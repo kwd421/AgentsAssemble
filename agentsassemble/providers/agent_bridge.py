@@ -23,6 +23,7 @@ from agentsassemble.room.text import (
     clean_room_text as clean_lobby_text,
     has_room_visible_text,
 )
+from agentsassemble.room.projection import public_activity
 from agentsassemble.providers.runtime_contracts import (
     AdapterContractError,
     ProviderRuntimeHealth,
@@ -855,27 +856,27 @@ class RoomAgentBridge:
         return payload
 
 
-_ACTIVITY_LABELS = {
-    "reasoning": {"started": "생각 정리 중", "running": "생각 정리 중", "completed": "생각 정리 완료"},
-    "file_read": {"started": "파일 읽는 중", "running": "파일 읽는 중", "completed": "파일 확인 완료"},
-    "search": {"started": "정보 검색 중", "running": "정보 검색 중", "completed": "정보 검색 완료"},
-    "command": {"started": "명령 실행 중", "running": "명령 실행 중", "completed": "명령 실행 완료"},
-    "web": {"started": "웹 확인 중", "running": "웹 확인 중", "completed": "웹 확인 완료"},
-    "tool": {"started": "도구 사용 중", "running": "도구 사용 중", "completed": "도구 사용 완료"},
-}
+_ACTIVITY_CATEGORIES = frozenset(
+    {"reasoning", "file_read", "search", "command", "web", "tool"}
+)
 
 
 def _safe_activity(activity: object) -> dict[str, str]:
     values = activity if isinstance(activity, dict) else {}
     category = clean_lobby_text(values.get("category"), limit=32)
     status = clean_lobby_text(values.get("status"), limit=32)
-    if category not in _ACTIVITY_LABELS or status not in {"started", "running", "completed"}:
+    if category not in _ACTIVITY_CATEGORIES or status not in {"started", "running", "completed"}:
         return {}
+    content, activity_kind = public_activity(
+        category,
+        status,
+        detail=values.get("content"),
+    )
     return {
-        "activity_kind": "reasoning" if category == "reasoning" else "tool",
+        "activity_kind": activity_kind,
         "category": category,
         "status": status,
-        "content": _ACTIVITY_LABELS[category][status],
+        "content": content,
     }
 
 

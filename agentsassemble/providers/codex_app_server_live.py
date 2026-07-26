@@ -192,7 +192,8 @@ class CodexAppServerLiveRuntime:
 
 
 def _codex_activity(value: object) -> dict[str, str]:
-    text = clean_room_text(value, limit=500).casefold()
+    content = clean_room_text(value, limit=600)
+    text = content.casefold()
     status = "completed" if "finished" in text or "completed" in text else "running"
     if "thinking" in text or "reason" in text:
         category = "reasoning"
@@ -206,4 +207,4 @@ def _codex_activity(value: object) -> dict[str, str]:
         category = "command"
     else:
         category = "tool"
-    return {"category": category, "status": status}
+    return {"category": category, "status": status, "content": content}

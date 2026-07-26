@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import re
+
 from agentsassemble.room.text import clean_room_text as clean_lobby_text
 from agentsassemble.room.types import RoomEvent
 
@@ -12,6 +14,46 @@ PUBLIC_ACTIVITY_LABELS = {
     "web": {"started": "웹 확인 중", "running": "웹 확인 중", "completed": "웹 확인 완료"},
     "tool": {"started": "도구 사용 중", "running": "도구 사용 중", "completed": "도구 사용 완료"},
 }
+
+_SENSITIVE_ACTIVITY_ASSIGNMENT = re.compile(
+    r"""(?ix)
+    (?<![a-z0-9_])(?:"|')?
+    (?:authorization|auth|api[_-]?key|access[_-]?token|refresh[_-]?token|
+    password|passwd|secret|token)
+    (?:"|')?(?![a-z0-9_])
+    \s*(?:=|:)\s*
+    (?:"[^"]*"|'[^']*'|`[^`]*`|[^\s,;]+)
+    """
+)
+_SENSITIVE_ACTIVITY_OPTION = re.compile(
+    r"""(?ix)
+    --?(?:authorization|auth|api[_-]?key|access[_-]?token|refresh[_-]?token|
+    password|passwd|secret|token)
+    (?:=|\s+)
+    (?:"[^"]*"|'[^']*'|`[^`]*`|[^\s,;]+)
+    """
+)
+_BEARER_ACTIVITY_VALUE = re.compile(r"(?i)\bbearer\s+\S+")
+_BASIC_AUTH_ACTIVITY_OPTION = re.compile(
+    r"""(?ix)(?P<prefix>^|\s)-u\s+(?:"[^"]*"|'[^']*'|[^\s,;]+)"""
+)
+_URL_USERINFO = re.compile(
+    r"""(?ix)\b(?P<scheme>[a-z][a-z0-9+.-]*://)[^/\s:@]+:[^/\s@]+@"""
+)
+_SECRET_ACTIVITY_PREFIX = re.compile(
+    r"\b(?:sk|aai1|ghp|github_pat)[-_.][A-Za-z0-9._-]{6,}\b",
+    re.IGNORECASE,
+)
+_UNIX_ACTIVITY_PATH = re.compile(
+    r"""(?x)
+    (?P<prefix>^|[\s'"`=(])
+    (?P<path>/(?!/)[^\s'"`|;&<>]*)
+    """
+)
+_HOME_ACTIVITY_PATH = re.compile(r"""(?x)(?P<prefix>^|[\s'"`=(])~(?:/[^\s'"`|;&<>]*)?""")
+_WINDOWS_ACTIVITY_PATH = re.compile(
+    r"""(?ix)(?P<prefix>^|[\s'"`=(])(?:[a-z]:[\\/]|\\\\)[^\s'"`|;&<>]*"""
+)
 
 _PRIVATE_SESSION_FIELDS = frozenset(
     {
@@ -90,9 +132,57 @@ def public_event(event: RoomEvent | dict[str, object]) -> dict[str, object]:
     return dict(project(dict(event)))
 
 
-def public_activity(category: str, status: str) -> tuple[str, str]:
+def safe_activity_detail(value: object, *, limit: int = 600) -> str:
+    """Return bounded provider activity text safe for the public room event log."""
+    text = clean_lobby_text(value, limit=max(1, int(limit)))
+    if not text:
+        return ""
+    text = text.replace(
+        "/agentsassemble-room/current.md",
+        "[room/current.md]",
+    ).replace(
+        "/agentsassemble-room/outbox.txt",
+        "[room/outbox.txt]",
+    )
+    text = _SENSITIVE_ACTIVITY_ASSIGNMENT.sub("[redacted]", text)
+    text = _SENSITIVE_ACTIVITY_OPTION.sub("[redacted]", text)
+    text = _BEARER_ACTIVITY_VALUE.sub("Bearer [redacted]", text)
+    text = _BASIC_AUTH_ACTIVITY_OPTION.sub(
+        lambda match: f"{match.group('prefix')}-u [redacted]",
+        text,
+    )
+    text = _URL_USERINFO.sub(
+        lambda match: f"{match.group('scheme')}[redacted]@",
+        text,
+    )
+    text = _SECRET_ACTIVITY_PREFIX.sub("[redacted]", text)
+    text = _WINDOWS_ACTIVITY_PATH.sub(
+        lambda match: f"{match.group('prefix')}[local path]",
+        text,
+    )
+    text = _HOME_ACTIVITY_PATH.sub(
+        lambda match: f"{match.group('prefix')}[local path]",
+        text,
+    )
+    text = _UNIX_ACTIVITY_PATH.sub(
+        lambda match: f"{match.group('prefix')}[local path]",
+        text,
+    )
+    return clean_lobby_text(text, limit=max(1, int(limit)))
+
+
+def public_activity(
+    category: str,
+    status: str,
+    *,
+    detail: object = "",
+) -> tuple[str, str]:
+    content = safe_activity_detail(
+        detail,
+        limit=2000 if category == "reasoning" else 600,
+    ) or PUBLIC_ACTIVITY_LABELS[category][status]
     return (
-        PUBLIC_ACTIVITY_LABELS[category][status],
+        content,
         "reasoning" if category == "reasoning" else "tool",
     )
 
@@ -152,4 +242,5 @@ __all__ = [
     "public_runtime_diagnostics",
     "public_session",
     "runtime_diagnostic_fields",
+    "safe_activity_detail",
 ]

@@ -39,6 +39,9 @@ class LiveCliMessageSource(Protocol):
     def poll(self, terminal_output: bytes, *, quiet: bool = False) -> LiveCliMessageSnapshot:
         ...
 
+    def drain_activities(self) -> list[dict[str, object]]:
+        ...
+
     def describe(self) -> dict[str, object]:
         ...
 
@@ -64,6 +67,9 @@ class TerminalCaptureMessageSource:
             source_kind="terminal_capture",
         )
 
+    def drain_activities(self) -> list[dict[str, object]]:
+        return []
+
     def describe(self) -> dict[str, object]:
         return {
             "message_source": "terminal_capture",
@@ -84,6 +90,7 @@ class _JsonlOffsetMessageSource:
         self._turn_input_seen_paths: set[str] = set()
         self._bound_path = ""
         self._expected_turn_input = ""
+        self._pending_activities: list[dict[str, object]] = []
 
     def prepare_start(self) -> None:
         self._offsets = {}
@@ -91,14 +98,21 @@ class _JsonlOffsetMessageSource:
         self._turn_input_seen_paths = set()
         self._bound_path = ""
         self._expected_turn_input = ""
+        self._pending_activities = []
         self._ignored_existing_paths = {str(path) for path in self._candidate_paths()}
 
     def begin_turn(self, expected_input: str = "") -> None:
         self._offsets = {}
         self._turn_input_seen_paths = set()
         self._expected_turn_input = _normalize_turn_input(expected_input)
+        self._pending_activities = []
         for path in self._visible_candidate_paths():
             self._offsets[str(path)] = _safe_size(path)
+
+    def drain_activities(self) -> list[dict[str, object]]:
+        activities = list(self._pending_activities)
+        self._pending_activities = []
+        return activities
 
     def poll(self, terminal_output: bytes, *, quiet: bool = False) -> LiveCliMessageSnapshot:
         del terminal_output, quiet
@@ -111,24 +125,41 @@ class _JsonlOffsetMessageSource:
             if not text:
                 continue
             self._observe_text(text, source=path_key)
-            exact_input = self._contains_turn_input(text, expected_input=self._expected_turn_input)
-            bound_session_input = bool(
-                self._bound_path == path_key and self._contains_any_turn_input(text)
-            )
-            if exact_input or bound_session_input:
+            scoped_text = text
+            if path_key not in self._turn_input_seen_paths:
+                turn_input_offset = self._turn_input_offset(text, path_key=path_key)
+                if turn_input_offset is None:
+                    continue
                 self._turn_input_seen_paths.add(path_key)
                 if not self._bound_path:
                     self._bound_path = path_key
                     self._active_paths.add(path_key)
+                scoped_text = text[turn_input_offset:]
             if path_key not in self._turn_input_seen_paths:
                 continue
             if self._bound_path and path_key != self._bound_path:
                 continue
-            snapshot = self._extract_from_text(text, source=str(path))
+            snapshot = self._extract_from_text(scoped_text, source=str(path))
             if snapshot.content or snapshot.error or snapshot.complete:
                 self._active_paths.add(path_key)
                 latest = snapshot
         return latest
+
+    def _turn_input_offset(self, text: str, *, path_key: str) -> int | None:
+        """Locate this turn's user row so earlier activity in the same read is ignored."""
+        offset = 0
+        for line in text.splitlines(keepends=True):
+            exact_input = self._contains_turn_input(
+                line,
+                expected_input=self._expected_turn_input,
+            )
+            bound_session_input = bool(
+                self._bound_path == path_key and self._contains_any_turn_input(line)
+            )
+            if exact_input or bound_session_input:
+                return offset
+            offset += len(line)
+        return None
 
     def describe(self) -> dict[str, object]:
         return {
@@ -374,8 +405,26 @@ class AntigravityTranscriptMessageSource(_JsonlOffsetMessageSource):
         for entry in _jsonl_objects(text):
             if str(entry.get("source") or "") != "MODEL":
                 continue
-            if str(entry.get("type") or "") != "PLANNER_RESPONSE":
+            entry_type = str(entry.get("type") or "")
+            if entry_type != "PLANNER_RESPONSE":
                 continue
+            for tool_call in list(entry.get("tool_calls") or []):
+                if not isinstance(tool_call, dict):
+                    continue
+                name = clean_room_text(tool_call.get("name"), limit=120) or "tool"
+                arguments = tool_call.get("args") if isinstance(tool_call.get("args"), dict) else {}
+                detail = _structured_tool_detail(
+                    name,
+                    arguments,
+                    preferred_keys=("CommandLine", "query", "toolSummary"),
+                )
+                self._pending_activities.append(
+                    {
+                        "category": _activity_category(name),
+                        "status": "running",
+                        "content": f"{name}: {detail}" if detail else name,
+                    }
+                )
             if str(entry.get("status") or "") and str(entry.get("status") or "") != "DONE":
                 continue
             content = _clean_provider_message_text(entry.get("content"), limit=12000)
@@ -467,10 +516,10 @@ class ClaudeSessionMessageSource(_JsonlOffsetMessageSource):
                 message.get("model") or entry.get("model") or entry.get("model_id"),
                 limit=128,
             ) or self._observed_model_id
-            if str(message.get("stop_reason") or "") == "tool_use":
-                continue
             content = message.get("content")
             if isinstance(content, str):
+                if str(message.get("stop_reason") or "") == "tool_use":
+                    continue
                 piece = _clean_provider_message_text(content, limit=12000)
                 if piece:
                     self._pending_messages.append(piece)
@@ -478,11 +527,23 @@ class ClaudeSessionMessageSource(_JsonlOffsetMessageSource):
             if not isinstance(content, list):
                 continue
             for block in content:
-                if not isinstance(block, dict) or str(block.get("type") or "") != "text":
+                if not isinstance(block, dict):
                     continue
-                piece = _clean_provider_message_text(block.get("text"), limit=12000)
-                if piece:
-                    self._pending_messages.append(piece)
+                block_type = str(block.get("type") or "")
+                if block_type == "tool_use":
+                    name = clean_room_text(block.get("name"), limit=120) or "tool"
+                    detail = _structured_tool_detail(name, block.get("input"))
+                    self._pending_activities.append(
+                        {
+                            "category": _activity_category(name),
+                            "status": "running",
+                            "content": f"{name}: {detail}" if detail else name,
+                        }
+                    )
+                elif block_type == "text" and str(message.get("stop_reason") or "") != "tool_use":
+                    piece = _clean_provider_message_text(block.get("text"), limit=12000)
+                    if piece:
+                        self._pending_messages.append(piece)
         result = "\n".join(self._pending_messages).strip()
         return LiveCliMessageSnapshot(
             content=result,
@@ -609,6 +670,44 @@ def _claude_message_text(message: dict[str, object]) -> str:
         if isinstance(block, dict) and str(block.get("type") or "") == "text"
         if (piece := _clean_provider_message_text(block.get("text"), limit=1000))
     ).strip()
+
+
+def _structured_tool_detail(
+    tool_name: str,
+    tool_input: object,
+    *,
+    preferred_keys: tuple[str, ...] = (
+        "command",
+        "file_path",
+        "path",
+        "pattern",
+        "query",
+        "url",
+        "description",
+        "prompt",
+    ),
+) -> str:
+    del tool_name
+    if not isinstance(tool_input, dict):
+        return ""
+    for key in preferred_keys:
+        value = tool_input.get(key)
+        if isinstance(value, str) and value.strip():
+            return clean_room_text(value, limit=600)
+    return ""
+
+
+def _activity_category(tool_name: str) -> str:
+    value = clean_room_text(tool_name, limit=120).casefold()
+    if any(word in value for word in ("read", "file", "open")):
+        return "file_read"
+    if any(word in value for word in ("grep", "search", "find")):
+        return "search"
+    if any(word in value for word in ("browser", "fetch", "http", "web")):
+        return "web"
+    if any(word in value for word in ("bash", "command", "exec", "run", "shell", "terminal")):
+        return "command"
+    return "tool"
 
 
 def make_live_cli_message_source(

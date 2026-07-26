@@ -222,6 +222,7 @@ class TranscriptMessageSourceTests(unittest.TestCase):
             )
 
             intermediate = source.poll(b"Claude TUI chrome", quiet=True)
+            activities = source.drain_activities()
             with current.open("a", encoding="utf-8") as handle:
                 handle.write(
                     json.dumps(
@@ -252,6 +253,17 @@ class TranscriptMessageSourceTests(unittest.TestCase):
 
         self.assertFalse(intermediate.complete)
         self.assertEqual(intermediate.content, "")
+        self.assertEqual(
+            activities,
+            [
+                {
+                    "category": "file_read",
+                    "status": "running",
+                    "content": "Read: /tmp/noise",
+                },
+            ],
+        )
+        self.assertNotIn("private reasoning", str(activities))
         self.assertFalse(before_completion.complete)
         self.assertEqual(before_completion.content, MARKDOWN_REPLY)
         self.assertTrue(snapshot.complete)
@@ -296,6 +308,183 @@ class TranscriptMessageSourceTests(unittest.TestCase):
 
             with self.assertRaisesRegex(LiveCliMessageExtractionError, "401 Invalid authentication"):
                 source.poll(b"", quiet=True)
+
+    def test_claude_activity_waits_for_the_new_turn_input_on_a_bound_transcript(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            workspace = root / "workspace"
+            workspace.mkdir()
+            project = (
+                root
+                / ".claude"
+                / "projects"
+                / re.sub(r"[^A-Za-z0-9-]", "-", str(workspace))
+            )
+            project.mkdir(parents=True)
+            transcript = project / "current.jsonl"
+            source = ClaudeSessionMessageSource(home=root, cwd=workspace)
+            source.prepare_start()
+            source.begin_turn("first")
+            transcript.write_text(
+                json.dumps(
+                    {
+                        "type": "user",
+                        "message": {"role": "user", "content": "first"},
+                    }
+                )
+                + "\n",
+                encoding="utf-8",
+            )
+            source.poll(b"", quiet=True)
+            source.drain_activities()
+
+            source.begin_turn("second")
+            with transcript.open("a", encoding="utf-8") as handle:
+                handle.write(
+                    json.dumps(
+                        {
+                            "type": "assistant",
+                            "message": {
+                                "role": "assistant",
+                                "stop_reason": "tool_use",
+                                "content": [
+                                    {
+                                        "type": "tool_use",
+                                        "name": "Bash",
+                                        "input": {"command": "stale-command"},
+                                    }
+                                ],
+                            },
+                        }
+                    )
+                    + "\n"
+                )
+            source.poll(b"", quiet=True)
+            stale = source.drain_activities()
+
+            with transcript.open("a", encoding="utf-8") as handle:
+                handle.write(
+                    json.dumps(
+                        {
+                            "type": "user",
+                            "message": {"role": "user", "content": "second"},
+                        }
+                    )
+                    + "\n"
+                )
+                handle.write(
+                    json.dumps(
+                        {
+                            "type": "assistant",
+                            "message": {
+                                "role": "assistant",
+                                "stop_reason": "tool_use",
+                                "content": [
+                                    {
+                                        "type": "tool_use",
+                                        "name": "Bash",
+                                        "input": {"command": "fresh-command"},
+                                    }
+                                ],
+                            },
+                        }
+                    )
+                    + "\n"
+                )
+            source.poll(b"", quiet=True)
+            fresh = source.drain_activities()
+
+        self.assertEqual(stale, [])
+        self.assertEqual(
+            fresh,
+            [
+                {
+                    "category": "command",
+                    "status": "running",
+                    "content": "Bash: fresh-command",
+                }
+            ],
+        )
+
+    def test_claude_activity_ignores_late_previous_turn_rows_in_same_read(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            workspace = root / "workspace"
+            workspace.mkdir()
+            project = (
+                root
+                / ".claude"
+                / "projects"
+                / re.sub(r"[^A-Za-z0-9-]", "-", str(workspace))
+            )
+            project.mkdir(parents=True)
+            transcript = project / "current.jsonl"
+            source = ClaudeSessionMessageSource(home=root, cwd=workspace)
+            source.prepare_start()
+            source.begin_turn("first")
+            transcript.write_text(
+                json.dumps(
+                    {
+                        "type": "user",
+                        "message": {"role": "user", "content": "first"},
+                    }
+                )
+                + "\n",
+                encoding="utf-8",
+            )
+            source.poll(b"", quiet=True)
+
+            source.begin_turn("second")
+            rows = [
+                {
+                    "type": "assistant",
+                    "message": {
+                        "role": "assistant",
+                        "stop_reason": "tool_use",
+                        "content": [
+                            {
+                                "type": "tool_use",
+                                "name": "Bash",
+                                "input": {"command": "stale-command"},
+                            }
+                        ],
+                    },
+                },
+                {
+                    "type": "user",
+                    "message": {"role": "user", "content": "second"},
+                },
+                {
+                    "type": "assistant",
+                    "message": {
+                        "role": "assistant",
+                        "stop_reason": "tool_use",
+                        "content": [
+                            {
+                                "type": "tool_use",
+                                "name": "Bash",
+                                "input": {"command": "fresh-command"},
+                            }
+                        ],
+                    },
+                },
+            ]
+            with transcript.open("a", encoding="utf-8") as handle:
+                handle.write("\n".join(json.dumps(row) for row in rows) + "\n")
+
+            source.poll(b"", quiet=True)
+            activities = source.drain_activities()
+
+        self.assertEqual(
+            activities,
+            [
+                {
+                    "category": "command",
+                    "status": "running",
+                    "content": "Bash: fresh-command",
+                }
+            ],
+        )
 
     def test_codex_source_reads_final_answer_from_session_jsonl(self):
         with tempfile.TemporaryDirectory() as temp_dir:
@@ -960,6 +1149,91 @@ class TranscriptMessageSourceTests(unittest.TestCase):
 
         self.assertTrue(snapshot.complete)
         self.assertEqual(snapshot.content, "TARGET")
+
+    def test_antigravity_source_emits_structured_tool_calls_without_result_output(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            transcript = (
+                root
+                / ".gemini"
+                / "antigravity-cli"
+                / "brain"
+                / "conv-a"
+                / ".system_generated"
+                / "logs"
+                / "transcript.jsonl"
+            )
+            transcript.parent.mkdir(parents=True)
+            source = AntigravityTranscriptMessageSource(home=root)
+            source.prepare_start()
+            source.begin_turn("hello")
+            transcript.write_text(
+                "\n".join(
+                    [
+                        json.dumps(
+                            {
+                                "source": "USER_EXPLICIT",
+                                "type": "USER_INPUT",
+                                "content": "<USER_REQUEST>hello</USER_REQUEST>",
+                            }
+                        ),
+                        json.dumps(
+                            {
+                                "source": "MODEL",
+                                "type": "PLANNER_RESPONSE",
+                                "status": "RUNNING",
+                                "tool_calls": [
+                                    {
+                                        "name": "run_command",
+                                        "args": {
+                                            "CommandLine": "pwd",
+                                            "toolSummary": "Check directory",
+                                        },
+                                    },
+                                    {
+                                        "name": "search_web",
+                                        "args": {
+                                            "query": "Alabasta strongest character",
+                                            "toolSummary": "Search the web",
+                                        },
+                                    },
+                                ],
+                            }
+                        ),
+                        json.dumps(
+                            {
+                                "source": "MODEL",
+                                "type": "RUN_COMMAND",
+                                "status": "DONE",
+                                "content": "private command output",
+                            }
+                        ),
+                    ]
+                )
+                + "\n",
+                encoding="utf-8",
+            )
+
+            snapshot = source.poll(b"", quiet=True)
+            activities = source.drain_activities()
+
+        self.assertFalse(snapshot.complete)
+        self.assertEqual(
+            activities,
+            [
+                {
+                    "category": "command",
+                    "status": "running",
+                    "content": "run_command: pwd",
+                },
+                {
+                    "category": "search",
+                    "status": "running",
+                    "content": "search_web: Alabasta strongest character",
+                },
+            ],
+        )
+        self.assertNotIn("private command output", str(activities))
 
     def test_codex_source_ignores_late_previous_completion_until_next_user_input(self):
         with tempfile.TemporaryDirectory() as temp_dir:

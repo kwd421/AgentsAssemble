@@ -275,7 +275,6 @@ class LiveCliRuntime:
         on_delta: Callable[[str], None] | None = None,
         on_activity: Callable[[dict[str, object]], None] | None = None,
     ) -> dict[str, object]:
-        del on_activity
         process, fd = self._state_snapshot()
         quiet = self.idle_quiet_seconds
         deadline = time.monotonic() + max(0.0, float(timeout_seconds))
@@ -301,6 +300,7 @@ class LiveCliRuntime:
                     quiet=bool(chunks and last_read_at is not None and time.monotonic() >= last_read_at + quiet),
                     previous=final_snapshot,
                     on_delta=on_delta,
+                    on_activity=on_activity,
                     last_visible_content_ref=[last_visible_content],
                 )
                 if final_snapshot.complete:
@@ -347,6 +347,7 @@ class LiveCliRuntime:
                 quiet=False,
                 previous=final_snapshot,
                 on_delta=on_delta,
+                on_activity=on_activity,
                 last_visible_content_ref=[last_visible_content],
             )
             if final_snapshot.content:
@@ -548,9 +549,15 @@ class LiveCliRuntime:
         quiet: bool,
         previous: LiveCliMessageSnapshot,
         on_delta: Callable[[str], None] | None,
+        on_activity: Callable[[dict[str, object]], None] | None,
         last_visible_content_ref: list[str],
     ) -> LiveCliMessageSnapshot:
         snapshot = self._message_source.poll(response, quiet=quiet)
+        drain_activities = getattr(self._message_source, "drain_activities", None)
+        if callable(drain_activities):
+            for activity in drain_activities():
+                if on_activity is not None and isinstance(activity, dict):
+                    on_activity(activity)
         if snapshot.error:
             raise LiveCliMessageExtractionError(snapshot.error)
         if not snapshot.content:

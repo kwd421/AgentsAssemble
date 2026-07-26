@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from collections import deque
 import json
+from pathlib import Path
 import select
 import subprocess
 import threading
@@ -12,6 +13,7 @@ from typing import Callable, Iterable
 
 from agentsassemble.providers.turn_input import agent_turn_prompt
 from agentsassemble.providers.process_environment import sanitized_provider_environment
+from agentsassemble.room.projection import safe_activity_detail
 from agentsassemble.room.text import clean_room_text
 
 AgentTurnChunk = dict[str, object]
@@ -1026,9 +1028,16 @@ def _app_server_progress_text(params: dict[str, object], *, completed: bool) -> 
     item = params.get("item") if isinstance(params.get("item"), dict) else {}
     item_type = clean_room_text(item.get("type"), limit=64)
     if item_type == "reasoning":
+        detail = safe_activity_detail(_app_server_reasoning_detail(item))
+        if detail:
+            return f"Thinking: {detail}"
         return "Thinking finished." if completed else "Thinking."
     if item_type in {"commandExecution", "command"}:
-        command = clean_room_text(item.get("command") or item.get("cmd") or item.get("name"), limit=200)
+        command = safe_activity_detail(
+            _app_server_command_detail(
+                item.get("command") or item.get("cmd") or item.get("name")
+            )
+        )
         if command:
             return f"Tool finished: {command}" if completed else f"Using tool: {command}"
         return "Tool finished." if completed else "Using tool."
@@ -1038,6 +1047,31 @@ def _app_server_progress_text(params: dict[str, object], *, completed: bool) -> 
             return f"Tool finished: {name}" if completed else f"Using tool: {name}"
         return "Tool finished." if completed else "Using tool."
     return ""
+
+
+def _app_server_reasoning_detail(item: dict[str, object]) -> str:
+    value = item.get("summary")
+    if isinstance(value, str):
+        return clean_room_text(value, limit=600)
+    if isinstance(value, list):
+        parts = [
+            clean_room_text(
+                entry.get("text") if isinstance(entry, dict) else entry,
+                limit=300,
+            )
+            for entry in value
+        ]
+        return clean_room_text(" ".join(part for part in parts if part), limit=600)
+    return ""
+
+
+def _app_server_command_detail(value: object) -> str:
+    if isinstance(value, (list, tuple)):
+        executable = clean_room_text(value[0], limit=200) if value else ""
+        if not executable:
+            return ""
+        return f"{Path(executable).name} …" if len(value) > 1 else Path(executable).name
+    return clean_room_text(value, limit=600)
 
 
 def clean_provider_session_id(value: object) -> str:

@@ -15,6 +15,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING, TextIO
 
 from agentsassemble.providers.process_environment import sanitized_provider_environment
+from agentsassemble.providers.room_portal import VIRTUAL_ROOM_OUTBOX_PATH
 from agentsassemble.providers.runtime_contracts import AdapterContractError
 from agentsassemble.room.text import clean_room_text
 
@@ -86,6 +87,13 @@ class GrokAcpRuntime:
         self._turn_notification_drop_start = 0
         self._permission_request_count = 0
         self._permission_denied_count = 0
+        self._tool_permission_context: dict[
+            tuple[str, str],
+            dict[str, object],
+        ] = {}
+        self._active_thought_text = ""
+        self._last_emitted_thought_text = ""
+        self._tool_activity_state: dict[str, tuple[str, str]] = {}
         self._stderr_byte_count = 0
         self._stderr_line_count = 0
         self._stderr_warning_count = 0
@@ -139,6 +147,10 @@ class GrokAcpRuntime:
             self._session_id = ""
             self._active_request = None
             self._active_room_observation = False
+            self._tool_permission_context.clear()
+            self._active_thought_text = ""
+            self._last_emitted_thought_text = ""
+            self._tool_activity_state.clear()
             self._pending.clear()
             process_notifications: queue.Queue[dict[str, object]] = queue.Queue(
                 maxsize=self._notification_queue_size
@@ -241,16 +253,25 @@ class GrokAcpRuntime:
         self._consume_notifications(session_id, [], on_delta=None, on_activity=None)
         with self._lock:
             self._turn_notification_drop_start = self._notification_drop_count
-        request = self._begin_request(
-            "session/prompt",
-            {
-                "sessionId": session_id,
-                "prompt": prompt,
-            },
-        )
+            self._active_room_observation = room_observation
+            self._tool_permission_context.clear()
+            self._active_thought_text = ""
+            self._last_emitted_thought_text = ""
+            self._tool_activity_state.clear()
+        try:
+            request = self._begin_request(
+                "session/prompt",
+                {
+                    "sessionId": session_id,
+                    "prompt": prompt,
+                },
+            )
+        except Exception:
+            with self._lock:
+                self._active_room_observation = False
+            raise
         with self._lock:
             self._active_request = request
-            self._active_room_observation = room_observation
 
     def read_output(
         self,
@@ -341,6 +362,10 @@ class GrokAcpRuntime:
                 if self._active_request and self._active_request[0] == request_id:
                     self._active_request = None
                 self._active_room_observation = False
+                self._tool_permission_context.clear()
+                self._active_thought_text = ""
+                self._last_emitted_thought_text = ""
+                self._tool_activity_state.clear()
                 self._pending.pop(request_id, None)
 
     def interrupt(self) -> None:
@@ -557,7 +582,7 @@ class GrokAcpRuntime:
                         self._handle_room_portal_request(message)
                         continue
                     if message.get("method") == "session/request_permission" and "id" in message:
-                        self._reject_permission_request(message)
+                        self._respond_to_permission_request(message)
                         continue
                     request_id = message.get("id")
                     if isinstance(request_id, int) and not message.get("method"):
@@ -568,6 +593,8 @@ class GrokAcpRuntime:
                         continue
                     method = str(message.get("method") or "")
                     if method in {"session/update", "_x.ai/session_notification", "_x.ai/sessions/changed"}:
+                        if method == "session/update":
+                            self._remember_tool_permission_context(message)
                         self._queue_notification(notifications, message)
             except (OSError, ValueError):
                 pass
@@ -609,17 +636,235 @@ class GrokAcpRuntime:
                     break
                 self._stderr_tail.popleft()
 
-    def _reject_permission_request(self, message: dict[str, object]) -> None:
+    def _respond_to_permission_request(self, message: dict[str, object]) -> None:
         request_id = message.get("id")
-        if not isinstance(request_id, int):
+        if not isinstance(request_id, (int, str)) or isinstance(request_id, bool):
             return
+        params = message.get("params") if isinstance(message.get("params"), dict) else {}
+        tool_call = params.get("toolCall") if isinstance(params.get("toolCall"), dict) else {}
+        allow_outbox = self._permission_is_room_outbox_write(params, tool_call)
+        if allow_outbox:
+            allow_outbox = self._stage_room_outbox_write(params, tool_call)
+        option_kind = "allow_once" if allow_outbox else "reject_once"
+        option_id = ""
+        for option in list(params.get("options") or []):
+            if not isinstance(option, dict) or str(option.get("kind") or "") != option_kind:
+                continue
+            option_id = clean_room_text(option.get("optionId"), limit=128)
+            if option_id:
+                break
         with self._lock:
             self._permission_request_count += 1
-            self._permission_denied_count += 1
+            if not allow_outbox:
+                self._permission_denied_count += 1
+        outcome: dict[str, object]
+        if option_id:
+            outcome = {"outcome": "selected", "optionId": option_id}
+        else:
+            outcome = {"outcome": "cancelled"}
         try:
-            self._send_json({"jsonrpc": "2.0", "id": request_id, "result": {"outcome": "reject_once"}})
+            self._send_json(
+                {
+                    "jsonrpc": "2.0",
+                    "id": request_id,
+                    "result": {"outcome": outcome},
+                }
+            )
         except RuntimeError as error:
             self._last_error = str(error)
+
+    def _permission_is_room_outbox_write(
+        self,
+        params: dict[str, object],
+        tool_call: dict[str, object],
+    ) -> bool:
+        with self._lock:
+            active_room_observation = self._active_room_observation
+            session_id = self._session_id
+        if (
+            not active_room_observation
+            or self.room_portal is None
+            or str(params.get("sessionId") or "") != session_id
+        ):
+            return False
+        raw_input = (
+            tool_call.get("rawInput")
+            if isinstance(tool_call.get("rawInput"), dict)
+            else {}
+        )
+        tool_call_id = clean_room_text(
+            tool_call.get("toolCallId") or params.get("toolCallId"),
+            limit=128,
+        )
+        with self._lock:
+            cached = dict(
+                self._tool_permission_context.get((session_id, tool_call_id)) or {}
+            )
+        cached_input = (
+            cached.get("rawInput")
+            if isinstance(cached.get("rawInput"), dict)
+            else {}
+        )
+        if raw_input.get("command") or cached_input.get("command"):
+            return False
+        identity = " ".join(
+            clean_room_text(value, limit=120)
+            for value in (
+                tool_call.get("name"),
+                tool_call.get("title"),
+                cached.get("name"),
+                cached.get("title"),
+                cached.get("label"),
+            )
+            if value
+        ).casefold()
+        if not any(
+            word in identity
+            for word in ("write", "write_file", "write text", "fs/write_text_file")
+        ):
+            return False
+        targets: list[str] = []
+        for values in (tool_call, raw_input, cached, cached_input):
+            for key in ("file_path", "path", "target_file"):
+                value = values.get(key)
+                if isinstance(value, str) and value:
+                    targets.append(value)
+        for values in (tool_call, cached):
+            for key in ("location", "locations"):
+                locations = values.get(key)
+                if isinstance(locations, dict):
+                    locations = [locations]
+                if isinstance(locations, list):
+                    targets.extend(
+                        str(location.get("path") or "")
+                        for location in locations
+                        if isinstance(location, dict) and location.get("path")
+                    )
+        return bool(targets) and all(
+            target == VIRTUAL_ROOM_OUTBOX_PATH
+            for target in targets
+        )
+
+    def _stage_room_outbox_write(
+        self,
+        params: dict[str, object],
+        tool_call: dict[str, object],
+    ) -> bool:
+        portal = self.room_portal
+        if portal is None:
+            return False
+        session_id = clean_room_text(params.get("sessionId"), limit=128)
+        tool_call_id = clean_room_text(
+            tool_call.get("toolCallId") or params.get("toolCallId"),
+            limit=128,
+        )
+        raw_input = (
+            tool_call.get("rawInput")
+            if isinstance(tool_call.get("rawInput"), dict)
+            else {}
+        )
+        with self._lock:
+            cached = dict(
+                self._tool_permission_context.get((session_id, tool_call_id)) or {}
+            )
+        cached_input = (
+            cached.get("rawInput")
+            if isinstance(cached.get("rawInput"), dict)
+            else {}
+        )
+        content = raw_input.get("content") or cached_input.get("content")
+        if not isinstance(content, str) or not content.strip():
+            return False
+        try:
+            portal.acp_write_text(VIRTUAL_ROOM_OUTBOX_PATH, content)
+        except Exception as error:
+            self._last_error = clean_room_text(error, limit=1000)
+            return False
+        return True
+
+    def _remember_tool_permission_context(self, message: dict[str, object]) -> None:
+        params = message.get("params") if isinstance(message.get("params"), dict) else {}
+        update = params.get("update") if isinstance(params.get("update"), dict) else {}
+        if str(update.get("sessionUpdate") or "") not in {"tool_call", "tool_call_update"}:
+            return
+        tool_call_id = clean_room_text(
+            update.get("toolCallId") or update.get("tool_call_id"),
+            limit=128,
+        )
+        if not tool_call_id:
+            return
+        update_session_id = clean_room_text(params.get("sessionId"), limit=128)
+        with self._lock:
+            active_session_id = self._session_id
+            active_room_observation = self._active_room_observation
+        if (
+            not active_room_observation
+            or not update_session_id
+            or update_session_id != active_session_id
+        ):
+            return
+        metadata = update.get("_meta") if isinstance(update.get("_meta"), dict) else {}
+        tool_metadata = (
+            metadata.get("x.ai/tool")
+            if isinstance(metadata.get("x.ai/tool"), dict)
+            else {}
+        )
+        raw_input = update.get("rawInput") if isinstance(update.get("rawInput"), dict) else {}
+        locations: list[dict[str, str]] = []
+        for key in ("location", "locations"):
+            values = update.get(key)
+            if isinstance(values, dict):
+                values = [values]
+            if isinstance(values, list):
+                locations.extend(
+                    {"path": str(value.get("path"))}
+                    for value in values
+                    if isinstance(value, dict) and value.get("path")
+                )
+        incoming = {
+            "name": clean_room_text(
+                tool_metadata.get("name") or update.get("name"),
+                limit=120,
+            ),
+            "label": clean_room_text(tool_metadata.get("label"), limit=120),
+            "title": clean_room_text(update.get("title"), limit=300),
+            "rawInput": {
+                key: (
+                    str(raw_input.get(key))[:12000]
+                    if key == "content"
+                    else clean_room_text(raw_input.get(key), limit=600)
+                )
+                for key in ("command", "content", "file_path", "path", "target_file")
+                if isinstance(raw_input.get(key), str) and raw_input.get(key)
+            },
+            "locations": locations,
+            **{
+                key: clean_room_text(update.get(key), limit=600)
+                for key in ("file_path", "path", "target_file")
+                if isinstance(update.get(key), str) and update.get(key)
+            },
+        }
+        context_key = (update_session_id, tool_call_id)
+        with self._lock:
+            previous = dict(self._tool_permission_context.get(context_key) or {})
+            previous_input = (
+                dict(previous.get("rawInput"))
+                if isinstance(previous.get("rawInput"), dict)
+                else {}
+            )
+            previous_input.update(incoming["rawInput"])
+            for key in ("name", "label", "title"):
+                if incoming.get(key):
+                    previous[key] = incoming[key]
+            for key in ("file_path", "path", "target_file"):
+                if incoming.get(key):
+                    previous[key] = incoming[key]
+            if incoming["locations"]:
+                previous["locations"] = incoming["locations"]
+            previous["rawInput"] = previous_input
+            self._tool_permission_context[context_key] = previous
+            while len(self._tool_permission_context) > 256:
+                self._tool_permission_context.pop(next(iter(self._tool_permission_context)))
 
     def _handle_room_portal_request(self, message: dict[str, object]) -> None:
         request_id = message.get("id")
@@ -697,15 +942,43 @@ class GrokAcpRuntime:
                 continue
             update = params.get("update") if isinstance(params.get("update"), dict) else {}
             update_type = str(update.get("sessionUpdate") or "")
+            if update_type == "agent_thought_chunk":
+                content = update.get("content") if isinstance(update.get("content"), dict) else {}
+                self._emit_thought_activity(
+                    content.get("text"),
+                    on_activity=on_activity,
+                )
+                continue
             if update_type in {"tool_call", "tool_call_update"}:
+                self._emit_thought_activity("", on_activity=on_activity, force=True)
                 if on_activity is not None:
                     raw_status = str(update.get("status") or "running").casefold()
-                    status = "completed" if raw_status in {"completed", "success", "done"} else "running"
-                    title = str(update.get("title") or update.get("name") or "")
-                    on_activity({"category": _tool_category(title), "status": status})
+                    status = (
+                        "completed"
+                        if raw_status in {"cancelled", "completed", "error", "failed", "success", "done"}
+                        else "running"
+                    )
+                    title, detail = _grok_tool_activity(update)
+                    tool_call_id = clean_room_text(
+                        update.get("toolCallId") or update.get("tool_call_id"),
+                        limit=128,
+                    )
+                    if self._should_emit_tool_activity(
+                        tool_call_id,
+                        status=status,
+                        detail=detail,
+                    ):
+                        on_activity(
+                            {
+                                "category": _tool_category(title),
+                                "status": status,
+                                "content": detail,
+                            }
+                        )
                 continue
             if update_type != "agent_message_chunk":
                 continue
+            self._emit_thought_activity("", on_activity=on_activity, force=True)
             content = update.get("content") if isinstance(update.get("content"), dict) else {}
             delta = str(content.get("text") or "")
             if not delta:
@@ -713,6 +986,64 @@ class GrokAcpRuntime:
             content_parts.append(delta)
             if on_delta is not None:
                 on_delta(delta)
+
+    def _emit_thought_activity(
+        self,
+        value: object,
+        *,
+        on_activity: Callable[[dict[str, object]], None] | None,
+        force: bool = False,
+    ) -> None:
+        if on_activity is None:
+            return
+        raw = str(value or "")
+        with self._lock:
+            if raw:
+                self._active_thought_text = (
+                    self._active_thought_text + raw
+                )[:2000]
+            thought = clean_room_text(self._active_thought_text, limit=2000)
+            previous = self._last_emitted_thought_text
+            should_emit = bool(
+                thought
+                and thought != previous
+                and (
+                    force
+                    or not previous
+                    or len(thought) - len(previous) >= 40
+                    or any(marker in raw for marker in (".", "!", "?", "\n"))
+                )
+            )
+            if should_emit:
+                self._last_emitted_thought_text = thought
+        if should_emit:
+            on_activity(
+                {
+                    "category": "reasoning",
+                    "status": "running",
+                    "content": thought,
+                }
+            )
+
+    def _should_emit_tool_activity(
+        self,
+        tool_call_id: str,
+        *,
+        status: str,
+        detail: str,
+    ) -> bool:
+        if not tool_call_id:
+            return True
+        with self._lock:
+            previous = self._tool_activity_state.get(tool_call_id)
+            current = (status, detail)
+            if previous == current:
+                return False
+            self._tool_activity_state[tool_call_id] = current
+            if status == "completed" and previous is not None:
+                return False
+        return True
+
     def _raise_if_exited(self) -> None:
         with self._lock:
             process = self.process
@@ -797,6 +1128,47 @@ def _tool_category(title: str) -> str:
     if any(word in value for word in ("shell", "command", "exec", "terminal")):
         return "command"
     return "tool"
+
+
+def _grok_tool_activity(update: dict[str, object]) -> tuple[str, str]:
+    metadata = update.get("_meta") if isinstance(update.get("_meta"), dict) else {}
+    tool_metadata = (
+        metadata.get("x.ai/tool")
+        if isinstance(metadata.get("x.ai/tool"), dict)
+        else {}
+    )
+    raw_input = update.get("rawInput") if isinstance(update.get("rawInput"), dict) else {}
+    name = clean_room_text(
+        tool_metadata.get("name")
+        or update.get("name")
+        or update.get("title"),
+        limit=120,
+    )
+    label = clean_room_text(tool_metadata.get("label") or name, limit=120)
+    title = clean_room_text(update.get("title"), limit=600)
+    category_source = " ".join(part for part in (name, label, title) if part)
+
+    detail_value = ""
+    for key in (
+        "command",
+        "target_file",
+        "file_path",
+        "path",
+        "pattern",
+        "query",
+        "url",
+        "target_directory",
+        "description",
+    ):
+        candidate = raw_input.get(key)
+        if isinstance(candidate, str) and candidate.strip():
+            detail_value = candidate
+            break
+    if detail_value:
+        detail = f"{label or name or 'Tool'}: {detail_value}"
+    else:
+        detail = title or label or name
+    return category_source, clean_room_text(detail, limit=600)
 
 
 def _resolve_executable(executable: str) -> str:

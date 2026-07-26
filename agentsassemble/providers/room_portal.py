@@ -23,6 +23,7 @@ _MAX_ROOM_MESSAGE_CHARS = 12_000
 
 def room_session_orientation(provider_kind: object = "") -> str:
     kind = clean_room_text(provider_kind, limit=64)
+    provider_note = ""
     if kind == "codex_live_session":
         read_interface = "Codex dynamic tool `agentsassemble_room_read`"
         speak_interface = "Codex dynamic tool `agentsassemble_room_speak` with `content`"
@@ -34,6 +35,10 @@ def room_session_orientation(provider_kind: object = "") -> str:
         speak_interface = (
             "ACP write path `/agentsassemble-room/outbox.txt` with the message as its content"
         )
+        provider_note = """
+- For that exact virtual outbox path, the room adapter captures the content at
+  the ACP permission boundary. A later local read-only filesystem error does
+  not mean publication failed; do not retry it through a shell or helper."""
     else:
         read_interface = (
             "the provider's private room read interface: Codex `agentsassemble_room_read`, "
@@ -51,7 +56,7 @@ def room_session_orientation(provider_kind: object = "") -> str:
 - The private room mirror is read through {read_interface}; public messages are
   staged through {speak_interface}.
 - Only that publication boundary creates a public room message. Ordinary
-  assistant output remains private.
+  assistant output remains private.{provider_note}
 - Room norm: public messages add new substance. Resolving an open decision is new
   substance; after a point is settled, receipt, thanks, repeated agreement,
   restatement, a silence explanation, or another closing is not."""

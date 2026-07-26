@@ -663,7 +663,12 @@ class ProviderRuntimeControlTests(unittest.TestCase):
         class FakeAppServer:
             def send_turn(self, handle, packet):
                 del handle, packet
-                return iter([{"type": "message_final", "content": "hello"}])
+                return iter(
+                    [
+                        {"type": "thinking_delta", "content": "Using tool: pwd"},
+                        {"type": "message_final", "content": "hello"},
+                    ]
+                )
 
             def diagnose(self, handle):
                 del handle
@@ -678,10 +683,21 @@ class ProviderRuntimeControlTests(unittest.TestCase):
         )
         runtime.runtime = FakeAppServer()
         runtime.pending = "hello"
+        activities = []
 
-        result = runtime.read_output(timeout_seconds=2)
+        result = runtime.read_output(timeout_seconds=2, on_activity=activities.append)
 
         self.assertEqual(result["metadata"]["observed_model_id"], "gpt-5.6-luna")
+        self.assertEqual(
+            activities,
+            [
+                {
+                    "category": "tool",
+                    "status": "running",
+                    "content": "Using tool: pwd",
+                }
+            ],
+        )
 
     def test_non_codex_attendees_build_complete_provider_runtime_configs(self):
         captured: list[tuple[ProviderRuntimeConfig, str]] = []

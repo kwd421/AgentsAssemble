@@ -636,14 +636,14 @@ class RoomAgentBridgeTests(unittest.TestCase):
                     "activity_kind": "tool",
                     "category": "command",
                     "status": "running",
-                    "content": "명령 실행 중",
+                    "content": "cat [local path] [redacted]",
                 },
                 {
                     "turn_id": "turn-2",
                     "activity_kind": "tool",
                     "category": "command",
                     "status": "running",
-                    "content": "명령 실행 중",
+                    "content": "cat [local path] [redacted]",
                 },
             ],
         )

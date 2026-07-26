@@ -8,6 +8,7 @@ from agentsassemble.room.projection import (
     public_runtime_diagnostics,
     public_session,
     runtime_diagnostic_fields,
+    safe_activity_detail,
 )
 
 
@@ -125,6 +126,35 @@ class RoomProjectionTests(unittest.TestCase):
                 {"ttfo_ms": None, "total_turn_ms": 650, "stream_ms": 200},
             ),
             {"ttfo_ms": 120, "total_turn_ms": 650, "stream_ms": 200},
+        )
+
+    def test_activity_detail_redacts_credentials_and_local_paths(self):
+        detail = (
+            'curl -u user:pass https://alice:hunter2@example.test '
+            '-d \'{"password":"hunter2"}\' '
+            'C:/Users/alice/private.txt /Users/alice/private.txt'
+        )
+
+        safe = safe_activity_detail(detail)
+
+        self.assertNotIn("user:pass", safe)
+        self.assertNotIn("alice:hunter2", safe)
+        self.assertNotIn("hunter2", safe)
+        self.assertNotIn("C:/Users/alice", safe)
+        self.assertNotIn("/Users/alice", safe)
+        self.assertIn("-u [redacted]", safe)
+        self.assertIn("https://[redacted]@example.test", safe)
+        self.assertEqual(safe.count("[local path]"), 2)
+
+    def test_activity_detail_names_virtual_room_paths_without_exposing_local_paths(self):
+        safe = safe_activity_detail(
+            "Read /agentsassemble-room/current.md then write "
+            "/agentsassemble-room/outbox.txt"
+        )
+
+        self.assertEqual(
+            safe,
+            "Read [room/current.md] then write [room/outbox.txt]",
         )
 
 

@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode, type UIEvent } from "react";
+import { useCallback, useEffect, useId, useLayoutEffect, useMemo, useRef, useState, type ReactNode, type UIEvent } from "react";
 import { Bot, ChevronDown, ChevronRight, Hash, MessageCircle, MoreHorizontal, Zap } from "lucide-react";
 import {
   fetchLobby,
@@ -18,6 +18,7 @@ import type { RoomAppearance } from "../lib/roomAppearance";
 import type { LobbyThreadSummary } from "../lib/sideChatThreadModel";
 import { isUnauthorizedApiError } from "../lib/apiErrors";
 import type { RoomPostingMode } from "../lib/roomGuestPosting";
+import type { RoomTypingIndicator } from "../lib/roomTypingIndicators";
 
 function timeLabel(iso: string): string {
   try {
@@ -144,11 +145,46 @@ function MessageAvatar({
   );
 }
 
-// Streamed reasoning/tool steps (kind="thinking"), grouped and collapsed by
-// default — like "what it's doing" you can expand. The final answer is a normal
-// message right after this block.
-function ThinkingGroup({ events, showHeader }: { events: LobbyEvent[]; showHeader: boolean }) {
+function ThinkingDetails({ events, label }: { events: LobbyEvent[]; label: string }) {
   const [open, setOpen] = useState(false);
+  const contentId = useId();
+  return (
+    <>
+      <button
+        type="button"
+        className="dc-thinking-toggle flex items-center gap-1 text-[12px] text-text-muted hover:text-text-secondary"
+        onClick={() => setOpen((value) => !value)}
+        aria-expanded={open}
+        aria-controls={contentId}
+      >
+        {open ? <ChevronDown size={13} /> : <ChevronRight size={13} />}
+        <span>{label}</span>
+      </button>
+      {open && (
+        <div
+          id={contentId}
+          className="dc-thinking-steps mt-1 border-l border-white/10 pl-3"
+          role="log"
+          aria-live="polite"
+          aria-relevant="additions text"
+        >
+          {events.map((event) => (
+            <div
+              key={event.id}
+              className="dc-thinking-step py-0.5 text-[13px] leading-relaxed text-text-muted preserve-words"
+            >
+              <DiscordText text={event.message || ""} />
+            </div>
+          ))}
+        </div>
+      )}
+    </>
+  );
+}
+
+// Completed reasoning/tool activity remains attached to the answer in room
+// history. Activity from a turn that is still active is rendered by TypingRow.
+function ThinkingGroup({ events, showHeader }: { events: LobbyEvent[]; showHeader: boolean }) {
   const header = events[0];
   const name = header?.name || "agent";
   return (
@@ -164,27 +200,7 @@ function ThinkingGroup({ events, showHeader }: { events: LobbyEvent[]; showHeade
             <span className="shrink-0 text-[11px] text-text-muted">{timeLabel(header?.created_at || "")}</span>
           </p>
         )}
-        <button
-          type="button"
-          className="dc-thinking-toggle flex items-center gap-1 text-[12px] text-text-muted hover:text-text-secondary"
-          onClick={() => setOpen((value) => !value)}
-          aria-expanded={open}
-        >
-          {open ? <ChevronDown size={13} /> : <ChevronRight size={13} />}
-          <span>{`💭 ${name}의 생각과 작업 · ${events.length}단계`}</span>
-        </button>
-        {open && (
-          <div className="dc-thinking-steps mt-1 border-l border-white/10 pl-3">
-            {events.map((event) => (
-              <div
-                key={event.id}
-                className="dc-thinking-step py-0.5 text-[13px] leading-relaxed text-text-muted preserve-words"
-              >
-                <DiscordText text={event.message || ""} />
-              </div>
-            ))}
-          </div>
-        )}
+        <ThinkingDetails events={events} label={`💭 ${name}의 생각과 작업`} />
       </div>
     </div>
   );
@@ -192,8 +208,15 @@ function ThinkingGroup({ events, showHeader }: { events: LobbyEvent[]; showHeade
 
 // Placeholder row for a participant who is currently generating a reply. It
 // matches MessageRow's grid so the bubble lands in the exact spot where the
-// real message will appear — the dots simply fill in with text once it posts.
-function TypingRow({ name }: { name: string }) {
+// real message will appear. Live thought/tool details belong beneath this
+// stable indicator so enabling them never makes the typing state disappear.
+function TypingRow({
+  indicator,
+  thinkingEvents,
+}: {
+  indicator: RoomTypingIndicator;
+  thinkingEvents: LobbyEvent[];
+}) {
   return (
     <div className="dc-message grid grid-cols-[40px_minmax(0,1fr)] gap-3 px-4 py-1.5">
       <span className="dc-message-avatar mt-0.5 agent">
@@ -202,7 +225,7 @@ function TypingRow({ name }: { name: string }) {
       <div className="min-w-0">
         <p className="flex items-baseline gap-2">
           <span className="truncate text-[15px] font-semibold text-text-primary preserve-words">
-            {name}
+            {indicator.displayName}
           </span>
         </p>
         <div className="flex items-center gap-2 text-[13px] text-text-muted" aria-live="polite">
@@ -211,8 +234,16 @@ function TypingRow({ name }: { name: string }) {
             <span></span>
             <span></span>
           </span>
-          <span>입력 중…</span>
+          <span>입력중...</span>
         </div>
+        {thinkingEvents.length > 0 && (
+          <div className="mt-1">
+            <ThinkingDetails
+              events={thinkingEvents}
+              label={`💭 ${indicator.displayName}의 생각과 작업`}
+            />
+          </div>
+        )}
       </div>
     </div>
   );
@@ -313,7 +344,7 @@ export default function LobbyView({
   threadSummaries = {},
   roomSessionToken = "",
   localDisplayName = "",
-  typingNames = [],
+  typingIndicators = [],
   bindLobbyStream,
   submitMessage,
   canonicalEvents,
@@ -323,7 +354,7 @@ export default function LobbyView({
 }: {
   activeRoom: RoomDockItem;
   agents: LiveAgent[];
-  typingNames?: string[];
+  typingIndicators?: RoomTypingIndicator[];
   mentionables?: string[];
   canManageRoom?: boolean;
   canPostMessages?: boolean;
@@ -416,7 +447,33 @@ export default function LobbyView({
       return Number.isFinite(eventTime) && eventTime >= roomStartedAt;
     });
   }, [activeRoom.createdAt, activeRoom.meetingId, roomScopedConversationEvents, usesCanonicalHistory]);
-  const lobbyRows = useMemo(() => buildLobbyRows(visibleEvents), [visibleEvents]);
+  const activeThinking = useMemo(() => {
+    const indicatorByTurn = new Map<string, RoomTypingIndicator>();
+    typingIndicators.forEach((indicator) => {
+      if (indicator.turnId) indicatorByTurn.set(indicator.turnId, indicator);
+    });
+    const eventsByParticipant = new Map<string, LobbyEvent[]>();
+    const completedEvents: LobbyEvent[] = [];
+    visibleEvents.forEach((event) => {
+      const indicator = event.flow_id ? indicatorByTurn.get(event.flow_id) : undefined;
+      const belongsToIndicator =
+        indicator && (!event.actor_id || event.actor_id === indicator.participantId);
+      if (belongsToIndicator && event.flow_action === "message_delta") {
+        return;
+      }
+      if (belongsToIndicator && event.kind === "thinking") {
+        const key = indicator.participantId || indicator.displayName;
+        eventsByParticipant.set(key, [...(eventsByParticipant.get(key) || []), event]);
+        return;
+      }
+      completedEvents.push(event);
+    });
+    return { completedEvents, eventsByParticipant };
+  }, [typingIndicators, visibleEvents]);
+  const lobbyRows = useMemo(
+    () => buildLobbyRows(activeThinking.completedEvents),
+    [activeThinking.completedEvents]
+  );
 
   const updatePinnedToLatest = useCallback((nextPinned: boolean) => {
     pinnedToLatestRef.current = nextPinned;
@@ -533,8 +590,8 @@ export default function LobbyView({
     }
     if (!pinnedToLatestRef.current) return;
     element.scrollTop = element.scrollHeight;
-    // typingNames is a dep so placeholder rows stay in view when they appear.
-  }, [activeRoom.id, visibleEvents, typingNames]);
+    // typingIndicators is a dep so active placeholders stay in view.
+  }, [activeRoom.id, visibleEvents, typingIndicators]);
 
   useEffect(() => {
     if (!loaded || !hasMoreHistory || loadingOlder) return;
@@ -728,9 +785,16 @@ export default function LobbyView({
         )}
         {/* Typing indicators render in the message body, where each reply will
             actually appear — one placeholder row per participant generating. */}
-        {typingNames.map((name) => (
-          <TypingRow key={`typing-${name}`} name={name} />
-        ))}
+        {typingIndicators.map((indicator) => {
+          const key = indicator.participantId || indicator.displayName;
+          return (
+            <TypingRow
+              key={`typing-${key}`}
+              indicator={indicator}
+              thinkingEvents={activeThinking.eventsByParticipant.get(key) || []}
+            />
+          );
+        })}
       </div>
 
       {/* Composer */}

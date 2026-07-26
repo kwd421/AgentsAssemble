@@ -151,7 +151,13 @@ for line in sys.stdin:
         )
         permission_response = json.loads(sys.stdin.readline())
         outcome = (permission_response.get("result") or {}).get("outcome")
-        response = "permission denied safely" if outcome == "reject_once" else "permission was not denied"
+        response = (
+            "permission denied safely"
+            if isinstance(outcome, dict)
+            and outcome.get("outcome") == "selected"
+            and outcome.get("optionId") == "reject-once"
+            else "permission was not denied"
+        )
     else:
         response = f"remembered {text}"
         provider_sessions.setdefault(session_id, {})["last_text"] = text

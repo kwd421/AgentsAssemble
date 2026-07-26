@@ -830,7 +830,11 @@ class RoomTurnCoordinator:
                 "Agent activity category or status is invalid.",
                 code="adapter_activity_invalid",
             )
-        content, activity_kind = public_activity(category, status)
+        content, activity_kind = public_activity(
+            category,
+            status,
+            detail=payload.get("content"),
+        )
         event = self.store.append_event(
             room_id,
             "activity_delta",

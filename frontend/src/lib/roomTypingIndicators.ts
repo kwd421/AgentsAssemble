@@ -1,31 +1,27 @@
-import type { LiveAgent, RoomAgentSession, RoomEvent, RoomMember } from "../api";
-import type { AgentActivityVisibility } from "./agentActivityPreferences";
-import { agentActivityIsVisible } from "./agentActivityPreferences";
+import type { LiveAgent, RoomAgentSession, RoomMember } from "../api";
 import type { AgentSessionProgress } from "./roomEventProjection";
 
-type RoomTypingNamesOptions = {
+type RoomTypingIndicatorsOptions = {
   agents: LiveAgent[];
   members: RoomMember[];
   sessions: RoomAgentSession[];
-  events: RoomEvent[];
   progress: AgentSessionProgress | null;
-  activityVisibility: AgentActivityVisibility;
 };
 
-function eventHasContent(event: RoomEvent) {
-  return Boolean(String(event.content || "").trim());
-}
+export type RoomTypingIndicator = {
+  participantId: string;
+  displayName: string;
+  turnId: string;
+};
 
-export function roomTypingNames({
+export function roomTypingIndicators({
   agents,
   members,
   sessions,
-  events,
   progress,
-  activityVisibility,
-}: RoomTypingNamesOptions): string[] {
-  const names: string[] = [];
-  const seen = new Set<string>();
+}: RoomTypingIndicatorsOptions): RoomTypingIndicator[] {
+  const indicators: RoomTypingIndicator[] = [];
+  const indicatorIndex = new Map<string, number>();
   const sessionByParticipant = new Map(
     sessions.map((session) => [session.participant_id, session])
   );
@@ -37,67 +33,75 @@ export function roomTypingNames({
     sessionCanShowTyping(progressSession, progress.turnId)
       ? progress
       : null;
-  const activeTurnHasVisibleOutput = Boolean(
-    activeProgress?.turnId &&
-      events.some(
-        (event) =>
-          event.type === "message_delta" &&
-          event.turn_id === activeProgress.turnId &&
-          eventHasContent(event)
-      )
-  );
-  const activeParticipantId = activeProgress?.participantId || "";
-  const activeDisplayNames = new Set(
-    activeTurnHasVisibleOutput
-      ? [
-          activeProgress?.displayName || "",
-          sessions.find((session) => session.participant_id === activeParticipantId)?.display_name ||
-            "",
-          members.find((member) => member.participant_id === activeParticipantId)?.display_name || "",
-        ].filter(Boolean)
-      : []
-  );
-  const add = (name: string) => {
-    const trimmed = name.trim();
-    if (trimmed && !activeDisplayNames.has(trimmed) && !seen.has(trimmed)) {
-      seen.add(trimmed);
-      names.push(trimmed);
+
+  const add = (participantId: string, displayName: string, turnId = "") => {
+    const normalizedParticipantId = participantId.trim();
+    const normalizedDisplayName = displayName.trim();
+    if (!normalizedDisplayName) return;
+    const key = normalizedParticipantId || `name:${normalizedDisplayName}`;
+    const existingIndex = indicatorIndex.get(key);
+    if (existingIndex !== undefined) {
+      const existing = indicators[existingIndex];
+      indicators[existingIndex] = {
+        participantId: existing.participantId || normalizedParticipantId,
+        displayName: normalizedDisplayName || existing.displayName,
+        turnId: turnId || existing.turnId,
+      };
+      return;
     }
+    indicatorIndex.set(key, indicators.length);
+    indicators.push({
+      participantId: normalizedParticipantId,
+      displayName: normalizedDisplayName,
+      turnId,
+    });
   };
 
+  sessions.forEach((session) => {
+    if (session.runtime_status === "busy") {
+      add(
+        session.participant_id,
+        session.display_name || session.participant_id,
+        session.active_turn_id
+      );
+    }
+  });
   agents.forEach((agent) => {
     const session = sessionByParticipant.get(agent.agent_id);
     if (agent.status === "working" && sessionCanShowTyping(session)) {
-      add(agent.display_name || agent.agent_id);
+      add(agent.agent_id, agent.display_name || agent.agent_id, session?.active_turn_id);
     }
   });
   members.forEach((member) => {
     const session = sessionByParticipant.get(member.participant_id);
     if (member.thinking && sessionCanShowTyping(session)) {
-      add(member.display_name || member.participant_id);
+      add(
+        member.participant_id,
+        member.display_name || member.participant_id,
+        session?.active_turn_id
+      );
     }
   });
 
-  if (activeProgress && !activeTurnHasVisibleOutput) {
-    const hasVisibleThinking = events.some(
-      (event) =>
-        ["thinking_delta", "activity_delta"].includes(event.type) &&
-        event.turn_id === activeProgress.turnId &&
-        eventHasContent(event) &&
-        agentActivityIsVisible(activityVisibility, activeProgress.participantId)
+  if (activeProgress) {
+    const session = sessions.find(
+      (candidate) => candidate.participant_id === activeProgress.participantId
     );
-    if (!hasVisibleThinking) {
-      const session = sessions.find(
-        (candidate) => candidate.participant_id === activeProgress.participantId
-      );
-      const participant = members.find(
-        (candidate) => candidate.participant_id === activeProgress.participantId
-      );
-      add(participant?.display_name || session?.display_name || activeProgress.displayName);
-    }
+    const participant = members.find(
+      (candidate) => candidate.participant_id === activeProgress.participantId
+    );
+    add(
+      activeProgress.participantId,
+      participant?.display_name || session?.display_name || activeProgress.displayName,
+      activeProgress.turnId
+    );
   }
 
-  return names;
+  return indicators;
+}
+
+export function roomTypingNames(options: RoomTypingIndicatorsOptions): string[] {
+  return roomTypingIndicators(options).map((indicator) => indicator.displayName);
 }
 
 function sessionCanShowTyping(session: RoomAgentSession | undefined, turnId = "") {

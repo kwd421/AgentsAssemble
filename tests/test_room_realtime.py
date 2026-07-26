@@ -2972,7 +2972,7 @@ class RoomRealtimeControllerTests(unittest.TestCase):
             [event["content"] for event in events if event["type"] == "message_delta"],
             ["clean", " delta"],
         )
-        self.assertEqual(activity["content"], "명령 실행 중")
+        self.assertEqual(activity["content"], "cat [local path] [redacted]")
         self.assertNotIn("/private/project", str(activity))
         self.assertNotIn("TOKEN", str(activity))
         self.assertFalse((self.root / "rooms" / "general" / "live_cli_events.jsonl").exists())

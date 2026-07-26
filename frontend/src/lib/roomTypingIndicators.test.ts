@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
-import type { LiveAgent, RoomAgentSession, RoomEvent, RoomMember } from "../api";
-import { roomTypingNames } from "./roomTypingIndicators";
+import type { LiveAgent, RoomAgentSession, RoomMember } from "../api";
+import { roomTypingIndicators, roomTypingNames } from "./roomTypingIndicators";
 
 const member: RoomMember = {
   meeting_id: "room-a",
@@ -39,18 +39,6 @@ const progress = {
   turnId: "turn-a",
 };
 
-function event(type: string, content: string): RoomEvent {
-  return {
-    id: `${type}-${content}`,
-    seq: 1,
-    created_at: "2026-07-12T00:00:00Z",
-    room_id: "room-a",
-    type,
-    turn_id: "turn-a",
-    content,
-  };
-}
-
 describe("roomTypingNames", () => {
   it("deduplicates working and thinking roster signals", () => {
     expect(
@@ -58,39 +46,54 @@ describe("roomTypingNames", () => {
         agents: [agent],
         members: [{ ...member, thinking: true }],
         sessions: [session],
-        events: [],
         progress: null,
-        activityVisibility: {},
       })
     ).toEqual(["Agent A"]);
   });
 
-  it("shows visible thinking instead of a typing pulse and falls back when thinking is hidden", () => {
+  it("keeps typing visible whether detailed activity is shown or hidden", () => {
     const options = {
       agents: [],
       members: [member],
       sessions: [session],
-      events: [event("thinking_delta", "검토 중")],
       progress,
     };
 
-    expect(roomTypingNames({ ...options, activityVisibility: {} })).toEqual([]);
-    expect(roomTypingNames({ ...options, activityVisibility: { "agent-a": false } })).toEqual([
-      "Agent A",
-    ]);
+    expect(roomTypingNames(options)).toEqual(["Agent A"]);
+    expect(
+      roomTypingNames({
+        ...options,
+        progress: { ...progress, message: "검토 중" },
+      })
+    ).toEqual(["Agent A"]);
   });
 
-  it("removes the typing pulse once visible answer output starts", () => {
+  it("keeps typing visible while answer output is still streaming", () => {
     expect(
       roomTypingNames({
         agents: [agent],
         members: [{ ...member, thinking: true }],
-        sessions: [session],
-        events: [event("message_delta", "답변 시작")],
+        sessions: [{ ...session, runtime_status: "busy", active_turn_id: "turn-a" }],
         progress,
-        activityVisibility: {},
       })
-    ).toEqual([]);
+    ).toEqual(["Agent A"]);
+  });
+
+  it("links a typing indicator to the participant's active turn", () => {
+    expect(
+      roomTypingIndicators({
+        agents: [agent],
+        members: [{ ...member, thinking: true }],
+        sessions: [{ ...session, runtime_status: "busy", active_turn_id: "turn-a" }],
+        progress,
+      })
+    ).toEqual([
+      {
+        participantId: "agent-a",
+        displayName: "Agent A",
+        turnId: "turn-a",
+      },
+    ]);
   });
 
   it("does not revive a stopped session from stale turn progress", () => {
@@ -99,9 +102,7 @@ describe("roomTypingNames", () => {
         agents: [{ ...agent, status: "working" }],
         members: [{ ...member, thinking: true }],
         sessions: [{ ...session, runtime_status: "stopped", active_turn_id: "" }],
-        events: [],
         progress,
-        activityVisibility: {},
       })
     ).toEqual([]);
   });
@@ -112,9 +113,7 @@ describe("roomTypingNames", () => {
         agents: [],
         members: [{ ...member, display_name: "Makima", thinking: true }],
         sessions: [{ ...session, display_name: "Antigravity CLI" }],
-        events: [],
         progress: { ...progress, displayName: "Antigravity CLI" },
-        activityVisibility: {},
       })
     ).toEqual(["Makima"]);
   });

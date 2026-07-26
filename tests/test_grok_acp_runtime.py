@@ -4,9 +4,10 @@ import tempfile
 import time
 import unittest
 from pathlib import Path
-from unittest.mock import patch
+from unittest.mock import Mock, patch
 
 from agentsassemble.providers.grok_acp import GrokAcpRuntime
+from agentsassemble.providers.room_portal import VIRTUAL_ROOM_OUTBOX_PATH
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -66,6 +67,275 @@ class GrokAcpRuntimeTests(unittest.TestCase):
         self.assertEqual(output["content"], "permission denied safely")
         self.assertEqual(health["permission_request_count"], 1)
         self.assertEqual(health["permission_denied_count"], 1)
+
+    def test_permission_allows_only_cached_room_outbox_write_during_observation(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            runtime = self.make_runtime(Path(temp_dir))
+            runtime.room_portal = Mock()
+            runtime._session_id = "session-1"
+            runtime._active_room_observation = True
+            runtime._remember_tool_permission_context(
+                {
+                    "method": "session/update",
+                    "params": {
+                        "sessionId": "session-1",
+                        "update": {
+                            "sessionUpdate": "tool_call",
+                            "toolCallId": "tool-write",
+                            "title": "write",
+                            "_meta": {
+                                "x.ai/tool": {
+                                    "name": "write",
+                                    "label": "Write",
+                                }
+                            },
+                            "rawInput": {
+                                "file_path": VIRTUAL_ROOM_OUTBOX_PATH,
+                                "content": "room reply",
+                            },
+                        },
+                    },
+                }
+            )
+            runtime._remember_tool_permission_context(
+                {
+                    "method": "session/update",
+                    "params": {
+                        "sessionId": "session-1",
+                        "update": {
+                            "sessionUpdate": "tool_call_update",
+                            "toolCallId": "tool-write",
+                            "status": "in_progress",
+                            "title": "Write room outbox",
+                        },
+                    },
+                }
+            )
+            request = {
+                "jsonrpc": "2.0",
+                "id": "permission-1",
+                "method": "session/request_permission",
+                "params": {
+                    "sessionId": "session-1",
+                    "toolCall": {"toolCallId": "tool-write", "title": "write"},
+                    "options": [
+                        {"optionId": "allow-once", "kind": "allow_once"},
+                        {"optionId": "reject-once", "kind": "reject_once"},
+                    ],
+                },
+            }
+
+            with patch.object(runtime, "_send_json") as send_json:
+                runtime._respond_to_permission_request(request)
+
+        self.assertEqual(
+            send_json.call_args.args[0]["result"],
+            {"outcome": {"outcome": "selected", "optionId": "allow-once"}},
+        )
+        self.assertEqual(runtime._permission_request_count, 1)
+        self.assertEqual(runtime._permission_denied_count, 0)
+        runtime.room_portal.acp_write_text.assert_called_once_with(
+            VIRTUAL_ROOM_OUTBOX_PATH,
+            "room reply",
+        )
+
+    def test_permission_ignores_tool_context_from_another_session(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            runtime = self.make_runtime(Path(temp_dir))
+            runtime.room_portal = object()
+            runtime._session_id = "session-1"
+            runtime._active_room_observation = True
+            runtime._remember_tool_permission_context(
+                {
+                    "method": "session/update",
+                    "params": {
+                        "sessionId": "session-2",
+                        "update": {
+                            "sessionUpdate": "tool_call",
+                            "toolCallId": "shared-tool-id",
+                            "_meta": {"x.ai/tool": {"name": "write"}},
+                            "rawInput": {
+                                "file_path": VIRTUAL_ROOM_OUTBOX_PATH,
+                            },
+                        },
+                    },
+                }
+            )
+            request = {
+                "jsonrpc": "2.0",
+                "id": "permission-foreign-context",
+                "method": "session/request_permission",
+                "params": {
+                    "sessionId": "session-1",
+                    "toolCall": {
+                        "toolCallId": "shared-tool-id",
+                        "title": "write",
+                    },
+                    "options": [
+                        {"optionId": "allow-once", "kind": "allow_once"},
+                        {"optionId": "reject-once", "kind": "reject_once"},
+                    ],
+                },
+            }
+
+            with patch.object(runtime, "_send_json") as send_json:
+                runtime._respond_to_permission_request(request)
+
+        self.assertEqual(
+            send_json.call_args.args[0]["result"],
+            {"outcome": {"outcome": "selected", "optionId": "reject-once"}},
+        )
+        self.assertEqual(runtime._permission_denied_count, 1)
+
+    def test_permission_rejects_terminal_write_and_non_outbox_target(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            runtime = self.make_runtime(Path(temp_dir))
+            runtime.room_portal = object()
+            runtime._session_id = "session-1"
+            runtime._active_room_observation = True
+            requests = []
+            for tool_call_id, name, raw_input in (
+                (
+                    "tool-terminal",
+                    "run_terminal_command",
+                    {
+                        "command": f"printf reply > {VIRTUAL_ROOM_OUTBOX_PATH}",
+                        "path": VIRTUAL_ROOM_OUTBOX_PATH,
+                    },
+                ),
+                (
+                    "tool-other",
+                    "write",
+                    {"file_path": "/tmp/not-the-room-outbox.txt"},
+                ),
+            ):
+                runtime._remember_tool_permission_context(
+                    {
+                        "method": "session/update",
+                        "params": {
+                            "sessionId": "session-1",
+                            "update": {
+                                "sessionUpdate": "tool_call",
+                                "toolCallId": tool_call_id,
+                                "_meta": {"x.ai/tool": {"name": name, "label": name}},
+                                "rawInput": raw_input,
+                            },
+                        },
+                    }
+                )
+                requests.append(
+                    {
+                        "jsonrpc": "2.0",
+                        "id": f"permission-{tool_call_id}",
+                        "method": "session/request_permission",
+                        "params": {
+                            "sessionId": "session-1",
+                            "toolCall": {"toolCallId": tool_call_id},
+                            "options": [
+                                {"optionId": "allow-once", "kind": "allow_once"},
+                                {"optionId": "reject-once", "kind": "reject_once"},
+                            ],
+                        },
+                    }
+                )
+
+            with patch.object(runtime, "_send_json") as send_json:
+                for request in requests:
+                    runtime._respond_to_permission_request(request)
+
+        self.assertEqual(
+            [call.args[0]["result"] for call in send_json.call_args_list],
+            [
+                {"outcome": {"outcome": "selected", "optionId": "reject-once"}},
+                {"outcome": {"outcome": "selected", "optionId": "reject-once"}},
+            ],
+        )
+        self.assertEqual(runtime._permission_denied_count, 2)
+
+    def test_structured_notifications_emit_thought_and_tool_detail_without_output(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            runtime = self.make_runtime(Path(temp_dir))
+            for update in (
+                {
+                    "sessionUpdate": "agent_thought_chunk",
+                    "content": {"type": "text", "text": "Checking "},
+                },
+                {
+                    "sessionUpdate": "agent_thought_chunk",
+                    "content": {"type": "text", "text": "the room "},
+                },
+                {
+                    "sessionUpdate": "agent_thought_chunk",
+                    "content": {"type": "text", "text": "context."},
+                },
+                {
+                    "sessionUpdate": "tool_call_update",
+                    "toolCallId": "tool-command",
+                    "status": "in_progress",
+                    "title": "Execute command",
+                    "_meta": {
+                        "x.ai/tool": {
+                            "name": "run_terminal_command",
+                            "label": "Run Command",
+                        }
+                    },
+                    "rawInput": {"command": "pwd"},
+                    "rawOutput": {"content": "must stay private"},
+                },
+                {
+                    "sessionUpdate": "tool_call_update",
+                    "toolCallId": "tool-command",
+                    "status": "in_progress",
+                    "title": "Execute command",
+                    "_meta": {
+                        "x.ai/tool": {
+                            "name": "run_terminal_command",
+                            "label": "Run Command",
+                        }
+                    },
+                    "rawInput": {"command": "pwd"},
+                    "rawOutput": {"content": "must stay private"},
+                },
+            ):
+                runtime._notifications.put(
+                    {
+                        "method": "session/update",
+                        "params": {
+                            "sessionId": "session-1",
+                            "update": update,
+                        },
+                    }
+                )
+            activities = []
+
+            runtime._consume_notifications(
+                "session-1",
+                [],
+                on_delta=None,
+                on_activity=activities.append,
+            )
+
+        self.assertEqual(
+            activities,
+            [
+                {
+                    "category": "reasoning",
+                    "status": "running",
+                    "content": "Checking",
+                },
+                {
+                    "category": "reasoning",
+                    "status": "running",
+                    "content": "Checking the room context.",
+                },
+                {
+                    "category": "command",
+                    "status": "running",
+                    "content": "Run Command: pwd",
+                },
+            ],
+        )
+        self.assertNotIn("must stay private", str(activities))
 
     def test_always_approve_session_is_rejected(self):
         with tempfile.TemporaryDirectory() as temp_dir:

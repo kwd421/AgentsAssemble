@@ -97,7 +97,7 @@ import { consumeOperatorPairingTokenFromUrl } from "./lib/roomGuestSession";
 import { roomPostingState } from "./lib/roomGuestPosting";
 import type { AgentQuotaVisibilityViewer } from "./lib/agentQuotaVisibility";
 import { isActivePresence } from "./lib/presenceStatus";
-import { roomTypingNames } from "./lib/roomTypingIndicators";
+import { roomTypingIndicators } from "./lib/roomTypingIndicators";
 
 // Keep room chat, roster, composer, admission, and Agent Session controls eager.
 // Only infrequently opened, non-core views belong behind this loading boundary.
@@ -616,7 +616,6 @@ export default function App() {
   const activeRoomAgentSessions = canonicalRoom.agentSessions;
   const activeRoomCapabilities = canonicalRoom.capabilities;
   const activeRoomHistory = canonicalRoom.history;
-  const activeRoomCanonicalEvents = canonicalRoom.events;
   const activeRoomTimelineEvents = canonicalRoom.timelineEvents;
   const visibleRoomTimelineEvents = useMemo(
     () =>
@@ -890,22 +889,18 @@ export default function App() {
     [activeRoomMembers, scopedAgents]
   );
   const scopedOnlineCount = scopedAgents.filter((agent) => isActivePresence(agent.status)).length;
-  const typingNames = useMemo(
+  const typingIndicators = useMemo(
     () =>
-      roomTypingNames({
+      roomTypingIndicators({
         agents: scopedAgents,
         members: activeRoomMembers,
         sessions: activeRoomAgentSessions,
-        events: activeRoomCanonicalEvents,
         progress: activeAgentSessionProgress,
-        activityVisibility: agentActivityVisibility,
       }),
     [
       activeAgentSessionProgress,
       activeRoomAgentSessions,
-      activeRoomCanonicalEvents,
       activeRoomMembers,
-      agentActivityVisibility,
       scopedAgents,
     ]
   );
@@ -1842,7 +1837,7 @@ export default function App() {
               onOpenSideThread={openSideChatThread}
               onGuestSessionExpired={expireGuestSession}
               threadSummaries={sideChatThreadSummaries}
-              typingNames={typingNames}
+              typingIndicators={typingIndicators}
               canonicalEvents={visibleRoomTimelineEvents}
               canonicalOldestSeq={activeRoomHistory.oldestSeq}
               canonicalHasMoreHistory={activeRoomHistory.hasMoreBefore}
