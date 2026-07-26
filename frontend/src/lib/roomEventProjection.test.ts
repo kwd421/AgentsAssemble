@@ -100,6 +100,7 @@ describe("projectRoomEventsToTimeline", () => {
           codex: {
             displayName: "Makima",
             avatarImageUrl: "/api/attachments/makima-avatar",
+            providerKind: "antigravity_live_session",
           },
         },
       }
@@ -108,6 +109,7 @@ describe("projectRoomEventsToTimeline", () => {
     expect(timeline[0]).toMatchObject({
       name: "Makima",
       avatar_image_url: "/api/attachments/makima-avatar",
+      provider_kind: "antigravity_live_session",
     });
   });
 

@@ -20,6 +20,7 @@ export type MemberEntry = {
   agentDisplayName?: string;
   agentProfile?: AgentProfileSettings;
   avatarImage?: string;
+  providerKind?: string;
   active: boolean;
   muted: boolean;
   meetingId: string;

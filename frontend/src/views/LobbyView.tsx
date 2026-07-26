@@ -19,6 +19,7 @@ import type { LobbyThreadSummary } from "../lib/sideChatThreadModel";
 import { isUnauthorizedApiError } from "../lib/apiErrors";
 import type { RoomPostingMode } from "../lib/roomGuestPosting";
 import type { RoomTypingIndicator } from "../lib/roomTypingIndicators";
+import ProviderLogo from "./components/ProviderLogo";
 
 function timeLabel(iso: string): string {
   try {
@@ -119,10 +120,12 @@ const INITIAL_HISTORY_MESSAGE_TARGET = 20;
 
 function MessageAvatar({
   avatarImage,
+  providerKind,
   show = true,
   system = false,
 }: {
   avatarImage?: string;
+  providerKind?: string;
   show?: boolean;
   system?: boolean;
 }) {
@@ -138,7 +141,11 @@ function MessageAvatar({
         ) : system ? (
           <Zap size={16} />
         ) : (
-          <Bot size={16} />
+          <ProviderLogo
+            providerKind={providerKind}
+            size={40}
+            fallback={<Bot size={16} />}
+          />
         )
       ) : null}
     </span>
@@ -184,7 +191,15 @@ function ThinkingDetails({ events, label }: { events: LobbyEvent[]; label: strin
 
 // Completed reasoning/tool activity remains attached to the answer in room
 // history. Activity from a turn that is still active is rendered by TypingRow.
-function ThinkingGroup({ events, showHeader }: { events: LobbyEvent[]; showHeader: boolean }) {
+function ThinkingGroup({
+  events,
+  showHeader,
+  providerKind,
+}: {
+  events: LobbyEvent[];
+  showHeader: boolean;
+  providerKind?: string;
+}) {
   const header = events[0];
   const name = header?.name || "agent";
   return (
@@ -192,7 +207,11 @@ function ThinkingGroup({ events, showHeader }: { events: LobbyEvent[]; showHeade
       className="dc-thinking-group grid grid-cols-[40px_minmax(0,1fr)] gap-3 px-4 py-0.5"
       data-room-event-id={header?.id}
     >
-      <MessageAvatar avatarImage={header?.avatar_image_url} show={showHeader} />
+      <MessageAvatar
+        avatarImage={header?.avatar_image_url}
+        providerKind={providerKind || header?.provider_kind}
+        show={showHeader}
+      />
       <div className="min-w-0">
         {showHeader && (
           <p className="flex items-baseline gap-2">
@@ -220,7 +239,11 @@ function TypingRow({
   return (
     <div className="dc-message grid grid-cols-[40px_minmax(0,1fr)] gap-3 px-4 py-1.5">
       <span className="dc-message-avatar mt-0.5 agent">
-        <Bot size={16} />
+        <ProviderLogo
+          providerKind={indicator.providerKind}
+          size={40}
+          fallback={<Bot size={16} />}
+        />
       </span>
       <div className="min-w-0">
         <p className="flex items-baseline gap-2">
@@ -249,8 +272,9 @@ function TypingRow({
   );
 }
 
-function MessageRow({ event, onOpenSideThread, threadSummary, voteCard, showHeader = true }: {
+function MessageRow({ event, providerKind, onOpenSideThread, threadSummary, voteCard, showHeader = true }: {
   event: LobbyEvent;
+  providerKind?: string;
   onOpenSideThread?: (event: LobbyEvent) => void;
   threadSummary?: LobbyThreadSummary;
   voteCard?: ReactNode;
@@ -265,6 +289,7 @@ function MessageRow({ event, onOpenSideThread, threadSummary, voteCard, showHead
     >
       <MessageAvatar
         avatarImage={event.avatar_image_url}
+        providerKind={providerKind || event.provider_kind}
         show={showHeader}
         system={systemLike}
       />
@@ -418,6 +443,10 @@ export default function LobbyView({
         ? roomMentionables
         : ["나", ...agents.map((agent) => agent.display_name || agent.agent_id).filter(Boolean)],
     [agents, roomMentionables]
+  );
+  const providerKindByParticipant = useMemo(
+    () => new Map(agents.map((agent) => [agent.agent_id, agent.provider_kind])),
+    [agents]
   );
   const conversationEvents = useMemo(
     // Ballots update the poll card's tally; they are not chat lines.
@@ -758,13 +787,28 @@ export default function LobbyView({
               );
             }
             if (row.type === "thinking") {
-              return <ThinkingGroup key={row.key} events={row.events} showHeader={row.showHeader} />;
+              const header = row.events[0];
+              return (
+                <ThinkingGroup
+                  key={row.key}
+                  events={row.events}
+                  showHeader={row.showHeader}
+                  providerKind={
+                    header?.provider_kind ||
+                    providerKindByParticipant.get(header?.actor_id || "")
+                  }
+                />
+              );
             }
             const event = row.event;
             return (
               <MessageRow
                 key={row.key}
                 event={event}
+                providerKind={
+                  event.provider_kind ||
+                  providerKindByParticipant.get(event.actor_id || "")
+                }
                 showHeader={row.showHeader}
                 onOpenSideThread={onOpenSideThread}
                 threadSummary={threadSummaries[event.id]}

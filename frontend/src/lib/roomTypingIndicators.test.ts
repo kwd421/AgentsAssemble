@@ -91,6 +91,7 @@ describe("roomTypingNames", () => {
       {
         participantId: "agent-a",
         displayName: "Agent A",
+        providerKind: "codex",
         turnId: "turn-a",
       },
     ]);

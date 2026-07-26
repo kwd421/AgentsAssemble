@@ -172,6 +172,7 @@ describe("MemberList component wiring", () => {
     const canonicalRow = screen.getByText("나's Canonical Makima").closest("[role='button']");
     expect(canonicalRow).not.toBeNull();
     expect(canonicalRow?.querySelector("img")).toBeNull();
+    expect(canonicalRow?.querySelector('[data-provider-brand="codex"]')).not.toBeNull();
     expect(screen.queryByText("나's Local Makima")).toBeNull();
   });
 

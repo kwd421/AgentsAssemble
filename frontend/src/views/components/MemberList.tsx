@@ -183,6 +183,9 @@ export default function MemberList({
         agentDisplayName,
         agentProfile: profile,
         avatarImage,
+        providerKind: String(
+          canonicalIdentity?.provider_kind || agent.provider_kind || ""
+        ),
         icon: ROLE_OPTIONS.find((option) => option.id === role)?.icon || Bot,
       } satisfies MemberEntry;
     });
@@ -232,6 +235,7 @@ export default function MemberList({
           canViewQuota: false,
           ownedByViewer: Boolean(agentSession && !agentSession.external_owned),
           avatarImage: member.avatar_image_url,
+          providerKind: String(agentSession?.provider_kind || member.provider_kind || ""),
           icon: ROLE_OPTIONS.find((option) => option.id === role)?.icon || typeMeta.icon,
         } satisfies MemberEntry;
       });

@@ -418,12 +418,16 @@ export function useCanonicalRoom(options: UseCanonicalRoomOptions) {
 
   const events = eventsByRoom[roomId] || [];
   const participantProfiles = useMemo(() => {
-    const profiles: Record<string, { displayName?: string; avatarImageUrl?: string }> = {};
+    const profiles: Record<
+      string,
+      { displayName?: string; avatarImageUrl?: string; providerKind?: string }
+    > = {};
     (sessionsByRoom[roomId] || []).forEach((session) => {
       if (!session.participant_id) return;
       profiles[session.participant_id] = {
         displayName: session.display_name,
         avatarImageUrl: session.avatar_image_url,
+        providerKind: session.provider_kind,
       };
     });
     (participantsByRoom[roomId] || []).forEach((participant) => {
@@ -431,6 +435,7 @@ export function useCanonicalRoom(options: UseCanonicalRoomOptions) {
       profiles[participant.participant_id] = {
         displayName: participant.display_name,
         avatarImageUrl: participant.avatar_image_url,
+        providerKind: participant.provider_kind,
       };
     });
     return profiles;

@@ -1,10 +1,11 @@
-import { Bot, X } from "lucide-react";
+import { X } from "lucide-react";
 import type { LiveAgentProcessGroup, RoomAgentSession } from "../../../api";
 import type { AgentProfileSettings } from "../../../lib/agentProfileSettings";
 import AgentSessionDetails, {
   type AgentSessionControlAction,
 } from "../AgentSessionDetails";
 import type { NativeCliProviderAvailability } from "../../../roomSocketClient";
+import ProviderLogo from "../ProviderLogo";
 import AgentIdentitySettings from "./AgentIdentitySettings";
 import AgentSessionControls from "./AgentSessionControls";
 import MemberDiagnostics from "./MemberDiagnostics";
@@ -56,7 +57,11 @@ export default function MemberDetailModal({
         >
           <header className="dc-member-detail-modal-head">
             <span className="dc-member-detail-modal-avatar" data-role={entry.role}>
-              <Bot size={22} />
+              {entry.avatarImage ? (
+                <img className="dc-member-avatar-image" src={entry.avatarImage} alt="" />
+              ) : (
+                <ProviderLogo providerKind={entry.providerKind} size={48} />
+              )}
             </span>
             <div className="min-w-0 flex-1">
               <h2 id="member-detail-title" className="truncate preserve-words">
@@ -102,7 +107,11 @@ export default function MemberDetailModal({
             {entry.avatarImage ? (
               <img className="dc-member-avatar-image" src={entry.avatarImage} alt="" />
             ) : (
-              <DetailIcon size={22} />
+              <ProviderLogo
+                providerKind={entry.providerKind}
+                size={48}
+                fallback={<DetailIcon size={22} />}
+              />
             )}
           </span>
           <div className="min-w-0 flex-1">

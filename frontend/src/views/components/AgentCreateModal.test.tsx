@@ -425,6 +425,12 @@ describe("AgentCreateModal", () => {
     expect(screen.queryByRole("combobox", { name: "모델" })).toBeNull();
     expect(screen.getByRole("listitem", { name: "Codex" }).getAttribute("data-active")).toBe("false");
     expect(screen.getByRole("listitem", { name: "Claude Code" }).getAttribute("data-active")).toBe("false");
+    expect(
+      screen.getByRole("listitem", { name: "Codex" }).querySelector('[data-provider-brand="codex"]')
+    ).not.toBeNull();
+    expect(
+      screen.getByRole("listitem", { name: "Claude Code" }).querySelector('[data-provider-brand="claude"]')
+    ).not.toBeNull();
     expect(screen.getByRole("button", { name: "추가" }).hasAttribute("disabled")).toBe(true);
   });
 });

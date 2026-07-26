@@ -24,6 +24,7 @@ import { participantTypeMeta } from "../../lib/participantTypes";
 import type { NativeCliProviderAvailability } from "../../roomSocketClient";
 import AgentSessionDetails, { type AgentSessionControlAction } from "./AgentSessionDetails";
 import { memberRole } from "./member/memberHelpers";
+import ProviderLogo from "./ProviderLogo";
 
 type MobileRoomSummary = {
   id: string;
@@ -42,6 +43,8 @@ type MobileMemberRow = {
   active: boolean;
   role: string;
   icon: LucideIcon;
+  avatarImage?: string;
+  providerKind?: string;
   app?: boolean;
 };
 
@@ -66,10 +69,6 @@ function statusTone(active: boolean) {
   return active ? "online" : "offline";
 }
 
-function memberAvatarLabel(name: string) {
-  return String(name || "A").trim().slice(0, 1).toUpperCase() || "A";
-}
-
 function buildMobileMembers({
   agents,
   members,
@@ -81,6 +80,9 @@ function buildMobileMembers({
   viewerParticipantId: string;
   roleOverrides?: Record<string, string>;
 }) {
+  const memberById = new Map(
+    members.map((member) => [member.participant_id, member])
+  );
   const viewerMember = members.find(
     (member) => member.participant_id === viewerParticipantId
   );
@@ -93,6 +95,7 @@ function buildMobileMembers({
     icon: User,
   };
   const agentRows = agents.map((agent) => {
+    const member = memberById.get(agent.agent_id);
     const role = roleOverrides?.[agent.agent_id] || "agent";
     return {
       id: agent.agent_id,
@@ -101,6 +104,8 @@ function buildMobileMembers({
       active: isActivePresence(agent.status),
       role,
       icon: Bot,
+      avatarImage: member ? member.avatar_image_url : agent.avatar_image_url,
+      providerKind: member ? member.provider_kind : agent.provider_kind,
       app: true,
     } satisfies MobileMemberRow;
   });
@@ -122,6 +127,8 @@ function buildMobileMembers({
         active: isActivePresence(member.status),
         role,
         icon: typeMeta.icon,
+        avatarImage: member.avatar_image_url,
+        providerKind: member.provider_kind,
         app: member.participant_type !== "human",
       } satisfies MobileMemberRow;
     });
@@ -179,8 +186,16 @@ function MobileMemberList({
                     }}
                   >
                     <span className="dc-mobile-info-member-avatar" data-status={statusTone(row.active)}>
-                      <Icon size={18} />
-                      <span>{memberAvatarLabel(row.displayName)}</span>
+                      {row.avatarImage ? (
+                        <img className="dc-member-avatar-image" src={row.avatarImage} alt="" />
+                      ) : (
+                        <ProviderLogo
+                          providerKind={row.providerKind}
+                          size={42}
+                          fallback={<Icon size={18} />}
+                        />
+                      )}
+                      <span className="dc-mobile-info-member-status" aria-hidden />
                     </span>
                     <span className="min-w-0 flex-1">
                       <span className="dc-mobile-info-member-name preserve-words">

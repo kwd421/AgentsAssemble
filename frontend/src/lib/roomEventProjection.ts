@@ -14,6 +14,7 @@ type ProjectionOptions = {
     {
       displayName?: string;
       avatarImageUrl?: string;
+      providerKind?: string;
     }
   >;
 };
@@ -46,6 +47,7 @@ function speakerIdentity(
     avatarImageUrl: String(
       currentProfile ? currentProfile.avatarImageUrl || "" : event.avatar_image_url || ""
     ),
+    providerKind: String(currentProfile?.providerKind || event.provider_kind || ""),
     side: mine ? "mine" : "other",
   };
 }
@@ -72,6 +74,7 @@ export function projectRoomEventsToTimeline(
         created_at: event.created_at,
         name: speaker.name,
         avatar_image_url: speaker.avatarImageUrl || undefined,
+        provider_kind: speaker.providerKind || undefined,
         side: speaker.side,
         kind: "thinking",
         message: String(event.content || ""),
@@ -114,6 +117,7 @@ export function projectRoomEventsToTimeline(
         created_at: event.created_at,
         name: speaker.name,
         avatar_image_url: speaker.avatarImageUrl || undefined,
+        provider_kind: speaker.providerKind || undefined,
         side: speaker.side,
         kind: "message",
         message,
@@ -145,6 +149,7 @@ export function projectRoomEventsToTimeline(
       created_at: event.created_at,
       name: speaker.name,
       avatar_image_url: speaker.avatarImageUrl || undefined,
+      provider_kind: speaker.providerKind || undefined,
       side: speaker.side,
       kind: "system",
       message: String(event.content || "Turn failed."),

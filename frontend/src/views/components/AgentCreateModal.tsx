@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import { Bot, Folder, Play, Plus, X } from "lucide-react";
+import { Folder, Play, Plus, X } from "lucide-react";
 import {
   chooseLocalWorkspace,
   deleteDeepSeekCredential,
@@ -18,6 +18,7 @@ import {
   initializeProviderSettings,
   reconcileProviderSettings,
 } from "../../lib/providerControlSettings";
+import ProviderLogo from "./ProviderLogo";
 
 type AgentCreateModalProps = {
   open: boolean;
@@ -283,7 +284,11 @@ export default function AgentCreateModal({
                     setStatus(provider.discovery_error || "");
                   }}
                 >
-                  <Bot size={16} />
+                  <ProviderLogo
+                    providerId={provider.id}
+                    providerKind={provider.provider_kind}
+                    size={22}
+                  />
                   <span>{provider.display_name}</span>
                 </button>
               ))}

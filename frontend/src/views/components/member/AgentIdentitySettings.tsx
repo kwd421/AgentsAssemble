@@ -16,6 +16,7 @@ import {
   providerSupportsFast,
 } from "../../../lib/liveAgentPermissionOptions";
 import ImageCropper from "../ImageCropper";
+import ProviderLogo from "../ProviderLogo";
 import { sessionProcessGroupForAgent } from "./memberHelpers";
 import type { MemberEntry } from "./memberTypes";
 
@@ -162,7 +163,11 @@ export default function AgentIdentitySettings({
               {agentAvatarImage ? (
                 <img className="dc-member-avatar-image" src={agentAvatarImage} alt="" />
               ) : (
-                <DetailIcon size={18} />
+                <ProviderLogo
+                  providerKind={entry.providerKind}
+                  size={44}
+                  fallback={<DetailIcon size={18} />}
+                />
               )}
             </span>
             <label className="dc-member-session-button">

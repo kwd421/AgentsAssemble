@@ -2,6 +2,7 @@ import { useRef } from "react";
 import type { MouseEvent as ReactMouseEvent, PointerEvent as ReactPointerEvent } from "react";
 import { VolumeX } from "lucide-react";
 import { agentSessionPresenceStatus } from "../AgentSessionDetails";
+import ProviderLogo from "../ProviderLogo";
 import {
   inlineQuotaChips,
   isPrimaryActivationPointer,
@@ -87,7 +88,11 @@ export default function MemberRow({
           {entry.avatarImage ? (
             <img className="dc-member-avatar-image" src={entry.avatarImage} alt="" />
           ) : (
-            <Icon size={15} />
+            <ProviderLogo
+              providerKind={entry.providerKind}
+              size={32}
+              fallback={<Icon size={15} />}
+            />
           )}
         </span>
         <span

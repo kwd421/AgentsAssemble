@@ -11,6 +11,7 @@ type RoomTypingIndicatorsOptions = {
 export type RoomTypingIndicator = {
   participantId: string;
   displayName: string;
+  providerKind?: string;
   turnId: string;
 };
 
@@ -34,7 +35,12 @@ export function roomTypingIndicators({
       ? progress
       : null;
 
-  const add = (participantId: string, displayName: string, turnId = "") => {
+  const add = (
+    participantId: string,
+    displayName: string,
+    turnId = "",
+    providerKind = ""
+  ) => {
     const normalizedParticipantId = participantId.trim();
     const normalizedDisplayName = displayName.trim();
     if (!normalizedDisplayName) return;
@@ -45,6 +51,7 @@ export function roomTypingIndicators({
       indicators[existingIndex] = {
         participantId: existing.participantId || normalizedParticipantId,
         displayName: normalizedDisplayName || existing.displayName,
+        providerKind: providerKind || existing.providerKind,
         turnId: turnId || existing.turnId,
       };
       return;
@@ -53,6 +60,7 @@ export function roomTypingIndicators({
     indicators.push({
       participantId: normalizedParticipantId,
       displayName: normalizedDisplayName,
+      providerKind,
       turnId,
     });
   };
@@ -62,14 +70,20 @@ export function roomTypingIndicators({
       add(
         session.participant_id,
         session.display_name || session.participant_id,
-        session.active_turn_id
+        session.active_turn_id,
+        session.provider_kind
       );
     }
   });
   agents.forEach((agent) => {
     const session = sessionByParticipant.get(agent.agent_id);
     if (agent.status === "working" && sessionCanShowTyping(session)) {
-      add(agent.agent_id, agent.display_name || agent.agent_id, session?.active_turn_id);
+      add(
+        agent.agent_id,
+        agent.display_name || agent.agent_id,
+        session?.active_turn_id,
+        session?.provider_kind || agent.provider_kind
+      );
     }
   });
   members.forEach((member) => {
@@ -78,7 +92,8 @@ export function roomTypingIndicators({
       add(
         member.participant_id,
         member.display_name || member.participant_id,
-        session?.active_turn_id
+        session?.active_turn_id,
+        session?.provider_kind || member.provider_kind
       );
     }
   });
@@ -93,7 +108,8 @@ export function roomTypingIndicators({
     add(
       activeProgress.participantId,
       participant?.display_name || session?.display_name || activeProgress.displayName,
-      activeProgress.turnId
+      activeProgress.turnId,
+      session?.provider_kind || participant?.provider_kind || ""
     );
   }
 
