@@ -13,6 +13,11 @@ import type {
   ProviderControl,
 } from "../../roomSocketClient";
 import type { RoomAgentSession } from "../../api/agentSessions";
+import {
+  effectiveProviderControlOptions,
+  initializeProviderSettings,
+  reconcileProviderSettings,
+} from "../../lib/providerControlSettings";
 
 type AgentCreateModalProps = {
   open: boolean;
@@ -65,7 +70,7 @@ export default function AgentCreateModal({
   const invalidControl = existingSessionId || !selectedProvider
     ? undefined
     : selectedProvider.controls.find((control) =>
-        !effectiveControlOptions(selectedProvider, control, settings).some(
+        !effectiveProviderControlOptions(selectedProvider, control, settings).some(
           (option) => option.value === (settings[control.key] ?? "")
         )
       );
@@ -157,10 +162,14 @@ export default function AgentCreateModal({
 
   function updateProviderControl(key: string, value: string) {
     if (!selectedProvider) return;
-    const next = reconcileProviderSettings(selectedProvider, {
-      ...settings,
-      [key]: value,
-    });
+    const next = reconcileProviderSettings(
+      selectedProvider,
+      {
+        ...settings,
+        [key]: value,
+      },
+      key
+    );
     setSettings(next);
     if (key === "model" && !displayNameEdited) {
       setDisplayName(defaultAgentDisplayName(selectedProvider, next));
@@ -342,7 +351,11 @@ export default function AgentCreateModal({
               <p className="dc-agent-section-title">모델 · 실행 설정</p>
               <div className="dc-agent-field-grid dc-agent-field-grid--dual">
                 {selectedProvider.controls.map((control) => {
-                  const options = effectiveControlOptions(selectedProvider, control, settings);
+                  const options = effectiveProviderControlOptions(
+                    selectedProvider,
+                    control,
+                    settings
+                  );
                   return (
                     <ProviderControlField
                       key={`${selectedProvider.id}:${control.key}`}
@@ -521,12 +534,6 @@ function deriveStatusMessage({
   return "";
 }
 
-function initializeProviderSettings(
-  provider: NativeCliProviderAvailability
-): Record<string, string> {
-  return normalizeProviderSettings(provider, {}, true);
-}
-
 function defaultAgentDisplayName(
   provider: NativeCliProviderAvailability,
   settings: Record<string, string>
@@ -547,83 +554,4 @@ function defaultAgentDisplayName(
     return modelName;
   }
   return `${providerName} ${modelName}`;
-}
-
-function reconcileProviderSettings(
-  provider: NativeCliProviderAvailability,
-  candidate: Record<string, string>
-): Record<string, string> {
-  return normalizeProviderSettings(provider, candidate, false);
-}
-
-function normalizeProviderSettings(
-  provider: NativeCliProviderAvailability,
-  candidate: Record<string, string>,
-  useDefaults: boolean
-): Record<string, string> {
-  const next: Record<string, string> = {};
-  const modelControl = provider.controls.find((control) => control.key === "model");
-  if (modelControl) {
-    next.model = validControlValue(modelControl, modelControl.options, candidate.model, useDefaults);
-  }
-  for (const control of provider.controls) {
-    if (control.key === "model") continue;
-    const options = effectiveControlOptions(provider, control, { ...candidate, ...next });
-    next[control.key] = validControlValue(control, options, candidate[control.key], useDefaults);
-  }
-  return next;
-}
-
-function validControlValue(
-  control: ProviderControl,
-  options: ProviderControl["options"],
-  candidate: string | undefined,
-  useDefault: boolean
-): string {
-  if (candidate !== undefined && options.some((option) => option.value === candidate)) {
-    return candidate;
-  }
-  const mayUseDefault =
-    useDefault || (control.key === "service_tier" && !candidate);
-  return mayUseDefault && options.some((option) => option.value === control.default_value)
-    ? control.default_value
-    : "";
-}
-
-function effectiveControlOptions(
-  provider: NativeCliProviderAvailability,
-  control: ProviderControl,
-  settings: Record<string, string>
-): ProviderControl["options"] {
-  if (!["reasoning_effort", "service_tier"].includes(control.key)) {
-    return control.options;
-  }
-  const modelControl = provider.controls.find((item) => item.key === "model");
-  const model = modelControl?.options.find((option) => option.value === settings.model);
-  if (control.key === "service_tier") {
-    const variants = model?.metadata?.runtime_variants;
-    if (Array.isArray(variants)) {
-      const selectedEffort = settings.reasoning_effort || "default";
-      const allowed = new Set(
-        variants
-          .filter(
-            (variant): variant is Record<string, unknown> =>
-              Boolean(variant) &&
-              typeof variant === "object" &&
-              String((variant as Record<string, unknown>).reasoning_effort || "default") === selectedEffort
-          )
-          .map((variant) => String(variant.service_tier || "default"))
-      );
-      return control.options.filter((option) => allowed.has(option.value));
-    }
-  }
-  const metadataKey = control.key === "reasoning_effort" ? "reasoning_efforts" : "service_tiers";
-  const relation = model?.metadata?.[metadataKey];
-  if (!Array.isArray(relation)) return control.options;
-  const allowed = new Set(relation.map(String));
-  return control.options.filter(
-    (option) =>
-      allowed.has(option.value) ||
-      (control.key === "service_tier" && option.value === "default")
-  );
 }

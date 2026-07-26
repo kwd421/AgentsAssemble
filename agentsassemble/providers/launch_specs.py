@@ -95,6 +95,7 @@ class NativeCliProviderDefinition:
     default_service_tier: str = ""
     default_variant: str = ""
     default_permission_mode: str = "meeting_read_only"
+    catalog_exact_model_allows_empty_reasoning_effort: bool = False
     model_observation_policy: str = "required"
     runtime_kind: str = "live_cli"
     transport: str = "pty"
@@ -104,6 +105,20 @@ class NativeCliProviderDefinition:
     startup_accept_contains: str = ""
     startup_accept_keys: str = "\r"
     startup_ready_contains: str = ""
+
+    def reasoning_effort_is_required(
+        self,
+        *,
+        model_selection_kind: str,
+        catalog_revision: str,
+    ) -> bool:
+        if not self.default_reasoning_effort:
+            return False
+        return not (
+            self.catalog_exact_model_allows_empty_reasoning_effort
+            and model_selection_kind == "exact"
+            and bool(catalog_revision)
+        )
 
     def make_default_spec(
         self,
@@ -158,11 +173,18 @@ class NativeCliProviderDefinition:
         selected_variant = clean_room_text(variant, limit=64)
         selected_permission = clean_room_text(permission_mode, limit=64)
         selected_kind = clean_room_text(model_selection_kind, limit=16)
+        selected_catalog_revision = clean_room_text(catalog_revision, limit=128)
         if self.provider_id == "cursor" and selected_model == "auto":
             selected_kind = "alias"
         if not selected_model:
             raise ValueError(f"Provider {self.provider_id} model is required.")
-        if self.default_reasoning_effort and not selected_effort:
+        if (
+            self.reasoning_effort_is_required(
+                model_selection_kind=selected_kind,
+                catalog_revision=selected_catalog_revision,
+            )
+            and not selected_effort
+        ):
             raise ValueError(f"Provider {self.provider_id} reasoning effort is required.")
         if self.default_service_tier and not selected_service_tier:
             raise ValueError(f"Provider {self.provider_id} service tier is required.")
@@ -193,7 +215,7 @@ class NativeCliProviderDefinition:
             ),
             model_selection_kind=selected_kind,
             model_observation_policy=self.model_observation_policy,
-            catalog_revision=clean_room_text(catalog_revision, limit=128),
+            catalog_revision=selected_catalog_revision,
             reasoning_effort=selected_effort,
             service_tier=selected_service_tier,
             variant=selected_variant,
@@ -258,8 +280,22 @@ def native_cli_provider_spec_from_stored_session_strict(
             "Stored Agent Session provider profile is incomplete.",
             code="profile_incomplete",
         )
+    model_selection_kind = (
+        clean_room_text(session.get("model_selection_kind"), limit=16) or "exact"
+    )
+    catalog_revision = clean_room_text(session.get("catalog_revision"), limit=128)
     for field, default in (
-        ("reasoning_effort", definition.default_reasoning_effort),
+        (
+            "reasoning_effort",
+            (
+                definition.default_reasoning_effort
+                if definition.reasoning_effort_is_required(
+                    model_selection_kind=model_selection_kind,
+                    catalog_revision=catalog_revision,
+                )
+                else ""
+            ),
+        ),
         ("service_tier", definition.default_service_tier),
         ("variant", definition.default_variant),
     ):
@@ -290,9 +326,8 @@ def native_cli_provider_spec_from_stored_session_strict(
         service_tier=clean_room_text(session.get("service_tier"), limit=32),
         variant=clean_room_text(session.get("variant"), limit=64),
         permission_mode=required["permission_mode"],
-        model_selection_kind=clean_room_text(session.get("model_selection_kind"), limit=16)
-        or "exact",
-        catalog_revision=clean_room_text(session.get("catalog_revision"), limit=128),
+        model_selection_kind=model_selection_kind,
+        catalog_revision=catalog_revision,
     )
     profile_matches = (
         stored_transport == definition.transport
@@ -651,6 +686,7 @@ NATIVE_CLI_PROVIDER_CATALOG: tuple[NativeCliProviderDefinition, ...] = (
         aliases=("agy", "antigravity_live_session"),
         default_model="gemini-3.6-flash",
         default_reasoning_effort="medium",
+        catalog_exact_model_allows_empty_reasoning_effort=True,
         model_observation_policy="required",
         input_mode="bracketed_paste",
         startup_quiet_seconds=5.0,

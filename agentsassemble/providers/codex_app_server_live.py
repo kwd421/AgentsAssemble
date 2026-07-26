@@ -22,6 +22,7 @@ class CodexAppServerLiveRuntime:
         model: str,
         reasoning_effort: str,
         permission_mode: str,
+        service_tier: str = "",
         environment: dict[str, str] | None = None,
         room_portal: RoomPortal | None = None,
     ) -> None:
@@ -32,6 +33,7 @@ class CodexAppServerLiveRuntime:
             "workspace": workspace,
             "model": model,
             "effort": reasoning_effort,
+            "service_tier": service_tier,
             "sandbox": sandbox,
             "permissions": permissions,
         }

@@ -342,6 +342,37 @@ describe("AgentCreateModal", () => {
     expect(screen.getByRole("option", { name: "Fast" })).toBeTruthy();
   });
 
+  it("normalizes dependent settings after a model or effort change", async () => {
+    render(
+      <AgentCreateModal
+        open
+        meetingId="room-a"
+        roomLabel="Room A"
+        catalogRevision="cat-related"
+        providers={[codexProviderWithRelations()]}
+        onClose={() => undefined}
+        onCreate={vi.fn()}
+      />
+    );
+
+    await userEvent.click(screen.getByRole("listitem", { name: "Codex" }));
+    await userEvent.selectOptions(screen.getByRole("combobox", { name: "모델" }), "model-high");
+    expect((screen.getByRole("combobox", { name: "추론 강도" }) as HTMLSelectElement).value).toBe(
+      "high"
+    );
+    expect((screen.getByRole("combobox", { name: "응답 속도" }) as HTMLSelectElement).value).toBe(
+      "default"
+    );
+
+    await userEvent.selectOptions(screen.getByRole("combobox", { name: "모델" }), "model-variable");
+    await userEvent.selectOptions(screen.getByRole("combobox", { name: "응답 속도" }), "fast");
+    await userEvent.selectOptions(screen.getByRole("combobox", { name: "추론 강도" }), "low");
+    expect((screen.getByRole("combobox", { name: "응답 속도" }) as HTMLSelectElement).value).toBe(
+      "default"
+    );
+    expect(screen.queryByRole("option", { name: "Fast" })).toBeNull();
+  });
+
   it("invalidates an effort removed by a model relation change", async () => {
     const { rerender } = render(
       <AgentCreateModal

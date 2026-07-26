@@ -185,6 +185,63 @@ class NativeCliProviderCatalogTests(unittest.TestCase):
         self.assertEqual(claude.provider_kind, "claude_code")
         self.assertEqual(claude.command[:3], ("claude", "--model", "haiku"))
 
+    def test_catalog_selected_antigravity_exact_model_can_omit_reasoning_effort(self):
+        with self.assertRaisesRegex(ValueError, "reasoning effort is required"):
+            native_cli_provider_spec_from_payload(
+                {
+                    "provider_id": "antigravity",
+                    "display_name": "Unvalidated Agy Claude",
+                    "workspace": ".",
+                    "model": "claude-sonnet-4-6",
+                    "model_selection_kind": "exact",
+                    "reasoning_effort": "",
+                    "permission_mode": "meeting_read_only",
+                }
+            )
+
+        spec = native_cli_provider_spec_from_payload(
+            {
+                "provider_id": "antigravity",
+                "display_name": "Agy Claude",
+                "workspace": ".",
+                "model": "claude-sonnet-4-6",
+                "model_selection_kind": "exact",
+                "catalog_revision": "cat-test",
+                "reasoning_effort": "",
+                "permission_mode": "meeting_read_only",
+            }
+        )
+
+        self.assertEqual(spec.reasoning_effort, "")
+        self.assertEqual(
+            spec.command,
+            ("agy", "--model", "claude-sonnet-4-6", "--sandbox"),
+        )
+        self.assertEqual(spec.requested_model_id, "claude-sonnet-4-6")
+
+        restored = native_cli_provider_spec_from_stored_session_strict(
+            {
+                "participant_id": spec.agent_id,
+                "display_name": spec.display_name,
+                "provider_kind": spec.provider_kind,
+                "workspace": spec.cwd,
+                "model": spec.model,
+                "model_selection_kind": spec.model_selection_kind,
+                "catalog_revision": spec.catalog_revision,
+                "reasoning_effort": spec.reasoning_effort,
+                "service_tier": spec.service_tier,
+                "variant": spec.variant,
+                "permission_mode": spec.permission_mode,
+                "runtime_kind": spec.runtime_kind,
+                "transport": spec.transport,
+                "runtime_profile_key": spec.runtime_profile_key(),
+                "command_configured": list(spec.command),
+            }
+        )
+
+        self.assertEqual(restored.command, spec.command)
+        self.assertEqual(restored.runtime_profile_key(), spec.runtime_profile_key())
+
     def test_smoke_config_can_override_command_without_forking_known_metadata(self):
         spec = native_cli_provider_spec_from_config(
             {

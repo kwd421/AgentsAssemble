@@ -2,6 +2,10 @@ import { useEffect, useState } from "react";
 import { Brain, CirclePause, Play, RotateCcw, Save, Square, Zap } from "lucide-react";
 import type { RoomAgentSession } from "../../api";
 import type { NativeCliProviderAvailability, ProviderControl } from "../../roomSocketClient";
+import {
+  effectiveProviderControlOptions,
+  reconcileProviderSettings,
+} from "../../lib/providerControlSettings";
 
 export type AgentSessionControlAction =
   | "start"
@@ -111,6 +115,13 @@ export default function AgentSessionDetails({
   const canInterrupt = status === "busy";
   const continuity = providerSessionContinuity(session);
   const canConfigure = ["", "available", "stopped", "error", "disconnected"].includes(status || "");
+  const runtimeSettingLabels =
+    (provider?.controls || []).map((control) => control.label).join("·") || "런타임 설정";
+  const invalidRuntimeControl = provider?.controls.find((control) =>
+    !effectiveProviderControlOptions(provider, control, settings).some(
+      (option) => option.value === (settings[control.key] ?? "")
+    )
+  );
 
   useEffect(() => {
     setSettings({
@@ -139,17 +150,32 @@ export default function AgentSessionDetails({
   }
 
   async function saveSettings() {
-    if (!onConfigure || !canConfigure || settingsBusy) return;
+    if (!onConfigure || !canConfigure || invalidRuntimeControl || settingsBusy) return;
     setSettingsBusy(true);
     setActionStatus("");
     try {
       await onConfigure(session, settings);
-      setActionStatus("런타임 설정 저장 완료");
+      setActionStatus("런타임 설정 저장 완료 · 다음 시작부터 적용");
     } catch (error) {
       setActionStatus(error instanceof Error ? error.message : "런타임 설정 저장 실패");
     } finally {
       setSettingsBusy(false);
     }
+  }
+
+  function updateRuntimeSetting(key: string, value: string) {
+    if (!provider) return;
+    setSettings((previous) => ({
+      ...previous,
+      ...reconcileProviderSettings(
+        provider,
+        {
+          ...previous,
+          [key]: value,
+        },
+        key
+      ),
+    }));
   }
 
   return (
@@ -179,25 +205,35 @@ export default function AgentSessionDetails({
       </div>
       {provider && onConfigure && (
         <div className="dc-agent-runtime-settings" aria-label={`${session.display_name} 런타임 설정`}>
-          {(provider.controls || []).map((control) => (
-            <RuntimeSettingField
-              key={`${session.session_id}:${control.key}`}
-              control={control}
-              value={settings[control.key] || ""}
-              disabled={!canConfigure || settingsBusy}
-              onChange={(value) => setSettings((previous) => ({ ...previous, [control.key]: value }))}
-            />
-          ))}
+          {(provider.controls || []).map((control) => {
+            const options = effectiveProviderControlOptions(provider, control, settings);
+            return (
+              <RuntimeSettingField
+                key={`${session.session_id}:${control.key}`}
+                control={control}
+                options={options}
+                value={settings[control.key] || ""}
+                disabled={!canConfigure || settingsBusy}
+                onChange={(value) => updateRuntimeSetting(control.key, value)}
+              />
+            );
+          })}
           <button
             type="button"
             className="dc-member-session-button"
-            disabled={!canConfigure || settingsBusy}
+            disabled={!canConfigure || Boolean(invalidRuntimeControl) || settingsBusy}
             onClick={() => void saveSettings()}
           >
             <Save size={14} />
-            설정 저장
+            런타임 설정 저장
           </button>
-          {!canConfigure && <p>설정을 바꾸려면 세션을 먼저 중지하세요.</p>}
+          <p className="preserve-words">
+            {!canConfigure
+              ? "현재 세션이 실행 중이라 시작 프로필을 표시하고 있습니다. 변경하려면 세션을 중지하세요."
+              : invalidRuntimeControl
+                ? `${invalidRuntimeControl.label}의 선택값을 확인하세요.`
+                : `${runtimeSettingLabels}을 함께 저장합니다. 변경은 다음 세션 시작부터 적용됩니다.`}
+          </p>
         </div>
       )}
       <div className="dc-agent-activity-setting">
@@ -321,39 +357,32 @@ function controlDefault(provider: NativeCliProviderAvailability | undefined, key
 
 function RuntimeSettingField({
   control,
+  options,
   value,
   disabled,
   onChange,
 }: {
   control: ProviderControl;
+  options: ProviderControl["options"];
   value: string;
   disabled: boolean;
   onChange: (value: string) => void;
 }) {
-  if (control.kind === "combobox") {
-    const listId = `session-${control.key}`;
-    return (
-      <label>
-        <span>{control.label}</span>
-        <input
-          value={value}
-          list={listId}
-          disabled={disabled}
-          onChange={(event) => onChange(event.currentTarget.value)}
-        />
-        <datalist id={listId}>
-          {control.options.map((option) => (
-            <option key={`${control.key}:${option.value}`} value={option.value}>{option.label}</option>
-          ))}
-        </datalist>
-      </label>
-    );
-  }
   return (
     <label>
       <span>{control.label}</span>
-      <select value={value} disabled={disabled} onChange={(event) => onChange(event.currentTarget.value)}>
-        {control.options.map((option) => (
+      <select
+        aria-label={control.label}
+        value={value}
+        disabled={disabled}
+        onChange={(event) => onChange(event.currentTarget.value)}
+      >
+        {!options.some((option) => option.value === value) && (
+          <option value="" disabled>
+            선택 필요
+          </option>
+        )}
+        {options.map((option) => (
           <option key={`${control.key}:${option.value || "default"}`} value={option.value}>{option.label}</option>
         ))}
       </select>

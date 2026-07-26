@@ -31,6 +31,7 @@ from agentsassemble.application.room_attendee import AgentAttendee
 from agentsassemble.providers.windows_conpty import WindowsConPtyRuntime
 from agentsassemble.providers.live_cli import _terminal_query_response
 from agentsassemble.providers.live_cli_transcripts import _antigravity_user_request
+from agentsassemble.providers.launch_specs import native_cli_provider_spec_from_payload
 
 
 class FakeKeyring:
@@ -315,6 +316,135 @@ class ProviderRuntimeControlTests(unittest.TestCase):
             invalid_variant.exception.code,
             "unsupported_model_runtime_combination",
         )
+
+    def test_antigravity_blank_effort_only_matches_exact_models_without_variants(self):
+        def runner(command: list[str], _timeout: float):
+            if command[0].endswith("agy"):
+                return 0, (
+                    "gemini-3.6-flash-high\n"
+                    "gemini-3.6-flash-low\n"
+                    "claude-sonnet-4-6\n"
+                    "gpt-oss-120b-medium\n"
+                ), ""
+            return 1, "", "unsupported"
+
+        catalog = ProviderCapabilityCatalog(
+            runner=runner,
+            resolver=lambda executable: "/bin/agy" if executable == "agy" else None,
+        )
+        revision = str(catalog.snapshot(refresh=True)["catalog_revision"])
+        common = {
+            "permission_mode": "meeting_read_only",
+            "service_tier": "",
+            "variant": "",
+        }
+
+        exact = catalog.validate_selection(
+            catalog_revision=revision,
+            provider_id="antigravity",
+            values={
+                **common,
+                "model": "claude-sonnet-4-6",
+                "reasoning_effort": "",
+            },
+        )
+        self.assertEqual(exact.reasoning_effort, "")
+        spec = native_cli_provider_spec_from_payload(
+            {
+                "provider_id": exact.provider_id,
+                "display_name": "Agy Claude",
+                "workspace": ".",
+                "model": exact.model,
+                "model_selection_kind": exact.model_selection_kind,
+                "catalog_revision": exact.catalog_revision,
+                "reasoning_effort": exact.reasoning_effort,
+                "permission_mode": exact.permission_mode,
+            }
+        )
+        self.assertEqual(
+            spec.command,
+            ("agy", "--model", "claude-sonnet-4-6", "--sandbox"),
+        )
+
+        for model, effort in (
+            ("gemini-3.6-flash", "low"),
+            ("gpt-oss-120b", "medium"),
+        ):
+            with self.subTest(model=model, effort=effort):
+                selected = catalog.validate_selection(
+                    catalog_revision=revision,
+                    provider_id="antigravity",
+                    values={
+                        **common,
+                        "model": model,
+                        "reasoning_effort": effort,
+                    },
+                )
+                self.assertEqual(selected.reasoning_effort, effort)
+
+        for model in ("gemini-3.6-flash", "gpt-oss-120b"):
+            with self.subTest(model=model):
+                with self.assertRaises(ProviderCatalogSelectionError) as rejected:
+                    catalog.validate_selection(
+                        catalog_revision=revision,
+                        provider_id="antigravity",
+                        values={
+                            **common,
+                            "model": model,
+                            "reasoning_effort": "",
+                        },
+                    )
+                self.assertEqual(
+                    rejected.exception.code,
+                    "unsupported_model_effort_combination",
+                )
+
+    def test_grok_catalog_exposes_its_enforced_read_only_permission(self):
+        catalog = ProviderCapabilityCatalog(
+            runner=lambda _command, _timeout: (
+                0,
+                "* grok-4.5\nDefault model: grok-4.5\n",
+                "",
+            ),
+            resolver=lambda executable: "/bin/grok" if executable == "grok" else None,
+        )
+
+        snapshot = catalog.snapshot(refresh=True)
+        grok = next(
+            provider
+            for provider in snapshot["providers"]
+            if provider["id"] == "grok"
+        )
+        self.assertEqual(
+            grok["fixed_values"],
+            {"permission_mode": "meeting_read_only"},
+        )
+        self.assertNotIn(
+            "permission_mode",
+            {control["key"] for control in grok["controls"]},
+        )
+
+        selected = catalog.validate_selection(
+            catalog_revision=str(snapshot["catalog_revision"]),
+            provider_id="grok",
+            values={
+                "model": "grok-4.5",
+                "reasoning_effort": "medium",
+            },
+        )
+        self.assertEqual(selected.permission_mode, "meeting_read_only")
+
+        with self.assertRaises(ProviderCatalogSelectionError) as rejected:
+            catalog.validate_selection(
+                catalog_revision=str(snapshot["catalog_revision"]),
+                provider_id="grok",
+                values={
+                    "model": "grok-4.5",
+                    "reasoning_effort": "medium",
+                    "permission_mode": "workspace_write",
+                },
+            )
+        self.assertEqual(rejected.exception.code, "unsupported_provider_option")
 
     def test_claude_catalog_exposes_only_exact_models(self):
         catalog = ProviderCapabilityCatalog(
@@ -643,12 +773,15 @@ class ProviderRuntimeControlTests(unittest.TestCase):
         attendee = AgentAttendee(
             invite_url="https://room.example/join?token=aai1.secret",
             provider_id="codex",
+            service_tier="priority",
         )
         with tempfile.TemporaryDirectory() as temp_dir:
             runtime = attendee._build_runtime("codex-guest", Path(temp_dir))
         self.assertIn("app-server", runtime.runtime.command)
         self.assertNotIn("exec", runtime.runtime.command)
         self.assertEqual(runtime.profile["sandbox"], "read-only")
+        self.assertEqual(runtime.profile["service_tier"], "priority")
+        self.assertIn('service_tier="priority"', runtime.runtime.command)
 
         explicit = AgentAttendee(
             invite_url="https://room.example/join?token=aai1.secret",

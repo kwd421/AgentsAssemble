@@ -224,6 +224,7 @@ class AgentAttendee:
                 model=spec.model,
                 reasoning_effort=spec.reasoning_effort,
                 permission_mode=spec.permission_mode,
+                service_tier=spec.service_tier,
                 room_portal=room_portal,
             )
         command = list(spec.command)

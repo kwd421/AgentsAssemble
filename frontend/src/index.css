@@ -512,6 +512,7 @@ button:disabled,
 
 .dc-agent-field input,
 .dc-agent-field select {
+  color-scheme: dark;
   min-width: 0;
   height: 38px;
   border: 1px solid transparent;
@@ -3455,6 +3456,7 @@ body[data-sidebar-resizing="true"] {
 
 .dc-agent-runtime-settings input,
 .dc-agent-runtime-settings select {
+  color-scheme: dark;
   width: 100%;
   min-width: 0;
   height: 36px;
@@ -3462,6 +3464,12 @@ body[data-sidebar-resizing="true"] {
   border-radius: 5px;
   background: var(--color-surface-raised);
   padding: 0 9px;
+  color: var(--color-text-primary);
+}
+
+.dc-agent-field select option,
+.dc-agent-runtime-settings select option {
+  background: #1e1f22;
   color: var(--color-text-primary);
 }
 

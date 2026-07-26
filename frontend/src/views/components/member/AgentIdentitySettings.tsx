@@ -70,8 +70,13 @@ export default function AgentIdentitySettings({
   const supportsFast = providerSupportsFast(agent.provider_kind);
   const sessionGroup = sessionProcessGroupForAgent(agent, processGroups);
   const optionsConfigPath = agent.live_agent_config_path || sessionGroup?.config_path || "";
-  const canEditAgentOptions = Boolean(
-    canEditAgentProfile && (permissionOptions.length > 0 || supportsFast)
+  // Canonical Agent Sessions own these values in their catalog-validated
+  // runtime profile. Keep this compatibility editor only for legacy agents
+  // that do not have a canonical Agent Session.
+  const canEditLegacyAgentOptions = Boolean(
+    !entry.agentSession &&
+      canEditAgentProfile &&
+      (permissionOptions.length > 0 || supportsFast)
   );
   const optionsDirty =
     permissionDraft !== (agent.permission_option || "") ||
@@ -114,7 +119,7 @@ export default function AgentIdentitySettings({
   }
 
   async function handleSaveAgentOptions() {
-    if (!canEditAgentOptions || optionsBusy) return;
+    if (!canEditLegacyAgentOptions || optionsBusy) return;
     setOptionsBusy(true);
     setOptionsStatus("권한/속도 저장 중...");
     try {
@@ -189,7 +194,7 @@ export default function AgentIdentitySettings({
           )}
         </section>
       )}
-      {canEditAgentOptions && (
+      {canEditLegacyAgentOptions && (
         <section className="dc-member-detail-section" aria-label={`${entry.displayName} 권한·속도`}>
           <h3>권한 / 속도</h3>
           {permissionOptions.length > 0 && (

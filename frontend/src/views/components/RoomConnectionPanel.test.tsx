@@ -1,6 +1,7 @@
 import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { LiveAgent, RoomAgentSession, RoomMember } from "../../api";
+import type { NativeCliProviderAvailability } from "../../roomSocketClient";
 import RoomConnectionPanel from "./RoomConnectionPanel";
 
 afterEach(cleanup);
@@ -64,6 +65,82 @@ function member(status = "attached"): RoomMember {
 }
 
 const agentControlCapability = { "agent.control": true };
+
+function codexProvider(): NativeCliProviderAvailability {
+  return {
+    id: "codex",
+    display_name: "Codex",
+    provider_kind: "codex_live_session",
+    runtime_kind: "live_cli",
+    connection_kind: "native_cli_bridge",
+    executable: "codex",
+    default_model: "gpt-current",
+    interactive: true,
+    startable: true,
+    available: true,
+    controls: [
+      {
+        key: "model",
+        label: "모델",
+        kind: "combobox",
+        default_value: "gpt-current",
+        options: [
+          {
+            value: "gpt-current",
+            label: "Current",
+            metadata: {
+              reasoning_efforts: ["low"],
+              runtime_variants: [
+                { reasoning_effort: "low", service_tier: "default" },
+              ],
+            },
+          },
+          {
+            value: "gpt-next",
+            label: "Next",
+            metadata: {
+              reasoning_efforts: ["high"],
+              runtime_variants: [
+                { reasoning_effort: "high", service_tier: "default" },
+                { reasoning_effort: "high", service_tier: "fast" },
+              ],
+            },
+          },
+        ],
+      },
+      {
+        key: "reasoning_effort",
+        label: "추론 강도",
+        kind: "select",
+        default_value: "low",
+        options: [
+          { value: "low", label: "low" },
+          { value: "high", label: "high" },
+        ],
+      },
+      {
+        key: "service_tier",
+        label: "응답 속도",
+        kind: "select",
+        default_value: "default",
+        options: [
+          { value: "default", label: "기본" },
+          { value: "fast", label: "Fast" },
+        ],
+      },
+      {
+        key: "permission_mode",
+        label: "권한",
+        kind: "select",
+        default_value: "meeting_read_only",
+        options: [
+          { value: "meeting_read_only", label: "읽기 전용" },
+          { value: "workspace_write", label: "작업 폴더 쓰기" },
+        ],
+      },
+    ],
+  };
+}
 
 function openAgentDetails() {
   fireEvent.click(screen.getByText("나's Codex Spark"));
@@ -271,5 +348,140 @@ describe("RoomConnectionPanel", () => {
 
     expect(onVisibilityChange).toHaveBeenCalledWith(session, false);
     expect(screen.getByText("공개용 생각 요약과 안전하게 정리된 도구 활동만 표시합니다.")).toBeTruthy();
+  });
+
+  it("keeps canonical runtime controls locked while the session is running without a duplicate options card", async () => {
+    const session = {
+      ...agentSession("idle"),
+      model: "gpt-current",
+      reasoning_effort: "low",
+      service_tier: "default",
+      permission_mode: "meeting_read_only",
+    };
+    render(
+      <RoomConnectionPanel
+        room={room}
+        agents={[agent()]}
+        members={[member()]}
+        agentSessions={[session]}
+        capabilities={agentControlCapability}
+        availableProviders={[codexProvider()]}
+        onAgentConfigure={vi.fn()}
+      />
+    );
+
+    openAgentDetails();
+
+    await waitFor(() =>
+      expect((screen.getByLabelText(/모델/) as HTMLSelectElement).value).toBe("gpt-current")
+    );
+    expect((screen.getByLabelText(/모델/) as HTMLSelectElement).disabled).toBe(true);
+    expect((screen.getByLabelText(/추론 강도/) as HTMLSelectElement).disabled).toBe(true);
+    expect((screen.getByLabelText(/권한/) as HTMLSelectElement).disabled).toBe(true);
+    expect((screen.getByRole("button", { name: "런타임 설정 저장" }) as HTMLButtonElement).disabled).toBe(
+      true
+    );
+    expect(
+      screen.getByText(
+        "현재 세션이 실행 중이라 시작 프로필을 표시하고 있습니다. 변경하려면 세션을 중지하세요."
+      )
+    ).toBeTruthy();
+    expect(screen.queryByRole("heading", { name: "권한 / 속도" })).toBeNull();
+  });
+
+  it("saves model, reasoning, speed, and permission together for a stopped canonical session", async () => {
+    const onAgentConfigure = vi.fn().mockResolvedValue(undefined);
+    const session = {
+      ...agentSession("stopped"),
+      model: "gpt-current",
+      reasoning_effort: "low",
+      service_tier: "default",
+      variant: "",
+      permission_mode: "meeting_read_only",
+    };
+    render(
+      <RoomConnectionPanel
+        room={room}
+        agents={[agent("offline")]}
+        members={[member("stopped")]}
+        agentSessions={[session]}
+        capabilities={agentControlCapability}
+        availableProviders={[codexProvider()]}
+        onAgentConfigure={onAgentConfigure}
+      />
+    );
+
+    openAgentDetails();
+
+    await waitFor(() =>
+      expect((screen.getByLabelText(/모델/) as HTMLSelectElement).disabled).toBe(false)
+    );
+    fireEvent.change(screen.getByLabelText(/모델/), { target: { value: "gpt-next" } });
+    expect((screen.getByLabelText(/추론 강도/) as HTMLSelectElement).value).toBe("high");
+    expect(screen.queryByRole("option", { name: "low" })).toBeNull();
+    fireEvent.change(screen.getByLabelText(/응답 속도/), { target: { value: "fast" } });
+    fireEvent.change(screen.getByLabelText(/권한/), { target: { value: "workspace_write" } });
+    fireEvent.click(screen.getByRole("button", { name: "런타임 설정 저장" }));
+
+    await waitFor(() =>
+      expect(onAgentConfigure).toHaveBeenCalledWith(session, {
+        model: "gpt-next",
+        reasoning_effort: "high",
+        service_tier: "fast",
+        variant: "",
+        permission_mode: "workspace_write",
+      })
+    );
+    expect(
+      screen.getByText(
+        "모델·추론 강도·응답 속도·권한을 함께 저장합니다. 변경은 다음 세션 시작부터 적용됩니다."
+      )
+    ).toBeTruthy();
+    expect(screen.queryByRole("heading", { name: "권한 / 속도" })).toBeNull();
+  });
+
+  it("does not save a stopped runtime profile that conflicts with the current catalog", async () => {
+    const session = {
+      ...agentSession("stopped"),
+      model: "gpt-next",
+      reasoning_effort: "low",
+      service_tier: "default",
+      permission_mode: "meeting_read_only",
+    };
+    render(
+      <RoomConnectionPanel
+        room={room}
+        agents={[agent("offline")]}
+        members={[member("stopped")]}
+        agentSessions={[session]}
+        capabilities={agentControlCapability}
+        availableProviders={[codexProvider()]}
+        onAgentConfigure={vi.fn()}
+      />
+    );
+
+    openAgentDetails();
+
+    await waitFor(() =>
+      expect(
+        (screen.getByRole("button", { name: "런타임 설정 저장" }) as HTMLButtonElement).disabled
+      ).toBe(true)
+    );
+    expect(screen.getByText("추론 강도의 선택값을 확인하세요.")).toBeTruthy();
+  });
+
+  it("retains the compatibility options editor for a legacy agent without a canonical session", () => {
+    render(
+      <RoomConnectionPanel
+        room={room}
+        agents={[agent("offline")]}
+        members={[]}
+        agentSessions={[]}
+      />
+    );
+
+    openAgentDetails();
+
+    expect(screen.getByRole("heading", { name: "권한 / 속도" })).toBeTruthy();
   });
 });

@@ -68,6 +68,7 @@ def runtime_from_config(
             model=config.model,
             reasoning_effort=config.reasoning_effort,
             permission_mode=config.permission_mode,
+            service_tier=config.service_tier,
             room_portal=room_portal,
         )
     if key == ("deepseek_api", "https"):

@@ -911,12 +911,15 @@ def codex_app_server_runtime_command(profile_settings: dict[str, object]) -> lis
     command = ["codex", "app-server"]
     model = clean_room_text(profile_settings.get("model"), limit=128)
     effort = clean_room_text(profile_settings.get("effort"), limit=64)
+    service_tier = clean_room_text(profile_settings.get("service_tier"), limit=32)
     sandbox = clean_room_text(profile_settings.get("sandbox"), limit=64)
     approval_policy = _codex_approval_policy(profile_settings.get("permissions"))
     if model:
         command.extend(["-c", _codex_toml_string_config("model", model)])
     if effort:
         command.extend(["-c", _codex_toml_string_config("model_reasoning_effort", effort)])
+    if service_tier and service_tier != "default":
+        command.extend(["-c", _codex_toml_string_config("service_tier", service_tier)])
     if sandbox in {"read-only", "workspace-write", "danger-full-access"}:
         command.extend(["-c", _codex_toml_string_config("sandbox_mode", sandbox)])
     if approval_policy:

@@ -495,6 +495,7 @@ class RoomAgentBridgeTests(unittest.TestCase):
                     provider_kind="codex_live_session",
                     command=["codex", "--no-alt-screen"],
                     model="gpt-5.6-luna",
+                    service_tier="priority",
                     permission_mode="meeting_read_only",
                 ),
                 room_portal=portal,
@@ -502,6 +503,8 @@ class RoomAgentBridgeTests(unittest.TestCase):
 
         self.assertIsInstance(runtime, CodexAppServerLiveRuntime)
         self.assertEqual(runtime.profile["sandbox"], "read-only")
+        self.assertEqual(runtime.profile["service_tier"], "priority")
+        self.assertIn('service_tier="priority"', runtime.runtime.command)
         self.assertIsNotNone(runtime.room_tools)
 
     def test_pty_runtime_preserves_an_intentional_empty_cli_argument(self):

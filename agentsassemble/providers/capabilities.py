@@ -249,9 +249,20 @@ class ProviderCapabilityCatalog:
         selected_value: str,
         error_code: str,
     ) -> None:
-        if not selected_value:
-            return
         relation_scope = str(metadata.get("relation_scope") or "")
+        if not selected_value:
+            if relation_scope == "per_model" and metadata_key in metadata:
+                advertised_values = {
+                    str(value)
+                    for value in list(metadata.get(metadata_key) or [])
+                    if str(value)
+                }
+                if advertised_values:
+                    raise ProviderCatalogSelectionError(
+                        f"The selected model and {metadata_key} value are not a supported combination for {provider_id}.",
+                        code=error_code,
+                    )
+            return
         if relation_scope == "global":
             return
         if relation_scope != "per_model" or metadata_key not in metadata:
@@ -377,6 +388,8 @@ class ProviderCapabilityCatalog:
                 "controls": [],
             }
         )
+        if definition.provider_id == "grok":
+            base["fixed_values"] = {"permission_mode": "meeting_read_only"}
         if not resolved:
             base["discovery_error"] = "configured command missing"
             return base
@@ -728,7 +741,6 @@ def _grok_controls(output: str) -> list[dict[str, object]]:
             default_match.group(1) if default_match else models[0],
         ),
         _control("reasoning_effort", "추론 강도", [_option(value) for value in ("low", "medium", "high")], "medium"),
-        _permission_control(),
     ]
 
 
