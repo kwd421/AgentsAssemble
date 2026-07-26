@@ -162,9 +162,10 @@ verification.
 
 Each bridge owns one private `RoomPortal` outside the provider workspace. It
 keeps at most 50 finalized messages and 32 KiB of rendered room text, projects
-the provider's current display identity, and stages only server-authorized room
-attachments. Server URLs, room tokens, database paths, process IDs, and backend
-topology are not written into the room view.
+the provider's current display identity, identifies its own finalized messages,
+reports how much dialogue followed its latest publication, and stages only
+server-authorized room attachments. Server URLs, room tokens, database paths,
+process IDs, and backend topology are not written into the room view.
 
 Provider access is adapter-specific:
 

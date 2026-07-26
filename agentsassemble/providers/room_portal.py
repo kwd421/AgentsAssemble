@@ -44,16 +44,17 @@ def room_session_orientation(provider_kind: object = "") -> str:
             "terminal `agentsassemble-room speak '<message>'`, or ACP "
             "`/agentsassemble-room/outbox.txt`"
         )
-    return f"""Shared room session guide:
+    return f"""Shared room session:
 - You are an ongoing participant in a shared AgentsAssemble room.
-- A `room.wake <turn-id>` notice means your private room mirror contains newly
-  assigned, finalized room activity. The notice is not a request and does not
-  itself require a room message.
-- Inspect the assigned room view through {read_interface}.
-- If you independently decide you have one useful contribution, stage it through
-  {speak_interface}; otherwise finish without a publication.
-- A staged message becomes public when this provider turn completes. Ordinary
-  assistant output stays private, and no acknowledgement is required."""
+- A `room.wake <turn-id>` notice is a content-free signal that assigned,
+  finalized room activity is available. It is not a request or a public message.
+- The private room mirror is read through {read_interface}; public messages are
+  staged through {speak_interface}.
+- Only that publication boundary creates a public room message. Ordinary
+  assistant output remains private.
+- Room norm: public messages add new substance. Resolving an open decision is new
+  substance; after a point is settled, receipt, thanks, repeated agreement,
+  restatement, a silence explanation, or another closing is not."""
 
 
 ROOM_SESSION_ORIENTATION = room_session_orientation()
@@ -399,10 +400,50 @@ class RoomPortal:
             "",
         ]
         visible_messages = tuple(messages)
+        latest_human_index = -1
+        latest_self_index = -1
+        for index, message in enumerate(visible_messages):
+            participant_type = clean_room_text(
+                message.get("participant_type"),
+                limit=32,
+            )
+            participant_id = clean_room_text(
+                message.get("participant_id"),
+                limit=128,
+            )
+            if participant_type == "human":
+                latest_human_index = index
+            if participant_id == self.participant_id:
+                latest_self_index = index
+        if latest_human_index >= 0:
+            self_messages_since_human = sum(
+                1
+                for message in visible_messages[latest_human_index + 1 :]
+                if clean_room_text(message.get("participant_id"), limit=128)
+                == self.participant_id
+            )
+            lines.extend(
+                [
+                    "## Conversation position",
+                    (
+                        "- Your public messages since the latest human message: "
+                        f"{self_messages_since_human}"
+                    ),
+                ]
+            )
+            if latest_self_index >= 0:
+                lines.append(
+                    "- Finalized messages since your latest public message: "
+                    f"{len(visible_messages) - latest_self_index - 1}"
+                )
+            lines.append("")
+        lines.append("## Finalized messages")
         if not visible_messages:
             lines.append("(No finalized messages.)")
         for message in visible_messages:
             name = str(message.get("display_name") or message.get("participant_id") or "participant")
+            if clean_room_text(message.get("participant_id"), limit=128) == self.participant_id:
+                name = f"{name} (you)"
             content = str(message.get("content") or "")
             lines.extend([f"## {name}", content or "(media or structured message)"])
             for attachment in message.get("attachments", []):
@@ -487,6 +528,10 @@ def _project_message(event: dict[str, object]) -> dict[str, object]:
         "participant_id": clean_room_text(
             event.get("participant_id") or event.get("actor_id"),
             limit=128,
+        ),
+        "participant_type": clean_room_text(
+            event.get("participant_type") or event.get("actor_type"),
+            limit=32,
         ),
         "display_name": clean_room_text(event.get("display_name"), limit=80),
         "content": str(event.get("content") or "")[:_MAX_ROOM_MESSAGE_CHARS],
