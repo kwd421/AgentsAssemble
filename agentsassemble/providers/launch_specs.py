@@ -325,6 +325,17 @@ def native_cli_provider_spec_from_stored_session_strict(
         ).runtime_profile_key()
         == required["runtime_profile_key"]
     )
+    previous_grok_command = _previous_grok_command(spec)
+    grok_cli_option_order_upgrade_profile = (
+        definition.provider_id == "grok"
+        and stored_transport == definition.transport
+        and stored_command == previous_grok_command
+        and replace(
+            spec,
+            command=previous_grok_command,
+        ).runtime_profile_key()
+        == required["runtime_profile_key"]
+    )
     reported_transport_overwrite_profile = (
         stored_transport in definition.reported_transports
         and spec.command == stored_command
@@ -343,7 +354,9 @@ def native_cli_provider_spec_from_stored_session_strict(
         or legacy_claude_startup_profile
         or reported_transport_overwrite_profile
     )
-    if not exact_stored_profile and not claude_room_portal_upgrade_profile:
+    if not exact_stored_profile and not (
+        claude_room_portal_upgrade_profile or grok_cli_option_order_upgrade_profile
+    ):
         raise StoredProviderProfileError(
             "Stored Agent Session profile must be migrated before it can be reused.",
             code="profile_migration_required",
@@ -444,11 +457,23 @@ def _grok_command(
     _variant: str,
     _permission_mode: str,
 ) -> tuple[str, ...]:
-    command = ["grok"]
+    command = ["grok", "agent"]
     if model:
         command.extend(("--model", model))
     if effort:
         command.extend(("--reasoning-effort", effort))
+    command.append("stdio")
+    return tuple(command)
+
+
+def _previous_grok_command(spec: NativeCliProviderSpec) -> tuple[str, ...]:
+    if spec.normalized_provider_kind() != "grok_live_session":
+        return ()
+    command = ["grok"]
+    if spec.model:
+        command.extend(("--model", spec.model))
+    if spec.reasoning_effort:
+        command.extend(("--reasoning-effort", spec.reasoning_effort))
     command.extend(("agent", "stdio"))
     return tuple(command)
 

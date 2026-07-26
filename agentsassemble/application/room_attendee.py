@@ -17,7 +17,7 @@ from agentsassemble.providers.codex_app_server_live import CodexAppServerLiveRun
 from agentsassemble.providers.opencode import OpenCodeServerProcess
 from agentsassemble.providers.runtime_config import ProviderRuntimeConfig, ProviderRuntimeProfile
 from agentsassemble.providers.runtime_factory import runtime_from_config
-from agentsassemble.providers.room_portal import RoomPortal
+from agentsassemble.providers.room_portal import ROOM_SESSION_ORIENTATION, RoomPortal
 from agentsassemble.providers.secrets import PROVIDER_SECRETS
 from agentsassemble.providers.agent_bridge import RoomAgentBridge
 from agentsassemble.web.room_client import connect_room_ws, join_agent_room_session
@@ -299,10 +299,8 @@ def parse_agent_invite_url(value: str) -> tuple[str, str]:
 
 def _orientation_text(value: object) -> str:
     guide = value if isinstance(value, dict) else {}
-    lines = [str(guide.get("welcome") or "You joined a shared AgentsAssemble room.")]
-    lines.extend(str(item) for item in list(guide.get("how_to") or []) if isinstance(item, str))
-    lines.extend(str(item) for item in list(guide.get("etiquette") or []) if isinstance(item, str))
-    return "Room attendee guide:\n" + "\n".join(f"- {line}" for line in lines if line)
+    welcome = str(guide.get("welcome") or "You joined a shared AgentsAssemble room.")
+    return f"Room attendee guide:\n- {welcome}\n\n{ROOM_SESSION_ORIENTATION}"
 
 
 def _leave_room(server_url: str, session_token: str) -> None:

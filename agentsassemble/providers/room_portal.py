@@ -8,6 +8,7 @@ import os
 import re
 import sys
 import threading
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Iterable
 
@@ -16,6 +17,12 @@ from agentsassemble.room.text import clean_room_text
 
 VIRTUAL_ROOM_VIEW_PATH = "/agentsassemble-room/current.md"
 VIRTUAL_ROOM_OUTBOX_PATH = "/agentsassemble-room/outbox.txt"
+ROOM_SESSION_ORIENTATION = """Shared room session guide:
+- You are a participant in a shared AgentsAssemble room.
+- Available room interfaces are Codex `agentsassemble_room_read` / `agentsassemble_room_speak`,
+  terminal `agentsassemble-room read` / `agentsassemble-room speak`, and ACP
+  `/agentsassemble-room/current.md` / `/agentsassemble-room/outbox.txt`.
+- These interfaces expose the current room and media references and can publish one room message."""
 _ATTACHMENT_ID = re.compile(r"^[A-Za-z0-9_-]{8,64}$")
 _MAX_ROOM_MESSAGE_CHARS = 12_000
 
@@ -42,6 +49,7 @@ class RoomPortal:
         self.view_path = self.root / "current.md"
         self.turn_path = self.root / "turn.json"
         self.outbox_path = self.root / "outbox.json"
+        self.activity_path = self.root / "activity.jsonl"
         self.media_root = self.root / "media"
         self.media_index_path = self.root / "media.json"
         self.bin_dir = self.root / "bin"
@@ -167,6 +175,7 @@ class RoomPortal:
             raise RoomPortalError("Only the shared room view may be read.")
         with self._lock:
             text = self.view_path.read_text(encoding="utf-8")
+            self._record_activity("read")
         lines = text.splitlines(keepends=True)
         start = max(0, _safe_int(line, 1) - 1)
         count = max(0, _safe_int(limit, len(lines)))
@@ -193,6 +202,7 @@ class RoomPortal:
                 self.outbox_path,
                 {"turn_id": turn_id, "content": text},
             )
+            self._record_activity("speak", turn_id=turn_id)
 
     def stage_attachment(
         self,
@@ -268,37 +278,6 @@ class RoomPortal:
                 }
             )
         return blocks
-
-    def wake_prompt(self, *, provider_kind: str) -> str:
-        provider = clean_room_text(provider_kind, limit=64)
-        if provider == "codex_live_session":
-            return (
-                "Room activity changed. Use `agentsassemble_room_read` to inspect the current shared "
-                "room and decide independently whether to speak. If speaking, use "
-                "`agentsassemble_room_speak` once with the exact public message. If staying silent, "
-                "do not call the speak tool. Ordinary assistant output is private."
-            )
-        if provider == "grok_live_session":
-            return (
-                f"Room activity changed. Read {VIRTUAL_ROOM_VIEW_PATH} with the available file reader. "
-                f"Decide independently whether to speak. If speaking, write only the public message to "
-                f"{VIRTUAL_ROOM_OUTBOX_PATH} with the available file writer. If staying silent, do not "
-                "write the outbox. Ordinary assistant output is private."
-            )
-        if provider == "antigravity_live_session":
-            return (
-                "Room activity changed. Run `agentsassemble-room read` to inspect the current shared room "
-                "and its media. Decide independently whether to speak. If speaking, run "
-                "`agentsassemble-room speak` with the exact public message as one single-quoted shell "
-                "argument; escape an apostrophe as `'\"'\"'` and do not use shell operators outside that "
-                "argument. If staying silent, do not publish. Ordinary CLI output is private."
-            )
-        return (
-            "Room activity changed. Run `agentsassemble-room read` to inspect the current shared room "
-            "and its media. Decide independently whether to speak. If speaking, publish the exact public "
-            "message with `agentsassemble-room speak`; if staying silent, do not publish. Ordinary CLI "
-            "output is private."
-        )
 
     def _ingest_identity(self, value: dict[str, object]) -> None:
         participants = (
@@ -403,6 +382,25 @@ class RoomPortal:
         except OSError:
             pass
 
+    def _record_activity(self, operation: str, *, turn_id: str = "") -> None:
+        if not turn_id:
+            try:
+                turn = json.loads(self.turn_path.read_text(encoding="utf-8"))
+            except (OSError, json.JSONDecodeError):
+                turn = {}
+            turn_id = clean_room_text(
+                turn.get("turn_id") if isinstance(turn, dict) else "",
+                limit=128,
+            )
+        payload = {
+            "created_at": datetime.now(timezone.utc).isoformat(),
+            "operation": clean_room_text(operation, limit=32),
+            "turn_id": turn_id,
+        }
+        with self.activity_path.open("a", encoding="utf-8") as stream:
+            stream.write(json.dumps(payload, ensure_ascii=False, sort_keys=True) + "\n")
+        self._chmod(self.activity_path, 0o600)
+
 
 def _frame_events(frame: dict[str, object]) -> Iterable[dict[str, object]]:
     if clean_room_text(frame.get("stream"), limit=32) != "room_events":
@@ -467,6 +465,7 @@ _HELPER_SCRIPT = r"""#!/usr/bin/env python3
 import json
 import os
 import sys
+from datetime import datetime, timezone
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
@@ -474,6 +473,7 @@ VIEW = ROOT / "current.md"
 TURN = ROOT / "turn.json"
 OUTBOX = ROOT / "outbox.json"
 MEDIA = ROOT / "media.json"
+ACTIVITY = ROOT / "activity.jsonl"
 
 def fail(message):
     print(message, file=sys.stderr)
@@ -488,9 +488,29 @@ def atomic_json(path, payload):
         pass
     os.replace(temporary, path)
 
+def audit(operation, turn_id=""):
+    if not turn_id:
+        try:
+            turn_id = str(json.loads(TURN.read_text(encoding="utf-8")).get("turn_id") or "")
+        except (OSError, json.JSONDecodeError):
+            turn_id = ""
+    payload = {
+        "created_at": datetime.now(timezone.utc).isoformat(),
+        "operation": operation,
+        "turn_id": turn_id,
+    }
+    with ACTIVITY.open("a", encoding="utf-8") as stream:
+        stream.write(json.dumps(payload, ensure_ascii=False, sort_keys=True) + "\n")
+    try:
+        ACTIVITY.chmod(0o600)
+    except OSError:
+        pass
+
 command = sys.argv[1] if len(sys.argv) > 1 else "help"
 if command == "read":
-    sys.stdout.write(VIEW.read_text(encoding="utf-8"))
+    content = VIEW.read_text(encoding="utf-8")
+    audit("read")
+    sys.stdout.write(content)
 elif command == "speak":
     content = " ".join(sys.argv[2:]).strip() if len(sys.argv) > 2 else sys.stdin.read().strip()
     if not content:
@@ -500,12 +520,14 @@ elif command == "speak":
     if not turn_id:
         fail("no room observation is active")
     atomic_json(OUTBOX, {"turn_id": turn_id, "content": content[:12000]})
+    audit("speak", turn_id)
 elif command == "media":
     attachment_id = sys.argv[2] if len(sys.argv) > 2 else ""
     index = json.loads(MEDIA.read_text(encoding="utf-8")).get("media", {})
     item = index.get(attachment_id)
     if not isinstance(item, dict) or not item.get("path"):
         fail("media is unavailable")
+    audit("media")
     print(item["path"])
 elif command == "help":
     print("agentsassemble-room read | speak [text] | media <id>")
@@ -523,6 +545,7 @@ def _windows_helper_wrapper() -> str:
 
 
 __all__ = [
+    "ROOM_SESSION_ORIENTATION",
     "RoomPortal",
     "RoomPortalError",
     "VIRTUAL_ROOM_OUTBOX_PATH",

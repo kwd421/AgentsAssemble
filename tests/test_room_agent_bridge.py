@@ -390,6 +390,8 @@ class RoomAgentBridgeTests(unittest.TestCase):
         self.assertNotIn("second room message", "\n".join(runtime.sent))
         self.assertIn("private invite orientation", runtime.sent[0])
         self.assertNotIn("private invite orientation", runtime.sent[1])
+        self.assertTrue(runtime.sent[0].endswith("room.wake wake-1"))
+        self.assertEqual(runtime.sent[1], "room.wake wake-2")
 
     def test_grok_acp_config_selects_structured_runtime(self):
         runtime = runtime_from_config(

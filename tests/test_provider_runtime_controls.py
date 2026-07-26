@@ -636,6 +636,8 @@ class ProviderRuntimeControlTests(unittest.TestCase):
         self.assertEqual(token, "aai1.secret")
         self.assertNotIn(token, orientation)
         self.assertNotIn("https://", orientation)
+        self.assertIn("Welcome", orientation)
+        self.assertNotIn("Speak naturally", orientation)
 
     def test_codex_attendee_uses_structured_persistent_cli_transport(self):
         attendee = AgentAttendee(

@@ -369,15 +369,7 @@ class RoomAgentBridge:
         if portal is None:
             return
         turn_id = wake.turn_id
-        provider_input = self._with_initial_orientation(
-            portal.wake_prompt(
-                provider_kind=(
-                    self._runtime_profile.provider_kind
-                    if self._runtime_profile is not None
-                    else ""
-                )
-            )
-        )
+        provider_input = self._with_initial_orientation(f"room.wake {turn_id}")
         started = time.monotonic()
         input_started_at = _now()
         first_output_at = ""

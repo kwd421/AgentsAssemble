@@ -31,7 +31,7 @@ class NativeCliProviderCatalogTests(unittest.TestCase):
             specs["cursor"].command,
             ("cursor-agent", "--model", "auto", "--sandbox", "enabled", "--mode", "ask"),
         )
-        self.assertEqual(specs["grok"].command, ("grok", "--model", "grok-4.5", "agent", "stdio"))
+        self.assertEqual(specs["grok"].command, ("grok", "agent", "--model", "grok-4.5", "stdio"))
         self.assertEqual(specs["grok"].transport, "acp_stdio")
         self.assertNotIn("-p", specs["claude"].command)
         self.assertNotIn("--print", specs["claude"].command)
@@ -286,6 +286,65 @@ class NativeCliProviderCatalogTests(unittest.TestCase):
         self.assertEqual(restored.transport, "acp_stdio")
         self.assertEqual(restored.command, spec.command)
         self.assertEqual(restored.runtime_profile_key(), spec.runtime_profile_key())
+
+    def test_stored_grok_profile_migrates_cli_options_after_agent_subcommand(self):
+        definition = native_cli_provider_definition("grok")
+        self.assertIsNotNone(definition)
+        spec = definition.make_selected_spec(
+            agent_id="grok-low",
+            display_name="Grok Low",
+            cwd="/tmp/workspace",
+            model="grok-4.5",
+            reasoning_effort="low",
+            permission_mode="meeting_read_only",
+        )
+        previous_command = (
+            "grok",
+            "--model",
+            spec.model,
+            "--reasoning-effort",
+            spec.reasoning_effort,
+            "agent",
+            "stdio",
+        )
+
+        restored = native_cli_provider_spec_from_stored_session_strict(
+            {
+                "participant_id": spec.agent_id,
+                "display_name": spec.display_name,
+                "provider_kind": spec.provider_kind,
+                "workspace": spec.cwd,
+                "model": spec.model,
+                "reasoning_effort": spec.reasoning_effort,
+                "service_tier": spec.service_tier,
+                "variant": spec.variant,
+                "permission_mode": spec.permission_mode,
+                "runtime_kind": spec.runtime_kind,
+                "transport": spec.transport,
+                "command_configured": list(previous_command),
+                "runtime_profile_key": replace(
+                    spec,
+                    command=previous_command,
+                ).runtime_profile_key(),
+            }
+        )
+
+        self.assertEqual(
+            restored.command,
+            (
+                "grok",
+                "agent",
+                "--model",
+                "grok-4.5",
+                "--reasoning-effort",
+                "low",
+                "stdio",
+            ),
+        )
+        self.assertNotEqual(
+            restored.runtime_profile_key(),
+            replace(spec, command=previous_command).runtime_profile_key(),
+        )
 
     def test_similar_grok_pty_profile_is_not_migrated(self):
         definition = native_cli_provider_definition("grok")
