@@ -26,8 +26,10 @@ An explicitly configured `ambient` room uses an event-driven observation path.
 Each committed room message wakes every connected, idle, unmuted provider
 session except its author. The wake carries canonical event/cursor identifiers
 and referenced attachment IDs, not a server-built provider transcript. Each
-provider then reads the current room through its private `RoomPortal` and
-independently chooses whether to publish.
+provider then reads the wake's assigned room snapshot through its private
+`RoomPortal` and independently chooses whether to publish. Events delivered
+while that observation is active remain hidden from its view until a later
+wake assigns them.
 
 A publication written through the portal becomes one canonical
 `message_final`. No publication becomes a structured `turn.decline` and creates

@@ -110,6 +110,7 @@ class RoomWakeEnvelope:
     participant_id: str
     session_id: str
     turn_id: str
+    input_up_to_seq: int
     timeout_seconds: float
     attachment_ids: tuple[str, ...]
 
@@ -166,6 +167,17 @@ class RoomWakeEnvelope:
                 turn_id=turn_id,
                 fatal=True,
             )
+        input_up_to_seq = value.get("input_up_to_seq")
+        if (
+            isinstance(input_up_to_seq, bool)
+            or not isinstance(input_up_to_seq, int)
+            or input_up_to_seq < 0
+        ):
+            raise BridgeProtocolError(
+                "Room wake requires a non-negative input_up_to_seq.",
+                code="room_wake_invalid",
+                turn_id=turn_id,
+            )
         attachment_values = value.get("attachment_ids")
         if attachment_values in (None, ""):
             attachment_values = []
@@ -189,6 +201,7 @@ class RoomWakeEnvelope:
             participant_id=actual_participant,
             session_id=actual_session,
             turn_id=turn_id,
+            input_up_to_seq=input_up_to_seq,
             timeout_seconds=timeout_seconds,
             attachment_ids=attachment_ids,
         )

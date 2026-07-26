@@ -9,7 +9,7 @@ import sys
 from pathlib import Path
 
 from agentsassemble.providers.agent_bridge import RoomAgentBridge
-from agentsassemble.providers.room_portal import ROOM_SESSION_ORIENTATION, RoomPortal
+from agentsassemble.providers.room_portal import RoomPortal, room_session_orientation
 from agentsassemble.providers.runtime_config import CanonicalBridgeLaunchConfig
 from agentsassemble.providers.runtime_factory import runtime_from_config
 from agentsassemble.web.room_client import connect_room_ws_with_ticket
@@ -49,7 +49,7 @@ def main() -> int:
         participant_id=config.runtime.participant_id,
         session_id=config.session_id,
         runtime_profile=config.runtime.profile,
-        initial_orientation=ROOM_SESSION_ORIENTATION,
+        initial_orientation=room_session_orientation(config.runtime.provider_kind),
         room_portal=portal,
     )
 

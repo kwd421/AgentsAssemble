@@ -17,7 +17,7 @@ from agentsassemble.providers.codex_app_server_live import CodexAppServerLiveRun
 from agentsassemble.providers.opencode import OpenCodeServerProcess
 from agentsassemble.providers.runtime_config import ProviderRuntimeConfig, ProviderRuntimeProfile
 from agentsassemble.providers.runtime_factory import runtime_from_config
-from agentsassemble.providers.room_portal import ROOM_SESSION_ORIENTATION, RoomPortal
+from agentsassemble.providers.room_portal import RoomPortal, room_session_orientation
 from agentsassemble.providers.secrets import PROVIDER_SECRETS
 from agentsassemble.providers.agent_bridge import RoomAgentBridge
 from agentsassemble.web.room_client import connect_room_ws, join_agent_room_session
@@ -94,7 +94,10 @@ class AgentAttendee:
                 environment=environment,
                 room_portal=portal,
             )
-            orientation = _orientation_text(joined.get("guide"))
+            orientation = _orientation_text(
+                joined.get("guide"),
+                self.definition.provider_kind,
+            )
             while not self._stop.is_set():
                 client = connect_room_ws(self.server_url, session_token, ["room_events"], timeout=10.0)
                 bridge = RoomAgentBridge(
@@ -297,10 +300,13 @@ def parse_agent_invite_url(value: str) -> tuple[str, str]:
     return server_url, token
 
 
-def _orientation_text(value: object) -> str:
+def _orientation_text(value: object, provider_kind: object = "") -> str:
     guide = value if isinstance(value, dict) else {}
     welcome = str(guide.get("welcome") or "You joined a shared AgentsAssemble room.")
-    return f"Room attendee guide:\n- {welcome}\n\n{ROOM_SESSION_ORIENTATION}"
+    return (
+        f"Room attendee guide:\n- {welcome}\n\n"
+        f"{room_session_orientation(provider_kind)}"
+    )
 
 
 def _leave_room(server_url: str, session_token: str) -> None:

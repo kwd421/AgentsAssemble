@@ -17,14 +17,46 @@ from agentsassemble.room.text import clean_room_text
 
 VIRTUAL_ROOM_VIEW_PATH = "/agentsassemble-room/current.md"
 VIRTUAL_ROOM_OUTBOX_PATH = "/agentsassemble-room/outbox.txt"
-ROOM_SESSION_ORIENTATION = """Shared room session guide:
-- You are a participant in a shared AgentsAssemble room.
-- Available room interfaces are Codex `agentsassemble_room_read` / `agentsassemble_room_speak`,
-  terminal `agentsassemble-room read` / `agentsassemble-room speak`, and ACP
-  `/agentsassemble-room/current.md` / `/agentsassemble-room/outbox.txt`.
-- These interfaces expose the current room and media references and can publish one room message."""
 _ATTACHMENT_ID = re.compile(r"^[A-Za-z0-9_-]{8,64}$")
 _MAX_ROOM_MESSAGE_CHARS = 12_000
+
+
+def room_session_orientation(provider_kind: object = "") -> str:
+    kind = clean_room_text(provider_kind, limit=64)
+    if kind == "codex_live_session":
+        read_interface = "Codex dynamic tool `agentsassemble_room_read`"
+        speak_interface = "Codex dynamic tool `agentsassemble_room_speak` with `content`"
+    elif kind in {"claude_code", "antigravity_live_session"}:
+        read_interface = "terminal command `agentsassemble-room read`"
+        speak_interface = "terminal command `agentsassemble-room speak '<message>'`"
+    elif kind == "grok_live_session":
+        read_interface = "ACP read path `/agentsassemble-room/current.md`"
+        speak_interface = (
+            "ACP write path `/agentsassemble-room/outbox.txt` with the message as its content"
+        )
+    else:
+        read_interface = (
+            "the provider's private room read interface: Codex `agentsassemble_room_read`, "
+            "terminal `agentsassemble-room read`, or ACP `/agentsassemble-room/current.md`"
+        )
+        speak_interface = (
+            "the matching private room speak interface: Codex `agentsassemble_room_speak`, "
+            "terminal `agentsassemble-room speak '<message>'`, or ACP "
+            "`/agentsassemble-room/outbox.txt`"
+        )
+    return f"""Shared room session guide:
+- You are an ongoing participant in a shared AgentsAssemble room.
+- A `room.wake <turn-id>` notice means your private room mirror contains newly
+  assigned, finalized room activity. The notice is not a request and does not
+  itself require a room message.
+- Inspect the assigned room view through {read_interface}.
+- If you independently decide you have one useful contribution, stage it through
+  {speak_interface}; otherwise finish without a publication.
+- A staged message becomes public when this provider turn completes. Ordinary
+  assistant output stays private, and no acknowledgement is required."""
+
+
+ROOM_SESSION_ORIENTATION = room_session_orientation()
 
 
 class RoomPortalError(RuntimeError):
@@ -62,6 +94,7 @@ class RoomPortal:
         self._display_name = self.participant_id
         self._media: dict[str, dict[str, object]] = {}
         self._active_media_ids: tuple[str, ...] = ()
+        self._active_messages: tuple[dict[str, object], ...] | None = None
 
     def prepare(self) -> None:
         with self._lock:
@@ -118,6 +151,7 @@ class RoomPortal:
         turn_id: str,
         *,
         attachment_ids: Iterable[object] = (),
+        input_up_to_seq: object = None,
     ) -> None:
         clean_turn_id = clean_room_text(turn_id, limit=128)
         if not clean_turn_id:
@@ -132,9 +166,28 @@ class RoomPortal:
             )
         )
         with self._lock:
+            if input_up_to_seq is None:
+                assigned_seq = max(
+                    (int(item.get("seq") or 0) for item in self._messages),
+                    default=0,
+                )
+            else:
+                assigned_seq = max(0, int(input_up_to_seq))
             self.outbox_path.unlink(missing_ok=True)
             self._active_media_ids = active_media_ids
-            self._write_json_atomic(self.turn_path, {"turn_id": clean_turn_id})
+            self._active_messages = tuple(
+                message
+                for message in self._messages
+                if int(message.get("seq") or 0) <= assigned_seq
+            )
+            self._write_json_atomic(
+                self.turn_path,
+                {
+                    "turn_id": clean_turn_id,
+                    "input_up_to_seq": assigned_seq,
+                },
+            )
+            self._write_view()
 
     def consume_publication(self, turn_id: str) -> str:
         clean_turn_id = clean_room_text(turn_id, limit=128)
@@ -147,6 +200,8 @@ class RoomPortal:
                 self.outbox_path.unlink(missing_ok=True)
                 self.turn_path.unlink(missing_ok=True)
                 self._active_media_ids = ()
+                self._active_messages = None
+                self._write_view()
             if not isinstance(payload, dict):
                 return ""
             if clean_room_text(payload.get("turn_id"), limit=128) != clean_turn_id:
@@ -169,6 +224,8 @@ class RoomPortal:
             self.turn_path.unlink(missing_ok=True)
             self.outbox_path.unlink(missing_ok=True)
             self._active_media_ids = ()
+            self._active_messages = None
+            self._write_view()
 
     def acp_read_text(self, path: object, *, line: object = None, limit: object = None) -> str:
         if str(path or "") != VIRTUAL_ROOM_VIEW_PATH:
@@ -310,7 +367,10 @@ class RoomPortal:
         self._messages.sort(key=lambda item: int(item.get("seq") or 0))
         if len(self._messages) > self.max_messages:
             self._messages = self._messages[-self.max_messages :]
-        while len(self._messages) > 1 and len(self._render_view_unbounded()) > self.max_chars:
+        while (
+            len(self._messages) > 1
+            and len(self._render_view_unbounded(self._messages)) > self.max_chars
+        ):
             self._messages.pop(0)
         self._message_ids = {
             clean_room_text(item.get("id"), limit=128)
@@ -319,20 +379,29 @@ class RoomPortal:
         }
 
     def _write_view(self) -> None:
-        text = self._render_view_unbounded()
+        messages = (
+            self._active_messages
+            if self._active_messages is not None
+            else tuple(self._messages)
+        )
+        text = self._render_view_unbounded(messages)
         if len(text) > self.max_chars:
             text = text[: self.max_chars].rstrip() + "\n"
         self._write_atomic(self.view_path, text, mode=0o600)
 
-    def _render_view_unbounded(self) -> str:
+    def _render_view_unbounded(
+        self,
+        messages: Iterable[dict[str, object]],
+    ) -> str:
         lines = [
             "# Shared room",
             f"Your display name: {self._display_name or self.participant_id}",
             "",
         ]
-        if not self._messages:
+        visible_messages = tuple(messages)
+        if not visible_messages:
             lines.append("(No finalized messages.)")
-        for message in self._messages:
+        for message in visible_messages:
             name = str(message.get("display_name") or message.get("participant_id") or "participant")
             content = str(message.get("content") or "")
             lines.extend([f"## {name}", content or "(media or structured message)"])
@@ -550,4 +619,5 @@ __all__ = [
     "RoomPortalError",
     "VIRTUAL_ROOM_OUTBOX_PATH",
     "VIRTUAL_ROOM_VIEW_PATH",
+    "room_session_orientation",
 ]

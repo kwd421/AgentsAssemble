@@ -356,6 +356,7 @@ class RoomAgentBridgeTests(unittest.TestCase):
                                 "session_id": "codex",
                                 "turn_id": turn_id,
                                 "source_event_id": event_id,
+                                "input_up_to_seq": seq,
                                 "attachment_ids": [],
                                 "timeout_seconds": 2,
                             },
@@ -392,6 +393,81 @@ class RoomAgentBridgeTests(unittest.TestCase):
         self.assertNotIn("private invite orientation", runtime.sent[1])
         self.assertTrue(runtime.sent[0].endswith("room.wake wake-1"))
         self.assertEqual(runtime.sent[1], "room.wake wake-2")
+
+    def test_room_wake_hides_events_beyond_its_assigned_sequence(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            portal = RoomPortal(Path(temp_dir) / "portal", participant_id="codex")
+            portal.prepare()
+            client = FakeClient()
+            runtime = RoomPortalRuntime(portal, ["", ""])
+            bridge = RoomAgentBridge(
+                client,
+                runtime,
+                room_id="general",
+                participant_id="codex",
+                session_id="codex",
+                receive_sleep_seconds=0.005,
+                room_portal=portal,
+            )
+            portal.ingest_frame(
+                {
+                    "stream": "room_events",
+                    "events": [
+                        {
+                            "id": "event-1",
+                            "seq": 1,
+                            "type": "message_final",
+                            "participant_id": "host",
+                            "display_name": "Host",
+                            "content": "first assigned message",
+                        },
+                        {
+                            "id": "event-2",
+                            "seq": 2,
+                            "type": "message_final",
+                            "participant_id": "peer",
+                            "display_name": "Peer",
+                            "content": "later queued message",
+                        }
+                    ]
+                }
+            )
+            thread = threading.Thread(target=bridge.run, daemon=True)
+            thread.start()
+            _wait_for(lambda: any(action == "bridge.ready" for action, _, _ in client.commands))
+
+            for turn_id, input_up_to_seq in (("wake-1", 1), ("wake-2", 2)):
+                with client._lock:
+                    client.messages.append(
+                        {
+                            "op": "room.wake",
+                            "room_id": "general",
+                            "participant_id": "codex",
+                            "session_id": "codex",
+                            "turn_id": turn_id,
+                            "input_up_to_seq": input_up_to_seq,
+                            "attachment_ids": [],
+                            "timeout_seconds": 2,
+                        }
+                    )
+                _wait_for(
+                    lambda: len(
+                        [
+                            item
+                            for item in client.commands
+                            if item[0] == "turn.decline"
+                        ]
+                    )
+                    >= input_up_to_seq
+                )
+
+            with client._lock:
+                client.messages.append({"op": "agent.control", "action": "stop"})
+            thread.join(timeout=2)
+
+        self.assertIn("first assigned message", runtime.observed_views[0])
+        self.assertNotIn("later queued message", runtime.observed_views[0])
+        self.assertIn("later queued message", runtime.observed_views[1])
 
     def test_grok_acp_config_selects_structured_runtime(self):
         runtime = runtime_from_config(

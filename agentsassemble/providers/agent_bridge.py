@@ -344,6 +344,7 @@ class RoomAgentBridge:
                 portal.begin_observation(
                     envelope.turn_id,
                     attachment_ids=envelope.attachment_ids,
+                    input_up_to_seq=envelope.input_up_to_seq,
                 )
             except RoomPortalError as error:
                 self._command(
