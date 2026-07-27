@@ -16,7 +16,7 @@ class PostgresRoomSchemaTests(unittest.TestCase):
     def test_current_revision_requires_authority_activation(self) -> None:
         self.assertEqual(
             POSTGRES_ROOM_SCHEMA_REVISION,
-            "0009_resumable_operator_pairing",
+            "0010_vote_ballot_index",
         )
 
     def test_sqlalchemy_url_explicitly_selects_psycopg3(self) -> None:

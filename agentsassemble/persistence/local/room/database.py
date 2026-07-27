@@ -22,7 +22,19 @@ except ImportError:  # pragma: no cover - AgentsAssemble's supported hosts are U
 
 
 ROOM_DATABASE_FILENAME = "rooms.sqlite3"
-ROOM_SCHEMA_VERSION = 5
+ROOM_SCHEMA_VERSION = 6
+VOTE_BALLOT_INDEX_NAME = "idx_events_vote_ballots"
+VOTE_BALLOT_INDEX_STATEMENT = f"""
+CREATE INDEX IF NOT EXISTS {VOTE_BALLOT_INDEX_NAME}
+ON room_events(
+    room_id,
+    visibility,
+    event_type,
+    json_extract(payload_json, '$.vote_id'),
+    seq
+)
+WHERE json_extract(payload_json, '$.message_kind') = 'vote_cast'
+"""
 LEGACY_AUTHORITY_FILES = (
     "room.json",
     "participants.json",
@@ -380,6 +392,7 @@ def _create_schema(connection: sqlite3.Connection) -> None:
         CREATE INDEX IF NOT EXISTS idx_commands_created ON command_results(room_id, created_at DESC);
         """
     )
+    _create_vote_ballot_index(connection)
     _create_attention_schema(connection)
 
 
@@ -403,7 +416,7 @@ def _migrate_schema(connection: sqlite3.Connection) -> None:
         raise RoomDatabaseMigrationError(
             f"Unsupported room database schema version {version}; expected {ROOM_SCHEMA_VERSION}."
         )
-    if version not in {1, 2, 3, 4}:
+    if version not in {1, 2, 3, 4, 5}:
         raise RoomDatabaseMigrationError(f"Unsupported room database schema version {version}.")
     connection.execute("BEGIN IMMEDIATE")
     try:
@@ -457,6 +470,9 @@ def _migrate_schema(connection: sqlite3.Connection) -> None:
             _create_room_settings_schema(connection)
             _backfill_room_settings(connection)
             version = 5
+        if version == 5:
+            _create_vote_ballot_index(connection)
+            version = 6
         connection.execute(
             "INSERT OR REPLACE INTO schema_meta(key, value) VALUES('schema_version', ?)",
             (str(version),),
@@ -470,6 +486,10 @@ def _migrate_schema(connection: sqlite3.Connection) -> None:
 def _create_attention_schema(connection: sqlite3.Connection) -> None:
     for statement in ATTENTION_SCHEMA_STATEMENTS:
         connection.execute(statement)
+
+
+def _create_vote_ballot_index(connection: sqlite3.Connection) -> None:
+    connection.execute(VOTE_BALLOT_INDEX_STATEMENT)
 
 
 def _create_room_settings_schema(connection: sqlite3.Connection) -> None:

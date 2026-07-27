@@ -11,6 +11,7 @@ from agentsassemble.room_database import (
     initialize_room_database,
     open_room_database,
 )
+from agentsassemble.persistence.local.room.database import VOTE_BALLOT_INDEX_NAME
 from agentsassemble.room_store import RoomStore
 
 
@@ -190,6 +191,56 @@ class CanonicalRoomEventStoreTests(unittest.TestCase):
         self.assertEqual(settings_count, 1)
         self.assertEqual(settings["label"], "General")
         self.assertEqual(settings["conversation_mode"], "ordered")
+
+    def test_version_five_database_adds_vote_index_without_losing_events(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            store = RoomStore(root)
+            store.create_room("general", label="General")
+            poll = store.append_event(
+                "general",
+                "message_final",
+                participant_id="host-a",
+                actor_type="human",
+                message_kind="vote",
+                vote_question="Choose",
+                vote_options=["A", "B"],
+            )
+            ballot = store.append_event(
+                "general",
+                "message_final",
+                participant_id="guest-a",
+                actor_type="human",
+                message_kind="vote_cast",
+                vote_id=poll["id"],
+                vote_choice="A",
+            )
+            with closing(open_room_database(store.database_path)) as connection:
+                connection.execute(f"DROP INDEX {VOTE_BALLOT_INDEX_NAME}")
+                connection.execute(
+                    "UPDATE schema_meta SET value = '5' WHERE key = 'schema_version'"
+                )
+
+            initialize_room_database(store.rooms_root, store.database_path)
+
+            with closing(open_room_database(store.database_path)) as connection:
+                version = int(
+                    connection.execute(
+                        "SELECT value FROM schema_meta WHERE key = 'schema_version'"
+                    ).fetchone()["value"]
+                )
+                index_exists = connection.execute(
+                    "SELECT 1 FROM sqlite_master WHERE type = 'index' AND name = ?",
+                    (VOTE_BALLOT_INDEX_NAME,),
+                ).fetchone() is not None
+            vote_events = store.vote_events("general", str(poll["id"]))
+
+        self.assertEqual(version, ROOM_SCHEMA_VERSION)
+        self.assertTrue(index_exists)
+        self.assertEqual(
+            [event["id"] for event in vote_events],
+            [poll["id"], ballot["id"]],
+        )
 
     def test_missing_room_global_settings_row_is_not_silently_recreated(self):
         with tempfile.TemporaryDirectory() as temp_dir:

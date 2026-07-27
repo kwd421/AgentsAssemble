@@ -5,7 +5,12 @@ import unittest
 from contextlib import closing
 from pathlib import Path
 
-from agentsassemble.persistence.local.room.database import open_room_database
+from agentsassemble.persistence.local.room.database import (
+    VISIBLE,
+    VOTE_BALLOT_INDEX_NAME,
+    open_room_database,
+)
+from agentsassemble.persistence.local.room.repository import _VOTE_BALLOT_EVENTS_QUERY
 from agentsassemble.room.repository import RoomRepository
 from agentsassemble.room_store import RoomStore
 from tests.room_repository_contract import RoomRepositoryContractMixin
@@ -61,6 +66,47 @@ class SQLiteRoomRepositoryContractTests(RoomRepositoryContractMixin, unittest.Te
             [event["type"] for event in self.repository.read_events("invalid-room")],
             ["room_created"],
         )
+
+    def test_vote_query_uses_poll_and_sequence_index(self) -> None:
+        self.repository.create_room("vote-plan")
+        poll = self.repository.append_event(
+            "vote-plan",
+            "message_final",
+            participant_id="host-a",
+            actor_type="human",
+            message_kind="vote",
+            vote_question="Choose",
+            vote_options=["A", "B"],
+        )
+        ballot = self.repository.append_event(
+            "vote-plan",
+            "message_final",
+            participant_id="guest-a",
+            actor_type="human",
+            message_kind="vote_cast",
+            vote_id=poll["id"],
+            vote_choice="A",
+        )
+
+        vote_events = self.repository.vote_events("vote-plan", str(poll["id"]))
+        with closing(open_room_database(self.repository.database_path)) as connection:
+            plan = connection.execute(
+                f"EXPLAIN QUERY PLAN {_VOTE_BALLOT_EVENTS_QUERY}",
+                (
+                    "vote-plan",
+                    VISIBLE,
+                    str(poll["id"]),
+                    int(poll["seq"]),
+                ),
+            ).fetchall()
+
+        plan_detail = "\n".join(str(row["detail"]) for row in plan)
+        self.assertEqual(
+            [event["id"] for event in vote_events],
+            [poll["id"], ballot["id"]],
+        )
+        self.assertIn(f"USING INDEX {VOTE_BALLOT_INDEX_NAME}", plan_detail)
+        self.assertNotIn("USE TEMP B-TREE", plan_detail)
 
 
 if __name__ == "__main__":

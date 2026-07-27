@@ -211,6 +211,16 @@ def read_event_by_id(
     return payload_from_row(row, column="payload_json")
 
 
+_VOTE_BALLOT_EVENTS_QUERY = """SELECT payload_json FROM room_events
+                               WHERE room_id = %s
+                                 AND visibility = %s
+                                 AND event_type = 'message_final'
+                                 AND payload_json->>'message_kind' = 'vote_cast'
+                                 AND payload_json->>'vote_id' = %s
+                                 AND seq > %s
+                               ORDER BY seq"""
+
+
 def read_vote_events(
     connection: Connection,
     room_id: str,
@@ -229,19 +239,12 @@ def read_vote_events(
     ):
         return []
     rows = connection.execute(
-        """SELECT payload_json FROM room_events
-           WHERE room_id = %s
-             AND visibility = %s
-             AND event_type = 'message_final'
-             AND seq > %s
-             AND payload_json->>'message_kind' = 'vote_cast'
-             AND payload_json->>'vote_id' = %s
-           ORDER BY seq""",
+        _VOTE_BALLOT_EVENTS_QUERY,
         (
             room_id,
             VISIBLE,
-            int(poll.get("seq") or 0),
             vote_id,
+            int(poll.get("seq") or 0),
         ),
     ).fetchall()
     return [

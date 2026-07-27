@@ -61,6 +61,14 @@ _STORE_LOCKS: dict[str, threading.RLock] = {}
 _EVENT_LISTENERS: dict[str, list[Callable[[dict[str, object]], None]]] = {}
 _INITIALIZED_DATABASES: dict[str, tuple[tuple[int, int], dict[str, object]]] = {}
 _LOGGER = logging.getLogger(__name__)
+_VOTE_BALLOT_EVENTS_QUERY = """SELECT payload_json FROM room_events
+                               WHERE room_id = ?
+                                 AND visibility = ?
+                                 AND event_type = 'message_final'
+                                 AND json_extract(payload_json, '$.message_kind') = 'vote_cast'
+                                 AND json_extract(payload_json, '$.vote_id') = ?
+                                 AND seq > ?
+                               ORDER BY seq"""
 
 
 def _store_lock(output_root: Path) -> threading.RLock:
@@ -783,19 +791,12 @@ class RoomStore:
             ):
                 return []
             rows = connection.execute(
-                """SELECT payload_json FROM room_events
-                   WHERE room_id = ?
-                     AND visibility = ?
-                     AND event_type = 'message_final'
-                     AND seq > ?
-                     AND json_extract(payload_json, '$.message_kind') = 'vote_cast'
-                     AND json_extract(payload_json, '$.vote_id') = ?
-                   ORDER BY seq""",
+                _VOTE_BALLOT_EVENTS_QUERY,
                 (
                     clean_room_id,
                     VISIBLE,
-                    int(poll.get("seq") or 0),
                     clean_vote_id,
+                    int(poll.get("seq") or 0),
                 ),
             ).fetchall()
         return [

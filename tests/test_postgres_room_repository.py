@@ -29,6 +29,9 @@ if _PSYCOPG_AVAILABLE:
         POSTGRES_ROOM_AUTHORITY_ID,
         upgrade_postgres_room_schema,
     )
+    from agentsassemble.persistence.postgres.room.queries import (
+        _VOTE_BALLOT_EVENTS_QUERY,
+    )
 
 
 class _FakeRepositoryConnection:
@@ -311,6 +314,46 @@ class PostgresRoomRepositoryContractTests(RoomRepositoryContractMixin, unittest.
 
         self.assertEqual(sorted(sequences), list(range(2, 42)))
         self.assertEqual(self.repository.latest_event_sequence("general"), 41)
+
+    def test_vote_query_uses_poll_and_sequence_index(self) -> None:
+        self.repository.create_room("vote-plan")
+        poll = self.repository.append_event(
+            "vote-plan",
+            "message_final",
+            participant_id="host-a",
+            participant_type="human",
+            message_kind="vote",
+            vote_question="Choose",
+            vote_options=["A", "B"],
+        )
+        ballot = self.repository.append_event(
+            "vote-plan",
+            "message_final",
+            participant_id="guest-a",
+            participant_type="human",
+            message_kind="vote_cast",
+            vote_id=poll["id"],
+            vote_choice="A",
+        )
+
+        vote_events = self.repository.vote_events("vote-plan", str(poll["id"]))
+        with psycopg.connect(self.test_dsn) as connection:
+            connection.execute("SET LOCAL enable_seqscan = off")
+            plan = connection.execute(
+                f"EXPLAIN (COSTS OFF, FORMAT JSON) {_VOTE_BALLOT_EVENTS_QUERY}",
+                (
+                    "vote-plan",
+                    "visible",
+                    str(poll["id"]),
+                    int(poll["seq"]),
+                ),
+            ).fetchone()[0]
+
+        self.assertEqual(
+            [event["id"] for event in vote_events],
+            [poll["id"], ballot["id"]],
+        )
+        self.assertIn("idx_events_vote_ballots", repr(plan))
 
     def test_command_unit_uses_one_real_pool_checkout_for_transaction_reads(self) -> None:
         self.repository.create_room("command-connection")
