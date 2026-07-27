@@ -455,7 +455,12 @@ class RoomRealtimeController:
         if not clean_room_id:
             raise ValueError("room_id is required.")
         with self._lock:
-            room = self.store.create_room(clean_room_id, label="#general" if clean_room_id == "general" else clean_room_id)
+            room = self.store.room(clean_room_id)
+            if not room:
+                room = self.store.create_room(
+                    clean_room_id,
+                    label="#general" if clean_room_id == "general" else clean_room_id,
+                )
             if clean_room_id not in self._event_listener_removers:
                 self._event_listener_removers[clean_room_id] = self.store.add_event_listener(
                     clean_room_id,

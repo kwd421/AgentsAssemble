@@ -637,6 +637,34 @@ class RoomRealtimeControllerTests(unittest.TestCase):
             [],
         )
 
+    def test_later_room_settings_commands_preserve_a_custom_room_label(self):
+        room_id = "custom-settings-room"
+        identity = {**HOST, "meeting_id": room_id}
+
+        first = self._command(
+            "settings-label",
+            "room.settings.update",
+            {"label": "Pinebrook Live D&D"},
+            identity,
+        )
+        second = self._command(
+            "settings-topic",
+            "room.settings.update",
+            {"topic": "Peril in Pinebrook"},
+            identity,
+        )
+
+        self.assertEqual(first["result"]["room_settings"]["label"], "Pinebrook Live D&D")
+        self.assertEqual(second["result"]["room_settings"]["label"], "Pinebrook Live D&D")
+        self.assertEqual(
+            self.controller.store.room(room_id)["label"],
+            "Pinebrook Live D&D",
+        )
+        self.assertEqual(
+            self.controller.store.room_settings(room_id)["topic"],
+            "Peril in Pinebrook",
+        )
+
     def test_room_settings_command_is_operator_only_and_rejects_noncanonical_updates(self):
         guest = {**HOST, "agent_id": "guest", "operator": False}
         with self.assertRaises(RoomCommandRejected) as forbidden:
