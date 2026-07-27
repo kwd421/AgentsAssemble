@@ -255,7 +255,7 @@ class PublicInviteHttpTests(unittest.TestCase):
         self.assertEqual(admitted["agent_id"], "operator-local")
         self.assertTrue(admitted["operator"])
         self.assertEqual(resumed["session_token"], admitted["session_token"])
-        self.assertEqual(admitted["room_label"], "friend-room")
+        self.assertEqual(admitted["room_label"], "Friend room")
         self.assertEqual(moderator_invite["meeting_id"], "friend-room")
         self.assertEqual(other_device_error.exception.code, 403)
 
@@ -477,7 +477,7 @@ class PublicInviteHttpTests(unittest.TestCase):
                     ) as response:
                         session_payload = json.loads(response.read().decode("utf-8"))
                     self.assertEqual(session_payload["status"], "admitted")
-                    self.assertEqual(session_payload["room_label"], "friend-room")
+                    self.assertEqual(session_payload["room_label"], "Friend room")
                     self.assertIn("room_created_at", session_payload)
 
                     with urlopen(
