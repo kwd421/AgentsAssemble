@@ -79,7 +79,8 @@ class RoomPortalResultTests(unittest.TestCase):
                 },
             )
 
-            results = portal.observation_results("wake-a")
+            batch = portal.observation_result_batch("wake-a")
+            results = list(batch.results)
 
         self.assertEqual(
             results,
@@ -108,6 +109,9 @@ class RoomPortalResultTests(unittest.TestCase):
                 },
             ],
         )
+        self.assertEqual(batch.malformed_count, 1)
+        self.assertEqual(batch.capped_count, 0)
+        self.assertFalse(batch.bytes_truncated)
 
     def test_observation_results_caps_the_number_returned(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:
@@ -131,11 +135,46 @@ class RoomPortalResultTests(unittest.TestCase):
                 ],
             )
 
-            results = portal.observation_results("wake-a")
+            batch = portal.observation_result_batch("wake-a")
+            results = list(batch.results)
 
         self.assertEqual(len(results), 32)
         self.assertEqual(results[0]["details"]["choice"], "choice-0")
         self.assertEqual(results[-1]["details"]["choice"], "choice-31")
+        self.assertEqual(batch.malformed_count, 0)
+        self.assertEqual(batch.capped_count, 8)
+        self.assertFalse(batch.bytes_truncated)
+
+    def test_observation_result_batch_preserves_complete_results_before_byte_cap(
+        self,
+    ) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            portal = RoomPortal(Path(temp_dir) / "portal", participant_id="codex")
+            portal.prepare()
+            portal.begin_observation("wake-a", input_up_to_seq=7)
+            self._append_activity(
+                portal,
+                {
+                    "turn_id": "wake-a",
+                    "operation": "roll_dice",
+                    "details": {
+                        "notation": "1d20",
+                        "rolls": [7],
+                        "modifier": 0,
+                        "total": 7,
+                    },
+                },
+            )
+            with portal.activity_path.open("ab") as stream:
+                stream.write(b'{"turn_id":"wake-a","operation":"roll_dice","pad":"')
+                stream.write(b"x" * (70 * 1024))
+
+            batch = portal.observation_result_batch("wake-a")
+
+        self.assertEqual(len(batch.results), 1)
+        self.assertEqual(batch.results[0]["details"]["total"], 7)
+        self.assertTrue(batch.bytes_truncated)
+        self.assertEqual(batch.diagnostic_count, 1)
 
     @staticmethod
     def _append_activity(

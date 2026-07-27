@@ -7,6 +7,7 @@ from agentsassemble.providers.room_random import (
     choose_random,
     roll_dice,
 )
+from agentsassemble.room.system_results import validate_room_system_result
 
 
 class RoomRandomTests(unittest.TestCase):
@@ -59,6 +60,27 @@ class RoomRandomTests(unittest.TestCase):
             with self.subTest(options=options):
                 with self.assertRaises(RoomRandomError):
                     choose_random(options)
+
+    def test_generated_results_satisfy_the_canonical_room_contract(self) -> None:
+        dice = roll_dice("d20", randbelow=lambda _sides: 6)
+        choice = choose_random(
+            ["north\npath", "south"],
+            randbelow=lambda _count: 0,
+        )
+
+        validated_dice = validate_room_system_result(
+            result_id="result-11111111111111111111111111111111",
+            operation="roll_dice",
+            details=dice,
+        )
+        validated_choice = validate_room_system_result(
+            result_id="result-22222222222222222222222222222222",
+            operation="choose_random",
+            details=choice,
+        )
+
+        self.assertEqual(validated_dice.details, dice)
+        self.assertEqual(validated_choice.details, choice)
 
 
 if __name__ == "__main__":

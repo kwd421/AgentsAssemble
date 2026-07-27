@@ -440,8 +440,22 @@ class RoomAgentBridge:
                     on_delta=on_private_delta,
                     on_activity=on_activity,
                 )
-            except Exception:
-                self._publish_observation_results(portal, turn_id)
+            except Exception as provider_error:
+                try:
+                    self._publish_observation_results(portal, turn_id)
+                except Exception as publish_error:
+                    print(
+                        "Agent Bridge room result publication also failed "
+                        f"({getattr(publish_error, 'code', type(publish_error).__name__)}); "
+                        "preserving the provider output failure.",
+                        file=sys.stderr,
+                        flush=True,
+                    )
+                    if hasattr(provider_error, "add_note"):
+                        provider_error.add_note(
+                            "Room result publication also failed: "
+                            f"{getattr(publish_error, 'code', type(publish_error).__name__)}"
+                        )
                 raise
             self._publish_observation_results(portal, turn_id)
             result = ProviderTurnResult.parse(raw_result)
@@ -531,7 +545,19 @@ class RoomAgentBridge:
         portal: RoomPortal,
         turn_id: str,
     ) -> None:
-        for room_result in portal.observation_results(turn_id):
+        batch = portal.observation_result_batch(turn_id)
+        if batch.diagnostic_count:
+            with self._diagnostics_lock:
+                self._activity_invalid_count += batch.diagnostic_count
+            print(
+                "Agent Bridge bounded room result activity "
+                f"(malformed={batch.malformed_count}, "
+                f"capped={batch.capped_count}, "
+                f"bytes_truncated={batch.bytes_truncated}).",
+                file=sys.stderr,
+                flush=True,
+            )
+        for room_result in batch.results:
             result_id = clean_lobby_text(room_result.get("result_id"), limit=64)
             self._command(
                 "room.result.publish",

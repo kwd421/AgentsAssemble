@@ -13,7 +13,11 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Iterable
 
-from agentsassemble.room.text import clean_room_text, has_room_visible_text
+from agentsassemble.room.system_results import (
+    RoomSystemResultError,
+    validate_room_system_result,
+)
+from agentsassemble.room.text import clean_room_text
 
 
 VIRTUAL_ROOM_VIEW_PATH = "/agentsassemble-room/current.md"
@@ -23,10 +27,6 @@ _ATTACHMENT_ID = re.compile(r"^[A-Za-z0-9_-]{8,64}$")
 _DIRECT_OUTBOX_PATH = re.compile(
     rf"^{re.escape(VIRTUAL_ROOM_DIRECT_OUTBOX_PREFIX)}(?P<target>[A-Za-z0-9_.-]{{1,128}})\.txt$"
 )
-_NORMALIZED_DICE_RESULT = re.compile(
-    r"^(?P<count>\d{1,3})d(?P<sides>\d{1,4})(?P<modifier>[+-]\d{1,5})?$"
-)
-_ROOM_RESULT_ID = re.compile(r"^result-[a-f0-9]{32}$")
 _MAX_ROOM_MESSAGE_CHARS = 12_000
 _MAX_OBSERVATION_RESULTS = 32
 _MAX_OBSERVATION_RESULT_BYTES = 64 * 1024
@@ -137,6 +137,22 @@ class RoomPortalError(RuntimeError):
 class RoomPublication:
     content: str = ""
     target_agent_id: str = ""
+
+
+@dataclass(frozen=True)
+class RoomObservationResultBatch:
+    results: tuple[dict[str, object], ...] = ()
+    malformed_count: int = 0
+    capped_count: int = 0
+    bytes_truncated: bool = False
+
+    @property
+    def diagnostic_count(self) -> int:
+        return (
+            self.malformed_count
+            + self.capped_count
+            + int(self.bytes_truncated)
+        )
 
 
 class RoomPortal:
@@ -307,49 +323,71 @@ class RoomPortal:
 
     def observation_results(self, turn_id: str) -> list[dict[str, object]]:
         """Return bounded official random-tool results recorded by this observation."""
+        return list(self.observation_result_batch(turn_id).results)
+
+    def observation_result_batch(self, turn_id: str) -> RoomObservationResultBatch:
+        """Return valid results plus bounded diagnostics for discarded activity."""
         clean_turn_id = clean_room_text(turn_id, limit=128)
         if not clean_turn_id:
-            return []
+            return RoomObservationResultBatch()
         with self._lock:
             try:
                 turn = json.loads(self.turn_path.read_text(encoding="utf-8"))
             except (OSError, json.JSONDecodeError):
-                return []
+                return RoomObservationResultBatch()
             if (
                 not isinstance(turn, dict)
                 or clean_room_text(turn.get("turn_id"), limit=128)
                 != clean_turn_id
             ):
-                return []
+                return RoomObservationResultBatch()
             offset = turn.get("activity_offset")
             if isinstance(offset, bool) or not isinstance(offset, int) or offset < 0:
-                return []
+                return RoomObservationResultBatch()
             try:
                 with self.activity_path.open("rb") as stream:
                     stream.seek(0, os.SEEK_END)
                     if offset > stream.tell():
-                        return []
+                        return RoomObservationResultBatch()
                     stream.seek(offset)
                     content = stream.read(_MAX_OBSERVATION_RESULT_BYTES + 1)
             except OSError:
-                return []
-        if len(content) > _MAX_OBSERVATION_RESULT_BYTES:
+                return RoomObservationResultBatch()
+        bytes_truncated = len(content) > _MAX_OBSERVATION_RESULT_BYTES
+        if bytes_truncated:
             content = content[:_MAX_OBSERVATION_RESULT_BYTES]
             content = content.rsplit(b"\n", 1)[0]
         results: list[dict[str, object]] = []
+        malformed_count = 0
+        capped_count = 0
         for line in content.splitlines():
-            if len(results) >= _MAX_OBSERVATION_RESULTS:
-                break
-            if not line or len(line) > _MAX_OBSERVATION_RESULT_LINE_BYTES:
+            if not line:
+                continue
+            if len(line) > _MAX_OBSERVATION_RESULT_LINE_BYTES:
+                malformed_count += 1
                 continue
             try:
                 record = json.loads(line)
             except (UnicodeDecodeError, json.JSONDecodeError):
+                malformed_count += 1
                 continue
-            result = _bounded_observation_result(record, turn_id=clean_turn_id)
-            if result is not None:
+            result, malformed = _bounded_observation_result(
+                record,
+                turn_id=clean_turn_id,
+            )
+            malformed_count += int(malformed)
+            if result is None:
+                continue
+            if len(results) < _MAX_OBSERVATION_RESULTS:
                 results.append(result)
-        return results
+            else:
+                capped_count += 1
+        return RoomObservationResultBatch(
+            results=tuple(results),
+            malformed_count=malformed_count,
+            capped_count=capped_count,
+            bytes_truncated=bytes_truncated,
+        )
 
     def consume_publication(self, turn_id: str) -> str:
         return self.consume_publication_result(turn_id).content
@@ -817,141 +855,34 @@ def _bounded_observation_result(
     record: object,
     *,
     turn_id: str,
-) -> dict[str, object] | None:
-    if (
-        not isinstance(record, dict)
-        or clean_room_text(record.get("turn_id"), limit=128) != turn_id
-    ):
-        return None
-    result_id = clean_room_text(record.get("result_id"), limit=64)
-    if _ROOM_RESULT_ID.fullmatch(result_id) is None:
-        return None
-    operation = record.get("operation")
-    details = record.get("details")
-    if not isinstance(details, dict):
-        return None
-    if operation == "roll_dice":
-        safe_details = _bounded_dice_result(details)
-    elif operation == "choose_random":
-        safe_details = _bounded_choice_result(details)
-    else:
-        return None
-    if safe_details is None:
-        return None
-    return {
-        "result_id": result_id,
-        "operation": operation,
-        "details": safe_details,
-    }
-
-
-def _bounded_dice_result(
-    details: dict[str, object],
-) -> dict[str, object] | None:
-    notation_value = details.get("notation")
-    if not isinstance(notation_value, str) or len(notation_value) > 32:
-        return None
-    match = _NORMALIZED_DICE_RESULT.fullmatch(notation_value)
-    if match is None:
-        return None
-    count = int(match.group("count"))
-    sides = int(match.group("sides"))
-    notation_modifier = int(match.group("modifier") or 0)
-    if (
-        not 1 <= count <= 100
-        or not 2 <= sides <= 1000
-        or not -100_000 <= notation_modifier <= 100_000
-    ):
-        return None
-    normalized = f"{count}d{sides}"
-    if notation_modifier:
-        normalized += f"{notation_modifier:+d}"
-    if notation_value != normalized:
-        return None
-    rolls_value = details.get("rolls")
-    if not isinstance(rolls_value, list) or len(rolls_value) != count:
-        return None
-    if any(
-        isinstance(value, bool)
-        or not isinstance(value, int)
-        or value < 1
-        or value > sides
-        for value in rolls_value
-    ):
-        return None
-    modifier = details.get("modifier")
-    total = details.get("total")
-    if (
-        isinstance(modifier, bool)
-        or not isinstance(modifier, int)
-        or modifier != notation_modifier
-        or isinstance(total, bool)
-        or not isinstance(total, int)
-        or total != sum(rolls_value) + modifier
-    ):
-        return None
-    safe: dict[str, object] = {
-        "notation": normalized,
-        "rolls": list(rolls_value),
-        "modifier": modifier,
-        "total": total,
-    }
-    reason = _bounded_result_reason(details.get("reason"))
-    if reason:
-        safe["reason"] = reason
-    return safe
-
-
-def _bounded_choice_result(
-    details: dict[str, object],
-) -> dict[str, object] | None:
-    choice_value = details.get("choice")
-    index = details.get("index")
-    option_count = details.get("option_count")
-    options_value = details.get("options")
-    if not isinstance(choice_value, str):
-        return None
-    choice = clean_room_text(choice_value, limit=200)
-    if (
-        not isinstance(options_value, list)
-        or len(options_value) != option_count
-        or any(not isinstance(option, str) for option in options_value)
-    ):
-        return None
-    options = [
-        clean_room_text(option, limit=200)
-        for option in options_value
-    ]
-    if (
-        not choice
-        or isinstance(index, bool)
-        or not isinstance(index, int)
-        or isinstance(option_count, bool)
-        or not isinstance(option_count, int)
-        or not 2 <= option_count <= 50
-        or not 0 <= index < option_count
-        or any(
-            not option or not has_room_visible_text(option)
-            for option in options
+) -> tuple[dict[str, object] | None, bool]:
+    if not isinstance(record, dict):
+        return None, True
+    if clean_room_text(record.get("turn_id"), limit=128) != turn_id:
+        return None, False
+    operation = clean_room_text(record.get("operation"), limit=32)
+    is_result_record = (
+        "result_id" in record
+        or operation in {"roll_dice", "choose_random"}
+    )
+    if not is_result_record:
+        return None, False
+    try:
+        validated = validate_room_system_result(
+            result_id=record.get("result_id"),
+            operation=operation,
+            details=record.get("details"),
         )
-        or not has_room_visible_text(choice)
-        or choice != options[index]
-    ):
-        return None
-    safe: dict[str, object] = {
-        "choice": choice,
-        "index": index,
-        "option_count": option_count,
-        "options": options,
-    }
-    reason = _bounded_result_reason(details.get("reason"))
-    if reason:
-        safe["reason"] = reason
-    return safe
-
-
-def _bounded_result_reason(value: object) -> str:
-    return clean_room_text(value, limit=200) if isinstance(value, str) else ""
+    except RoomSystemResultError:
+        return None, True
+    return (
+        {
+            "result_id": validated.result_id,
+            "operation": validated.operation,
+            "details": validated.details,
+        },
+        False,
+    )
 
 
 def direct_outbox_target(path: object) -> str:
@@ -976,6 +907,9 @@ def _safe_int(value: object, default: int) -> int:
         return int(default)
 
 
+# This file is copied into provider-private state and must run without importing
+# the AgentsAssemble package. The bridge and room authority independently
+# revalidate its activity records through validate_room_system_result.
 _HELPER_SCRIPT = r"""#!/usr/bin/env python3
 import json
 import os
@@ -1106,6 +1040,7 @@ def _windows_helper_wrapper() -> str:
 
 __all__ = [
     "ROOM_SESSION_ORIENTATION",
+    "RoomObservationResultBatch",
     "RoomPortal",
     "RoomPortalError",
     "RoomPublication",
