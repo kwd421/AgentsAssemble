@@ -68,6 +68,7 @@ import RoomSettingsModal from "./views/components/RoomSettingsModal";
 import SideChatDock from "./views/components/SideChatDock";
 import UserPanel from "./views/components/UserPanel";
 import { roomAppearanceStyle } from "./lib/roomAppearance";
+import { roomMentionables } from "./lib/roomMentionables";
 import {
   SIDEBAR_WIDTH_MAX,
   SIDEBAR_WIDTH_MIN,
@@ -160,24 +161,6 @@ type RoomSettingsState = {
 } | null;
 
 type RightPanelMode = "room-info" | "side-chat";
-
-function appendMentionableName(names: string[], seen: Set<string>, value?: string) {
-  const cleanName = String(value || "").trim();
-  const key = cleanName.toLowerCase();
-  if (!cleanName || seen.has(key)) return;
-  seen.add(key);
-  names.push(cleanName);
-}
-
-function appendAgentMentionables(names: string[], seen: Set<string>, agent: LiveAgent) {
-  appendMentionableName(names, seen, agent.display_name);
-  appendMentionableName(names, seen, agent.agent_id);
-}
-
-function appendMemberMentionables(names: string[], seen: Set<string>, member: RoomMember) {
-  appendMentionableName(names, seen, member.display_name);
-  appendMentionableName(names, seen, member.participant_id);
-}
 
 const CHANNELS: ChannelConfig[] = [
   { id: "lobby", label: "general", icon: Hash },
@@ -878,15 +861,13 @@ export default function App() {
     void refreshFriendsDirectory();
   }, [refreshFriendsDirectory, refreshSessionAndMembers]);
   const scopedMentionables = useMemo(
-    () => {
-      const seen = new Set<string>();
-      const names: string[] = [];
-      appendMentionableName(names, seen, "나");
-      scopedAgents.forEach((agent) => appendAgentMentionables(names, seen, agent));
-      activeRoomMembers.forEach((member) => appendMemberMentionables(names, seen, member));
-      return names;
-    },
-    [activeRoomMembers, scopedAgents]
+    () =>
+      roomMentionables({
+        viewerParticipantId: guestSession?.agentId || "operator-local",
+        agents: scopedAgents,
+        members: activeRoomMembers,
+      }),
+    [activeRoomMembers, guestSession?.agentId, scopedAgents]
   );
   const scopedOnlineCount = scopedAgents.filter((agent) => isActivePresence(agent.status)).length;
   const typingIndicators = useMemo(
