@@ -43,6 +43,7 @@ class RoomRandomTests(unittest.TestCase):
                 "choice": "negotiate",
                 "index": 1,
                 "option_count": 3,
+                "options": ["scout", "negotiate", "retreat"],
             },
         )
 
@@ -51,6 +52,7 @@ class RoomRandomTests(unittest.TestCase):
             [],
             ["only"],
             ["north", ""],
+            ["\u200b", "\u200c"],
             "north",
             [str(index) for index in range(51)],
         ):

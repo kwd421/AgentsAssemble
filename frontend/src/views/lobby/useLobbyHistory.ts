@@ -82,7 +82,6 @@ export function useLobbyHistory({
 
   const visibleEvents = useMemo(() => {
     const roomEvents = events
-      .filter((event) => event.kind !== "vote_cast")
       .filter(
         (event) =>
           !event.flow_meeting_id ||

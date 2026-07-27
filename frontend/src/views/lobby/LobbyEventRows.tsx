@@ -208,7 +208,8 @@ export function LobbyMessageRow({
   voteCard?: ReactNode;
   showHeader?: boolean;
 }) {
-  const systemLike = event.kind === "system" || event.kind === "flow_event";
+  const systemLike =
+    event.kind === "system" || event.kind === "flow_event" || event.kind === "vote_cast";
   return (
     <div
       className={`dc-message grid grid-cols-[40px_minmax(0,1fr)] gap-3 px-4 ${

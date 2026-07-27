@@ -65,6 +65,8 @@ export interface RoomEvent {
   vote_id?: string;
   vote_question?: string;
   vote_options?: string[];
+  vote_duration_seconds?: number;
+  vote_deadline_at?: string;
   vote_choice?: string;
   visibility?: string;
   phase?: string;

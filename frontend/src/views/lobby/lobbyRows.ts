@@ -36,7 +36,7 @@ export function buildLobbyRows(events: LobbyEvent[]): LobbyRow[] {
   let previousTime = 0;
   let thinkingBuffer: LobbyEvent[] = [];
   const authorKey = (event: LobbyEvent) =>
-    event.kind === "system" || event.kind === "flow_event"
+    event.kind === "system" || event.kind === "flow_event" || event.kind === "vote_cast"
       ? "::system"
       : event.actor_id || event.name || "";
   const timestamp = (iso: string) => Date.parse(iso || "") || 0;

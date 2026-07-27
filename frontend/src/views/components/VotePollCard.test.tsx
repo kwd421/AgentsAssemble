@@ -1,10 +1,18 @@
-import { fireEvent, render, screen, waitFor } from "@testing-library/react";
-import { describe, expect, it, vi } from "vitest";
+import {
+  cleanup,
+  fireEvent,
+  render,
+  screen,
+  waitFor,
+} from "@testing-library/react";
+import { afterEach, describe, expect, it, vi } from "vitest";
 
 import { RoomSocketProvider } from "../../RoomSocketContext";
 import type { LobbyEvent } from "../../api";
 import type { RoomSocketHandle } from "../../roomSocketClient";
 import VotePollCard from "./VotePollCard";
+
+afterEach(cleanup);
 
 function pollEvent(): LobbyEvent {
   return {
@@ -22,6 +30,7 @@ function pollEvent(): LobbyEvent {
 
 describe("VotePollCard", () => {
   it("reads and casts votes only through the canonical room socket", async () => {
+    const deadlineAt = new Date(Date.now() + 5 * 60_000).toISOString();
     const command = vi.fn().mockResolvedValue({
       op: "ack",
       request_id: "summary",
@@ -31,6 +40,8 @@ describe("VotePollCard", () => {
         vote_id: "vote-1",
         question: "어느 길로 갈까?",
         options: ["북쪽", "남쪽"],
+        vote_duration_seconds: 300,
+        vote_deadline_at: deadlineAt,
         created_by: "호스트",
         created_at: "2026-01-01T00:00:00Z",
         tallies: { 북쪽: 0, 남쪽: 0 },
@@ -53,6 +64,7 @@ describe("VotePollCard", () => {
     );
 
     expect(await screen.findByText("어느 길로 갈까?")).toBeTruthy();
+    expect(await screen.findByText(/^남은 시간 /)).toBeTruthy();
     await waitFor(() =>
       expect(command).toHaveBeenCalledWith("room.vote.summary", {
         vote_id: "vote-1",
@@ -68,6 +80,47 @@ describe("VotePollCard", () => {
         voteChoice: "남쪽",
       })
     );
+  });
+
+  it("shows an ended vote and does not send another ballot", async () => {
+    const command = vi.fn().mockResolvedValue({
+      op: "ack",
+      request_id: "summary-ended",
+      accepted: true,
+      action: "room.vote.summary",
+      result: {
+        vote_id: "vote-1",
+        question: "어느 길로 갈까?",
+        options: ["북쪽", "남쪽"],
+        vote_duration_seconds: 60,
+        vote_deadline_at: "2000-01-01T00:01:00Z",
+        created_by: "호스트",
+        created_at: "2000-01-01T00:00:00Z",
+        tallies: { 북쪽: 1, 남쪽: 0 },
+        voters: { 북쪽: ["호스트"], 남쪽: [] },
+        total_votes: 1,
+      },
+    });
+    const say = vi.fn().mockResolvedValue({ events: [] });
+    const socket: RoomSocketHandle = {
+      close: vi.fn(),
+      ready: () => true,
+      command,
+      say,
+      historyBefore: vi.fn(),
+    };
+    render(
+      <RoomSocketProvider socket={socket}>
+        <VotePollCard event={pollEvent()} voterName="호스트" />
+      </RoomSocketProvider>
+    );
+
+    expect(await screen.findByText("마감됨")).toBeTruthy();
+    const north = screen.getByText(/북쪽/).closest("button") as HTMLButtonElement;
+    expect(north.disabled).toBe(true);
+    fireEvent.click(north);
+    expect(say).not.toHaveBeenCalled();
+    expect(screen.getByText("투표가 마감되었습니다")).toBeTruthy();
   });
 
   it("does not attempt a vote when the canonical room socket is unavailable", async () => {

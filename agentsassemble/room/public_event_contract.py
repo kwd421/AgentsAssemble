@@ -69,6 +69,8 @@ class PublicRoomEvent(TypedDict):
     vote_id: NotRequired[str]
     vote_question: NotRequired[str]
     vote_options: NotRequired[list[str]]
+    vote_duration_seconds: NotRequired[int]
+    vote_deadline_at: NotRequired[str]
     vote_choice: NotRequired[str]
     visibility: NotRequired[str]
     phase: NotRequired[str]

@@ -434,11 +434,16 @@ class RoomAgentBridge:
                     wait_for_ack=False,
                 )
 
-            raw_result = self.runtime.read_output(
-                timeout_seconds=wake.timeout_seconds,
-                on_delta=on_private_delta,
-                on_activity=on_activity,
-            )
+            try:
+                raw_result = self.runtime.read_output(
+                    timeout_seconds=wake.timeout_seconds,
+                    on_delta=on_private_delta,
+                    on_activity=on_activity,
+                )
+            except Exception:
+                self._publish_observation_results(portal, turn_id)
+                raise
+            self._publish_observation_results(portal, turn_id)
             result = ProviderTurnResult.parse(raw_result)
             observed_through_seq = portal.observation_receipt(turn_id)
             publication = portal.consume_publication_result(turn_id)
@@ -520,6 +525,25 @@ class RoomAgentBridge:
             with self._worker_lock:
                 if self._worker is threading.current_thread():
                     self._worker = None
+
+    def _publish_observation_results(
+        self,
+        portal: RoomPortal,
+        turn_id: str,
+    ) -> None:
+        for room_result in portal.observation_results(turn_id):
+            result_id = clean_lobby_text(room_result.get("result_id"), limit=64)
+            self._command(
+                "room.result.publish",
+                {
+                    "turn_id": turn_id,
+                    "result_id": result_id,
+                    "operation": room_result["operation"],
+                    "details": room_result["details"],
+                },
+                request_id=f"bridge-room-result-{result_id}",
+                retry_on_timeout=True,
+            )
 
     def _run_turn(self, assignment: TurnAssignmentEnvelope) -> None:
         turn_id = assignment.turn_id
@@ -681,9 +705,11 @@ class RoomAgentBridge:
         payload: dict[str, object],
         *,
         wait_for_ack: bool = True,
+        request_id: str = "",
+        retry_on_timeout: bool = False,
     ) -> dict[str, object] | None:
         if not wait_for_ack:
-            request_id = self._report_tracker.new_request_id()
+            request_id = request_id or self._report_tracker.new_request_id()
             self.client.command(action, payload, request_id=request_id)
             return None
         pump = self._pump_report_messages if threading.current_thread() is self._run_thread else None
@@ -693,6 +719,8 @@ class RoomAgentBridge:
             pump=pump,
             is_closed=lambda: self.client.closed,
             wait_interval_seconds=self.receive_sleep_seconds,
+            request_id=request_id,
+            retry_on_timeout=retry_on_timeout,
         )
 
     def _pump_report_messages(self) -> bool:

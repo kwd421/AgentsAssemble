@@ -5,7 +5,7 @@ import unittest
 from contextlib import closing
 from pathlib import Path
 
-from agentsassemble.room_database import open_room_database
+from agentsassemble.persistence.local.room.database import open_room_database
 from agentsassemble.room.repository import RoomRepository
 from agentsassemble.room_store import RoomStore
 from tests.room_repository_contract import RoomRepositoryContractMixin

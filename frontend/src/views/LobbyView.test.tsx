@@ -56,7 +56,7 @@ function activeDelta(message: string): LobbyEvent {
 }
 
 function renderLobby(events: LobbyEvent[], typingIndicators: RoomTypingIndicator[]) {
-  render(
+  return render(
     <LobbyView
       activeRoom={room}
       agents={[]}
@@ -71,6 +71,23 @@ function renderLobby(events: LobbyEvent[], typingIndicators: RoomTypingIndicator
       })}
     />
   );
+}
+
+function voteResult(id: string, voter: string, choice: string): LobbyEvent {
+  return {
+    id,
+    kind: "vote_cast",
+    name: "투표",
+    message: `🗳️ ${voter}의 선택: 「${choice}」`,
+    side: "other",
+    created_at: "2026-07-26T01:00:00Z",
+    actor_id: `voter-${id}`,
+    actor_type: "human",
+    flow_meeting_id: "room-a",
+    flow_action: "message_final",
+    vote_id: "vote-1",
+    vote_choice: choice,
+  };
 }
 
 describe("LobbyView active provider turn", () => {
@@ -163,5 +180,25 @@ describe("LobbyView active provider turn", () => {
       Boolean(details.compareDocumentPosition(finalAnswer) & Node.DOCUMENT_POSITION_FOLLOWING)
     ).toBe(true);
     expect(details.textContent).not.toContain("단계");
+  });
+});
+
+describe("LobbyView vote results", () => {
+  it("shows canonical ballots as one grouped sequence of system-styled rows", async () => {
+    const { container } = renderLobby(
+      [
+        voteResult("ballot-a", "민지", "남쪽"),
+        voteResult("ballot-b", "준호", "북쪽"),
+      ],
+      []
+    );
+
+    expect(await screen.findByText("🗳️ 민지의 선택: 「남쪽」")).toBeTruthy();
+    expect(screen.getByText("🗳️ 준호의 선택: 「북쪽」")).toBeTruthy();
+
+    const firstRow = container.querySelector('[data-room-event-id="ballot-a"]');
+    const secondRow = container.querySelector('[data-room-event-id="ballot-b"]');
+    expect(firstRow?.querySelector(".dc-message-avatar.system")).toBeTruthy();
+    expect(secondRow?.querySelector(".dc-message-avatar.system")).toBeNull();
   });
 });

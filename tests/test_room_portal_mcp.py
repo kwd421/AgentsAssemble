@@ -1,6 +1,7 @@
 import tempfile
 import unittest
 from pathlib import Path
+import re
 
 import anyio
 from mcp import ClientSession
@@ -22,6 +23,7 @@ class RoomPortalMcpTests(unittest.TestCase):
                 room_portal_mcp_settings(portal.root),
             )
             receipt = portal.observation_receipt("wake-a")
+            room_results = portal.observation_results("wake-a")
             publication = portal.consume_publication_result("wake-a")
             activity = portal.activity_path.read_text(encoding="utf-8")
 
@@ -43,6 +45,21 @@ class RoomPortalMcpTests(unittest.TestCase):
         self.assertEqual(publication.target_agent_id, "sonnet")
         self.assertIn('"operation": "roll_dice"', activity)
         self.assertIn('"operation": "choose_random"', activity)
+        self.assertEqual(
+            [result["operation"] for result in room_results],
+            ["roll_dice", "choose_random"],
+        )
+        self.assertTrue(
+            all(
+                re.fullmatch(r"result-[a-f0-9]{32}", str(result["result_id"]))
+                for result in room_results
+            )
+        )
+        self.assertEqual(room_results[0]["details"]["notation"], "2d6+1")
+        self.assertEqual(room_results[0]["details"]["reason"], "damage")
+        self.assertEqual(room_results[1]["details"]["reason"], "route")
+        self.assertEqual(room_results[1]["details"]["options"], ["north", "south"])
+        self.assertIn(room_results[1]["details"]["choice"], {"north", "south"})
 
     async def _call_tools(self, settings):
         parameters = StdioServerParameters(

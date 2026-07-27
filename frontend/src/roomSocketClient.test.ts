@@ -108,6 +108,54 @@ describe("canonical room socket client", () => {
     handle.close();
   });
 
+  it("forwards vote duration on the canonical message command", async () => {
+    const sockets: FakeWebSocket[] = [];
+    const handle = openRoomSocket(
+      { kind: "host", meetingId: "general" },
+      ["room_events"],
+      {},
+      {
+        getTicket: async () => "ticket-vote",
+        createSocket: () => {
+          const socket = new FakeWebSocket();
+          sockets.push(socket);
+          return socket as unknown as WebSocket;
+        },
+      }
+    );
+    await flushPromises();
+    sockets[0].open();
+
+    const pending = handle.say({
+      message: "",
+      kind: "vote",
+      voteQuestion: "어느 길로 갈까요?",
+      voteOptions: ["북쪽", "남쪽"],
+      voteDurationSeconds: 900,
+    });
+    const command = sockets[0].sent[1];
+    expect(command).toMatchObject({
+      op: "command",
+      action: "message.send",
+      payload: {
+        content: "",
+        kind: "vote",
+        vote_question: "어느 길로 갈까요?",
+        vote_options: ["북쪽", "남쪽"],
+        vote_duration_seconds: 900,
+      },
+    });
+
+    sockets[0].receive({
+      op: "ack",
+      accepted: true,
+      request_id: command.request_id,
+      action: "message.send",
+    });
+    await expect(pending).resolves.toEqual({ events: [] });
+    handle.close();
+  });
+
   it("reconnects from the last durable sequence after backpressure resync", async () => {
     vi.useFakeTimers();
     const sockets: FakeWebSocket[] = [];

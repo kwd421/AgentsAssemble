@@ -1,4 +1,11 @@
-import { useRef, useState, type ChangeEvent, type KeyboardEvent } from "react";
+import {
+  useCallback,
+  useEffect,
+  useRef,
+  useState,
+  type ChangeEvent,
+  type KeyboardEvent,
+} from "react";
 import type { LucideIcon } from "lucide-react";
 import { AtSign, Gift, Paperclip, Send, Smile, Sparkles, Sticker, X } from "lucide-react";
 import {
@@ -20,6 +27,9 @@ import type { RoomPostingMode } from "../../lib/roomGuestPosting";
 import type { Mentionable } from "../../lib/mentionComposerModel";
 import { parseVoteCommand } from "../../lib/votePoll";
 import MentionInput from "./MentionInput";
+import VoteComposerDialog, {
+  type VoteComposerValue,
+} from "./VoteComposerDialog";
 
 type ComposerAccessory = {
   id: "gift" | "gif" | "sticker" | "apps";
@@ -91,12 +101,18 @@ export default function LobbyComposer({
   const [uploading, setUploading] = useState(false);
   const [error, setError] = useState("");
   const [accessoryNotice, setAccessoryNotice] = useState("");
+  const [voteDialogOpen, setVoteDialogOpen] = useState(false);
   const roomSocket = useRoomSocket();
   const disabled = Boolean(disabledReason);
   const canUploadAttachments =
     postingMode === "host" ||
     (postingMode === "guest" && Boolean(roomSessionToken.trim()));
   const canSubmit = Boolean(message.trim() || pendingAttachments.length) && !busy && !uploading && !disabled;
+  const closeVoteDialog = useCallback(() => setVoteDialogOpen(false), []);
+
+  useEffect(() => {
+    setVoteDialogOpen(false);
+  }, [meetingId]);
 
   function insertText(text: string) {
     const input = inputRef.current;
@@ -167,6 +183,11 @@ export default function LobbyComposer({
     const draftAttachments = pendingAttachments;
     const trimmed = draftMessage.trim();
     if (!trimmed && draftAttachments.length === 0) return;
+    if (trimmed.toLocaleLowerCase() === "/vote") {
+      setError("");
+      setVoteDialogOpen(true);
+      return;
+    }
 
     setBusy(true);
     setError("");
@@ -218,6 +239,48 @@ export default function LobbyComposer({
     }
   }
 
+  async function submitVote(value: VoteComposerValue) {
+    if (disabled || busy || uploading) {
+      throw new Error("지금은 투표를 만들 수 없습니다.");
+    }
+    setBusy(true);
+    setError("");
+    try {
+      if (postingMode === "guest" && !roomSessionToken) {
+        throw new Error("투표를 만들려면 유효한 초대 세션이 필요합니다.");
+      }
+      if (!roomSocket?.ready()) {
+        throw new RoomSocketSayError(
+          "방 연결이 준비되지 않았습니다. 연결된 뒤 다시 보내 주세요.",
+          "socket_not_ready"
+        );
+      }
+      const payload = await roomSocket.say({
+        message: "",
+        attachments: pendingAttachments,
+        kind: "vote",
+        voteQuestion: value.question,
+        voteOptions: value.options,
+        voteDurationSeconds: value.durationSeconds,
+      });
+      const cleared = lobbySubmitSuccessDraft<LobbyAttachmentRef>();
+      setMessage(cleared.message);
+      setPendingAttachments(cleared.pendingAttachments);
+      onPosted(payload.events || (payload.event ? [payload.event] : []));
+    } catch (errorValue) {
+      if (
+        isUnauthorizedApiError(errorValue) ||
+        (errorValue instanceof RoomSocketSayError &&
+          errorValue.category === "session_revoked")
+      ) {
+        onGuestSessionExpired?.();
+      }
+      throw errorValue;
+    } finally {
+      setBusy(false);
+    }
+  }
+
   function handleKeyDown(event: KeyboardEvent<HTMLTextAreaElement>) {
     if (event.key !== "Enter" || event.nativeEvent.isComposing) return;
     if (event.shiftKey) return;
@@ -226,7 +289,8 @@ export default function LobbyComposer({
   }
 
   return (
-    <section className="dc-composer-shell">
+    <>
+      <section className="dc-composer-shell">
       {error && (
         <p className="mb-2 rounded border border-danger/30 bg-danger/10 px-3 py-2 text-[12px] font-semibold text-danger preserve-words">
           {error}
@@ -352,6 +416,13 @@ export default function LobbyComposer({
           <Send size={17} />
         </button>
       </div>
-    </section>
+      </section>
+      {voteDialogOpen && (
+        <VoteComposerDialog
+          onClose={closeVoteDialog}
+          onSubmit={submitVote}
+        />
+      )}
+    </>
   );
 }

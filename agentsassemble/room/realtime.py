@@ -682,6 +682,12 @@ class RoomRealtimeController:
                     room_id,
                     participant_id,
                 )
+                room_events = (
+                    self.store.read_events(room_id)
+                    if clean_lobby_text(payload.get("kind"), limit=64)
+                    == "vote_cast"
+                    else []
+                )
                 return self._execute_durable_command(
                     identity,
                     room_id,
@@ -693,6 +699,7 @@ class RoomRealtimeController:
                         payload,
                         unit=unit,
                         compatibility_muted=compatibility_muted,
+                        room_events=room_events,
                     ),
                 )
         if action == "agent.configure" and not AGENT_RUNTIME_PROFILE_KEYS.intersection(payload):
@@ -800,6 +807,21 @@ class RoomRealtimeController:
                     participant,
                 )
                 return ack
+        if action == "room.result.publish":
+            self._require_bridge(identity)
+            with self._lock:
+                return self._execute_durable_command(
+                    identity,
+                    room_id,
+                    request_id,
+                    action,
+                    payload,
+                    lambda unit: self._turn_coordinator.room_result_in_unit(
+                        identity,
+                        payload,
+                        unit=unit,
+                    ),
+                )
         if action == "message.final":
             self._require_bridge(identity)
             with self._lock:
@@ -1076,12 +1098,14 @@ class RoomRealtimeController:
         *,
         unit: RoomCommandUnitOfWork,
         compatibility_muted: bool,
+        room_events: list[dict[str, object]],
     ) -> dict[str, object]:
         return self._messages.send_in_unit(
             identity,
             payload,
             unit=unit,
             compatibility_muted=compatibility_muted,
+            room_events=room_events,
         )
 
     def _create_agent(
@@ -1342,6 +1366,11 @@ class RoomRealtimeController:
     def _on_event_appended(self, event: RoomEvent | dict[str, object]) -> None:
         self.broker.broadcast_event(_public_event(event))
         if event.get("type") != "message_final":
+            return
+        if (
+            event.get("message_source") == "room_tool_result"
+            or event.get("message_kind") == "vote_cast"
+        ):
             return
         with self._lock:
             self._route_message_event(event)

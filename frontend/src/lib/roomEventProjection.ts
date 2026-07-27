@@ -109,18 +109,23 @@ export function projectRoomEventsToTimeline(
     if (event.type === "message_delta" || event.type === "message_final") {
       const existingIndex = turnIndex.get(key);
       const existing = existingIndex === undefined ? null : timeline[existingIndex];
+      const messageKind = String(event.message_kind || existing?.kind || "message");
+      const voteChoice = String(event.vote_choice || existing?.vote_choice || "");
+      const isVoteResult = event.type === "message_final" && messageKind === "vote_cast";
       const message =
-        event.type === "message_final"
+        isVoteResult
+          ? `🗳️ ${speaker.name}의 선택: 「${voteChoice || "선택 없음"}」`
+          : event.type === "message_final"
           ? String(event.content || "")
           : `${existing?.message || ""}${event.content || ""}`;
       const projected: LobbyEvent = {
         id: key,
         created_at: event.created_at,
-        name: speaker.name,
+        name: isVoteResult ? "투표" : speaker.name,
         avatar_image_url: speaker.avatarImageUrl || undefined,
         provider_kind: speaker.providerKind || undefined,
-        side: speaker.side,
-        kind: String(event.message_kind || existing?.kind || "message"),
+        side: isVoteResult ? "other" : speaker.side,
+        kind: messageKind,
         message,
         actor_id: eventActor.id,
         actor_type: eventActor.type,
@@ -134,7 +139,16 @@ export function projectRoomEventsToTimeline(
         vote_options: Array.isArray(event.vote_options)
           ? event.vote_options.map(String)
           : existing?.vote_options,
-        vote_choice: String(event.vote_choice || existing?.vote_choice || "") || undefined,
+        vote_duration_seconds:
+          Number(
+            event.vote_duration_seconds ??
+              existing?.vote_duration_seconds ??
+              0
+          ) || undefined,
+        vote_deadline_at:
+          String(event.vote_deadline_at || existing?.vote_deadline_at || "") ||
+          undefined,
+        vote_choice: voteChoice || undefined,
         attachments: Array.isArray(event.attachments)
           ? event.attachments
           : existing?.attachments,

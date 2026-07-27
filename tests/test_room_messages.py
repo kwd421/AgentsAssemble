@@ -67,6 +67,7 @@ class RoomMessageServiceTests(unittest.TestCase):
                 payload,
                 unit=unit,
                 compatibility_muted=False,
+                room_events=self.store.read_events("general"),
             )
             unit.build_ack(result)
             unit.record_ack()
@@ -111,6 +112,7 @@ class RoomMessageServiceTests(unittest.TestCase):
                 "request_id": "vote",
                 "kind": "vote",
                 "vote_question": "Choose",
+                "vote_options": ["A", "B"],
             }
         )
         self.assertEqual(vote["event"]["message_kind"], "vote")
@@ -176,6 +178,7 @@ class RoomMessageServiceTests(unittest.TestCase):
                 {"content": "blocked"},
                 unit=unit,  # type: ignore[arg-type]
                 compatibility_muted=True,
+                room_events=[],
             )
 
         self.assertEqual(raised.exception.code, "muted")

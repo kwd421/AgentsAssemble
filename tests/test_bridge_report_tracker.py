@@ -73,6 +73,35 @@ class BridgeReportTrackerTests(unittest.TestCase):
 
         self.assertEqual(timeout.exception.code, "bridge_report_timeout")
 
+    def test_request_retries_once_with_the_same_id_when_enabled(self):
+        tracker = BridgeReportTracker(timeout_seconds=0.01)
+        queued: list[dict[str, object]] = []
+        sent: list[str] = []
+
+        def send(request_id: str) -> None:
+            sent.append(request_id)
+            if len(sent) == 2:
+                queued.append({"op": "ack", "request_id": request_id, "accepted": True})
+
+        def pump() -> bool:
+            if not queued:
+                return False
+            tracker.resolve_message(queued.pop(0))
+            return True
+
+        result = tracker.request(
+            "room.result.publish",
+            send=send,
+            pump=pump,
+            is_closed=lambda: False,
+            wait_interval_seconds=0.001,
+            request_id="stable-room-result",
+            retry_on_timeout=True,
+        )
+
+        self.assertTrue(result["accepted"])
+        self.assertEqual(sent, ["stable-room-result", "stable-room-result"])
+
     def test_unknown_ack_is_consumed_without_resolving_another_request(self):
         tracker = BridgeReportTracker(timeout_seconds=0.1)
 

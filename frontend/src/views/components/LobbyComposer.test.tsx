@@ -4,9 +4,12 @@ import {
   render,
   screen,
   waitFor,
+  within,
 } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
+import { RoomSocketProvider } from "../../RoomSocketContext";
+import type { RoomSocketHandle } from "../../roomSocketClient";
 import LobbyComposer from "./LobbyComposer";
 
 const apiMocks = vi.hoisted(() => ({
@@ -112,5 +115,149 @@ describe("LobbyComposer", () => {
       },
     });
     expect(apiMocks.uploadLobbyAttachment).not.toHaveBeenCalled();
+  });
+
+  it("opens the vote dialog for the exact slash command without sending chat", async () => {
+    const say = vi.fn().mockResolvedValue({ events: [] });
+    const socket = {
+      ready: () => true,
+      say,
+    } as unknown as RoomSocketHandle;
+    render(
+      <RoomSocketProvider socket={socket}>
+        <LobbyComposer meetingId="room-a" onPosted={vi.fn()} />
+      </RoomSocketProvider>
+    );
+
+    const input = screen.getByLabelText("채팅 입력");
+    fireEvent.change(input, { target: { value: "/vote" } });
+    fireEvent.keyDown(input, { key: "Enter" });
+
+    const dialog = await screen.findByRole("dialog", { name: "투표 만들기" });
+    fireEvent.click(
+      within(dialog).getByRole("button", { name: "선택지 추가" })
+    );
+    expect(
+      within(dialog).getByRole("textbox", { name: "선택지 3" })
+    ).toBeTruthy();
+    fireEvent.click(
+      within(dialog).getByRole("button", { name: "선택지 3 제거" })
+    );
+    expect(
+      within(dialog).queryByRole("textbox", { name: "선택지 3" })
+    ).toBeNull();
+    expect(say).not.toHaveBeenCalled();
+  });
+
+  it("contains modal focus, restores the composer focus, and closes on room change", async () => {
+    const say = vi.fn().mockResolvedValue({ events: [] });
+    const socket = {
+      ready: () => true,
+      say,
+    } as unknown as RoomSocketHandle;
+    const view = render(
+      <RoomSocketProvider socket={socket}>
+        <LobbyComposer meetingId="room-a" onPosted={vi.fn()} />
+      </RoomSocketProvider>
+    );
+
+    const composer = screen.getByLabelText("채팅 입력") as HTMLTextAreaElement;
+    composer.focus();
+    fireEvent.change(composer, { target: { value: "/vote" } });
+    fireEvent.keyDown(composer, { key: "Enter" });
+    const dialog = await screen.findByRole("dialog", { name: "투표 만들기" });
+    const first = within(dialog).getByRole("button", {
+      name: "투표 만들기 닫기",
+    });
+    const last = within(dialog).getByRole("button", { name: "투표 만들기" });
+
+    first.focus();
+    fireEvent.keyDown(first, { key: "Tab", shiftKey: true });
+    expect(document.activeElement).toBe(last);
+
+    fireEvent.click(within(dialog).getByRole("button", { name: "취소" }));
+    expect(document.activeElement).toBe(composer);
+
+    fireEvent.keyDown(composer, { key: "Enter" });
+    expect(
+      await screen.findByRole("dialog", { name: "투표 만들기" })
+    ).toBeTruthy();
+    view.rerender(
+      <RoomSocketProvider socket={socket}>
+        <LobbyComposer meetingId="room-b" onPosted={vi.fn()} />
+      </RoomSocketProvider>
+    );
+    await waitFor(() =>
+      expect(
+        screen.queryByRole("dialog", { name: "투표 만들기" })
+      ).toBeNull()
+    );
+    expect(say).not.toHaveBeenCalled();
+  });
+
+  it("requires two named choices and submits the dialog through the canonical vote path", async () => {
+    const say = vi.fn().mockResolvedValue({ events: [] });
+    const onPosted = vi.fn();
+    const socket = {
+      ready: () => true,
+      say,
+    } as unknown as RoomSocketHandle;
+    render(
+      <RoomSocketProvider socket={socket}>
+        <LobbyComposer meetingId="room-a" onPosted={onPosted} />
+      </RoomSocketProvider>
+    );
+
+    fireEvent.change(screen.getByLabelText("채팅 입력"), {
+      target: { value: "/vote" },
+    });
+    fireEvent.click(screen.getByLabelText("채팅 메시지 보내기"));
+    const dialog = await screen.findByRole("dialog", { name: "투표 만들기" });
+
+    expect(
+      (within(dialog).getByRole("button", {
+        name: "선택지 1 제거",
+      }) as HTMLButtonElement).disabled
+    ).toBe(true);
+    fireEvent.change(within(dialog).getByRole("textbox", { name: "질문" }), {
+      target: { value: "어느 길로 갈까요?" },
+    });
+    fireEvent.change(within(dialog).getByRole("textbox", { name: "선택지 1" }), {
+      target: { value: "북쪽" },
+    });
+    fireEvent.click(
+      within(dialog).getByRole("button", { name: "투표 만들기" })
+    );
+
+    expect((await within(dialog).findByRole("alert")).textContent).toContain(
+      "모든 선택지에 이름을 입력해 주세요."
+    );
+    expect(say).not.toHaveBeenCalled();
+
+    fireEvent.change(within(dialog).getByRole("textbox", { name: "선택지 2" }), {
+      target: { value: "남쪽" },
+    });
+    fireEvent.change(
+      within(dialog).getByRole("spinbutton", { name: "투표 기간 (분)" }),
+      { target: { value: "15" } }
+    );
+    fireEvent.click(
+      within(dialog).getByRole("button", { name: "투표 만들기" })
+    );
+
+    await waitFor(() =>
+      expect(say).toHaveBeenCalledWith({
+        message: "",
+        attachments: [],
+        kind: "vote",
+        voteQuestion: "어느 길로 갈까요?",
+        voteOptions: ["북쪽", "남쪽"],
+        voteDurationSeconds: 900,
+      })
+    );
+    await waitFor(() =>
+      expect(screen.queryByRole("dialog", { name: "투표 만들기" })).toBeNull()
+    );
+    expect(onPosted).toHaveBeenCalledWith([]);
   });
 });

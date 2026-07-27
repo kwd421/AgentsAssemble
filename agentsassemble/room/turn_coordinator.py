@@ -42,6 +42,10 @@ from agentsassemble.providers.sync_cursor import (
     provider_sync_session_fields,
 )
 from agentsassemble.room.repository import RoomRepository, RoomTransaction
+from agentsassemble.room.system_results import (
+    RoomSystemResultError,
+    prepare_room_system_result,
+)
 from agentsassemble.room_turn_attention import RoomTurnAttention
 from agentsassemble.room.types import RoomEvent, TurnAssignment
 
@@ -1151,6 +1155,63 @@ class RoomTurnCoordinator:
             category=category,
             status=status,
             content=content,
+        )
+        return {"event": event, "event_seq": event["seq"]}
+
+    def room_result_in_unit(
+        self,
+        identity: dict[str, object],
+        payload: dict[str, object],
+        *,
+        unit: RoomCommandUnitOfWork,
+    ) -> dict[str, object]:
+        agent_id, session = self.active_bridge_turn_in_writer(
+            identity,
+            payload,
+            writer=unit,
+        )
+        require_active_turn_phase(session)
+        if (
+            clean_lobby_text(session.get("process_ownership"), limit=32) != "server"
+            or not clean_lobby_text(session.get("bridge_handle_id"), limit=128)
+        ):
+            raise RoomCommandRejected(
+                "Only a server-owned Agent Bridge can publish an official room tool result.",
+                code="room_result_untrusted_bridge",
+            )
+        if (
+            clean_lobby_text(session.get("provider_input_mode"), limit=32)
+            != "room_observation"
+        ):
+            raise RoomCommandRejected(
+                "Official room tool results require a room observation turn.",
+                code="room_result_input_mode_invalid",
+            )
+        try:
+            prepared = prepare_room_system_result(
+                result_id=payload.get("result_id"),
+                operation=payload.get("operation"),
+                details=payload.get("details"),
+                participant_id=agent_id,
+                display_name=session.get("display_name") or agent_id,
+                source_turn_id=session.get("active_turn_id"),
+            )
+        except RoomSystemResultError as error:
+            raise RoomCommandRejected(
+                str(error),
+                code="invalid_room_result",
+            ) from error
+        event = unit.append_event(
+            "message_final",
+            participant_id="room-system",
+            participant_type="system",
+            actor_id="room-system",
+            actor_type="system",
+            display_name=prepared.display_name,
+            content=prepared.content,
+            message_kind="system",
+            message_source="room_tool_result",
+            metadata=prepared.metadata,
         )
         return {"event": event, "event_seq": event["seq"]}
 

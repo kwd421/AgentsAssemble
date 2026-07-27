@@ -34,6 +34,7 @@ export interface RoomSayRequest {
   voteQuestion?: string;
   voteOptions?: string[];
   voteChoice?: string;
+  voteDurationSeconds?: number;
 }
 
 export class RoomSocketSayError extends Error {
@@ -363,6 +364,7 @@ export function openRoomSocket(
         vote_question: request.voteQuestion || "",
         vote_options: request.voteOptions || [],
         vote_choice: request.voteChoice || "",
+        vote_duration_seconds: request.voteDurationSeconds || 0,
       });
       return { events: [] };
     },

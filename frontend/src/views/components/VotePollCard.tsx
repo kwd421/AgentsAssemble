@@ -6,6 +6,16 @@ import {
 } from "../../api";
 import { useRoomSocket } from "../../RoomSocketContext";
 
+function remainingTimeLabel(milliseconds: number): string {
+  const totalSeconds = Math.max(0, Math.ceil(milliseconds / 1000));
+  const hours = Math.floor(totalSeconds / 3600);
+  const minutes = Math.floor((totalSeconds % 3600) / 60);
+  const seconds = totalSeconds % 60;
+  if (hours) return `${hours}시간 ${minutes}분`;
+  if (minutes) return `${minutes}분 ${seconds}초`;
+  return `${seconds}초`;
+}
+
 export default function VotePollCard({
   event,
   voterName,
@@ -22,6 +32,7 @@ export default function VotePollCard({
   const [summary, setSummary] = useState<VoteSummary | null>(null);
   const [busyOption, setBusyOption] = useState("");
   const [error, setError] = useState("");
+  const [clockMs, setClockMs] = useState(() => Date.now());
 
   const refresh = useCallback(() => {
     if (!roomSocket?.ready()) {
@@ -43,8 +54,26 @@ export default function VotePollCard({
     refresh();
   }, [refresh]);
 
+  const deadlineAt = summary?.vote_deadline_at || event.vote_deadline_at || "";
+  const deadlineMs = Date.parse(deadlineAt);
+  const hasDeadline = Boolean(deadlineAt) && Number.isFinite(deadlineMs);
+  const ended = hasDeadline && clockMs >= deadlineMs;
+
+  useEffect(() => {
+    setClockMs(Date.now());
+  }, [deadlineAt]);
+
+  useEffect(() => {
+    if (!hasDeadline || ended) return undefined;
+    const timer = window.setTimeout(
+      () => setClockMs(Date.now()),
+      Math.min(1000, Math.max(50, deadlineMs - clockMs))
+    );
+    return () => window.clearTimeout(timer);
+  }, [clockMs, deadlineMs, ended, hasDeadline]);
+
   async function castVote(option: string) {
-    if (!canVote || busyOption) return;
+    if (!canVote || ended || busyOption) return;
     setBusyOption(option);
     setError("");
     try {
@@ -67,12 +96,24 @@ export default function VotePollCard({
   const question = summary?.question || event.vote_question || "";
   const total = summary?.total_votes ?? 0;
   const myChoice = options.find((option) => (summary?.voters?.[option] || []).includes(voterName));
+  const deadlineLabel = ended
+    ? "마감됨"
+    : hasDeadline
+      ? `남은 시간 ${remainingTimeLabel(deadlineMs - clockMs)}`
+      : "";
 
   return (
     <section className="dc-vote-card" aria-label={`투표: ${question}`}>
       <header className="dc-vote-card-head">
         <BarChart3 size={15} aria-hidden />
         <span className="dc-vote-card-question preserve-words">{question}</span>
+        {deadlineLabel && (
+          <span
+            className="shrink-0 rounded bg-black/15 px-2 py-1 text-[11px] font-bold text-text-muted"
+          >
+            {deadlineLabel}
+          </span>
+        )}
         <button
           type="button"
           className="dc-vote-refresh"
@@ -94,7 +135,7 @@ export default function VotePollCard({
               type="button"
               className="dc-vote-option"
               data-mine={option === myChoice}
-              disabled={!canVote || Boolean(busyOption)}
+              disabled={!canVote || ended || Boolean(busyOption)}
               onClick={() => void castVote(option)}
               title={voters.length ? `투표: ${voters.join(", ")}` : "아직 아무도 투표하지 않음"}
             >
@@ -113,7 +154,11 @@ export default function VotePollCard({
       <footer className="dc-vote-card-foot">
         <span>총 {total}명 참여{summary?.created_by ? ` · ${summary.created_by} 시작` : ""}</span>
         <span className="dc-vote-card-hint">
-          {canVote ? "선택지를 누르면 투표 (다시 누르면 변경)" : "읽기 전용 세션은 투표할 수 없어요"}
+          {ended
+            ? "투표가 마감되었습니다"
+            : canVote
+              ? "선택지를 누르면 투표 (다시 누르면 변경)"
+              : "읽기 전용 세션은 투표할 수 없어요"}
         </span>
       </footer>
       {error && <p className="dc-vote-card-error preserve-words">{error}</p>}

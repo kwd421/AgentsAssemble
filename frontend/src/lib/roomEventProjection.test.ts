@@ -89,6 +89,8 @@ describe("projectRoomEventsToTimeline", () => {
         vote_id: "vote-1",
         vote_question: "어느 길로 갈까?",
         vote_options: ["북쪽", "남쪽"],
+        vote_duration_seconds: 900,
+        vote_deadline_at: "2026-01-01T00:15:00Z",
       }),
     ]);
 
@@ -98,6 +100,34 @@ describe("projectRoomEventsToTimeline", () => {
         vote_id: "vote-1",
         vote_question: "어느 길로 갈까?",
         vote_options: ["북쪽", "남쪽"],
+        vote_duration_seconds: 900,
+        vote_deadline_at: "2026-01-01T00:15:00Z",
+      }),
+    ]);
+  });
+
+  it("projects a canonical ballot as a deterministic system-style vote result", () => {
+    const timeline = projectRoomEventsToTimeline([
+      event({
+        id: "ballot-1",
+        actor: { participant_id: "voter-1", participant_type: "human" },
+        display_name: "민지",
+        content: "",
+        message_kind: "vote_cast",
+        vote_id: "vote-1",
+        vote_choice: "남쪽",
+      }),
+    ]);
+
+    expect(timeline).toEqual([
+      expect.objectContaining({
+        kind: "vote_cast",
+        name: "투표",
+        side: "other",
+        actor_id: "voter-1",
+        vote_id: "vote-1",
+        vote_choice: "남쪽",
+        message: "🗳️ 민지의 선택: 「남쪽」",
       }),
     ]);
   });

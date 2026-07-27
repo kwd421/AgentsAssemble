@@ -182,9 +182,9 @@ process IDs, and backend topology are not written into the room view.
 
 Provider access is adapter-specific:
 
-- Codex app-server receives two session-scoped MCP tools: read the current room
-  and publish one room message. The app-server remains in `read-only` sandbox
-  mode.
+- Codex app-server receives session-scoped MCP tools to read the current room,
+  publish one room message, roll bounded dice, and choose from a bounded list.
+  The app-server remains in `read-only` sandbox mode.
 - Grok ACP receives equivalent virtual read/write paths. Its assigned
   observation is confirmed only by reading the exact virtual path through ACP;
   a shell read of a similarly named local file is not a receipt. During an
@@ -195,6 +195,19 @@ Provider access is adapter-specific:
 
 The provider must explicitly use the publication boundary. A normal assistant
 final, terminal text, or TUI output is not copied into the room.
+Official randomness is first recorded in the private portal activity log with a
+tool-generated result ID. Before the bridge finishes, declines, or reports a
+provider-output failure, it reports only strictly validated post-observation
+records through `room.result.publish`. The server accepts these reports only
+from its owned bridge during a `room_observation` turn, validates the result
+again (including a random choice against its recorded candidate list), then
+commits a standalone `message_final`/`message_kind=system` event and the command
+ACK in one room transaction. An ACK timeout is retried once with the same
+request ID. The source turn remains metadata rather than the event's top-level
+turn ID, so the browser cannot merge the result row into the agent reply.
+Provider-supplied tool reasons and random-choice candidates are not copied to
+the public event metadata. System result events and structured ballot-result
+rows are visible room history but are not attention triggers.
 
 ## Idle Check
 

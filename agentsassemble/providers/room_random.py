@@ -6,6 +6,8 @@ import re
 import secrets
 from collections.abc import Callable, Sequence
 
+from agentsassemble.room.text import has_room_visible_text
+
 
 _DICE_NOTATION = re.compile(
     r"^\s*(?P<count>\d{0,3})d(?P<sides>\d{1,4})"
@@ -60,13 +62,17 @@ def choose_random(
     if len(values) > 50:
         raise RoomRandomError("Random choice accepts at most 50 options.")
     cleaned = [str(option or "").strip()[:200] for option in values]
-    if len(cleaned) < 2 or any(not option for option in cleaned):
+    if (
+        len(cleaned) < 2
+        or any(not option or not has_room_visible_text(option) for option in cleaned)
+    ):
         raise RoomRandomError("Random choice requires 2 to 50 non-empty options.")
     index = int(randbelow(len(cleaned)))
     return {
         "choice": cleaned[index],
         "index": index,
         "option_count": len(cleaned),
+        "options": cleaned,
     }
 
 

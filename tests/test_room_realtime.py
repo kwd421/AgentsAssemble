@@ -7,6 +7,7 @@ import time
 import unittest
 from contextlib import closing
 from dataclasses import replace
+from datetime import UTC, datetime
 from pathlib import Path
 from unittest.mock import patch
 
@@ -21,7 +22,7 @@ from agentsassemble.room.realtime import (
 )
 from agentsassemble.room.command_uow import RoomCommandUnitOfWork
 from agentsassemble.room.attachments import store_uploaded_attachment
-from agentsassemble.room_database import open_room_database
+from agentsassemble.persistence.local.room.database import open_room_database
 from agentsassemble.room.moderation import is_room_member_muted, set_room_member_muted
 from agentsassemble.room_store import RoomStore
 from agentsassemble.room.settings import update_room_settings as update_legacy_room_settings
@@ -745,26 +746,36 @@ class RoomRealtimeControllerTests(unittest.TestCase):
         )
 
     def test_canonical_vote_summary_reads_poll_and_ballots_from_room_events(self):
+        created_after = datetime.now(UTC)
         poll = self._command(
             "vote-poll",
             "message.send",
             {
                 "content": "",
                 "kind": "vote",
-                "vote_question": "어느 길로 갈까?",
-                "vote_options": ["북쪽", "남쪽"],
+                "vote_id": "client-supplied-id",
+                "vote_question": " 어느 길로\n갈까? ",
+                "vote_options": [" 북쪽 ", "북쪽", "남쪽"],
+                "vote_duration_seconds": 30,
             },
         )["result"]["event"]
-        self._command(
+        pending_before_cast = list(
+            self.controller.store.session("general", "codex").get(
+                "pending_event_ids"
+            )
+            or []
+        )
+        cast = self._command(
             "vote-cast",
             "message.send",
             {
-                "content": "",
+                "content": "@codex 이 숨은 문장은 전달되면 안 돼",
                 "kind": "vote_cast",
                 "vote_id": poll["id"],
                 "vote_choice": "2",
+                "target_agent_id": "codex",
             },
-        )
+        )["result"]["event"]
 
         summary = self._command(
             "vote-summary",
@@ -775,6 +786,207 @@ class RoomRealtimeControllerTests(unittest.TestCase):
         self.assertEqual(summary["result"]["question"], "어느 길로 갈까?")
         self.assertEqual(summary["result"]["tallies"], {"북쪽": 0, "남쪽": 1})
         self.assertEqual(summary["result"]["total_votes"], 1)
+        self.assertNotIn("vote_id", poll)
+        self.assertEqual(poll["vote_options"], ["북쪽", "남쪽"])
+        self.assertEqual(poll["vote_duration_seconds"], 30)
+        deadline = datetime.fromisoformat(str(poll["vote_deadline_at"]))
+        self.assertGreaterEqual((deadline - created_after).total_seconds(), 29)
+        self.assertLessEqual((deadline - created_after).total_seconds(), 31)
+        self.assertEqual(cast["vote_choice"], "남쪽")
+        self.assertNotIn("content", cast)
+        self.assertNotIn("target_agent_id", cast)
+        self.assertEqual(
+            self.controller.store.session("general", "codex").get(
+                "pending_event_ids"
+            ),
+            pending_before_cast,
+        )
+
+    def test_vote_cast_rejects_unknown_poll_or_invalid_choice_without_event_or_ack(self):
+        poll = self._command(
+            "validated-vote-poll",
+            "message.send",
+            {
+                "content": "",
+                "kind": "vote",
+                "vote_question": "어느 길로 갈까?",
+                "vote_options": ["북쪽", "남쪽"],
+            },
+        )["result"]["event"]
+        store = self.controller.store
+        before_seq = store.latest_event_sequence("general")
+
+        invalid_ballots = (
+            (
+                "unknown-vote-cast",
+                {"vote_id": "missing-vote", "vote_choice": "북쪽"},
+                "vote_not_found",
+            ),
+            (
+                "invalid-choice-cast",
+                {"vote_id": poll["id"], "vote_choice": "서쪽"},
+                "invalid_vote_choice",
+            ),
+        )
+        for request_id, ballot, expected_code in invalid_ballots:
+            with self.subTest(request_id=request_id), self.assertRaises(
+                RoomCommandRejected
+            ) as rejected:
+                self._command(
+                    request_id,
+                    "message.send",
+                    {
+                        "content": "",
+                        "kind": "vote_cast",
+                        **ballot,
+                    },
+                )
+
+            self.assertEqual(rejected.exception.code, expected_code)
+            self.assertEqual(
+                store.command_record("general", "operator-local", request_id),
+                {},
+            )
+
+        self.assertEqual(store.latest_event_sequence("general"), before_seq)
+        self.assertFalse(
+            any(
+                event.get("message_kind") == "vote_cast"
+                for event in store.read_events("general")
+            )
+        )
+
+    def test_malformed_vote_definition_is_rejected_without_event_or_ack(self):
+        store = self.controller.store
+        normalized = self._command(
+            "bounded-vote-definition",
+            "message.send",
+            {
+                "kind": "vote",
+                "vote_question": f"  {'Q' * 301}  ",
+                "vote_options": [f"  {'A' * 101}  ", "B"],
+            },
+        )["result"]["event"]
+        self.assertEqual(len(normalized["vote_question"]), 300)
+        self.assertEqual(len(normalized["vote_options"][0]), 100)
+        before_seq = store.latest_event_sequence("general")
+        malformed_polls = (
+            {"vote_question": "", "vote_options": ["A", "B"]},
+            {"vote_question": "Q", "vote_options": "A, B"},
+            {"vote_question": "Q", "vote_options": ["A", "a"]},
+            {
+                "vote_question": "\u200b",
+                "vote_options": ["A", "B"],
+            },
+            {
+                "vote_question": "Q",
+                "vote_options": ["\u200b", "\u200c"],
+            },
+            {
+                "vote_question": "Q",
+                "vote_options": [f"option-{index}" for index in range(11)],
+            },
+            {"vote_question": "Q", "vote_options": ["A", 2]},
+        )
+
+        for index, poll in enumerate(malformed_polls):
+            request_id = f"malformed-vote-{index}"
+            with self.subTest(poll=poll), self.assertRaises(
+                RoomCommandRejected
+            ) as rejected:
+                self._command(
+                    request_id,
+                    "message.send",
+                    {
+                        "kind": "vote",
+                        **poll,
+                    },
+                )
+
+            self.assertEqual(rejected.exception.code, "invalid_vote")
+            self.assertEqual(
+                store.command_record("general", "operator-local", request_id),
+                {},
+            )
+
+        self.assertEqual(store.latest_event_sequence("general"), before_seq)
+
+    def test_vote_duration_is_bounded_and_expired_vote_rejects_ballot_atomically(self):
+        store = self.controller.store
+        no_deadline = self._command(
+            "vote-without-deadline",
+            "message.send",
+            {
+                "kind": "vote",
+                "vote_question": "언제 끝낼까?",
+                "vote_options": ["지금", "나중"],
+                "vote_duration_seconds": 0,
+            },
+        )["result"]["event"]
+        self.assertEqual(no_deadline["vote_duration_seconds"], 0)
+        self.assertNotIn("vote_deadline_at", no_deadline)
+
+        invalid_durations = (True, "30", 29, 86401)
+        for index, duration in enumerate(invalid_durations):
+            request_id = f"invalid-vote-duration-{index}"
+            with self.subTest(duration=duration), self.assertRaises(
+                RoomCommandRejected
+            ) as rejected:
+                self._command(
+                    request_id,
+                    "message.send",
+                    {
+                        "kind": "vote",
+                        "vote_question": "언제 끝낼까?",
+                        "vote_options": ["지금", "나중"],
+                        "vote_duration_seconds": duration,
+                    },
+                )
+
+            self.assertEqual(rejected.exception.code, "invalid_vote_duration")
+            self.assertEqual(
+                store.command_record("general", "operator-local", request_id),
+                {},
+            )
+
+        expired_poll = store.append_event(
+            "general",
+            "message_final",
+            participant_id="operator-local-user",
+            participant_type="human",
+            actor_id="operator-local-user",
+            actor_type="human",
+            display_name="민지",
+            content="",
+            message_kind="vote",
+            vote_question="이미 끝난 투표",
+            vote_options=["찬성", "반대"],
+            vote_duration_seconds=30,
+            vote_deadline_at="2000-01-01T00:00:00+00:00",
+        )
+        before_seq = store.latest_event_sequence("general")
+
+        with self.assertRaises(RoomCommandRejected) as rejected:
+            self._command(
+                "expired-vote-cast",
+                "message.send",
+                {
+                    "kind": "vote_cast",
+                    "vote_id": expired_poll["id"],
+                    "vote_choice": "찬성",
+                },
+            )
+
+        self.assertEqual(rejected.exception.code, "vote_expired")
+        self.assertEqual(store.latest_event_sequence("general"), before_seq)
+        self.assertEqual(
+            store.command_record(
+                "general",
+                "operator-local",
+                "expired-vote-cast",
+            ),
+            {},
+        )
 
     def test_message_command_rolls_back_event_and_routing_when_ack_record_fails(self):
         with patch.object(
@@ -3873,6 +4085,228 @@ class RoomRealtimeControllerTests(unittest.TestCase):
         self.assertNotIn("TOKEN", str(activity))
         self.assertFalse((self.root / "rooms" / "general" / "live_cli_events.jsonl").exists())
         self.assertEqual(RoomStore(self.root).session("general", "codex")["runtime_status"], "idle")
+
+    def test_bridge_room_result_is_an_atomic_system_message_without_waking_agents(self):
+        identity, channel = self._connect_bridge()
+        channel.drain()
+        self.controller.store.update_room_settings(
+            "general",
+            {"conversation_mode": "ambient"},
+        )
+        self._command(
+            "room-result-source",
+            "message.send",
+            {"content": "@codex 지각 판정을 해줘"},
+        )
+        wake = next(
+            message
+            for message in channel.drain()
+            if message.get("op") == "room.wake"
+        )
+        payload = {
+            "turn_id": wake["turn_id"],
+            "result_id": "result-11111111111111111111111111111111",
+            "operation": "roll_dice",
+            "details": {
+                "notation": "1d20",
+                "rolls": [7],
+                "modifier": 0,
+                "total": 7,
+                "reason": "지각",
+            },
+        }
+        store = RoomStore(self.root)
+        before_seq = store.latest_event_sequence("general")
+
+        with patch.object(
+            RoomCommandUnitOfWork,
+            "record_ack",
+            side_effect=RuntimeError("injected"),
+        ):
+            with self.assertRaisesRegex(RuntimeError, "injected"):
+                self._command(
+                    "room-result-publish",
+                    "room.result.publish",
+                    payload,
+                    identity,
+                )
+
+        self.assertEqual(store.latest_event_sequence("general"), before_seq)
+        published = self._command(
+            "room-result-publish",
+            "room.result.publish",
+            payload,
+            identity,
+        )
+        duplicate = self._command(
+            "room-result-publish",
+            "room.result.publish",
+            payload,
+            identity,
+        )
+        event = published["result"]["event"]
+
+        self.assertFalse(published["deduplicated"])
+        self.assertTrue(duplicate["deduplicated"])
+        self.assertEqual(event["type"], "message_final")
+        self.assertEqual(event["message_kind"], "system")
+        self.assertEqual(event["actor"], {
+            "participant_id": "room-system",
+            "participant_type": "system",
+        })
+        self.assertEqual(event["display_name"], "주사위 결과")
+        self.assertEqual(event["content"], "Codex · 1d20 → 7 (굴림: 7)")
+        self.assertNotIn("turn_id", event)
+        self.assertEqual(event["metadata"]["source_turn_id"], wake["turn_id"])
+        self.assertEqual(event["metadata"]["source_participant_id"], "codex")
+        self.assertEqual(
+            event["metadata"]["room_result_id"],
+            "result-11111111111111111111111111111111",
+        )
+        self.assertNotIn("reason", event["metadata"]["details"])
+        matching = [
+            candidate
+            for candidate in store.read_events("general")
+            if candidate.get("message_source") == "room_tool_result"
+        ]
+        self.assertEqual([candidate["id"] for candidate in matching], [event["id"]])
+        self.assertEqual(
+            store.session("general", "codex")["active_turn_id"],
+            wake["turn_id"],
+        )
+        self.assertEqual(
+            store.session("general", "codex").get("pending_event_ids"),
+            [],
+        )
+        self.assertFalse(
+            any(message.get("op") == "room.wake" for message in channel.drain())
+        )
+
+    def test_bridge_room_result_rejects_forged_or_unauthorized_reports(self):
+        identity, channel = self._connect_bridge()
+        channel.drain()
+        self.controller.store.update_room_settings(
+            "general",
+            {"conversation_mode": "ambient"},
+        )
+        self._command(
+            "invalid-room-result-source",
+            "message.send",
+            {"content": "@codex 판정"},
+        )
+        wake = next(
+            message
+            for message in channel.drain()
+            if message.get("op") == "room.wake"
+        )
+        before = len(RoomStore(self.root).read_events("general"))
+
+        invalid_details = (
+            {
+                "notation": "1d20",
+                "rolls": [21],
+                "modifier": 0,
+                "total": 21,
+            },
+            {
+                "notation": "1d20",
+                "rolls": [7],
+                "modifier": 0,
+                "total": 20,
+            },
+        )
+        for index, details in enumerate(invalid_details):
+            with self.subTest(details=details), self.assertRaises(
+                RoomCommandRejected
+            ) as rejected:
+                self._command(
+                    f"invalid-room-result-{index}",
+                    "room.result.publish",
+                    {
+                        "turn_id": wake["turn_id"],
+                        "result_id": f"result-{index + 2:032x}",
+                        "operation": "roll_dice",
+                        "details": details,
+                    },
+                    identity,
+                )
+            self.assertEqual(rejected.exception.code, "invalid_room_result")
+
+        self.controller.store.update_session_fields(
+            "general",
+            "codex",
+            process_ownership="external",
+            bridge_handle_id="",
+        )
+        with self.assertRaises(RoomCommandRejected) as untrusted:
+            self._command(
+                "untrusted-room-result",
+                "room.result.publish",
+                {
+                    "turn_id": wake["turn_id"],
+                    "result_id": "result-44444444444444444444444444444444",
+                    "operation": "roll_dice",
+                    "details": {
+                        "notation": "1d20",
+                        "rolls": [7],
+                        "modifier": 0,
+                        "total": 7,
+                    },
+                },
+                identity,
+            )
+        self.assertEqual(untrusted.exception.code, "room_result_untrusted_bridge")
+
+        with self.assertRaises(RoomCommandRejected) as unauthorized:
+            self._command(
+                "unauthorized-room-result",
+                "room.result.publish",
+                {
+                    "turn_id": wake["turn_id"],
+                    "result_id": "result-55555555555555555555555555555555",
+                    "operation": "roll_dice",
+                    "details": {
+                        "notation": "1d20",
+                        "rolls": [7],
+                        "modifier": 0,
+                        "total": 7,
+                    },
+                },
+            )
+        self.assertEqual(unauthorized.exception.code, "permission_denied")
+        self.assertEqual(len(RoomStore(self.root).read_events("general")), before)
+
+    def test_bridge_room_result_requires_a_room_observation_turn(self):
+        self._use_continuous_routing()
+        self._command("result-mode-start", "agent.start", {"agent_id": "codex"})
+        identity, channel = self._connect_bridge()
+        channel.drain()
+        self._command("result-mode-source", "message.send", {"content": "@codex 판정"})
+        assignment = next(
+            message
+            for message in channel.drain()
+            if message.get("op") == "turn.assign"
+        )
+
+        with self.assertRaises(RoomCommandRejected) as rejected:
+            self._command(
+                "result-mode-invalid",
+                "room.result.publish",
+                {
+                    "turn_id": assignment["turn_id"],
+                    "result_id": "result-66666666666666666666666666666666",
+                    "operation": "roll_dice",
+                    "details": {
+                        "notation": "1d20",
+                        "rolls": [7],
+                        "modifier": 0,
+                        "total": 7,
+                    },
+                },
+                identity,
+            )
+
+        self.assertEqual(rejected.exception.code, "room_result_input_mode_invalid")
 
     def test_bridge_turn_phase_rejects_unknown_values_and_regression(self):
         self._use_continuous_routing()

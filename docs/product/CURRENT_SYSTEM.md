@@ -150,10 +150,32 @@ tools for facilitator-owned game randomness. For dice, terminal providers and
 Grok ACP use the bounded `agentsassemble-room roll '<NdS±M>'` helper for the
 same audited contract; Grok's ACP permission boundary continues to reject every
 other terminal command. Inputs and results are recorded in the private portal
-activity log. Structured room votes remain a human-UI action, but vote questions,
-options, and recorded ballots are rendered in every provider's private room
-mirror; Agent Sessions answer a requested vote through an ordinary public room
-message rather than claiming a structured ballot.
+activity log with a tool-generated result ID. During the active turn, the
+server-owned bridge projects each validated dice or random-choice record through
+the bridge-only `room.result.publish` command. The server accepts that command
+only during a `room_observation` turn owned by its bridge process, validates the
+record again (including the selected index against the recorded candidate
+list), and commits a separate canonical system message and its ACK atomically.
+A provider-output failure does not discard an already recorded result; an ACK
+timeout is retried once with the same request ID. Result messages do not wake
+providers and are not merged into the provider's public reply. Provider-supplied
+tool reasons and random-choice candidate lists remain private validation input;
+the public event metadata contains only the bounded result fields.
+
+Structured room votes remain a human-UI action. Entering `/vote` opens the vote
+composer for a question, two to ten named options, and a bounded deadline. The
+server normalizes the poll, computes its deadline, rejects unknown choices and
+late ballots, and stores the matched option text. Vote questions, options,
+deadline, and recorded ballots are rendered in every provider's private room
+mirror. The browser shows each recorded ballot as a system-style result and
+keeps the aggregate tally and ended state on the vote card. Ballot result rows
+do not wake providers. There is no separate vote-close/final-winner event.
+Agent Sessions answer a requested vote through an ordinary public room message
+rather than claiming a structured ballot.
+
+The one-time room session orientation tells providers to follow the language of
+the latest human or host message unless that message explicitly requests
+another language. This is session guidance, not a repeated wake instruction.
 
 Agent Bridges passively acknowledge canonical room events without invoking the
 provider, while provider context is still delivered only through a server-assigned

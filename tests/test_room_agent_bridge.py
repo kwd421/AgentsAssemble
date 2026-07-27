@@ -65,6 +65,20 @@ class FakeClient:
         self.closed = True
 
 
+class LostFirstResultAckClient(FakeClient):
+    def __init__(self):
+        super().__init__()
+        self._lost_result_ack = False
+
+    def command(self, action, payload=None, *, request_id=""):
+        if action == "room.result.publish" and not self._lost_result_ack:
+            with self._lock:
+                self.commands.append((action, dict(payload or {}), request_id))
+                self._lost_result_ack = True
+            return request_id
+        return super().command(action, payload, request_id=request_id)
+
+
 class RoomWakeOrientationTests(unittest.TestCase):
     def test_terminal_room_publication_explains_shell_safe_prose(self):
         orientation = room_wake_orientation("antigravity_live_session")
@@ -215,6 +229,32 @@ class RoomPortalRuntime(FakeRuntime):
         }
 
 
+class RoomPortalResultRuntime(RoomPortalRuntime):
+    def __init__(self, portal, publications, room_results):
+        super().__init__(portal, publications)
+        self.room_results = list(room_results)
+
+    def send(self, text):
+        super().send(text)
+        turn = json.loads(self.portal.turn_path.read_text(encoding="utf-8"))
+        turn_id = str(turn["turn_id"])
+        results = self.room_results.pop(0)
+        with self.portal.activity_path.open("a", encoding="utf-8") as stream:
+            for result in results:
+                stream.write(
+                    json.dumps(
+                        {
+                            "turn_id": turn_id,
+                            "result_id": result["result_id"],
+                            "operation": result["operation"],
+                            "details": result["details"],
+                        },
+                        ensure_ascii=False,
+                    )
+                    + "\n"
+                )
+
+
 def _launch_config(**overrides):
     values = {
         "room_id": "general",
@@ -347,6 +387,7 @@ class RoomAgentBridgeTests(unittest.TestCase):
                 json.loads(line)
                 for line in portal.activity_path.read_text(encoding="utf-8").splitlines()
             ]
+            room_results = portal.observation_results("wake-game")
 
         self.assertEqual(result["notation"], "2d6+1")
         self.assertEqual(len(result["rolls"]), 2)
@@ -354,6 +395,16 @@ class RoomAgentBridgeTests(unittest.TestCase):
         self.assertEqual(result["total"], sum(result["rolls"]) + 1)
         self.assertEqual(activity[-1]["operation"], "roll_dice")
         self.assertEqual(activity[-1]["details"], result)
+        self.assertEqual(
+            room_results,
+            [
+                {
+                    "result_id": activity[-1]["result_id"],
+                    "operation": "roll_dice",
+                    "details": result,
+                }
+            ],
+        )
 
     def test_room_portal_renders_vote_question_options_and_ballots(self):
         with tempfile.TemporaryDirectory() as temp_dir:
@@ -373,6 +424,8 @@ class RoomAgentBridgeTests(unittest.TestCase):
                             "vote_id": "vote-1",
                             "vote_question": "Which route?",
                             "vote_options": ["North", "South"],
+                            "vote_duration_seconds": 300,
+                            "vote_deadline_at": "2026-07-27T15:00:00+00:00",
                         },
                         {
                             "id": "ballot-1",
@@ -392,6 +445,7 @@ class RoomAgentBridgeTests(unittest.TestCase):
 
         self.assertIn("[Vote vote-1]", view)
         self.assertIn("Which route?", view)
+        self.assertIn("Closes at: 2026-07-27T15:00:00+00:00", view)
         self.assertIn("1. North", view)
         self.assertIn("2. South", view)
         self.assertIn("[Vote vote-1 ballot] South", view)
@@ -463,9 +517,37 @@ class RoomAgentBridgeTests(unittest.TestCase):
             portal = RoomPortal(Path(temp_dir) / "portal", participant_id="codex")
             portal.prepare()
             client = FakeClient()
-            runtime = RoomPortalRuntime(
+            runtime = RoomPortalResultRuntime(
                 portal,
                 [("sonnet", "public room reply"), ""],
+                [
+                    [
+                        {
+                            "result_id": "result-11111111111111111111111111111111",
+                            "operation": "roll_dice",
+                            "details": {
+                                "notation": "1d20+2",
+                                "rolls": [13],
+                                "modifier": 2,
+                                "total": 15,
+                                "reason": "perception",
+                            },
+                        }
+                    ],
+                    [
+                        {
+                            "result_id": "result-22222222222222222222222222222222",
+                            "operation": "choose_random",
+                            "details": {
+                                "choice": "north",
+                                "index": 0,
+                                "option_count": 2,
+                                "options": ["north", "south"],
+                                "reason": "route",
+                            },
+                        }
+                    ],
+                ],
             )
             bridge = RoomAgentBridge(
                 client,
@@ -562,6 +644,177 @@ class RoomAgentBridgeTests(unittest.TestCase):
         self.assertIn("Current turn contract: room wake", runtime.sent[1])
         self.assertNotIn("automatic final", runtime.sent[0])
         self.assertNotIn("automatic final", runtime.sent[1])
+        result_commands = [
+            (index, payload)
+            for index, (action, payload, _) in enumerate(client.commands)
+            if action == "room.result.publish"
+        ]
+        self.assertEqual(
+            [payload for _, payload in result_commands],
+            [
+                {
+                    "turn_id": "wake-1",
+                    "result_id": "result-11111111111111111111111111111111",
+                    "operation": "roll_dice",
+                    "details": {
+                        "notation": "1d20+2",
+                        "rolls": [13],
+                        "modifier": 2,
+                        "total": 15,
+                        "reason": "perception",
+                    },
+                },
+                {
+                    "turn_id": "wake-2",
+                    "result_id": "result-22222222222222222222222222222222",
+                    "operation": "choose_random",
+                    "details": {
+                        "choice": "north",
+                        "index": 0,
+                        "option_count": 2,
+                        "options": ["north", "south"],
+                        "reason": "route",
+                    },
+                },
+            ],
+        )
+        final_index = next(
+            index
+            for index, (action, payload, _) in enumerate(client.commands)
+            if action == "message.final" and payload["turn_id"] == "wake-1"
+        )
+        decline_index = next(
+            index
+            for index, (action, payload, _) in enumerate(client.commands)
+            if action == "turn.decline" and payload["turn_id"] == "wake-2"
+        )
+        self.assertLess(result_commands[0][0], final_index)
+        self.assertLess(result_commands[1][0], decline_index)
+
+    def test_room_result_is_published_before_a_provider_output_failure(self):
+        class FailingResultRuntime(RoomPortalResultRuntime):
+            def read_output(self, *, timeout_seconds, on_delta=None, on_activity=None):
+                del timeout_seconds, on_delta, on_activity
+                raise RuntimeError("provider output failed")
+
+        with tempfile.TemporaryDirectory() as temp_dir:
+            portal = RoomPortal(Path(temp_dir) / "portal", participant_id="codex")
+            portal.prepare()
+            client = FakeClient()
+            runtime = FailingResultRuntime(
+                portal,
+                [""],
+                [
+                    [
+                        {
+                            "result_id": "result-33333333333333333333333333333333",
+                            "operation": "roll_dice",
+                            "details": {
+                                "notation": "1d20",
+                                "rolls": [9],
+                                "modifier": 0,
+                                "total": 9,
+                            },
+                        }
+                    ]
+                ],
+            )
+            bridge = RoomAgentBridge(
+                client,
+                runtime,
+                room_id="general",
+                participant_id="codex",
+                session_id="codex",
+                receive_sleep_seconds=0.005,
+                room_portal=portal,
+            )
+            thread = threading.Thread(target=bridge.run, daemon=True)
+            thread.start()
+            _wait_for(lambda: any(action == "bridge.ready" for action, _, _ in client.commands))
+            with client._lock:
+                client.messages.append(
+                    {
+                        "op": "room.wake",
+                        "room_id": "general",
+                        "participant_id": "codex",
+                        "session_id": "codex",
+                        "turn_id": "wake-failing-output",
+                        "input_up_to_seq": 0,
+                        "attachment_ids": [],
+                        "publication_mode": "explicit_room_portal",
+                        "timeout_seconds": 2,
+                    }
+                )
+            _wait_for(lambda: any(action == "turn.failed" for action, _, _ in client.commands))
+            with client._lock:
+                client.messages.append({"op": "agent.control", "action": "stop"})
+            thread.join(timeout=2)
+
+        actions = [action for action, _, _ in client.commands]
+        self.assertLess(actions.index("room.result.publish"), actions.index("turn.failed"))
+
+    def test_room_result_retries_the_same_request_id_after_ack_loss(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            portal = RoomPortal(Path(temp_dir) / "portal", participant_id="codex")
+            portal.prepare()
+            client = LostFirstResultAckClient()
+            runtime = RoomPortalResultRuntime(
+                portal,
+                [""],
+                [
+                    [
+                        {
+                            "result_id": "result-44444444444444444444444444444444",
+                            "operation": "roll_dice",
+                            "details": {
+                                "notation": "1d20",
+                                "rolls": [11],
+                                "modifier": 0,
+                                "total": 11,
+                            },
+                        }
+                    ]
+                ],
+            )
+            bridge = RoomAgentBridge(
+                client,
+                runtime,
+                room_id="general",
+                participant_id="codex",
+                session_id="codex",
+                receive_sleep_seconds=0.005,
+                report_timeout_seconds=0.02,
+                room_portal=portal,
+            )
+            thread = threading.Thread(target=bridge.run, daemon=True)
+            thread.start()
+            _wait_for(lambda: any(action == "bridge.ready" for action, _, _ in client.commands))
+            with client._lock:
+                client.messages.append(
+                    {
+                        "op": "room.wake",
+                        "room_id": "general",
+                        "participant_id": "codex",
+                        "session_id": "codex",
+                        "turn_id": "wake-lost-ack",
+                        "input_up_to_seq": 0,
+                        "attachment_ids": [],
+                        "publication_mode": "explicit_room_portal",
+                        "timeout_seconds": 2,
+                    }
+                )
+            _wait_for(lambda: any(action == "turn.decline" for action, _, _ in client.commands))
+            with client._lock:
+                client.messages.append({"op": "agent.control", "action": "stop"})
+            thread.join(timeout=2)
+
+        reports = [
+            (payload, request_id)
+            for action, payload, request_id in client.commands
+            if action == "room.result.publish"
+        ]
+        self.assertEqual(len(reports), 2)
+        self.assertEqual(reports[0], reports[1])
 
     def test_room_wake_hides_events_beyond_its_assigned_sequence(self):
         with tempfile.TemporaryDirectory() as temp_dir:

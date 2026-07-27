@@ -7,6 +7,7 @@ from datetime import datetime, timezone
 import json
 import os
 from pathlib import Path
+from uuid import uuid4
 
 from agentsassemble.providers.room_random import (
     choose_random as choose_random_result,
@@ -134,6 +135,8 @@ def _record_activity(
         "turn_id": active_turn_id,
         "observed_through_seq": observed_through_seq,
     }
+    if operation in {"roll_dice", "choose_random"}:
+        payload["result_id"] = f"result-{uuid4().hex}"
     if details:
         payload["details"] = details
     with activity_path.open("a", encoding="utf-8") as stream:

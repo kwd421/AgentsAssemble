@@ -40,20 +40,29 @@ class BridgeReportTracker:
         pump: Callable[[], bool] | None,
         is_closed: Callable[[], bool],
         wait_interval_seconds: float,
+        request_id: str = "",
+        retry_on_timeout: bool = False,
     ) -> dict[str, object]:
-        request_id = self.new_request_id()
+        request_id = str(request_id or "").strip()[:128] or self.new_request_id()
         pending = _PendingReport(action=action)
         with self._lock:
             self._pending[request_id] = pending
         try:
-            send(request_id)
-            response = self._wait(
-                request_id,
-                pending,
-                pump=pump,
-                is_closed=is_closed,
-                wait_interval_seconds=wait_interval_seconds,
-            )
+            attempts = 2 if retry_on_timeout else 1
+            for attempt in range(attempts):
+                send(request_id)
+                try:
+                    response = self._wait(
+                        request_id,
+                        pending,
+                        pump=pump,
+                        is_closed=is_closed,
+                        wait_interval_seconds=wait_interval_seconds,
+                    )
+                    break
+                except BridgeReportTimeout:
+                    if attempt + 1 >= attempts or is_closed():
+                        raise
         finally:
             with self._lock:
                 self._pending.pop(request_id, None)

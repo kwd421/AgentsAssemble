@@ -51,6 +51,8 @@ export interface LobbyEvent {
   vote_id?: string;
   vote_question?: string;
   vote_options?: string[];
+  vote_duration_seconds?: number;
+  vote_deadline_at?: string;
   vote_choice?: string;
   attachments?: LobbyAttachmentRef[];
 }
@@ -59,6 +61,8 @@ export interface VoteSummary {
   vote_id: string;
   question: string;
   options: string[];
+  vote_duration_seconds?: number;
+  vote_deadline_at?: string;
   created_by: string;
   created_at: string;
   tallies: Record<string, number>;
