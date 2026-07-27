@@ -1439,6 +1439,55 @@ class RoomRealtimeControllerTests(unittest.TestCase):
         self.assertIn(queued["id"], peer_session["inflight_event_ids"])
         self.assertGreaterEqual(peer_wake["input_up_to_seq"], queued["seq"])
 
+    def test_ordered_room_advances_to_the_queued_speaker_after_a_provider_failure(self):
+        self.controller.create_provider_session("general", _spec("peer"))
+        codex_identity, codex_channel = self._connect_bridge("codex")
+        _peer_identity, peer_channel = self._connect_bridge("peer")
+        codex_channel.drain()
+        peer_channel.drain()
+        self.controller.store.update_room_settings(
+            "general",
+            {"conversation_mode": "ordered"},
+        )
+
+        self._command(
+            "ordered-failing-codex",
+            "message.send",
+            {"content": "@codex 먼저 검토해"},
+        )
+        codex_wake = next(
+            message for message in codex_channel.drain() if message.get("op") == "room.wake"
+        )
+        queued = self._command(
+            "ordered-queued-peer-after-failure",
+            "message.send",
+            {"content": "@peer 다음으로 검토해"},
+        )["result"]["event"]
+
+        self.assertFalse(
+            any(message.get("op") == "room.wake" for message in peer_channel.drain())
+        )
+
+        self._command(
+            "ordered-codex-failed",
+            "turn.failed",
+            {
+                "turn_id": codex_wake["turn_id"],
+                "message": "ordinary provider failure",
+            },
+            codex_identity,
+        )
+
+        peer_wake = next(
+            message for message in peer_channel.drain() if message.get("op") == "room.wake"
+        )
+        failed_session = self.controller.store.session("general", "codex")
+        peer_session = self.controller.store.session("general", "peer")
+        self.assertEqual(failed_session["runtime_status"], "error")
+        self.assertEqual(peer_wake["source_event_id"], queued["id"])
+        self.assertIn(queued["id"], peer_session["inflight_event_ids"])
+        self.assertGreaterEqual(peer_wake["input_up_to_seq"], queued["seq"])
+
     def test_ambient_mode_wakes_each_eligible_bridge_without_transcript(self):
         self.controller.create_provider_session("general", _spec("peer"))
         codex_identity, codex_channel = self._connect_bridge("codex")

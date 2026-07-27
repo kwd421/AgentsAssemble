@@ -1417,6 +1417,11 @@ class RoomTurnCoordinator:
                 self.recovery_delay_seconds,
                 lambda: self._retry_pending_turn(room_id, str(session["session_id"])),
             )
+        elif (
+            not interrupted
+            and self.store.room_settings(room_id).get("conversation_mode") == "ordered"
+        ):
+            self.assign_next_ordered_pending(room_id)
         return {"event": error, "agent_session": public_session(updated)}
 
     def _complete_active_turn(
