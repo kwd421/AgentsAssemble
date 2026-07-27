@@ -127,8 +127,10 @@ def room_wake_orientation(
   `choose_random`; do not invent a result yourself."""
     elif kind in {"claude_code", "antigravity_live_session", "grok_live_session"}:
         random_note = """
-- For official game dice, run terminal command
-  `agentsassemble-room roll '<NdS±M>'` and use its returned result."""
+- For official game dice, run exactly one terminal command per roll:
+  `agentsassemble-room roll '<NdS±M>'`. If another roll is needed, wait for the
+  first result and use a separate tool call. Shell chaining such as `&&`, `;`,
+  or `|` is rejected."""
     return f"""Current turn contract: room wake
 - `room.wake <turn-id>` is only a content-free signal that assigned, finalized
   room activity is available.

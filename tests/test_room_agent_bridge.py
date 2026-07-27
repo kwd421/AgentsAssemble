@@ -94,6 +94,9 @@ class RoomWakeOrientationTests(unittest.TestCase):
         self.assertIn("do not try to locate", orientation)
         self.assertIn("Unicode quotation marks", orientation)
         self.assertIn('do not use ASCII `"`, `$`, or', orientation)
+        self.assertIn("exactly one terminal command per roll", orientation)
+        self.assertIn("use a separate tool call", orientation)
+        self.assertIn("Shell chaining", orientation)
 
     def test_room_wake_distinguishes_floor_selection_without_action_directives(self):
         ordered = room_wake_orientation(

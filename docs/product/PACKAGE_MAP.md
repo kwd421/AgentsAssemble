@@ -4,7 +4,7 @@ Status: generated architecture inventory
 
 Generator: `python3 scripts/generate_package_map.py`
 
-Source fingerprint: `9b26851d35521c01`
+Source fingerprint: `96c79296f1e91e24`
 
 This file describes current evidence and proposed ownership. It does not by
 itself authorize a module move or a product behavior change.
@@ -634,7 +634,7 @@ itself authorize a module move or a product behavior change.
 | `agentsassemble.providers.provider_usage` | `agentsassemble/providers/provider_usage.py` | 53 | providers | current | `agentsassemble.providers.claude_usage`, `agentsassemble.providers.codex_usage`, `agentsassemble.providers.deepseek_usage`, `agentsassemble.providers.terminal_usage`, `agentsassemble.providers.usage_contract` | 2 | - | - | - | `providers/` | in-target-package |
 | `agentsassemble.providers.remote_bridge_config` | `agentsassemble/providers/remote_bridge_config.py` | 55 | providers | current | - | 5 | - | - | - | `providers/` | in-target-package |
 | `agentsassemble.providers.resident_config` | `agentsassemble/providers/resident_config.py` | 24 | providers | current | - | 6 | - | - | - | `providers/` | in-target-package |
-| `agentsassemble.providers.room_portal` | `agentsassemble/providers/room_portal.py` | 1073 | providers | current | `agentsassemble.providers.runtime_contracts`, `agentsassemble.room.system_results`, `agentsassemble.room.text` | 7 | `call:compile@31`, `call:compile@32`, `call:room_session_orientation@148` | test-import:4 | `tests/test_grok_acp_runtime.py`, `tests/test_room_agent_bridge.py`, `tests/test_room_portal.py`, `+1` | `providers/` | in-target-package |
+| `agentsassemble.providers.room_portal` | `agentsassemble/providers/room_portal.py` | 1075 | providers | current | `agentsassemble.providers.runtime_contracts`, `agentsassemble.room.system_results`, `agentsassemble.room.text` | 7 | `call:compile@31`, `call:compile@32`, `call:room_session_orientation@150` | test-import:4 | `tests/test_grok_acp_runtime.py`, `tests/test_room_agent_bridge.py`, `tests/test_room_portal.py`, `+1` | `providers/` | in-target-package |
 | `agentsassemble.providers.room_portal_mcp` | `agentsassemble/providers/room_portal_mcp.py` | 172 | providers | current | `agentsassemble.providers.room_random`, `agentsassemble.room.text` | 1 | - | test-import:1 | `tests/test_room_portal_mcp.py` | `providers/` | in-target-package |
 | `agentsassemble.providers.room_random` | `agentsassemble/providers/room_random.py` | 64 | providers | current | `agentsassemble.room.random_contract` | 1 | - | test-import:1 | `tests/test_room_random.py` | `providers/` | in-target-package |
 | `agentsassemble.providers.runtime_config` | `agentsassemble/providers/runtime_config.py` | 279 | providers | current | `agentsassemble.room.text` | 7 | - | test-import:4 | `tests/test_provider_package.py`, `tests/test_provider_runtime_controls.py`, `tests/test_room_agent_bridge.py`, `+1` | `providers/` | in-target-package |
