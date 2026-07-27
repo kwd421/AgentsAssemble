@@ -137,6 +137,119 @@ class AgentSessionRoomStoreTests(unittest.TestCase):
         self.assertEqual(session["runtime_sharing_policy"], "isolated_session")
         self.assertIn("agent_session_created", [event["type"] for event in store.read_events("room-a")])
 
+    def test_legacy_agent_session_controls_reject_canonical_provider_session(self):
+        store = RoomStore(self.output_root)
+        store.create_room("room-a")
+        store.upsert_participant(
+            "room-a",
+            {
+                "participant_id": "agent-1",
+                "display_name": "Grok",
+                "role": "agent",
+                "status": "joined",
+            },
+        )
+        store.upsert_session(
+            "room-a",
+            {
+                "session_id": "agent-1",
+                "participant_id": "agent-1",
+                "display_name": "Grok",
+                "status": "available",
+                "provider_kind": "grok",
+                "runtime_kind": "live_cli",
+                "transport": "acp_stdio",
+            },
+        )
+        before = store.session("room-a", "agent-1")
+
+        operations = (
+            lambda: create_agent_session_payload(
+                self.output_root,
+                {
+                    "room_id": "room-a",
+                    "agent_id": "agent-1",
+                    "display_name": "overwritten",
+                },
+            ),
+            lambda: resume_agent_session_payload(
+                self.output_root,
+                {
+                    "room_id": "room-a",
+                    "agent_id": "agent-1",
+                    "display_name": "overwritten",
+                },
+            ),
+            lambda: run_agent_session_turn_payload(
+                self.output_root,
+                {
+                    "room_id": "room-a",
+                    "agent_id": "agent-1",
+                    "session_id": "agent-1",
+                    "instruction": "wrong runtime",
+                },
+                turn_runner=lambda _packet: (),
+            ),
+        )
+        for operation in operations:
+            with self.subTest(operation=operation):
+                with self.assertRaisesRegex(
+                    ValueError,
+                    "Canonical room provider sessions",
+                ):
+                    operation()
+
+        self.assertEqual(store.session("room-a", "agent-1"), before)
+
+    def test_legacy_next_turn_does_not_select_canonical_provider_sessions(self):
+        store = RoomStore(self.output_root)
+        store.create_room("room-a")
+        store.upsert_participant(
+            "room-a",
+            {
+                "participant_id": "agent-1",
+                "display_name": "Claude",
+                "role": "agent",
+                "status": "joined",
+            },
+        )
+        store.upsert_session(
+            "room-a",
+            {
+                "session_id": "agent-1",
+                "participant_id": "agent-1",
+                "display_name": "Claude",
+                "status": "available",
+                "provider_kind": "claude_code",
+                "runtime_kind": "live_cli",
+                "transport": "pty",
+            },
+        )
+        trigger = store.append_event(
+            "room-a",
+            "message_final",
+            actor_id="human-1",
+            content="hello",
+        )
+
+        with self.assertRaisesRegex(
+            ValueError,
+            "No active Agent Session participant",
+        ):
+            run_next_agent_session_turn_payload(
+                self.output_root,
+                {
+                    "room_id": "room-a",
+                    "trigger_event_id": trigger["id"],
+                },
+                turn_runner=lambda _packet: (),
+            )
+
+        self.assertNotIn(
+            "turn_queued",
+            [event["type"] for event in store.read_events("room-a")],
+        )
+
     def test_room_message_schedules_next_agent_session_turn_without_side_instruction(self):
         store = RoomStore(self.output_root)
         create_agent_session_payload(

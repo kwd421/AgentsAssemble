@@ -12,7 +12,6 @@ from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import Path
 
-from agentsassemble.application.agent_sessions import enqueue_agent_session_auto_turn_for_lobby_event
 from agentsassemble.application.gui import SessionRunMonitor
 from agentsassemble.legacy.live_agent.http.codex_session import (
     LegacyCodexSessionHttpDeps,
@@ -143,7 +142,6 @@ from agentsassemble.legacy.live_agent.presence import LegacyLiveAgentPresenceSer
 from agentsassemble.legacy.live_agent.runtime.room_admin import LegacyLiveAgentRoomSessionService
 from agentsassemble.legacy.live_agent.runtime.self_managed import LegacySelfManagedAgentService
 from agentsassemble.legacy.live_agent.runtime.session_runs import LiveAgentSessionRunController
-from agentsassemble.room.repository import RoomRepository
 
 
 LegacyCallable = Callable[..., object]
@@ -212,12 +210,10 @@ class LegacyGuiApplication:
     processes: LiveAgentProcessSupervisor
     session_runs: LiveAgentSessionRunController
     session_run_monitor: SessionRunMonitor
-    room_repository: RoomRepository
     append_lobby_event: LegacyCallable
     public_lobby_allows_room_scope: Callable[[dict[str, object]], bool]
     is_muted: LegacyCallable
     remote_lobby_requester: Callable[[], object | None]
-    turn_adapter: Callable[[], LegacyCallable]
     read_operation_payload: OperationPayloadReader
     record_operation: LegacyCallable
     speech: LegacyLiveAgentSpeechService
@@ -252,14 +248,6 @@ class LegacyGuiApplication:
             service=LegacyOfficialRoundService(self.output_root),
         )
 
-        def enqueue_auto_turn(event: dict[str, object]) -> None:
-            enqueue_agent_session_auto_turn_for_lobby_event(
-                self.output_root,
-                event,
-                turn_adapter=self.turn_adapter(),
-                repository=self.room_repository,
-            )
-
         register_legacy_lobby_routes(
             router,
             commands=LegacyLobbyCommandService(
@@ -269,7 +257,6 @@ class LegacyGuiApplication:
                 is_muted=self.is_muted,
                 requester=self.remote_lobby_requester,
             ),
-            enqueue_auto_turn=enqueue_auto_turn,
         )
 
     def register_live_agent_routes(self, router: Router) -> None:

@@ -14,7 +14,6 @@ from http import HTTPStatus
 from agentsassemble.application.agent_sessions import (
     AgentSessionProcessService,
     create_agent_session_payload,
-    enqueue_agent_session_auto_turn_for_lobby_event,
     resume_agent_session_payload,
     room_action_payload,
     room_lifecycle_payload,
@@ -23,6 +22,7 @@ from agentsassemble.application.agent_sessions import (
     run_next_agent_session_turn_payload,
 )
 from agentsassemble.providers.codex_app_server import CodexAppServerRuntimeManager
+from agentsassemble.providers.codex_app_server import clean_agent_session_provider_kind
 from agentsassemble.web.routes.agent_sessions import register_agent_session_routes
 from agentsassemble.web.routes.room_invite import register_invite_admission_routes
 from agentsassemble.legacy.meeting.http.room_lifecycle_compat import register_legacy_room_ensure_route
@@ -147,6 +147,11 @@ def _local_agent_session_turn_command_streamer(
 
 
 def _local_agent_session_turn_adapter(session: dict[str, object], packet: dict[str, object]):
+    provider_kind = clean_agent_session_provider_kind(session.get("provider_kind"))
+    if provider_kind not in {"", "codex_live_session"}:
+        raise ValueError(
+            "The legacy Agent Session app-server adapter only supports Codex sessions."
+        )
     yield from _CODEX_APP_SERVER_RUNTIMES.send_turn(session, packet)
 
 
@@ -186,8 +191,6 @@ def register_room_routes(
 
     register_room_history_routes(
         router,
-        agent_session_control_allowed=resolved.agent_session_control_allowed,
-        agent_turn_adapter=resolved.turn_adapter,
         speech_rejection_status=resolved.speech_rejection_status,
     )
     register_agent_session_routes(
@@ -203,8 +206,6 @@ def register_room_routes(
     register_room_member_routes(router)
     register_legacy_moderation_media_routes(
         router,
-        agent_session_control_allowed=resolved.agent_session_control_allowed,
-        agent_turn_adapter=resolved.turn_adapter,
         speech_rejection_status=resolved.speech_rejection_status,
     )
     register_invite_admission_routes(router)

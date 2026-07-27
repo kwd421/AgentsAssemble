@@ -106,6 +106,23 @@ def _legacy_facade_route_dependencies(root: Path) -> GuiDeps:
 
 class GuiServerRoomRouteTests(unittest.TestCase):
 
+    def test_legacy_app_server_adapter_rejects_non_codex_provider(self):
+        from agentsassemble.legacy.meeting.http import room_composition
+
+        with patch.object(
+            room_composition._CODEX_APP_SERVER_RUNTIMES,
+            "send_turn",
+        ) as send_turn:
+            with self.assertRaisesRegex(ValueError, "only supports Codex"):
+                list(
+                    room_composition._local_agent_session_turn_adapter(
+                        {"provider_kind": "grok"},
+                        {"provider_input": "hello"},
+                    )
+                )
+
+        send_turn.assert_not_called()
+
     def test_room_invite_creation_requires_an_existing_canonical_room(self):
         reset_room_invite_state()
         with tempfile.TemporaryDirectory() as temp_dir:
@@ -811,12 +828,9 @@ class GuiServerRoomRouteTests(unittest.TestCase):
             self.assertIn("turn_finished", event_types)
 
 
-    def test_lobby_message_auto_starts_agent_session_turn_without_manual_call(self):
+    def test_legacy_lobby_message_does_not_start_a_canonical_provider_turn(self):
         reset_room_invite_state()
         reset_room_users_state()
-
-        def fake_turn_adapter(session, packet):
-            yield {"type": "message_final", "content": "자동 Agent Session 응답"}
 
         with tempfile.TemporaryDirectory() as temp_dir:
             root = Path(temp_dir)
@@ -835,35 +849,33 @@ class GuiServerRoomRouteTests(unittest.TestCase):
             thread = threading.Thread(target=server.serve_forever, daemon=True)
             thread.start()
             try:
-                with patch("agentsassemble.gui._local_agent_session_turn_adapter", side_effect=fake_turn_adapter):
-                    request = Request(
-                        f"http://127.0.0.1:{server.server_port}/api/lobby",
-                        data=json.dumps(
-                            {
-                                "name": "나",
-                                "side": "mine",
-                                "kind": "message",
-                                "message": "방 메시지에 자동으로 답해줘.",
-                                "flow_meeting_id": "session-room",
-                            }
-                        ).encode("utf-8"),
-                        headers={"Content-Type": "application/json"},
+                request = Request(
+                    f"http://127.0.0.1:{server.server_port}/api/lobby",
+                    data=json.dumps(
+                        {
+                            "name": "나",
+                            "side": "mine",
+                            "kind": "message",
+                            "message": "레거시 호환 경로 메시지",
+                            "flow_meeting_id": "session-room",
+                        }
+                    ).encode("utf-8"),
+                    headers={"Content-Type": "application/json"},
+                )
+                with urlopen(request, timeout=4) as response:
+                    posted = json.loads(response.read().decode("utf-8"))
+
+                events = RoomStore(root).read_events("session-room")
+                self.assertEqual(posted["event"]["message"], "레거시 호환 경로 메시지")
+                self.assertNotIn("turn_queued", [event["type"] for event in events])
+                self.assertNotIn("turn_assigned", [event["type"] for event in events])
+                self.assertFalse(
+                    any(
+                        event.get("type") == "message_final"
+                        and event.get("content") == "레거시 호환 경로 메시지"
+                        for event in events
                     )
-                    with urlopen(request, timeout=4) as response:
-                        posted = json.loads(response.read().decode("utf-8"))
-
-                    deadline = time.time() + 4
-                    events = []
-                    while time.time() < deadline:
-                        events = RoomStore(root).read_events("session-room")
-                        if any(event.get("content") == "자동 Agent Session 응답" for event in events):
-                            break
-                        time.sleep(0.02)
-
-                self.assertEqual(posted["event"]["message"], "방 메시지에 자동으로 답해줘.")
-                self.assertIn("turn_queued", [event["type"] for event in events])
-                self.assertIn("turn_assigned", [event["type"] for event in events])
-                self.assertTrue(any(event.get("content") == "자동 Agent Session 응답" for event in events))
+                )
             finally:
                 server.shutdown()
                 server.server_close()

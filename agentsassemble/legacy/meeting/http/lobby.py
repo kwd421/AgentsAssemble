@@ -5,7 +5,6 @@ remain for compatibility and must not become a second room authority.
 """
 from __future__ import annotations
 
-from collections.abc import Callable
 from http import HTTPStatus
 
 from agentsassemble.room.attachments import AttachmentError
@@ -18,7 +17,6 @@ def register_legacy_lobby_routes(
     router: Router,
     *,
     commands: LegacyLobbyCommandService,
-    enqueue_auto_turn: Callable[[dict[str, object]], None],
 ) -> None:
     """Register the compatibility lobby write and event-stream endpoints."""
 
@@ -52,7 +50,6 @@ def register_legacy_lobby_routes(
             payload,
             allow_flow_metadata=allows_room_scope(payload),
         )
-        enqueue_auto_turn(event)
         ctx.send_json(
             {
                 "event": event,

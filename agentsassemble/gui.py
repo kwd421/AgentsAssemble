@@ -163,7 +163,7 @@ from agentsassemble.legacy.http.sse_transport import (
 )
 from agentsassemble.web.routes.observability import register_observability_routes
 from agentsassemble.web.routes.public_invite import register_public_invite_admin_routes
-from agentsassemble.legacy.meeting.http.room_composition import _local_agent_session_turn_adapter, register_room_routes
+from agentsassemble.legacy.meeting.http.room_composition import register_room_routes
 from agentsassemble.web.routes.room_settings import register_room_settings_routes
 from agentsassemble.web.static import (
     ReactStaticTransport,
@@ -396,7 +396,7 @@ from agentsassemble.web.room_ws_composition import (
     RoomWsComposition,
     build_ws_room_deps_factory,
 )
-from agentsassemble.application.agent_sessions import enqueue_agent_session_auto_turn_for_lobby_event, room_sse_frames_after_cursor
+from agentsassemble.application.agent_sessions import room_sse_frames_after_cursor
 from agentsassemble.admission.compat import configure_compatibility_invite_repository
 from agentsassemble.admission.invite import compatibility_public_invite_runtime
 from agentsassemble.legacy.meeting.core.events import (
@@ -1809,8 +1809,6 @@ def _make_handler(
             append_lobby_event=append_lobby_event,
             public_lobby_allows_room_scope=_public_lobby_allows_room_scope,
             is_muted=is_room_member_muted,
-            enqueue_auto_turn=enqueue_agent_session_auto_turn_for_lobby_event,
-            turn_adapter=_local_agent_session_turn_adapter,
             mark_thinking=mark_thinking,
             local_server_url=_local_server_url,
         ),
@@ -1903,12 +1901,10 @@ def _make_handler(
         processes=live_agent_process_supervisor,
         session_runs=live_agent_session_run_controller,
         session_run_monitor=session_run_monitor,
-        room_repository=room_repository,
         append_lobby_event=append_server_lobby_event,
         public_lobby_allows_room_scope=_public_lobby_allows_room_scope,
         is_muted=is_room_member_muted,
         remote_lobby_requester=lambda: REMOTE_LOBBY_REQUESTER,
-        turn_adapter=lambda: _local_agent_session_turn_adapter,
         read_operation_payload=_read_operation_payload,
         record_operation=record_live_agent_operation,
         speech=_legacy_live_agent_speech_service(output_root),

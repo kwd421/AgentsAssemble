@@ -4,10 +4,7 @@ from __future__ import annotations
 from collections.abc import Callable
 from http import HTTPStatus
 
-from agentsassemble.application.agent_sessions import (
-    enqueue_agent_session_auto_turn_for_lobby_event,
-    room_status_payload,
-)
+from agentsassemble.application.agent_sessions import room_status_payload
 from agentsassemble.room.moderation import is_room_member_muted
 from agentsassemble.room.speech import (
     ActorIdentity,
@@ -22,8 +19,6 @@ from agentsassemble.web.router import RequestContext, Router
 def register_room_history_routes(
     router: Router,
     *,
-    agent_session_control_allowed: Callable[[RequestContext], bool],
-    agent_turn_adapter: Callable[..., object],
     speech_rejection_status: Callable[[str], HTTPStatus],
 ) -> None:
     """Register lobby history, room messages, votes, and room registry routes."""
@@ -176,13 +171,6 @@ def register_room_history_routes(
         except GovernedLobbySayRejected as rejected:
             ctx.send_error(speech_rejection_status(rejected.category), str(rejected))
             return
-        if agent_session_control_allowed(ctx):
-            enqueue_agent_session_auto_turn_for_lobby_event(
-                ctx.deps.output_root,
-                event,
-                turn_adapter=agent_turn_adapter,
-                repository=ctx.deps.rooms,
-            )
         ctx.send_json({"event": event})
 
     def _vote_summary_response(

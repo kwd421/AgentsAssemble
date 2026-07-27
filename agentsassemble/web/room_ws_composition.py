@@ -31,8 +31,6 @@ class RoomWsComposition:
     append_lobby_event: Callable[..., dict[str, object]]
     public_lobby_allows_room_scope: Callable[[dict[str, object]], bool]
     is_muted: Callable[[Path, str, str], bool]
-    enqueue_auto_turn: Callable[..., object]
-    turn_adapter: Callable[..., object]
     mark_thinking: Callable[[str, str, bool], None]
     local_server_url: Callable[[object], str]
 
@@ -116,12 +114,6 @@ def build_ws_room_deps_factory(
                         composition.public_lobby_allows_room_scope
                     ),
                     is_muted=composition.is_muted,
-                )
-                composition.enqueue_auto_turn(
-                    output_root,
-                    event,
-                    turn_adapter=composition.turn_adapter,
-                    repository=room_repository,
                 )
                 return event
             except GovernedLobbySayRejected as rejected:

@@ -45,6 +45,7 @@ from agentsassemble.application.agent_sessions.compatibility import (
     ClaudeAgentSessionAdapter,
     GrokAgentSessionAdapter,
     UnsupportedAgentSessionAdapter,
+    is_canonical_room_provider_session,
 )
 from agentsassemble.application.agent_sessions.service import (
     create_agent_session as _create_agent_session,
@@ -411,6 +412,7 @@ def _ordered_agent_session_candidates(
         clean_lobby_text(session.get("participant_id"), limit=128): session
         for session in store.sessions(room_id)
         if clean_lobby_text(session.get("status"), limit=64) in {"attached", "available"}
+        and not is_canonical_room_provider_session(session)
     }
     candidates: list[tuple[dict[str, object], dict[str, object]]] = []
     for participant in store.active_participants(room_id):

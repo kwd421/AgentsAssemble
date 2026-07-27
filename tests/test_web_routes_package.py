@@ -114,8 +114,6 @@ class WebRoutesPackageTests(unittest.TestCase):
 
         compatibility_moderation_media.register_moderation_media_routes(
             router,
-            agent_session_control_allowed=lambda _ctx: False,
-            agent_turn_adapter=lambda *_args, **_kwargs: (),
             speech_rejection_status=lambda _category: 400,
         )
 

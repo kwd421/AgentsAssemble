@@ -9,6 +9,9 @@ import time
 from typing import Iterable
 from uuid import uuid4
 
+from agentsassemble.application.agent_sessions.compatibility import (
+    ensure_legacy_agent_session,
+)
 from agentsassemble.application.agent_sessions.turn_commands import (
     AgentTurnChunk,
     AgentTurnCommandRunner,
@@ -75,6 +78,7 @@ def run_agent_session_turn_payload(
         raise ValueError(f"Session {session_id} was not found.")
     if clean_lobby_text(session.get("participant_id"), limit=128) != agent_id:
         raise ValueError("session does not belong to participant.")
+    ensure_legacy_agent_session(session)
 
     packet = build_room_turn_packet(
         output_root,

@@ -7,6 +7,24 @@ from typing import Iterable, Protocol
 AgentTurnChunk = dict[str, object]
 
 
+def is_canonical_room_provider_session(session: dict[str, object]) -> bool:
+    """Return whether a session belongs to the current room runtime lifecycle."""
+
+    return any(
+        str(session.get(field) or "").strip()
+        for field in ("runtime_kind", "transport")
+    )
+
+
+def ensure_legacy_agent_session(session: dict[str, object]) -> None:
+    """Keep legacy Agent Session controls away from canonical provider sessions."""
+
+    if is_canonical_room_provider_session(session):
+        raise ValueError(
+            "Canonical room provider sessions must be controlled through room agent commands."
+        )
+
+
 class AgentSessionAdapter(Protocol):
     def start(self, config: dict[str, object]) -> dict[str, object]: ...
 
@@ -81,4 +99,3 @@ class ClaudeAgentSessionAdapter(UnsupportedAgentSessionAdapter):
 class AgyAgentSessionAdapter(UnsupportedAgentSessionAdapter):
     provider_name = "agy"
     reason = "AGY is unavailable until protocol verified."
-

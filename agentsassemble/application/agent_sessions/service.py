@@ -5,6 +5,9 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Callable, Protocol
 
+from agentsassemble.application.agent_sessions.compatibility import (
+    ensure_legacy_agent_session,
+)
 from agentsassemble.providers.codex_app_server import (
     clean_agent_session_provider_kind,
     clean_codex_app_server_runtime_sharing_policy,
@@ -31,6 +34,21 @@ class AgentSessionProcessServiceProtocol(Protocol):
 ProcessServiceFactory = Callable[[CommandRunner | None], AgentSessionProcessServiceProtocol]
 
 
+def _ensure_no_canonical_session(
+    store: RoomRepository,
+    room_id: str,
+    *,
+    agent_id: str,
+    session_id: str,
+) -> None:
+    for session in store.sessions(room_id):
+        if (
+            str(session.get("session_id") or "") == session_id
+            or str(session.get("participant_id") or "") == agent_id
+        ):
+            ensure_legacy_agent_session(session)
+
+
 def resume_agent_session(
     output_root: Path,
     payload: dict[str, object],
@@ -51,6 +69,12 @@ def resume_agent_session(
     if not session_id:
         raise ValueError("session_id is required.")
 
+    _ensure_no_canonical_session(
+        store,
+        room_id,
+        agent_id=agent_id,
+        session_id=session_id,
+    )
     room = store.create_room(room_id, label=clean_lobby_text(payload.get("label"), limit=128))
     previous_participant = store.participant(room_id, agent_id)
     previous_session = store.session(room_id, session_id)
@@ -136,6 +160,12 @@ def create_agent_session(
     if not session_id:
         raise ValueError("session_id is required.")
 
+    _ensure_no_canonical_session(
+        store,
+        room_id,
+        agent_id=agent_id,
+        session_id=session_id,
+    )
     owner_id = clean_lobby_text(payload.get("owner_id") or payload.get("created_by"), limit=128) or "operator-local"
     created_by = clean_lobby_text(payload.get("created_by") or owner_id, limit=128) or owner_id
     previous_participant = store.participant(room_id, agent_id)

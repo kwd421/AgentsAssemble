@@ -5,9 +5,6 @@ import threading
 from collections.abc import Callable
 from http import HTTPStatus
 
-from agentsassemble.application.agent_sessions import (
-    enqueue_agent_session_auto_turn_for_lobby_event,
-)
 from agentsassemble.web.router import RequestContext, Router
 from agentsassemble.legacy.live_agent.runtime.room_admin import expel_live_agent_from_room_payload
 from agentsassemble.legacy.live_agent.state import read_live_agents
@@ -56,8 +53,6 @@ _LOCAL_OPERATOR_DISPLAY_DEFAULT = "호스트"
 def register_legacy_moderation_media_routes(
     router: Router,
     *,
-    agent_session_control_allowed: Callable[[RequestContext], bool],
-    agent_turn_adapter: Callable[..., object],
     speech_rejection_status: Callable[[str], HTTPStatus],
 ) -> None:
     """Register legacy resident kick, custom channel, and voice routes."""
@@ -314,13 +309,6 @@ def register_legacy_moderation_media_routes(
         except GovernedLobbySayRejected as rejected:
             ctx.send_error(speech_rejection_status(rejected.category), str(rejected))
             return
-        if agent_session_control_allowed(ctx):
-            enqueue_agent_session_auto_turn_for_lobby_event(
-                ctx.deps.output_root,
-                event,
-                turn_adapter=agent_turn_adapter,
-                repository=ctx.deps.rooms,
-            )
         ctx.send_json({"event": event, "channel_id": channel_id})
 
     def _voice_presence_response(ctx: RequestContext, meeting_id: str, channel_id: str) -> None:
@@ -382,16 +370,12 @@ def register_legacy_moderation_media_routes(
 def register_moderation_media_routes(
     router: Router,
     *,
-    agent_session_control_allowed: Callable[[RequestContext], bool],
-    agent_turn_adapter: Callable[..., object],
     speech_rejection_status: Callable[[str], HTTPStatus],
 ) -> None:
     """Preserve the historical combined moderation/media registrar."""
     register_room_member_routes(router)
     register_legacy_moderation_media_routes(
         router,
-        agent_session_control_allowed=agent_session_control_allowed,
-        agent_turn_adapter=agent_turn_adapter,
         speech_rejection_status=speech_rejection_status,
     )
 
