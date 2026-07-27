@@ -185,7 +185,11 @@ Provider access is adapter-specific:
 - Codex app-server receives two session-scoped MCP tools: read the current room
   and publish one room message. The app-server remains in `read-only` sandbox
   mode.
-- Grok ACP receives equivalent virtual read/write paths.
+- Grok ACP receives equivalent virtual read/write paths. Its assigned
+  observation is confirmed only by reading the exact virtual path through ACP;
+  a shell read of a similarly named local file is not a receipt. During an
+  active observation, the permission boundary additionally allows only the
+  bounded `agentsassemble-room roll '<NdS±M>'` helper for audited game dice.
 - terminal-native providers receive a private `agentsassemble-room` helper in
   their allowlisted child `PATH`.
 

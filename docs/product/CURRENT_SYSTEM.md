@@ -145,13 +145,15 @@ targeted virtual outbox path shown in its room orientation. The bridge carries
 that target into the canonical message event; ordered routing then gives that
 provider the next observation without parsing the public prose.
 
-The Codex room portal also exposes server-side `roll_dice` and
-`choose_random` MCP tools for facilitator-owned game randomness. Their inputs
-and results are recorded in the private portal activity log. Structured room
-votes remain a human-UI action, but vote questions, options, and recorded
-ballots are rendered in every provider's private room mirror; Agent Sessions
-answer a requested vote through an ordinary public room message rather than
-claiming a structured ballot.
+The Codex room portal exposes server-side `roll_dice` and `choose_random` MCP
+tools for facilitator-owned game randomness. For dice, terminal providers and
+Grok ACP use the bounded `agentsassemble-room roll '<NdS±M>'` helper for the
+same audited contract; Grok's ACP permission boundary continues to reject every
+other terminal command. Inputs and results are recorded in the private portal
+activity log. Structured room votes remain a human-UI action, but vote questions,
+options, and recorded ballots are rendered in every provider's private room
+mirror; Agent Sessions answer a requested vote through an ordinary public room
+message rather than claiming a structured ballot.
 
 Agent Bridges passively acknowledge canonical room events without invoking the
 provider, while provider context is still delivered only through a server-assigned

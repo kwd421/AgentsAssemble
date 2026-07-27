@@ -15,7 +15,10 @@ _PERMISSION_BLOCK = re.compile(
 )
 _ATTACHMENT_ID = re.compile(r"^[A-Za-z0-9_-]{8,64}$")
 _AGENT_ID = re.compile(r"^[A-Za-z0-9_.-]{1,128}$")
-_DICE_NOTATION = re.compile(r"^\d{0,3}d\d{1,4}(?:[+-]\d{1,5})?$", re.IGNORECASE)
+_DICE_NOTATION = re.compile(
+    r"^(?P<count>\d{0,3})d(?P<sides>\d{1,4})(?P<modifier>[+-]\d{1,5})?$",
+    re.IGNORECASE,
+)
 _SHELL_CONTROL_TOKENS = frozenset({";", ";;", "&", "&&", "|", "||", "<", ">", "(", ")"})
 
 
@@ -77,9 +80,7 @@ def _latest_permission_command(output: bytes) -> str:
 
 def _is_safe_room_portal_command(command: str) -> bool:
     try:
-        parts = _split_shell_command(command)
-        if len(parts) == 1 and parts[0].startswith("agentsassemble-room "):
-            parts = _split_shell_command(parts[0])
+        parts = _room_portal_command_parts(command)
     except ValueError:
         return False
     if len(parts) < 2 or parts[0] != "agentsassemble-room":
@@ -93,7 +94,7 @@ def _is_safe_room_portal_command(command: str) -> bool:
     if action == "media":
         return len(arguments) == 1 and bool(_ATTACHMENT_ID.fullmatch(arguments[0]))
     if action == "roll":
-        return len(arguments) == 1 and bool(_DICE_NOTATION.fullmatch(arguments[0]))
+        return len(arguments) == 1 and _is_bounded_dice_notation(arguments[0])
     if action == "speak-to":
         if len(arguments) < 2 or _AGENT_ID.fullmatch(arguments[0]) is None:
             return False
@@ -108,6 +109,44 @@ def _is_safe_room_portal_command(command: str) -> bool:
         argument.startswith("~")
         for argument in arguments
     )
+
+
+def is_safe_room_roll_command(command: str) -> bool:
+    """Return whether a shell command is exactly one bounded room dice roll."""
+
+    try:
+        parts = _room_portal_command_parts(command)
+    except ValueError:
+        return False
+    return bool(
+        len(parts) == 3
+        and parts[0] == "agentsassemble-room"
+        and parts[1] == "roll"
+        and _is_bounded_dice_notation(parts[2])
+    )
+
+
+def _is_bounded_dice_notation(value: str) -> bool:
+    match = _DICE_NOTATION.fullmatch(value)
+    if match is None:
+        return False
+    count = int(match.group("count") or 1)
+    sides = int(match.group("sides"))
+    modifier = int(match.group("modifier") or 0)
+    return bool(
+        1 <= count <= 100
+        and 2 <= sides <= 1000
+        and -100_000 <= modifier <= 100_000
+    )
+
+
+def _room_portal_command_parts(command: str) -> list[str]:
+    parts = _split_shell_command(command)
+    if len(parts) == 1 and parts[0].startswith("agentsassemble-room "):
+        parts = _split_shell_command(parts[0])
+    if any(part in _SHELL_CONTROL_TOKENS for part in parts):
+        raise ValueError("room portal commands cannot contain shell control tokens")
+    return parts
 
 
 def _has_shell_expansion_outside_single_quotes(command: str) -> bool:
@@ -138,7 +177,9 @@ def _split_shell_command(command: str) -> list[str]:
     lexer.commenters = ""
     return list(lexer)
 
+
 __all__ = [
     "AntigravityRoomPortalInteraction",
     "TerminalInteractionPolicy",
+    "is_safe_room_roll_command",
 ]

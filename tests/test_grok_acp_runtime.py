@@ -178,6 +178,198 @@ class GrokAcpRuntimeTests(unittest.TestCase):
             "소넷, 다음 판단을 부탁해.",
         )
 
+    def test_permission_allows_only_bounded_room_roll_during_observation(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            runtime = self.make_runtime(Path(temp_dir))
+            runtime.room_portal = object()
+            runtime._session_id = "session-1"
+            runtime._active_room_observation = True
+            requests = []
+            for tool_call_id, tool_name, command in (
+                ("tool-roll", "run_terminal_command", "agentsassemble-room roll '1d20+4'"),
+                ("tool-write", "write", "agentsassemble-room roll d20"),
+                ("tool-unbounded", "run_terminal_command", "agentsassemble-room roll 999d9999"),
+                ("tool-chained", "run_terminal_command", "agentsassemble-room roll d20 && whoami"),
+                (
+                    "tool-python",
+                    "run_terminal_command",
+                    'python3 -c "import random; print(random.randint(1,20))"',
+                ),
+                (
+                    "tool-long-suffix",
+                    "run_terminal_command",
+                    "agentsassemble-room roll d20" + (" " * 700) + "&& whoami",
+                ),
+            ):
+                runtime._remember_tool_permission_context(
+                    {
+                        "method": "session/update",
+                        "params": {
+                            "sessionId": "session-1",
+                            "update": {
+                                "sessionUpdate": "tool_call",
+                                "toolCallId": tool_call_id,
+                                "_meta": {
+                                    "x.ai/tool": {
+                                        "name": tool_name,
+                                        "label": "Run Command",
+                                    }
+                                },
+                                "rawInput": {"command": command},
+                            },
+                        },
+                    }
+                )
+                requests.append(
+                    {
+                        "jsonrpc": "2.0",
+                        "id": f"permission-{tool_call_id}",
+                        "method": "session/request_permission",
+                        "params": {
+                            "sessionId": "session-1",
+                            "toolCall": {"toolCallId": tool_call_id},
+                            "options": [
+                                {"optionId": "allow-once", "kind": "allow_once"},
+                                {"optionId": "reject-once", "kind": "reject_once"},
+                            ],
+                        },
+                    }
+                )
+
+            with patch.object(runtime, "_send_json") as send_json:
+                for request in requests:
+                    runtime._respond_to_permission_request(request)
+
+        self.assertEqual(
+            [call.args[0]["result"] for call in send_json.call_args_list],
+            [
+                {"outcome": {"outcome": "selected", "optionId": "allow-once"}},
+                {"outcome": {"outcome": "selected", "optionId": "reject-once"}},
+                {"outcome": {"outcome": "selected", "optionId": "reject-once"}},
+                {"outcome": {"outcome": "selected", "optionId": "reject-once"}},
+                {"outcome": {"outcome": "selected", "optionId": "reject-once"}},
+                {"outcome": {"outcome": "selected", "optionId": "reject-once"}},
+            ],
+        )
+        self.assertEqual(runtime._permission_request_count, 6)
+        self.assertEqual(runtime._permission_denied_count, 5)
+
+    def test_permission_rejects_conflicting_command_updates_for_one_tool(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            runtime = self.make_runtime(Path(temp_dir))
+            runtime.room_portal = object()
+            runtime._session_id = "session-1"
+            runtime._active_room_observation = True
+            for command in (
+                "agentsassemble-room roll d20 && whoami",
+                "agentsassemble-room roll d20",
+            ):
+                runtime._remember_tool_permission_context(
+                    {
+                        "method": "session/update",
+                        "params": {
+                            "sessionId": "session-1",
+                            "update": {
+                                "sessionUpdate": "tool_call_update",
+                                "toolCallId": "tool-conflict",
+                                "_meta": {
+                                    "x.ai/tool": {
+                                        "name": "run_terminal_command",
+                                        "label": "Run Command",
+                                    }
+                                },
+                                "rawInput": {"command": command},
+                            },
+                        },
+                    }
+                )
+            request = {
+                "jsonrpc": "2.0",
+                "id": "permission-conflict",
+                "method": "session/request_permission",
+                "params": {
+                    "sessionId": "session-1",
+                    "toolCall": {"toolCallId": "tool-conflict"},
+                    "options": [
+                        {"optionId": "allow-once", "kind": "allow_once"},
+                        {"optionId": "reject-once", "kind": "reject_once"},
+                    ],
+                },
+            }
+
+            with patch.object(runtime, "_send_json") as send_json:
+                runtime._respond_to_permission_request(request)
+
+        self.assertEqual(
+            send_json.call_args.args[0]["result"],
+            {"outcome": {"outcome": "selected", "optionId": "reject-once"}},
+        )
+
+    def test_room_roll_permission_is_correlated_to_exact_tool_session_and_turn(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            runtime = self.make_runtime(Path(temp_dir))
+            runtime.room_portal = object()
+            runtime._session_id = "session-1"
+            runtime._active_room_observation = True
+            exact_tool_id = "r" * 128
+            runtime._remember_tool_permission_context(
+                {
+                    "method": "session/update",
+                    "params": {
+                        "sessionId": "session-1",
+                        "update": {
+                            "sessionUpdate": "tool_call",
+                            "toolCallId": exact_tool_id,
+                            "_meta": {
+                                "x.ai/tool": {
+                                    "name": "run_terminal_command",
+                                    "label": "Run Command",
+                                }
+                            },
+                            "rawInput": {"command": "agentsassemble-room roll d20"},
+                        },
+                    },
+                }
+            )
+
+            self.assertTrue(
+                runtime._permission_is_room_roll(
+                    {
+                        "sessionId": "session-1",
+                        "toolCallId": exact_tool_id,
+                    },
+                    {},
+                )
+            )
+            self.assertFalse(
+                runtime._permission_is_room_roll(
+                    {
+                        "sessionId": "session-2",
+                        "toolCallId": exact_tool_id,
+                    },
+                    {},
+                )
+            )
+            self.assertFalse(
+                runtime._permission_is_room_roll(
+                    {
+                        "sessionId": "session-1",
+                        "toolCallId": exact_tool_id + "x",
+                    },
+                    {},
+                )
+            )
+            runtime._active_room_observation = False
+            self.assertFalse(
+                runtime._permission_is_room_roll(
+                    {
+                        "sessionId": "session-1",
+                        "toolCallId": exact_tool_id,
+                    },
+                    {},
+                )
+            )
+
     def test_permission_ignores_tool_context_from_another_session(self):
         with tempfile.TemporaryDirectory() as temp_dir:
             runtime = self.make_runtime(Path(temp_dir))

@@ -46,6 +46,17 @@ class AntigravityRoomPortalInteractionTests(unittest.TestCase):
         with self.assertRaises(AdapterContractError):
             policy.response_for(unsafe_prompt)
 
+        policy.begin_turn()
+        unbounded_prompt = b"\n".join(
+            [
+                b"Requesting permission for:",
+                b"   agentsassemble-room roll 999d9999",
+                b"Do you want to proceed?",
+            ]
+        )
+        with self.assertRaises(AdapterContractError):
+            policy.response_for(unbounded_prompt)
+
     def test_shell_chaining_is_rejected_instead_of_receiving_terminal_approval(self):
         policy = AntigravityRoomPortalInteraction()
         policy.begin_turn()

@@ -21,6 +21,8 @@ from agentsassemble.providers.grok_acp.room_access import (
     merge_permission_context,
     permission_context_update,
     permission_is_room_outbox_write,
+    permission_is_room_roll,
+    permission_tool_call_id,
     room_outbox_content,
     room_outbox_path,
 )
@@ -504,7 +506,9 @@ class GrokAcpRuntime(GrokAcpTransportMixin, GrokAcpTurnProjectionMixin):
         allow_outbox = self._permission_is_room_outbox_write(params, tool_call)
         if allow_outbox:
             allow_outbox = self._stage_room_outbox_write(params, tool_call)
-        option_kind = "allow_once" if allow_outbox else "reject_once"
+        allow_roll = self._permission_is_room_roll(params, tool_call)
+        allow_request = allow_outbox or allow_roll
+        option_kind = "allow_once" if allow_request else "reject_once"
         option_id = ""
         for option in list(params.get("options") or []):
             if not isinstance(option, dict) or str(option.get("kind") or "") != option_kind:
@@ -514,7 +518,7 @@ class GrokAcpRuntime(GrokAcpTransportMixin, GrokAcpTurnProjectionMixin):
                 break
         with self._lock:
             self._permission_request_count += 1
-            if not allow_outbox:
+            if not allow_request:
                 self._permission_denied_count += 1
         outcome: dict[str, object]
         if option_id:
@@ -542,15 +546,35 @@ class GrokAcpRuntime(GrokAcpTransportMixin, GrokAcpTurnProjectionMixin):
             session_id = self._session_id
         if self.room_portal is None:
             return False
-        tool_call_id = clean_room_text(
-            tool_call.get("toolCallId") or params.get("toolCallId"),
-            limit=128,
-        )
+        tool_call_id = permission_tool_call_id(params, tool_call)
         with self._lock:
             cached = dict(
                 self._tool_permission_context.get((session_id, tool_call_id)) or {}
             )
         return permission_is_room_outbox_write(
+            params,
+            tool_call,
+            session_id=session_id,
+            active_room_observation=active_room_observation,
+            cached=cached,
+        )
+
+    def _permission_is_room_roll(
+        self,
+        params: dict[str, object],
+        tool_call: dict[str, object],
+    ) -> bool:
+        with self._lock:
+            active_room_observation = self._active_room_observation
+            session_id = self._session_id
+        if self.room_portal is None:
+            return False
+        tool_call_id = permission_tool_call_id(params, tool_call)
+        with self._lock:
+            cached = dict(
+                self._tool_permission_context.get((session_id, tool_call_id)) or {}
+            )
+        return permission_is_room_roll(
             params,
             tool_call,
             session_id=session_id,
@@ -567,10 +591,7 @@ class GrokAcpRuntime(GrokAcpTransportMixin, GrokAcpTurnProjectionMixin):
         if portal is None:
             return False
         session_id = clean_room_text(params.get("sessionId"), limit=128)
-        tool_call_id = clean_room_text(
-            tool_call.get("toolCallId") or params.get("toolCallId"),
-            limit=128,
-        )
+        tool_call_id = permission_tool_call_id(params, tool_call)
         with self._lock:
             cached = dict(
                 self._tool_permission_context.get((session_id, tool_call_id)) or {}

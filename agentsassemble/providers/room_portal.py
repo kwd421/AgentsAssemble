@@ -58,6 +58,9 @@ def _room_interfaces(provider_kind: object = "") -> tuple[str, str, str]:
             "handing the floor to one participant"
         )
         provider_note = """
+- Read the exact virtual path with the ACP Read/File Read tool. Do not use
+  terminal `cat`, `find`, file listing, or a local-path substitute; only the ACP
+  read confirms that this assigned observation was seen.
 - For that exact virtual outbox path, the room adapter captures the content at
   the ACP permission boundary. A later local read-only filesystem error does
   not mean publication failed; do not retry it through a shell or helper."""
@@ -94,7 +97,7 @@ def room_wake_orientation(provider_kind: object = "") -> str:
         random_note = """
 - For official game randomness, use `roll_dice` with NdS±M notation or
   `choose_random`; do not invent a result yourself."""
-    elif kind in {"claude_code", "antigravity_live_session"}:
+    elif kind in {"claude_code", "antigravity_live_session", "grok_live_session"}:
         random_note = """
 - For official game dice, run terminal command
   `agentsassemble-room roll '<NdS±M>'` and use its returned result."""

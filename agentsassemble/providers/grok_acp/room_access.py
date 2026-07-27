@@ -6,7 +6,11 @@ from agentsassemble.providers.room_portal import (
     VIRTUAL_ROOM_OUTBOX_PATH,
     direct_outbox_target,
 )
+from agentsassemble.providers.terminal_interactions import is_safe_room_roll_command
 from agentsassemble.room.text import clean_room_text
+
+
+_MAX_PERMISSION_COMMAND_CHARS = 600
 
 
 def permission_is_room_outbox_write(
@@ -17,8 +21,10 @@ def permission_is_room_outbox_write(
     active_room_observation: bool,
     cached: dict[str, object],
 ) -> bool:
+    tool_call_id = permission_tool_call_id(params, tool_call)
     if (
-        not active_room_observation
+        not tool_call_id
+        or not active_room_observation
         or str(params.get("sessionId") or "") != session_id
     ):
         return False
@@ -70,6 +76,62 @@ def permission_is_room_outbox_write(
     return bool(targets) and all(
         target == VIRTUAL_ROOM_OUTBOX_PATH or bool(direct_outbox_target(target))
         for target in targets
+    )
+
+
+def permission_is_room_roll(
+    params: dict[str, object],
+    tool_call: dict[str, object],
+    *,
+    session_id: str,
+    active_room_observation: bool,
+    cached: dict[str, object],
+) -> bool:
+    tool_call_id = permission_tool_call_id(params, tool_call)
+    if (
+        not tool_call_id
+        or not active_room_observation
+        or str(params.get("sessionId") or "") != session_id
+    ):
+        return False
+    raw_input = (
+        tool_call.get("rawInput")
+        if isinstance(tool_call.get("rawInput"), dict)
+        else {}
+    )
+    cached_input = (
+        cached.get("rawInput")
+        if isinstance(cached.get("rawInput"), dict)
+        else {}
+    )
+    if (
+        raw_input.get("_command_overflow")
+        or cached_input.get("_command_overflow")
+        or cached_input.get("_command_conflict")
+        or cached.get("_identity_conflict")
+    ):
+        return False
+    tool_names = [
+        clean_room_text(value, limit=120).casefold()
+        for value in (
+            tool_call.get("name"),
+            cached.get("name"),
+        )
+        if value
+    ]
+    if not tool_names or any(name != "run_terminal_command" for name in tool_names):
+        return False
+    commands = [
+        command
+        for command in (
+            raw_input.get("command"),
+            cached_input.get("command"),
+        )
+        if isinstance(command, str) and command
+    ]
+    return bool(commands) and all(
+        is_safe_room_roll_command(command)
+        for command in commands
     )
 
 
@@ -138,9 +200,8 @@ def permission_context_update(
     update = params.get("update") if isinstance(params.get("update"), dict) else {}
     if str(update.get("sessionUpdate") or "") not in {"tool_call", "tool_call_update"}:
         return None
-    tool_call_id = clean_room_text(
+    tool_call_id = _bounded_tool_call_id(
         update.get("toolCallId") or update.get("tool_call_id"),
-        limit=128,
     )
     update_session_id = clean_room_text(params.get("sessionId"), limit=128)
     if (
@@ -157,6 +218,20 @@ def permission_context_update(
         else {}
     )
     raw_input = update.get("rawInput") if isinstance(update.get("rawInput"), dict) else {}
+    permission_input: dict[str, object] = {}
+    for key in ("command", "content", "file_path", "path", "target_file"):
+        value = raw_input.get(key)
+        if not isinstance(value, str) or not value:
+            continue
+        if key == "content":
+            permission_input[key] = value[:12000]
+        elif key == "command":
+            if len(value) > _MAX_PERMISSION_COMMAND_CHARS:
+                permission_input["_command_overflow"] = True
+            else:
+                permission_input[key] = value
+        else:
+            permission_input[key] = clean_room_text(value, limit=600)
     locations: list[dict[str, str]] = []
     for key in ("location", "locations"):
         values = update.get(key)
@@ -175,15 +250,7 @@ def permission_context_update(
         ),
         "label": clean_room_text(tool_metadata.get("label"), limit=120),
         "title": clean_room_text(update.get("title"), limit=300),
-        "rawInput": {
-            key: (
-                str(raw_input.get(key))[:12000]
-                if key == "content"
-                else clean_room_text(raw_input.get(key), limit=600)
-            )
-            for key in ("command", "content", "file_path", "path", "target_file")
-            if isinstance(raw_input.get(key), str) and raw_input.get(key)
-        },
+        "rawInput": permission_input,
         "locations": locations,
         **{
             key: clean_room_text(update.get(key), limit=600)
@@ -205,9 +272,19 @@ def merge_permission_context(
         else {}
     )
     if isinstance(incoming.get("rawInput"), dict):
+        previous_command = merged_input.get("command")
+        incoming_command = incoming["rawInput"].get("command")
+        if (
+            isinstance(previous_command, str)
+            and isinstance(incoming_command, str)
+            and previous_command != incoming_command
+        ):
+            merged_input["_command_conflict"] = True
         merged_input.update(incoming["rawInput"])
     for key in ("name", "label", "title", "file_path", "path", "target_file"):
         if incoming.get(key):
+            if key == "name" and merged.get(key) and merged[key] != incoming[key]:
+                merged["_identity_conflict"] = True
             merged[key] = incoming[key]
     if incoming.get("locations"):
         merged["locations"] = incoming["locations"]
@@ -215,10 +292,27 @@ def merge_permission_context(
     return merged
 
 
+def permission_tool_call_id(
+    params: dict[str, object],
+    tool_call: dict[str, object],
+) -> str:
+    return _bounded_tool_call_id(
+        tool_call.get("toolCallId") or params.get("toolCallId"),
+    )
+
+
+def _bounded_tool_call_id(value: object) -> str:
+    if not isinstance(value, str):
+        return ""
+    return value if value == clean_room_text(value, limit=128) else ""
+
+
 __all__ = [
     "merge_permission_context",
     "permission_context_update",
     "permission_is_room_outbox_write",
+    "permission_is_room_roll",
+    "permission_tool_call_id",
     "room_outbox_content",
     "room_outbox_path",
 ]
