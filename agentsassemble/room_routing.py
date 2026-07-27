@@ -52,6 +52,34 @@ def route_message_targets(
     )
 
 
+def direct_message_targets(
+    event: dict[str, object],
+    providers: Mapping[str, NativeCliProviderSpec],
+) -> tuple[str, ...]:
+    """Return specifically addressed providers in message order.
+
+    ``@all`` is intentionally not a direct target in a one-speaker room.
+    """
+    content = clean_lobby_text(event.get("content"), limit=12000)
+    target_agent_id = clean_lobby_text(event.get("target_agent_id"), limit=128)
+    ordered: list[tuple[int, str]] = []
+    if target_agent_id in providers:
+        ordered.append((-1, target_agent_id))
+    lowered = content.casefold()
+    for agent_id in providers:
+        match = re.search(
+            rf"(?<![\w-])@{re.escape(agent_id.casefold())}(?![\w-])",
+            lowered,
+        )
+        if match is not None:
+            ordered.append((match.start(), agent_id))
+    result: list[str] = []
+    for _position, agent_id in sorted(ordered):
+        if agent_id not in result:
+            result.append(agent_id)
+    return tuple(result)
+
+
 def _mentioned_agents(
     content: str,
     providers: Mapping[str, NativeCliProviderSpec],

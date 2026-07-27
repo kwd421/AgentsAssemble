@@ -1,6 +1,6 @@
 # Durable Attention Model
 
-Status: current contract; opt-in ambient routing active
+Status: current contract; ordered and ambient room-observation routing active
 
 Updated: 2026-07-25
 
@@ -14,8 +14,8 @@ Canonical room events are pushed to each connected Agent Bridge so its private,
 bounded room mirror stays current. Passive event delivery advances only the
 observation cursor and does not invoke the provider.
 
-`ordered` and legacy `continuous` rooms still use their existing routing.
-Optional shadow recording is controlled by the server's
+Legacy `continuous` rooms still use bounded transcript turns. Their optional
+shadow recording is controlled by the server's
 `--attention-shadow-mode off|sample|full` setting and defaults to `off`.
 `sample` evaluates only committed source events whose canonical room sequence
 is divisible by 16; this rule is deterministic across restarts. Shadow
@@ -47,6 +47,18 @@ The deterministic attention selector remains available for shadow recording in
 non-ambient rooms. It is not the ambient speaking authority. In ambient mode the
 server decides only whether a session is eligible to inspect the room; the
 provider decides whether it has something to say.
+
+An `ordered` room uses the same private room-observation and explicit
+publication boundary, but wakes only one provider for each committed room
+message. A direct provider `@mention` gets the next observation without speaker
+selection. Otherwise the server samples two available providers at random and
+wakes the one with the smaller share of the most recent 100 provider messages;
+a tied sample retains its random order. The author is excluded. The selected
+provider reads the bounded room mirror and may publish or decline. A publication
+creates the next room diff and therefore the next one-speaker selection.
+If a new human message arrives while that provider is still working, its chosen
+next observer is queued. The room does not dispatch a second observation until
+the active turn finishes.
 
 ## Independent Cursors
 
@@ -102,9 +114,10 @@ Session. The author is excluded from its own message wake. Busy sessions retain
 their pending canonical event IDs and inspect the backlog when they become
 available.
 
-An `@mention` remains a public room message. It may be used by the provider as a
-reason to answer, but it does not hide the message from peers or turn it into a
-DM. Ambient routing does not silently replace an unavailable named provider.
+An `@mention` remains a public room message and does not become a DM. In ordered
+mode a direct provider mention grants that provider the next observation without
+substituting another provider. Ambient routing still wakes all eligible peers
+and does not silently replace an unavailable named provider.
 
 The Agent Bridge acknowledges the highest canonical event sequence delivered
 to it with `room.observed`. This advances only `last_observed_seq`; it does not
@@ -169,8 +182,9 @@ process IDs, and backend topology are not written into the room view.
 
 Provider access is adapter-specific:
 
-- Codex app-server receives two dynamic tools: read the current room and publish
-  one room message. The app-server remains in `read-only` sandbox mode.
+- Codex app-server receives two session-scoped MCP tools: read the current room
+  and publish one room message. The app-server remains in `read-only` sandbox
+  mode.
 - Grok ACP receives equivalent virtual read/write paths.
 - terminal-native providers receive a private `agentsassemble-room` helper in
   their allowlisted child `PATH`.
@@ -188,8 +202,9 @@ may publish or decline exactly as it would after an event wake.
 
 ## Current Limits
 
-- Ambient observation is event-driven; there is no fractional-second provider
-  polling and no server relay-count stop.
+- Ordered and ambient observation are event-driven; there is no
+  fractional-second provider polling. Ordered selects one speaker per diff,
+  while ambient wakes all eligible peers.
 - The five-minute idle check invokes the provider only when the server accepts
   a room observation.
 - Scheduled follow-ups and conversation obligations remain inactive schema

@@ -127,15 +127,15 @@ Detailed implementation and verification:
 
 ## Current Provider Contract
 
-Ordered and continuous providers receive a server-assigned turn containing a
-bounded room diff after their durable cursor. A turn reuses the existing
-provider process and must not launch a one-shot CLI.
+Continuous providers receive a server-assigned turn containing a bounded room
+diff after their durable cursor. A turn reuses the existing provider process
+and must not launch a one-shot CLI.
 
-Ambient providers use a different input mode. The canonical event broker keeps
-each Agent Bridge's private `RoomPortal` current, then sends a `room.wake`
-containing event/cursor and referenced-attachment identifiers but no provider
-transcript. The provider reads its bounded room mirror and either publishes
-through the portal or publishes nothing. Only portal output becomes
+Ordered and ambient providers use a different input mode. The canonical event
+broker keeps each Agent Bridge's private `RoomPortal` current, then sends a
+`room.wake` containing event/cursor and referenced-attachment identifiers but
+no provider transcript. The provider reads its bounded room mirror and either
+publishes through the portal or publishes nothing. Only portal output becomes
 `message_final`; no output becomes a structured decline. Ordinary assistant or
 terminal output is private and is never used as an implicit fallback.
 
@@ -207,9 +207,16 @@ same principal/request/payload can resume or deduplicate that delete; a
 different request receives `room_deleted`.
 
 An event-driven deterministic attention gate can record durable `selected`,
-`eligible`, or `silent` decisions. Shadow recording for existing `ordered` and
-`continuous` rooms is server-configured as `off | sample | full` and defaults to
-`off`; `sample` records only canonical source sequences divisible by 16.
+`eligible`, or `silent` decisions. Shadow recording for legacy `continuous`
+rooms is server-configured as `off | sample | full` and defaults to `off`;
+`sample` records only canonical source sequences divisible by 16.
+
+An `ordered` room selects exactly one observer for each committed message. A
+direct provider mention takes the next observation; otherwise the server
+randomly samples two available providers and chooses the one with fewer
+messages among the latest 100 provider messages. The author is excluded. If a
+turn is already active, the chosen observation remains queued until it
+finishes, preserving one room-wide provider turn at a time.
 
 A room explicitly set to `ambient` does not use that selector to choose one
 speaker. Each committed room message wakes all connected, idle, unmuted Agent
@@ -220,11 +227,12 @@ observation; it is not a fast provider polling loop. Current contract:
 `docs/product/ATTENTION_MODEL.md`; supporting research:
 `docs/reports/autonomous-room-participation-research.md`.
 
-For ordinary selected turns, the evaluation cursor, attention job and lease,
-and the Agent Session's pending source/job/lease fields commit together. Ambient
-room observations instead retain canonical pending event IDs per session and
-assign one active observation per eligible bridge. A busy session keeps later
-events pending rather than launching a concurrent provider turn.
+For legacy selected transcript turns, the evaluation cursor, attention job and
+lease, and the Agent Session's pending source/job/lease fields commit together.
+Ordered and ambient room observations instead retain canonical pending event
+IDs per session. Ordered dispatches one room-wide observation at a time;
+ambient may assign one active observation per eligible bridge. A busy session
+keeps later events pending rather than launching a concurrent provider turn.
 
 Attention lease claim checks the persisted expiry. An elapsed active lease is
 expired and replaced in the same transaction; a rollback restores the prior

@@ -65,6 +65,7 @@ from agentsassemble.room_floor_policy import (
     AgentFloorEligibility,
     continuous_floor_targets,
     evaluate_agent_floor_eligibility,
+    ordered_floor_target,
 )
 from agentsassemble.room.moderation import (
     is_room_member_muted,
@@ -87,7 +88,7 @@ from agentsassemble.providers.sync_cursor import (
     ProviderSyncCursorParityError,
     ProviderSyncCursorReconciler,
 )
-from agentsassemble.room_routing import route_message_targets
+from agentsassemble.room_routing import direct_message_targets, route_message_targets
 from agentsassemble.room.repository import RoomRepository
 from agentsassemble.room.snapshots import (
     ROOM_HISTORY_MAX_LIMIT,
@@ -1297,14 +1298,18 @@ class RoomRealtimeController:
         room_id = clean_lobby_text(event.get("room_id"), limit=128)
         providers = self._room_providers(room_id)
         settings = self.store.room_settings(room_id)
-        if settings.get("conversation_mode") == "ambient":
+        conversation_mode = settings.get("conversation_mode")
+        if conversation_mode == "ambient":
             self._route_ambient_event(
                 dict(event),
                 providers,
             )
             return
+        if conversation_mode == "ordered":
+            self._route_ordered_event(dict(event), providers)
+            return
         self._record_shadow_attention(dict(event), providers)
-        continuous = settings.get("conversation_mode") == "continuous"
+        continuous = conversation_mode == "continuous"
         max_relay_turns = int(settings.get("max_relay_turns") or self.max_agent_relay_depth)
         decision = route_message_targets(
             dict(event),
@@ -1335,6 +1340,65 @@ class RoomRealtimeController:
                 event,
                 relay_depth=decision.relay_depth + (1 if continuous or decision.actor_type == "agent" else 0),
             )
+
+    def _route_ordered_event(
+        self,
+        event: dict[str, object],
+        providers: dict[str, NativeCliProviderSpec],
+    ) -> None:
+        room_id = clean_lobby_text(event.get("room_id"), limit=128)
+        actor = event.get("actor") if isinstance(event.get("actor"), dict) else {}
+        actor_id = clean_lobby_text(
+            actor.get("participant_id") or event.get("participant_id"),
+            limit=128,
+        )
+        direct_targets = direct_message_targets(event, providers)
+        eligible_agent_ids: list[str] = []
+        for agent_id in providers:
+            if agent_id == actor_id:
+                continue
+            eligibility = self.agent_floor_eligibility(room_id, agent_id)
+            if eligibility.eligible or eligibility.reason_code == "runtime_busy":
+                eligible_agent_ids.append(agent_id)
+        target_ids = ordered_floor_target(
+            provider_ids=providers,
+            actor_id=actor_id,
+            direct_targets=direct_targets,
+            eligible_agent_ids=eligible_agent_ids,
+            message_counts=self._recent_agent_message_counts(room_id, providers),
+        )
+        for agent_id in target_ids:
+            participant = self.store.participant(room_id, agent_id)
+            if participant.get("status") == "kicked" or participant.get("muted"):
+                continue
+            self._turn_coordinator.queue_event(
+                room_id,
+                agent_id,
+                event,
+                relay_depth=0,
+                input_mode="room_observation",
+            )
+
+    def _recent_agent_message_counts(
+        self,
+        room_id: str,
+        providers: dict[str, NativeCliProviderSpec],
+    ) -> dict[str, int]:
+        counts = {agent_id: 0 for agent_id in providers}
+        for message in self.store.read_events(
+            room_id,
+            event_types=("message_final",),
+            limit=100,
+            newest=True,
+        ):
+            actor = message.get("actor") if isinstance(message.get("actor"), dict) else {}
+            participant_id = clean_lobby_text(
+                message.get("participant_id") or actor.get("participant_id"),
+                limit=128,
+            )
+            if participant_id in counts:
+                counts[participant_id] += 1
+        return counts
 
     def _route_ambient_event(
         self,

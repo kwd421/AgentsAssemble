@@ -1,13 +1,17 @@
 from __future__ import annotations
 
+import random
 from dataclasses import dataclass
-from typing import Iterable, Mapping
+from typing import Callable, Iterable, Mapping, Sequence
 
 
 @dataclass(frozen=True)
 class AgentFloorEligibility:
     eligible: bool
     reason_code: str
+
+
+RandomSample = Callable[[Sequence[str], int], list[str]]
 
 
 def evaluate_agent_floor_eligibility(
@@ -66,3 +70,30 @@ def continuous_floor_targets(
     if not eligible_candidates:
         raise RuntimeError("continuous_floor_invariant_violation")
     return (eligible_candidates[0],)
+
+
+def ordered_floor_target(
+    *,
+    provider_ids: Iterable[str],
+    actor_id: str,
+    direct_targets: Iterable[str],
+    eligible_agent_ids: Iterable[str],
+    message_counts: Mapping[str, int],
+    random_sample: RandomSample = random.sample,
+) -> tuple[str, ...]:
+    """Choose one ordered-room speaker without asking every provider to answer."""
+    providers = set(provider_ids)
+    for target in direct_targets:
+        if target in providers and target != actor_id:
+            return (target,)
+
+    eligible = sorted(
+        agent_id
+        for agent_id in set(eligible_agent_ids)
+        if agent_id in providers and agent_id != actor_id
+    )
+    if not eligible:
+        return ()
+    sampled = random_sample(eligible, min(2, len(eligible)))
+    selected = min(sampled, key=lambda agent_id: max(0, int(message_counts.get(agent_id, 0))))
+    return (selected,)

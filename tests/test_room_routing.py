@@ -1,7 +1,7 @@
 import unittest
 
 from agentsassemble.providers.launch_specs import NativeCliProviderSpec
-from agentsassemble.room_routing import route_message_targets
+from agentsassemble.room_routing import direct_message_targets, route_message_targets
 
 
 def _providers():
@@ -78,6 +78,18 @@ class RoomRoutingPolicyTests(unittest.TestCase):
         )
         self.assertEqual(allowed.targets, ("peer",))
         self.assertEqual(blocked.targets, ())
+
+    def test_direct_targets_preserve_mention_order_and_ignore_all(self):
+        providers = {
+            "alpha": NativeCliProviderSpec("alpha", "Alpha", ("alpha",)),
+            "bravo": NativeCliProviderSpec("bravo", "Bravo", ("bravo",)),
+        }
+
+        self.assertEqual(
+            direct_message_targets(_event("@bravo 먼저, @alpha 다음"), providers),
+            ("bravo", "alpha"),
+        )
+        self.assertEqual(direct_message_targets(_event("@all 확인"), providers), ())
 
 
 if __name__ == "__main__":

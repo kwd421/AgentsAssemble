@@ -275,6 +275,12 @@ class RoomRealtimeControllerTests(unittest.TestCase):
         self.controller.close()
         self.temp.cleanup()
 
+    def _use_continuous_routing(self):
+        self.controller.store.update_room_settings(
+            "general",
+            {"conversation_mode": "continuous"},
+        )
+
     def test_controller_accepts_one_repository_instance_as_room_authority(self):
         injected_root = self.root / "injected"
         repository = RoomStore(injected_root)
@@ -588,13 +594,18 @@ class RoomRealtimeControllerTests(unittest.TestCase):
             side_effect=RuntimeError("command result unavailable"),
         ):
             with self.assertRaisesRegex(RuntimeError, "command result unavailable"):
-                self._command("req-message-rollback", "message.send", {"content": "must roll back"})
+                self._command(
+                    "req-message-rollback",
+                    "message.send",
+                    {"content": "@codex must roll back"},
+                )
 
         self.assertEqual(
             [
                 event
                 for event in self.controller.store.read_events("general")
-                if event.get("type") == "message_final" and event.get("content") == "must roll back"
+                if event.get("type") == "message_final"
+                and event.get("content") == "@codex must roll back"
             ],
             [],
         )
@@ -604,19 +615,27 @@ class RoomRealtimeControllerTests(unittest.TestCase):
             {},
         )
 
-        retry = self._command("req-message-rollback", "message.send", {"content": "must roll back"})
+        retry = self._command(
+            "req-message-rollback",
+            "message.send",
+            {"content": "@codex must roll back"},
+        )
 
         self.assertTrue(retry["accepted"])
         messages = [
             event
             for event in self.controller.store.read_events("general")
-            if event.get("type") == "message_final" and event.get("content") == "must roll back"
+            if event.get("type") == "message_final"
+            and event.get("content") == "@codex must roll back"
         ]
         self.assertEqual(len(messages), 1)
         self.assertIn(messages[0]["id"], self.controller.store.session("general", "codex")["pending_event_ids"])
 
-    def test_shadow_attention_records_silence_without_changing_ordered_routing(self):
+    def test_shadow_attention_records_silence_without_changing_nonambient_routing(self):
+        self._use_continuous_routing()
         self.controller.attention_shadow_mode = "full"
+        _identity, channel = self._connect_bridge("codex")
+        channel.drain()
         result = self._command("shadow-ordinary", "message.send", {"content": "그냥 상황을 공유할게."})
         event = result["result"]["event"]
 
@@ -625,10 +644,11 @@ class RoomRealtimeControllerTests(unittest.TestCase):
 
         self.assertEqual(jobs[-1]["source_event_id"], event["id"])
         self.assertEqual(jobs[-1]["outcome"], "silent")
-        self.assertIn(event["id"], session["pending_event_ids"])
+        self.assertEqual(session["active_source_event_id"], event["id"])
         self.assertEqual(self.controller.attention_shadow_diagnostics()["error_count"], 0)
 
     def test_shadow_attention_selects_connected_direct_mention(self):
+        self._use_continuous_routing()
         self.controller.attention_shadow_mode = "full"
         self._command("shadow-start", "agent.start", {"agent_id": "codex"})
         _identity, channel = self._connect_bridge("codex")
@@ -732,7 +752,10 @@ class RoomRealtimeControllerTests(unittest.TestCase):
         )
 
     def test_shadow_attention_failure_is_diagnostic_and_does_not_block_current_routing(self):
+        self._use_continuous_routing()
         self.controller.attention_shadow_mode = "full"
+        _identity, channel = self._connect_bridge("codex")
+        channel.drain()
         with patch.object(
             self.controller._attention_coordinator,
             "evaluate_shadow",
@@ -744,11 +767,14 @@ class RoomRealtimeControllerTests(unittest.TestCase):
         session = self.controller.store.session("general", "codex")
         diagnostics = self.controller.attention_shadow_diagnostics()
 
-        self.assertIn(event["id"], session["pending_event_ids"])
+        self.assertEqual(session["active_source_event_id"], event["id"])
         self.assertEqual(diagnostics["error_count"], 1)
         self.assertIn("shadow storage unavailable", diagnostics["last_error"])
 
-    def test_shadow_attention_is_off_by_default_without_changing_ordered_routing(self):
+    def test_shadow_attention_is_off_by_default_without_changing_nonambient_routing(self):
+        self._use_continuous_routing()
+        _identity, channel = self._connect_bridge("codex")
+        channel.drain()
         with patch.object(self.controller._attention_coordinator, "evaluate_shadow") as evaluate_shadow:
             result = self._command("shadow-off", "message.send", {"content": "기본 라우팅은 계속해."})
 
@@ -758,7 +784,7 @@ class RoomRealtimeControllerTests(unittest.TestCase):
 
         evaluate_shadow.assert_not_called()
         self.assertEqual(self.controller.store.attention_jobs("general", mode="shadow"), [])
-        self.assertIn(event["id"], session["pending_event_ids"])
+        self.assertEqual(session["active_source_event_id"], event["id"])
         self.assertEqual(diagnostics["mode"], "off")
         self.assertEqual(diagnostics["recorded_count"], 0)
         self.assertEqual(diagnostics["skipped_count"], 1)
@@ -1091,6 +1117,7 @@ class RoomRealtimeControllerTests(unittest.TestCase):
         self.assertEqual(RoomStore(self.root).participant("general", "ghost"), {})
 
     def test_running_agent_profile_update_changes_canonical_identity_and_next_message(self):
+        self._use_continuous_routing()
         identity, channel = self._connect_bridge()
         updated = self._command(
             "profile-update",
@@ -1209,14 +1236,15 @@ class RoomRealtimeControllerTests(unittest.TestCase):
         self.assertEqual([event.get("participant_id") for event in finals[-3:]], ["operator-local", "codex", "peer"])
 
     def test_routing_ignores_conflicting_legacy_room_settings_file(self):
-        self.controller.create_provider_session("general", _spec("peer"))
+        self._use_continuous_routing()
+        self.controller.create_provider_session("general", _spec("peer", default_responder=False))
         codex_identity, codex_channel = self._connect_bridge("codex")
         _peer_identity, peer_channel = self._connect_bridge("peer")
         update_legacy_room_settings(
             self.root,
             {
                 "room_id": "general",
-                "conversation_mode": "continuous",
+                "conversation_mode": "ordered",
                 "max_relay_turns": 4,
             },
         )
@@ -1229,17 +1257,155 @@ class RoomRealtimeControllerTests(unittest.TestCase):
         self._command(
             "repository-mode-final",
             "message.final",
-            {"turn_id": first["turn_id"], "content": "DB 설정은 ordered야."},
+            {"turn_id": first["turn_id"], "content": "DB 설정은 continuous야."},
             codex_identity,
         )
 
         self.assertEqual(
             self.controller.store.room_settings("general")["conversation_mode"],
-            "ordered",
+            "continuous",
         )
         self.assertFalse(
             any(message.get("op") == "turn.assign" for message in peer_channel.drain())
         )
+
+    def test_ordered_room_wakes_only_one_provider_through_the_room_portal_path(self):
+        self.controller.create_provider_session("general", _spec("peer"))
+        identities = {}
+        channels = {}
+        for agent_id in ("codex", "peer"):
+            identities[agent_id], channels[agent_id] = self._connect_bridge(agent_id)
+            channels[agent_id].drain()
+        self.controller.store.update_room_settings(
+            "general",
+            {"conversation_mode": "ordered"},
+        )
+
+        source = self._command(
+            "ordered-topic",
+            "message.send",
+            {"content": "한 명씩 검토해서 합의해"},
+        )["result"]["event"]
+        messages = {
+            agent_id: channel.drain()
+            for agent_id, channel in channels.items()
+        }
+        wakes = [
+            (agent_id, message)
+            for agent_id, pushed in messages.items()
+            for message in pushed
+            if message.get("op") == "room.wake"
+        ]
+
+        self.assertEqual(len(wakes), 1)
+        selected_agent_id, first_wake = wakes[0]
+        self.assertEqual(first_wake["source_event_id"], source["id"])
+        self.assertNotIn("provider_input", first_wake)
+        self.assertEqual(
+            self.controller.store.session("general", selected_agent_id)["provider_input_mode"],
+            "room_observation",
+        )
+        self.assertFalse(
+            any(
+                message.get("op") == "turn.assign"
+                for pushed in messages.values()
+                for message in pushed
+            )
+        )
+
+        final = self._command(
+            "ordered-first-final",
+            "message.final",
+            {
+                "turn_id": first_wake["turn_id"],
+                "content": "첫 번째 검토 의견이야.",
+                "observed_through_seq": first_wake["input_up_to_seq"],
+            },
+            identities[selected_agent_id],
+        )["result"]["event"]
+        next_agent_id = next(agent_id for agent_id in channels if agent_id != selected_agent_id)
+        next_wake = next(
+            message
+            for message in channels[next_agent_id].drain()
+            if message.get("op") == "room.wake"
+        )
+        self.assertEqual(next_wake["source_event_id"], final["id"])
+
+    def test_ordered_room_direct_mention_gets_the_next_observation(self):
+        self.controller.create_provider_session("general", _spec("peer"))
+        _codex_identity, codex_channel = self._connect_bridge("codex")
+        _peer_identity, peer_channel = self._connect_bridge("peer")
+        codex_channel.drain()
+        peer_channel.drain()
+        self.controller.store.update_room_settings(
+            "general",
+            {"conversation_mode": "ordered"},
+        )
+
+        source = self._command(
+            "ordered-mention",
+            "message.send",
+            {"content": "@peer 네가 다음으로 검토해"},
+        )["result"]["event"]
+
+        wake = next(
+            message for message in peer_channel.drain() if message.get("op") == "room.wake"
+        )
+        self.assertEqual(wake["source_event_id"], source["id"])
+        self.assertFalse(
+            any(message.get("op") == "room.wake" for message in codex_channel.drain())
+        )
+
+    def test_ordered_room_queues_a_named_next_speaker_until_the_active_turn_finishes(self):
+        self.controller.create_provider_session("general", _spec("peer"))
+        codex_identity, codex_channel = self._connect_bridge("codex")
+        _peer_identity, peer_channel = self._connect_bridge("peer")
+        codex_channel.drain()
+        peer_channel.drain()
+        self.controller.store.update_room_settings(
+            "general",
+            {"conversation_mode": "ordered"},
+        )
+
+        self._command(
+            "ordered-active-codex",
+            "message.send",
+            {"content": "@codex 먼저 검토해"},
+        )
+        codex_wake = next(
+            message for message in codex_channel.drain() if message.get("op") == "room.wake"
+        )
+        queued = self._command(
+            "ordered-queued-peer",
+            "message.send",
+            {"content": "@peer 다음으로 검토해"},
+        )["result"]["event"]
+
+        self.assertFalse(
+            any(message.get("op") == "room.wake" for message in peer_channel.drain())
+        )
+        self.assertIn(
+            queued["id"],
+            self.controller.store.session("general", "peer")["pending_event_ids"],
+        )
+
+        self._command(
+            "ordered-codex-final",
+            "message.final",
+            {
+                "turn_id": codex_wake["turn_id"],
+                "content": "첫 검토를 마쳤어.",
+                "observed_through_seq": codex_wake["input_up_to_seq"],
+            },
+            codex_identity,
+        )
+
+        peer_wake = next(
+            message for message in peer_channel.drain() if message.get("op") == "room.wake"
+        )
+        peer_session = self.controller.store.session("general", "peer")
+        self.assertIn(queued["id"], peer_session["inflight_event_ids"])
+        self.assertGreaterEqual(peer_wake["input_up_to_seq"], queued["seq"])
 
     def test_ambient_mode_wakes_each_eligible_bridge_without_transcript(self):
         self.controller.create_provider_session("general", _spec("peer"))
@@ -1342,7 +1508,7 @@ class RoomRealtimeControllerTests(unittest.TestCase):
         self.assertLess(after["last_provider_sync_seq"], source["seq"])
         self.assertEqual(after["runtime_status"], "error")
 
-    def test_pending_ambient_observation_is_not_reassigned_after_leaving_ambient(self):
+    def test_pending_observation_is_retained_when_leaving_ambient_for_ordered(self):
         _identity, channel = self._connect_bridge("codex")
         channel.drain()
         self.controller.store.update_session_fields(
@@ -1376,13 +1542,14 @@ class RoomRealtimeControllerTests(unittest.TestCase):
 
         self.assertTrue(self.controller._turn_coordinator.assign_pending("general", "codex"))
         assignment = next(
-            message for message in channel.drain() if message.get("op") == "turn.assign"
+            message for message in channel.drain() if message.get("op") == "room.wake"
         )
         session = self.controller.store.session("general", "codex")
         self.assertEqual(assignment["source_event_id"], ordered_source["id"])
-        self.assertNotIn(ambient_source["id"], session["inflight_event_ids"])
+        self.assertIn(ambient_source["id"], session["inflight_event_ids"])
 
     def test_pending_transcript_keeps_its_mode_when_room_enters_ambient(self):
+        self._use_continuous_routing()
         identity, channel = self._connect_bridge("codex")
         channel.drain()
         self.controller.store.update_session_fields(
@@ -1393,7 +1560,7 @@ class RoomRealtimeControllerTests(unittest.TestCase):
         ordered_source = self._command(
             "pending-transcript-source",
             "message.send",
-            {"content": "ordered에서 먼저 들어온 메시지"},
+            {"content": "@codex continuous에서 먼저 들어온 메시지"},
         )["result"]["event"]
         self.controller.store.update_room_settings(
             "general",
@@ -1862,6 +2029,7 @@ class RoomRealtimeControllerTests(unittest.TestCase):
         self.assertEqual(RoomStore(self.root).session("general", "codex")["runtime_status"], "idle")
 
     def test_zero_width_final_is_an_error_not_silence(self):
+        self._use_continuous_routing()
         identity, channel = self._connect_bridge("codex")
         self._command("empty-final-topic", "message.send", {"content": "@codex answer"})
         assignment = next(message for message in channel.drain() if message.get("op") == "turn.assign")
@@ -1881,6 +2049,7 @@ class RoomRealtimeControllerTests(unittest.TestCase):
         self.assertEqual(errors[-1]["error_code"], "empty_provider_final")
 
     def test_exact_model_mismatch_fails_before_publishing_message(self):
+        self._use_continuous_routing()
         RoomStore(self.root).update_session_fields(
             "general",
             "codex",
@@ -1918,6 +2087,7 @@ class RoomRealtimeControllerTests(unittest.TestCase):
         self.assertEqual(RoomStore(self.root).session("general", "codex")["observed_model_id"], "")
 
     def test_required_model_observation_missing_fails_before_publishing_message(self):
+        self._use_continuous_routing()
         RoomStore(self.root).update_session_fields(
             "general",
             "codex",
@@ -1949,6 +2119,7 @@ class RoomRealtimeControllerTests(unittest.TestCase):
         )
 
     def test_alias_model_records_provider_observed_exact_model(self):
+        self._use_continuous_routing()
         RoomStore(self.root).update_session_fields(
             "general",
             "codex",
@@ -1981,6 +2152,7 @@ class RoomRealtimeControllerTests(unittest.TestCase):
         self.assertEqual(session["model_verification_status"], "resolved_alias")
 
     def test_claude_release_accepts_the_provider_reported_snapshot_id(self):
+        self._use_continuous_routing()
         RoomStore(self.root).update_session_fields(
             "general",
             "codex",
@@ -2012,6 +2184,7 @@ class RoomRealtimeControllerTests(unittest.TestCase):
         self.assertEqual(session["model_verification_status"], "verified_provider_revision")
 
     def test_claude_release_rejects_a_different_provider_release(self):
+        self._use_continuous_routing()
         RoomStore(self.root).update_session_fields(
             "general",
             "codex",
@@ -2373,6 +2546,7 @@ class RoomRealtimeControllerTests(unittest.TestCase):
         self.assertFalse(snapshot["has_more_before"])
 
     def test_bridge_crash_restarts_once_with_room_memory_and_pending_diff(self):
+        self._use_continuous_routing()
         self._command("req-start-recovery", "agent.start", {"agent_id": "codex"})
         self.controller.store.update_session_fields(
             "general",
@@ -2424,6 +2598,7 @@ class RoomRealtimeControllerTests(unittest.TestCase):
         self.assertTrue(failed["recovery_required"])
 
     def test_provider_process_exit_retries_turn_once_but_auth_failure_does_not(self):
+        self._use_continuous_routing()
         self._command("req-start-provider-retry", "agent.start", {"agent_id": "codex"})
         identity, channel = self._connect_bridge()
         self._command("req-provider-retry-source", "message.send", {"content": "@codex retry provider"})
@@ -2731,6 +2906,7 @@ class RoomRealtimeControllerTests(unittest.TestCase):
         self.assertEqual(session["runtime_status"], "stopped")
 
     def test_explicit_start_and_bridge_ready_assign_backlog_on_same_socket_path(self):
+        self._use_continuous_routing()
         message = self._command("req-message", "message.send", {"content": "@codex answer this"})
         started = self._command("req-start", "agent.start", {"agent_id": "codex"})
         identity, channel = self._connect_bridge()
@@ -2748,6 +2924,7 @@ class RoomRealtimeControllerTests(unittest.TestCase):
         self.assertEqual(identity["client_type"], "agent_bridge")
 
     def test_busy_agent_automatically_receives_next_pending_turn_after_final(self):
+        self._use_continuous_routing()
         self._command("req-start", "agent.start", {"agent_id": "codex"})
         identity, channel = self._connect_bridge()
         first_message = self._command("req-first", "message.send", {"content": "@codex first"})
@@ -2770,6 +2947,11 @@ class RoomRealtimeControllerTests(unittest.TestCase):
         self.assertEqual(RoomStore(self.root).session("general", "codex")["runtime_status"], "busy")
 
     def test_server_assigned_group_turn_sees_all_public_messages_since_agent_last_turn(self):
+        self._use_continuous_routing()
+        self.controller._provider_registry.register(
+            "general",
+            _spec("codex", default_responder=False),
+        )
         self.controller.create_provider_session("general", _spec("antigravity", default_responder=False))
         self.controller.create_provider_session("general", _spec("claude", default_responder=False))
         bridges = {}
@@ -2867,6 +3049,7 @@ class RoomRealtimeControllerTests(unittest.TestCase):
         self.assertIn(topic["id"], assignment["provider_context_event_ids"])
 
     def test_prompt_budget_defers_unseen_pending_event_to_immediate_next_turn(self):
+        self._use_continuous_routing()
         self._command("start-deferred", "agent.start", {"agent_id": "codex"})
         identity, channel = self._connect_bridge()
         channel.drain()
@@ -2880,12 +3063,12 @@ class RoomRealtimeControllerTests(unittest.TestCase):
         first = self._command(
             "pending-first",
             "message.send",
-            {"content": "FIRST-PENDING " + ("a" * 4000), "target_agent_id": "codex"},
+            {"content": "@codex FIRST-PENDING " + ("a" * 4000), "target_agent_id": "codex"},
         )["result"]["event"]
         second = self._command(
             "pending-second",
             "message.send",
-            {"content": "SECOND-PENDING " + ("b" * 4000), "target_agent_id": "codex"},
+            {"content": "@codex SECOND-PENDING " + ("b" * 4000), "target_agent_id": "codex"},
         )["result"]["event"]
         store.update_session_fields("general", "codex", runtime_status="idle")
 
@@ -2934,6 +3117,7 @@ class RoomRealtimeControllerTests(unittest.TestCase):
         self.assertEqual(during_second["last_provider_sync_event_id"], first["id"])
 
     def test_failed_bounded_turn_restores_inflight_and_deferred_pending_events(self):
+        self._use_continuous_routing()
         self._command("start-failed-deferred", "agent.start", {"agent_id": "codex"})
         identity, channel = self._connect_bridge()
         channel.drain()
@@ -2942,12 +3126,12 @@ class RoomRealtimeControllerTests(unittest.TestCase):
         first = self._command(
             "failed-pending-first",
             "message.send",
-            {"content": "FIRST-FAIL " + ("a" * 4000), "target_agent_id": "codex"},
+            {"content": "@codex FIRST-FAIL " + ("a" * 4000), "target_agent_id": "codex"},
         )["result"]["event"]
         second = self._command(
             "failed-pending-second",
             "message.send",
-            {"content": "SECOND-FAIL " + ("b" * 4000), "target_agent_id": "codex"},
+            {"content": "@codex SECOND-FAIL " + ("b" * 4000), "target_agent_id": "codex"},
         )["result"]["event"]
         store.update_session_fields("general", "codex", runtime_status="idle")
 
@@ -3020,6 +3204,7 @@ class RoomRealtimeControllerTests(unittest.TestCase):
         self.assertFalse(any(message.get("op") == "turn.assign" for message in channel.drain()))
 
     def test_pending_partition_keeps_only_valid_deferred_and_inflight_events(self):
+        self._use_continuous_routing()
         self._command("start-mixed-pending", "agent.start", {"agent_id": "codex"})
         _identity, channel = self._connect_bridge()
         channel.drain()
@@ -3074,6 +3259,7 @@ class RoomRealtimeControllerTests(unittest.TestCase):
         self.assertEqual(during_turn["pending_event_ids"], [deferred["id"]])
 
     def test_bridge_delta_and_final_create_only_canonical_turn_events(self):
+        self._use_continuous_routing()
         self._command("req-start", "agent.start", {"agent_id": "codex"})
         identity, channel = self._connect_bridge()
         self._command("req-prompt", "message.send", {"content": "@codex hello"})
@@ -3128,6 +3314,7 @@ class RoomRealtimeControllerTests(unittest.TestCase):
         self.assertEqual(RoomStore(self.root).session("general", "codex")["runtime_status"], "idle")
 
     def test_bridge_turn_phase_rejects_unknown_values_and_regression(self):
+        self._use_continuous_routing()
         self._command("phase-start", "agent.start", {"agent_id": "codex"})
         identity, channel = self._connect_bridge()
         self._command("phase-prompt", "message.send", {"content": "@codex hello"})
@@ -3161,6 +3348,7 @@ class RoomRealtimeControllerTests(unittest.TestCase):
         self.assertEqual(store.session("general", "codex")["turn_phase"], "streaming")
 
     def test_bridge_terminal_report_rejects_a_corrupt_active_phase(self):
+        self._use_continuous_routing()
         self._command("corrupt-phase-start", "agent.start", {"agent_id": "codex"})
         identity, channel = self._connect_bridge()
         self._command("corrupt-phase-prompt", "message.send", {"content": "@codex hello"})
@@ -3183,6 +3371,7 @@ class RoomRealtimeControllerTests(unittest.TestCase):
         self.assertFalse(any(event.get("content") == "must not publish" for event in events))
 
     def test_invalid_bridge_activity_is_rejected_without_an_event(self):
+        self._use_continuous_routing()
         self._command("req-start-invalid-activity", "agent.start", {"agent_id": "codex"})
         identity, channel = self._connect_bridge()
         self._command("req-prompt-invalid-activity", "message.send", {"content": "@codex hello"})
@@ -3222,6 +3411,7 @@ class RoomRealtimeControllerTests(unittest.TestCase):
         self.assertEqual(event["content"], markdown)
 
     def test_runtime_diagnostics_survive_failure_without_exposing_raw_provider_output(self):
+        self._use_continuous_routing()
         self._command("req-start-diagnostics", "agent.start", {"agent_id": "codex"})
         identity, channel = self._connect_bridge()
         self._command("req-prompt-diagnostics", "message.send", {"content": "@codex fail safely"})
@@ -3280,6 +3470,7 @@ class RoomRealtimeControllerTests(unittest.TestCase):
         self.assertEqual(len(session["pending_event_ids"]), 1)
 
     def test_pause_preserves_process_and_resume_assigns_backlog_to_same_bridge(self):
+        self._use_continuous_routing()
         self._command("req-start-pause", "agent.start", {"agent_id": "codex"})
         identity, channel = self._connect_bridge()
         channel.drain()

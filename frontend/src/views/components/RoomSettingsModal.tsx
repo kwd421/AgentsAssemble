@@ -218,7 +218,7 @@ export default function RoomSettingsModal({
                     onChange={() => onConversationModeChange("ordered")}
                   />
                   <span className="preserve-words">
-                    🔢 순서 — 다들 말하고 싶어 하지만, 알고리즘이 다음 발언자를 정합니다 (공정하게 번갈아, 동시발언·도배 방지).
+                    🔢 순서 — 새 메시지마다 후보 둘을 무작위로 비교해 덜 말한 에이전트 한 명만 방을 확인합니다. @멘션은 그 에이전트에게 다음 순서를 줍니다.
                   </span>
                 </label>
                 <label>

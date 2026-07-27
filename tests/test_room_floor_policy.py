@@ -3,6 +3,7 @@ import unittest
 from agentsassemble.room_floor_policy import (
     continuous_floor_targets,
     evaluate_agent_floor_eligibility,
+    ordered_floor_target,
 )
 
 
@@ -86,6 +87,37 @@ class RoomFloorPolicyTests(unittest.TestCase):
         )
 
         self.assertEqual(result, ())
+
+    def test_ordered_floor_samples_two_and_chooses_the_less_frequent_speaker(self):
+        sampled = []
+
+        def sample(values, count):
+            sampled.append((list(values), count))
+            return ["charlie", "alpha"]
+
+        result = ordered_floor_target(
+            provider_ids=["alpha", "bravo", "charlie"],
+            actor_id="human",
+            direct_targets=[],
+            eligible_agent_ids=["alpha", "bravo", "charlie"],
+            message_counts={"alpha": 2, "bravo": 0, "charlie": 7},
+            random_sample=sample,
+        )
+
+        self.assertEqual(sampled, [(["alpha", "bravo", "charlie"], 2)])
+        self.assertEqual(result, ("alpha",))
+
+    def test_ordered_floor_direct_mention_bypasses_sampling_and_availability(self):
+        result = ordered_floor_target(
+            provider_ids=["alpha", "bravo"],
+            actor_id="human",
+            direct_targets=["bravo"],
+            eligible_agent_ids=[],
+            message_counts={"alpha": 0, "bravo": 10},
+            random_sample=lambda _values, _count: self.fail("mention must not sample"),
+        )
+
+        self.assertEqual(result, ("bravo",))
 
 
 if __name__ == "__main__":

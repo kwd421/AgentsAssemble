@@ -241,8 +241,60 @@ class RoomTurnCoordinator:
             and session.get("runtime_status") == "idle"
             and self.broker.has_bridge(room_id, agent_id)
         ):
+            if self.store.room_settings(room_id).get("conversation_mode") == "ordered":
+                return self.assign_next_ordered_pending(room_id)
             return self.assign_pending(room_id, agent_id)
         return False
+
+    def assign_next_ordered_pending(self, room_id: str) -> bool:
+        """Assign the oldest selected observation while preserving one room-wide turn."""
+        if self.store.room_settings(room_id).get("conversation_mode") != "ordered":
+            return False
+        sessions = self.store.sessions(room_id)
+        if self._ordered_turn_is_active(room_id, sessions=sessions):
+            return False
+
+        candidates: list[tuple[int, str]] = []
+        for session in sessions:
+            agent_id = clean_lobby_text(session.get("participant_id"), limit=128)
+            pending = dedupe_event_ids(list(session.get("pending_event_ids") or []))
+            if (
+                not agent_id
+                or not pending
+                or not session.get("enabled")
+                or session.get("status") != "attached"
+                or session.get("runtime_status") != "idle"
+                or not self.broker.has_bridge(room_id, agent_id)
+            ):
+                continue
+            first_event = self.store.event_by_id(room_id, pending[0])
+            candidates.append(
+                (
+                    safe_bounded_int(first_event.get("seq"), default=0, minimum=0),
+                    agent_id,
+                )
+            )
+        for _event_seq, agent_id in sorted(candidates):
+            if self.assign_pending(room_id, agent_id):
+                return True
+        return False
+
+    def _ordered_turn_is_active(
+        self,
+        room_id: str,
+        *,
+        sessions: list[dict[str, object]] | None = None,
+    ) -> bool:
+        return any(
+            session.get("enabled")
+            and session.get("status") == "attached"
+            and session.get("runtime_status") == "busy"
+            and self.broker.has_bridge(
+                room_id,
+                clean_lobby_text(session.get("participant_id"), limit=128),
+            )
+            for session in (sessions if sessions is not None else self.store.sessions(room_id))
+        )
 
     def assign_pending(self, room_id: str, agent_id: str) -> bool:
         session = self.store.session(room_id, agent_id)
@@ -257,10 +309,18 @@ class RoomTurnCoordinator:
             or not self.broker.has_bridge(room_id, agent_id)
         ):
             return False
+        if (
+            self.store.room_settings(room_id).get("conversation_mode") == "ordered"
+            and self._ordered_turn_is_active(room_id)
+        ):
+            return False
         event_modes = pending_event_modes(session, all_pending)
         if not all_pending:
             return False
-        if self.store.room_settings(room_id).get("conversation_mode") != "ambient":
+        if self.store.room_settings(room_id).get("conversation_mode") not in {
+            "ambient",
+            "ordered",
+        }:
             retained = [
                 event_id
                 for event_id in all_pending
@@ -1493,7 +1553,10 @@ class RoomTurnCoordinator:
         session_id: str,
         publish_state: bool,
     ) -> dict[str, object]:
-        self.assign_pending(room_id, participant_id)
+        if self.store.room_settings(room_id).get("conversation_mode") == "ordered":
+            self.assign_next_ordered_pending(room_id)
+        else:
+            self.assign_pending(room_id, participant_id)
         current = self.store.session(room_id, session_id)
         if publish_state:
             self._publish_session_state(room_id, current)
