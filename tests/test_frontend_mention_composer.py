@@ -42,13 +42,13 @@ class FrontendMentionComposerTests(unittest.TestCase):
               ["Codex Spark A", "Kiro Opus 4.8", "codex spark a", "", "나"],
               query
             );
-            assert.deepEqual(options, ["Codex Spark A"]);
+            assert.deepEqual(options, [{ token: "Codex Spark A", label: "Codex Spark A" }]);
 
             const spacedQuery = mentions.mentionQueryAtCursor("hello @QA Local", "hello @QA Local".length);
             assert.deepEqual(spacedQuery, { start: 6, query: "qa local" });
             assert.deepEqual(
               mentions.mentionOptions(["QA Local Llama", "Codex Room QA"], spacedQuery),
-              ["QA Local Llama"]
+              [{ token: "QA Local Llama", label: "QA Local Llama" }]
             );
 
             assert.equal(mentions.formatMentionToken("Kiro"), "@Kiro");

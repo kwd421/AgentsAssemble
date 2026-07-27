@@ -624,7 +624,23 @@ def _smoke_agent_conversation(
             raise RuntimeError("At least one Agent Session missed a peer's public room message.")
 
         if verify_controls:
+            if not _wait_for_room_sessions_quiet(
+                controller,
+                specs,
+                timeout_seconds=8.0,
+            ):
+                raise RuntimeError(
+                    "Shared-room conversation did not settle before control verification."
+                )
             for spec in specs:
+                if not _wait_for_room_sessions_quiet(
+                    controller,
+                    specs,
+                    timeout_seconds=8.0,
+                ):
+                    raise RuntimeError(
+                        f"{spec.agent_id}: peer room turns did not settle before pause verification"
+                    )
                 control_result = _verify_pause_resume(
                     client,
                     inbox,
@@ -635,6 +651,12 @@ def _smoke_agent_conversation(
                 )
                 result["control_checks"].append(control_result)  # type: ignore[union-attr]
 
+        if not _wait_for_room_sessions_quiet(
+            controller,
+            specs,
+            timeout_seconds=8.0,
+        ):
+            raise RuntimeError("Shared-room speaker queue did not become quiet.")
         turn_counts_before_quiet = {
             spec.agent_id: int(controller.store.session("general", spec.agent_id).get("turn_count") or 0)
             for spec in specs
@@ -987,21 +1009,42 @@ def _run_group_speaker_turn(
         for value in list(turn_started.get("provider_context_actor_ids") or [])
         if clean_lobby_text(value, limit=128)
     ]
-    peer_actor_ids = sorted((set(context_actor_ids) & all_agent_ids) - {spec.agent_id})
+    room_mirror_actor_ids = [
+        clean_lobby_text(
+            item.get("participant_id")
+            or (
+                item.get("actor", {}).get("participant_id")
+                if isinstance(item.get("actor"), dict)
+                else ""
+            ),
+            limit=128,
+        )
+        for item in expected_context
+    ]
+    peer_actor_ids = sorted((set(room_mirror_actor_ids) & all_agent_ids) - {spec.agent_id})
     expected_peers = all_agent_ids - {spec.agent_id}
-    full_peer_context_seen = expected_peers.issubset(set(context_actor_ids)) if cycle_index > 1 else None
+    full_peer_context_seen = (
+        expected_peers.issubset(set(room_mirror_actor_ids))
+        if cycle_index > 1
+        else None
+    )
     output = str(event.get("content") or "")
-    expected_source = STRICT_MESSAGE_SOURCES.get(spec.agent_id)
     checks = {
         "server_turn_sourced_from_previous_public_message": turn_started.get("source_event_id") == source_event_id,
         "final_sourced_from_previous_public_message": event.get("source_event_id") == source_event_id,
-        "previous_public_message_was_visible": source_event_id in context_event_ids,
-        "entire_bounded_public_diff_was_visible": context_event_ids == expected_context_ids,
+        "room_observation_contract": turn_started.get("provider_input_mode") == "room_observation",
+        "prompt_kept_room_content_private": (
+            not context_event_ids
+            and not context_actor_ids
+            and int(turn_started.get("provider_visible_chars") or 0) == 0
+            and int(turn_started.get("provider_visible_event_count") or 0) == 0
+        ),
+        "previous_public_message_was_in_room_mirror": source_event_id in expected_context_ids,
         "context_cursor_reached_source": context_up_to_seq == source_event_seq,
         "message_has_no_at_mention": "@" not in output,
         "message_clean": not bool(TUI_NOISE.search(output)),
         "message_is_room_reply": not bool(NON_ROOM_REPLY.search(output)),
-        "message_structured": not expected_source or event.get("message_source") == expected_source,
+        "message_published_through_room_portal": event.get("message_source") == "room_portal",
     }
     if not all(checks.values()):
         failed = sorted(name for name, passed in checks.items() if not passed)
@@ -1021,6 +1064,8 @@ def _run_group_speaker_turn(
         "provider_visible_event_count": turn_started.get("provider_visible_event_count"),
         "provider_context_event_ids": context_event_ids,
         "provider_context_actor_ids": context_actor_ids,
+        "room_mirror_event_ids": expected_context_ids,
+        "room_mirror_actor_ids": room_mirror_actor_ids,
         "peer_actor_ids_seen": peer_actor_ids,
         "full_peer_context_seen": full_peer_context_seen,
         "last_seen_event_id": session_after.get("last_seen_event_id"),
@@ -1268,6 +1313,35 @@ def _wait_until(predicate, *, timeout_seconds: float) -> bool:
             return True
         time.sleep(0.05)
     return bool(predicate())
+
+
+def _wait_for_room_sessions_quiet(
+    controller: RoomRealtimeController,
+    specs: list[NativeCliProviderSpec],
+    *,
+    timeout_seconds: float,
+    stable_seconds: float = 0.25,
+) -> bool:
+    deadline = time.monotonic() + max(0.0, timeout_seconds)
+    quiet_since: float | None = None
+    while time.monotonic() < deadline:
+        quiet = all(
+            controller.store.session("general", spec.agent_id).get("runtime_status")
+            == "idle"
+            and not controller.store.session("general", spec.agent_id).get(
+                "pending_event_ids"
+            )
+            for spec in specs
+        )
+        now = time.monotonic()
+        if quiet:
+            quiet_since = quiet_since or now
+            if now - quiet_since >= max(0.0, stable_seconds):
+                return True
+        else:
+            quiet_since = None
+        time.sleep(0.05)
+    return False
 
 
 def _resolve_executable(command: tuple[str, ...]) -> str:

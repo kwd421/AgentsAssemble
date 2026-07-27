@@ -97,7 +97,13 @@ class NativeCliRoomEndToEndTests(unittest.TestCase):
         self.assertEqual(len(conversation["turns"]), cycle_count * 2)
         self.assertEqual(
             conversation["actual_turn_counts"],
-            {"group-a": cycle_count + 1, "group-b": cycle_count + 1},
+            conversation["turn_counts_before_quiet_window"],
+        )
+        self.assertTrue(
+            all(
+                count >= cycle_count + 1
+                for count in conversation["actual_turn_counts"].values()
+            )
         )
         self.assertFalse(conversation["unexpected_extra_turns"])
         self.assertEqual(conversation["metrics"]["turn_count"], cycle_count * 2)
@@ -169,7 +175,7 @@ class NativeCliRoomEndToEndTests(unittest.TestCase):
         self.assertTrue(provider["same_pid_over_turns"])
         self.assertTrue(provider["memory_marker_recalled"])
         self.assertFalse(provider["alive_after_stop"])
-        self.assertEqual(provider["message_sources"], ["terminal_capture", "terminal_capture"])
+        self.assertEqual(provider["message_sources"], ["room_portal", "room_portal"])
         self.assertEqual(len(provider["provider_direct_ttfo_ms"]), 2)
         self.assertEqual(len(provider["room_observed_ttfo_ms"]), 2)
         self.assertFalse(provider["latency_acceptance"]["enforced"])

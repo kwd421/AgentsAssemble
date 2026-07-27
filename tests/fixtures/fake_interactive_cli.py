@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import os
 import re
+import subprocess
 import sys
 import time
 import tty
@@ -9,6 +10,16 @@ import tty
 
 START = b"\x1b[200~"
 END = b"\x1b[201~"
+
+
+def room_command(*args: str) -> str:
+    completed = subprocess.run(
+        ["agentsassemble-room", *args],
+        check=True,
+        capture_output=True,
+        text=True,
+    )
+    return completed.stdout
 
 
 def main() -> int:
@@ -29,14 +40,18 @@ def main() -> int:
             payload, _, buffer = after_start.partition(END)
             buffer = buffer.lstrip(b"\r\n")
             text = payload.decode("utf-8", errors="replace")
-            found = re.search(r"AGENTSASSEMBLE_SESSION_MARKER=([A-Za-z0-9_.-]+)", text)
+            room_observation = "room.wake " in text
+            visible_text = room_command("read") if room_observation else text
+            found = re.search(r"AGENTSASSEMBLE_SESSION_MARKER=([A-Za-z0-9_.-]+)", visible_text)
             if found:
                 marker = found.group(1)
-            delay = re.search(r"AGENTSASSEMBLE_RESPONSE_DELAY_MS=(\d+)", text)
+            delay = re.search(r"AGENTSASSEMBLE_RESPONSE_DELAY_MS=(\d+)", visible_text)
             if delay:
                 time.sleep(min(int(delay.group(1)), 2_000) / 1_000)
             turn += 1
             response = f"fake reply {turn}; marker={marker}; pid={os.getpid()}\n"
+            if room_observation:
+                room_command("speak", response.strip())
             os.write(sys.stdout.fileno(), response.encode("utf-8"))
 
 
