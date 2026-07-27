@@ -93,7 +93,9 @@ export default function LobbyComposer({
   const [accessoryNotice, setAccessoryNotice] = useState("");
   const roomSocket = useRoomSocket();
   const disabled = Boolean(disabledReason);
-  const canUploadAttachments = postingMode === "host";
+  const canUploadAttachments =
+    postingMode === "host" ||
+    (postingMode === "guest" && Boolean(roomSessionToken.trim()));
   const canSubmit = Boolean(message.trim() || pendingAttachments.length) && !busy && !uploading && !disabled;
 
   function insertText(text: string) {

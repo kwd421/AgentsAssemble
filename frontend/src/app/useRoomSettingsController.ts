@@ -79,6 +79,8 @@ export function useRoomSettingsController({
     Record<string, RoomSettingsAuthorityState>
   >({});
   const operationGenerationsRef = useRef<Record<string, number>>({});
+  const preferenceOperationGenerationsRef = useRef<Record<string, number>>({});
+  const preferenceWriteChainsRef = useRef<Record<string, Promise<void>>>({});
   const onRoomMetadataLoadedRef = useRef(onRoomMetadataLoaded);
   onRoomMetadataLoadedRef.current = onRoomMetadataLoaded;
   const canonicalGlobalSettingsRef = useRef(canonicalGlobalSettings);
@@ -121,6 +123,17 @@ export function useRoomSettingsController({
   const isCurrentSettingsOperation = useCallback(
     (key: string, generation: number) =>
       operationGenerationsRef.current[key] === generation,
+    []
+  );
+  const beginPreferenceOperation = useCallback((key: string) => {
+    const generation =
+      (preferenceOperationGenerationsRef.current[key] || 0) + 1;
+    preferenceOperationGenerationsRef.current[key] = generation;
+    return generation;
+  }, []);
+  const isCurrentPreferenceOperation = useCallback(
+    (key: string, generation: number) =>
+      preferenceOperationGenerationsRef.current[key] === generation,
     []
   );
 
@@ -191,10 +204,29 @@ export function useRoomSettingsController({
     if (!activeMeetingId) return;
     const meetingId = activeMeetingId;
     const key = activeRoomKey;
+    const generation = beginPreferenceOperation(key);
+    const pendingWrite =
+      preferenceWriteChainsRef.current[key] || Promise.resolve();
     let cancelled = false;
-    fetchRoomSettings(meetingId, { sessionToken, deviceToken })
+    void pendingWrite
+      .catch(() => undefined)
+      .then(() => {
+        if (
+          cancelled ||
+          !isCurrentPreferenceOperation(key, generation)
+        ) {
+          return null;
+        }
+        return fetchRoomSettings(meetingId, { sessionToken, deviceToken });
+      })
       .then((settings) => {
-        if (!cancelled) applyPreferences(key, settings);
+        if (
+          settings &&
+          !cancelled &&
+          isCurrentPreferenceOperation(key, generation)
+        ) {
+          applyPreferences(key, settings);
+        }
       })
       .catch(() => undefined);
     return () => {
@@ -204,7 +236,9 @@ export function useRoomSettingsController({
     activeMeetingId,
     activeRoomKey,
     applyPreferences,
+    beginPreferenceOperation,
     deviceToken,
+    isCurrentPreferenceOperation,
     sessionToken,
   ]);
 
@@ -215,15 +249,32 @@ export function useRoomSettingsController({
     ) => {
       if (!room.meetingId) return;
       const key = roomSettingsKey(room);
-      void saveRoomSettings({
-        roomId: room.meetingId,
-        ...updates,
-        identity: { sessionToken, deviceToken },
-      })
-        .then((settings) => applyPreferences(key, settings))
+      const generation = beginPreferenceOperation(key);
+      const previousWrite =
+        preferenceWriteChainsRef.current[key] || Promise.resolve();
+      const write = previousWrite
+        .then(() =>
+          saveRoomSettings({
+            roomId: room.meetingId,
+            ...updates,
+            identity: { sessionToken, deviceToken },
+          })
+        )
+        .then((settings) => {
+          if (isCurrentPreferenceOperation(key, generation)) {
+            applyPreferences(key, settings);
+          }
+        })
         .catch(() => undefined);
+      preferenceWriteChainsRef.current[key] = write;
     },
-    [applyPreferences, deviceToken, sessionToken]
+    [
+      applyPreferences,
+      beginPreferenceOperation,
+      deviceToken,
+      isCurrentPreferenceOperation,
+      sessionToken,
+    ]
   );
 
   const saveGlobalSettings = useCallback(

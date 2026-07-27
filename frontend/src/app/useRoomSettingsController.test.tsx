@@ -58,6 +58,20 @@ function settings(room: RoomDockItem, bannerPreset: "forest" | "ember"): RoomSet
   };
 }
 
+function preferenceSettings(
+  room: RoomDockItem,
+  notifications: RoomSettings["appearance"]["notifications"]
+): RoomSettings {
+  const result = settings(room, "forest");
+  return {
+    ...result,
+    appearance: {
+      ...result.appearance,
+      notifications,
+    },
+  };
+}
+
 function globalSettings(
   room: RoomDockItem,
   bannerPreset: "forest" | "ember",
@@ -216,6 +230,98 @@ describe("useRoomSettingsController", () => {
       identity: { sessionToken: "session-a", deviceToken: "device-test" },
     });
     expect(saveCanonicalGlobalSettings).not.toHaveBeenCalled();
+  });
+
+  it("does not let the initial preference response overwrite a newer save", async () => {
+    const initialRequest = deferred<RoomSettings>();
+    const saveRequest = deferred<RoomSettings>();
+    apiMocks.fetchRoomSettings.mockReturnValue(initialRequest.promise);
+    apiMocks.saveRoomSettings.mockReturnValue(saveRequest.promise);
+    const hook = renderHook(() =>
+      useRoomSettingsController({
+        activeRoom: roomA,
+        sessionToken: "session-a",
+        deviceToken: "device-test",
+        canonicalGlobalSettings: globalSettings(roomA, "forest"),
+        saveCanonicalGlobalSettings,
+        onRoomMetadataLoaded: vi.fn(),
+        onMembersChanged: vi.fn(),
+      })
+    );
+    await waitFor(() => expect(apiMocks.fetchRoomSettings).toHaveBeenCalledTimes(1));
+
+    act(() => {
+      hook.result.current.updateAppearance(roomA, { notifications: "mute" });
+    });
+    await waitFor(() => expect(apiMocks.saveRoomSettings).toHaveBeenCalledTimes(1));
+
+    await act(async () => {
+      saveRequest.resolve(preferenceSettings(roomA, "mute"));
+      await saveRequest.promise;
+    });
+    await waitFor(() =>
+      expect(hook.result.current.appearanceFor(roomA).notifications).toBe("mute")
+    );
+
+    await act(async () => {
+      initialRequest.resolve(preferenceSettings(roomA, "mentions"));
+      await initialRequest.promise;
+    });
+
+    expect(hook.result.current.appearanceFor(roomA).notifications).toBe("mute");
+  });
+
+  it("serializes preference saves so the server receives them in user order", async () => {
+    const firstSave = deferred<RoomSettings>();
+    const secondSave = deferred<RoomSettings>();
+    apiMocks.saveRoomSettings
+      .mockReturnValueOnce(firstSave.promise)
+      .mockReturnValueOnce(secondSave.promise);
+    const hook = renderHook(() =>
+      useRoomSettingsController({
+        activeRoom: roomA,
+        sessionToken: "session-a",
+        deviceToken: "device-test",
+        canonicalGlobalSettings: globalSettings(roomA, "forest"),
+        saveCanonicalGlobalSettings,
+        onRoomMetadataLoaded: vi.fn(),
+        onMembersChanged: vi.fn(),
+      })
+    );
+    await waitFor(() =>
+      expect(hook.result.current.appearanceFor(roomA).notifications).toBe("mentions")
+    );
+
+    act(() => {
+      hook.result.current.updateAppearance(roomA, { notifications: "all" });
+    });
+    act(() => {
+      hook.result.current.updateAppearance(roomA, { notifications: "mute" });
+    });
+
+    await waitFor(() => expect(apiMocks.saveRoomSettings).toHaveBeenCalledTimes(1));
+    expect(apiMocks.saveRoomSettings).toHaveBeenNthCalledWith(
+      1,
+      expect.objectContaining({ appearance: { notifications: "all" } })
+    );
+
+    await act(async () => {
+      firstSave.resolve(preferenceSettings(roomA, "all"));
+      await firstSave.promise;
+    });
+    await waitFor(() => expect(apiMocks.saveRoomSettings).toHaveBeenCalledTimes(2));
+    expect(apiMocks.saveRoomSettings).toHaveBeenNthCalledWith(
+      2,
+      expect.objectContaining({ appearance: { notifications: "mute" } })
+    );
+
+    await act(async () => {
+      secondSave.resolve(preferenceSettings(roomA, "mute"));
+      await secondSave.promise;
+    });
+    await waitFor(() =>
+      expect(hook.result.current.appearanceFor(roomA).notifications).toBe("mute")
+    );
   });
 
   it("keeps server-owned routing settings unknown without a canonical snapshot", async () => {
