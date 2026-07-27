@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from datetime import UTC, datetime
+import logging
 from pathlib import Path
 import threading
 from typing import Callable
@@ -51,6 +52,10 @@ ProviderLookup = Callable[[str, str], NativeCliProviderSpec]
 SessionCallback = Callable[[str, dict[str, object]], object]
 EnsureRoom = Callable[[str], dict[str, object]]
 TurnFinalizationWriter = RoomTransaction | RoomCommandUnitOfWork
+_LOGGER = logging.getLogger(__name__)
+FLOOR_PROGRESSION_PUBLIC_ERROR = (
+    "Pending room work could not be assigned. Check the server diagnostics."
+)
 
 
 @dataclass(frozen=True)
@@ -275,9 +280,127 @@ class RoomTurnCoordinator:
                 )
             )
         for _event_seq, agent_id in sorted(candidates):
-            if self.assign_pending(room_id, agent_id):
-                return True
+            try:
+                if self.assign_pending(room_id, agent_id):
+                    return True
+            except Exception as error:
+                self._record_floor_progression_error(
+                    room_id,
+                    participant_id=agent_id,
+                    error=error,
+                    error_code="ordered_assignment_failed",
+                )
         return False
+
+    def reconcile_conversation_mode(self, room_id: str) -> bool:
+        """Apply the current room mode to pending work after a durable mode change."""
+        return self._advance_floor_after_commit(room_id)
+
+    def _assign_all_ambient_pending(self, room_id: str) -> bool:
+        if self.store.room_settings(room_id).get("conversation_mode") != "ambient":
+            return False
+        assigned = False
+        for session in self.store.sessions(room_id):
+            participant_id = clean_lobby_text(
+                session.get("participant_id"),
+                limit=128,
+            )
+            if not participant_id or not session.get("pending_event_ids"):
+                continue
+            try:
+                assigned = self.assign_pending(room_id, participant_id) or assigned
+            except Exception as error:
+                self._record_floor_progression_error(
+                    room_id,
+                    participant_id=participant_id,
+                    error=error,
+                    error_code="ambient_assignment_failed",
+                )
+        return assigned
+
+    def _advance_floor_after_commit(
+        self,
+        room_id: str,
+        *,
+        participant_id: str = "",
+    ) -> bool:
+        """Advance queued work without turning an already-committed command into a NACK."""
+        try:
+            mode = self.store.room_settings(room_id).get("conversation_mode")
+            if mode == "ordered":
+                return self.assign_next_ordered_pending(room_id)
+            if mode == "ambient":
+                return self._assign_all_ambient_pending(room_id)
+            return bool(participant_id) and self.assign_pending(
+                room_id,
+                participant_id,
+            )
+        except Exception as error:
+            self._record_floor_progression_error(
+                room_id,
+                participant_id=participant_id,
+                error=error,
+                error_code="floor_progression_failed",
+            )
+            return False
+
+    def _record_floor_progression_error(
+        self,
+        room_id: str,
+        *,
+        participant_id: str,
+        error: Exception,
+        error_code: str,
+    ) -> None:
+        assignment_error_code = (
+            clean_lobby_text(error.code, limit=64)
+            if isinstance(error, RoomCommandRejected)
+            else "internal_assignment_error"
+        )
+        log_context = {
+            "room_id": room_id,
+            "participant_id": participant_id,
+            "error_code": error_code,
+            "assignment_error_code": assignment_error_code,
+        }
+        if isinstance(error, RoomCommandRejected):
+            _LOGGER.info("Room floor progression rejected", extra=log_context)
+        else:
+            _LOGGER.error(
+                "Room floor progression failed",
+                extra=log_context,
+                exc_info=(type(error), error, error.__traceback__),
+            )
+        try:
+            if participant_id:
+                session = self.store.session(room_id, participant_id)
+                if session:
+                    updated = self.store.update_session_fields(
+                        room_id,
+                        str(session["session_id"]),
+                        last_error=FLOOR_PROGRESSION_PUBLIC_ERROR,
+                    )
+                    self._publish_session_state(room_id, updated)
+            self.store.append_event(
+                room_id,
+                "error",
+                participant_id=participant_id,
+                content=FLOOR_PROGRESSION_PUBLIC_ERROR,
+                error_code=error_code,
+                diagnostics={
+                    "assignment_error_code": assignment_error_code,
+                },
+            )
+        except Exception as recording_error:
+            _LOGGER.exception(
+                "Failed to record room floor progression error",
+                extra={
+                    "room_id": room_id,
+                    "participant_id": participant_id,
+                    "error_code": error_code,
+                    "recording_error_type": type(recording_error).__name__,
+                },
+            )
 
     def _ordered_turn_is_active(
         self,
@@ -1417,11 +1540,8 @@ class RoomTurnCoordinator:
                 self.recovery_delay_seconds,
                 lambda: self._retry_pending_turn(room_id, str(session["session_id"])),
             )
-        elif (
-            not interrupted
-            and self.store.room_settings(room_id).get("conversation_mode") == "ordered"
-        ):
-            self.assign_next_ordered_pending(room_id)
+        elif not interrupted:
+            self._advance_floor_after_commit(room_id)
         return {"event": error, "agent_session": public_session(updated)}
 
     def _complete_active_turn(
@@ -1562,10 +1682,10 @@ class RoomTurnCoordinator:
         session_id: str,
         publish_state: bool,
     ) -> dict[str, object]:
-        if self.store.room_settings(room_id).get("conversation_mode") == "ordered":
-            self.assign_next_ordered_pending(room_id)
-        else:
-            self.assign_pending(room_id, participant_id)
+        self._advance_floor_after_commit(
+            room_id,
+            participant_id=participant_id,
+        )
         current = self.store.session(room_id, session_id)
         if publish_state:
             self._publish_session_state(room_id, current)
@@ -1576,15 +1696,29 @@ class RoomTurnCoordinator:
         with self._lock:
             self._recovery_handles.pop(key, None)
             session = self.store.session(room_id, session_id)
-            if (
-                self._is_closed()
-                or not session
-                or not session.get("enabled")
-                or session.get("runtime_status") != "recovering"
-                or not self.broker.has_bridge(room_id, str(session.get("participant_id") or session_id))
-            ):
+            if self._is_closed() or not session:
                 return
             participant_id = str(session.get("participant_id") or session_id)
+            if (
+                not session.get("enabled")
+                or session.get("runtime_status") != "recovering"
+            ):
+                return
+            if not self.broker.has_bridge(room_id, participant_id):
+                failed = self.store.update_session_fields(
+                    room_id,
+                    session_id,
+                    status="error",
+                    runtime_status="error",
+                    recovery_required=True,
+                    last_error=(
+                        "Automatic provider recovery could not continue because "
+                        "the Agent Bridge disconnected."
+                    ),
+                )
+                self._publish_session_state(room_id, failed)
+                self._advance_floor_after_commit(room_id)
+                return
             updated = self.store.update_session_fields(
                 room_id,
                 session_id,
@@ -1592,7 +1726,15 @@ class RoomTurnCoordinator:
                 runtime_status="idle",
             )
             self._publish_session_state(room_id, updated)
-            if not self.assign_pending(room_id, participant_id):
+            if self.store.room_settings(room_id).get("conversation_mode") == "ordered":
+                assigned = self._advance_floor_after_commit(room_id)
+                if assigned or self._ordered_turn_is_active(room_id):
+                    return
+            else:
+                assigned = self.assign_pending(room_id, participant_id)
+                if assigned:
+                    return
+            if not assigned:
                 current = self.store.session(room_id, session_id)
                 if current and current.get("pending_event_ids"):
                     failed = self.store.update_session_fields(

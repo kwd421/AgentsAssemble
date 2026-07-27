@@ -1593,6 +1593,329 @@ class RoomRealtimeControllerTests(unittest.TestCase):
         self.assertIn(queued["id"], peer_session["inflight_event_ids"])
         self.assertGreaterEqual(peer_wake["input_up_to_seq"], queued["seq"])
 
+    def test_ordered_recovery_disconnect_advances_the_queued_peer(self):
+        self.controller.create_provider_session("general", _spec("peer"))
+        codex_identity, codex_channel = self._connect_bridge("codex")
+        _peer_identity, peer_channel = self._connect_bridge("peer")
+        codex_channel.drain()
+        peer_channel.drain()
+        self.controller.store.update_room_settings(
+            "general",
+            {"conversation_mode": "ordered"},
+        )
+
+        self._command(
+            "ordered-recovery-disconnect-codex",
+            "message.send",
+            {"content": "@codex 먼저 검토해"},
+        )
+        codex_wake = next(
+            message for message in codex_channel.drain() if message.get("op") == "room.wake"
+        )
+        queued = self._command(
+            "ordered-recovery-disconnect-peer",
+            "message.send",
+            {"content": "@peer 다음으로 검토해"},
+        )["result"]["event"]
+
+        self._command(
+            "ordered-recovery-disconnect-failure",
+            "turn.failed",
+            {
+                "turn_id": codex_wake["turn_id"],
+                "message": "Live CLI runtime exited with return code 9.",
+                "diagnostics": {"running": False, "returncode": 9},
+            },
+            codex_identity,
+        )
+        self.controller.broker.disconnect(codex_channel)
+        self.recovery_scheduler.run_next()
+
+        peer_wake = next(
+            message for message in peer_channel.drain() if message.get("op") == "room.wake"
+        )
+        failed = self.controller.store.session("general", "codex")
+        self.assertEqual(failed["runtime_status"], "error")
+        self.assertTrue(failed["recovery_required"])
+        self.assertEqual(peer_wake["source_event_id"], queued["id"])
+
+    def test_ordered_recovery_waits_behind_a_busy_peer_without_losing_its_observation(self):
+        self.controller.create_provider_session("general", _spec("peer"))
+        codex_identity, codex_channel = self._connect_bridge("codex")
+        peer_identity, peer_channel = self._connect_bridge("peer")
+        codex_channel.drain()
+        peer_channel.drain()
+        self.controller.store.update_room_settings(
+            "general",
+            {"conversation_mode": "ordered"},
+        )
+
+        original = self._command(
+            "ordered-recovery-busy-codex",
+            "message.send",
+            {"content": "@codex 먼저 검토해"},
+        )["result"]["event"]
+        codex_wake = next(
+            message for message in codex_channel.drain() if message.get("op") == "room.wake"
+        )
+        self._command(
+            "ordered-recovery-busy-peer",
+            "message.send",
+            {"content": "@peer 다음으로 검토해"},
+        )
+        self._command(
+            "ordered-recovery-busy-failure",
+            "turn.failed",
+            {
+                "turn_id": codex_wake["turn_id"],
+                "message": "Live CLI runtime exited with return code 9.",
+                "diagnostics": {"running": False, "returncode": 9},
+            },
+            codex_identity,
+        )
+
+        self.assertTrue(
+            self.controller._turn_coordinator.assign_next_ordered_pending("general")
+        )
+        peer_wake = next(
+            message for message in peer_channel.drain() if message.get("op") == "room.wake"
+        )
+        self.recovery_scheduler.run_next()
+        recovering = self.controller.store.session("general", "codex")
+        self.assertEqual(recovering["runtime_status"], "idle")
+        self.assertIn(original["id"], recovering["pending_event_ids"])
+
+        self._command(
+            "ordered-recovery-busy-peer-decline",
+            "turn.decline",
+            {
+                "turn_id": peer_wake["turn_id"],
+                "reason_code": "nothing_useful_to_add",
+                "observed_through_seq": peer_wake["input_up_to_seq"],
+            },
+            peer_identity,
+        )
+
+        retry_wake = next(
+            message for message in codex_channel.drain() if message.get("op") == "room.wake"
+        )
+        self.assertEqual(retry_wake["source_event_id"], original["id"])
+        self.assertEqual(
+            self.controller.store.session("general", "codex")["runtime_status"],
+            "busy",
+        )
+
+    def test_ordered_to_ambient_change_dispatches_an_already_queued_peer(self):
+        self.controller.create_provider_session("general", _spec("peer"))
+        _codex_identity, codex_channel = self._connect_bridge("codex")
+        _peer_identity, peer_channel = self._connect_bridge("peer")
+        codex_channel.drain()
+        peer_channel.drain()
+        self.controller.store.update_room_settings(
+            "general",
+            {"conversation_mode": "ordered"},
+        )
+
+        self._command(
+            "ordered-to-ambient-codex",
+            "message.send",
+            {"content": "@codex 먼저 검토해"},
+        )
+        codex_wake = next(
+            message for message in codex_channel.drain() if message.get("op") == "room.wake"
+        )
+        queued = self._command(
+            "ordered-to-ambient-peer",
+            "message.send",
+            {"content": "@peer 다음으로 검토해"},
+        )["result"]["event"]
+
+        changed = self._command(
+            "ordered-to-ambient-mode",
+            "room.settings.update",
+            {"conversation_mode": "ambient"},
+        )
+
+        peer_wake = next(
+            message for message in peer_channel.drain() if message.get("op") == "room.wake"
+        )
+        self.assertEqual(changed["result"]["room_settings"]["conversation_mode"], "ambient")
+        self.assertEqual(peer_wake["source_event_id"], queued["id"])
+        self.assertEqual(
+            self.controller.store.session("general", "codex")["active_turn_id"],
+            codex_wake["turn_id"],
+        )
+
+    def test_turn_failure_ack_survives_a_queued_ordered_cursor_error(self):
+        self.controller.create_provider_session("general", _spec("peer"))
+        codex_identity, codex_channel = self._connect_bridge("codex")
+        _peer_identity, peer_channel = self._connect_bridge("peer")
+        codex_channel.drain()
+        peer_channel.drain()
+        self.controller.store.update_room_settings(
+            "general",
+            {"conversation_mode": "ordered"},
+        )
+
+        self._command(
+            "ordered-cursor-failure-codex",
+            "message.send",
+            {"content": "@codex 먼저 검토해"},
+        )
+        codex_wake = next(
+            message for message in codex_channel.drain() if message.get("op") == "room.wake"
+        )
+        self._command(
+            "ordered-cursor-failure-peer",
+            "message.send",
+            {"content": "@peer 다음으로 검토해"},
+        )
+        self.controller.store.update_session_fields(
+            "general",
+            "peer",
+            last_provider_sync_seq=999,
+        )
+        payload = {
+            "turn_id": codex_wake["turn_id"],
+            "message": "ordinary provider failure",
+        }
+
+        completed = self._command(
+            "ordered-cursor-failure-report",
+            "turn.failed",
+            payload,
+            codex_identity,
+        )
+        duplicate = self._command(
+            "ordered-cursor-failure-report",
+            "turn.failed",
+            payload,
+            codex_identity,
+        )
+
+        self.assertTrue(completed["accepted"])
+        self.assertTrue(duplicate["deduplicated"])
+        self.assertEqual(
+            self.controller.store.session("general", "codex")["runtime_status"],
+            "error",
+        )
+        assignment_error = next(
+            event
+            for event in reversed(self.controller.store.read_events("general"))
+            if event.get("type") == "error"
+            and event.get("error_code") == "ordered_assignment_failed"
+        )
+        self.assertEqual(assignment_error["participant_id"], "peer")
+        self.assertEqual(
+            assignment_error["diagnostics"]["assignment_error_code"],
+            "provider_sync_cursor_mismatch",
+        )
+
+    def test_ordered_assignment_failure_is_sanitized_and_does_not_block_a_healthy_peer(self):
+        self.controller.create_provider_session("general", _spec("peer"))
+        self.controller.create_provider_session("general", _spec("backup"))
+        codex_identity, codex_channel = self._connect_bridge("codex")
+        _peer_identity, peer_channel = self._connect_bridge("peer")
+        _backup_identity, backup_channel = self._connect_bridge("backup")
+        codex_channel.drain()
+        peer_channel.drain()
+        backup_channel.drain()
+        self.controller.store.update_room_settings(
+            "general",
+            {"conversation_mode": "ordered"},
+        )
+
+        self._command(
+            "ordered-internal-error-codex",
+            "message.send",
+            {"content": "@codex 먼저 검토해"},
+        )
+        codex_wake = next(
+            message for message in codex_channel.drain() if message.get("op") == "room.wake"
+        )
+        self._command(
+            "ordered-internal-error-peer",
+            "message.send",
+            {"content": "@peer 다음으로 검토해"},
+        )
+        healthy = self._command(
+            "ordered-internal-error-backup",
+            "message.send",
+            {"content": "@backup 그다음으로 검토해"},
+        )["result"]["event"]
+        secret_error = "database failed at /Users/private token=secret-value"
+        coordinator = self.controller._turn_coordinator
+        assign_pending = coordinator.assign_pending
+
+        def assign_with_one_failure(room_id, participant_id):
+            if participant_id == "peer":
+                raise RuntimeError(secret_error)
+            return assign_pending(room_id, participant_id)
+
+        payload = {
+            "turn_id": codex_wake["turn_id"],
+            "message": "ordinary provider failure",
+        }
+        with (
+            patch.object(
+                coordinator,
+                "assign_pending",
+                side_effect=assign_with_one_failure,
+            ),
+            self.assertLogs(
+                "agentsassemble.room.turn_coordinator",
+                level="ERROR",
+            ) as logs,
+        ):
+            completed = self._command(
+                "ordered-internal-error-report",
+                "turn.failed",
+                payload,
+                codex_identity,
+            )
+
+        duplicate = self._command(
+            "ordered-internal-error-report",
+            "turn.failed",
+            payload,
+            codex_identity,
+        )
+        backup_wake = next(
+            message
+            for message in backup_channel.drain()
+            if message.get("op") == "room.wake"
+        )
+        peer = self.controller.store.session("general", "peer")
+        public_error = next(
+            event
+            for event in reversed(self.controller.store.read_events("general"))
+            if event.get("type") == "error"
+            and event.get("error_code") == "ordered_assignment_failed"
+        )
+        published_peer = next(
+            event
+            for event in reversed(self.controller.store.read_events("general"))
+            if event.get("type") == "agent_session_state"
+            and event.get("participant_id") == "peer"
+        )
+
+        self.assertTrue(completed["accepted"])
+        self.assertTrue(duplicate["deduplicated"])
+        self.assertEqual(backup_wake["source_event_id"], healthy["id"])
+        self.assertIn(secret_error, "\n".join(logs.output))
+        self.assertNotIn("secret-value", peer["last_error"])
+        self.assertNotIn("/Users/private", peer["last_error"])
+        self.assertNotIn("secret-value", public_error["content"])
+        self.assertNotIn("/Users/private", public_error["content"])
+        self.assertEqual(
+            public_error["diagnostics"]["assignment_error_code"],
+            "internal_assignment_error",
+        )
+        self.assertNotIn(
+            "secret-value",
+            published_peer["agent_session"]["last_error"],
+        )
+
     def test_ambient_mode_wakes_each_eligible_bridge_without_transcript(self):
         self.controller.create_provider_session("general", _spec("peer"))
         codex_identity, codex_channel = self._connect_bridge("codex")

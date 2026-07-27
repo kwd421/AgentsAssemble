@@ -651,7 +651,7 @@ class RoomRealtimeController:
         if action == "room.settings.update":
             self._require_capability(identity, "room.manage")
             with self._lock:
-                return self._execute_durable_command(
+                ack = self._execute_durable_command(
                     identity,
                     room_id,
                     request_id,
@@ -668,6 +668,8 @@ class RoomRealtimeController:
                         unit=unit,
                     ),
                 )
+                self._turn_coordinator.reconcile_conversation_mode(room_id)
+                return ack
         if action == "message.send":
             self._require_capability(identity, "message.send")
             with self._lock:
