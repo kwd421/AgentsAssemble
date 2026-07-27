@@ -217,6 +217,46 @@ class PostgresRoomRepositoryContractTests(RoomRepositoryContractMixin, unittest.
     def test_postgres_repository_implements_repository_protocol(self) -> None:
         self.assertIsInstance(self.repository, RoomRepository)
 
+    def test_ensure_room_rejects_missing_or_invalid_settings(self) -> None:
+        self.repository.create_room("missing-settings", label="Missing")
+        self.repository.create_room("invalid-settings", label="Invalid")
+        self.repository.create_room("invalid-room", label="Invalid room")
+        with psycopg.connect(self.test_dsn) as connection:
+            connection.execute(
+                "DELETE FROM room_settings WHERE room_id = %s",
+                ("missing-settings",),
+            )
+            connection.execute(
+                "UPDATE room_settings SET data_json = %s::jsonb WHERE room_id = %s",
+                ('{"unexpected": true}', "invalid-settings"),
+            )
+            connection.execute(
+                "UPDATE rooms SET data_json = %s::jsonb WHERE room_id = %s",
+                ("{}", "invalid-room"),
+            )
+            connection.execute(
+                "DELETE FROM room_settings WHERE room_id = %s",
+                ("invalid-room",),
+            )
+
+        with self.assertRaisesRegex(ValueError, "settings.*missing"):
+            self.repository.ensure_room("missing-settings")
+        with self.assertRaises(ValueError):
+            self.repository.ensure_room("invalid-settings")
+        with self.assertRaisesRegex(ValueError, "record is invalid"):
+            self.repository.ensure_room("invalid-room")
+
+        with psycopg.connect(self.test_dsn) as connection:
+            settings_count = connection.execute(
+                "SELECT COUNT(*) AS count FROM room_settings WHERE room_id = %s",
+                ("invalid-room",),
+            ).fetchone()[0]
+        self.assertEqual(settings_count, 0)
+        self.assertEqual(
+            [event["type"] for event in self.repository.read_events("invalid-room")],
+            ["room_created"],
+        )
+
     def test_repository_representation_does_not_disclose_dsn(self) -> None:
         self.assertEqual(repr(self.repository), "PostgresRoomRepository(configured=True)")
         self.assertNotIn(self.test_dsn, repr(self.repository))

@@ -1,6 +1,8 @@
 from __future__ import annotations
 
+import threading
 import time
+from concurrent.futures import ThreadPoolExecutor
 from typing import cast
 from unittest import TestCase
 
@@ -40,6 +42,73 @@ class RoomRepositoryContractMixin:
         case.assertEqual(second["room_id"], "general")
         case.assertEqual(second["label"], "General renamed")
         case.assertEqual([event["type"] for event in events], ["room_created"])
+
+    def test_room_ensure_creates_once_without_overwriting_existing_room(self) -> None:
+        first = self.repository.ensure_room("ensured-room", label="Original")
+        self.repository.update_room_settings(
+            "ensured-room",
+            {
+                "label": "Customized",
+                "topic": "Preserve this topic",
+                "conversation_mode": "ambient",
+            },
+        )
+        self.repository.set_room_status("ensured-room", "archived")
+        room_before_second_ensure = self.repository.room("ensured-room")
+        settings_before_second_ensure = self.repository.room_settings("ensured-room")
+        events_before_second_ensure = self.repository.read_events("ensured-room")
+        second = self.repository.ensure_room(
+            "ensured-room",
+            label="Replacement",
+            status="active",
+        )
+        events_after_second_ensure = self.repository.read_events("ensured-room")
+
+        case = self._test_case()
+        case.assertEqual(first["label"], "Original")
+        case.assertEqual(second, room_before_second_ensure)
+        case.assertEqual(
+            self.repository.room("ensured-room"),
+            room_before_second_ensure,
+        )
+        case.assertEqual(
+            self.repository.room_settings("ensured-room"),
+            settings_before_second_ensure,
+        )
+        case.assertEqual(
+            events_after_second_ensure,
+            events_before_second_ensure,
+        )
+
+    def test_concurrent_room_ensure_keeps_the_first_committed_room(self) -> None:
+        barrier = threading.Barrier(2)
+
+        def ensure(label: str) -> dict[str, object]:
+            barrier.wait()
+            return self.repository.ensure_room("concurrent-ensure-room", label=label)
+
+        with ThreadPoolExecutor(max_workers=2) as executor:
+            first_future = executor.submit(ensure, "First candidate")
+            second_future = executor.submit(ensure, "Second candidate")
+            rooms = [first_future.result(), second_future.result()]
+
+        case = self._test_case()
+        case.assertEqual(len({str(room["label"]) for room in rooms}), 1)
+        case.assertIn(
+            str(rooms[0]["label"]),
+            {"First candidate", "Second candidate"},
+        )
+        case.assertEqual(
+            self.repository.room_settings("concurrent-ensure-room")["label"],
+            rooms[0]["label"],
+        )
+        case.assertEqual(
+            [
+                event["type"]
+                for event in self.repository.read_events("concurrent-ensure-room")
+            ],
+            ["room_created"],
+        )
 
     def test_room_global_settings_are_backend_neutral_and_strict(self) -> None:
         self.repository.create_room("settings-room", label="Initial")
@@ -468,6 +537,8 @@ class RoomRepositoryContractMixin:
         case.assertTrue(self.repository.room_is_deleted("general"))
         with case.assertRaisesRegex(ValueError, "cannot be recreated"):
             self.repository.create_room("general")
+        with case.assertRaisesRegex(ValueError, "cannot be recreated"):
+            self.repository.ensure_room("general")
 
     def test_deleted_room_tombstone_preserves_command_and_cleanup_state(self) -> None:
         self.repository.create_room("general")

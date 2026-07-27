@@ -113,6 +113,9 @@ class _SQLiteRoomTransaction:
     def create_room(self, *, label: str = "", status: str = "active") -> tuple[dict[str, object], bool]:
         return self._store._create_room(self._connection, self._room_id, label=label, status=status)
 
+    def ensure_room(self, *, label: str = "", status: str = "active") -> tuple[dict[str, object], bool]:
+        return self._store._ensure_room(self._connection, self._room_id, label=label, status=status)
+
     def upsert_participant(
         self,
         participant: dict[str, object],
@@ -283,6 +286,14 @@ class RoomStore:
         clean_room_id = _clean_room_id(room_id)
         with self.transaction(clean_room_id) as transaction:
             room, created = transaction.create_room(label=label, status=status)
+            if created:
+                transaction.append_event("room_created", label=room["label"])
+        return room
+
+    def ensure_room(self, room_id: str, *, label: str = "", status: str = "active") -> dict[str, object]:
+        clean_room_id = _clean_room_id(room_id)
+        with self.transaction(clean_room_id) as transaction:
+            room, created = transaction.ensure_room(label=label, status=status)
             if created:
                 transaction.append_event("room_created", label=room["label"])
         return room
@@ -959,6 +970,37 @@ class RoomStore:
             )
         self._write_room_settings(connection, room_id, settings)
         return room, not bool(existing)
+
+    def _ensure_room(
+        self,
+        connection: sqlite3.Connection,
+        room_id: str,
+        *,
+        label: str,
+        status: str,
+    ) -> tuple[dict[str, object], bool]:
+        deleted = connection.execute(
+            "SELECT deleted_at FROM deleted_rooms WHERE room_id = ?",
+            (room_id,),
+        ).fetchone()
+        if deleted is not None:
+            raise ValueError(f"Room {room_id} was deleted and cannot be recreated implicitly.")
+        row = connection.execute(
+            "SELECT data_json FROM rooms WHERE room_id = ?",
+            (room_id,),
+        ).fetchone()
+        if row is not None:
+            existing = _row_payload(row)
+            if not existing:
+                raise ValueError(f"Room {room_id} record is invalid.")
+            self._room_settings(connection, room_id)
+            return existing, False
+        return self._create_room(
+            connection,
+            room_id,
+            label=label,
+            status=status,
+        )
 
     def _room_settings(
         self,

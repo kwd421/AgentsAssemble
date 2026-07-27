@@ -77,6 +77,14 @@ room-local and must provide these guarantees on every backend:
 7. Room deletion removes canonical room state atomically and retains its
    tombstone in the same commit.
 
+Implicit room access uses the repository's atomic `ensure_room` operation.
+Under the same room-local transaction lock, it rejects tombstones and invalid
+room/settings records, returns an existing room without writing its label,
+status, settings, or timestamps, and creates a missing room plus its one
+`room_created` event. Controllers must not implement this as a separate
+read-then-create sequence because hosted workers can race and overwrite a
+concurrently customized room.
+
 The repository does not own routing, attention policy, provider execution,
 WebSocket serialization, media bytes, or identity authentication. Those layers
 may coordinate a repository transaction but must not receive a raw database

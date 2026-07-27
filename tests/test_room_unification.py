@@ -203,6 +203,8 @@ class CanonicalRoomEventStoreTests(unittest.TestCase):
                 store.room_settings("general")
             with self.assertRaisesRegex(ValueError, "settings.*missing"):
                 store.create_room("general", label="General")
+            with self.assertRaisesRegex(ValueError, "settings.*missing"):
+                store.ensure_room("general", label="General")
 
     def test_session_fields_can_be_explicitly_cleared_and_command_results_are_deduplicated(self):
         with tempfile.TemporaryDirectory() as temp_dir:

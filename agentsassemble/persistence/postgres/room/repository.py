@@ -124,6 +124,28 @@ class _PostgresRoomTransaction:
     def create_room(self, *, label: str = "", status: str = "active") -> tuple[dict[str, object], bool]:
         return create_room_record(self._connection, self._room_id, label=label, status=status)
 
+    def ensure_room(self, *, label: str = "", status: str = "active") -> tuple[dict[str, object], bool]:
+        if query_room_is_deleted(self._connection, self._room_id):
+            raise ValueError(
+                f"Room {self._room_id} was deleted and cannot be recreated implicitly."
+            )
+        room_exists = self._connection.execute(
+            "SELECT 1 FROM rooms WHERE room_id = %s",
+            (self._room_id,),
+        ).fetchone() is not None
+        if room_exists:
+            existing = read_room(self._connection, self._room_id)
+            if not existing:
+                raise ValueError(f"Room {self._room_id} record is invalid.")
+            read_room_settings(self._connection, self._room_id)
+            return existing, False
+        return create_room_record(
+            self._connection,
+            self._room_id,
+            label=label,
+            status=status,
+        )
+
     def upsert_participant(self, participant: dict[str, object]) -> tuple[dict[str, object], bool]:
         return upsert_participant(self._connection, self._room_id, participant)
 
@@ -314,6 +336,14 @@ class PostgresRoomRepository:
         clean_id = clean_room_id(room_id)
         with self.transaction(clean_id) as transaction:
             room, created = transaction.create_room(label=label, status=status)
+            if created:
+                transaction.append_event("room_created", label=room["label"])
+        return room
+
+    def ensure_room(self, room_id: str, *, label: str = "", status: str = "active") -> dict[str, object]:
+        clean_id = clean_room_id(room_id)
+        with self.transaction(clean_id) as transaction:
+            room, created = transaction.ensure_room(label=label, status=status)
             if created:
                 transaction.append_event("room_created", label=room["label"])
         return room

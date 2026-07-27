@@ -5,6 +5,7 @@ import json
 import threading
 import time
 import unittest
+from contextlib import closing
 from dataclasses import replace
 from pathlib import Path
 from unittest.mock import patch
@@ -20,6 +21,7 @@ from agentsassemble.room.realtime import (
 )
 from agentsassemble.room.command_uow import RoomCommandUnitOfWork
 from agentsassemble.room.attachments import store_uploaded_attachment
+from agentsassemble.room_database import open_room_database
 from agentsassemble.room.moderation import is_room_member_muted, set_room_member_muted
 from agentsassemble.room_store import RoomStore
 from agentsassemble.room.settings import update_room_settings as update_legacy_room_settings
@@ -663,6 +665,28 @@ class RoomRealtimeControllerTests(unittest.TestCase):
         self.assertEqual(
             self.controller.store.room_settings(room_id)["topic"],
             "Peril in Pinebrook",
+        )
+
+    def test_connect_rejects_missing_room_settings_before_participant_mutation(self):
+        room_id = "corrupt-settings-room"
+        self.controller.store.create_room(room_id, label="Corrupt")
+        with closing(open_room_database(self.controller.store.database_path)) as connection:
+            connection.execute(
+                "DELETE FROM room_settings WHERE room_id = ?",
+                (room_id,),
+            )
+
+        identity = {
+            **HOST,
+            "agent_id": "corrupt-room-guest",
+            "meeting_id": room_id,
+        }
+        with self.assertRaisesRegex(ValueError, "settings.*missing"):
+            self.controller.connect(identity)
+
+        self.assertEqual(
+            self.controller.store.participant(room_id, "corrupt-room-guest"),
+            {},
         )
 
     def test_room_settings_command_is_operator_only_and_rejects_noncanonical_updates(self):
