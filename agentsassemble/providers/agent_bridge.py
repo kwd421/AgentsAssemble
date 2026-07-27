@@ -433,6 +433,7 @@ class RoomAgentBridge:
                 on_activity=on_activity,
             )
             result = ProviderTurnResult.parse(raw_result)
+            observed_through_seq = portal.observation_receipt(turn_id)
             public_content = portal.consume_publication(turn_id)
             completed = time.monotonic()
             completed_at = _now()
@@ -459,6 +460,7 @@ class RoomAgentBridge:
                         ),
                         "diagnostics": self._health_payload(self.runtime.health()),
                         "latency": latency,
+                        "observed_through_seq": observed_through_seq,
                     },
                 )
                 return
@@ -472,6 +474,7 @@ class RoomAgentBridge:
                         limit=128,
                     ),
                     "message_source": "room_portal",
+                    "observed_through_seq": observed_through_seq,
                     "diagnostics": self._health_payload(self.runtime.health()),
                     "latency": latency,
                 },

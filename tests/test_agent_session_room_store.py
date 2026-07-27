@@ -2,6 +2,7 @@ import json
 import tempfile
 import threading
 import time
+import tomllib
 import unittest
 from pathlib import Path
 from unittest.mock import patch
@@ -29,6 +30,10 @@ from agentsassemble.agent_sessions import (
     run_agent_session_turn_payload,
     room_sse_frames_after_cursor,
     stream_room_sse_frames,
+)
+from agentsassemble.providers.codex_app_server import (
+    _codex_app_server_thread_start_settings,
+    _is_agentsassemble_room_mcp_approval,
 )
 from agentsassemble.room_store import RoomStore
 from agentsassemble.room_turn_context import _agent_turn_prompt
@@ -820,6 +825,7 @@ class AgentSessionRoomStoreTests(unittest.TestCase):
                         '{"jsonrpc":"2.0","id":2,"result":{"thread":{"id":"thread-1"},"model":"gpt-5.6-luna"}}\n',
                         '{"jsonrpc":"2.0","id":3,"result":{"turn":{"id":"turn-a"}}}\n',
                         '{"jsonrpc":"2.0","method":"turn/started","params":{"threadId":"thread-1","turn":{"id":"turn-a"}}}\n',
+                        '{"jsonrpc":"2.0","id":"mcp-approval-1","method":"mcpServer/elicitation/request","params":{"threadId":"thread-1","turnId":"turn-a","serverName":"agentsassemble_room","mode":"form","_meta":{"codex_approval_kind":"mcp_tool_call"},"message":"Allow room MCP?","requestedSchema":{"type":"object","properties":{}}}}\n',
                         '{"jsonrpc":"2.0","id":"tool-1","method":"item/tool/call","params":{"threadId":"thread-1","turnId":"turn-a","callId":"call-1","tool":"room_read","arguments":{}}}\n',
                         '{"jsonrpc":"2.0","method":"model/rerouted","params":{"threadId":"thread-1","turnId":"turn-a","fromModel":"gpt-5.6-luna","toModel":"gpt-5.6-luna-safe","reason":"highRiskCyberActivity"}}\n',
                         '{"jsonrpc":"2.0","method":"item/agentMessage/delta","params":{"threadId":"thread-1","turnId":"turn-a","itemId":"item-a","delta":"hello"}}\n',
@@ -864,6 +870,10 @@ class AgentSessionRoomStoreTests(unittest.TestCase):
         self.assertIn('"method": "turn/start"', writes)
         self.assertIn('"input": [{"type": "text"', writes)
         self.assertIn('"dynamicTools"', writes)
+        self.assertIn(
+            '"id": "mcp-approval-1", "result": {"action": "accept", "content": {}}',
+            writes,
+        )
         self.assertIn('"id": "tool-1", "result": {"success": true', writes)
         self.assertNotIn('"provider_session_id"', writes)
         self.assertEqual(tool_calls, [("room_read", {})])
@@ -1281,6 +1291,51 @@ class AgentSessionRoomStoreTests(unittest.TestCase):
         self.assertEqual(runtime.diagnostics["sandbox"], "read-only")
         self.assertEqual(runtime.diagnostics["permissions"], "never")
 
+    def test_app_server_runtime_command_trusts_selected_workspace_for_process(self):
+        workspace = self.output_root / 'workspace with "quotes"'
+        workspace.mkdir()
+        manager = CodexAppServerRuntimeManager()
+        session = {
+            "session_id": "codex-a",
+            "provider_kind": "codex_live_session",
+            "workspace": str(workspace),
+        }
+
+        runtime = manager.runtime_for(session)
+
+        overrides = [
+            runtime.command[index + 1]
+            for index, argument in enumerate(runtime.command[:-1])
+            if argument == "-c"
+        ]
+        trust_override = next(
+            override for override in overrides if override.startswith("projects.")
+        )
+        parsed = tomllib.loads(trust_override)
+        thread_settings = _codex_app_server_thread_start_settings(runtime.profile_settings)
+        self.assertEqual(
+            parsed["projects"][str(workspace.resolve())]["trust_level"],
+            "trusted",
+        )
+        self.assertEqual(thread_settings["cwd"], str(workspace.resolve()))
+
+    def test_app_server_auto_approves_only_private_room_mcp_tool_calls(self):
+        room_request = {
+            "params": {
+                "serverName": "agentsassemble_room",
+                "_meta": {"codex_approval_kind": "mcp_tool_call"},
+            }
+        }
+        foreign_request = {
+            "params": {
+                "serverName": "other_server",
+                "_meta": {"codex_approval_kind": "mcp_tool_call"},
+            }
+        }
+
+        self.assertTrue(_is_agentsassemble_room_mcp_approval(room_request))
+        self.assertFalse(_is_agentsassemble_room_mcp_approval(foreign_request))
+
     def test_codex_app_server_drains_stderr_and_reports_bounded_tail(self):
         class Pipe:
             def __init__(self, lines=None):
@@ -1694,12 +1749,13 @@ class AgentSessionRoomStoreTests(unittest.TestCase):
         requests = [__import__("json").loads(line) for line in runtime.process.stdin.writes]
         thread_start = next(request for request in requests if request.get("method") == "thread/start")
         turn_start = next(request for request in requests if request.get("method") == "turn/start")
+        canonical_workspace = str(Path("/tmp/agentsassemble-workspace").resolve())
 
-        self.assertEqual(thread_start["params"].get("cwd"), "/tmp/agentsassemble-workspace")
+        self.assertEqual(thread_start["params"].get("cwd"), canonical_workspace)
         self.assertEqual(thread_start["params"].get("model"), "gpt-5.3-codex-spark")
         self.assertEqual(thread_start["params"].get("approvalPolicy"), "never")
         self.assertEqual(thread_start["params"].get("sandbox"), "read-only")
-        self.assertEqual(turn_start["params"].get("cwd"), "/tmp/agentsassemble-workspace")
+        self.assertEqual(turn_start["params"].get("cwd"), canonical_workspace)
         self.assertEqual(turn_start["params"].get("model"), "gpt-5.3-codex-spark")
         self.assertEqual(turn_start["params"].get("effort"), "medium")
         self.assertEqual(turn_start["params"].get("approvalPolicy"), "never")

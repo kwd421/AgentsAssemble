@@ -6,8 +6,8 @@ from agentsassemble.providers.codex_app_server import (
     CodexAppServerRuntime,
     codex_app_server_runtime_command,
 )
-from agentsassemble.providers.codex_room_tools import CodexRoomTools
 from agentsassemble.providers.room_portal import RoomPortal
+from agentsassemble.providers.room_portal_mcp import room_portal_mcp_settings
 from agentsassemble.room.text import clean_room_text
 
 
@@ -37,13 +37,12 @@ class CodexAppServerLiveRuntime:
             "sandbox": sandbox,
             "permissions": permissions,
         }
-        self.room_tools = CodexRoomTools(room_portal) if room_portal is not None else None
+        if room_portal is not None:
+            self.profile["room_mcp_server"] = room_portal_mcp_settings(room_portal.root)
         self.runtime = CodexAppServerRuntime(
             command=codex_app_server_runtime_command(self.profile),
             profile_settings=self.profile,
             environment=environment,
-            dynamic_tools=self.room_tools.specs() if self.room_tools is not None else None,
-            dynamic_tool_handler=self.room_tools.handle if self.room_tools is not None else None,
         )
         self.handle: dict[str, object] = {"session_id": self.agent_id}
         self.pending = ""
@@ -127,9 +126,9 @@ class CodexAppServerLiveRuntime:
             elif chunk_type == "error":
                 errors.append(str(chunk.get("diagnostics") or "Codex app-server turn failed."))
         diagnostics = self.runtime.diagnose(self.handle)
+        if errors:
+            raise RuntimeError(errors[-1])
         if not final.strip():
-            if errors:
-                raise RuntimeError(errors[-1])
             if room_observation:
                 if (
                     int(diagnostics.get("dynamic_tool_error_count") or 0)

@@ -1,6 +1,6 @@
 import type { RoomAppearance } from "../lib/roomAppearance";
-import type { RoomAgentSession } from "./agentSessions";
 import type { VoiceParticipant } from "./room";
+import type { RoomEvent as GeneratedRoomEvent } from "../types/generatedRoomEvent";
 import {
   fetchJson,
   fetchJsonWithToken,
@@ -82,37 +82,7 @@ export interface SideChatPostResponse {
   events: SideChatEvent[];
 }
 
-export interface RoomEvent {
-  v?: number;
-  id: string;
-  seq: number;
-  created_at: string;
-  room_id: string;
-  type: string;
-  actor?: {
-    participant_id?: string;
-    participant_type?: string;
-  };
-  participant_id?: string;
-  participant_type?: string;
-  session_id?: string;
-  turn_id?: string;
-  source_event_id?: string;
-  actor_id?: string;
-  actor_type?: string;
-  display_name?: string;
-  avatar_image_url?: string;
-  provider_kind?: string;
-  content?: string;
-  phase?: string;
-  status?: string;
-  activity_kind?: "reasoning" | "tool" | string;
-  category?: string;
-  latency?: Record<string, unknown>;
-  metadata?: Record<string, unknown>;
-  agent_session?: RoomAgentSession;
-  media?: LobbyAttachmentRef | Record<string, unknown>;
-}
+export type RoomEvent = GeneratedRoomEvent;
 
 export function fetchLobby(meetingId = "", options: { before?: string; limit?: number } = {}) {
   const limitText = options.limit ? String(options.limit) : undefined;

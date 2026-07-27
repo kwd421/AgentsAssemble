@@ -101,6 +101,32 @@ Keep changes scoped to the requested behavior. Do not reformat, rename, reorder,
 
 Assume uncommitted changes may belong to the user or another tool. Do not revert, overwrite, normalize, or move them unless explicitly asked. If they conflict with the task, explain the conflict and choose the smallest safe path forward.
 
+## AgentsAssemble Contract Boundaries
+
+Treat these cross-layer boundaries as one contract, not as independent copies:
+
+- A public room event starts at the repository record, passes through the
+  public projection and transport, and ends in the frontend room-event
+  projection. Add or change a public field at the authoritative contract and
+  regenerate the checked frontend type.
+- Each provider call has an explicit publication mode. A normal assigned turn
+  publishes its assistant final automatically; a room observation publishes
+  only through the RoomPortal. Do not infer publication behavior from prompt
+  wording or provider identity.
+- Pending room input owns its input mode per item. Do not convert queued
+  transcript input into observation input, or queued observation input into a
+  transcript turn, when room settings change.
+- Advancing an ambient observation cursor requires evidence that the provider
+  read the assigned room state. Tool availability or a successful provider
+  completion is not a read receipt.
+- Provider transcript parsers are provider protocol adapters. Keep their schema
+  handling in the provider-specific transcript module and preserve current-turn
+  binding, partial-record handling, and no-history-replay behavior.
+
+Verify changes through the full boundary they affect. A room-event field needs
+backend projection and frontend projection evidence; a provider publication
+change needs the real bridge path or its structured provider fixture.
+
 ## Roles
 
 Use these role boundaries as defaults:

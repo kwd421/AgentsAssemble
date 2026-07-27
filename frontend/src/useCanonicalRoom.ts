@@ -432,10 +432,14 @@ export function useCanonicalRoom(options: UseCanonicalRoomOptions) {
     });
     (participantsByRoom[roomId] || []).forEach((participant) => {
       if (!participant.participant_id) return;
+      const previous = profiles[participant.participant_id] || {};
       profiles[participant.participant_id] = {
-        displayName: participant.display_name,
-        avatarImageUrl: participant.avatar_image_url,
-        providerKind: participant.provider_kind,
+        displayName: participant.display_name || previous.displayName,
+        avatarImageUrl:
+          participant.avatar_image_url !== undefined
+            ? participant.avatar_image_url
+            : previous.avatarImageUrl,
+        providerKind: participant.provider_kind || previous.providerKind,
       };
     });
     return profiles;

@@ -783,6 +783,9 @@ class RoomRealtimeControllerTests(unittest.TestCase):
                 runtime_status="busy",
                 inflight_event_ids=["evt-inflight"],
                 pending_event_ids=["evt-pending"],
+                pending_event_modes={"evt-pending": "transcript"},
+                pending_input_mode="transcript",
+                provider_input_mode="room_observation",
                 bridge_handle_id="lost-handle",
             )
             controller = RoomRealtimeController(
@@ -796,6 +799,13 @@ class RoomRealtimeControllerTests(unittest.TestCase):
         self.assertEqual(recovered["runtime_status"], "disconnected")
         self.assertEqual(recovered["inflight_event_ids"], [])
         self.assertEqual(recovered["pending_event_ids"], ["evt-inflight", "evt-pending"])
+        self.assertEqual(
+            recovered["pending_event_modes"],
+            {
+                "evt-inflight": "room_observation",
+                "evt-pending": "transcript",
+            },
+        )
         self.assertTrue(recovered["recovery_required"])
         self.assertEqual(recovered["bridge_handle_id"], "")
 
@@ -1269,13 +1279,18 @@ class RoomRealtimeControllerTests(unittest.TestCase):
             {
                 "turn_id": codex_wake["turn_id"],
                 "reason_code": "nothing_useful_to_add",
+                "observed_through_seq": codex_wake["input_up_to_seq"],
             },
             codex_identity,
         )
         peer_final = self._command(
             "ambient-peer-final",
             "message.final",
-            {"turn_id": peer_wake["turn_id"], "content": "먼저 출구 표식을 남겨야 해."},
+            {
+                "turn_id": peer_wake["turn_id"],
+                "content": "먼저 출구 표식을 남겨야 해.",
+                "observed_through_seq": peer_wake["input_up_to_seq"],
+            },
             peer_identity,
         )["result"]["event"]
         codex_followup = next(
@@ -1292,6 +1307,129 @@ class RoomRealtimeControllerTests(unittest.TestCase):
             peer_final["seq"],
         )
         self.assertEqual(self.controller.attention_active_diagnostics()["error_count"], 0)
+
+    def test_ambient_completion_without_read_receipt_does_not_advance_cursor(self):
+        identity, channel = self._connect_bridge("codex")
+        channel.drain()
+        self.controller.store.update_room_settings(
+            "general",
+            {"conversation_mode": "ambient"},
+        )
+        source = self._command(
+            "ambient-receipt-source",
+            "message.send",
+            {"content": "방을 읽고 판단해줘"},
+        )["result"]["event"]
+        assignment = next(
+            message for message in channel.drain() if message.get("op") == "room.wake"
+        )
+        before = self.controller.store.session("general", "codex")
+
+        with self.assertRaises(RoomCommandRejected) as raised:
+            self._command(
+                "ambient-receipt-missing",
+                "turn.decline",
+                {
+                    "turn_id": assignment["turn_id"],
+                    "reason_code": "nothing_useful_to_add",
+                },
+                identity,
+            )
+
+        self.assertEqual(raised.exception.code, "room_observation_unconfirmed")
+        after = self.controller.store.session("general", "codex")
+        self.assertEqual(after["last_provider_sync_seq"], before["last_provider_sync_seq"])
+        self.assertLess(after["last_provider_sync_seq"], source["seq"])
+        self.assertEqual(after["runtime_status"], "error")
+
+    def test_pending_ambient_observation_is_not_reassigned_after_leaving_ambient(self):
+        _identity, channel = self._connect_bridge("codex")
+        channel.drain()
+        self.controller.store.update_session_fields(
+            "general",
+            "codex",
+            runtime_status="busy",
+        )
+        self.controller.store.update_room_settings(
+            "general",
+            {"conversation_mode": "ambient"},
+        )
+        ambient_source = self._command(
+            "pending-ambient-source",
+            "message.send",
+            {"content": "ambient에서 대기한 메시지"},
+        )["result"]["event"]
+        self.controller.store.update_room_settings(
+            "general",
+            {"conversation_mode": "ordered"},
+        )
+        ordered_source = self._command(
+            "pending-ordered-source",
+            "message.send",
+            {"content": "ordered에서 새로 들어온 메시지"},
+        )["result"]["event"]
+        self.controller.store.update_session_fields(
+            "general",
+            "codex",
+            runtime_status="idle",
+        )
+
+        self.assertTrue(self.controller._turn_coordinator.assign_pending("general", "codex"))
+        assignment = next(
+            message for message in channel.drain() if message.get("op") == "turn.assign"
+        )
+        session = self.controller.store.session("general", "codex")
+        self.assertEqual(assignment["source_event_id"], ordered_source["id"])
+        self.assertNotIn(ambient_source["id"], session["inflight_event_ids"])
+
+    def test_pending_transcript_keeps_its_mode_when_room_enters_ambient(self):
+        identity, channel = self._connect_bridge("codex")
+        channel.drain()
+        self.controller.store.update_session_fields(
+            "general",
+            "codex",
+            runtime_status="busy",
+        )
+        ordered_source = self._command(
+            "pending-transcript-source",
+            "message.send",
+            {"content": "ordered에서 먼저 들어온 메시지"},
+        )["result"]["event"]
+        self.controller.store.update_room_settings(
+            "general",
+            {"conversation_mode": "ambient"},
+        )
+        ambient_source = self._command(
+            "pending-observation-source",
+            "message.send",
+            {"content": "ambient에서 뒤에 들어온 메시지"},
+        )["result"]["event"]
+        self.controller.store.update_session_fields(
+            "general",
+            "codex",
+            runtime_status="idle",
+        )
+
+        self.assertTrue(self.controller._turn_coordinator.assign_pending("general", "codex"))
+        assignment = next(
+            message for message in channel.drain() if message.get("op") == "turn.assign"
+        )
+        self.assertEqual(assignment["source_event_id"], ordered_source["id"])
+        self.assertLess(assignment["input_up_to_seq"], ambient_source["seq"])
+
+        self._command(
+            "pending-transcript-final",
+            "message.final",
+            {
+                "turn_id": assignment["turn_id"],
+                "content": "첫 메시지에 대한 답",
+            },
+            identity,
+        )
+        wake = next(
+            message for message in channel.drain() if message.get("op") == "room.wake"
+        )
+        self.assertEqual(wake["source_event_id"], ambient_source["id"])
 
     def test_ambient_busy_session_reads_messages_queued_during_its_current_observation(self):
         self.controller.create_provider_session("general", _spec("peer"))
@@ -1318,7 +1456,11 @@ class RoomRealtimeControllerTests(unittest.TestCase):
         codex_final = self._command(
             "ambient-busy-codex-final",
             "message.final",
-            {"turn_id": codex_wake["turn_id"], "content": "먼저 확인한 내용이야."},
+            {
+                "turn_id": codex_wake["turn_id"],
+                "content": "먼저 확인한 내용이야.",
+                "observed_through_seq": codex_wake["input_up_to_seq"],
+            },
             codex_identity,
         )["result"]["event"]
 
@@ -1332,6 +1474,7 @@ class RoomRealtimeControllerTests(unittest.TestCase):
             {
                 "turn_id": peer_wake["turn_id"],
                 "reason_code": "nothing_useful_to_add",
+                "observed_through_seq": peer_wake["input_up_to_seq"],
             },
             peer_identity,
         )
@@ -1385,7 +1528,11 @@ class RoomRealtimeControllerTests(unittest.TestCase):
         before_session = store.session("general", "codex")
         before_attention = store.attention_state("general", "codex")
         before_latest_seq = store.latest_event_sequence("general")
-        payload = {"turn_id": assignment["turn_id"], "content": "원자적 최종 답변"}
+        payload = {
+            "turn_id": assignment["turn_id"],
+            "content": "원자적 최종 답변",
+            "observed_through_seq": assignment["input_up_to_seq"],
+        }
 
         with patch.object(RoomCommandUnitOfWork, "record_ack", side_effect=RuntimeError("injected")):
             with self.assertRaisesRegex(RuntimeError, "injected"):
@@ -1496,6 +1643,7 @@ class RoomRealtimeControllerTests(unittest.TestCase):
         referenced = store_uploaded_attachment(
             self.root,
             {
+                "room_id": "general",
                 "filename": "room.png",
                 "content_type": "image/png",
                 "data_base64": "cm9vbS1pbWFnZQ==",
@@ -1504,6 +1652,7 @@ class RoomRealtimeControllerTests(unittest.TestCase):
         unreferenced = store_uploaded_attachment(
             self.root,
             {
+                "room_id": "general",
                 "filename": "private.png",
                 "content_type": "image/png",
                 "data_base64": "cHJpdmF0ZS1pbWFnZQ==",

@@ -40,7 +40,7 @@ from agentsassemble.web.room_client import WsRoomClient, connect_room_ws_with_ti
 
 
 STRICT_MESSAGE_SOURCES = {
-    "codex": "codex_session_jsonl",
+    "codex": "codex_app_server",
     "grok": "grok_acp",
     "antigravity": "antigravity_transcript_jsonl",
     "claude": "claude_session_jsonl",

@@ -5,6 +5,11 @@ from dataclasses import dataclass
 from typing import Literal
 
 
+PublicationMode = Literal["automatic_final", "explicit_room_portal"]
+AUTOMATIC_FINAL: PublicationMode = "automatic_final"
+EXPLICIT_ROOM_PORTAL: PublicationMode = "explicit_room_portal"
+
+
 SUPPORTED_DECLINE_REASONS = frozenset(
     {"nothing_useful_to_add", "not_addressed", "duplicate"}
 )
@@ -123,7 +128,10 @@ class ProviderRuntimeHealth:
 
 
 __all__ = [
+    "AUTOMATIC_FINAL",
     "AdapterContractError",
+    "EXPLICIT_ROOM_PORTAL",
+    "PublicationMode",
     "ProviderRuntimeHealth",
     "ProviderTurnResult",
     "SUPPORTED_DECLINE_REASONS",

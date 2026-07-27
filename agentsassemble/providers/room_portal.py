@@ -25,11 +25,21 @@ def room_session_orientation(provider_kind: object = "") -> str:
     kind = clean_room_text(provider_kind, limit=64)
     provider_note = ""
     if kind == "codex_live_session":
-        read_interface = "Codex dynamic tool `agentsassemble_room_read`"
-        speak_interface = "Codex dynamic tool `agentsassemble_room_speak` with `content`"
+        read_interface = "the `read_discussion` MCP tool"
+        speak_interface = "the `publish_message` MCP tool with `content`"
+        publication_note = f"""
+- On `room.wake`, only {speak_interface} creates a public room message; ordinary
+  assistant output remains private.
+- On a normal assigned room turn, do not use the room publication boundary:
+  your ordinary final answer is published automatically."""
     elif kind in {"claude_code", "antigravity_live_session"}:
         read_interface = "terminal command `agentsassemble-room read`"
         speak_interface = "terminal command `agentsassemble-room speak '<message>'`"
+        publication_note = f"""
+- On `room.wake`, only {speak_interface} creates a public room message; ordinary
+  assistant output remains private.
+- On a normal assigned room turn, do not use the room publication boundary:
+  your ordinary final answer is published automatically."""
     elif kind == "grok_live_session":
         read_interface = "ACP read path `/agentsassemble-room/current.md`"
         speak_interface = (
@@ -39,24 +49,31 @@ def room_session_orientation(provider_kind: object = "") -> str:
 - For that exact virtual outbox path, the room adapter captures the content at
   the ACP permission boundary. A later local read-only filesystem error does
   not mean publication failed; do not retry it through a shell or helper."""
+        publication_note = f"""
+- On `room.wake`, only {speak_interface} creates a public room message; ordinary
+  assistant output remains private.
+- On a normal assigned room turn, do not use the room publication boundary:
+  your ordinary final answer is published automatically."""
     else:
         read_interface = (
-            "the provider's private room read interface: Codex `agentsassemble_room_read`, "
+            "the provider's private room read interface: Codex `read_discussion` MCP, "
             "terminal `agentsassemble-room read`, or ACP `/agentsassemble-room/current.md`"
         )
         speak_interface = (
-            "the matching private room speak interface: Codex `agentsassemble_room_speak`, "
+            "the matching private room speak interface: Codex `publish_message` MCP, "
             "terminal `agentsassemble-room speak '<message>'`, or ACP "
             "`/agentsassemble-room/outbox.txt`"
         )
+        publication_note = f"""
+- On `room.wake`, only {speak_interface} creates a public room message; ordinary
+  assistant output remains private.
+- On a normal assigned room turn, do not use the room publication boundary:
+  your ordinary final answer is published automatically."""
     return f"""Shared room session:
 - You are an ongoing participant in a shared AgentsAssemble room.
 - A `room.wake <turn-id>` notice is a content-free signal that assigned,
   finalized room activity is available. It is not a request or a public message.
-- The private room mirror is read through {read_interface}; public messages are
-  staged through {speak_interface}.
-- Only that publication boundary creates a public room message. Ordinary
-  assistant output remains private.{provider_note}
+- The private room mirror is read through {read_interface}.{publication_note}{provider_note}
 - Room norm: public messages add new substance. Resolving an open decision is new
   substance; after a point is settled, receipt, thanks, repeated agreement,
   restatement, a silence explanation, or another closing is not."""
@@ -191,9 +208,48 @@ class RoomPortal:
                 {
                     "turn_id": clean_turn_id,
                     "input_up_to_seq": assigned_seq,
+                    "activity_offset": (
+                        self.activity_path.stat().st_size
+                        if self.activity_path.exists()
+                        else 0
+                    ),
                 },
             )
             self._write_view()
+
+    def observation_receipt(self, turn_id: str) -> int | None:
+        clean_turn_id = clean_room_text(turn_id, limit=128)
+        with self._lock:
+            try:
+                turn = json.loads(self.turn_path.read_text(encoding="utf-8"))
+            except (OSError, json.JSONDecodeError):
+                return None
+            if (
+                not isinstance(turn, dict)
+                or clean_room_text(turn.get("turn_id"), limit=128) != clean_turn_id
+            ):
+                return None
+            assigned_seq = max(0, _safe_int(turn.get("input_up_to_seq"), 0))
+            offset = max(0, _safe_int(turn.get("activity_offset"), 0))
+            try:
+                with self.activity_path.open("r", encoding="utf-8") as stream:
+                    stream.seek(offset)
+                    records = stream.readlines()
+            except OSError:
+                return None
+        for line in records:
+            try:
+                record = json.loads(line)
+            except json.JSONDecodeError:
+                continue
+            if (
+                isinstance(record, dict)
+                and record.get("operation") == "read"
+                and clean_room_text(record.get("turn_id"), limit=128)
+                == clean_turn_id
+            ):
+                return assigned_seq
+        return None
 
     def consume_publication(self, turn_id: str) -> str:
         clean_turn_id = clean_room_text(turn_id, limit=128)
@@ -498,6 +554,7 @@ class RoomPortal:
             pass
 
     def _record_activity(self, operation: str, *, turn_id: str = "") -> None:
+        input_up_to_seq = 0
         if not turn_id:
             try:
                 turn = json.loads(self.turn_path.read_text(encoding="utf-8"))
@@ -507,10 +564,16 @@ class RoomPortal:
                 turn.get("turn_id") if isinstance(turn, dict) else "",
                 limit=128,
             )
+            input_up_to_seq = (
+                max(0, _safe_int(turn.get("input_up_to_seq"), 0))
+                if isinstance(turn, dict)
+                else 0
+            )
         payload = {
             "created_at": datetime.now(timezone.utc).isoformat(),
             "operation": clean_room_text(operation, limit=32),
             "turn_id": turn_id,
+            "observed_through_seq": input_up_to_seq if operation == "read" else 0,
         }
         with self.activity_path.open("a", encoding="utf-8") as stream:
             stream.write(json.dumps(payload, ensure_ascii=False, sort_keys=True) + "\n")
@@ -608,15 +671,19 @@ def atomic_json(path, payload):
     os.replace(temporary, path)
 
 def audit(operation, turn_id=""):
+    observed_through_seq = 0
     if not turn_id:
         try:
-            turn_id = str(json.loads(TURN.read_text(encoding="utf-8")).get("turn_id") or "")
+            turn = json.loads(TURN.read_text(encoding="utf-8"))
+            turn_id = str(turn.get("turn_id") or "")
+            observed_through_seq = int(turn.get("input_up_to_seq") or 0)
         except (OSError, json.JSONDecodeError):
             turn_id = ""
     payload = {
         "created_at": datetime.now(timezone.utc).isoformat(),
         "operation": operation,
         "turn_id": turn_id,
+        "observed_through_seq": observed_through_seq if operation == "read" else 0,
     }
     with ACTIVITY.open("a", encoding="utf-8") as stream:
         stream.write(json.dumps(payload, ensure_ascii=False, sort_keys=True) + "\n")

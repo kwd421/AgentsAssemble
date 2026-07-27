@@ -11,6 +11,8 @@ from pathlib import Path
 from urllib.parse import quote
 from uuid import uuid4
 
+from agentsassemble.room.text import clean_room_text
+
 MAX_ATTACHMENT_BYTES = 10 * 1024 * 1024
 MAX_ATTACHMENTS_PER_EVENT = 8
 ATTACHMENT_ID_PATTERN = re.compile(r"^[A-Za-z0-9_-]{8,64}$")
@@ -37,8 +39,17 @@ class FileAttachmentStore:
     def store(self, payload: dict[str, object]) -> dict[str, object]:
         return store_uploaded_attachment(self.output_root, payload)
 
-    def normalize_references(self, value: object) -> list[dict[str, object]]:
-        return normalize_attachment_references(self.output_root, value)
+    def normalize_references(
+        self,
+        value: object,
+        *,
+        room_id: str = "",
+    ) -> list[dict[str, object]]:
+        return normalize_attachment_references(
+            self.output_root,
+            value,
+            room_id=room_id,
+        )
 
     def read_file(self, attachment_id: str) -> tuple[dict[str, object], Path]:
         return read_attachment_file(self.output_root, attachment_id)
@@ -47,6 +58,10 @@ class FileAttachmentStore:
 def store_uploaded_attachment(output_root: Path, payload: dict[str, object]) -> dict[str, object]:
     filename = sanitize_attachment_filename(payload.get("filename"))
     content_type = normalize_content_type(payload.get("content_type"), filename)
+    room_id = clean_room_text(
+        payload.get("room_id") or payload.get("meeting_id"),
+        limit=128,
+    )
     raw = decode_attachment_data(payload.get("data_base64"))
     if len(raw) > MAX_ATTACHMENT_BYTES:
         raise AttachmentError("Attachment is too large")
@@ -63,12 +78,18 @@ def store_uploaded_attachment(output_root: Path, payload: dict[str, object]) -> 
         "size": len(raw),
         "is_image": content_type in INLINE_SAFE_IMAGE_TYPES,
         "created_at": datetime.now(UTC).isoformat(),
+        "room_id": room_id,
     }
     (directory / "metadata.json").write_text(json.dumps(metadata, ensure_ascii=False, sort_keys=True), encoding="utf-8")
     return public_attachment_metadata(metadata)
 
 
-def normalize_attachment_references(output_root: Path, value: object) -> list[dict[str, object]]:
+def normalize_attachment_references(
+    output_root: Path,
+    value: object,
+    *,
+    room_id: str = "",
+) -> list[dict[str, object]]:
     if value in (None, ""):
         return []
     if not isinstance(value, list):
@@ -81,8 +102,11 @@ def normalize_attachment_references(output_root: Path, value: object) -> list[di
         attachment_id = normalize_attachment_id(item.get("id"))
         if attachment_id in seen:
             continue
-        metadata = read_attachment_metadata(output_root, attachment_id)
-        attachments.append(public_attachment_metadata(metadata))
+        stored_metadata = read_attachment_metadata(output_root, attachment_id)
+        if room_id and clean_room_text(stored_metadata.get("room_id"), limit=128) != room_id:
+            raise AttachmentError("Attachment is not part of this room")
+        metadata, _file_path = read_attachment_file(output_root, attachment_id)
+        attachments.append(metadata)
         seen.add(attachment_id)
     if len(value) > MAX_ATTACHMENTS_PER_EVENT:
         raise AttachmentError(f"at most {MAX_ATTACHMENTS_PER_EVENT} attachments are allowed")

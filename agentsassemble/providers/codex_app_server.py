@@ -721,13 +721,24 @@ class CodexAppServerRuntime:
     ) -> dict[str, object]:
         while True:
             message = self._read_json_line(timeout_deadline=timeout_deadline)
+            method = clean_room_text(message.get("method"), limit=128)
+            if method == "item/tool/call" and "id" in message:
+                self._handle_dynamic_tool_request(message)
+                continue
             if (
-                clean_room_text(message.get("method"), limit=128)
-                != "item/tool/call"
-                or "id" not in message
+                method == "mcpServer/elicitation/request"
+                and "id" in message
+                and _is_agentsassemble_room_mcp_approval(message)
             ):
-                return message
-            self._handle_dynamic_tool_request(message)
+                self._write_json(
+                    {
+                        "jsonrpc": "2.0",
+                        "id": message.get("id"),
+                        "result": {"action": "accept", "content": {}},
+                    }
+                )
+                continue
+            return message
 
     def _handle_dynamic_tool_request(self, message: dict[str, object]) -> None:
         request_id = message.get("id")
@@ -914,6 +925,8 @@ def codex_app_server_runtime_command(profile_settings: dict[str, object]) -> lis
     service_tier = clean_room_text(profile_settings.get("service_tier"), limit=32)
     sandbox = clean_room_text(profile_settings.get("sandbox"), limit=64)
     approval_policy = _codex_approval_policy(profile_settings.get("permissions"))
+    workspace_trust = _codex_workspace_trust_config(profile_settings.get("workspace"))
+    room_mcp_server = profile_settings.get("room_mcp_server")
     if model:
         command.extend(["-c", _codex_toml_string_config("model", model)])
     if effort:
@@ -924,13 +937,39 @@ def codex_app_server_runtime_command(profile_settings: dict[str, object]) -> lis
         command.extend(["-c", _codex_toml_string_config("sandbox_mode", sandbox)])
     if approval_policy:
         command.extend(["-c", _codex_toml_string_config("approval_policy", approval_policy)])
+    if workspace_trust:
+        command.extend(["-c", workspace_trust])
+    if isinstance(room_mcp_server, dict) and room_mcp_server.get("command"):
+        server_key = "mcp_servers.agentsassemble_room"
+        configured_args = room_mcp_server.get("args")
+        server_args = (
+            [str(value) for value in configured_args]
+            if isinstance(configured_args, list)
+            else []
+        )
+        server_cwd = clean_room_text(room_mcp_server.get("cwd"), limit=500)
+        command.extend(
+            [
+                "-c",
+                _codex_toml_string_config(
+                    f"{server_key}.command",
+                    str(room_mcp_server["command"]),
+                ),
+                "-c",
+                f"{server_key}.args={json.dumps(server_args, ensure_ascii=True)}",
+            ]
+        )
+        if server_cwd:
+            command.extend(
+                ["-c", _codex_toml_string_config(f"{server_key}.cwd", server_cwd)]
+            )
     command.append("--stdio")
     return command
 
 
 def _codex_app_server_thread_start_settings(profile_settings: dict[str, object]) -> dict[str, object]:
     params: dict[str, object] = {}
-    workspace = clean_room_text(profile_settings.get("workspace"), limit=300)
+    workspace = _codex_workspace_path(profile_settings.get("workspace"))
     model = clean_room_text(profile_settings.get("model"), limit=128)
     sandbox = clean_room_text(profile_settings.get("sandbox"), limit=64)
     approval_policy = _codex_approval_policy(profile_settings.get("permissions"))
@@ -947,7 +986,7 @@ def _codex_app_server_thread_start_settings(profile_settings: dict[str, object])
 
 def _codex_app_server_turn_start_settings(profile_settings: dict[str, object]) -> dict[str, object]:
     params: dict[str, object] = {}
-    workspace = clean_room_text(profile_settings.get("workspace"), limit=300)
+    workspace = _codex_workspace_path(profile_settings.get("workspace"))
     model = clean_room_text(profile_settings.get("model"), limit=128)
     effort = clean_room_text(profile_settings.get("effort"), limit=64)
     approval_policy = _codex_approval_policy(profile_settings.get("permissions"))
@@ -987,6 +1026,24 @@ def _codex_approval_policy(value: object) -> str:
 
 def _codex_toml_string_config(key: str, value: str) -> str:
     return f"{key}={json.dumps(value, ensure_ascii=True)}"
+
+
+def _codex_workspace_trust_config(value: object) -> str:
+    workspace = _codex_workspace_path(value)
+    if not workspace:
+        return ""
+    # app-server does not request dynamic tools from an untrusted cwd and can
+    # otherwise leave the turn waiting indefinitely. Keep this trust grant
+    # process-local instead of modifying the user's Codex configuration.
+    project_key = f"projects.{json.dumps(workspace, ensure_ascii=True)}.trust_level"
+    return _codex_toml_string_config(project_key, "trusted")
+
+
+def _codex_workspace_path(value: object) -> str:
+    workspace = clean_room_text(value, limit=300)
+    if not workspace:
+        return ""
+    return str(Path(workspace).expanduser().resolve())
 
 
 def _agent_turn_timeout_seconds(value: object) -> float:
@@ -1131,6 +1188,17 @@ def _app_server_agent_message_completed(message: dict[str, object]) -> bool:
     if method == "item/completed":
         return clean_room_text(_nested_get(message, "params.item.type"), limit=64) == "agentMessage"
     return True
+
+
+def _is_agentsassemble_room_mcp_approval(message: dict[str, object]) -> bool:
+    params = message.get("params") if isinstance(message.get("params"), dict) else {}
+    metadata = params.get("_meta") if isinstance(params.get("_meta"), dict) else {}
+    return (
+        clean_room_text(params.get("serverName"), limit=128)
+        == "agentsassemble_room"
+        and clean_room_text(metadata.get("codex_approval_kind"), limit=128)
+        == "mcp_tool_call"
+    )
 
 
 def _app_server_thread_idle(message: dict[str, object]) -> bool:

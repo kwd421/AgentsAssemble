@@ -207,6 +207,35 @@ test("recovers a failed join and keeps incognito credentials distinct", async ({
   await incognitoContext.close();
 });
 
+test("sends and restores an attachment-only canonical room message", async ({ browser, page }) => {
+  await installHostCredential(page);
+  await page.goto("/");
+  await page.getByRole("button", { name: "#general", exact: true }).click();
+
+  await page.getByLabel("채팅 첨부 선택").setInputFiles({
+    name: "attachment-only.png",
+    mimeType: "image/png",
+    buffer: PROFILE_PNG,
+  });
+  await expect(page.getByText("attachment-only.png", { exact: true })).toBeVisible();
+  await page.getByRole("button", { name: "채팅 메시지 보내기" }).click();
+
+  const postedImage = page.getByRole("img", { name: "attachment-only.png" });
+  await expect(postedImage).toBeVisible();
+
+  await page.reload();
+  await page.getByRole("button", { name: "#general", exact: true }).click();
+  await expect(page.getByRole("img", { name: "attachment-only.png" })).toBeVisible();
+
+  const observerContext = await browser.newContext();
+  const observerPage = await observerContext.newPage();
+  await installHostCredential(observerPage);
+  await observerPage.goto("/");
+  await observerPage.getByRole("button", { name: "#general", exact: true }).click();
+  await expect(observerPage.getByRole("img", { name: "attachment-only.png" })).toBeVisible();
+  await observerContext.close();
+});
+
 test("streams on desktop and controls the same canonical session on mobile", async ({ page }) => {
   await installHostCredential(page);
   await page.setViewportSize({ width: 1440, height: 900 });
@@ -229,7 +258,7 @@ test("streams on desktop and controls the same canonical session on mobile", asy
     "@fake AGENTSASSEMBLE_SESSION_MARKER=ui-e2e-001 AGENTSASSEMBLE_RESPONSE_DELAY_MS=500 기억하고 답해."
   );
   await page.getByRole("button", { name: "채팅 메시지 보내기" }).click();
-  await expect(page.getByText("입력 중…", { exact: true })).toBeVisible();
+  await expect(page.getByText("입력중...", { exact: true })).toBeVisible();
   const firstReply = page.getByText(/fake reply 1; marker=ui-e2e-001/);
   await expect(firstReply).toHaveCount(1);
   await expect(firstReply).toBeVisible();

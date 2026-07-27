@@ -28,23 +28,28 @@ def project_room_context(
     room_id: str,
     participant_id: str,
     after_seq: int = 0,
+    up_to_seq: int = 0,
     max_messages: int = DEFAULT_ROOM_CONTEXT_MESSAGES,
     max_chars: int = DEFAULT_ROOM_CONTEXT_CHARS,
 ) -> RoomContextWindow:
     """Project a bounded, room-visible message diff without scanning history."""
 
     clean_after_seq = max(0, int(after_seq or 0))
+    clean_up_to_seq = max(0, int(up_to_seq or 0))
+    before_seq = clean_up_to_seq + 1 if clean_up_to_seq else 0
     clean_max_messages = min(MAX_ROOM_CONTEXT_MESSAGES, max(1, int(max_messages or DEFAULT_ROOM_CONTEXT_MESSAGES)))
     clean_max_chars = max(256, int(max_chars or DEFAULT_ROOM_CONTEXT_CHARS))
     total_messages = store.event_count(
         room_id,
         after_seq=clean_after_seq,
+        before_seq=before_seq,
         event_types=("message_final",),
         exclude_actor_id=participant_id,
     )
     source_events = store.read_events(
         room_id,
         after_seq=clean_after_seq,
+        before_seq=before_seq,
         limit=clean_max_messages,
         newest=True,
         event_types=("message_final",),
@@ -62,14 +67,20 @@ def project_room_context(
     delta_count = store.event_count(
         room_id,
         after_seq=clean_after_seq,
+        before_seq=before_seq,
         event_types=("message_delta",),
     )
     all_message_count = store.event_count(
         room_id,
         after_seq=clean_after_seq,
+        before_seq=before_seq,
         event_types=("message_final",),
     )
-    visible_count = store.event_count(room_id, after_seq=clean_after_seq)
+    visible_count = store.event_count(
+        room_id,
+        after_seq=clean_after_seq,
+        before_seq=before_seq,
+    )
     internal_count = max(0, visible_count - all_message_count - delta_count)
     return RoomContextWindow(
         events=tuple(projected_events),

@@ -15,6 +15,7 @@ def _assignment(**overrides):
         "session_id": "codex-session",
         "turn_id": "turn-1",
         "provider_input": "hello",
+        "publication_mode": "automatic_final",
         "timeout_seconds": 30,
     }
     value.update(overrides)
@@ -29,6 +30,7 @@ def _room_wake(**overrides):
         "turn_id": "wake-1",
         "input_up_to_seq": 7,
         "attachment_ids": [],
+        "publication_mode": "explicit_room_portal",
         "timeout_seconds": 30,
     }
     value.update(overrides)
@@ -49,6 +51,7 @@ class BridgeProtocolTests(unittest.TestCase):
 
         self.assertEqual(parsed.turn_id, "turn-1")
         self.assertEqual(parsed.timeout_seconds, 30.0)
+        self.assertEqual(parsed.publication_mode, "automatic_final")
         for overrides in ({"room_id": "other"}, {"timeout_seconds": 0}, {"provider_input": ""}):
             with self.subTest(overrides=overrides), self.assertRaises(BridgeProtocolError):
                 self.parse_assignment(_assignment(**overrides))
@@ -72,6 +75,7 @@ class BridgeProtocolTests(unittest.TestCase):
         )
 
         self.assertEqual(parsed.input_up_to_seq, 7)
+        self.assertEqual(parsed.publication_mode, "explicit_room_portal")
         with self.assertRaises(BridgeProtocolError) as provider_input:
             RoomWakeEnvelope.parse_strict(
                 _room_wake(provider_input="room transcript"),
@@ -83,6 +87,30 @@ class BridgeProtocolTests(unittest.TestCase):
         self.assertEqual(
             provider_input.exception.code,
             "room_wake_contains_provider_input",
+        )
+
+    def test_publication_mode_is_strictly_bound_to_the_envelope_kind(self):
+        with self.assertRaises(BridgeProtocolError) as assigned:
+            self.parse_assignment(
+                _assignment(publication_mode="explicit_room_portal")
+            )
+        self.assertTrue(assigned.exception.fatal)
+        self.assertEqual(
+            assigned.exception.code,
+            "assignment_publication_mode_invalid",
+        )
+
+        with self.assertRaises(BridgeProtocolError) as wake:
+            RoomWakeEnvelope.parse_strict(
+                _room_wake(publication_mode="automatic_final"),
+                room_id="general",
+                participant_id="codex",
+                session_id="codex-session",
+            )
+        self.assertTrue(wake.exception.fatal)
+        self.assertEqual(
+            wake.exception.code,
+            "room_wake_publication_mode_invalid",
         )
 
     def test_room_wake_rejects_a_missing_or_invalid_assigned_sequence(self):

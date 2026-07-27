@@ -17,7 +17,11 @@ from agentsassemble.providers.model_verification import (
     model_observation_matches,
     model_verification_status,
 )
-from agentsassemble.providers.runtime_contracts import SUPPORTED_DECLINE_REASONS
+from agentsassemble.providers.runtime_contracts import (
+    AUTOMATIC_FINAL,
+    EXPLICIT_ROOM_PORTAL,
+    SUPPORTED_DECLINE_REASONS,
+)
 from agentsassemble.room.errors import RoomCommandRejected
 from agentsassemble.room_attention import AttentionLeaseConflict
 from agentsassemble.room.command_uow import RoomCommandUnitOfWork
@@ -208,14 +212,17 @@ class RoomTurnCoordinator:
             return False
         event_id = clean_lobby_text(event.get("id"), limit=128)
         pending = dedupe_event_ids([*list(session.get("pending_event_ids") or []), event_id])
+        event_modes = pending_event_modes(session, pending)
+        event_modes[event_id] = (
+            "room_observation"
+            if clean_lobby_text(input_mode, limit=32) == "room_observation"
+            else "transcript"
+        )
         updates: dict[str, object] = {
             "pending_event_ids": pending,
+            "pending_event_modes": event_modes,
             "pending_relay_depth": max(int(session.get("pending_relay_depth") or 0), relay_depth),
-            "pending_input_mode": (
-                "room_observation"
-                if clean_lobby_text(input_mode, limit=32) == "room_observation"
-                else clean_lobby_text(session.get("pending_input_mode"), limit=32)
-            ),
+            "pending_input_mode": event_modes.get(pending[0], "") if pending else "",
         }
         updates.update(
             self._turn_attention.queue_fields(
@@ -240,7 +247,7 @@ class RoomTurnCoordinator:
     def assign_pending(self, room_id: str, agent_id: str) -> bool:
         session = self.store.session(room_id, agent_id)
         participant = self.store.participant(room_id, agent_id)
-        pending = dedupe_event_ids(list(session.get("pending_event_ids") or [])) if session else []
+        all_pending = dedupe_event_ids(list(session.get("pending_event_ids") or [])) if session else []
         if (
             not session
             or participant.get("status") == "kicked"
@@ -250,12 +257,48 @@ class RoomTurnCoordinator:
             or not self.broker.has_bridge(room_id, agent_id)
         ):
             return False
-        if clean_lobby_text(session.get("pending_input_mode"), limit=32) == "room_observation":
+        event_modes = pending_event_modes(session, all_pending)
+        if not all_pending:
+            return False
+        if self.store.room_settings(room_id).get("conversation_mode") != "ambient":
+            retained = [
+                event_id
+                for event_id in all_pending
+                if event_modes.get(event_id) != "room_observation"
+            ]
+            if retained != all_pending:
+                attention_fields = self._turn_attention.deferred_fields(
+                    room_id,
+                    session,
+                    retained,
+                )
+                session = self.store.update_session_fields(
+                    room_id,
+                    str(session["session_id"]),
+                    pending_event_ids=retained,
+                    pending_input_mode=event_modes.get(retained[0], "") if retained else "",
+                    **attention_fields,
+                )
+                all_pending = retained
+            if not all_pending:
+                return False
+        selected_mode = event_modes.get(all_pending[0], "transcript")
+        pending = [
+            event_id
+            for event_id in all_pending
+            if event_modes.get(event_id, "transcript") == selected_mode
+        ]
+        preserved_pending = [
+            event_id for event_id in all_pending if event_id not in set(pending)
+        ]
+        if selected_mode == "room_observation":
             return self._assign_room_observation(
                 room_id,
                 agent_id,
                 session=session,
                 pending=pending,
+                preserved_pending=preserved_pending,
+                event_modes=event_modes,
             )
         if not pending:
             return False
@@ -278,6 +321,17 @@ class RoomTurnCoordinator:
             include_instruction=False,
             max_recent_events=50 if session.get("external_owned") else None,
             max_prompt_chars=64_000 if session.get("external_owned") else None,
+            up_to_seq=max(
+                (
+                    safe_bounded_int(
+                        self.store.event_by_id(room_id, event_id).get("seq"),
+                        default=0,
+                        minimum=0,
+                    )
+                    for event_id in pending
+                ),
+                default=0,
+            ),
         )
         provider_events = [event for event in list(packet.get("events") or []) if isinstance(event, dict)]
         provider_context_event_ids = [
@@ -311,11 +365,14 @@ class RoomTurnCoordinator:
             ),
         )
         if not partition.inflight:
-            cleaned_pending = partition.deferred
+            cleaned_pending = ordered_pending_subset(
+                all_pending,
+                [*partition.deferred, *preserved_pending],
+            )
             attention_fields = self._turn_attention.deferred_fields(
                 room_id,
                 session,
-                partition.deferred,
+                [*partition.deferred, *preserved_pending],
             )
             attention_changed = any(session.get(key) != value for key, value in attention_fields.items())
             if cleaned_pending != pending or attention_changed:
@@ -323,6 +380,7 @@ class RoomTurnCoordinator:
                     room_id,
                     str(session["session_id"]),
                     pending_event_ids=cleaned_pending,
+                    pending_input_mode=event_modes.get(cleaned_pending[0], "") if cleaned_pending else "",
                     pending_relay_depth=int(session.get("pending_relay_depth") or 0) if cleaned_pending else 0,
                     **attention_fields,
                 )
@@ -337,7 +395,7 @@ class RoomTurnCoordinator:
                 agent_id,
                 session,
                 inflight_event_ids=partition.inflight,
-                deferred_event_ids=partition.deferred,
+                deferred_event_ids=[*partition.deferred, *preserved_pending],
             )
         except AttentionLeaseConflict as error:
             failed = self.store.update_session_fields(
@@ -359,8 +417,22 @@ class RoomTurnCoordinator:
             input_up_to_event_id=input_up_to_event_id,
             input_up_to_seq=input_up_to_seq,
             inflight_event_ids=partition.inflight,
-            pending_event_ids=partition.deferred,
-            pending_relay_depth=relay_depth if partition.deferred else 0,
+            pending_event_ids=ordered_pending_subset(
+                all_pending,
+                [*partition.deferred, *preserved_pending],
+            ),
+            pending_relay_depth=relay_depth if partition.deferred or preserved_pending else 0,
+            pending_input_mode=(
+                event_modes.get(
+                    ordered_pending_subset(
+                        all_pending,
+                        [*partition.deferred, *preserved_pending],
+                    )[0],
+                    "",
+                )
+                if partition.deferred or preserved_pending
+                else ""
+            ),
             **attention_fields,
             latency={
                 "queued_at": source_event.get("created_at") or dispatched_at,
@@ -408,6 +480,7 @@ class RoomTurnCoordinator:
             "provider_context_event_ids": provider_context_event_ids,
             "provider_context_actor_ids": provider_context_actor_ids,
             "timeout_seconds": self._provider_lookup(room_id, agent_id).turn_timeout_seconds,
+            "publication_mode": AUTOMATIC_FINAL,
         }
         if self.broker.direct_to_bridge(room_id, agent_id, assignment):
             return True
@@ -421,7 +494,11 @@ class RoomTurnCoordinator:
             turn_phase="",
             input_up_to_seq=0,
             inflight_event_ids=[],
-            pending_event_ids=[*partition.inflight, *partition.deferred],
+            pending_event_ids=ordered_pending_subset(
+                all_pending,
+                [*partition.inflight, *partition.deferred, *preserved_pending],
+            ),
+            pending_input_mode=event_modes.get(all_pending[0], "") if all_pending else "",
             **self._turn_attention.delivery_failed_fields(updated),
             last_error="Agent bridge disconnected before turn assignment.",
         )
@@ -451,8 +528,16 @@ class RoomTurnCoordinator:
         *,
         session: dict[str, object],
         pending: list[str],
+        preserved_pending: list[str] | None = None,
+        event_modes: dict[str, str] | None = None,
         allow_empty: bool = False,
     ) -> bool:
+        preserved_pending = dedupe_event_ids(list(preserved_pending or []))
+        event_modes = event_modes or pending_event_modes(
+            session,
+            [*pending, *preserved_pending],
+        )
+        all_pending = dedupe_event_ids([*pending, *preserved_pending])
         participant = self.store.participant(room_id, agent_id)
         if (
             participant.get("status") == "kicked"
@@ -478,12 +563,20 @@ class RoomTurnCoordinator:
             last_provider_sync_seq=canonical_sync_seq,
         )
         if not partition.inflight and not allow_empty:
+            remaining_pending = ordered_pending_subset(
+                all_pending,
+                [*partition.deferred, *preserved_pending],
+            )
             self.store.update_session_fields(
                 room_id,
                 str(session["session_id"]),
-                pending_event_ids=partition.deferred,
+                pending_event_ids=remaining_pending,
                 pending_relay_depth=0,
-                pending_input_mode="room_observation" if partition.deferred else "",
+                pending_input_mode=(
+                    event_modes.get(remaining_pending[0], "")
+                    if remaining_pending
+                    else ""
+                ),
                 **self._turn_attention.deferred_fields(
                     room_id,
                     session,
@@ -518,7 +611,7 @@ class RoomTurnCoordinator:
                 agent_id,
                 session,
                 inflight_event_ids=partition.inflight,
-                deferred_event_ids=partition.deferred,
+                deferred_event_ids=[*partition.deferred, *preserved_pending],
             )
         except AttentionLeaseConflict as error:
             failed = self.store.update_session_fields(
@@ -530,6 +623,10 @@ class RoomTurnCoordinator:
             raise RoomCommandRejected(str(error), code="attention_lease_conflict") from error
         turn_id = f"turn-{uuid4().hex[:12]}"
         dispatched_at = now()
+        remaining_pending = ordered_pending_subset(
+            all_pending,
+            [*partition.deferred, *preserved_pending],
+        )
         updated = self.store.update_session_fields(
             room_id,
             str(session["session_id"]),
@@ -541,9 +638,13 @@ class RoomTurnCoordinator:
             input_up_to_event_id=input_up_to_event_id,
             input_up_to_seq=input_up_to_seq,
             inflight_event_ids=partition.inflight,
-            pending_event_ids=partition.deferred,
-            pending_relay_depth=relay_depth if partition.deferred else 0,
-            pending_input_mode="room_observation" if partition.deferred else "",
+            pending_event_ids=remaining_pending,
+            pending_relay_depth=relay_depth if remaining_pending else 0,
+            pending_input_mode=(
+                event_modes.get(remaining_pending[0], "")
+                if remaining_pending
+                else ""
+            ),
             **attention_fields,
             latency={
                 "queued_at": latest_message.get("created_at") or dispatched_at,
@@ -596,6 +697,7 @@ class RoomTurnCoordinator:
                 room_id,
                 agent_id,
             ).turn_timeout_seconds,
+            "publication_mode": EXPLICIT_ROOM_PORTAL,
         }
         if self.broker.direct_to_bridge(room_id, agent_id, wake):
             return True
@@ -609,8 +711,11 @@ class RoomTurnCoordinator:
             turn_phase="",
             input_up_to_seq=0,
             inflight_event_ids=[],
-            pending_event_ids=[*partition.inflight, *partition.deferred],
-            pending_input_mode="room_observation",
+            pending_event_ids=ordered_pending_subset(
+                all_pending,
+                [*partition.inflight, *partition.deferred, *preserved_pending],
+            ),
+            pending_input_mode=event_modes.get(all_pending[0], "") if all_pending else "",
             **self._turn_attention.delivery_failed_fields(updated),
             last_error="Agent bridge disconnected before room wake.",
         )
@@ -639,12 +744,19 @@ class RoomTurnCoordinator:
         pending_event_ids: list[str],
         retry: bool,
     ) -> dict[str, object]:
-        return self._turn_attention.prepare_session_reset(
+        fields = self._turn_attention.prepare_session_reset(
             room_id,
             session,
             pending_event_ids=pending_event_ids,
             retry=retry,
         )
+        fields.update(
+            pending_mode_fields(
+                session,
+                list(fields.get("pending_event_ids") or []),
+            )
+        )
+        return fields
 
     def reconcile_session_attention(
         self,
@@ -653,11 +765,18 @@ class RoomTurnCoordinator:
         *,
         pending_event_ids: list[str],
     ) -> dict[str, object]:
-        return self._turn_attention.reconcile_session(
+        fields = self._turn_attention.reconcile_session(
             room_id,
             session,
             pending_event_ids=pending_event_ids,
         )
+        fields.update(
+            pending_mode_fields(
+                session,
+                list(fields.get("pending_event_ids") or []),
+            )
+        )
+        return fields
 
     def partition_pending_events(
         self,
@@ -877,6 +996,12 @@ class RoomTurnCoordinator:
     ) -> PreparedFinalMessage:
         agent_id, session = self.active_bridge_turn(identity, room_id, payload)
         require_active_turn_phase(session)
+        self._require_observation_receipt(
+            identity,
+            room_id,
+            payload,
+            session=session,
+        )
         content = room_message_text(payload.get("content"), limit=12000)
         active_turn_id = str(session["active_turn_id"])
         latency = merged_latency(session.get("latency"), payload.get("latency"))
@@ -1044,6 +1169,12 @@ class RoomTurnCoordinator:
     ) -> dict[str, object]:
         _agent_id, session = self.active_bridge_turn(identity, room_id, payload)
         require_active_turn_phase(session)
+        self._require_observation_receipt(
+            identity,
+            room_id,
+            payload,
+            session=session,
+        )
         reason_code = clean_lobby_text(payload.get("reason_code"), limit=64)
         if reason_code not in SUPPORTED_DECLINE_REASONS:
             raise RoomCommandRejected("A supported decline reason is required.", code="invalid_decline_reason")
@@ -1065,6 +1196,49 @@ class RoomTurnCoordinator:
             "agent_session": public_session(current),
         }
 
+    def _require_observation_receipt(
+        self,
+        identity: dict[str, object],
+        room_id: str,
+        payload: dict[str, object],
+        *,
+        session: dict[str, object],
+    ) -> None:
+        if clean_lobby_text(session.get("provider_input_mode"), limit=32) != "room_observation":
+            return
+        assigned_seq = safe_bounded_int(
+            session.get("input_up_to_seq"),
+            default=0,
+            minimum=0,
+        )
+        observed_value = payload.get("observed_through_seq")
+        observed_seq = (
+            observed_value
+            if isinstance(observed_value, int) and not isinstance(observed_value, bool)
+            else -1
+        )
+        if observed_seq >= assigned_seq:
+            return
+        turn_id = clean_lobby_text(session.get("active_turn_id"), limit=128)
+        self.turn_failed(
+            identity,
+            room_id,
+            {
+                "turn_id": turn_id,
+                "message": "Provider did not confirm reading the assigned room observation.",
+                "error_code": "room_observation_unconfirmed",
+                "diagnostics": (
+                    payload.get("diagnostics")
+                    if isinstance(payload.get("diagnostics"), dict)
+                    else {}
+                ),
+            },
+        )
+        raise RoomCommandRejected(
+            "Provider did not confirm reading the assigned room observation.",
+            code="room_observation_unconfirmed",
+        )
+
     def turn_failed(
         self,
         identity: dict[str, object],
@@ -1083,6 +1257,7 @@ class RoomTurnCoordinator:
                 "empty_provider_final",
                 "provider_model_mismatch",
                 "provider_model_unobserved",
+                "room_observation_unconfirmed",
             }
             else ("interrupted" if interrupted else "provider_turn_failed")
         )
@@ -1094,6 +1269,14 @@ class RoomTurnCoordinator:
         pending = dedupe_event_ids(
             [*list(session.get("inflight_event_ids") or []), *list(session.get("pending_event_ids") or [])]
         )
+        pending_modes = pending_event_modes(session, list(session.get("pending_event_ids") or []))
+        active_input_mode = clean_lobby_text(session.get("provider_input_mode"), limit=32)
+        for event_id in list(session.get("inflight_event_ids") or []):
+            pending_modes[clean_lobby_text(event_id, limit=128)] = (
+                "room_observation"
+                if active_input_mode == "room_observation"
+                else "transcript"
+            )
         recovery_attempt_count = int(session.get("recovery_attempt_count") or 0)
         automatic_recovery = bool(
             not interrupted
@@ -1148,6 +1331,15 @@ class RoomTurnCoordinator:
                 input_up_to_seq=0,
                 inflight_event_ids=[],
                 pending_event_ids=pending,
+                pending_event_modes={
+                    event_id: pending_modes.get(event_id, "transcript")
+                    for event_id in pending
+                },
+                pending_input_mode=(
+                    pending_modes.get(pending[0], "transcript")
+                    if pending
+                    else ""
+                ),
                 **attention_fields,
                 recovery_required=not interrupted,
                 recovery_attempt_count=recovery_attempt_count + (1 if automatic_recovery else 0),
@@ -1351,6 +1543,75 @@ def dedupe_event_ids(values: list[object]) -> list[str]:
     return result
 
 
+def pending_event_modes(
+    session: dict[str, object],
+    event_ids: list[str],
+) -> dict[str, str]:
+    raw_modes = (
+        session.get("pending_event_modes")
+        if isinstance(session.get("pending_event_modes"), dict)
+        else {}
+    )
+    legacy_mode = (
+        "room_observation"
+        if clean_lobby_text(session.get("pending_input_mode"), limit=32)
+        == "room_observation"
+        else "transcript"
+    )
+    modes: dict[str, str] = {}
+    for event_id in dedupe_event_ids(list(event_ids)):
+        raw_mode = clean_lobby_text(raw_modes.get(event_id), limit=32)
+        modes[event_id] = (
+            "room_observation"
+            if raw_mode == "room_observation"
+            else ("transcript" if raw_mode == "transcript" else legacy_mode)
+        )
+    return modes
+
+
+def ordered_pending_subset(
+    original: list[str],
+    retained: list[str],
+) -> list[str]:
+    retained_ids = set(dedupe_event_ids(list(retained)))
+    result = [
+        event_id
+        for event_id in dedupe_event_ids(list(original))
+        if event_id in retained_ids
+    ]
+    return dedupe_event_ids([*result, *retained])
+
+
+def pending_mode_fields(
+    session: dict[str, object],
+    pending_event_ids: list[str],
+) -> dict[str, object]:
+    pending = dedupe_event_ids(list(pending_event_ids))
+    modes = pending_event_modes(session, list(session.get("pending_event_ids") or []))
+    active_mode = (
+        "room_observation"
+        if clean_lobby_text(session.get("provider_input_mode"), limit=32)
+        == "room_observation"
+        else "transcript"
+    )
+    for event_id in list(session.get("inflight_event_ids") or []):
+        clean_event_id = clean_lobby_text(event_id, limit=128)
+        if clean_event_id:
+            modes[clean_event_id] = active_mode
+    retained_modes = {
+        event_id: modes.get(event_id, "transcript")
+        for event_id in pending
+    }
+    return {
+        "pending_event_modes": retained_modes,
+        "pending_input_mode": (
+            retained_modes.get(pending[0], "transcript")
+            if pending
+            else ""
+        ),
+    }
+
+
 def _attachment_ids(
     store: RoomRepository,
     room_id: str,
@@ -1454,6 +1715,9 @@ __all__ = [
     "TurnFinalizationWriter",
     "TurnPacketBuilder",
     "dedupe_event_ids",
+    "ordered_pending_subset",
+    "pending_mode_fields",
+    "pending_event_modes",
     "message_delta_text",
     "now",
     "provider_process_exited",

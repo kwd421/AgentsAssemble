@@ -71,6 +71,7 @@ from agentsassemble.room.moderation import (
     remove_room_member,
     set_room_member_muted,
 )
+from agentsassemble.room.attachments import FileAttachmentStore
 from agentsassemble.room.messages import RoomMessageService
 from agentsassemble.room.member_mute import RoomMemberMuteService
 from agentsassemble.room.participant_kick import RoomParticipantKickService
@@ -415,7 +416,7 @@ class RoomRealtimeController:
             publish_session_state=self._publish_session_state,
             start_agent=self._agent_lifecycle.start,
         )
-        self._messages = RoomMessageService()
+        self._messages = RoomMessageService(FileAttachmentStore(self.output_root))
         self.last_cleanup_report = CleanupReport("room_realtime_controller")
         self.ensure_room(self.default_room_id)
         self._provider_sessions.restore_server_owned_providers()

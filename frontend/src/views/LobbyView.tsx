@@ -1,354 +1,25 @@
-import { useCallback, useEffect, useId, useLayoutEffect, useMemo, useRef, useState, type ReactNode, type UIEvent } from "react";
-import { Bot, ChevronDown, ChevronRight, Hash, MessageCircle, MoreHorizontal, Zap } from "lucide-react";
+import { useMemo } from "react";
+import { Hash } from "lucide-react";
 import {
-  fetchLobby,
-  fetchRoomLobby,
-  mergeLobbyEvents,
   type LiveAgent,
   type LobbyEvent,
 } from "../api";
 import type { RoomDockItem } from "../lib/roomDockModel";
 import VotePollCard from "./components/VotePollCard";
-import LobbyAttachments from "./components/LobbyAttachments";
 import LobbyComposer from "./components/LobbyComposer";
 import ChannelHeader from "./components/ChannelHeader";
 import type { ChannelHeaderActions } from "./components/ChannelHeader";
-import DiscordText from "./components/DiscordText";
 import type { RoomAppearance } from "../lib/roomAppearance";
 import type { LobbyThreadSummary } from "../lib/sideChatThreadModel";
-import { isUnauthorizedApiError } from "../lib/apiErrors";
 import type { RoomPostingMode } from "../lib/roomGuestPosting";
 import type { RoomTypingIndicator } from "../lib/roomTypingIndicators";
-import ProviderLogo from "./components/ProviderLogo";
-
-function timeLabel(iso: string): string {
-  try {
-    return new Date(iso).toLocaleTimeString("ko-KR", { hour: "2-digit", minute: "2-digit" });
-  } catch {
-    return "--:--";
-  }
-}
-
-function dateKey(iso: string): string {
-  const parsed = new Date(iso);
-  if (Number.isNaN(parsed.getTime())) return "";
-  return `${parsed.getFullYear()}-${parsed.getMonth()}-${parsed.getDate()}`;
-}
-
-function dateDividerLabel(iso: string): string {
-  const parsed = new Date(iso);
-  if (Number.isNaN(parsed.getTime())) return "";
-  const today = new Date();
-  const yesterday = new Date(today);
-  yesterday.setDate(today.getDate() - 1);
-  if (dateKey(iso) === dateKey(today.toISOString())) return "오늘";
-  if (dateKey(iso) === dateKey(yesterday.toISOString())) return "어제";
-  return parsed.toLocaleDateString("ko-KR", {
-    year: "numeric",
-    month: "long",
-    day: "numeric",
-    weekday: "long",
-  });
-}
-
-function lobbyFeedIsNearBottom(element: HTMLDivElement) {
-  const { scrollHeight, scrollTop, clientHeight } = element;
-  return scrollHeight - scrollTop - clientHeight <= 64;
-}
-
-type LobbyRow =
-  | { type: "divider"; key: string; label: string }
-  | { type: "thinking"; key: string; events: LobbyEvent[]; showHeader: boolean }
-  | { type: "event"; key: string; event: LobbyEvent; showHeader: boolean };
-
-// Discord-style grouping: collapse consecutive kind="thinking" events into one
-// foldable group, and show the avatar/name header only on the FIRST row of a
-// run by the same author — follow-ups render body-only (a new author, a date
-// change, or a >7-min gap starts a fresh header). The thinking group, streamed
-// before the answer, becomes the header row of its author's block, so it sits
-// under that agent's name (not the previous speaker's).
-const GROUP_GAP_MS = 7 * 60 * 1000;
-
-function buildLobbyRows(events: LobbyEvent[]): LobbyRow[] {
-  const rows: LobbyRow[] = [];
-  let lastDateKey = "";
-  let prevAuthor = "";
-  let prevTime = 0;
-  let buffer: LobbyEvent[] = [];
-  const authorKey = (event: LobbyEvent) =>
-    event.kind === "system" || event.kind === "flow_event" ? "::system" : event.actor_id || event.name || "";
-  const ms = (iso: string) => Date.parse(iso || "") || 0;
-  const flush = () => {
-    if (!buffer.length) return;
-    const key = authorKey(buffer[0]);
-    const startTime = ms(buffer[0].created_at);
-    const showHeader = key !== prevAuthor || startTime - prevTime > GROUP_GAP_MS;
-    rows.push({ type: "thinking", key: `think-${buffer[0].id}`, events: buffer, showHeader });
-    prevAuthor = key;
-    prevTime = ms(buffer[buffer.length - 1].created_at) || startTime;
-    buffer = [];
-  };
-  for (const event of events) {
-    const dk = dateKey(event.created_at);
-    if (dk !== lastDateKey) {
-      flush();
-      rows.push({ type: "divider", key: `d-${event.id}`, label: dateDividerLabel(event.created_at) });
-      lastDateKey = dk;
-      prevAuthor = "";
-      prevTime = 0;
-    }
-    if (event.kind === "thinking") {
-      if (buffer.length && authorKey(buffer[0]) !== authorKey(event)) flush();
-      buffer.push(event);
-      continue;
-    }
-    flush();
-    const key = authorKey(event);
-    const time = ms(event.created_at);
-    const showHeader = key !== prevAuthor || time - prevTime > GROUP_GAP_MS;
-    rows.push({ type: "event", key: event.id, event, showHeader });
-    prevAuthor = key;
-    prevTime = time;
-  }
-  flush();
-  return rows;
-}
-
-const HISTORY_TOP_THRESHOLD = 120;
-const HISTORY_PAGE_SIZE = 50;
-const INITIAL_HISTORY_MESSAGE_TARGET = 20;
-
-function MessageAvatar({
-  avatarImage,
-  providerKind,
-  show = true,
-  system = false,
-}: {
-  avatarImage?: string;
-  providerKind?: string;
-  show?: boolean;
-  system?: boolean;
-}) {
-  return (
-    <span
-      className={show ? `dc-message-avatar mt-0.5 ${system ? "system" : "agent"}` : ""}
-      data-has-image={Boolean(show && avatarImage && !system)}
-      aria-hidden="true"
-    >
-      {show ? (
-        avatarImage && !system ? (
-          <img className="dc-message-avatar-image" src={avatarImage} alt="" />
-        ) : system ? (
-          <Zap size={16} />
-        ) : (
-          <ProviderLogo
-            providerKind={providerKind}
-            size={40}
-            fallback={<Bot size={16} />}
-          />
-        )
-      ) : null}
-    </span>
-  );
-}
-
-function ThinkingDetails({ events, label }: { events: LobbyEvent[]; label: string }) {
-  const [open, setOpen] = useState(false);
-  const contentId = useId();
-  return (
-    <>
-      <button
-        type="button"
-        className="dc-thinking-toggle flex items-center gap-1 text-[12px] text-text-muted hover:text-text-secondary"
-        onClick={() => setOpen((value) => !value)}
-        aria-expanded={open}
-        aria-controls={contentId}
-      >
-        {open ? <ChevronDown size={13} /> : <ChevronRight size={13} />}
-        <span>{label}</span>
-      </button>
-      {open && (
-        <div
-          id={contentId}
-          className="dc-thinking-steps mt-1 border-l border-white/10 pl-3"
-          role="log"
-          aria-live="polite"
-          aria-relevant="additions text"
-        >
-          {events.map((event) => (
-            <div
-              key={event.id}
-              className="dc-thinking-step py-0.5 text-[13px] leading-relaxed text-text-muted preserve-words"
-            >
-              <DiscordText text={event.message || ""} />
-            </div>
-          ))}
-        </div>
-      )}
-    </>
-  );
-}
-
-// Completed reasoning/tool activity remains attached to the answer in room
-// history. Activity from a turn that is still active is rendered by TypingRow.
-function ThinkingGroup({
-  events,
-  showHeader,
-  providerKind,
-}: {
-  events: LobbyEvent[];
-  showHeader: boolean;
-  providerKind?: string;
-}) {
-  const header = events[0];
-  const name = header?.name || "agent";
-  return (
-    <div
-      className="dc-thinking-group grid grid-cols-[40px_minmax(0,1fr)] gap-3 px-4 py-0.5"
-      data-room-event-id={header?.id}
-    >
-      <MessageAvatar
-        avatarImage={header?.avatar_image_url}
-        providerKind={providerKind || header?.provider_kind}
-        show={showHeader}
-      />
-      <div className="min-w-0">
-        {showHeader && (
-          <p className="flex items-baseline gap-2">
-            <span className="truncate text-[15px] font-semibold text-text-primary preserve-words">{name}</span>
-            <span className="shrink-0 text-[11px] text-text-muted">{timeLabel(header?.created_at || "")}</span>
-          </p>
-        )}
-        <ThinkingDetails events={events} label={`💭 ${name}의 생각과 작업`} />
-      </div>
-    </div>
-  );
-}
-
-// Placeholder row for a participant who is currently generating a reply. It
-// matches MessageRow's grid so the bubble lands in the exact spot where the
-// real message will appear. Live thought/tool details belong beneath this
-// stable indicator so enabling them never makes the typing state disappear.
-function TypingRow({
-  indicator,
-  thinkingEvents,
-}: {
-  indicator: RoomTypingIndicator;
-  thinkingEvents: LobbyEvent[];
-}) {
-  return (
-    <div className="dc-message grid grid-cols-[40px_minmax(0,1fr)] gap-3 px-4 py-1.5">
-      <span className="dc-message-avatar mt-0.5 agent">
-        <ProviderLogo
-          providerKind={indicator.providerKind}
-          size={40}
-          fallback={<Bot size={16} />}
-        />
-      </span>
-      <div className="min-w-0">
-        <p className="flex items-baseline gap-2">
-          <span className="truncate text-[15px] font-semibold text-text-primary preserve-words">
-            {indicator.displayName}
-          </span>
-        </p>
-        <div className="flex items-center gap-2 text-[13px] text-text-muted" aria-live="polite">
-          <span className="dc-typing-dots" aria-hidden="true">
-            <span></span>
-            <span></span>
-            <span></span>
-          </span>
-          <span>입력중...</span>
-        </div>
-        {thinkingEvents.length > 0 && (
-          <div className="mt-1">
-            <ThinkingDetails
-              events={thinkingEvents}
-              label={`💭 ${indicator.displayName}의 생각과 작업`}
-            />
-          </div>
-        )}
-      </div>
-    </div>
-  );
-}
-
-function MessageRow({ event, providerKind, onOpenSideThread, threadSummary, voteCard, showHeader = true }: {
-  event: LobbyEvent;
-  providerKind?: string;
-  onOpenSideThread?: (event: LobbyEvent) => void;
-  threadSummary?: LobbyThreadSummary;
-  voteCard?: ReactNode;
-  showHeader?: boolean;
-}) {
-  const systemLike = event.kind === "system" || event.kind === "flow_event";
-  return (
-    <div
-      className={`dc-message grid grid-cols-[40px_minmax(0,1fr)] gap-3 px-4 ${showHeader ? "py-1.5" : "py-0.5"}`}
-      data-room-event-id={event.id}
-      tabIndex={0}
-    >
-      <MessageAvatar
-        avatarImage={event.avatar_image_url}
-        providerKind={providerKind || event.provider_kind}
-        show={showHeader}
-        system={systemLike}
-      />
-      <div className="dc-message-actions" aria-label="메시지 작업">
-        {onOpenSideThread && (
-          <button
-            type="button"
-            className="dc-message-action-button"
-            onClick={() => onOpenSideThread(event)}
-            aria-label="스레드로 열기"
-            title="스레드"
-          >
-            <MessageCircle size={15} />
-          </button>
-        )}
-        <button
-          type="button"
-          className="dc-message-action-button"
-          aria-label="더 보기"
-          title="더 보기"
-        >
-          <MoreHorizontal size={15} />
-        </button>
-      </div>
-      <div className="min-w-0">
-        {showHeader && (
-          <p className="flex items-baseline gap-2">
-            <span className="truncate text-[15px] font-semibold text-text-primary preserve-words">
-              {event.name || "Room"}
-            </span>
-            <span className="shrink-0 text-[11px] text-text-muted">{timeLabel(event.created_at)}</span>
-          </p>
-        )}
-        {voteCard ? (
-          voteCard
-        ) : (
-          <div className="text-[14px] leading-relaxed text-text-secondary preserve-words">
-            <DiscordText text={event.message || ""} />
-          </div>
-        )}
-        <LobbyAttachments attachments={event.attachments} />
-        {threadSummary && onOpenSideThread && (
-          <button
-            type="button"
-            className="dc-message-thread-chip"
-            onClick={() => onOpenSideThread(event)}
-            aria-label={`스레드 보기, 답장 ${threadSummary.replyCount}개`}
-          >
-            <MessageCircle size={14} />
-            <span>답장 {threadSummary.replyCount}개</span>
-            <span className="dc-message-thread-last preserve-words">
-              {threadSummary.lastReplyName || "사이드"} · {timeLabel(threadSummary.lastReplyAt)}
-            </span>
-          </button>
-        )}
-      </div>
-    </div>
-  );
-}
+import { buildLobbyRows } from "./lobby/lobbyRows";
+import {
+  LobbyMessageRow,
+  LobbyThinkingGroup,
+  LobbyTypingRow,
+} from "./lobby/LobbyEventRows";
+import { useLobbyHistory } from "./lobby/useLobbyHistory";
 
 export default function LobbyView({
   activeRoom,
@@ -407,7 +78,6 @@ export default function LobbyView({
     hasMoreBefore: boolean;
   }>;
 }) {
-  const scrollRef = useRef<HTMLDivElement>(null);
   const voterName = useMemo(() => {
     if (localDisplayName) return localDisplayName;
     try {
@@ -416,26 +86,27 @@ export default function LobbyView({
       return "나";
     }
   }, [localDisplayName]);
-  const pinnedToLatestRef = useRef(true);
-  const historyReadyRef = useRef(false);
-  const historyRoomRef = useRef(activeRoom.id);
-  if (historyRoomRef.current !== activeRoom.id) {
-    historyRoomRef.current = activeRoom.id;
-    historyReadyRef.current = false;
-  }
-  const loadingOlderRef = useRef(false);
-  const prependAnchorRef = useRef<{
-    eventId: string;
-    viewportTop: number;
-    scrollHeight: number;
-    scrollTop: number;
-  } | null>(null);
-  const [events, setEvents] = useState<LobbyEvent[]>([]);
-  const [loaded, setLoaded] = useState(false);
-  const [pinnedToLatest, setPinnedToLatest] = useState(true);
-  const [hasMoreHistory, setHasMoreHistory] = useState(true);
-  const [loadingOlder, setLoadingOlder] = useState(false);
-  const usesCanonicalHistory = Boolean(loadCanonicalHistory);
+  const {
+    handleLobbyPosted,
+    handleLobbyScroll,
+    hasMoreHistory,
+    loaded,
+    loadingOlder,
+    pinnedToLatest,
+    scrollRef,
+    scrollToLatest,
+    visibleEvents,
+  } = useLobbyHistory({
+    activeRoom,
+    roomSessionToken,
+    typingIndicators,
+    bindLobbyStream,
+    canonicalEvents,
+    canonicalOldestSeq,
+    canonicalHasMoreHistory,
+    loadCanonicalHistory,
+    onGuestSessionExpired,
+  });
 
   const mentionables = useMemo(
     () =>
@@ -448,34 +119,6 @@ export default function LobbyView({
     () => new Map(agents.map((agent) => [agent.agent_id, agent.provider_kind])),
     [agents]
   );
-  const conversationEvents = useMemo(
-    // Ballots update the poll card's tally; they are not chat lines.
-    () => events.filter((event) => event.kind !== "vote_cast"),
-    [events]
-  );
-  const roomScopedConversationEvents = useMemo(
-    () =>
-      conversationEvents.filter((event) => {
-        if (event.flow_meeting_id && event.flow_meeting_id !== activeRoom.meetingId) {
-          return false;
-        }
-        return true;
-      }),
-    [activeRoom.meetingId, conversationEvents]
-  );
-  const visibleEvents = useMemo(() => {
-    if (usesCanonicalHistory) return roomScopedConversationEvents;
-    if (!activeRoom.createdAt) return roomScopedConversationEvents;
-    const roomStartedAt = Date.parse(activeRoom.createdAt);
-    if (!Number.isFinite(roomStartedAt)) return roomScopedConversationEvents;
-    return roomScopedConversationEvents.filter((event) => {
-      if (event.flow_meeting_id === activeRoom.meetingId) {
-        return true;
-      }
-      const eventTime = Date.parse(event.created_at || "");
-      return Number.isFinite(eventTime) && eventTime >= roomStartedAt;
-    });
-  }, [activeRoom.createdAt, activeRoom.meetingId, roomScopedConversationEvents, usesCanonicalHistory]);
   const activeThinking = useMemo(() => {
     const indicatorByTurn = new Map<string, RoomTypingIndicator>();
     typingIndicators.forEach((indicator) => {
@@ -504,208 +147,7 @@ export default function LobbyView({
     [activeThinking.completedEvents]
   );
 
-  const updatePinnedToLatest = useCallback((nextPinned: boolean) => {
-    pinnedToLatestRef.current = nextPinned;
-    setPinnedToLatest(nextPinned);
-  }, []);
 
-  const scrollToLatest = useCallback(() => {
-    const element = scrollRef.current;
-    if (!element) return;
-    element.scrollTop = element.scrollHeight;
-    updatePinnedToLatest(true);
-  }, [updatePinnedToLatest]);
-
-  const loadOlderHistory = useCallback((triggerScrollTop?: number) => {
-    if (!historyReadyRef.current || loadingOlderRef.current || !hasMoreHistory || !loaded) return;
-    const element = scrollRef.current;
-    const oldest = events[0];
-    if (!element || (!usesCanonicalHistory && !oldest?.id)) return;
-    loadingOlderRef.current = true;
-    setLoadingOlder(true);
-    const anchorEventId = visibleEvents[0]?.id || "";
-    const anchorElement = Array.from(
-      element.querySelectorAll<HTMLElement>("[data-room-event-id]")
-    ).find((candidate) => candidate.dataset.roomEventId === anchorEventId);
-    prependAnchorRef.current = {
-      eventId: anchorEventId,
-      viewportTop: anchorElement
-        ? element.getBoundingClientRect().top + anchorElement.offsetTop - (triggerScrollTop ?? element.scrollTop)
-        : element.getBoundingClientRect().top,
-      scrollHeight: element.scrollHeight,
-      scrollTop: triggerScrollTop ?? element.scrollTop,
-    };
-    if (usesCanonicalHistory && loadCanonicalHistory) {
-      loadCanonicalHistory(canonicalOldestSeq)
-        .then((page) => {
-          setHasMoreHistory(page.hasMoreBefore);
-          if (!page.loadedCount) {
-            prependAnchorRef.current = null;
-            loadingOlderRef.current = false;
-          }
-        })
-        .catch(() => {
-          prependAnchorRef.current = null;
-          loadingOlderRef.current = false;
-        })
-        .finally(() => {
-          setLoadingOlder(false);
-        });
-      return;
-    }
-    const request = roomSessionToken
-      ? fetchRoomLobby(roomSessionToken, { before: oldest.id, limit: HISTORY_PAGE_SIZE })
-      : fetchLobby(activeRoom.meetingId, { before: oldest.id, limit: HISTORY_PAGE_SIZE });
-    request
-      .then((page) => {
-        const older = Array.isArray(page.events) ? page.events : [];
-        setHasMoreHistory(Boolean(page.has_more));
-        if (older.length) {
-          setEvents((previous) => mergeLobbyEvents(older, previous));
-        } else {
-          prependAnchorRef.current = null;
-          loadingOlderRef.current = false;
-        }
-      })
-      .catch(() => {
-        prependAnchorRef.current = null;
-        loadingOlderRef.current = false;
-      })
-      .finally(() => {
-        setLoadingOlder(false);
-      });
-  }, [
-    activeRoom.meetingId,
-    canonicalOldestSeq,
-    events,
-    hasMoreHistory,
-    loadCanonicalHistory,
-    loaded,
-    roomSessionToken,
-    usesCanonicalHistory,
-    visibleEvents,
-  ]);
-
-  const handleLobbyScroll = useCallback(
-    (event: UIEvent<HTMLDivElement>) => {
-      updatePinnedToLatest(lobbyFeedIsNearBottom(event.currentTarget));
-      if (event.currentTarget.scrollTop <= HISTORY_TOP_THRESHOLD) {
-        loadOlderHistory(event.currentTarget.scrollTop);
-      }
-    },
-    [loadOlderHistory, updatePinnedToLatest]
-  );
-
-  useLayoutEffect(() => {
-    const element = scrollRef.current;
-    if (!element) return;
-    const anchor = prependAnchorRef.current;
-    if (anchor) {
-      prependAnchorRef.current = null;
-      loadingOlderRef.current = false;
-      const restoreAnchor = () => {
-        const anchorElement = Array.from(
-          element.querySelectorAll<HTMLElement>("[data-room-event-id]")
-        ).find((candidate) => candidate.dataset.roomEventId === anchor.eventId);
-        if (anchorElement && anchor.eventId) {
-          element.scrollTop += anchorElement.getBoundingClientRect().top - anchor.viewportTop;
-          return;
-        }
-        element.scrollTop = element.scrollHeight - anchor.scrollHeight + anchor.scrollTop;
-      };
-      restoreAnchor();
-      window.requestAnimationFrame(restoreAnchor);
-      return;
-    }
-    if (!pinnedToLatestRef.current) return;
-    element.scrollTop = element.scrollHeight;
-    // typingIndicators is a dep so active placeholders stay in view.
-  }, [activeRoom.id, visibleEvents, typingIndicators]);
-
-  useEffect(() => {
-    if (!loaded || !hasMoreHistory || loadingOlder) return;
-    const scheduledRoomId = activeRoom.id;
-    const timeoutId = window.setTimeout(() => {
-      if (historyRoomRef.current !== scheduledRoomId) return;
-      const element = scrollRef.current;
-      if (!element) return;
-      historyReadyRef.current = true;
-      const renderedMessageCount = element.querySelectorAll("[data-room-event-id]").length;
-      if (
-        renderedMessageCount < INITIAL_HISTORY_MESSAGE_TARGET ||
-        element.scrollHeight <= element.clientHeight + HISTORY_TOP_THRESHOLD
-      ) {
-        loadOlderHistory(element.scrollTop);
-      }
-    }, 50);
-    return () => window.clearTimeout(timeoutId);
-  }, [activeRoom.id, hasMoreHistory, loadOlderHistory, loaded, loadingOlder, visibleEvents]);
-
-  useEffect(() => {
-    updatePinnedToLatest(true);
-  }, [activeRoom.id, updatePinnedToLatest]);
-
-  useEffect(() => {
-    if (usesCanonicalHistory) {
-      setEvents(canonicalEvents || []);
-      setLoaded(true);
-      setHasMoreHistory(canonicalHasMoreHistory);
-      return;
-    }
-    let cancelled = false;
-    setEvents([]);
-    setLoaded(false);
-    setHasMoreHistory(true);
-    function refreshLobby() {
-      const lobbyRequest = roomSessionToken ? fetchRoomLobby(roomSessionToken) : fetchLobby(activeRoom.meetingId);
-      lobbyRequest
-        .then((data) => {
-          if (cancelled) return;
-          const nextEvents = Array.isArray(data.events) ? data.events : [];
-          setEvents((previous) => mergeLobbyEvents(previous, nextEvents));
-          setLoaded(true);
-        })
-        .catch((error) => {
-          if (cancelled) return;
-          if (isUnauthorizedApiError(error)) {
-            onGuestSessionExpired?.();
-          }
-          setLoaded(true);
-        });
-    }
-    refreshLobby();
-    return () => {
-      cancelled = true;
-    };
-  }, [
-    activeRoom.meetingId,
-    canonicalEvents,
-    canonicalHasMoreHistory,
-    onGuestSessionExpired,
-    roomSessionToken,
-    usesCanonicalHistory,
-  ]);
-
-  const handleSSE = useCallback((incoming: LobbyEvent[]) => {
-    setEvents((previous) => {
-      const next = mergeLobbyEvents(previous, incoming);
-      if (next.length === previous.length) {
-        const changed = next.some((event, index) => event !== previous[index]);
-        return changed ? next : previous;
-      }
-      return next;
-    });
-  }, []);
-
-  // App owns one room WebSocket (lobby + roster). Register our merge handler here.
-  useEffect(() => {
-    if (!bindLobbyStream) return undefined;
-    return bindLobbyStream(handleSSE);
-  }, [bindLobbyStream, handleSSE]);
-
-  const handleLobbyPosted = useCallback((postedEvents: LobbyEvent[]) => {
-    setEvents((previous) => mergeLobbyEvents(previous, postedEvents));
-  }, []);
 
   return (
     <div className="flex h-full min-h-0 flex-col">
@@ -789,7 +231,7 @@ export default function LobbyView({
             if (row.type === "thinking") {
               const header = row.events[0];
               return (
-                <ThinkingGroup
+                <LobbyThinkingGroup
                   key={row.key}
                   events={row.events}
                   showHeader={row.showHeader}
@@ -802,7 +244,7 @@ export default function LobbyView({
             }
             const event = row.event;
             return (
-              <MessageRow
+              <LobbyMessageRow
                 key={row.key}
                 event={event}
                 providerKind={
@@ -832,7 +274,7 @@ export default function LobbyView({
         {typingIndicators.map((indicator) => {
           const key = indicator.participantId || indicator.displayName;
           return (
-            <TypingRow
+            <LobbyTypingRow
               key={`typing-${key}`}
               indicator={indicator}
               thinkingEvents={activeThinking.eventsByParticipant.get(key) || []}

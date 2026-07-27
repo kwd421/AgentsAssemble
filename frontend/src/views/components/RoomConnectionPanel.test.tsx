@@ -417,8 +417,9 @@ describe("RoomConnectionPanel", () => {
       expect((screen.getByLabelText(/모델/) as HTMLSelectElement).disabled).toBe(false)
     );
     fireEvent.change(screen.getByLabelText(/모델/), { target: { value: "gpt-next" } });
-    expect((screen.getByLabelText(/추론 강도/) as HTMLSelectElement).value).toBe("high");
+    expect((screen.getByLabelText(/추론 강도/) as HTMLSelectElement).value).toBe("");
     expect(screen.queryByRole("option", { name: "low" })).toBeNull();
+    fireEvent.change(screen.getByLabelText(/추론 강도/), { target: { value: "high" } });
     fireEvent.change(screen.getByLabelText(/응답 속도/), { target: { value: "fast" } });
     fireEvent.change(screen.getByLabelText(/권한/), { target: { value: "workspace_write" } });
     fireEvent.click(screen.getByRole("button", { name: "런타임 설정 저장" }));

@@ -4,29 +4,10 @@ from __future__ import annotations
 
 from typing import NotRequired, TypedDict
 
-
-class RoomActor(TypedDict, total=False):
-    participant_id: str
-    participant_type: str
-
-
-class RoomEvent(TypedDict):
-    v: int
-    id: str
-    seq: int
-    created_at: str
-    room_id: str
-    type: str
-    actor: RoomActor
-    participant_id: NotRequired[str]
-    participant_type: NotRequired[str]
-    session_id: NotRequired[str]
-    turn_id: NotRequired[str]
-    source_event_id: NotRequired[str]
-    display_name: NotRequired[str]
-    content: NotRequired[str]
-    visibility: NotRequired[str]
-    metadata: NotRequired[dict[str, object]]
+from agentsassemble.room.public_event_contract import (
+    PublicRoomActor as RoomActor,
+    PublicRoomEvent as RoomEvent,
+)
 
 
 class RoomParticipant(TypedDict):
@@ -58,6 +39,8 @@ class AgentSession(TypedDict):
     last_seen_event_id: NotRequired[str]
     last_seen_seq: NotRequired[int]
     pending_event_ids: NotRequired[list[str]]
+    pending_event_modes: NotRequired[dict[str, str]]
+    pending_input_mode: NotRequired[str]
     inflight_event_ids: NotRequired[list[str]]
     pending_attention_job_id: NotRequired[str]
     pending_attention_lease_id: NotRequired[str]
@@ -100,3 +83,4 @@ class TurnAssignment(TypedDict):
     provider_context_event_ids: NotRequired[list[str]]
     provider_context_actor_ids: NotRequired[list[str]]
     timeout_seconds: float
+    publication_mode: str

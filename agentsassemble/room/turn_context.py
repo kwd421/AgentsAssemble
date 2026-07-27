@@ -45,6 +45,7 @@ def build_room_turn_packet(
     max_recent_events: object = None,
     max_prompt_chars: object = None,
     include_instruction: bool = True,
+    up_to_seq: int = 0,
     repository: RoomRepository | None = None,
 ) -> dict[str, object]:
     clean_instruction = clean_lobby_text(instruction, limit=2000)
@@ -81,6 +82,7 @@ def build_room_turn_packet(
         room_id=room_id,
         participant_id=participant_id,
         after_seq=context_after_seq,
+        up_to_seq=up_to_seq,
         max_messages=recent_limit,
         max_chars=min(DEFAULT_ROOM_CONTEXT_CHARS, max(256, prompt_limit // 2)),
     )

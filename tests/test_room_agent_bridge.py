@@ -6,9 +6,9 @@ import unittest
 from pathlib import Path
 from unittest.mock import patch
 
+from agentsassemble.providers.bridge_protocol import BridgeReportTimeout
 from agentsassemble.providers.codex_app_server_live import CodexAppServerLiveRuntime
 from agentsassemble.providers.grok_acp import GrokAcpRuntime
-from agentsassemble.providers.bridge_protocol import BridgeReportTimeout
 from agentsassemble.providers.runtime_contracts import (
     AdapterContractError,
     ProviderTurnResult,
@@ -247,6 +247,7 @@ def _turn_assignment(turn_id: str, provider_input: str, **overrides):
         "session_id": "codex",
         "turn_id": turn_id,
         "provider_input": provider_input,
+        "publication_mode": "automatic_final",
         "timeout_seconds": 2,
     }
     values.update(overrides)
@@ -263,6 +264,33 @@ def _wait_for(predicate, timeout=2.0):
 
 
 class RoomAgentBridgeTests(unittest.TestCase):
+    def test_codex_wake_does_not_publish_commentary_after_provider_error(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            portal = RoomPortal(Path(temp_dir) / "portal", participant_id="codex")
+            portal.prepare()
+            portal.begin_observation("wake-a", input_up_to_seq=0)
+            runtime = CodexAppServerLiveRuntime(
+                "codex",
+                workspace=temp_dir,
+                model="gpt-test",
+                reasoning_effort="high",
+                permission_mode="meeting_read_only",
+                room_portal=portal,
+            )
+            runtime.send_room_observation("room.wake wake-a")
+            runtime.runtime.send_turn = lambda *_args, **_kwargs: iter(
+                [
+                    {"type": "message_final", "content": "먼저 확인하겠습니다."},
+                    {"type": "error", "diagnostics": "tool request stalled"},
+                ]
+            )
+
+            with self.assertRaisesRegex(RuntimeError, "tool request stalled"):
+                runtime.read_output(timeout_seconds=2)
+            publication = portal.consume_publication("wake-a")
+
+        self.assertEqual(publication, "")
+
     def test_idle_room_check_is_event_driven_and_not_a_fast_poll_loop(self):
         with tempfile.TemporaryDirectory() as temp_dir:
             portal = RoomPortal(Path(temp_dir) / "portal", participant_id="codex")
@@ -358,6 +386,7 @@ class RoomAgentBridgeTests(unittest.TestCase):
                                 "source_event_id": event_id,
                                 "input_up_to_seq": seq,
                                 "attachment_ids": [],
+                                "publication_mode": "explicit_room_portal",
                                 "timeout_seconds": 2,
                             },
                         ]
@@ -447,6 +476,7 @@ class RoomAgentBridgeTests(unittest.TestCase):
                             "turn_id": turn_id,
                             "input_up_to_seq": input_up_to_seq,
                             "attachment_ids": [],
+                            "publication_mode": "explicit_room_portal",
                             "timeout_seconds": 2,
                         }
                     )
@@ -484,7 +514,7 @@ class RoomAgentBridgeTests(unittest.TestCase):
 
         self.assertIsInstance(runtime, GrokAcpRuntime)
 
-    def test_codex_config_uses_app_server_room_tools_without_workspace_write(self):
+    def test_codex_config_uses_private_room_mcp_without_workspace_write(self):
         with tempfile.TemporaryDirectory() as temp_dir:
             portal = RoomPortal(Path(temp_dir) / "portal", participant_id="codex")
             portal.prepare()
@@ -505,7 +535,15 @@ class RoomAgentBridgeTests(unittest.TestCase):
         self.assertEqual(runtime.profile["sandbox"], "read-only")
         self.assertEqual(runtime.profile["service_tier"], "priority")
         self.assertIn('service_tier="priority"', runtime.runtime.command)
-        self.assertIsNotNone(runtime.room_tools)
+        self.assertIn(
+            'mcp_servers.agentsassemble_room.command=',
+            " ".join(runtime.runtime.command),
+        )
+        self.assertIn(
+            'mcp_servers.agentsassemble_room.cwd=',
+            " ".join(runtime.runtime.command),
+        )
+        self.assertEqual(runtime.runtime.dynamic_tools, [])
 
     def test_pty_runtime_preserves_an_intentional_empty_cli_argument(self):
         runtime = runtime_from_config(

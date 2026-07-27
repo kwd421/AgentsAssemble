@@ -5,6 +5,7 @@ import { projectRoomEventProgress, projectRoomEventsToTimeline } from "./roomEve
 
 function event(overrides: Partial<RoomEvent>): RoomEvent {
   return {
+    v: 1,
     id: "event-1",
     seq: 1,
     created_at: "2026-01-01T00:00:00Z",
@@ -17,14 +18,39 @@ function event(overrides: Partial<RoomEvent>): RoomEvent {
 
 describe("projectRoomEventsToTimeline", () => {
   it("updates one bubble across multiple deltas and the final message", () => {
+    const attachment = {
+      id: "attachment-1",
+      filename: "photo.png",
+      content_type: "image/png",
+      size: 42,
+      is_image: true,
+      url: "/api/attachments/attachment-1?view=1",
+      download_url: "/api/attachments/attachment-1?download=1",
+    };
     const timeline = projectRoomEventsToTimeline([
       event({ id: "d1", seq: 1, type: "message_delta", turn_id: "turn-1", content: "hello " }),
       event({ id: "d2", seq: 2, type: "message_delta", turn_id: "turn-1", content: "world" }),
-      event({ id: "f1", seq: 3, type: "message_final", turn_id: "turn-1", content: "hello world" }),
+      event({
+        id: "f1",
+        seq: 3,
+        type: "message_final",
+        turn_id: "turn-1",
+        content: "hello world",
+        avatar_image_url: "/api/attachments/codex-avatar",
+        provider_kind: "codex_app_server",
+        attachments: [attachment],
+      }),
     ]);
 
     expect(timeline).toHaveLength(1);
-    expect(timeline[0]).toMatchObject({ id: "turn-1", message: "hello world", flow_action: "message_final" });
+    expect(timeline[0]).toMatchObject({
+      id: "turn-1",
+      message: "hello world",
+      flow_action: "message_final",
+      attachments: [attachment],
+      avatar_image_url: "/api/attachments/codex-avatar",
+      provider_kind: "codex_app_server",
+    });
   });
 
   it("groups legacy delta and final events by source event and actor", () => {

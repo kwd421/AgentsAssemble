@@ -303,6 +303,52 @@ describe("useCanonicalRoom", () => {
     expect(result.current.timelineEvents[0].avatar_image_url).toBeUndefined();
   });
 
+  it("preserves session provider branding when a participant snapshot omits it", async () => {
+    let handlers: RoomSocketHandlers | undefined;
+    const openSocket = vi.fn((_auth, _streams, nextHandlers: RoomSocketHandlers) => {
+      handlers = nextHandlers;
+      return {
+        close: vi.fn(),
+        ready: () => true,
+        command: vi.fn(),
+        say: vi.fn(),
+        historyBefore: vi.fn(),
+      } satisfies RoomSocketHandle;
+    });
+    const { result } = renderHook(() =>
+      useCanonicalRoom({
+        roomId: "general",
+        auth: { kind: "host", meetingId: "general" },
+        openSocket,
+      })
+    );
+    await waitFor(() => expect(openSocket).toHaveBeenCalledOnce());
+    const initial = snapshot([event(1, "message_final", "hello")]);
+    initial.participants = [
+      {
+        meeting_id: "general",
+        participant_id: "codex",
+        display_name: "Luna",
+        avatar_image_url: undefined,
+        role: "agent",
+        participant_type: "local",
+        provider_kind: "",
+        connection_kind: "native_cli_bridge",
+        status: "joined",
+        source: "agent_session",
+        created_at: "",
+        updated_at: "",
+      },
+    ];
+
+    act(() => handlers?.onRoomSnapshot?.(initial));
+
+    expect(result.current.timelineEvents[0]).toMatchObject({
+      name: "Luna",
+      provider_kind: "codex_live_session",
+    });
+  });
+
   it("applies the configure ACK to visible and later-loaded message history", async () => {
     let handlers: RoomSocketHandlers | undefined;
     const updatedParticipant: RoomMember = {

@@ -110,7 +110,7 @@ describe("providerControlSettings", () => {
     });
   });
 
-  it("normalizes model-dependent reasoning to an available value", () => {
+  it("clears model-dependent values that require an explicit new choice", () => {
     expect(
       reconcileProviderSettings(
         relatedProvider(),
@@ -124,13 +124,13 @@ describe("providerControlSettings", () => {
       )
     ).toEqual({
       model: "model-high",
-      reasoning_effort: "high",
-      service_tier: "default",
+      reasoning_effort: "",
+      service_tier: "",
       permission_mode: "workspace_write",
     });
   });
 
-  it("normalizes service tier when reasoning changes", () => {
+  it("clears service tier when reasoning invalidates it", () => {
     const provider = relatedProvider();
     const next = reconcileProviderSettings(
       provider,
@@ -143,7 +143,7 @@ describe("providerControlSettings", () => {
       "reasoning_effort"
     );
 
-    expect(next.service_tier).toBe("default");
+    expect(next.service_tier).toBe("");
     expect(
       effectiveProviderControlOptions(
         provider,

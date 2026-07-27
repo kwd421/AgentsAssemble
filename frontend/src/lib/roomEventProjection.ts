@@ -84,6 +84,7 @@ export function projectRoomEventsToTimeline(
         flow_action: event.type,
         flow_meeting_id: event.room_id,
         flow_id: key,
+        attachments: Array.isArray(event.attachments) ? event.attachments : undefined,
       };
       if (event.type === "activity_delta" && event.activity_kind === "reasoning" && event.turn_id) {
         const activityKey = `${key}:reasoning:${event.category || "reasoning"}`;
@@ -127,6 +128,9 @@ export function projectRoomEventsToTimeline(
         flow_action: event.type,
         flow_meeting_id: event.room_id,
         flow_id: key,
+        attachments: Array.isArray(event.attachments)
+          ? event.attachments
+          : existing?.attachments,
       };
       if (existingIndex === undefined) {
         turnIndex.set(key, timeline.length);

@@ -159,6 +159,7 @@ class TestNormalizeAttachmentReferences(unittest.TestCase):
             d.mkdir(parents=True)
             meta = {"id": aid, "filename": "f.txt", "content_type": "text/plain", "size": 1, "is_image": False}
             (d / "metadata.json").write_text(json.dumps(meta))
+            (d / "f.txt").write_text("x")
             refs = [{"id": aid}, {"id": aid}]
             result = normalize_attachment_references(root, refs)
             self.assertEqual(len(result), 1)

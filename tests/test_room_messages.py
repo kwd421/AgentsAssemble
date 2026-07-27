@@ -5,6 +5,7 @@ import unittest
 from pathlib import Path
 
 from agentsassemble.persistence.local.room.repository import RoomStore
+from agentsassemble.room.attachments import FileAttachmentStore, store_uploaded_attachment
 from agentsassemble.room.command_uow import RoomCommandUnitOfWork
 from agentsassemble.room.errors import RoomCommandRejected
 from agentsassemble.room.messages import RoomMessageService
@@ -12,6 +13,7 @@ from agentsassemble.room.messages import RoomMessageService
 
 class _UnitWithoutCanonicalMute:
     def __init__(self) -> None:
+        self.room_id = "general"
         self.appended: list[tuple[str, dict[str, object]]] = []
 
     def participant(self, participant_id: str) -> dict[str, object]:
@@ -41,7 +43,7 @@ class RoomMessageServiceTests(unittest.TestCase):
                 "status": "joined",
             },
         )
-        self.service = RoomMessageService()
+        self.service = RoomMessageService(FileAttachmentStore(self.root))
         self.identity = {
             "agent_id": "host",
             "display_name": "Host",
@@ -71,10 +73,19 @@ class RoomMessageServiceTests(unittest.TestCase):
         return result
 
     def test_message_appends_canonical_human_event_with_media_and_vote_fields(self) -> None:
+        attachment = store_uploaded_attachment(
+            self.root,
+            {
+                "room_id": "general",
+                "filename": "diagram.png",
+                "content_type": "image/png",
+                "data_base64": "aW1hZ2U=",
+            },
+        )
         result = self._send(
             {
                 "content": "hello",
-                "attachments": [{"media_id": "media-1"}],
+                "attachments": [{"id": attachment["id"]}],
                 "vote_id": "vote-1",
                 "target_agent_id": "codex",
             }
@@ -84,7 +95,8 @@ class RoomMessageServiceTests(unittest.TestCase):
         self.assertEqual(event["type"], "message_final")
         self.assertEqual(event["participant_id"], "host")
         self.assertEqual(event["display_name"], "Host")
-        self.assertEqual(event["attachments"], [{"media_id": "media-1"}])
+        self.assertEqual(event["attachments"][0]["id"], attachment["id"])
+        self.assertNotIn("room_id", event["attachments"][0])
         self.assertEqual(event["vote_id"], "vote-1")
         self.assertEqual(event["target_agent_id"], "codex")
         self.assertEqual(event["relay_depth"], 0)
@@ -103,6 +115,46 @@ class RoomMessageServiceTests(unittest.TestCase):
         )
         self.assertEqual(vote["event"]["message_kind"], "vote")
 
+    def test_attachment_only_message_is_allowed_and_must_own_the_attachment(self) -> None:
+        attachment = store_uploaded_attachment(
+            self.root,
+            {
+                "room_id": "general",
+                "filename": "photo.png",
+                "content_type": "image/png",
+                "data_base64": "cGhvdG8=",
+            },
+        )
+
+        result = self._send(
+            {
+                "request_id": "attachment-only",
+                "content": "",
+                "attachments": [{"id": attachment["id"]}],
+            }
+        )
+
+        self.assertEqual(result["event"].get("content", ""), "")
+        self.assertEqual(result["event"]["attachments"][0]["id"], attachment["id"])
+
+        foreign = store_uploaded_attachment(
+            self.root,
+            {
+                "room_id": "another-room",
+                "filename": "private.png",
+                "content_type": "image/png",
+                "data_base64": "cHJpdmF0ZQ==",
+            },
+        )
+        with self.assertRaises(RoomCommandRejected) as raised:
+            self._send(
+                {
+                    "request_id": "foreign-attachment",
+                    "attachments": [{"id": foreign["id"]}],
+                }
+            )
+        self.assertEqual(raised.exception.code, "invalid_attachment")
+
     def test_left_participant_cannot_append_a_message(self) -> None:
         self.store.update_participant_fields(
             "general",
@@ -119,7 +171,7 @@ class RoomMessageServiceTests(unittest.TestCase):
         unit = _UnitWithoutCanonicalMute()
 
         with self.assertRaises(RoomCommandRejected) as raised:
-            self.service.send_in_unit(
+            RoomMessageService(FileAttachmentStore(self.root)).send_in_unit(
                 self.identity,
                 {"content": "blocked"},
                 unit=unit,  # type: ignore[arg-type]

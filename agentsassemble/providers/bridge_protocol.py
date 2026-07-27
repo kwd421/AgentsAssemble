@@ -2,6 +2,11 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
+from agentsassemble.providers.runtime_contracts import (
+    AUTOMATIC_FINAL,
+    EXPLICIT_ROOM_PORTAL,
+    PublicationMode,
+)
 from agentsassemble.room.text import clean_room_text
 
 
@@ -44,6 +49,7 @@ class TurnAssignmentEnvelope:
     turn_id: str
     provider_input: str
     timeout_seconds: float
+    publication_mode: PublicationMode
 
     @classmethod
     def parse_strict(
@@ -80,6 +86,13 @@ class TurnAssignmentEnvelope:
                 code="assignment_invalid",
                 turn_id=turn_id,
             )
+        if value.get("publication_mode") != AUTOMATIC_FINAL:
+            raise BridgeProtocolError(
+                "Turn assignment requires automatic_final publication.",
+                code="assignment_publication_mode_invalid",
+                turn_id=turn_id,
+                fatal=True,
+            )
         timeout_value = value.get("timeout_seconds")
         if isinstance(timeout_value, bool):
             timeout_seconds = 0.0
@@ -101,6 +114,7 @@ class TurnAssignmentEnvelope:
             turn_id=turn_id,
             provider_input=provider_input,
             timeout_seconds=timeout_seconds,
+            publication_mode=AUTOMATIC_FINAL,
         )
 
 
@@ -113,6 +127,7 @@ class RoomWakeEnvelope:
     input_up_to_seq: int
     timeout_seconds: float
     attachment_ids: tuple[str, ...]
+    publication_mode: PublicationMode
 
     @classmethod
     def parse_strict(
@@ -167,6 +182,13 @@ class RoomWakeEnvelope:
                 turn_id=turn_id,
                 fatal=True,
             )
+        if value.get("publication_mode") != EXPLICIT_ROOM_PORTAL:
+            raise BridgeProtocolError(
+                "Room wake requires explicit_room_portal publication.",
+                code="room_wake_publication_mode_invalid",
+                turn_id=turn_id,
+                fatal=True,
+            )
         input_up_to_seq = value.get("input_up_to_seq")
         if (
             isinstance(input_up_to_seq, bool)
@@ -204,6 +226,7 @@ class RoomWakeEnvelope:
             input_up_to_seq=input_up_to_seq,
             timeout_seconds=timeout_seconds,
             attachment_ids=attachment_ids,
+            publication_mode=EXPLICIT_ROOM_PORTAL,
         )
 
 

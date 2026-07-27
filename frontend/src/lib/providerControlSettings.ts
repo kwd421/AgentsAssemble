@@ -12,9 +12,9 @@ export function initializeProviderSettings(
 export function reconcileProviderSettings(
   provider: NativeCliProviderAvailability,
   candidate: Record<string, string>,
-  changedKey = ""
+  _changedKey = ""
 ): Record<string, string> {
-  return normalizeProviderSettings(provider, candidate, false, changedKey);
+  return normalizeProviderSettings(provider, candidate, false);
 }
 
 export function effectiveProviderControlOptions(
@@ -62,8 +62,7 @@ export function effectiveProviderControlOptions(
 function normalizeProviderSettings(
   provider: NativeCliProviderAvailability,
   candidate: Record<string, string>,
-  useDefaults: boolean,
-  changedKey = ""
+  useDefaults: boolean
 ): Record<string, string> {
   const next: Record<string, string> = {};
   const modelControl = provider.controls.find((control) => control.key === "model");
@@ -72,8 +71,7 @@ function normalizeProviderSettings(
       modelControl,
       modelControl.options,
       candidate.model,
-      useDefaults,
-      false
+      useDefaults
     );
   }
   for (const control of orderedDependentControls(provider)) {
@@ -85,8 +83,7 @@ function normalizeProviderSettings(
       control,
       options,
       candidate[control.key],
-      useDefaults,
-      dependentValueNeedsFallback(changedKey, control.key)
+      useDefaults
     );
   }
   return next;
@@ -104,30 +101,19 @@ function orderedDependentControls(provider: NativeCliProviderAvailability): Prov
   ];
 }
 
-function dependentValueNeedsFallback(changedKey: string, controlKey: string): boolean {
-  if (changedKey === "model") {
-    return ["reasoning_effort", "service_tier"].includes(controlKey);
-  }
-  return changedKey === "reasoning_effort" && controlKey === "service_tier";
-}
-
 function validControlValue(
   control: ProviderControl,
   options: ProviderControl["options"],
   candidate: string | undefined,
-  useDefault: boolean,
-  fallbackToAvailable: boolean
+  useDefault: boolean
 ): string {
   if (candidate !== undefined && options.some((option) => option.value === candidate)) {
     return candidate;
   }
-  const mayUseDefault =
-    useDefault ||
-    fallbackToAvailable ||
-    (control.key === "service_tier" && !candidate);
+  const mayUseDefault = useDefault;
   if (mayUseDefault) {
     const defaultOption = options.find((option) => option.value === control.default_value);
     if (defaultOption) return defaultOption.value;
   }
-  return fallbackToAvailable ? options[0]?.value || "" : "";
+  return "";
 }
