@@ -40,7 +40,7 @@ export default function LobbyView({
   onGuestSessionExpired,
   threadSummaries = {},
   roomSessionToken = "",
-  localDisplayName = "",
+  viewerParticipantId = "",
   typingIndicators = [],
   bindLobbyStream,
   submitMessage,
@@ -67,7 +67,7 @@ export default function LobbyView({
   onGuestSessionExpired?: () => void;
   threadSummaries?: Record<string, LobbyThreadSummary>;
   roomSessionToken?: string;
-  localDisplayName?: string;
+  viewerParticipantId?: string;
   bindLobbyStream?: (receive: (events: LobbyEvent[]) => void) => () => void;
   submitMessage?: (message: string) => Promise<LobbyEvent[]>;
   canonicalEvents?: LobbyEvent[];
@@ -79,14 +79,6 @@ export default function LobbyView({
     hasMoreBefore: boolean;
   }>;
 }) {
-  const voterName = useMemo(() => {
-    if (localDisplayName) return localDisplayName;
-    try {
-      return window.localStorage.getItem("agentsassemble.name") || "나";
-    } catch {
-      return "나";
-    }
-  }, [localDisplayName]);
   const {
     handleLobbyPosted,
     handleLobbyScroll,
@@ -266,7 +258,7 @@ export default function LobbyView({
                   event.kind === "vote" ? (
                     <VotePollCard
                       event={event}
-                      voterName={voterName}
+                      voterParticipantId={viewerParticipantId}
                       canVote={canPostMessages}
                       revision={voteRevisions[event.vote_id || event.id] || ""}
                     />

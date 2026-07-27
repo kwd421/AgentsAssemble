@@ -67,6 +67,7 @@ export interface VoteSummary {
   created_at: string;
   tallies: Record<string, number>;
   voters: Record<string, string[]>;
+  voter_ids: Record<string, string[]>;
   total_votes: number;
 }
 

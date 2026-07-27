@@ -1811,7 +1811,7 @@ export default function App() {
               mentionables={scopedMentionables}
               bindLobbyStream={bindLobbyStream}
               roomSessionToken={lobbyPostingState.sessionToken}
-              localDisplayName={guestSession?.displayName || ""}
+              viewerParticipantId={guestSession?.agentId || "operator-local"}
               canManageRoom={!guestLocked}
               canPostMessages={lobbyPostingState.canPost}
               postingMode={lobbyPostingState.mode}

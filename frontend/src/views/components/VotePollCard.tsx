@@ -18,12 +18,12 @@ function remainingTimeLabel(milliseconds: number): string {
 
 export default function VotePollCard({
   event,
-  voterName,
+  voterParticipantId,
   canVote = true,
   revision = "",
 }: {
   event: LobbyEvent;
-  voterName: string;
+  voterParticipantId: string;
   canVote?: boolean;
   revision?: string;
 }) {
@@ -95,7 +95,9 @@ export default function VotePollCard({
   const options = summary?.options || event.vote_options || [];
   const question = summary?.question || event.vote_question || "";
   const total = summary?.total_votes ?? 0;
-  const myChoice = options.find((option) => (summary?.voters?.[option] || []).includes(voterName));
+  const myChoice = options.find((option) =>
+    (summary?.voter_ids?.[option] || []).includes(voterParticipantId)
+  );
   const deadlineLabel = ended
     ? "마감됨"
     : hasDeadline

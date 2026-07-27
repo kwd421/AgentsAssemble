@@ -46,6 +46,7 @@ describe("VotePollCard", () => {
         created_at: "2026-01-01T00:00:00Z",
         tallies: { 북쪽: 0, 남쪽: 0 },
         voters: { 북쪽: [], 남쪽: [] },
+        voter_ids: { 북쪽: [], 남쪽: [] },
         total_votes: 0,
       },
     });
@@ -59,7 +60,7 @@ describe("VotePollCard", () => {
     };
     render(
       <RoomSocketProvider socket={socket}>
-        <VotePollCard event={pollEvent()} voterName="호스트" />
+        <VotePollCard event={pollEvent()} voterParticipantId="host-1" />
       </RoomSocketProvider>
     );
 
@@ -98,6 +99,7 @@ describe("VotePollCard", () => {
         created_at: "2000-01-01T00:00:00Z",
         tallies: { 북쪽: 1, 남쪽: 0 },
         voters: { 북쪽: ["호스트"], 남쪽: [] },
+        voter_ids: { 북쪽: ["host-1"], 남쪽: [] },
         total_votes: 1,
       },
     });
@@ -111,7 +113,7 @@ describe("VotePollCard", () => {
     };
     render(
       <RoomSocketProvider socket={socket}>
-        <VotePollCard event={pollEvent()} voterName="호스트" />
+        <VotePollCard event={pollEvent()} voterParticipantId="host-1" />
       </RoomSocketProvider>
     );
 
@@ -126,10 +128,50 @@ describe("VotePollCard", () => {
   it("does not attempt a vote when the canonical room socket is unavailable", async () => {
     render(
       <RoomSocketProvider socket={null}>
-        <VotePollCard event={pollEvent()} voterName="호스트" />
+        <VotePollCard event={pollEvent()} voterParticipantId="host-1" />
       </RoomSocketProvider>
     );
 
     expect(await screen.findByText("방 연결이 준비되지 않았습니다.")).toBeTruthy();
+  });
+
+  it("marks my choice by participant id when display names collide", async () => {
+    const command = vi.fn().mockResolvedValue({
+      op: "ack",
+      request_id: "summary-same-name",
+      accepted: true,
+      action: "room.vote.summary",
+      result: {
+        vote_id: "vote-1",
+        question: "어느 길로 갈까?",
+        options: ["북쪽", "남쪽"],
+        created_by: "호스트",
+        created_at: "2026-01-01T00:00:00Z",
+        tallies: { 북쪽: 1, 남쪽: 1 },
+        voters: { 북쪽: ["민지"], 남쪽: ["민지"] },
+        voter_ids: { 북쪽: ["guest-other"], 남쪽: ["guest-me"] },
+        total_votes: 2,
+      },
+    });
+    const socket: RoomSocketHandle = {
+      close: vi.fn(),
+      ready: () => true,
+      command,
+      say: vi.fn(),
+      historyBefore: vi.fn(),
+    };
+
+    render(
+      <RoomSocketProvider socket={socket}>
+        <VotePollCard event={pollEvent()} voterParticipantId="guest-me" />
+      </RoomSocketProvider>
+    );
+
+    await screen.findByText(/남쪽/);
+    const north = screen.getByText("북쪽").closest("button") as HTMLButtonElement;
+    const south = screen.getByText(/남쪽/).closest("button") as HTMLButtonElement;
+    expect(north.dataset.mine).toBe("false");
+    expect(south.dataset.mine).toBe("true");
+    expect(south.textContent).toContain("내 선택");
   });
 });
