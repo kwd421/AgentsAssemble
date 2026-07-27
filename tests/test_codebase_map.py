@@ -10,8 +10,11 @@ from pathlib import Path
 from unittest.mock import patch
 
 from scripts.generate_codebase_map import (
+    HTML_RELATIVE_PATH,
+    JSON_RELATIVE_PATH,
     build_map,
     generated_outputs,
+    load_existing_maps,
     prepare_generated_map,
     render_html,
     stale_generated_outputs,
@@ -26,12 +29,7 @@ class CodebaseMapTests(unittest.TestCase):
     @classmethod
     def setUpClass(cls) -> None:
         cls.data = build_map(ROOT)
-        json_path = ROOT / "docs" / "product" / "CODEBASE_MAP.json"
-        try:
-            committed = json.loads(json_path.read_text(encoding="utf-8"))
-        except (OSError, ValueError):
-            committed = None
-        cls.data = prepare_generated_map(ROOT, cls.data, committed)
+        cls.data = prepare_generated_map(cls.data, load_existing_maps(ROOT))
 
     def test_committed_codebase_map_matches_source_tree(self) -> None:
         expected_json = json.dumps(self.data, ensure_ascii=False, indent=1) + "\n"
@@ -286,7 +284,7 @@ class CodebaseMapOutputTests(unittest.TestCase):
             }
             write_generated_outputs(root, generated_outputs(existing))
 
-            prepared = prepare_generated_map(root, fresh, existing)
+            prepared = prepare_generated_map(fresh, load_existing_maps(root))
 
             self.assertEqual(prepared, existing)
 
@@ -303,11 +301,13 @@ class CodebaseMapOutputTests(unittest.TestCase):
         }
 
         with tempfile.TemporaryDirectory() as temp_dir:
-            prepared = prepare_generated_map(Path(temp_dir), fresh, existing)
+            root = Path(temp_dir)
+            write_generated_outputs(root, generated_outputs(existing))
+            prepared = prepare_generated_map(fresh, load_existing_maps(root))
 
         self.assertEqual(prepared, fresh)
 
-    def test_changed_rendered_output_keeps_the_fresh_timestamp(self) -> None:
+    def test_changed_html_repairs_only_html_and_preserves_timestamp(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:
             root = Path(temp_dir)
             existing = {
@@ -320,14 +320,110 @@ class CodebaseMapOutputTests(unittest.TestCase):
             }
             write_generated_outputs(root, generated_outputs(existing))
             html_path = root / "docs" / "product" / "CODEBASE_MAP.html"
-            html_path.write_text(
-                html_path.read_text(encoding="utf-8") + "\ncorrupt",
+            html_path.write_bytes(b"\xff")
+
+            outputs = generated_outputs(
+                prepare_generated_map(fresh, load_existing_maps(root))
+            )
+            stale = stale_generated_outputs(root, outputs)
+            changed = write_generated_outputs(root, outputs)
+
+            self.assertEqual(stale, [HTML_RELATIVE_PATH])
+            self.assertFalse(changed[JSON_RELATIVE_PATH])
+            self.assertTrue(changed[HTML_RELATIVE_PATH])
+            self.assertEqual(stale_generated_outputs(root, outputs), [])
+
+    def test_changed_json_uses_current_html_and_repairs_only_json(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            existing = {
+                "generated_at": "2026-07-01T00:00:00Z",
+                "stats": {"backend_modules": 2},
+            }
+            fresh = {
+                **existing,
+                "generated_at": "2026-07-27T00:00:00Z",
+            }
+            write_generated_outputs(root, generated_outputs(existing))
+            json_path = root / JSON_RELATIVE_PATH
+            json_path.write_text(
+                json.dumps(
+                    {
+                        **existing,
+                        "stats": {"backend_modules": 99},
+                    },
+                    ensure_ascii=False,
+                    indent=1,
+                )
+                + "\n",
                 encoding="utf-8",
             )
 
-            prepared = prepare_generated_map(root, fresh, existing)
+            outputs = generated_outputs(
+                prepare_generated_map(fresh, load_existing_maps(root))
+            )
+            stale = stale_generated_outputs(root, outputs)
+            changed = write_generated_outputs(root, outputs)
 
-            self.assertEqual(prepared, fresh)
+            self.assertEqual(stale, [JSON_RELATIVE_PATH])
+            self.assertTrue(changed[JSON_RELATIVE_PATH])
+            self.assertFalse(changed[HTML_RELATIVE_PATH])
+            self.assertEqual(stale_generated_outputs(root, outputs), [])
+
+    def test_invalid_json_timestamp_repairs_only_json(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            existing = {
+                "generated_at": "2026-07-01T00:00:00Z",
+                "stats": {"backend_modules": 2},
+            }
+            fresh = {
+                **existing,
+                "generated_at": "2026-07-27T00:00:00Z",
+            }
+            write_generated_outputs(root, generated_outputs(existing))
+            json_path = root / JSON_RELATIVE_PATH
+            json_path.write_text(
+                json.dumps(
+                    {
+                        **existing,
+                        "generated_at": "corrupt-but-nonempty",
+                    },
+                    ensure_ascii=False,
+                    indent=1,
+                )
+                + "\n",
+                encoding="utf-8",
+            )
+
+            outputs = generated_outputs(
+                prepare_generated_map(fresh, load_existing_maps(root))
+            )
+            stale = stale_generated_outputs(root, outputs)
+            changed = write_generated_outputs(root, outputs)
+
+            self.assertEqual(stale, [JSON_RELATIVE_PATH])
+            self.assertTrue(changed[JSON_RELATIVE_PATH])
+            self.assertFalse(changed[HTML_RELATIVE_PATH])
+            self.assertEqual(stale_generated_outputs(root, outputs), [])
+
+    def test_conflicting_valid_timestamps_use_the_fresh_timestamp(self) -> None:
+        existing = {
+            "generated_at": "2026-07-01T00:00:00Z",
+            "stats": {"backend_modules": 2},
+        }
+        conflicting = {
+            **existing,
+            "generated_at": "2026-07-02T00:00:00Z",
+        }
+        fresh = {
+            **existing,
+            "generated_at": "2026-07-27T00:00:00Z",
+        }
+
+        prepared = prepare_generated_map(fresh, [existing, conflicting])
+
+        self.assertEqual(prepared, fresh)
 
     def test_identical_outputs_are_not_rewritten(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:
@@ -350,6 +446,96 @@ class CodebaseMapOutputTests(unittest.TestCase):
             self.assertTrue(all(first_write.values()))
             self.assertFalse(any(second_write.values()))
             self.assertEqual(stale_generated_outputs(root, outputs), [])
+
+
+class CodebaseMapMakeTests(unittest.TestCase):
+    def test_commit_check_rejects_staged_and_unstaged_generated_changes(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            (root / "Makefile").write_text(
+                (ROOT / "Makefile").read_text(encoding="utf-8"),
+                encoding="utf-8",
+            )
+            for relative_path in (
+                Path("docs/product/PACKAGE_MAP.md"),
+                JSON_RELATIVE_PATH,
+                HTML_RELATIVE_PATH,
+            ):
+                path = root / relative_path
+                path.parent.mkdir(parents=True, exist_ok=True)
+                path.write_text("baseline\n", encoding="utf-8")
+
+            subprocess.run(["git", "init", "--quiet"], cwd=root, check=True)
+            subprocess.run(["git", "add", "."], cwd=root, check=True)
+            subprocess.run(
+                [
+                    "git",
+                    "-c",
+                    "user.name=Codebase Map Test",
+                    "-c",
+                    "user.email=codebase-map@example.invalid",
+                    "commit",
+                    "--quiet",
+                    "-m",
+                    "baseline",
+                ],
+                cwd=root,
+                check=True,
+            )
+
+            clean = subprocess.run(
+                ["make", "codebase-map-commit-check"],
+                cwd=root,
+                capture_output=True,
+                text=True,
+            )
+            (root / JSON_RELATIVE_PATH).write_text("changed\n", encoding="utf-8")
+            unstaged = subprocess.run(
+                ["make", "codebase-map-commit-check"],
+                cwd=root,
+                capture_output=True,
+                text=True,
+            )
+            subprocess.run(
+                ["git", "add", str(JSON_RELATIVE_PATH)],
+                cwd=root,
+                check=True,
+            )
+            staged = subprocess.run(
+                ["make", "codebase-map-commit-check"],
+                cwd=root,
+                capture_output=True,
+                text=True,
+            )
+            (root / JSON_RELATIVE_PATH).write_text("baseline\n", encoding="utf-8")
+            head_only_check = subprocess.run(
+                ["git", "diff", "--quiet", "HEAD", "--", str(JSON_RELATIVE_PATH)],
+                cwd=root,
+            )
+            repaired_worktree = subprocess.run(
+                ["make", "codebase-map-commit-check"],
+                cwd=root,
+                capture_output=True,
+                text=True,
+            )
+
+            self.assertEqual(clean.returncode, 0, clean.stdout + clean.stderr)
+            self.assertNotEqual(unstaged.returncode, 0)
+            self.assertNotEqual(staged.returncode, 0)
+            self.assertEqual(head_only_check.returncode, 0)
+            self.assertNotEqual(repaired_worktree.returncode, 0)
+            self.assertIn(
+                "Generated codebase maps differ from HEAD.",
+                unstaged.stdout + unstaged.stderr,
+            )
+            self.assertIn(
+                "Generated codebase maps differ from HEAD.",
+                staged.stdout + staged.stderr,
+            )
+            self.assertIn(
+                "Generated codebase maps differ from HEAD.",
+                repaired_worktree.stdout + repaired_worktree.stderr,
+            )
 
 
 class CodebaseMapRenderSmokeTests(unittest.TestCase):

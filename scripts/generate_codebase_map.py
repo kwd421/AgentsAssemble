@@ -16,7 +16,8 @@ Outputs:
   (no build step, no network assets; open directly or serve statically).
 
 Regenerate: `make codebase-map`
-Verify: `make codebase-map-check`
+Verify committed outputs: `make codebase-map-verify`
+Check without changing the working tree: `make codebase-map-check`
 """
 from __future__ import annotations
 
@@ -54,6 +55,11 @@ except ModuleNotFoundError as error:  # pragma: no cover - direct script run
 
 JSON_RELATIVE_PATH = Path("docs/product/CODEBASE_MAP.json")
 HTML_RELATIVE_PATH = Path("docs/product/CODEBASE_MAP.html")
+HTML_DATA_RE = re.compile(
+    r'<script id="mapdata" type="application/json">(.*?)</script>',
+    re.DOTALL,
+)
+GENERATED_AT_RE = re.compile(r"\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z")
 
 # Display metadata for top-level backend groups. Descriptions come from each
 # package's own __init__.py docstring when present; these fallbacks only cover
@@ -1397,7 +1403,8 @@ def build_map(root: Path) -> dict:
     return {
         "readme": (
             "AgentsAssemble codebase map. Regenerate with "
-            "`python3 scripts/generate_codebase_map.py`. modules[] columns: "
+            "`make codebase-map`; verify committed outputs with "
+            "`make codebase-map-verify`. modules[] columns: "
             "name, path, package, domain, classification, migration_status, "
             "lines, docstring, imports[], imported_by[] (indexes into modules), "
             "classes[[name, [[base, defining_module], ...]]] (best-effort, "
@@ -2848,7 +2855,8 @@ const feByPath = Object.fromEntries(feFiles.map(f => [f.path, f]));
 
 document.getElementById("gensub").innerHTML =
   `Generated ${D.generated_at} &middot; fingerprint <code>${D.fingerprint}</code> &middot; ` +
-  `regenerate: <code>python3 scripts/generate_codebase_map.py</code> &middot; ` +
+  `regenerate: <code>make codebase-map</code> &middot; ` +
+  `verify: <code>make codebase-map-verify</code> &middot; ` +
   `machine-readable twin: <code>docs/product/CODEBASE_MAP.json</code>`;
 document.getElementById("foot").innerHTML =
   "Backend domains/classifications/migration status match " +
@@ -4049,23 +4057,35 @@ def render_html(data: dict) -> str:
     return HTML_TEMPLATE.replace("__DATA__", payload)
 
 
+def _is_valid_generation_timestamp(value: object) -> bool:
+    if not isinstance(value, str) or not GENERATED_AT_RE.fullmatch(value):
+        return False
+    try:
+        datetime.strptime(value, "%Y-%m-%dT%H:%M:%SZ")
+    except ValueError:
+        return False
+    return True
+
+
 def preserve_generation_timestamp(
     fresh: dict[str, object],
-    existing: dict[str, object] | None,
+    existing_maps: list[dict[str, object]],
 ) -> dict[str, object]:
-    """Keep generated_at stable when every generated fact is unchanged."""
-    if not existing:
-        return fresh
-    recorded_at = existing.get("generated_at")
-    if not isinstance(recorded_at, str) or not recorded_at:
-        return fresh
+    """Keep one valid timestamp shared by all current generated outputs."""
     fresh_facts = {key: value for key, value in fresh.items() if key != "generated_at"}
-    existing_facts = {
-        key: value for key, value in existing.items() if key != "generated_at"
-    }
-    if fresh_facts != existing_facts:
-        return fresh
-    return {**fresh, "generated_at": recorded_at}
+    recorded_timestamps: set[str] = set()
+    for existing in existing_maps:
+        recorded_at = existing.get("generated_at")
+        if not _is_valid_generation_timestamp(recorded_at):
+            continue
+        existing_facts = {
+            key: value for key, value in existing.items() if key != "generated_at"
+        }
+        if fresh_facts == existing_facts:
+            recorded_timestamps.add(recorded_at)
+    if len(recorded_timestamps) == 1:
+        return {**fresh, "generated_at": next(iter(recorded_timestamps))}
+    return fresh
 
 
 def generated_outputs(data: dict[str, object]) -> dict[Path, str]:
@@ -4075,12 +4095,18 @@ def generated_outputs(data: dict[str, object]) -> dict[Path, str]:
     }
 
 
+def _read_generated_output(path: Path) -> str | None:
+    try:
+        return path.read_text(encoding="utf-8")
+    except (OSError, UnicodeError):
+        return None
+
+
 def stale_generated_outputs(root: Path, outputs: dict[Path, str]) -> list[Path]:
     return [
         relative_path
         for relative_path, content in outputs.items()
-        if not (root / relative_path).exists()
-        or (root / relative_path).read_text(encoding="utf-8") != content
+        if _read_generated_output(root / relative_path) != content
     ]
 
 
@@ -4091,7 +4117,7 @@ def write_generated_outputs(
     changed_outputs: dict[Path, bool] = {}
     for relative_path, content in outputs.items():
         path = root / relative_path
-        changed = not path.exists() or path.read_text(encoding="utf-8") != content
+        changed = _read_generated_output(path) != content
         changed_outputs[relative_path] = changed
         if not changed:
             continue
@@ -4100,28 +4126,40 @@ def write_generated_outputs(
     return changed_outputs
 
 
-def load_existing_map(root: Path) -> dict[str, object] | None:
+def load_existing_maps(root: Path) -> list[dict[str, object]]:
+    existing_maps: list[dict[str, object]] = []
     try:
         existing = json.loads(
             (root / JSON_RELATIVE_PATH).read_text(encoding="utf-8")
         )
     except (OSError, ValueError):
-        return None
-    return existing if isinstance(existing, dict) else None
+        pass
+    else:
+        if isinstance(existing, dict):
+            existing_maps.append(existing)
+
+    try:
+        html = (root / HTML_RELATIVE_PATH).read_text(encoding="utf-8")
+    except (OSError, UnicodeError):
+        return existing_maps
+    match = HTML_DATA_RE.search(html)
+    if not match:
+        return existing_maps
+    try:
+        existing = json.loads(match.group(1))
+    except ValueError:
+        return existing_maps
+    if isinstance(existing, dict):
+        existing_maps.append(existing)
+    return existing_maps
 
 
 def prepare_generated_map(
-    root: Path,
     fresh: dict[str, object],
-    existing: dict[str, object] | None,
+    existing_maps: list[dict[str, object]],
 ) -> dict[str, object]:
-    """Reuse the timestamp only when the complete generated output is current."""
-    prepared = preserve_generation_timestamp(fresh, existing)
-    if prepared is fresh:
-        return fresh
-    if stale_generated_outputs(root, generated_outputs(prepared)):
-        return fresh
-    return prepared
+    """Reuse a current output's timestamp so repairs stay output-local."""
+    return preserve_generation_timestamp(fresh, existing_maps)
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -4130,7 +4168,7 @@ def main(argv: list[str] | None = None) -> int:
                         help="fail if the generated outputs are stale")
     args = parser.parse_args(argv)
     root = Path(__file__).resolve().parents[1]
-    data = prepare_generated_map(root, build_map(root), load_existing_map(root))
+    data = prepare_generated_map(build_map(root), load_existing_maps(root))
     outputs = generated_outputs(data)
     if args.check:
         stale = stale_generated_outputs(root, outputs)
