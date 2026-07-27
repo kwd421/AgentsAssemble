@@ -413,6 +413,8 @@ def _ordered_agent_session_candidates(
         for session in store.sessions(room_id)
         if clean_lobby_text(session.get("status"), limit=64) in {"attached", "available"}
         and not is_canonical_room_provider_session(session)
+        and clean_agent_session_provider_kind(session.get("provider_kind"))
+        in {"", "codex_live_session"}
     }
     candidates: list[tuple[dict[str, object], dict[str, object]]] = []
     for participant in store.active_participants(room_id):

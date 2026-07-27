@@ -250,6 +250,52 @@ class AgentSessionRoomStoreTests(unittest.TestCase):
             [event["type"] for event in store.read_events("room-a")],
         )
 
+    def test_legacy_turn_controls_reject_non_codex_session_before_starting(self):
+        store = RoomStore(self.output_root)
+        create_agent_session_payload(
+            self.output_root,
+            {
+                "room_id": "room-a",
+                "agent_id": "agent-1",
+                "display_name": "Grok",
+                "provider_kind": "grok",
+            },
+        )
+        trigger = store.append_event(
+            "room-a",
+            "message_final",
+            actor_id="human-1",
+            content="hello",
+        )
+
+        with self.assertRaisesRegex(ValueError, "only supports Codex"):
+            run_agent_session_turn_payload(
+                self.output_root,
+                {
+                    "room_id": "room-a",
+                    "agent_id": "agent-1",
+                    "session_id": "agent-1",
+                    "instruction": "wrong runtime",
+                },
+                turn_runner=lambda _packet: (),
+            )
+        with self.assertRaisesRegex(
+            ValueError,
+            "No active Agent Session participant",
+        ):
+            run_next_agent_session_turn_payload(
+                self.output_root,
+                {
+                    "room_id": "room-a",
+                    "trigger_event_id": trigger["id"],
+                },
+                turn_runner=lambda _packet: (),
+            )
+
+        event_types = [event["type"] for event in store.read_events("room-a")]
+        self.assertNotIn("turn_started", event_types)
+        self.assertNotIn("turn_queued", event_types)
+
     def test_room_message_schedules_next_agent_session_turn_without_side_instruction(self):
         store = RoomStore(self.output_root)
         create_agent_session_payload(

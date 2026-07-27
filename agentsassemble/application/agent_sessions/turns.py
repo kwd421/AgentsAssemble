@@ -29,6 +29,7 @@ from agentsassemble.providers.codex_app_server import (
     _diagnostic_items,
     _elapsed_ms,
     _now_iso,
+    clean_agent_session_provider_kind,
     clean_provider_session_id,
 )
 from agentsassemble.providers.sync_cursor import (
@@ -79,6 +80,13 @@ def run_agent_session_turn_payload(
     if clean_lobby_text(session.get("participant_id"), limit=128) != agent_id:
         raise ValueError("session does not belong to participant.")
     ensure_legacy_agent_session(session)
+    if clean_agent_session_provider_kind(session.get("provider_kind")) not in {
+        "",
+        "codex_live_session",
+    }:
+        raise ValueError(
+            "The legacy Agent Session turn path only supports Codex sessions."
+        )
 
     packet = build_room_turn_packet(
         output_root,
