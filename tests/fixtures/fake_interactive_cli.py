@@ -42,9 +42,12 @@ def main() -> int:
             text = payload.decode("utf-8", errors="replace")
             room_observation = "room.wake " in text
             visible_text = room_command("read") if room_observation else text
-            found = re.search(r"AGENTSASSEMBLE_SESSION_MARKER=([A-Za-z0-9_.-]+)", visible_text)
-            if found:
-                marker = found.group(1)
+            markers = re.findall(
+                r"AGENTSASSEMBLE_SESSION_MARKER=([A-Za-z0-9_.-]+)",
+                visible_text,
+            )
+            if markers:
+                marker = markers[-1]
             delay = re.search(r"AGENTSASSEMBLE_RESPONSE_DELAY_MS=(\d+)", visible_text)
             if delay:
                 time.sleep(min(int(delay.group(1)), 2_000) / 1_000)

@@ -347,7 +347,7 @@ test("streams on desktop and controls the same canonical session on mobile", asy
 
   await composer.fill("@fake AGENTSASSEMBLE_SESSION_MARKER=ui-e2e-paused 재개 뒤에만 답해.");
   await page.getByRole("button", { name: "채팅 메시지 보내기" }).click();
-  const resumedReply = page.getByText(/fake reply 2; marker=ui-e2e-paused/);
+  const resumedReply = page.getByText(/fake reply \d+; marker=ui-e2e-paused/);
   await page.waitForTimeout(300);
   await expect(resumedReply).toHaveCount(0);
 
