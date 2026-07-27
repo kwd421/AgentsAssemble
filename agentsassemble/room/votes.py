@@ -21,9 +21,14 @@ def vote_summary(events: list[dict[str, object]], vote_id: str) -> dict[str, obj
     poll: dict[str, object] | None = None
     latest_choice_by_voter: dict[str, tuple[str, str]] = {}  # voter key -> (choice, display name)
     for event in events:
-        if str(event.get("vote_id") or "") != clean_vote_id:
+        kind = str(event.get("kind") or event.get("message_kind") or "")
+        event_vote_id = str(
+            event.get("vote_id")
+            or (event.get("id") if kind == "vote" else "")
+            or ""
+        )
+        if event_vote_id != clean_vote_id:
             continue
-        kind = str(event.get("kind") or "")
         if kind == "vote" and poll is None:
             poll = event
             continue
@@ -37,7 +42,10 @@ def vote_summary(events: list[dict[str, object]], vote_id: str) -> dict[str, obj
         voter_key = str(event.get("actor_id") or "") or f"name:{str(event.get('name') or '')}"
         if voter_key in {"", "name:"}:
             continue
-        latest_choice_by_voter[voter_key] = (matched, str(event.get("name") or voter_key))
+        latest_choice_by_voter[voter_key] = (
+            matched,
+            str(event.get("name") or event.get("display_name") or voter_key),
+        )
     if poll is None:
         raise ValueError(f"Vote {clean_vote_id} was not found.")
 
@@ -51,7 +59,7 @@ def vote_summary(events: list[dict[str, object]], vote_id: str) -> dict[str, obj
         "vote_id": clean_vote_id,
         "question": str(poll.get("vote_question") or ""),
         "options": options,
-        "created_by": str(poll.get("name") or ""),
+        "created_by": str(poll.get("name") or poll.get("display_name") or ""),
         "created_at": str(poll.get("created_at") or ""),
         "tallies": tallies,
         "voters": voters,

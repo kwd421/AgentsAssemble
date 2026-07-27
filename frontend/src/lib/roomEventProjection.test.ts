@@ -79,6 +79,42 @@ describe("projectRoomEventsToTimeline", () => {
     expect(projectRoomEventProgress(event({ type: "message_final", turn_id: "turn-1" }))).toBeNull();
   });
 
+  it("keeps canonical vote fields on the projected poll card event", () => {
+    const timeline = projectRoomEventsToTimeline([
+      event({
+        id: "vote-1",
+        actor: { participant_id: "operator-local", participant_type: "human" },
+        content: "",
+        message_kind: "vote",
+        vote_id: "vote-1",
+        vote_question: "어느 길로 갈까?",
+        vote_options: ["북쪽", "남쪽"],
+      }),
+    ]);
+
+    expect(timeline).toEqual([
+      expect.objectContaining({
+        kind: "vote",
+        vote_id: "vote-1",
+        vote_question: "어느 길로 갈까?",
+        vote_options: ["북쪽", "남쪽"],
+      }),
+    ]);
+  });
+
+  it("keeps provider failures out of the public conversation timeline", () => {
+    expect(
+      projectRoomEventsToTimeline([
+        event({
+          id: "error-1",
+          type: "error",
+          content: "provider transport failed",
+        }),
+      ])
+    ).toEqual([]);
+    expect(projectRoomEventProgress(event({ type: "error" }))).toBeNull();
+  });
+
   it("renders provider-visible thinking as a collapsible timeline step", () => {
     const timeline = projectRoomEventsToTimeline(
       [

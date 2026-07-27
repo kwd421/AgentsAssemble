@@ -331,7 +331,7 @@ export function useCanonicalRoom(options: UseCanonicalRoomOptions) {
         hasMoreBefore = Boolean(page.has_more_before);
         if (!page.events.length || oldestSeq >= cursor) break;
         cursor = oldestSeq;
-        if (page.events.some((event) => event.type === "message_final" || event.type === "error")) {
+        if (page.events.some((event) => event.type === "message_final")) {
           break;
         }
       }
@@ -348,9 +348,7 @@ export function useCanonicalRoom(options: UseCanonicalRoomOptions) {
           resumeGap: false,
         },
       }));
-      const visibleCount = events.filter(
-        (event) => event.type === "message_final" || event.type === "error"
-      ).length;
+      const visibleCount = events.filter((event) => event.type === "message_final").length;
       return {
         loadedCount: visibleCount,
         oldestSeq,

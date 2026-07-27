@@ -3,11 +3,24 @@ export type MentionQuery = {
   query: string;
 };
 
+export type Mentionable = {
+  token: string;
+  label: string;
+};
+
+type MentionableInput = Mentionable | string;
+
 function cleanMentionName(name: string) {
   return name
     .replace(/[\r\n<>]/g, " ")
     .replace(/\s+/g, " ")
     .trim();
+}
+
+function normalizedMentionable(value: MentionableInput): Mentionable | null {
+  const token = cleanMentionName(typeof value === "string" ? value : value.token);
+  const label = cleanMentionName(typeof value === "string" ? value : value.label) || token;
+  return token ? { token, label } : null;
 }
 
 export function mentionQueryAtCursor(message: string, cursor = message.length): MentionQuery | null {
@@ -22,37 +35,38 @@ export function mentionQueryAtCursor(message: string, cursor = message.length): 
 }
 
 export function mentionOptions(
-  mentionables: string[],
+  mentionables: MentionableInput[],
   query: MentionQuery | null,
   limit = 6
-): string[] {
+): Mentionable[] {
   if (!query) return [];
   const seen = new Set<string>();
-  const options: string[] = [];
-  for (const rawName of mentionables) {
-    const name = cleanMentionName(rawName);
-    if (!name) continue;
-    const key = name.toLowerCase();
-    if (seen.has(key) || !key.includes(query.query)) continue;
+  const options: Mentionable[] = [];
+  for (const rawMentionable of mentionables) {
+    const mentionable = normalizedMentionable(rawMentionable);
+    if (!mentionable) continue;
+    const key = mentionable.token.toLowerCase();
+    const searchable = `${mentionable.label}\n${mentionable.token}`.toLowerCase();
+    if (seen.has(key) || !searchable.includes(query.query)) continue;
     seen.add(key);
-    options.push(name);
+    options.push(mentionable);
     if (options.length >= limit) break;
   }
   return options;
 }
 
-export function formatMentionToken(name: string): string {
-  const cleanName = cleanMentionName(name);
-  if (!cleanName) return "@";
-  if (/\s/u.test(cleanName)) return `<@${cleanName}>`;
-  return `@${cleanName}`;
+export function formatMentionToken(value: MentionableInput): string {
+  const mentionable = normalizedMentionable(value);
+  if (!mentionable) return "@";
+  if (/\s/u.test(mentionable.token)) return `<@${mentionable.token}>`;
+  return `@${mentionable.token}`;
 }
 
 export function insertMentionText(
   message: string,
   cursor: number,
   query: MentionQuery | null,
-  name: string
+  mentionable: MentionableInput
 ): { message: string; cursor: number } {
   const safeCursor = Math.max(0, Math.min(cursor, message.length));
   if (!query) {
@@ -61,7 +75,7 @@ export function insertMentionText(
       cursor: safeCursor,
     };
   }
-  const token = `${formatMentionToken(name)} `;
+  const token = `${formatMentionToken(mentionable)} `;
   const start = Math.max(0, Math.min(query.start, safeCursor));
   const nextMessage = `${message.slice(0, start)}${token}${message.slice(safeCursor)}`;
   return {

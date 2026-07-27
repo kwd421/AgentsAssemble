@@ -1,10 +1,6 @@
 import { useCallback, useEffect, useState } from "react";
 import { BarChart3, RefreshCw } from "lucide-react";
 import {
-  fetchLobbyVote,
-  fetchRoomVote,
-  postLobbyMessage,
-  postRoomSay,
   type LobbyEvent,
   type VoteSummary,
 } from "../../api";
@@ -12,16 +8,14 @@ import { useRoomSocket } from "../../RoomSocketContext";
 
 export default function VotePollCard({
   event,
-  meetingId,
-  roomSessionToken = "",
   voterName,
   canVote = true,
+  revision = "",
 }: {
   event: LobbyEvent;
-  meetingId: string;
-  roomSessionToken?: string;
   voterName: string;
   canVote?: boolean;
+  revision?: string;
 }) {
   const roomSocket = useRoomSocket();
   const voteId = event.vote_id || event.id;
@@ -30,18 +24,20 @@ export default function VotePollCard({
   const [error, setError] = useState("");
 
   const refresh = useCallback(() => {
-    const request = roomSessionToken
-      ? fetchRoomVote(roomSessionToken, voteId)
-      : fetchLobbyVote(meetingId, voteId);
-    request
-      .then((payload) => {
-        setSummary(payload);
+    if (!roomSocket?.ready()) {
+      setError("방 연결이 준비되지 않았습니다.");
+      return;
+    }
+    void roomSocket
+      .command("room.vote.summary", { vote_id: voteId })
+      .then((ack) => {
+        setSummary((ack.result || null) as VoteSummary | null);
         setError("");
       })
       .catch((errorValue) => {
         setError(errorValue instanceof Error ? errorValue.message : "투표 현황을 불러오지 못했습니다.");
       });
-  }, [meetingId, roomSessionToken, voteId]);
+  }, [revision, roomSocket, voteId]);
 
   useEffect(() => {
     refresh();
@@ -52,32 +48,13 @@ export default function VotePollCard({
     setBusyOption(option);
     setError("");
     try {
-      if (roomSocket?.ready()) {
-        await roomSocket.say({
-          message: "",
-          kind: "vote_cast",
-          voteId,
-          voteChoice: option,
-        });
-      } else if (roomSessionToken) {
-        await postRoomSay({
-          sessionToken: roomSessionToken,
-          message: "",
-          kind: "vote_cast",
-          voteId,
-          voteChoice: option,
-        });
-      } else {
-        await postLobbyMessage({
-          name: voterName,
-          side: "mine",
-          kind: "vote_cast",
-          message: "",
-          meetingId,
-          voteId,
-          voteChoice: option,
-        });
-      }
+      if (!roomSocket?.ready()) throw new Error("방 연결이 준비되지 않았습니다.");
+      await roomSocket.say({
+        message: "",
+        kind: "vote_cast",
+        voteId,
+        voteChoice: option,
+      });
       refresh();
     } catch (errorValue) {
       setError(errorValue instanceof Error ? errorValue.message : "투표 실패");

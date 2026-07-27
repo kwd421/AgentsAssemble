@@ -102,6 +102,20 @@ export function useLobbyHistory({
     events,
     usesCanonicalHistory,
   ]);
+  const voteRevisions = useMemo(() => {
+    const revisions: Record<string, string> = {};
+    events.forEach((event) => {
+      if (
+        event.kind !== "vote_cast" ||
+        !event.vote_id ||
+        (event.flow_meeting_id && event.flow_meeting_id !== activeRoom.meetingId)
+      ) {
+        return;
+      }
+      revisions[event.vote_id] = `${revisions[event.vote_id] || ""}|${event.id}`;
+    });
+    return revisions;
+  }, [activeRoom.meetingId, events]);
 
   const updatePinnedToLatest = useCallback((nextPinned: boolean) => {
     pinnedToLatestRef.current = nextPinned;
@@ -338,6 +352,7 @@ export function useLobbyHistory({
     pinnedToLatest,
     scrollRef,
     scrollToLatest,
+    voteRevisions,
     visibleEvents,
   };
 }

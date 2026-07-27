@@ -7,6 +7,7 @@ from agentsassemble.room.text import clean_room_text as clean_lobby_text
 ROOM_COMMAND_ACTIONS = frozenset(
     {
         "room.history",
+        "room.vote.summary",
         "room.delete",
         "message.send",
         "agent.create",
@@ -66,6 +67,7 @@ def capabilities_for_identity(identity: dict[str, object]) -> dict[str, bool]:
     read_write = str(identity.get("invite_scope") or "read_write") != "read_only"
     return {
         "room.history": not bridge,
+        "room.vote.summary": not bridge,
         "message.send": read_write and not bridge,
         "room.manage": operator,
         "room.delete": operator,

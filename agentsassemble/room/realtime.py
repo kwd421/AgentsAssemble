@@ -101,6 +101,7 @@ from agentsassemble.room.turn_coordinator import RoomTurnCoordinator
 from agentsassemble.room.turn_context import build_room_turn_packet
 from agentsassemble.room.text import clean_room_text as clean_lobby_text
 from agentsassemble.room.types import RoomCommand, RoomEvent
+from agentsassemble.room.votes import vote_summary
 from agentsassemble.room.voice_presence import leave_all_voice
 
 AGENT_RUNTIME_PROFILE_KEYS = frozenset(
@@ -613,6 +614,30 @@ class RoomRealtimeController:
                     maximum=ROOM_HISTORY_MAX_LIMIT,
                 ),
             )
+            return {
+                "op": "ack",
+                "request_id": request_id,
+                "accepted": True,
+                "action": action,
+                "result": result,
+                "deduplicated": False,
+            }
+        if action == "room.vote.summary":
+            if identity.get("client_type") == "agent_bridge":
+                raise RoomCommandRejected(
+                    "Agent Bridges read votes through their assigned room view.",
+                    code="permission_denied",
+                )
+            try:
+                result = vote_summary(
+                    self.store.read_events(room_id),
+                    clean_lobby_text(payload.get("vote_id"), limit=128),
+                )
+            except ValueError as error:
+                raise RoomCommandRejected(
+                    str(error),
+                    code="vote_not_found",
+                ) from error
             return {
                 "op": "ack",
                 "request_id": request_id,

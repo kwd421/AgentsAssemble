@@ -1,5 +1,9 @@
 import { describe, expect, it } from "vitest";
-import { mentionOptions, mentionQueryAtCursor } from "./mentionComposerModel";
+import {
+  insertMentionText,
+  mentionOptions,
+  mentionQueryAtCursor,
+} from "./mentionComposerModel";
 import { roomMentionables } from "./roomMentionables";
 
 describe("roomMentionables", () => {
@@ -24,10 +28,21 @@ describe("roomMentionables", () => {
         ],
       });
 
-    expect(mentionables).toEqual(["나", "Luna — 플레이어"]);
+    expect(mentionables).toEqual([
+      { token: "나", label: "나" },
+      {
+        token: "Luna",
+        label: "Luna — 플레이어",
+      },
+    ]);
     expect(
       mentionOptions(mentionables, mentionQueryAtCursor("@luna"))
-    ).toEqual(["Luna — 플레이어"]);
+    ).toEqual([
+      {
+        token: "Luna",
+        label: "Luna — 플레이어",
+      },
+    ]);
   });
 
   it("falls back to ids when names are absent or collide", () => {
@@ -41,6 +56,35 @@ describe("roomMentionables", () => {
         ],
         members: [],
       })
-    ).toEqual(["나", "동일 이름", "bravo", "charlie"]);
+    ).toEqual([
+      { token: "나", label: "나" },
+      { token: "alpha", label: "동일 이름 · alpha" },
+      { token: "bravo", label: "동일 이름 · bravo" },
+      { token: "charlie", label: "charlie" },
+    ]);
+  });
+
+  it("inserts the unique participant id even when the visible label contains spaces", () => {
+    const mentionable = roomMentionables({
+      viewerParticipantId: "host",
+      agents: [{ agent_id: "sol-dm", display_name: "Sol — 던전 마스터" }],
+      members: [],
+    })[1];
+
+    expect(mentionable).toEqual({
+      token: "Sol",
+      label: "Sol — 던전 마스터",
+    });
+    expect(
+      insertMentionText(
+        "@sol",
+        4,
+        mentionQueryAtCursor("@sol"),
+        mentionable
+      )
+    ).toEqual({
+      message: "@Sol ",
+      cursor: 5,
+    });
   });
 });

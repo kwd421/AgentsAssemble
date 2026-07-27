@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import { AtSign, ChevronLeft, MessageSquare, Send, Smile, X } from "lucide-react";
 import { postSideChatMessage, type SideChatEvent } from "../../api";
 import type { SideChatThreadContext } from "../../lib/sideChatThreadModel";
+import type { Mentionable } from "../../lib/mentionComposerModel";
 import DiscordText from "./DiscordText";
 import MentionInput from "./MentionInput";
 
@@ -50,7 +51,7 @@ export default function SideChatDock({
   events: SideChatEvent[];
   error: Error | null;
   onPosted: (events: SideChatEvent[]) => void;
-  mentionables?: string[];
+  mentionables?: Mentionable[];
   threadContext?: SideChatThreadContext | null;
   onCloseThread?: () => void;
   canPostMessages?: boolean;

@@ -120,7 +120,7 @@ export function projectRoomEventsToTimeline(
         avatar_image_url: speaker.avatarImageUrl || undefined,
         provider_kind: speaker.providerKind || undefined,
         side: speaker.side,
-        kind: "message",
+        kind: String(event.message_kind || existing?.kind || "message"),
         message,
         actor_id: eventActor.id,
         actor_type: eventActor.type,
@@ -128,6 +128,13 @@ export function projectRoomEventsToTimeline(
         flow_action: event.type,
         flow_meeting_id: event.room_id,
         flow_id: key,
+        target_agent_id: String(event.target_agent_id || existing?.target_agent_id || "") || undefined,
+        vote_id: String(event.vote_id || existing?.vote_id || "") || undefined,
+        vote_question: String(event.vote_question || existing?.vote_question || "") || undefined,
+        vote_options: Array.isArray(event.vote_options)
+          ? event.vote_options.map(String)
+          : existing?.vote_options,
+        vote_choice: String(event.vote_choice || existing?.vote_choice || "") || undefined,
         attachments: Array.isArray(event.attachments)
           ? event.attachments
           : existing?.attachments,
@@ -144,26 +151,7 @@ export function projectRoomEventsToTimeline(
     if (["turn_started", "turn_state", "turn_finished", "agent_session_state"].includes(event.type)) {
       return;
     }
-    if (event.type !== "error") return;
-    const errorKey = `${key}:error`;
-    if (turnIndex.has(errorKey)) return;
-    turnIndex.set(errorKey, timeline.length);
-    timeline.push({
-      id: errorKey,
-      created_at: event.created_at,
-      name: speaker.name,
-      avatar_image_url: speaker.avatarImageUrl || undefined,
-      provider_kind: speaker.providerKind || undefined,
-      side: speaker.side,
-      kind: "system",
-      message: String(event.content || "Turn failed."),
-      actor_id: eventActor.id,
-      actor_type: eventActor.type,
-      flow_event_type: "agent_session_turn",
-      flow_action: event.type,
-      flow_meeting_id: event.room_id,
-      flow_id: key,
-    });
+    return;
   });
 
   return timeline;

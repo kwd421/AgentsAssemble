@@ -41,8 +41,10 @@ class RoomCommandPolicyTests(unittest.TestCase):
         self.assertTrue(operator["message.send"])
         self.assertFalse(read_only["message.send"])
         self.assertTrue(read_only["room.history"])
+        self.assertTrue(read_only["room.vote.summary"])
         self.assertTrue(bridge["bridge.report"])
         self.assertFalse(bridge["room.history"])
+        self.assertFalse(bridge["room.vote.summary"])
 
 
 if __name__ == "__main__":

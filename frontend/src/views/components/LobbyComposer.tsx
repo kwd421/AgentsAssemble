@@ -2,8 +2,6 @@ import { useRef, useState, type ChangeEvent, type KeyboardEvent } from "react";
 import type { LucideIcon } from "lucide-react";
 import { AtSign, Gift, Paperclip, Send, Smile, Sparkles, Sticker, X } from "lucide-react";
 import {
-  postLobbyMessage,
-  postRoomSay,
   uploadLobbyAttachment,
   type LobbyAttachmentRef,
   type LobbyEvent,
@@ -19,6 +17,7 @@ import {
 } from "../../lib/lobbyComposerModel";
 import { isUnauthorizedApiError } from "../../lib/apiErrors";
 import type { RoomPostingMode } from "../../lib/roomGuestPosting";
+import type { Mentionable } from "../../lib/mentionComposerModel";
 import { parseVoteCommand } from "../../lib/votePoll";
 import MentionInput from "./MentionInput";
 
@@ -65,14 +64,6 @@ const COMPOSER_ACCESSORIES: ComposerAccessory[] = [
   },
 ];
 
-function currentLobbyName() {
-  try {
-    return window.localStorage.getItem("agentsassemble.name") || "나";
-  } catch {
-    return "나";
-  }
-}
-
 export default function LobbyComposer({
   meetingId,
   onPosted,
@@ -86,7 +77,7 @@ export default function LobbyComposer({
   meetingId: string;
   onPosted: (events: LobbyEvent[]) => void;
   submitMessage?: (message: string) => Promise<LobbyEvent[]>;
-  mentionables?: string[];
+  mentionables?: Mentionable[];
   disabledReason?: string;
   roomSessionToken?: string;
   postingMode?: RoomPostingMode;
@@ -190,21 +181,12 @@ export default function LobbyComposer({
           ? { events: await submitMessage(sayRequest.message) }
           : roomSocket?.ready()
             ? await roomSocket.say(sayRequest)
-            : postingMode === "guest"
-              ? await postRoomSay({
-                  sessionToken: roomSessionToken,
-                  ...sayRequest,
-                })
-              : await postLobbyMessage({
-                  name: currentLobbyName(),
-                  side: "mine",
-                  kind: sayRequest.kind,
-                  message: sayRequest.message,
-                  attachments: sayRequest.attachments,
-                  meetingId,
-                  voteQuestion: sayRequest.voteQuestion,
-                  voteOptions: sayRequest.voteOptions,
-                });
+            : await Promise.reject(
+                new RoomSocketSayError(
+                  "방 연결이 준비되지 않았습니다. 연결된 뒤 다시 보내 주세요.",
+                  "socket_not_ready"
+                )
+              );
       const cleared = lobbySubmitSuccessDraft<LobbyAttachmentRef>();
       setMessage(cleared.message);
       setPendingAttachments(cleared.pendingAttachments);

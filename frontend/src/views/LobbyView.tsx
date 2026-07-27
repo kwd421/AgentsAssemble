@@ -13,6 +13,7 @@ import type { RoomAppearance } from "../lib/roomAppearance";
 import type { LobbyThreadSummary } from "../lib/sideChatThreadModel";
 import type { RoomPostingMode } from "../lib/roomGuestPosting";
 import type { RoomTypingIndicator } from "../lib/roomTypingIndicators";
+import type { Mentionable } from "../lib/mentionComposerModel";
 import { buildLobbyRows } from "./lobby/lobbyRows";
 import {
   LobbyMessageRow,
@@ -51,7 +52,7 @@ export default function LobbyView({
   activeRoom: RoomDockItem;
   agents: LiveAgent[];
   typingIndicators?: RoomTypingIndicator[];
-  mentionables?: string[];
+  mentionables?: Mentionable[];
   canManageRoom?: boolean;
   canPostMessages?: boolean;
   postingMode?: RoomPostingMode;
@@ -95,6 +96,7 @@ export default function LobbyView({
     pinnedToLatest,
     scrollRef,
     scrollToLatest,
+    voteRevisions,
     visibleEvents,
   } = useLobbyHistory({
     activeRoom,
@@ -112,7 +114,13 @@ export default function LobbyView({
     () =>
       roomMentionables?.length
         ? roomMentionables
-        : ["나", ...agents.map((agent) => agent.display_name || agent.agent_id).filter(Boolean)],
+        : [
+            { token: "나", label: "나" },
+            ...agents.map((agent) => ({
+              token: agent.agent_id,
+              label: agent.display_name || agent.agent_id,
+            })),
+          ],
     [agents, roomMentionables]
   );
   const providerKindByParticipant = useMemo(
@@ -258,10 +266,9 @@ export default function LobbyView({
                   event.kind === "vote" ? (
                     <VotePollCard
                       event={event}
-                      meetingId={activeRoom.meetingId}
-                      roomSessionToken={roomSessionToken}
                       voterName={voterName}
                       canVote={canPostMessages}
+                      revision={voteRevisions[event.vote_id || event.id] || ""}
                     />
                   ) : undefined
                 }

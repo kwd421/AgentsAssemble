@@ -587,6 +587,38 @@ class RoomRealtimeControllerTests(unittest.TestCase):
         self.assertEqual(messages[0]["actor"]["participant_id"], "operator-local")
         self.assertEqual(messages[0]["content"], "@codex hello")
 
+    def test_canonical_vote_summary_reads_poll_and_ballots_from_room_events(self):
+        poll = self._command(
+            "vote-poll",
+            "message.send",
+            {
+                "content": "",
+                "kind": "vote",
+                "vote_question": "어느 길로 갈까?",
+                "vote_options": ["북쪽", "남쪽"],
+            },
+        )["result"]["event"]
+        self._command(
+            "vote-cast",
+            "message.send",
+            {
+                "content": "",
+                "kind": "vote_cast",
+                "vote_id": poll["id"],
+                "vote_choice": "2",
+            },
+        )
+
+        summary = self._command(
+            "vote-summary",
+            "room.vote.summary",
+            {"vote_id": poll["id"]},
+        )
+
+        self.assertEqual(summary["result"]["question"], "어느 길로 갈까?")
+        self.assertEqual(summary["result"]["tallies"], {"북쪽": 0, "남쪽": 1})
+        self.assertEqual(summary["result"]["total_votes"], 1)
+
     def test_message_command_rolls_back_event_and_routing_when_ack_record_fails(self):
         with patch.object(
             RoomCommandUnitOfWork,

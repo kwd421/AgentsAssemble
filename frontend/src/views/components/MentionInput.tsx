@@ -12,12 +12,13 @@ import {
   insertMentionText,
   mentionOptions,
   mentionQueryAtCursor,
+  type Mentionable,
 } from "../../lib/mentionComposerModel";
 
 type MentionInputProps = {
   value: string;
   onChange: (value: string) => void;
-  mentionables?: string[];
+  mentionables?: Mentionable[];
   inputRef?: RefObject<HTMLTextAreaElement | null>;
   onKeyDown?: (event: KeyboardEvent<HTMLTextAreaElement>) => void;
   className?: string;
@@ -80,10 +81,10 @@ export default function MentionInput({
     setMentionCursor(targetRef.current?.selectionStart ?? value.length);
   }
 
-  function chooseMention(name: string) {
+  function chooseMention(mentionable: Mentionable) {
     const cursor = targetRef.current?.selectionStart ?? value.length;
     const query = mentionQueryAtCursor(value, cursor);
-    const next = insertMentionText(value, cursor, query, name);
+    const next = insertMentionText(value, cursor, query, mentionable);
     setDismissedMentionKey("");
     setSuppressMentionSuggestions(true);
     setMentionCursor(next.cursor);
@@ -122,7 +123,8 @@ export default function MentionInput({
 
     if (event.key === "Enter" || event.key === "Tab") {
       event.preventDefault();
-      chooseMention(options[activeOptionIndex] || options[0]);
+      const option = options[activeOptionIndex] || options[0];
+      if (option) chooseMention(option);
       return;
     }
 
@@ -144,19 +146,19 @@ export default function MentionInput({
           role="listbox"
           aria-label="멘션 후보"
         >
-          {options.map((name, index) => (
+          {options.map((option, index) => (
             <button
-              key={name}
+              key={option.token}
               id={`${mentionListId}-option-${index}`}
               type="button"
               onMouseDown={(event) => event.preventDefault()}
               onMouseEnter={() => setActiveOptionIndex(index)}
-              onClick={() => chooseMention(name)}
+              onClick={() => chooseMention(option)}
               role="option"
               aria-selected={index === activeOptionIndex}
             >
               <span className="dc-mention-avatar">@</span>
-              <span>{name}</span>
+              <span>{option.label}</span>
             </button>
           ))}
         </div>

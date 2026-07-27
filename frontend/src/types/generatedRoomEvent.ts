@@ -35,6 +35,12 @@ export interface RoomEvent {
   avatar_image_url?: string;
   provider_kind?: string;
   content?: string;
+  message_kind?: string;
+  target_agent_id?: string;
+  vote_id?: string;
+  vote_question?: string;
+  vote_options?: string[];
+  vote_choice?: string;
   visibility?: string;
   phase?: string;
   status?: string;
