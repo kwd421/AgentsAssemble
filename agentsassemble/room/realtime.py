@@ -14,6 +14,10 @@ from agentsassemble.providers.launch_specs import (
     default_native_cli_provider_specs,
     validate_native_cli_provider_spec,
 )
+from agentsassemble.providers.runtime_contracts import (
+    AMBIENT_OBSERVATION,
+    ORDERED_FLOOR,
+)
 from agentsassemble.providers.capabilities import (
     PROVIDER_CAPABILITIES,
     ValidatedProviderSelection,
@@ -1450,6 +1454,7 @@ class RoomRealtimeController:
                 event,
                 relay_depth=0,
                 input_mode="room_observation",
+                observation_kind=ORDERED_FLOOR,
             )
 
     def _recent_agent_message_counts(
@@ -1498,6 +1503,7 @@ class RoomRealtimeController:
                     event,
                     relay_depth=0,
                     input_mode="room_observation",
+                    observation_kind=AMBIENT_OBSERVATION,
                 )
             except Exception as error:
                 self._attention_active_error_count += 1

@@ -2,7 +2,7 @@
 
 Status: current contract; ordered and ambient room-observation routing active
 
-Updated: 2026-07-25
+Updated: 2026-07-28
 
 Read this document when changing autonomous participation, room observation,
 speaker selection, follow-up timers, or provider wake behavior.
@@ -59,6 +59,20 @@ creates the next room diff and therefore the next one-speaker selection.
 If a new human message arrives while that provider is still working, its chosen
 next observer is queued. The room does not dispatch a second observation until
 the active turn finishes.
+
+Every `room.wake` carries a structural `observation_kind`:
+`ordered_floor` for that selected ordered observation, or
+`ambient_observation` for a discretionary ambient event or idle check. This
+kind is recorded with each pending event when it is queued and survives later
+conversation-mode changes; assignment must not reinterpret queued work from
+the room's current mode. The field conveys routing provenance only. It neither
+injects room content nor directs the provider's behavior or answer. An
+`ordered_floor` provider still reads the room and may publish or decline.
+For bridge-version compatibility, a wake from an older server that omits the
+field is treated conservatively as `ambient_observation`; an explicit unknown
+value is rejected. Likewise, older persisted pending work with no recorded
+kind is restored as ambient provenance. Neither compatibility rule may invent
+an ordered floor.
 
 ## Independent Cursors
 

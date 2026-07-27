@@ -321,7 +321,7 @@ export default function AgentSessionControls({
               Agent Session resume first attaches canonical room state. Process execution is reported separately.
             </p>
             <p className="dc-member-detail-note preserve-words">
-              Normal room participation is ordered and turn-based. Unsupported loops stay internal.
+              Normal room participation follows the room conversation mode. Unsupported loops stay internal.
             </p>
             <p className="dc-member-session-status preserve-words">
               state: attached · sandbox: {agent.sandbox_enforcement || "unknown"}

@@ -377,7 +377,10 @@ class RoomAgentBridge:
             return
         turn_id = wake.turn_id
         provider_input = self._with_initial_orientation(
-            f"{room_wake_orientation(self._provider_kind())}\n\nroom.wake {turn_id}"
+            (
+                f"{room_wake_orientation(self._provider_kind(), observation_kind=wake.observation_kind)}"
+                f"\n\nroom.wake {turn_id}"
+            )
         )
         started = time.monotonic()
         input_started_at = _now()

@@ -84,13 +84,37 @@ class LostFirstResultAckClient(FakeClient):
 
 class RoomWakeOrientationTests(unittest.TestCase):
     def test_terminal_room_publication_explains_shell_safe_prose(self):
-        orientation = room_wake_orientation("antigravity_live_session")
+        orientation = room_wake_orientation(
+            "antigravity_live_session",
+            observation_kind="ambient_observation",
+        )
 
         self.assertIn('agentsassemble-room speak "<message>"', orientation)
         self.assertIn("already on `PATH`", orientation)
         self.assertIn("do not try to locate", orientation)
         self.assertIn("Unicode quotation marks", orientation)
         self.assertIn('do not use ASCII `"`, `$`, or', orientation)
+
+    def test_room_wake_distinguishes_floor_selection_without_action_directives(self):
+        ordered = room_wake_orientation(
+            "antigravity_live_session",
+            observation_kind="ordered_floor",
+        )
+        ambient = room_wake_orientation(
+            "antigravity_live_session",
+            observation_kind="ambient_observation",
+        )
+
+        self.assertIn("Queue provenance: ordered selection", ordered)
+        self.assertIn("selected for this event when it was queued", ordered)
+        self.assertNotIn("holds the room's single ordered floor", ordered)
+        self.assertNotIn("Queue provenance: ordered selection", ambient)
+        self.assertIn("Queue provenance: shared ambient observation", ambient)
+        self.assertIn("Other eligible sessions", ambient)
+        for orientation in (ordered, ambient):
+            self.assertNotIn("You must speak", orientation)
+            self.assertNotIn("You must reply", orientation)
+            self.assertNotIn("Respond to", orientation)
 
 
 class FakeRuntime:
@@ -606,6 +630,11 @@ class RoomAgentBridgeTests(unittest.TestCase):
                                 "source_event_id": event_id,
                                 "input_up_to_seq": seq,
                                 "attachment_ids": [],
+                                "observation_kind": (
+                                    "ordered_floor"
+                                    if turn_id == "wake-1"
+                                    else "ambient_observation"
+                                ),
                                 "publication_mode": "explicit_room_portal",
                                 "timeout_seconds": 2,
                             },
@@ -645,6 +674,13 @@ class RoomAgentBridgeTests(unittest.TestCase):
         self.assertTrue(runtime.sent[1].endswith("room.wake wake-2"))
         self.assertIn("Current turn contract: room wake", runtime.sent[0])
         self.assertIn("Current turn contract: room wake", runtime.sent[1])
+        self.assertIn("Queue provenance: ordered selection", runtime.sent[0])
+        self.assertIn("selected for this event when it was queued", runtime.sent[0])
+        self.assertNotIn("holds the room's single ordered floor", runtime.sent[0])
+        self.assertNotIn("Queue provenance: shared ambient observation", runtime.sent[0])
+        self.assertIn("Queue provenance: shared ambient observation", runtime.sent[1])
+        self.assertIn("Other eligible sessions", runtime.sent[1])
+        self.assertNotIn("Queue provenance: ordered selection", runtime.sent[1])
         self.assertNotIn("automatic final", runtime.sent[0])
         self.assertNotIn("automatic final", runtime.sent[1])
         result_commands = [
@@ -758,6 +794,7 @@ class RoomAgentBridgeTests(unittest.TestCase):
                             "turn_id": "wake-failing-output",
                             "input_up_to_seq": 0,
                             "attachment_ids": [],
+                            "observation_kind": "ambient_observation",
                             "publication_mode": "explicit_room_portal",
                             "timeout_seconds": 2,
                         }
@@ -836,6 +873,7 @@ class RoomAgentBridgeTests(unittest.TestCase):
                         input_up_to_seq=0,
                         timeout_seconds=2,
                         attachment_ids=(),
+                        observation_kind="ambient_observation",
                         publication_mode="explicit_room_portal",
                     )
                 )
@@ -905,6 +943,7 @@ class RoomAgentBridgeTests(unittest.TestCase):
                             "turn_id": "wake-bounded-results",
                             "input_up_to_seq": 0,
                             "attachment_ids": [],
+                            "observation_kind": "ambient_observation",
                             "publication_mode": "explicit_room_portal",
                             "timeout_seconds": 2,
                         }
@@ -984,6 +1023,7 @@ class RoomAgentBridgeTests(unittest.TestCase):
                         "turn_id": "wake-lost-ack",
                         "input_up_to_seq": 0,
                         "attachment_ids": [],
+                        "observation_kind": "ambient_observation",
                         "publication_mode": "explicit_room_portal",
                         "timeout_seconds": 2,
                     }
@@ -1054,6 +1094,7 @@ class RoomAgentBridgeTests(unittest.TestCase):
                             "turn_id": turn_id,
                             "input_up_to_seq": input_up_to_seq,
                             "attachment_ids": [],
+                            "observation_kind": "ambient_observation",
                             "publication_mode": "explicit_room_portal",
                             "timeout_seconds": 2,
                         }

@@ -1710,6 +1710,7 @@ class RoomRealtimeControllerTests(unittest.TestCase):
         self.assertEqual(len(wakes), 1)
         selected_agent_id, first_wake = wakes[0]
         self.assertEqual(first_wake["source_event_id"], source["id"])
+        self.assertEqual(first_wake["observation_kind"], "ordered_floor")
         self.assertNotIn("provider_input", first_wake)
         self.assertEqual(
             self.controller.store.session("general", selected_agent_id)["provider_input_mode"],
@@ -1762,6 +1763,7 @@ class RoomRealtimeControllerTests(unittest.TestCase):
             message for message in peer_channel.drain() if message.get("op") == "room.wake"
         )
         self.assertEqual(wake["source_event_id"], source["id"])
+        self.assertEqual(wake["observation_kind"], "ordered_floor")
         self.assertFalse(
             any(message.get("op") == "room.wake" for message in codex_channel.drain())
         )
@@ -1973,6 +1975,7 @@ class RoomRealtimeControllerTests(unittest.TestCase):
             message for message in codex_channel.drain() if message.get("op") == "room.wake"
         )
         self.assertEqual(retry_wake["source_event_id"], original["id"])
+        self.assertEqual(retry_wake["observation_kind"], "ordered_floor")
         self.assertEqual(
             self.controller.store.session("general", "codex")["runtime_status"],
             "busy",
@@ -2014,6 +2017,7 @@ class RoomRealtimeControllerTests(unittest.TestCase):
         )
         self.assertEqual(changed["result"]["room_settings"]["conversation_mode"], "ambient")
         self.assertEqual(peer_wake["source_event_id"], queued["id"])
+        self.assertEqual(peer_wake["observation_kind"], "ordered_floor")
         self.assertEqual(
             self.controller.store.session("general", "codex")["active_turn_id"],
             codex_wake["turn_id"],
@@ -2219,6 +2223,8 @@ class RoomRealtimeControllerTests(unittest.TestCase):
         self.assertNotIn("provider_input", peer_wake)
         self.assertEqual(codex_wake["source_event_id"], source["id"])
         self.assertEqual(peer_wake["source_event_id"], source["id"])
+        self.assertEqual(codex_wake["observation_kind"], "ambient_observation")
+        self.assertEqual(peer_wake["observation_kind"], "ambient_observation")
         self.assertEqual(self.controller.store.attention_jobs("general", mode="active"), [])
 
         self._command(
@@ -2247,6 +2253,7 @@ class RoomRealtimeControllerTests(unittest.TestCase):
             if message.get("op") == "room.wake"
         )
         self.assertEqual(codex_followup["source_event_id"], peer_final["id"])
+        self.assertEqual(codex_followup["observation_kind"], "ambient_observation")
         self.assertFalse(
             any(message.get("op") == "room.wake" for message in peer_channel.drain())
         )
@@ -2290,8 +2297,8 @@ class RoomRealtimeControllerTests(unittest.TestCase):
         self.assertLess(after["last_provider_sync_seq"], source["seq"])
         self.assertEqual(after["runtime_status"], "error")
 
-    def test_pending_observation_is_retained_when_leaving_ambient_for_ordered(self):
-        _identity, channel = self._connect_bridge("codex")
+    def test_pending_observation_kinds_preserve_fifo_across_mode_changes(self):
+        identity, channel = self._connect_bridge("codex")
         channel.drain()
         self.controller.store.update_session_fields(
             "general",
@@ -2316,6 +2323,19 @@ class RoomRealtimeControllerTests(unittest.TestCase):
             "message.send",
             {"content": "ordered에서 새로 들어온 메시지"},
         )["result"]["event"]
+        self.controller.store.update_room_settings(
+            "general",
+            {"conversation_mode": "ambient"},
+        )
+        later_ambient_source = self._command(
+            "pending-later-ambient-source",
+            "message.send",
+            {"content": "ambient로 돌아온 뒤 들어온 메시지"},
+        )["result"]["event"]
+        self.controller.store.update_room_settings(
+            "general",
+            {"conversation_mode": "ordered"},
+        )
         self.controller.store.update_session_fields(
             "general",
             "codex",
@@ -2323,12 +2343,107 @@ class RoomRealtimeControllerTests(unittest.TestCase):
         )
 
         self.assertTrue(self.controller._turn_coordinator.assign_pending("general", "codex"))
-        assignment = next(
+        ambient_assignment = next(
             message for message in channel.drain() if message.get("op") == "room.wake"
         )
         session = self.controller.store.session("general", "codex")
-        self.assertEqual(assignment["source_event_id"], ordered_source["id"])
+        self.assertEqual(ambient_assignment["source_event_id"], ambient_source["id"])
+        self.assertEqual(ambient_assignment["observation_kind"], "ambient_observation")
         self.assertIn(ambient_source["id"], session["inflight_event_ids"])
+        self.assertIn(ordered_source["id"], session["pending_event_ids"])
+        self.assertIn(later_ambient_source["id"], session["pending_event_ids"])
+        self.assertNotIn(
+            ambient_source["id"],
+            session["pending_event_observation_kinds"],
+        )
+        self.assertEqual(
+            session["pending_event_observation_kinds"],
+            {
+                ordered_source["id"]: "ordered_floor",
+                later_ambient_source["id"]: "ambient_observation",
+            },
+        )
+
+        self._command(
+            "pending-ambient-decline",
+            "turn.decline",
+            {
+                "turn_id": ambient_assignment["turn_id"],
+                "reason_code": "nothing_useful_to_add",
+                "observed_through_seq": ambient_assignment["input_up_to_seq"],
+            },
+            identity,
+        )
+        ordered_assignment = next(
+            message for message in channel.drain() if message.get("op") == "room.wake"
+        )
+        self.assertEqual(ordered_assignment["source_event_id"], ordered_source["id"])
+        self.assertEqual(ordered_assignment["observation_kind"], "ordered_floor")
+
+        self._command(
+            "pending-ordered-decline",
+            "turn.decline",
+            {
+                "turn_id": ordered_assignment["turn_id"],
+                "reason_code": "nothing_useful_to_add",
+                "observed_through_seq": ordered_assignment["input_up_to_seq"],
+            },
+            identity,
+        )
+        later_ambient_assignment = next(
+            message for message in channel.drain() if message.get("op") == "room.wake"
+        )
+        self.assertEqual(
+            later_ambient_assignment["source_event_id"],
+            later_ambient_source["id"],
+        )
+        self.assertEqual(
+            later_ambient_assignment["observation_kind"],
+            "ambient_observation",
+        )
+
+    def test_leaving_observation_modes_clears_pending_delivery_metadata(self):
+        _identity, channel = self._connect_bridge("codex")
+        channel.drain()
+        self.controller.store.update_session_fields(
+            "general",
+            "codex",
+            runtime_status="busy",
+        )
+        self.controller.store.update_room_settings(
+            "general",
+            {"conversation_mode": "ambient"},
+        )
+        source = self._command(
+            "pending-observation-before-continuous",
+            "message.send",
+            {"content": "ambient에서 대기한 메시지"},
+        )["result"]["event"]
+        pending = self.controller.store.session("general", "codex")
+        self.assertIn(source["id"], pending["pending_event_ids"])
+        self.assertEqual(
+            pending["pending_event_observation_kinds"][source["id"]],
+            "ambient_observation",
+        )
+
+        self.controller.store.update_room_settings(
+            "general",
+            {"conversation_mode": "continuous"},
+        )
+        self.controller.store.update_session_fields(
+            "general",
+            "codex",
+            runtime_status="idle",
+        )
+
+        self.assertFalse(
+            self.controller._turn_coordinator.assign_pending("general", "codex")
+        )
+        cleared = self.controller.store.session("general", "codex")
+        self.assertEqual(cleared["pending_event_ids"], [])
+        self.assertEqual(cleared["pending_event_modes"], {})
+        self.assertEqual(cleared["pending_event_observation_kinds"], {})
+        self.assertEqual(cleared["pending_input_mode"], "")
 
     def test_pending_transcript_keeps_its_mode_when_room_enters_ambient(self):
         self._use_continuous_routing()

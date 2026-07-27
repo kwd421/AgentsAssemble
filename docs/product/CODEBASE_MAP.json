@@ -1,10 +1,10 @@
 {
  "readme": "AgentsAssemble codebase map. Regenerate with `make codebase-map`; verify committed outputs with `make codebase-map-verify`. modules[] columns: name, path, package, domain, classification, migration_status, lines, docstring, imports[], imported_by[] (indexes into modules), classes[[name, [[base, defining_module], ...]]] (best-effort, top-level classes only). frontend[] columns: path, group, lines, doc, imports[], imported_by[] (indexes into frontend). package_edges go importer -> dependency with module-import counts; `points` is the precomputed polyline for that edge and `intra_cycle` marks imports whose endpoints share one cycle group. graph{} holds the layered package drawing: layers[] top-to-bottom (each with members[] package ids, member_count, and the dominant domain), (a package sits below everything importing it), clusters[] are mutually dependent packages (import cycles at package level) drawn as one labelled block, plus width/height of the drawing. health{} ranks findings for a reader who has to act: cycles[] (mutually dependent packages, with the lines they hold), leaning_on_retiring[] (current modules importing legacy/compatibility modules - the reason legacy cannot be deleted), highest_leverage_migrations[] (retiring modules with the most current importers), unreferenced_shims[] (compatibility modules with no importer in agentsassemble/ and no reference in tests/; callers outside this repository are not visible, so verify before deleting), and hotspots[] (largest modules). health.scope states exactly what was measured. class_graph{} is the UML generalization DAG over base classes that resolve inside the repo: edges go base -> subclass, so a subclass always sits below the class it extends. Coordinates in graph and class_graph are laid out with a Sugiyama pipeline (cycle condensation, Coffman-Graham layering, dummy-node edge routing, median/transpose crossing reduction) and are deterministic.",
- "generated_at": "2026-07-27T16:10:45Z",
- "fingerprint": "25e29afc23be6fc5",
+ "generated_at": "2026-07-27T16:56:38Z",
+ "fingerprint": "fd6f2060a2a1ae2f",
  "stats": {
   "backend_modules": 786,
-  "backend_lines": 128904,
+  "backend_lines": 129122,
   "frontend_files": 144,
   "frontend_lines": 37974,
   "packages": 30,
@@ -63,7 +63,7 @@
    "kind": "backend",
    "doc": "Current room domain contracts and behavior.",
    "files": 49,
-   "lines": 12563,
+   "lines": 12728,
    "domains": {
     "room": 49
    },
@@ -124,7 +124,7 @@
    "kind": "backend",
    "doc": "Provider runtime contracts and implementations.",
    "files": 82,
-   "lines": 20678,
+   "lines": 20731,
    "domains": {
     "providers": 82
    },
@@ -1728,7 +1728,7 @@
   {
    "from": "room",
    "to": "providers",
-   "count": 23,
+   "count": 24,
    "points": [
     [
      1246.0,
@@ -3700,7 +3700,7 @@
      "web"
     ],
     "internal_edges": 80,
-    "lines": 123840,
+    "lines": 124058,
     "heaviest": "legacy"
    },
    {
@@ -4051,6 +4051,12 @@
     "imported_by": 20
    },
    {
+    "module": "agentsassemble.room.turn_coordinator",
+    "lines": 2156,
+    "cls": "current",
+    "imported_by": 4
+   },
+   {
     "module": "agentsassemble.legacy.live_agent.runtime.processes",
     "lines": 2112,
     "cls": "legacy",
@@ -4075,14 +4081,8 @@
     "imported_by": 6
    },
    {
-    "module": "agentsassemble.room.turn_coordinator",
-    "lines": 2003,
-    "cls": "current",
-    "imported_by": 4
-   },
-   {
     "module": "agentsassemble.room.realtime",
-    "lines": 1705,
+    "lines": 1711,
     "cls": "current",
     "imported_by": 7
    },
@@ -16182,7 +16182,7 @@
    "providers",
    "current",
    "in-target-package",
-   1002,
+   1005,
    "Persistent provider runtime bridge for the canonical room protocol.",
    [
     106,
@@ -16367,7 +16367,7 @@
    "providers",
    "current",
    "in-target-package",
-   259,
+   281,
    "",
    [
     608,
@@ -17506,9 +17506,10 @@
    "providers",
    "current",
    "in-target-package",
-   1054,
+   1073,
    "Private room-view boundary used by autonomous provider sessions.",
    [
+    608,
     674,
     675
    ],
@@ -17651,7 +17652,7 @@
    "providers",
    "current",
    "in-target-package",
-   138,
+   147,
    "",
    [],
    [
@@ -17659,8 +17660,10 @@
     558,
     563,
     585,
+    604,
     615,
     641,
+    664,
     677
    ],
    [
@@ -19142,7 +19145,7 @@
    "room",
    "current",
    "in-target-package",
-   246,
+   248,
    "",
    [
     675,
@@ -19199,7 +19202,7 @@
    "room",
    "current",
    "in-target-package",
-   479,
+   481,
    "",
    [
     592,
@@ -19331,7 +19334,7 @@
    "room",
    "current",
    "in-target-package",
-   1705,
+   1711,
    "",
    [
     15,
@@ -19341,6 +19344,7 @@
     493,
     567,
     592,
+    608,
     614,
     635,
     636,
@@ -19879,7 +19883,7 @@
    "room",
    "current",
    "in-target-package",
-   2003,
+   2156,
    "",
    [
     106,
@@ -19926,7 +19930,7 @@
    "room",
    "current",
    "in-target-package",
-   86,
+   88,
    "Shared room event, participant, session, command, and turn shapes.",
    [
     662
@@ -24334,7 +24338,7 @@
    "name": "agentsassemble",
    "note": "Backend package (Python)",
    "files": 786,
-   "lines": 128904
+   "lines": 129122
   },
   {
    "name": "frontend/src",
@@ -24346,7 +24350,7 @@
    "name": "tests",
    "note": "Backend test suite",
    "files": 351,
-   "lines": 140449
+   "lines": 140646
   },
   {
    "name": "scripts",
@@ -24358,7 +24362,7 @@
    "name": "docs",
    "note": "Product and architecture docs",
    "files": 77,
-   "lines": 29048
+   "lines": 29072
   },
   {
    "name": "configs",

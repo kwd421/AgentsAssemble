@@ -30,6 +30,7 @@ def _room_wake(**overrides):
         "turn_id": "wake-1",
         "input_up_to_seq": 7,
         "attachment_ids": [],
+        "observation_kind": "ambient_observation",
         "publication_mode": "explicit_room_portal",
         "timeout_seconds": 30,
     }
@@ -75,7 +76,15 @@ class BridgeProtocolTests(unittest.TestCase):
         )
 
         self.assertEqual(parsed.input_up_to_seq, 7)
+        self.assertEqual(parsed.observation_kind, "ambient_observation")
         self.assertEqual(parsed.publication_mode, "explicit_room_portal")
+        ordered = RoomWakeEnvelope.parse_strict(
+            _room_wake(observation_kind="ordered_floor"),
+            room_id="general",
+            participant_id="codex",
+            session_id="codex-session",
+        )
+        self.assertEqual(ordered.observation_kind, "ordered_floor")
         with self.assertRaises(BridgeProtocolError) as provider_input:
             RoomWakeEnvelope.parse_strict(
                 _room_wake(provider_input="room transcript"),
@@ -112,6 +121,38 @@ class BridgeProtocolTests(unittest.TestCase):
             wake.exception.code,
             "room_wake_publication_mode_invalid",
         )
+
+    def test_room_wake_treats_a_legacy_missing_observation_kind_as_ambient(self):
+        missing = _room_wake()
+        missing.pop("observation_kind")
+
+        parsed = RoomWakeEnvelope.parse_strict(
+            missing,
+            room_id="general",
+            participant_id="codex",
+            session_id="codex-session",
+        )
+
+        self.assertEqual(parsed.observation_kind, "ambient_observation")
+
+    def test_room_wake_rejects_an_explicit_unknown_observation_kind(self):
+        for value in (
+            _room_wake(observation_kind="unknown"),
+            _room_wake(observation_kind=[]),
+            _room_wake(observation_kind={}),
+            _room_wake(observation_kind=True),
+            _room_wake(observation_kind=None),
+        ):
+            with self.subTest(value=value), self.assertRaises(
+                BridgeProtocolError
+            ) as raised:
+                RoomWakeEnvelope.parse_strict(
+                    value,
+                    room_id="general",
+                    participant_id="codex",
+                    session_id="codex-session",
+                )
+            self.assertTrue(raised.exception.fatal)
 
     def test_room_wake_rejects_a_missing_or_invalid_assigned_sequence(self):
         missing = _room_wake()

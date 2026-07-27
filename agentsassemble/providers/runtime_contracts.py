@@ -9,6 +9,11 @@ PublicationMode = Literal["automatic_final", "explicit_room_portal"]
 AUTOMATIC_FINAL: PublicationMode = "automatic_final"
 EXPLICIT_ROOM_PORTAL: PublicationMode = "explicit_room_portal"
 
+RoomObservationKind = Literal["ordered_floor", "ambient_observation"]
+ORDERED_FLOOR: RoomObservationKind = "ordered_floor"
+AMBIENT_OBSERVATION: RoomObservationKind = "ambient_observation"
+ROOM_OBSERVATION_KINDS = frozenset({ORDERED_FLOOR, AMBIENT_OBSERVATION})
+
 
 SUPPORTED_DECLINE_REASONS = frozenset(
     {"nothing_useful_to_add", "not_addressed", "duplicate"}
@@ -128,11 +133,15 @@ class ProviderRuntimeHealth:
 
 
 __all__ = [
+    "AMBIENT_OBSERVATION",
     "AUTOMATIC_FINAL",
     "AdapterContractError",
     "EXPLICIT_ROOM_PORTAL",
+    "ORDERED_FLOOR",
     "PublicationMode",
     "ProviderRuntimeHealth",
     "ProviderTurnResult",
+    "ROOM_OBSERVATION_KINDS",
+    "RoomObservationKind",
     "SUPPORTED_DECLINE_REASONS",
 ]

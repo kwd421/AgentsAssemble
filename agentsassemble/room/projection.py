@@ -75,6 +75,8 @@ _PRIVATE_SESSION_FIELDS = frozenset(
         "stdout_path",
         "stderr_path",
         "provider_endpoint",
+        "provider_observation_kind",
+        "pending_event_observation_kinds",
         "lifecycle_intent_action",
         "lifecycle_intent_id",
         "lifecycle_intent_status",

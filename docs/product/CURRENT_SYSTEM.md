@@ -2,7 +2,7 @@
 
 Status: current starting point
 
-Updated: 2026-07-20
+Updated: 2026-07-28
 
 Read this file before changing rooms, Agent Sessions, providers, invites,
 moderation, media, or the React room UI. It is intentionally short. Follow its
@@ -134,10 +134,20 @@ and must not launch a one-shot CLI.
 Ordered and ambient providers use a different input mode. The canonical event
 broker keeps each Agent Bridge's private `RoomPortal` current, then sends a
 `room.wake` containing event/cursor and referenced-attachment identifiers but
-no provider transcript. The provider reads its bounded room mirror and either
-publishes through the portal or publishes nothing. Only portal output becomes
+no provider transcript. Each wake also carries structural `observation_kind`
+metadata: `ordered_floor` for the one provider selected in ordered mode, or
+`ambient_observation` for a discretionary ambient or idle observation. The
+kind is fixed when the source event is queued and remains attached to that
+pending input across later room-mode changes; the bridge must not derive it
+from the current room setting. It conveys provenance only, not room content or
+an instruction about what to say. The provider reads its bounded room mirror
+and either publishes through the portal or publishes nothing; a provider with
+the ordered floor may still decline. Only portal output becomes
 `message_final`; no output becomes a structured decline. Ordinary assistant or
 terminal output is private and is never used as an implicit fallback.
+For compatibility with older servers and persisted sessions, a missing kind is
+normalized to `ambient_observation`; explicit unknown values are rejected, and
+the compatibility path never infers an ordered floor.
 Portal publication may atomically include one `target_agent_id` handoff. Codex
 uses the optional `next_agent_id` argument on `publish_message`, terminal
 providers use `agentsassemble-room speak-to`, and Grok ACP writes to the

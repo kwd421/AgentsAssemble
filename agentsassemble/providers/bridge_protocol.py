@@ -6,6 +6,8 @@ from agentsassemble.providers.runtime_contracts import (
     AUTOMATIC_FINAL,
     EXPLICIT_ROOM_PORTAL,
     PublicationMode,
+    ROOM_OBSERVATION_KINDS,
+    RoomObservationKind,
 )
 from agentsassemble.room.text import clean_room_text
 
@@ -127,6 +129,7 @@ class RoomWakeEnvelope:
     input_up_to_seq: int
     timeout_seconds: float
     attachment_ids: tuple[str, ...]
+    observation_kind: RoomObservationKind
     publication_mode: PublicationMode
 
     @classmethod
@@ -189,6 +192,24 @@ class RoomWakeEnvelope:
                 turn_id=turn_id,
                 fatal=True,
             )
+        if "observation_kind" not in value:
+            # Pre-observation-kind servers cannot identify an ordered
+            # selection. Preserve wire compatibility without inventing an
+            # exclusive floor that the envelope did not prove.
+            observation_kind: RoomObservationKind = "ambient_observation"
+        else:
+            raw_observation_kind = value.get("observation_kind")
+            if (
+                not isinstance(raw_observation_kind, str)
+                or raw_observation_kind not in ROOM_OBSERVATION_KINDS
+            ):
+                raise BridgeProtocolError(
+                    "Room wake requires a supported observation_kind.",
+                    code="room_wake_observation_kind_invalid",
+                    turn_id=turn_id,
+                    fatal=True,
+                )
+            observation_kind = raw_observation_kind
         input_up_to_seq = value.get("input_up_to_seq")
         if (
             isinstance(input_up_to_seq, bool)
@@ -226,6 +247,7 @@ class RoomWakeEnvelope:
             input_up_to_seq=input_up_to_seq,
             timeout_seconds=timeout_seconds,
             attachment_ids=attachment_ids,
+            observation_kind=observation_kind,
             publication_mode=EXPLICIT_ROOM_PORTAL,
         )
 

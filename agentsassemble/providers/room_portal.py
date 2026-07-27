@@ -13,6 +13,11 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Iterable
 
+from agentsassemble.providers.runtime_contracts import (
+    AMBIENT_OBSERVATION,
+    ORDERED_FLOOR,
+    RoomObservationKind,
+)
 from agentsassemble.room.system_results import (
     RoomSystemResultError,
     validate_room_system_result,
@@ -98,9 +103,23 @@ def room_session_orientation(provider_kind: object = "") -> str:
   restatement, a silence explanation, or another closing is not."""
 
 
-def room_wake_orientation(provider_kind: object = "") -> str:
+def room_wake_orientation(
+    provider_kind: object = "",
+    *,
+    observation_kind: RoomObservationKind,
+) -> str:
     read_interface, speak_interface, provider_note = _room_interfaces(provider_kind)
     kind = clean_room_text(provider_kind, limit=64)
+    if observation_kind == ORDERED_FLOOR:
+        floor_note = """
+- Queue provenance: ordered selection. This session was the single provider
+  selected for this event when it was queued."""
+    elif observation_kind == AMBIENT_OBSERVATION:
+        floor_note = """
+- Queue provenance: shared ambient observation. Other eligible sessions may
+  receive the same triggering event."""
+    else:
+        raise ValueError("Unsupported room observation kind.")
     random_note = ""
     if kind == "codex_live_session":
         random_note = """
@@ -116,7 +135,7 @@ def room_wake_orientation(provider_kind: object = "") -> str:
 - Read the private room mirror through {read_interface}.
 - If you should speak, only {speak_interface} creates a public room message.
 - Ordinary assistant output is private on this turn and is never published.
-  Do not merely draft the intended public message as your final answer.{random_note}{provider_note}"""
+  Do not merely draft the intended public message as your final answer.{floor_note}{random_note}{provider_note}"""
 
 
 def automatic_turn_orientation() -> str:
