@@ -12,8 +12,8 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: "3.13"
-      - name: Regenerate and verify committed codebase maps
-        run: make codebase-map-verify PYTHON=python
+      - name: Regenerate and verify committed generated artifacts
+        run: make generated-artifacts-verify PYTHON=python
 
   unittest:
     runs-on: ubuntu-latest
