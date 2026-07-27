@@ -16,6 +16,31 @@ export interface PublicRoomAttachment {
   download_url: string;
 }
 
+export interface PublicRoomGlobalAppearance {
+  banner_preset: string;
+  banner_image_url: string;
+  icon_image_url: string;
+  icon_label: string;
+  invite_scope: string;
+}
+
+export interface PublicRoomGlobalChannel {
+  id: string;
+  name: string;
+  type: string;
+  position: number;
+  created_at: string;
+}
+
+export interface PublicRoomGlobalSettings {
+  label: string;
+  topic: string;
+  appearance: PublicRoomGlobalAppearance;
+  conversation_mode: string;
+  max_relay_turns: number;
+  channels: PublicRoomGlobalChannel[];
+}
+
 export interface RoomEvent {
   v: number;
   id: string;
@@ -54,4 +79,5 @@ export interface RoomEvent {
   message_source?: string;
   relay_depth?: number;
   reason_code?: string;
+  room_settings?: PublicRoomGlobalSettings;
 }

@@ -38,11 +38,13 @@ class RoomCommandPolicyTests(unittest.TestCase):
         bridge = capabilities_for_identity({"operator": False, "client_type": "agent_bridge"})
 
         self.assertTrue(operator["agent.control"])
+        self.assertTrue(operator["room.manage"])
         self.assertTrue(operator["message.send"])
         self.assertFalse(read_only["message.send"])
         self.assertTrue(read_only["room.history"])
         self.assertTrue(read_only["room.vote.summary"])
         self.assertTrue(bridge["bridge.report"])
+        self.assertFalse(bridge["room.manage"])
         self.assertFalse(bridge["room.history"])
         self.assertFalse(bridge["room.vote.summary"])
 

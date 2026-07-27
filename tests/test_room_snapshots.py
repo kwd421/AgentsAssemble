@@ -64,6 +64,7 @@ class RoomSnapshotServiceTests(unittest.TestCase):
 
         self.assertEqual(snapshot["snapshot_mode"], "initial")
         self.assertEqual(snapshot["events"][-1]["content"], "hello")
+        self.assertEqual(snapshot["room_settings"], self.store.room_settings("general"))
         self.assertEqual(snapshot["provider_catalog"]["catalog_revision"], "revision-1")
         self.assertEqual(snapshot["capabilities"], {"message.send": True})
 
@@ -96,6 +97,7 @@ class RoomSnapshotServiceTests(unittest.TestCase):
         )
 
         self.assertEqual(snapshot["snapshot_mode"], "bridge")
+        self.assertEqual(snapshot["room_settings"], self.store.room_settings("general"))
         self.assertEqual(snapshot["events"], [])
         self.assertEqual(
             [participant["participant_id"] for participant in snapshot["participants"]],

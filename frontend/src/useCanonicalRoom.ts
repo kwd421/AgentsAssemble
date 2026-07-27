@@ -1,5 +1,15 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import type { LobbyEvent, RoomAgentSession, RoomEvent, RoomMember, SideChatEvent } from "./api";
+import {
+  normalizeRoomGlobalSettings,
+  roomGlobalSettingsUpdateToApi,
+  type LobbyEvent,
+  type RoomAgentSession,
+  type RoomEvent,
+  type RoomGlobalSettings,
+  type RoomGlobalSettingsUpdate,
+  type RoomMember,
+  type SideChatEvent,
+} from "./api";
 import {
   openRoomSocket,
   type NativeCliProviderAvailability,
@@ -144,7 +154,11 @@ export function useCanonicalRoom(options: UseCanonicalRoomOptions) {
   const connectionGenerationRef = useRef(0);
 
   const eventsRef = useRef<Record<string, RoomEvent[]>>({});
+  const roomSettingsSeqRef = useRef<Record<string, number>>({});
   const [eventsByRoom, setEventsByRoom] = useState<Record<string, RoomEvent[]>>({});
+  const [roomSettingsByRoom, setRoomSettingsByRoom] = useState<
+    Record<string, RoomGlobalSettings>
+  >({});
   const [historyByRoom, setHistoryByRoom] = useState<Record<string, CanonicalRoomHistoryState>>({});
   const [sessionsByRoom, setSessionsByRoom] = useState<Record<string, RoomAgentSession[]>>({});
   const [participantsByRoom, setParticipantsByRoom] = useState<Record<string, RoomMember[]>>({});
@@ -180,6 +194,33 @@ export function useCanonicalRoom(options: UseCanonicalRoomOptions) {
     const next = mergeRoomEvents(eventsRef.current[targetRoomId] || [], incoming, replace);
     eventsRef.current = { ...eventsRef.current, [targetRoomId]: next };
     setEventsByRoom((previous) => ({ ...previous, [targetRoomId]: next }));
+
+    let latestSettingsEvent: RoomEvent | null = null;
+    for (const event of incoming) {
+      if (
+        event.type === "room_settings_updated" &&
+        event.room_settings &&
+        Number(event.seq || 0) > Number(roomSettingsSeqRef.current[targetRoomId] || 0)
+      ) {
+        latestSettingsEvent = event;
+      }
+    }
+    if (latestSettingsEvent) {
+      const normalized = normalizeRoomGlobalSettings(
+        latestSettingsEvent.room_settings,
+        targetRoomId
+      );
+      if (normalized) {
+        roomSettingsSeqRef.current = {
+          ...roomSettingsSeqRef.current,
+          [targetRoomId]: Number(latestSettingsEvent.seq || 0),
+        };
+        setRoomSettingsByRoom((previous) => ({
+          ...previous,
+          [targetRoomId]: normalized,
+        }));
+      }
+    }
 
     const sessionUpdates = projectSessionState
       ? incoming.flatMap((event) =>
@@ -240,6 +281,20 @@ export function useCanonicalRoom(options: UseCanonicalRoomOptions) {
     const currentSocket = openSocket(auth, ["room_events", "side_chat"], {
       onRoomSnapshot: (snapshot) => {
         if (!connectionIsCurrent()) return;
+        const snapshotSettings = normalizeRoomGlobalSettings(
+          snapshot.room_settings,
+          roomId
+        );
+        if (snapshotSettings) {
+          roomSettingsSeqRef.current = {
+            ...roomSettingsSeqRef.current,
+            [roomId]: Number(snapshot.last_seq || 0),
+          };
+          setRoomSettingsByRoom((previous) => ({
+            ...previous,
+            [roomId]: snapshotSettings,
+          }));
+        }
         setParticipantsByRoom((previous) => ({
           ...previous,
           [roomId]: (snapshot.participants || []).map((participant) =>
@@ -414,6 +469,30 @@ export function useCanonicalRoom(options: UseCanonicalRoomOptions) {
     [socket]
   );
 
+  const sendRoomSettingsUpdate = useCallback(
+    async (updates: RoomGlobalSettingsUpdate): Promise<RoomGlobalSettings> => {
+      if (!socket) throw new Error("방 연결이 준비되지 않았습니다.");
+      const ack = await socket.command(
+        "room.settings.update",
+        roomGlobalSettingsUpdateToApi(updates)
+      );
+      const result = ack.result || {};
+      const event = result.event as RoomEvent | undefined;
+      if (event?.id && event.type === "room_settings_updated") {
+        applyEvents(roomId, [event]);
+      }
+      const settings = normalizeRoomGlobalSettings(result.room_settings, roomId);
+      if (!settings) {
+        throw new Error("서버가 올바른 방 설정을 반환하지 않았습니다.");
+      }
+      if (!event?.id) {
+        setRoomSettingsByRoom((previous) => ({ ...previous, [roomId]: settings }));
+      }
+      return settings;
+    },
+    [applyEvents, roomId, socket]
+  );
+
   const events = eventsByRoom[roomId] || [];
   const participantProfiles = useMemo(() => {
     const profiles: Record<
@@ -455,6 +534,7 @@ export function useCanonicalRoom(options: UseCanonicalRoomOptions) {
     events,
     timelineEvents,
     participants: participantsByRoom[roomId] || [],
+    roomSettings: roomSettingsByRoom[roomId] || null,
     agentSessions: sessionsByRoom[roomId] || [],
     capabilities: capabilitiesByRoom[roomId] || {},
     availableProviders: providersByRoom[roomId] || [],
@@ -466,5 +546,6 @@ export function useCanonicalRoom(options: UseCanonicalRoomOptions) {
     sendAgentConfigure,
     sendParticipantKick,
     sendParticipantMute,
+    sendRoomSettingsUpdate,
   };
 }

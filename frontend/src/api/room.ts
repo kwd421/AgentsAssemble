@@ -20,6 +20,28 @@ export type { RoomChannel } from "./roomChannelCodec";
 
 export type ConversationMode = "ordered" | "ambient" | "continuous";
 
+export type RoomGlobalAppearance = Omit<RoomAppearance, "notifications">;
+
+export interface RoomGlobalSettings {
+  roomId: string;
+  label: string;
+  topic: string;
+  shortLabel: string;
+  appearance: RoomGlobalAppearance;
+  conversationMode: ConversationMode;
+  maxRelayTurns: number;
+  channels: RoomChannel[];
+}
+
+export type RoomGlobalSettingsUpdate = {
+  label?: string;
+  topic?: string;
+  shortLabel?: string;
+  appearance?: Partial<RoomGlobalAppearance>;
+  conversationMode?: ConversationMode;
+  maxRelayTurns?: number;
+};
+
 export type ChannelNotificationSetting = "default" | "all" | "mentions" | "mute";
 
 export type ChannelSettings = {
@@ -178,6 +200,7 @@ type ApiRoomSettings = {
   channel_settings?: Record<string, ApiChannelSettings>;
   conversation_mode?: ConversationMode;
   max_relay_turns?: number;
+  channels?: ApiRoomChannel[];
 };
 
 type ApiChannelSettings = {
@@ -222,6 +245,80 @@ function normalizeRoomSettings(payload: ApiRoomSettings | undefined, fallbackRoo
         : "ordered",
     maxRelayTurns: Math.min(20, Math.max(2, Number(payload?.max_relay_turns || 6))),
   };
+}
+
+export function normalizeRoomGlobalSettings(
+  value: unknown,
+  fallbackRoomId: string
+): RoomGlobalSettings | null {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return null;
+  const payload = value as ApiRoomSettings;
+  const appearance = payload.appearance;
+  if (
+    typeof payload.label !== "string" ||
+    typeof payload.topic !== "string" ||
+    !appearance ||
+    typeof appearance !== "object" ||
+    typeof appearance.banner_preset !== "string" ||
+    typeof appearance.banner_image_url !== "string" ||
+    typeof appearance.icon_image_url !== "string" ||
+    typeof appearance.icon_label !== "string" ||
+    typeof appearance.invite_scope !== "string" ||
+    !["ordered", "ambient", "continuous"].includes(String(payload.conversation_mode || "")) ||
+    !Number.isInteger(payload.max_relay_turns) ||
+    !Array.isArray(payload.channels)
+  ) {
+    return null;
+  }
+  return {
+    roomId: String(payload.room_id || fallbackRoomId || ""),
+    label: payload.label,
+    topic: payload.topic,
+    shortLabel: appearance.icon_label,
+    appearance: {
+      bannerPreset: appearance.banner_preset,
+      bannerImage: appearance.banner_image_url || undefined,
+      iconImage: appearance.icon_image_url || undefined,
+      iconLabel: appearance.icon_label || undefined,
+      inviteScope: appearance.invite_scope,
+    },
+    conversationMode: payload.conversation_mode as ConversationMode,
+    maxRelayTurns: Number(payload.max_relay_turns),
+    channels: normalizeRoomChannelList(payload.channels as ApiRoomChannel[]),
+  };
+}
+
+export function roomGlobalSettingsUpdateToApi(
+  updates: RoomGlobalSettingsUpdate
+): Record<string, unknown> {
+  const payload: Record<string, unknown> = {};
+  if (updates.label !== undefined) payload.label = updates.label;
+  if (updates.topic !== undefined) payload.topic = updates.topic;
+  if (updates.conversationMode !== undefined) {
+    payload.conversation_mode = updates.conversationMode;
+  }
+  if (updates.maxRelayTurns !== undefined) {
+    payload.max_relay_turns = updates.maxRelayTurns;
+  }
+  const appearance: Record<string, unknown> = {};
+  if (updates.appearance?.bannerPreset !== undefined) {
+    appearance.banner_preset = updates.appearance.bannerPreset;
+  }
+  if (updates.appearance?.bannerImage !== undefined) {
+    appearance.banner_image_url = updates.appearance.bannerImage;
+  }
+  if (updates.appearance?.iconImage !== undefined) {
+    appearance.icon_image_url = updates.appearance.iconImage;
+  }
+  if (updates.appearance?.iconLabel !== undefined) {
+    appearance.icon_label = updates.appearance.iconLabel;
+  }
+  if (updates.appearance?.inviteScope !== undefined) {
+    appearance.invite_scope = updates.appearance.inviteScope;
+  }
+  if (updates.shortLabel !== undefined) appearance.icon_label = updates.shortLabel;
+  if (Object.keys(appearance).length) payload.appearance = appearance;
+  return payload;
 }
 
 function roomAppearanceToApi(appearance: Partial<RoomAppearance> | undefined): ApiRoomAppearance {

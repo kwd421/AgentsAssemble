@@ -552,6 +552,8 @@ export default function App() {
     activeRoom,
     sessionToken: admittedSessionToken,
     deviceToken,
+    canonicalGlobalSettings: canonicalRoom.roomSettings,
+    saveCanonicalGlobalSettings: canonicalRoom.sendRoomSettingsUpdate,
     onRoomMetadataLoaded: updateRoomByMeetingId,
     onMembersChanged: roomMembers.replaceMembers,
   });
@@ -1420,7 +1422,13 @@ export default function App() {
           onRoomChange={(updates) => {
             const nextRoom = { ...settingsModalRoom, ...updates };
             updateRoom(settingsModalRoom.id, updates);
-            roomSettings.persist(nextRoom);
+            roomSettings.persist(nextRoom, {
+              ...(updates.label !== undefined ? { label: updates.label } : {}),
+              ...(updates.topic !== undefined ? { topic: updates.topic } : {}),
+              ...(updates.shortLabel !== undefined
+                ? { shortLabel: updates.shortLabel }
+                : {}),
+            });
           }}
           onAppearanceChange={(updates) => roomSettings.updateAppearance(settingsModalRoom, updates)}
           onChannelSettingChange={(channelId, updates) =>

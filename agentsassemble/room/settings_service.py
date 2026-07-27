@@ -39,6 +39,18 @@ _APPEARANCE_ALIASES = {
     "inviteScope": "invite_scope",
 }
 _APPEARANCE_PREFERENCE_FIELDS = frozenset({"notifications"})
+_GLOBAL_TOP_LEVEL_FIELDS = frozenset(
+    {
+        "label",
+        "topic",
+        "channels",
+        "short_label",
+        "conversation_mode",
+        "conversationMode",
+        "max_relay_turns",
+        "maxRelayTurns",
+    }
+)
 
 
 def room_settings_payload(
@@ -113,6 +125,17 @@ def update_room_settings(
         identities,
         user_id=user_id,
         room_id=room_id,
+    )
+
+
+def has_room_global_updates(payload: dict[str, object]) -> bool:
+    """Return whether an HTTP settings payload attempts a room-wide write."""
+
+    if set(payload) & _GLOBAL_TOP_LEVEL_FIELDS:
+        return True
+    appearance = payload.get("appearance")
+    return isinstance(appearance, dict) and bool(
+        set(appearance) - _APPEARANCE_PREFERENCE_FIELDS
     )
 
 

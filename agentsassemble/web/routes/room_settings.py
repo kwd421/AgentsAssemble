@@ -4,7 +4,11 @@ from __future__ import annotations
 from http import HTTPStatus
 
 from agentsassemble.web.router import RequestContext, Router
-from agentsassemble.room.settings_service import room_settings_payload, update_room_settings
+from agentsassemble.room.settings_service import (
+    has_room_global_updates,
+    room_settings_payload,
+    update_room_settings,
+)
 
 
 def register_room_settings_routes(router: Router) -> None:
@@ -35,6 +39,12 @@ def register_room_settings_routes(router: Router) -> None:
     def post_room_settings(ctx: RequestContext) -> None:
         payload = ctx.read_json_body()
         if payload is None:
+            return
+        if (
+            has_room_global_updates(payload)
+            and not ctx.is_local_operator()
+            and not ctx.require_moderator()
+        ):
             return
         try:
             ctx.send_json(

@@ -7,6 +7,7 @@ from contextlib import AbstractContextManager
 from types import TracebackType
 
 from agentsassemble.room_attention import AgentAttentionState
+from agentsassemble.room.global_settings import RoomGlobalSettingsRecord
 from agentsassemble.room.repository import RoomRepository, RoomTransaction
 
 
@@ -107,6 +108,12 @@ class RoomCommandUnitOfWork:
 
     def session(self, session_id: str) -> dict[str, object]:
         return self._require_transaction().session(session_id)
+
+    def update_room_settings(
+        self,
+        updates: dict[str, object],
+    ) -> RoomGlobalSettingsRecord:
+        return self._require_transaction().update_room_settings(updates)
 
     def upsert_participant(self, participant: dict[str, object]) -> tuple[dict[str, object], bool]:
         return self._require_transaction().upsert_participant(participant)

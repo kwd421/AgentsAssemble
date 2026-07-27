@@ -5,6 +5,9 @@ import {
   upsertRoomMember,
   type ChannelSettings,
   type ConversationMode,
+  type RoomGlobalAppearance,
+  type RoomGlobalSettings,
+  type RoomGlobalSettingsUpdate,
   type RoomMember,
   type RoomSettings,
 } from "../api";
@@ -18,15 +21,15 @@ type UseRoomSettingsControllerOptions = {
   activeRoom: RoomDockItem;
   sessionToken: string;
   deviceToken: string;
+  canonicalGlobalSettings: RoomGlobalSettings | null;
+  saveCanonicalGlobalSettings: (
+    updates: RoomGlobalSettingsUpdate
+  ) => Promise<RoomGlobalSettings>;
   onRoomMetadataLoaded: (meetingId: string, updates: Partial<RoomDockItem>) => void;
   onMembersChanged: (room: RoomDockItem, members: RoomMember[]) => void;
 };
 
-type PersistedRoomSettingsOverrides = {
-  appearance?: RoomAppearance;
-  conversationMode?: ConversationMode;
-  maxRelayTurns?: number;
-};
+type PersistedRoomSettingsOverrides = RoomGlobalSettingsUpdate;
 
 export type AuthoritativeRoomSettings = {
   conversationMode: ConversationMode;
@@ -50,7 +53,9 @@ function settingsError(errorValue: unknown, fallback: string): Error {
   return errorValue instanceof Error ? errorValue : new Error(fallback);
 }
 
-function authoritativeSettings(settings: RoomSettings): AuthoritativeRoomSettings {
+function authoritativeSettings(
+  settings: Pick<RoomGlobalSettings, "conversationMode" | "maxRelayTurns">
+): AuthoritativeRoomSettings {
   return {
     conversationMode: settings.conversationMode,
     maxRelayTurns: settings.maxRelayTurns,
@@ -61,6 +66,8 @@ export function useRoomSettingsController({
   activeRoom,
   sessionToken,
   deviceToken,
+  canonicalGlobalSettings,
+  saveCanonicalGlobalSettings,
   onRoomMetadataLoaded,
   onMembersChanged,
 }: UseRoomSettingsControllerOptions) {
@@ -74,8 +81,13 @@ export function useRoomSettingsController({
   const operationGenerationsRef = useRef<Record<string, number>>({});
   const onRoomMetadataLoadedRef = useRef(onRoomMetadataLoaded);
   onRoomMetadataLoadedRef.current = onRoomMetadataLoaded;
+  const canonicalGlobalSettingsRef = useRef(canonicalGlobalSettings);
+  canonicalGlobalSettingsRef.current = canonicalGlobalSettings;
   const activeRoomKey = roomSettingsKey(activeRoom);
   const activeMeetingId = activeRoom.meetingId;
+  const canonicalGlobalSettingsSignature = canonicalGlobalSettings
+    ? JSON.stringify(canonicalGlobalSettings)
+    : "";
 
   const appearanceFor = useCallback(
     (room: RoomDockItem) =>
@@ -112,17 +124,20 @@ export function useRoomSettingsController({
     []
   );
 
-  const applyServerSettings = useCallback(
-    (meetingId: string, key: string, settings: RoomSettings) => {
-      if (settings.label || settings.topic || settings.shortLabel) {
-        onRoomMetadataLoadedRef.current(meetingId, {
-          ...(settings.label ? { label: settings.label } : {}),
-          ...(settings.topic ? { topic: settings.topic } : {}),
-          ...(settings.shortLabel ? { shortLabel: settings.shortLabel } : {}),
-        });
-      }
-      setAppearances((previous) => ({ ...previous, [key]: settings.appearance }));
-      setChannelSettings((previous) => ({ ...previous, [key]: settings.channelSettings }));
+  const applyGlobalSettings = useCallback(
+    (meetingId: string, key: string, settings: RoomGlobalSettings) => {
+      onRoomMetadataLoadedRef.current(meetingId, {
+        label: settings.label,
+        topic: settings.topic,
+        shortLabel: settings.shortLabel,
+      });
+      setAppearances((previous) => ({
+        ...previous,
+        [key]: completeRoomAppearance({
+          ...settings.appearance,
+          notifications: previous[key]?.notifications || "mentions",
+        }),
+      }));
       setAuthorityStates((previous) => ({
         ...previous,
         [key]: { status: "ready", value: authoritativeSettings(settings), error: null },
@@ -131,96 +146,103 @@ export function useRoomSettingsController({
     []
   );
 
-  const reconcileSettings = useCallback(
-    (
-      room: RoomDockItem,
-      knownValue: AuthoritativeRoomSettings | null,
-      generation: number
-    ) => {
-      if (!room.meetingId) return;
-      const key = roomSettingsKey(room);
-      void fetchRoomSettings(room.meetingId, { sessionToken, deviceToken })
-        .then((settings) => {
-          if (isCurrentSettingsOperation(key, generation)) {
-            applyServerSettings(room.meetingId, key, settings);
-          }
-        })
-        .catch((errorValue) => {
-          if (!isCurrentSettingsOperation(key, generation)) return;
-          const error = settingsError(errorValue, "Room settings reconciliation failed");
-          setAuthorityStates((previous) => ({
-            ...previous,
-            [key]: knownValue
-              ? { status: "stale", value: knownValue, error }
-              : { status: "error", value: null, error },
-          }));
-        });
-    },
-    [applyServerSettings, deviceToken, isCurrentSettingsOperation, sessionToken]
-  );
+  const applyPreferences = useCallback((key: string, settings: RoomSettings) => {
+    setAppearances((previous) => ({
+      ...previous,
+      [key]: completeRoomAppearance({
+        ...previous[key],
+        notifications: settings.appearance.notifications,
+      }),
+    }));
+    setChannelSettings((previous) => ({
+      ...previous,
+      [key]: settings.channelSettings,
+    }));
+  }, []);
+
+  useEffect(() => {
+    if (!activeMeetingId) return;
+    const currentGlobalSettings = canonicalGlobalSettingsRef.current;
+    if (
+      currentGlobalSettings &&
+      currentGlobalSettings.roomId === activeMeetingId
+    ) {
+      beginSettingsOperation(activeRoomKey);
+      applyGlobalSettings(
+        activeMeetingId,
+        activeRoomKey,
+        currentGlobalSettings
+      );
+      return;
+    }
+    setAuthorityStates((previous) => ({
+      ...previous,
+      [activeRoomKey]: { status: "loading", value: null, error: null },
+    }));
+  }, [
+    activeMeetingId,
+    activeRoomKey,
+    applyGlobalSettings,
+    beginSettingsOperation,
+    canonicalGlobalSettingsSignature,
+  ]);
 
   useEffect(() => {
     if (!activeMeetingId) return;
     const meetingId = activeMeetingId;
     const key = activeRoomKey;
-    const generation = beginSettingsOperation(key);
     let cancelled = false;
-    setAuthorityStates((previous) => ({
-      ...previous,
-      [key]: { status: "loading", value: null, error: null },
-    }));
     fetchRoomSettings(meetingId, { sessionToken, deviceToken })
       .then((settings) => {
-        if (cancelled || !isCurrentSettingsOperation(key, generation)) return;
-        applyServerSettings(meetingId, key, settings);
+        if (!cancelled) applyPreferences(key, settings);
       })
-      .catch((errorValue) => {
-        if (cancelled || !isCurrentSettingsOperation(key, generation)) return;
-        setAuthorityStates((previous) => ({
-          ...previous,
-          [key]: {
-            status: "error",
-            value: null,
-            error: settingsError(errorValue, "Room settings unavailable"),
-          },
-        }));
-      });
+      .catch(() => undefined);
     return () => {
       cancelled = true;
     };
   }, [
     activeMeetingId,
     activeRoomKey,
-    applyServerSettings,
-    beginSettingsOperation,
+    applyPreferences,
     deviceToken,
-    isCurrentSettingsOperation,
     sessionToken,
   ]);
 
-  const saveSettings = useCallback(
+  const savePreferences = useCallback(
     (
       room: RoomDockItem,
-      updates: Omit<Parameters<typeof saveRoomSettings>[0], "roomId" | "identity">,
-      optimisticValue?: AuthoritativeRoomSettings | null
+      updates: Omit<Parameters<typeof saveRoomSettings>[0], "roomId" | "identity">
     ) => {
       if (!room.meetingId) return;
       const key = roomSettingsKey(room);
-      const generation = beginSettingsOperation(key);
-      const currentValue = settingsStateFor(room).value;
-      const nextValue = optimisticValue === undefined ? currentValue : optimisticValue;
-      setAuthorityStates((previous) => ({
-        ...previous,
-        [key]: { status: "saving", value: nextValue, error: null },
-      }));
       void saveRoomSettings({
         roomId: room.meetingId,
         ...updates,
         identity: { sessionToken, deviceToken },
       })
+        .then((settings) => applyPreferences(key, settings))
+        .catch(() => undefined);
+    },
+    [applyPreferences, deviceToken, sessionToken]
+  );
+
+  const saveGlobalSettings = useCallback(
+    (
+      room: RoomDockItem,
+      updates: RoomGlobalSettingsUpdate,
+      optimisticValue: AuthoritativeRoomSettings | null
+    ) => {
+      if (!room.meetingId || !Object.keys(updates).length) return;
+      const key = roomSettingsKey(room);
+      const generation = beginSettingsOperation(key);
+      setAuthorityStates((previous) => ({
+        ...previous,
+        [key]: { status: "saving", value: optimisticValue, error: null },
+      }));
+      void saveCanonicalGlobalSettings(updates)
         .then((settings) => {
           if (isCurrentSettingsOperation(key, generation)) {
-            applyServerSettings(room.meetingId, key, settings);
+            applyGlobalSettings(room.meetingId, key, settings);
           }
         })
         .catch((errorValue) => {
@@ -228,27 +250,22 @@ export function useRoomSettingsController({
           const error = settingsError(errorValue, "Room settings save failed");
           setAuthorityStates((previous) => ({
             ...previous,
-            [key]: nextValue
-              ? { status: "stale", value: nextValue, error }
+            [key]: optimisticValue
+              ? { status: "stale", value: optimisticValue, error }
               : { status: "error", value: null, error },
           }));
-          reconcileSettings(room, nextValue, generation);
         });
     },
     [
-      applyServerSettings,
+      applyGlobalSettings,
       beginSettingsOperation,
-      deviceToken,
       isCurrentSettingsOperation,
-      reconcileSettings,
-      sessionToken,
-      settingsStateFor,
+      saveCanonicalGlobalSettings,
     ]
   );
 
   const persist = useCallback(
     (room: RoomDockItem, overrides: PersistedRoomSettingsOverrides = {}) => {
-      const appearance = overrides.appearance ?? appearanceFor(room);
       const currentValue = settingsStateFor(room).value;
       const nextValue = currentValue
         ? {
@@ -256,28 +273,9 @@ export function useRoomSettingsController({
             maxRelayTurns: overrides.maxRelayTurns ?? currentValue.maxRelayTurns,
           }
         : null;
-      saveSettings(
-        room,
-        {
-          label: room.label,
-          topic: room.topic,
-          shortLabel: room.shortLabel,
-          appearance: {
-            bannerPreset: appearance.bannerPreset,
-            bannerImage: appearance.bannerImage,
-            iconImage: appearance.iconImage,
-            iconLabel: appearance.iconLabel,
-            inviteScope: appearance.inviteScope,
-          },
-          ...(overrides.conversationMode ? { conversationMode: overrides.conversationMode } : {}),
-          ...(overrides.maxRelayTurns !== undefined
-            ? { maxRelayTurns: overrides.maxRelayTurns }
-            : {}),
-        },
-        nextValue
-      );
+      saveGlobalSettings(room, overrides, nextValue);
     },
-    [appearanceFor, saveSettings, settingsStateFor]
+    [saveGlobalSettings, settingsStateFor]
   );
 
   const persistPreferences = useCallback(
@@ -288,14 +286,14 @@ export function useRoomSettingsController({
         channelSettings?: Record<string, ChannelSettings>;
       }
     ) => {
-      saveSettings(room, {
+      savePreferences(room, {
         ...(updates.notifications
           ? { appearance: { notifications: updates.notifications } }
           : {}),
         ...(updates.channelSettings ? { channelSettings: updates.channelSettings } : {}),
       });
     },
-    [saveSettings]
+    [savePreferences]
   );
 
   const updateAppearance = useCallback(
@@ -307,7 +305,7 @@ export function useRoomSettingsController({
       });
       const { notifications, ...globalUpdates } = updates;
       if (Object.keys(globalUpdates).length > 0) {
-        persist(room, { appearance: nextAppearance });
+        persist(room, { appearance: globalUpdates as Partial<RoomGlobalAppearance> });
       }
       if (notifications) {
         persistPreferences(room, { notifications });
@@ -365,18 +363,25 @@ export function useRoomSettingsController({
 
   const refresh = useCallback(
     (room: RoomDockItem) => {
-      const currentValue = settingsStateFor(room).value;
-      if (!currentValue) {
-        const key = roomSettingsKey(room);
-        setAuthorityStates((previous) => ({
-          ...previous,
-          [key]: { status: "loading", value: null, error: null },
-        }));
+      const key = roomSettingsKey(room);
+      if (
+        canonicalGlobalSettings &&
+        canonicalGlobalSettings.roomId === room.meetingId
+      ) {
+        beginSettingsOperation(key);
+        applyGlobalSettings(room.meetingId, key, canonicalGlobalSettings);
+        return;
       }
-      const generation = beginSettingsOperation(roomSettingsKey(room));
-      reconcileSettings(room, currentValue, generation);
+      setAuthorityStates((previous) => ({
+        ...previous,
+        [key]: { status: "loading", value: null, error: null },
+      }));
     },
-    [beginSettingsOperation, reconcileSettings, settingsStateFor]
+    [
+      applyGlobalSettings,
+      beginSettingsOperation,
+      canonicalGlobalSettings,
+    ]
   );
 
   return {

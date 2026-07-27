@@ -40,6 +40,25 @@ function session(status = "idle"): RoomAgentSession {
   };
 }
 
+function rawRoomSettings(
+  conversationMode: "ordered" | "ambient" | "continuous" = "ordered"
+): RoomSocketSnapshot["room_settings"] {
+  return {
+    label: "General",
+    topic: "",
+    appearance: {
+      banner_preset: "default",
+      banner_image_url: "",
+      icon_image_url: "",
+      icon_label: "G",
+      invite_scope: "room",
+    },
+    conversation_mode: conversationMode,
+    max_relay_turns: 6,
+    channels: [],
+  };
+}
+
 function snapshot(
   events: RoomEvent[],
   mode: RoomSocketSnapshot["snapshot_mode"] = "initial",
@@ -49,6 +68,7 @@ function snapshot(
     op: "snapshot",
     stream: "room_events",
     room: { room_id: "general" },
+    room_settings: rawRoomSettings(),
     participants: [],
     agent_sessions: currentSessions,
     active_turns: [],
@@ -69,6 +89,68 @@ function snapshot(
 }
 
 describe("useCanonicalRoom", () => {
+  it("projects canonical settings from snapshots, events, and update ACKs", async () => {
+    let handlers: RoomSocketHandlers | undefined;
+    const updatedEvent = {
+      ...event(6, "room_settings_updated"),
+      room_settings: rawRoomSettings("ambient"),
+    };
+    const command = vi.fn(async (
+      action: string,
+      _payload: Record<string, unknown> = {}
+    ) => ({
+      op: "ack",
+      request_id: "settings-1",
+      accepted: true,
+      action,
+      result: {
+        event: updatedEvent,
+        room_settings: updatedEvent.room_settings,
+      },
+    }) satisfies RoomCommandAck);
+    const openSocket = vi.fn((_auth, _streams, nextHandlers: RoomSocketHandlers) => {
+      handlers = nextHandlers;
+      return {
+        close: vi.fn(),
+        ready: () => true,
+        command,
+        say: vi.fn(),
+        historyBefore: vi.fn(),
+      } satisfies RoomSocketHandle;
+    });
+    const { result } = renderHook(() =>
+      useCanonicalRoom({
+        roomId: "general",
+        auth: { kind: "host", meetingId: "general" },
+        openSocket,
+      })
+    );
+    await waitFor(() => expect(openSocket).toHaveBeenCalledOnce());
+    const initial = snapshot([event(5, "message_final", "hello")]);
+
+    act(() => handlers?.onRoomSnapshot?.(initial));
+    expect(result.current.roomSettings?.conversationMode).toBe("ordered");
+
+    act(() =>
+      handlers?.onRoomEvents?.([
+        {
+          ...event(4, "room_settings_updated"),
+          room_settings: rawRoomSettings("continuous"),
+        },
+      ])
+    );
+    expect(result.current.roomSettings?.conversationMode).toBe("ordered");
+
+    await act(async () => {
+      await result.current.sendRoomSettingsUpdate({ conversationMode: "ambient" });
+    });
+
+    expect(command).toHaveBeenCalledWith("room.settings.update", {
+      conversation_mode: "ambient",
+    });
+    expect(result.current.roomSettings?.conversationMode).toBe("ambient");
+  });
+
   it("applies a pushed provider catalog revision to the active room", async () => {
     let handlers: RoomSocketHandlers | undefined;
     const openSocket = vi.fn((_auth, _streams, nextHandlers: RoomSocketHandlers) => {

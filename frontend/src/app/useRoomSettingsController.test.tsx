@@ -1,7 +1,7 @@
 import { act, renderHook, waitFor } from "@testing-library/react";
 import { Hash } from "lucide-react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import type { RoomMember, RoomSettings } from "../api";
+import type { RoomGlobalSettings, RoomMember, RoomSettings } from "../api";
 import type { RoomDockItem } from "../lib/roomDockModel";
 import { useRoomSettingsController } from "./useRoomSettingsController";
 
@@ -58,6 +58,27 @@ function settings(room: RoomDockItem, bannerPreset: "forest" | "ember"): RoomSet
   };
 }
 
+function globalSettings(
+  room: RoomDockItem,
+  bannerPreset: "forest" | "ember",
+  overrides: Partial<RoomGlobalSettings> = {}
+): RoomGlobalSettings {
+  return {
+    roomId: room.meetingId,
+    label: `${room.label} saved`,
+    topic: room.topic,
+    shortLabel: room.shortLabel,
+    appearance: {
+      bannerPreset,
+      inviteScope: "room",
+    },
+    conversationMode: "ordered",
+    maxRelayTurns: 6,
+    channels: [],
+    ...overrides,
+  };
+}
+
 function deferred<T>() {
   let resolve!: (value: T) => void;
   let reject!: (reason?: unknown) => void;
@@ -69,12 +90,16 @@ function deferred<T>() {
 }
 
 describe("useRoomSettingsController", () => {
+  const saveCanonicalGlobalSettings = vi.fn();
+
   beforeEach(() => {
     vi.resetAllMocks();
     apiMocks.saveRoomSettings.mockResolvedValue(settings(roomA, "forest"));
+    apiMocks.fetchRoomSettings.mockResolvedValue(settings(roomA, "forest"));
+    saveCanonicalGlobalSettings.mockResolvedValue(globalSettings(roomA, "forest"));
   });
 
-  it("ignores a stale room settings response after the active room changes", async () => {
+  it("uses canonical settings when a stale preference response resolves after the room changes", async () => {
     const roomARequest = deferred<RoomSettings>();
     apiMocks.fetchRoomSettings
       .mockReturnValueOnce(roomARequest.promise)
@@ -82,23 +107,32 @@ describe("useRoomSettingsController", () => {
     const onRoomMetadataLoaded = vi.fn();
     const onMembersChanged = vi.fn();
     const hook = renderHook(
-      ({ room }) =>
+      ({ room, canonical }) =>
         useRoomSettingsController({
           activeRoom: room,
           sessionToken: "",
           deviceToken: "device-test",
+          canonicalGlobalSettings: canonical,
+          saveCanonicalGlobalSettings,
           onRoomMetadataLoaded,
           onMembersChanged,
         }),
-      { initialProps: { room: roomA } }
+      {
+        initialProps: {
+          room: roomA,
+          canonical: globalSettings(roomA, "forest"),
+        },
+      }
     );
 
-    hook.rerender({ room: roomB });
+    hook.rerender({
+      room: roomB,
+      canonical: globalSettings(roomB, "ember"),
+    });
     await waitFor(() => expect(hook.result.current.appearanceFor(roomB).bannerPreset).toBe("ember"));
     await act(async () => roomARequest.resolve(settings(roomA, "forest")));
 
-    expect(hook.result.current.appearanceFor(roomA).bannerPreset).toBe("default");
-    expect(onRoomMetadataLoaded).toHaveBeenCalledTimes(1);
+    expect(hook.result.current.appearanceFor(roomA).bannerPreset).toBe("forest");
     expect(onRoomMetadataLoaded).toHaveBeenCalledWith(
       roomB.meetingId,
       expect.objectContaining({ label: "Room B saved" })
@@ -121,6 +155,8 @@ describe("useRoomSettingsController", () => {
         activeRoom: roomA,
         sessionToken: "",
         deviceToken: "device-test",
+        canonicalGlobalSettings: globalSettings(roomA, "forest"),
+        saveCanonicalGlobalSettings,
         onRoomMetadataLoaded,
         onMembersChanged,
       })
@@ -156,6 +192,8 @@ describe("useRoomSettingsController", () => {
         activeRoom: roomA,
         sessionToken: "session-a",
         deviceToken: "device-test",
+        canonicalGlobalSettings: globalSettings(roomA, "forest"),
+        saveCanonicalGlobalSettings,
         onRoomMetadataLoaded,
         onMembersChanged,
       })
@@ -177,40 +215,38 @@ describe("useRoomSettingsController", () => {
       },
       identity: { sessionToken: "session-a", deviceToken: "device-test" },
     });
+    expect(saveCanonicalGlobalSettings).not.toHaveBeenCalled();
   });
 
-  it("keeps server-owned routing settings unknown after the initial read fails", async () => {
+  it("keeps server-owned routing settings unknown without a canonical snapshot", async () => {
     apiMocks.fetchRoomSettings.mockRejectedValue(new Error("offline"));
     const hook = renderHook(() =>
       useRoomSettingsController({
         activeRoom: roomA,
         sessionToken: "",
         deviceToken: "device-test",
+        canonicalGlobalSettings: null,
+        saveCanonicalGlobalSettings,
         onRoomMetadataLoaded: vi.fn(),
         onMembersChanged: vi.fn(),
       })
     );
 
     expect(hook.result.current.settingsStateFor(roomA).status).toBe("loading");
-    await waitFor(() => expect(hook.result.current.settingsStateFor(roomA).status).toBe("error"));
-
     expect(hook.result.current.conversationModeFor(roomA)).toBeNull();
     expect(hook.result.current.maxRelayTurnsFor(roomA)).toBeNull();
-    expect(hook.result.current.settingsStateFor(roomA).error?.message).toBe("offline");
   });
 
-  it("marks a failed optimistic save stale and reconciles it from the server", async () => {
-    const saveRequest = deferred<RoomSettings>();
-    const reconciliation = deferred<RoomSettings>();
-    apiMocks.fetchRoomSettings
-      .mockResolvedValueOnce(settings(roomA, "forest"))
-      .mockReturnValueOnce(reconciliation.promise);
-    apiMocks.saveRoomSettings.mockReturnValue(saveRequest.promise);
+  it("saves a mode-only update through the canonical socket path", async () => {
+    const saveRequest = deferred<RoomGlobalSettings>();
+    saveCanonicalGlobalSettings.mockReturnValue(saveRequest.promise);
     const hook = renderHook(() =>
       useRoomSettingsController({
         activeRoom: roomA,
         sessionToken: "",
         deviceToken: "device-test",
+        canonicalGlobalSettings: globalSettings(roomA, "forest"),
+        saveCanonicalGlobalSettings,
         onRoomMetadataLoaded: vi.fn(),
         onMembersChanged: vi.fn(),
       })
@@ -223,35 +259,26 @@ describe("useRoomSettingsController", () => {
       status: "saving",
       value: { conversationMode: "ambient", maxRelayTurns: 6 },
     });
+    expect(saveCanonicalGlobalSettings).toHaveBeenCalledWith({
+      conversationMode: "ambient",
+    });
+    expect(apiMocks.saveRoomSettings).not.toHaveBeenCalled();
 
     await act(async () => {
-      saveRequest.reject(new Error("save offline"));
-      try {
-        await saveRequest.promise;
-      } catch {
-        // The hook handles the rejected save and starts authoritative reconciliation.
-      }
-    });
-    await waitFor(() => expect(apiMocks.fetchRoomSettings).toHaveBeenCalledTimes(2));
-    expect(hook.result.current.settingsStateFor(roomA)).toMatchObject({
-      status: "stale",
-      value: { conversationMode: "ambient", maxRelayTurns: 6 },
-    });
-
-    await act(async () => {
-      reconciliation.resolve(settings(roomA, "forest"));
-      await reconciliation.promise;
+      saveRequest.resolve(
+        globalSettings(roomA, "forest", { conversationMode: "ambient" })
+      );
+      await saveRequest.promise;
     });
 
     await waitFor(() => expect(hook.result.current.settingsStateFor(roomA).status).toBe("ready"));
-    expect(hook.result.current.conversationModeFor(roomA)).toBe("ordered");
+    expect(hook.result.current.conversationModeFor(roomA)).toBe("ambient");
   });
 
   it("ignores an older save failure after a newer settings save succeeds", async () => {
-    const firstSave = deferred<RoomSettings>();
-    const secondSave = deferred<RoomSettings>();
-    apiMocks.fetchRoomSettings.mockResolvedValue(settings(roomA, "forest"));
-    apiMocks.saveRoomSettings
+    const firstSave = deferred<RoomGlobalSettings>();
+    const secondSave = deferred<RoomGlobalSettings>();
+    saveCanonicalGlobalSettings
       .mockReturnValueOnce(firstSave.promise)
       .mockReturnValueOnce(secondSave.promise);
     const hook = renderHook(() =>
@@ -259,6 +286,8 @@ describe("useRoomSettingsController", () => {
         activeRoom: roomA,
         sessionToken: "",
         deviceToken: "device-test",
+        canonicalGlobalSettings: globalSettings(roomA, "forest"),
+        saveCanonicalGlobalSettings,
         onRoomMetadataLoaded: vi.fn(),
         onMembersChanged: vi.fn(),
       })
@@ -268,11 +297,12 @@ describe("useRoomSettingsController", () => {
     act(() => hook.result.current.updateConversationMode(roomA, "ambient"));
     act(() => hook.result.current.updateMaxRelayTurns(roomA, 8));
     await act(async () => {
-      secondSave.resolve({
-        ...settings(roomA, "forest"),
-        conversationMode: "ambient",
-        maxRelayTurns: 8,
-      });
+      secondSave.resolve(
+        globalSettings(roomA, "forest", {
+          conversationMode: "ambient",
+          maxRelayTurns: 8,
+        })
+      );
       await secondSave.promise;
     });
     expect(hook.result.current.settingsStateFor(roomA)).toMatchObject({
@@ -289,10 +319,36 @@ describe("useRoomSettingsController", () => {
       }
     });
 
-    expect(apiMocks.fetchRoomSettings).toHaveBeenCalledTimes(1);
     expect(hook.result.current.settingsStateFor(roomA)).toMatchObject({
       status: "ready",
       value: { conversationMode: "ambient", maxRelayTurns: 8 },
     });
+  });
+
+  it("applies empty canonical metadata instead of retaining stale text", async () => {
+    const onRoomMetadataLoaded = vi.fn();
+    renderHook(() =>
+      useRoomSettingsController({
+        activeRoom: roomA,
+        sessionToken: "",
+        deviceToken: "device-test",
+        canonicalGlobalSettings: globalSettings(roomA, "forest", {
+          label: "",
+          topic: "",
+          shortLabel: "",
+        }),
+        saveCanonicalGlobalSettings,
+        onRoomMetadataLoaded,
+        onMembersChanged: vi.fn(),
+      })
+    );
+
+    await waitFor(() =>
+      expect(onRoomMetadataLoaded).toHaveBeenCalledWith(roomA.meetingId, {
+        label: "",
+        topic: "",
+        shortLabel: "",
+      })
+    );
   });
 });

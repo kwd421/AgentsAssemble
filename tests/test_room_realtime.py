@@ -587,6 +587,111 @@ class RoomRealtimeControllerTests(unittest.TestCase):
         self.assertEqual(messages[0]["actor"]["participant_id"], "operator-local")
         self.assertEqual(messages[0]["content"], "@codex hello")
 
+    def test_operator_room_settings_command_publishes_full_settings_without_waking_provider(self):
+        browser = self.controller.connect({**HOST, "agent_id": "browser-observer"})
+        bridge = self.controller.connect(_bridge_identity("codex"))
+        browser.subscribe({"room_events"})
+        bridge.subscribe({"room_events"})
+        browser.drain()
+        bridge.drain()
+
+        first = self._command(
+            "settings-mode",
+            "room.settings.update",
+            {"conversation_mode": "ambient"},
+        )
+        duplicate = self._command(
+            "settings-mode",
+            "room.settings.update",
+            {"conversation_mode": "ambient"},
+        )
+
+        settings = first["result"]["room_settings"]
+        event = first["result"]["event"]
+        self.assertEqual(settings["conversation_mode"], "ambient")
+        self.assertEqual(event["type"], "room_settings_updated")
+        self.assertEqual(event["room_settings"], settings)
+        self.assertTrue(duplicate["deduplicated"])
+        self.assertEqual(
+            len(
+                [
+                    item
+                    for item in self.controller.store.read_events("general")
+                    if item.get("type") == "room_settings_updated"
+                ]
+            ),
+            1,
+        )
+        for channel in (browser, bridge):
+            messages = channel.drain()
+            delivered = [
+                delivered_event
+                for message in messages
+                if message.get("op") == "event"
+                for delivered_event in message.get("events", [])
+            ]
+            self.assertIn(event["id"], [item.get("id") for item in delivered])
+            self.assertFalse(any(message.get("op") == "room.wake" for message in messages))
+        self.assertEqual(
+            self.controller.store.session("general", "codex")["pending_event_ids"],
+            [],
+        )
+
+    def test_room_settings_command_is_operator_only_and_rejects_noncanonical_updates(self):
+        guest = {**HOST, "agent_id": "guest", "operator": False}
+        with self.assertRaises(RoomCommandRejected) as forbidden:
+            self._command(
+                "guest-settings",
+                "room.settings.update",
+                {"conversation_mode": "ambient"},
+                guest,
+            )
+        with self.assertRaises(RoomCommandRejected) as alias:
+            self._command(
+                "alias-settings",
+                "room.settings.update",
+                {"conversationMode": "ambient"},
+            )
+
+        self.assertEqual(forbidden.exception.code, "permission_denied")
+        self.assertEqual(alias.exception.code, "bad_request")
+        self.assertEqual(
+            self.controller.store.room_settings("general")["conversation_mode"],
+            "ordered",
+        )
+
+    def test_room_settings_command_rolls_back_settings_event_and_ack_together(self):
+        with patch.object(
+            RoomCommandUnitOfWork,
+            "record_ack",
+            side_effect=RuntimeError("command result unavailable"),
+        ):
+            with self.assertRaisesRegex(RuntimeError, "command result unavailable"):
+                self._command(
+                    "settings-rollback",
+                    "room.settings.update",
+                    {"conversation_mode": "ambient"},
+                )
+
+        self.assertEqual(
+            self.controller.store.room_settings("general")["conversation_mode"],
+            "ordered",
+        )
+        self.assertFalse(
+            any(
+                event.get("type") == "room_settings_updated"
+                for event in self.controller.store.read_events("general")
+            )
+        )
+        self.assertEqual(
+            self.controller.store.command_record(
+                "general",
+                "operator-local",
+                "settings-rollback",
+            ),
+            {},
+        )
+
     def test_canonical_vote_summary_reads_poll_and_ballots_from_room_events(self):
         poll = self._command(
             "vote-poll",

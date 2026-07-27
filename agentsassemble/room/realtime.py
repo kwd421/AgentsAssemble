@@ -95,6 +95,7 @@ from agentsassemble.room.snapshots import (
     ROOM_SNAPSHOT_EVENT_LIMIT,
     RoomSnapshotService,
 )
+from agentsassemble.room.settings_commands import RoomGlobalSettingsCommandService
 from agentsassemble.room.startup_reconciliation import RoomStartupSessionReconciler
 from agentsassemble.persistence.local.room.repository import RoomStore
 from agentsassemble.room.turn_coordinator import RoomTurnCoordinator
@@ -419,6 +420,7 @@ class RoomRealtimeController:
             start_agent=self._agent_lifecycle.start,
         )
         self._messages = RoomMessageService(FileAttachmentStore(self.output_root))
+        self._room_settings = RoomGlobalSettingsCommandService()
         self.last_cleanup_report = CleanupReport("room_realtime_controller")
         self.ensure_room(self.default_room_id)
         self._provider_sessions.restore_server_owned_providers()
@@ -646,6 +648,26 @@ class RoomRealtimeController:
                 "result": result,
                 "deduplicated": False,
             }
+        if action == "room.settings.update":
+            self._require_capability(identity, "room.manage")
+            with self._lock:
+                return self._execute_durable_command(
+                    identity,
+                    room_id,
+                    request_id,
+                    action,
+                    payload,
+                    lambda unit: self._room_settings.update_in_unit(
+                        payload,
+                        actor_id=clean_lobby_text(identity.get("agent_id"), limit=128),
+                        actor_type=clean_lobby_text(
+                            identity.get("participant_type"),
+                            limit=32,
+                        )
+                        or "human",
+                        unit=unit,
+                    ),
+                )
         if action == "message.send":
             self._require_capability(identity, "message.send")
             with self._lock:

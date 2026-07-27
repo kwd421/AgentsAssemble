@@ -18,12 +18,18 @@ from agentsassemble.room.public_event_contract import (  # noqa: E402
     PublicRoomActor,
     PublicRoomAttachment,
     PublicRoomEvent,
+    PublicRoomGlobalAppearance,
+    PublicRoomGlobalChannel,
+    PublicRoomGlobalSettings,
 )
 
 
 TYPESCRIPT_NAME = {
     PublicRoomActor: "PublicRoomActor",
     PublicRoomAttachment: "PublicRoomAttachment",
+    PublicRoomGlobalAppearance: "PublicRoomGlobalAppearance",
+    PublicRoomGlobalChannel: "PublicRoomGlobalChannel",
+    PublicRoomGlobalSettings: "PublicRoomGlobalSettings",
     PublicRoomEvent: "RoomEvent",
 }
 
@@ -77,6 +83,9 @@ def render() -> str:
     contracts = (
         ("PublicRoomActor", PublicRoomActor),
         ("PublicRoomAttachment", PublicRoomAttachment),
+        ("PublicRoomGlobalAppearance", PublicRoomGlobalAppearance),
+        ("PublicRoomGlobalChannel", PublicRoomGlobalChannel),
+        ("PublicRoomGlobalSettings", PublicRoomGlobalSettings),
         ("RoomEvent", PublicRoomEvent),
     )
     for index, (name, contract) in enumerate(contracts):

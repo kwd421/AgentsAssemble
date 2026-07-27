@@ -8,9 +8,11 @@ import unittest
 from http import HTTPStatus
 from http.server import ThreadingHTTPServer
 from pathlib import Path
+from types import SimpleNamespace
 from urllib.parse import parse_qs, urlparse
 from urllib.request import Request, urlopen
 
+from agentsassemble.application.public_invite_runtime import PublicInviteRuntime
 from agentsassemble.gui import _make_handler
 from agentsassemble.web.routes.room_settings import register_room_settings_routes
 from agentsassemble.web.router import GuiDeps, RequestContext, Router
@@ -25,12 +27,20 @@ class FakeHandler:
         *,
         body: bytes = b"",
         device_token: str = "room-settings-test-device",
+        local_operator: bool = True,
+        host_token: str = "",
     ) -> None:
         self.path = path
         self.headers = {
             "Content-Length": str(len(body)),
             "X-Device-Token": device_token,
+            "Host": "127.0.0.1:8765" if local_operator else "room.example",
         }
+        if host_token:
+            self.headers["X-Host-Token"] = host_token
+        self.server = SimpleNamespace(
+            server_address=("127.0.0.1" if local_operator else "0.0.0.0", 8765)
+        )
         self.rfile = io.BytesIO(body)
         self.sent_json: dict[str, object] | None = None
         self.sent_error: tuple[HTTPStatus, str] | None = None
@@ -55,16 +65,28 @@ class RoomSettingsHttpTests(unittest.TestCase):
         *,
         body: bytes = b"",
         device_token: str = "room-settings-test-device",
+        local_operator: bool = True,
+        host_token: str = "",
     ) -> FakeHandler:
-        handler = FakeHandler(path, body=body, device_token=device_token)
+        handler = FakeHandler(
+            path,
+            body=body,
+            device_token=device_token,
+            local_operator=local_operator,
+            host_token=host_token,
+        )
         parsed = urlparse(path)
         repository = RoomStore(output_root)
+        public_invite = PublicInviteRuntime(environ={})
+        public_invite.set_host_token("host-secret")
         context = RequestContext(
             handler,
             GuiDeps(
                 output_root=output_root,
                 room_repository=repository,
                 identity_backend=IdentityStore(output_root / "identity.db"),
+                public_invite_runtime=public_invite,
+                room_sessions=SimpleNamespace(verify=lambda _token: None),
             ),
             parsed,
             parse_qs(parsed.query),
@@ -139,6 +161,41 @@ class RoomSettingsHttpTests(unittest.TestCase):
         self.assertEqual(response.sent_error[0], HTTPStatus.BAD_REQUEST)
         self.assertIn("separate requests", response.sent_error[1])
 
+    def test_remote_anonymous_post_cannot_change_room_global_settings(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            repository = RoomStore(root)
+            repository.create_room("room-1", label="Original")
+
+            response = self._dispatch(
+                root,
+                "/api/room-settings",
+                "POST",
+                body=json.dumps({"room_id": "room-1", "label": "Unauthorized"}).encode(),
+                local_operator=False,
+            )
+            stored_label = repository.room_settings("room-1")["label"]
+
+        self.assertEqual(response.sent_error[0], HTTPStatus.FORBIDDEN)
+        self.assertEqual(stored_label, "Original")
+
+    def test_remote_host_can_use_the_authorized_global_compatibility_surface(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            RoomStore(root).create_room("room-1", label="Original")
+
+            response = self._dispatch(
+                root,
+                "/api/room-settings",
+                "POST",
+                body=json.dumps({"room_id": "room-1", "label": "Authorized"}).encode(),
+                local_operator=False,
+                host_token="host-secret",
+            )
+
+        self.assertIsNone(response.sent_error)
+        self.assertEqual(response.sent_json["settings"]["label"], "Authorized")
+
     def test_notification_and_read_preferences_are_isolated_by_device_user(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:
             root = Path(temp_dir)
@@ -160,6 +217,7 @@ class RoomSettingsHttpTests(unittest.TestCase):
                     }
                 ).encode(),
                 device_token="device-user-alpha",
+                local_operator=False,
             )
 
             first = self._dispatch(

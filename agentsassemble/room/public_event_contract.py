@@ -20,6 +20,31 @@ class PublicRoomAttachment(TypedDict):
     download_url: str
 
 
+class PublicRoomGlobalAppearance(TypedDict):
+    banner_preset: str
+    banner_image_url: str
+    icon_image_url: str
+    icon_label: str
+    invite_scope: str
+
+
+class PublicRoomGlobalChannel(TypedDict):
+    id: str
+    name: str
+    type: str
+    position: int
+    created_at: str
+
+
+class PublicRoomGlobalSettings(TypedDict):
+    label: str
+    topic: str
+    appearance: PublicRoomGlobalAppearance
+    conversation_mode: str
+    max_relay_turns: int
+    channels: list[PublicRoomGlobalChannel]
+
+
 class PublicRoomEvent(TypedDict):
     v: int
     id: str
@@ -58,10 +83,14 @@ class PublicRoomEvent(TypedDict):
     message_source: NotRequired[str]
     relay_depth: NotRequired[int]
     reason_code: NotRequired[str]
+    room_settings: NotRequired[PublicRoomGlobalSettings]
 
 
 __all__ = [
     "PublicRoomActor",
     "PublicRoomAttachment",
+    "PublicRoomGlobalAppearance",
+    "PublicRoomGlobalChannel",
+    "PublicRoomGlobalSettings",
     "PublicRoomEvent",
 ]
