@@ -91,6 +91,57 @@ class RoomRoutingPolicyTests(unittest.TestCase):
         )
         self.assertEqual(direct_message_targets(_event("@all 확인"), providers), ())
 
+    def test_structured_handoff_target_does_not_require_public_mention_text(self):
+        providers = {
+            "alpha": NativeCliProviderSpec("alpha", "Alpha", ("alpha",)),
+            "bravo": NativeCliProviderSpec("bravo", "Bravo", ("bravo",)),
+        }
+        event = _event("다음 판단을 부탁해.")
+        event["target_agent_id"] = "bravo"
+
+        self.assertEqual(direct_message_targets(event, providers), ("bravo",))
+
+    def test_direct_targets_use_each_agents_final_mention_position(self):
+        providers = {
+            "alpha": NativeCliProviderSpec("alpha", "Alpha", ("alpha",)),
+            "bravo": NativeCliProviderSpec("bravo", "Bravo", ("bravo",)),
+        }
+
+        self.assertEqual(
+            direct_message_targets(
+                _event("@alpha 설명에서 @bravo 를 언급하고 마지막 호출은 @alpha"),
+                providers,
+            ),
+            ("bravo", "alpha"),
+        )
+
+    def test_display_name_tokens_are_unambiguous_mention_aliases(self):
+        providers = {
+            "luna": NativeCliProviderSpec("luna", "루나 — 리라", ("codex",)),
+            "sonnet": NativeCliProviderSpec("sonnet", "소넷 — 로완", ("claude",)),
+        }
+
+        self.assertEqual(
+            direct_message_targets(_event("@리라 다음에는 @소넷"), providers),
+            ("luna", "sonnet"),
+        )
+        self.assertEqual(
+            route_message_targets(
+                _event("@루나 답해"),
+                providers,
+                max_agent_relay_depth=2,
+            ).targets,
+            ("luna",),
+        )
+
+    def test_ambiguous_display_name_token_is_not_a_mention_alias(self):
+        providers = {
+            "alpha": NativeCliProviderSpec("alpha", "Alex One", ("alpha",)),
+            "bravo": NativeCliProviderSpec("bravo", "Alex Two", ("bravo",)),
+        }
+
+        self.assertEqual(direct_message_targets(_event("@alex 답해"), providers), ())
+
 
 if __name__ == "__main__":
     unittest.main()

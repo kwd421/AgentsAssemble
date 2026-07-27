@@ -119,6 +119,17 @@ class RoomFloorPolicyTests(unittest.TestCase):
 
         self.assertEqual(result, ("bravo",))
 
+    def test_ordered_floor_uses_the_final_mention_as_the_handoff(self):
+        result = ordered_floor_target(
+            provider_ids=["dm", "luna", "sonnet"],
+            actor_id="dm",
+            direct_targets=["luna", "sonnet"],
+            eligible_agent_ids=["luna", "sonnet"],
+            message_counts={"luna": 1, "sonnet": 0},
+        )
+
+        self.assertEqual(result, ("sonnet",))
+
 
 if __name__ == "__main__":
     unittest.main()

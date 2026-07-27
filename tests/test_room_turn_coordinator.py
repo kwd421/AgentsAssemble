@@ -163,11 +163,17 @@ class RoomTurnCoordinatorTests(unittest.TestCase):
         result = self.coordinator.message_final(
             self.identity,
             "general",
-            {"turn_id": turn_id, "content": "final answer", "latency": {"ttfo_ms": 25}},
+            {
+                "turn_id": turn_id,
+                "content": "final answer",
+                "target_agent_id": "sonnet",
+                "latency": {"ttfo_ms": 25},
+            },
         )
 
         session = self.store.session("general", "codex")
         self.assertEqual(result["event"]["content"], "final answer")
+        self.assertEqual(result["event"]["target_agent_id"], "sonnet")
         self.assertEqual(session["runtime_status"], "idle")
         self.assertEqual(session["active_turn_id"], "")
         self.assertEqual(session["turn_phase"], "")

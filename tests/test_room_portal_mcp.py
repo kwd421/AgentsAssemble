@@ -17,18 +17,32 @@ class RoomPortalMcpTests(unittest.TestCase):
             portal.prepare()
             portal.begin_observation("wake-a", input_up_to_seq=7)
 
-            tool_names, read_error, publish_error = anyio.run(
+            tool_names, read_error, publish_error, roll, choice = anyio.run(
                 self._call_tools,
                 room_portal_mcp_settings(portal.root),
             )
             receipt = portal.observation_receipt("wake-a")
-            publication = portal.consume_publication("wake-a")
+            publication = portal.consume_publication_result("wake-a")
+            activity = portal.activity_path.read_text(encoding="utf-8")
 
-        self.assertEqual(tool_names, ["read_discussion", "publish_message"])
+        self.assertEqual(
+            tool_names,
+            [
+                "read_discussion",
+                "publish_message",
+                "roll_dice",
+                "choose_random",
+            ],
+        )
         self.assertFalse(read_error)
         self.assertFalse(publish_error)
+        self.assertFalse(roll.isError)
+        self.assertFalse(choice.isError)
         self.assertEqual(receipt, 7)
-        self.assertEqual(publication, "MCP publication")
+        self.assertEqual(publication.content, "MCP publication")
+        self.assertEqual(publication.target_agent_id, "sonnet")
+        self.assertIn('"operation": "roll_dice"', activity)
+        self.assertIn('"operation": "choose_random"', activity)
 
     async def _call_tools(self, settings):
         parameters = StdioServerParameters(
@@ -44,12 +58,25 @@ class RoomPortalMcpTests(unittest.TestCase):
                     read_result = await session.call_tool("read_discussion", {})
                     publish_result = await session.call_tool(
                         "publish_message",
-                        {"content": "MCP publication"},
+                        {
+                            "content": "MCP publication",
+                            "next_agent_id": "sonnet",
+                        },
+                    )
+                    roll_result = await session.call_tool(
+                        "roll_dice",
+                        {"notation": "2d6+1", "reason": "damage"},
+                    )
+                    choice_result = await session.call_tool(
+                        "choose_random",
+                        {"options": ["north", "south"], "reason": "route"},
                     )
         return (
             [tool.name for tool in tools.tools],
             read_result.isError,
             publish_result.isError,
+            roll_result,
+            choice_result,
         )
 
 

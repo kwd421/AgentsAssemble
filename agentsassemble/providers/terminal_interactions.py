@@ -14,6 +14,8 @@ _PERMISSION_BLOCK = re.compile(
     flags=re.IGNORECASE | re.DOTALL,
 )
 _ATTACHMENT_ID = re.compile(r"^[A-Za-z0-9_-]{8,64}$")
+_AGENT_ID = re.compile(r"^[A-Za-z0-9_.-]{1,128}$")
+_DICE_NOTATION = re.compile(r"^\d{0,3}d\d{1,4}(?:[+-]\d{1,5})?$", re.IGNORECASE)
 _SHELL_CONTROL_TOKENS = frozenset({";", ";;", "&", "&&", "|", "||", "<", ">", "(", ")"})
 
 
@@ -90,7 +92,15 @@ def _is_safe_room_portal_command(command: str) -> bool:
         return not arguments
     if action == "media":
         return len(arguments) == 1 and bool(_ATTACHMENT_ID.fullmatch(arguments[0]))
-    if action != "speak" or not arguments:
+    if action == "roll":
+        return len(arguments) == 1 and bool(_DICE_NOTATION.fullmatch(arguments[0]))
+    if action == "speak-to":
+        if len(arguments) < 2 or _AGENT_ID.fullmatch(arguments[0]) is None:
+            return False
+        arguments = arguments[1:]
+    elif action != "speak":
+        return False
+    if not arguments:
         return False
     if _has_shell_expansion_outside_single_quotes(command):
         return False

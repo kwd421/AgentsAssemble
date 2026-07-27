@@ -8,6 +8,10 @@ from agentsassemble.legacy.meeting.core.events import clean_lobby_text
 from agentsassemble.providers.launch_specs import NativeCliProviderSpec
 
 
+_DISPLAY_ALIAS_SPLIT = re.compile(r"[\s/|·—–:()]+")
+_MENTION_ALIAS = re.compile(r"^[\w.-]+$", re.UNICODE)
+
+
 @dataclass(frozen=True)
 class RoomRoutingDecision:
     targets: tuple[str, ...]
@@ -62,22 +66,29 @@ def direct_message_targets(
     """
     content = clean_lobby_text(event.get("content"), limit=12000)
     target_agent_id = clean_lobby_text(event.get("target_agent_id"), limit=128)
-    ordered: list[tuple[int, str]] = []
+    last_positions: dict[str, int] = {}
     if target_agent_id in providers:
-        ordered.append((-1, target_agent_id))
+        last_positions[target_agent_id] = -1
     lowered = content.casefold()
-    for agent_id in providers:
-        match = re.search(
-            rf"(?<![\w-])@{re.escape(agent_id.casefold())}(?![\w-])",
-            lowered,
+    for alias, agent_id in _provider_mention_aliases(providers).items():
+        matches = tuple(
+            re.finditer(
+                rf"(?<![\w-])@{re.escape(alias)}(?![\w-])",
+                lowered,
+            )
         )
-        if match is not None:
-            ordered.append((match.start(), agent_id))
-    result: list[str] = []
-    for _position, agent_id in sorted(ordered):
-        if agent_id not in result:
-            result.append(agent_id)
-    return tuple(result)
+        if matches:
+            last_positions[agent_id] = max(
+                last_positions.get(agent_id, -1),
+                matches[-1].start(),
+            )
+    return tuple(
+        agent_id
+        for agent_id, _position in sorted(
+            last_positions.items(),
+            key=lambda item: item[1],
+        )
+    )
 
 
 def _mentioned_agents(
@@ -87,6 +98,28 @@ def _mentioned_agents(
     lowered = content.casefold()
     return {
         agent_id
-        for agent_id in providers
-        if re.search(rf"(?<![\w-])@{re.escape(agent_id.casefold())}(?![\w-])", lowered)
+        for alias, agent_id in _provider_mention_aliases(providers).items()
+        if re.search(rf"(?<![\w-])@{re.escape(alias)}(?![\w-])", lowered)
+    }
+
+
+def _provider_mention_aliases(
+    providers: Mapping[str, NativeCliProviderSpec],
+) -> dict[str, str]:
+    candidates: dict[str, set[str]] = {}
+    for agent_id, spec in providers.items():
+        display_name = clean_lobby_text(spec.display_name, limit=128)
+        aliases = [agent_id]
+        if display_name and not any(character.isspace() for character in display_name):
+            aliases.append(display_name)
+        aliases.extend(_DISPLAY_ALIAS_SPLIT.split(display_name))
+        for value in aliases:
+            alias = str(value or "").strip(" @,;!?[]{}").casefold()
+            if not alias or alias == "all" or _MENTION_ALIAS.fullmatch(alias) is None:
+                continue
+            candidates.setdefault(alias, set()).add(agent_id)
+    return {
+        alias: next(iter(agent_ids))
+        for alias, agent_ids in candidates.items()
+        if len(agent_ids) == 1
     }

@@ -1,4 +1,6 @@
 import io
+import json
+import subprocess
 import tempfile
 import threading
 import time
@@ -24,7 +26,7 @@ from agentsassemble.providers.runtime_factory import (
     runtime_from_config,
 )
 from agentsassemble.providers.agent_bridge import RoomAgentBridge
-from agentsassemble.providers.room_portal import RoomPortal
+from agentsassemble.providers.room_portal import RoomPortal, room_wake_orientation
 
 
 class FakeClient:
@@ -61,6 +63,17 @@ class FakeClient:
 
     def close(self):
         self.closed = True
+
+
+class RoomWakeOrientationTests(unittest.TestCase):
+    def test_terminal_room_publication_explains_shell_safe_prose(self):
+        orientation = room_wake_orientation("antigravity_live_session")
+
+        self.assertIn('agentsassemble-room speak "<message>"', orientation)
+        self.assertIn("already on `PATH`", orientation)
+        self.assertIn("do not try to locate", orientation)
+        self.assertIn("Unicode quotation marks", orientation)
+        self.assertIn('do not use ASCII `"`, `$`, or', orientation)
 
 
 class FakeRuntime:
@@ -181,8 +194,13 @@ class RoomPortalRuntime(FakeRuntime):
         )
         publication = self.publications.pop(0)
         if publication:
+            if isinstance(publication, tuple):
+                target_agent_id, publication = publication
+                path = f"/agentsassemble-room/outbox-to/{target_agent_id}.txt"
+            else:
+                path = "/agentsassemble-room/outbox.txt"
             self.portal.acp_write_text(
-                "/agentsassemble-room/outbox.txt",
+                path,
                 publication,
             )
 
@@ -264,6 +282,120 @@ def _wait_for(predicate, timeout=2.0):
 
 
 class RoomAgentBridgeTests(unittest.TestCase):
+    def test_terminal_room_portal_speak_to_records_target_with_publication(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            portal = RoomPortal(Path(temp_dir) / "portal", participant_id="gemini")
+            portal.prepare()
+            portal.begin_observation("wake-handoff", input_up_to_seq=4)
+
+            subprocess.run(
+                [
+                    str(portal.helper_path),
+                    "speak-to",
+                    "sonnet",
+                    "다음 판단을 부탁해.",
+                ],
+                check=True,
+                capture_output=True,
+                text=True,
+            )
+            publication = portal.consume_publication_result("wake-handoff")
+
+        self.assertEqual(publication.content, "다음 판단을 부탁해.")
+        self.assertEqual(publication.target_agent_id, "sonnet")
+
+    def test_room_portal_view_lists_agent_ids_for_explicit_handoff(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            portal = RoomPortal(Path(temp_dir) / "portal", participant_id="gemini")
+            portal.prepare()
+            portal.ingest_frame(
+                {
+                    "participants": [
+                        {
+                            "participant_id": "gemini",
+                            "participant_type": "agent",
+                            "display_name": "제미나이",
+                        },
+                        {
+                            "participant_id": "sonnet",
+                            "participant_type": "agent",
+                            "display_name": "소넷",
+                        },
+                    ]
+                }
+            )
+
+            view = portal.acp_read_text("/agentsassemble-room/current.md")
+
+        self.assertIn("## Agent handles", view)
+        self.assertIn("`sonnet` — 소넷", view)
+
+    def test_terminal_room_portal_rolls_audited_dice_for_non_codex_game_master(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            portal = RoomPortal(Path(temp_dir) / "portal", participant_id="gemini")
+            portal.prepare()
+            portal.begin_observation("wake-game", input_up_to_seq=9)
+
+            completed = subprocess.run(
+                [str(portal.helper_path), "roll", "2d6+1"],
+                check=True,
+                capture_output=True,
+                text=True,
+            )
+            result = json.loads(completed.stdout)
+            activity = [
+                json.loads(line)
+                for line in portal.activity_path.read_text(encoding="utf-8").splitlines()
+            ]
+
+        self.assertEqual(result["notation"], "2d6+1")
+        self.assertEqual(len(result["rolls"]), 2)
+        self.assertTrue(all(1 <= value <= 6 for value in result["rolls"]))
+        self.assertEqual(result["total"], sum(result["rolls"]) + 1)
+        self.assertEqual(activity[-1]["operation"], "roll_dice")
+        self.assertEqual(activity[-1]["details"], result)
+
+    def test_room_portal_renders_vote_question_options_and_ballots(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            portal = RoomPortal(Path(temp_dir) / "portal", participant_id="codex")
+            portal.prepare()
+            portal.ingest_frame(
+                {
+                    "stream": "room_events",
+                    "events": [
+                        {
+                            "id": "vote-1",
+                            "seq": 1,
+                            "type": "message_final",
+                            "participant_id": "host",
+                            "display_name": "Host",
+                            "message_kind": "vote",
+                            "vote_id": "vote-1",
+                            "vote_question": "Which route?",
+                            "vote_options": ["North", "South"],
+                        },
+                        {
+                            "id": "ballot-1",
+                            "seq": 2,
+                            "type": "message_final",
+                            "participant_id": "peer",
+                            "display_name": "Peer",
+                            "message_kind": "vote_cast",
+                            "vote_id": "vote-1",
+                            "vote_choice": "South",
+                        },
+                    ],
+                }
+            )
+
+            view = portal.acp_read_text("/agentsassemble-room/current.md")
+
+        self.assertIn("[Vote vote-1]", view)
+        self.assertIn("Which route?", view)
+        self.assertIn("1. North", view)
+        self.assertIn("2. South", view)
+        self.assertIn("[Vote vote-1 ballot] South", view)
+
     def test_codex_wake_does_not_publish_commentary_after_provider_error(self):
         with tempfile.TemporaryDirectory() as temp_dir:
             portal = RoomPortal(Path(temp_dir) / "portal", participant_id="codex")
@@ -331,7 +463,10 @@ class RoomAgentBridgeTests(unittest.TestCase):
             portal = RoomPortal(Path(temp_dir) / "portal", participant_id="codex")
             portal.prepare()
             client = FakeClient()
-            runtime = RoomPortalRuntime(portal, ["public room reply", ""])
+            runtime = RoomPortalRuntime(
+                portal,
+                [("sonnet", "public room reply"), ""],
+            )
             bridge = RoomAgentBridge(
                 client,
                 runtime,
@@ -409,6 +544,7 @@ class RoomAgentBridgeTests(unittest.TestCase):
 
         final = next(payload for action, payload, _ in client.commands if action == "message.final")
         self.assertEqual(final["content"], "public room reply")
+        self.assertEqual(final["target_agent_id"], "sonnet")
         self.assertFalse(any(action == "message.delta" for action, _, _ in client.commands))
         self.assertEqual(
             len([item for item in client.commands if item[0] == "turn.decline"]),
@@ -421,7 +557,11 @@ class RoomAgentBridgeTests(unittest.TestCase):
         self.assertIn("private invite orientation", runtime.sent[0])
         self.assertNotIn("private invite orientation", runtime.sent[1])
         self.assertTrue(runtime.sent[0].endswith("room.wake wake-1"))
-        self.assertEqual(runtime.sent[1], "room.wake wake-2")
+        self.assertTrue(runtime.sent[1].endswith("room.wake wake-2"))
+        self.assertIn("Current turn contract: room wake", runtime.sent[0])
+        self.assertIn("Current turn contract: room wake", runtime.sent[1])
+        self.assertNotIn("automatic final", runtime.sent[0])
+        self.assertNotIn("automatic final", runtime.sent[1])
 
     def test_room_wake_hides_events_beyond_its_assigned_sequence(self):
         with tempfile.TemporaryDirectory() as temp_dir:
@@ -660,7 +800,13 @@ class RoomAgentBridgeTests(unittest.TestCase):
         self.assertFalse(thread.is_alive())
         self.assertTrue(bridge.remote_stop_requested)
         self.assertEqual(runtime.start_count, 1)
-        self.assertEqual(runtime.sent, ["first prompt", "second prompt"])
+        self.assertEqual(len(runtime.sent), 2)
+        self.assertTrue(runtime.sent[0].endswith("first prompt"))
+        self.assertTrue(runtime.sent[1].endswith("second prompt"))
+        self.assertTrue(
+            all("Current turn contract: automatic final" in value for value in runtime.sent)
+        )
+        self.assertTrue(all("room wake" not in value for value in runtime.sent))
         self.assertEqual(runtime.stop_count, 1)
         deltas = [payload["content"] for action, payload, _ in client.commands if action == "message.delta"]
         self.assertEqual(deltas, ["clean ", "delta", "clean ", "delta"])

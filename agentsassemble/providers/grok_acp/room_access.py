@@ -2,7 +2,10 @@
 
 from __future__ import annotations
 
-from agentsassemble.providers.room_portal import VIRTUAL_ROOM_OUTBOX_PATH
+from agentsassemble.providers.room_portal import (
+    VIRTUAL_ROOM_OUTBOX_PATH,
+    direct_outbox_target,
+)
 from agentsassemble.room.text import clean_room_text
 
 
@@ -65,9 +68,45 @@ def permission_is_room_outbox_write(
                     if isinstance(location, dict) and location.get("path")
                 )
     return bool(targets) and all(
-        target == VIRTUAL_ROOM_OUTBOX_PATH
+        target == VIRTUAL_ROOM_OUTBOX_PATH or bool(direct_outbox_target(target))
         for target in targets
     )
+
+
+def room_outbox_path(
+    tool_call: dict[str, object],
+    *,
+    cached: dict[str, object],
+) -> str:
+    raw_input = (
+        tool_call.get("rawInput")
+        if isinstance(tool_call.get("rawInput"), dict)
+        else {}
+    )
+    cached_input = (
+        cached.get("rawInput")
+        if isinstance(cached.get("rawInput"), dict)
+        else {}
+    )
+    for values in (tool_call, raw_input, cached, cached_input):
+        for key in ("file_path", "path", "target_file"):
+            value = str(values.get(key) or "")
+            if value == VIRTUAL_ROOM_OUTBOX_PATH or direct_outbox_target(value):
+                return value
+    for values in (tool_call, cached):
+        for key in ("location", "locations"):
+            locations = values.get(key)
+            if isinstance(locations, dict):
+                locations = [locations]
+            if not isinstance(locations, list):
+                continue
+            for location in locations:
+                if not isinstance(location, dict):
+                    continue
+                value = str(location.get("path") or "")
+                if value == VIRTUAL_ROOM_OUTBOX_PATH or direct_outbox_target(value):
+                    return value
+    return ""
 
 
 def room_outbox_content(
@@ -181,4 +220,5 @@ __all__ = [
     "permission_context_update",
     "permission_is_room_outbox_write",
     "room_outbox_content",
+    "room_outbox_path",
 ]

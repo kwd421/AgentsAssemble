@@ -7,7 +7,10 @@ from pathlib import Path
 from unittest.mock import Mock, patch
 
 from agentsassemble.providers.grok_acp import GrokAcpRuntime
-from agentsassemble.providers.room_portal import VIRTUAL_ROOM_OUTBOX_PATH
+from agentsassemble.providers.room_portal import (
+    VIRTUAL_ROOM_DIRECT_OUTBOX_PREFIX,
+    VIRTUAL_ROOM_OUTBOX_PATH,
+)
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -137,6 +140,42 @@ class GrokAcpRuntimeTests(unittest.TestCase):
         runtime.room_portal.acp_write_text.assert_called_once_with(
             VIRTUAL_ROOM_OUTBOX_PATH,
             "room reply",
+        )
+
+    def test_permission_stages_targeted_room_outbox_write_atomically(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            runtime = self.make_runtime(Path(temp_dir))
+            runtime.room_portal = Mock()
+            runtime._session_id = "session-1"
+            runtime._active_room_observation = True
+            target_path = f"{VIRTUAL_ROOM_DIRECT_OUTBOX_PREFIX}sonnet.txt"
+            request = {
+                "jsonrpc": "2.0",
+                "id": "permission-targeted",
+                "method": "session/request_permission",
+                "params": {
+                    "sessionId": "session-1",
+                    "toolCall": {
+                        "toolCallId": "tool-targeted",
+                        "title": "write",
+                        "rawInput": {
+                            "file_path": target_path,
+                            "content": "소넷, 다음 판단을 부탁해.",
+                        },
+                    },
+                    "options": [
+                        {"optionId": "allow-once", "kind": "allow_once"},
+                        {"optionId": "reject-once", "kind": "reject_once"},
+                    ],
+                },
+            }
+
+            with patch.object(runtime, "_send_json"):
+                runtime._respond_to_permission_request(request)
+
+        runtime.room_portal.acp_write_text.assert_called_once_with(
+            target_path,
+            "소넷, 다음 판단을 부탁해.",
         )
 
     def test_permission_ignores_tool_context_from_another_session(self):

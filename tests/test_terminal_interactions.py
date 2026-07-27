@@ -22,6 +22,30 @@ class AntigravityRoomPortalInteractionTests(unittest.TestCase):
         self.assertEqual(policy.response_for(prompt), b"")
         self.assertEqual(policy.describe()["room_portal_permission_approval_count"], 1)
 
+    def test_bounded_room_dice_roll_receives_terminal_approval(self):
+        policy = AntigravityRoomPortalInteraction()
+        policy.begin_turn()
+        prompt = b"\n".join(
+            [
+                b"Requesting permission for:",
+                b"   agentsassemble-room roll '1d20+4'",
+                b"Do you want to proceed?",
+            ]
+        )
+
+        self.assertEqual(policy.response_for(prompt), b"\x1b[B\r")
+
+        policy.begin_turn()
+        unsafe_prompt = b"\n".join(
+            [
+                b"Requesting permission for:",
+                b"   agentsassemble-room roll '1d20+4' && whoami",
+                b"Do you want to proceed?",
+            ]
+        )
+        with self.assertRaises(AdapterContractError):
+            policy.response_for(unsafe_prompt)
+
     def test_shell_chaining_is_rejected_instead_of_receiving_terminal_approval(self):
         policy = AntigravityRoomPortalInteraction()
         policy.begin_turn()
@@ -57,6 +81,29 @@ class AntigravityRoomPortalInteractionTests(unittest.TestCase):
             [
                 b"Requesting permission for:",
                 b'   agentsassemble-room speak "The `yellow block` looks like an overlay."',
+                b"Do you want to proceed?",
+            ]
+        )
+        with self.assertRaises(AdapterContractError):
+            policy.response_for(unsafe_prompt)
+
+    def test_targeted_room_publication_requires_a_safe_agent_id(self):
+        policy = AntigravityRoomPortalInteraction()
+        safe_prompt = b"\n".join(
+            [
+                b"Requesting permission for:",
+                b"   agentsassemble-room speak-to sonnet 'Your turn.'",
+                b"Do you want to proceed?",
+            ]
+        )
+
+        self.assertEqual(policy.response_for(safe_prompt), b"\x1b[B\r")
+
+        policy.begin_turn()
+        unsafe_prompt = b"\n".join(
+            [
+                b"Requesting permission for:",
+                b"   agentsassemble-room speak-to ../sonnet 'Your turn.'",
                 b"Do you want to proceed?",
             ]
         )

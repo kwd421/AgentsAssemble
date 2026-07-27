@@ -8,6 +8,12 @@ import json
 import os
 from pathlib import Path
 
+from agentsassemble.providers.room_random import (
+    choose_random as choose_random_result,
+)
+from agentsassemble.providers.room_random import roll_dice as roll_dice_result
+from agentsassemble.room.text import clean_room_text
+
 
 def serve_room_portal_mcp(root: str | Path) -> None:
     try:
@@ -30,21 +36,56 @@ def serve_room_portal_mcp(root: str | Path) -> None:
         return text
 
     @server.tool()
-    def publish_message(content: str) -> str:
-        """Publish one substantive message to the shared room."""
+    def publish_message(content: str, next_agent_id: str = "") -> str:
+        """Publish one substantive message, optionally handing the floor to one agent."""
         message = str(content or "").replace("\x00", "").strip()[:12_000]
         if not message:
             raise ValueError("A room publication cannot be empty.")
+        target_agent_id = clean_room_text(next_agent_id, limit=128)
         turn = _read_turn(turn_path)
         turn_id = str(turn.get("turn_id") or "").strip()
         if not turn_id:
             raise RuntimeError("No room observation is active.")
         _write_json_atomic(
             outbox_path,
-            {"turn_id": turn_id, "content": message},
+            {
+                "turn_id": turn_id,
+                "content": message,
+                "target_agent_id": target_agent_id,
+            },
         )
         _record_activity(activity_path, turn_path, "speak", turn_id=turn_id)
         return "Published to the shared room."
+
+    @server.tool()
+    def roll_dice(notation: str, reason: str = "") -> dict[str, object]:
+        """Roll bounded NdS±M dice using server-side randomness."""
+        result = roll_dice_result(notation)
+        _record_activity(
+            activity_path,
+            turn_path,
+            "roll_dice",
+            details={
+                **result,
+                "reason": clean_room_text(reason, limit=200),
+            },
+        )
+        return result
+
+    @server.tool()
+    def choose_random(options: list[str], reason: str = "") -> dict[str, object]:
+        """Choose one item from 2 to 50 options using server-side randomness."""
+        result = choose_random_result(options)
+        _record_activity(
+            activity_path,
+            turn_path,
+            "choose_random",
+            details={
+                **result,
+                "reason": clean_room_text(reason, limit=200),
+            },
+        )
+        return result
 
     server.run(transport="stdio")
 
@@ -78,6 +119,7 @@ def _record_activity(
     operation: str,
     *,
     turn_id: str = "",
+    details: dict[str, object] | None = None,
 ) -> None:
     turn = _read_turn(turn_path)
     active_turn_id = turn_id or str(turn.get("turn_id") or "").strip()
@@ -92,6 +134,8 @@ def _record_activity(
         "turn_id": active_turn_id,
         "observed_through_seq": observed_through_seq,
     }
+    if details:
+        payload["details"] = details
     with activity_path.open("a", encoding="utf-8") as stream:
         stream.write(json.dumps(payload, ensure_ascii=False, sort_keys=True) + "\n")
     activity_path.chmod(0o600)

@@ -1178,6 +1178,10 @@ class RoomTurnCoordinator:
             session_id=session["session_id"],
             turn_id=active_turn_id,
             content=prepared.content,
+            target_agent_id=clean_lobby_text(
+                payload.get("target_agent_id"),
+                limit=128,
+            ),
             source_event_id=session.get("active_source_event_id"),
             relay_depth=int(session.get("active_relay_depth") or 0),
             message_source=payload.get("message_source"),

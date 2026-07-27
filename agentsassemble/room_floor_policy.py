@@ -83,7 +83,9 @@ def ordered_floor_target(
 ) -> tuple[str, ...]:
     """Choose one ordered-room speaker without asking every provider to answer."""
     providers = set(provider_ids)
-    for target in direct_targets:
+    # A model may mention the previous speaker in its recap and end with the
+    # actual next-speaker call. The final direct mention owns the ordered floor.
+    for target in reversed(tuple(direct_targets)):
         if target in providers and target != actor_id:
             return (target,)
 

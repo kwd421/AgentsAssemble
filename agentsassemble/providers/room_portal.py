@@ -8,6 +8,7 @@ import os
 import re
 import sys
 import threading
+from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Iterable
@@ -17,43 +18,49 @@ from agentsassemble.room.text import clean_room_text
 
 VIRTUAL_ROOM_VIEW_PATH = "/agentsassemble-room/current.md"
 VIRTUAL_ROOM_OUTBOX_PATH = "/agentsassemble-room/outbox.txt"
+VIRTUAL_ROOM_DIRECT_OUTBOX_PREFIX = "/agentsassemble-room/outbox-to/"
 _ATTACHMENT_ID = re.compile(r"^[A-Za-z0-9_-]{8,64}$")
+_DIRECT_OUTBOX_PATH = re.compile(
+    rf"^{re.escape(VIRTUAL_ROOM_DIRECT_OUTBOX_PREFIX)}(?P<target>[A-Za-z0-9_.-]{{1,128}})\.txt$"
+)
 _MAX_ROOM_MESSAGE_CHARS = 12_000
 
 
-def room_session_orientation(provider_kind: object = "") -> str:
+def _room_interfaces(provider_kind: object = "") -> tuple[str, str, str]:
     kind = clean_room_text(provider_kind, limit=64)
     provider_note = ""
     if kind == "codex_live_session":
         read_interface = "the `read_discussion` MCP tool"
-        speak_interface = "the `publish_message` MCP tool with `content`"
-        publication_note = f"""
-- On `room.wake`, only {speak_interface} creates a public room message; ordinary
-  assistant output remains private.
-- On a normal assigned room turn, do not use the room publication boundary:
-  your ordinary final answer is published automatically."""
+        speak_interface = (
+            "the `publish_message` MCP tool with `content` and, when deliberately "
+            "handing the floor to one participant, `next_agent_id`"
+        )
     elif kind in {"claude_code", "antigravity_live_session"}:
         read_interface = "terminal command `agentsassemble-room read`"
-        speak_interface = "terminal command `agentsassemble-room speak '<message>'`"
-        publication_note = f"""
-- On `room.wake`, only {speak_interface} creates a public room message; ordinary
-  assistant output remains private.
-- On a normal assigned room turn, do not use the room publication boundary:
-  your ordinary final answer is published automatically."""
+        speak_interface = (
+            'terminal command `agentsassemble-room speak "<message>"`, or '
+            '`agentsassemble-room speak-to <agent-id> "<message>"` when deliberately '
+            "handing the floor to one participant"
+        )
+        provider_note = """
+- `agentsassemble-room` is already on `PATH`. Run the documented `read`,
+  `roll`, and `speak` commands directly; do not try to locate or inspect the
+  helper with `which`, `find`, or other discovery commands.
+- The terminal command is shell-parsed. Wrap the whole public message in one
+  pair of ASCII double quotes. Inside the message, use Unicode quotation marks
+  such as `「」` and Unicode arrows such as `→`; do not use ASCII `"`, `$`, or
+  backticks. This keeps ordinary room prose inside the one approved command."""
     elif kind == "grok_live_session":
         read_interface = "ACP read path `/agentsassemble-room/current.md`"
         speak_interface = (
-            "ACP write path `/agentsassemble-room/outbox.txt` with the message as its content"
+            "ACP write path `/agentsassemble-room/outbox.txt` with the message as its "
+            "content, or `/agentsassemble-room/outbox-to/<agent-id>.txt` when deliberately "
+            "handing the floor to one participant"
         )
         provider_note = """
 - For that exact virtual outbox path, the room adapter captures the content at
   the ACP permission boundary. A later local read-only filesystem error does
   not mean publication failed; do not retry it through a shell or helper."""
-        publication_note = f"""
-- On `room.wake`, only {speak_interface} creates a public room message; ordinary
-  assistant output remains private.
-- On a normal assigned room turn, do not use the room publication boundary:
-  your ordinary final answer is published automatically."""
     else:
         read_interface = (
             "the provider's private room read interface: Codex `read_discussion` MCP, "
@@ -61,22 +68,50 @@ def room_session_orientation(provider_kind: object = "") -> str:
         )
         speak_interface = (
             "the matching private room speak interface: Codex `publish_message` MCP, "
-            "terminal `agentsassemble-room speak '<message>'`, or ACP "
-            "`/agentsassemble-room/outbox.txt`"
+            'terminal `agentsassemble-room speak "<message>"` / `speak-to`, or ACP '
+            "`/agentsassemble-room/outbox.txt` / `outbox-to/<agent-id>.txt`"
         )
-        publication_note = f"""
-- On `room.wake`, only {speak_interface} creates a public room message; ordinary
-  assistant output remains private.
-- On a normal assigned room turn, do not use the room publication boundary:
-  your ordinary final answer is published automatically."""
+    return read_interface, speak_interface, provider_note
+
+
+def room_session_orientation(provider_kind: object = "") -> str:
+    del provider_kind
     return f"""Shared room session:
 - You are an ongoing participant in a shared AgentsAssemble room.
-- A `room.wake <turn-id>` notice is a content-free signal that assigned,
-  finalized room activity is available. It is not a request or a public message.
-- The private room mirror is read through {read_interface}.{publication_note}{provider_note}
+- Room vote cards are visible in finalized messages. Agent sessions do not have
+  structured ballot buttons yet; when asked to vote, publish the chosen option
+  clearly and do not claim it was counted by the structured tally.
 - Room norm: public messages add new substance. Resolving an open decision is new
   substance; after a point is settled, receipt, thanks, repeated agreement,
   restatement, a silence explanation, or another closing is not."""
+
+
+def room_wake_orientation(provider_kind: object = "") -> str:
+    read_interface, speak_interface, provider_note = _room_interfaces(provider_kind)
+    kind = clean_room_text(provider_kind, limit=64)
+    random_note = ""
+    if kind == "codex_live_session":
+        random_note = """
+- For official game randomness, use `roll_dice` with NdS±M notation or
+  `choose_random`; do not invent a result yourself."""
+    elif kind in {"claude_code", "antigravity_live_session"}:
+        random_note = """
+- For official game dice, run terminal command
+  `agentsassemble-room roll '<NdS±M>'` and use its returned result."""
+    return f"""Current turn contract: room wake
+- `room.wake <turn-id>` is only a content-free signal that assigned, finalized
+  room activity is available.
+- Read the private room mirror through {read_interface}.
+- If you should speak, only {speak_interface} creates a public room message.
+- Ordinary assistant output is private on this turn and is never published.
+  Do not merely draft the intended public message as your final answer.{random_note}{provider_note}"""
+
+
+def automatic_turn_orientation() -> str:
+    return """Current turn contract: automatic final
+- The assigned room context is included below; do not use the private room
+  read or publication boundary for this turn.
+- Your ordinary final answer is published automatically as the room message."""
 
 
 ROOM_SESSION_ORIENTATION = room_session_orientation()
@@ -84,6 +119,12 @@ ROOM_SESSION_ORIENTATION = room_session_orientation()
 
 class RoomPortalError(RuntimeError):
     pass
+
+
+@dataclass(frozen=True)
+class RoomPublication:
+    content: str = ""
+    target_agent_id: str = ""
 
 
 class RoomPortal:
@@ -115,6 +156,7 @@ class RoomPortal:
         self._messages: list[dict[str, object]] = []
         self._message_ids: set[str] = set()
         self._display_name = self.participant_id
+        self._participants: dict[str, str] = {}
         self._media: dict[str, dict[str, object]] = {}
         self._active_media_ids: tuple[str, ...] = ()
         self._active_messages: tuple[dict[str, object], ...] | None = None
@@ -252,12 +294,15 @@ class RoomPortal:
         return None
 
     def consume_publication(self, turn_id: str) -> str:
+        return self.consume_publication_result(turn_id).content
+
+    def consume_publication_result(self, turn_id: str) -> RoomPublication:
         clean_turn_id = clean_room_text(turn_id, limit=128)
         with self._lock:
             try:
                 payload = json.loads(self.outbox_path.read_text(encoding="utf-8"))
             except (OSError, json.JSONDecodeError):
-                return ""
+                return RoomPublication()
             finally:
                 self.outbox_path.unlink(missing_ok=True)
                 self.turn_path.unlink(missing_ok=True)
@@ -265,10 +310,16 @@ class RoomPortal:
                 self._active_messages = None
                 self._write_view()
             if not isinstance(payload, dict):
-                return ""
+                return RoomPublication()
             if clean_room_text(payload.get("turn_id"), limit=128) != clean_turn_id:
-                return ""
-            return _publication_text(payload.get("content"))
+                return RoomPublication()
+            return RoomPublication(
+                content=_publication_text(payload.get("content")),
+                target_agent_id=clean_room_text(
+                    payload.get("target_agent_id"),
+                    limit=128,
+                ),
+            )
 
     def end_observation(self, turn_id: str) -> None:
         clean_turn_id = clean_room_text(turn_id, limit=128)
@@ -301,7 +352,8 @@ class RoomPortal:
         return "".join(lines[start : start + count])
 
     def acp_write_text(self, path: object, content: object) -> None:
-        if str(path or "") != VIRTUAL_ROOM_OUTBOX_PATH:
+        target_agent_id = direct_outbox_target(path)
+        if str(path or "") != VIRTUAL_ROOM_OUTBOX_PATH and not target_agent_id:
             raise RoomPortalError("Only the shared room outbox may be written.")
         text = _publication_text(content)
         if not text:
@@ -319,7 +371,11 @@ class RoomPortal:
                 raise RoomPortalError("No room observation is active.")
             self._write_json_atomic(
                 self.outbox_path,
-                {"turn_id": turn_id, "content": text},
+                {
+                    "turn_id": turn_id,
+                    "content": text,
+                    "target_agent_id": target_agent_id,
+                },
             )
             self._record_activity("speak", turn_id=turn_id)
 
@@ -419,10 +475,16 @@ class RoomPortal:
                 item.get("participant_id") or item.get("session_id"),
                 limit=128,
             )
-            if identity != self.participant_id:
+            if not identity:
                 continue
             name = clean_room_text(item.get("display_name"), limit=80)
-            if name:
+            participant_type = clean_room_text(
+                item.get("participant_type"),
+                limit=32,
+            )
+            if participant_type == "agent" or item in sessions:
+                self._participants[identity] = name or identity
+            if identity == self.participant_id and name:
                 self._display_name = name
 
     def _bound_messages(self) -> None:
@@ -460,6 +522,21 @@ class RoomPortal:
             f"Your display name: {self._display_name or self.participant_id}",
             "",
         ]
+        peers = [
+            (agent_id, display_name)
+            for agent_id, display_name in self._participants.items()
+            if agent_id != self.participant_id
+        ]
+        if peers:
+            lines.append("## Agent handles")
+            lines.extend(
+                f"- `{agent_id}` — {display_name}"
+                for agent_id, display_name in sorted(
+                    peers,
+                    key=lambda item: (item[1].casefold(), item[0]),
+                )
+            )
+            lines.append("")
         visible_messages = tuple(messages)
         latest_human_index = -1
         latest_self_index = -1
@@ -505,7 +582,7 @@ class RoomPortal:
             name = str(message.get("display_name") or message.get("participant_id") or "participant")
             if clean_room_text(message.get("participant_id"), limit=128) == self.participant_id:
                 name = f"{name} (you)"
-            content = str(message.get("content") or "")
+            content = _visible_message_content(message)
             lines.extend([f"## {name}", content or "(media or structured message)"])
             for attachment in message.get("attachments", []):
                 if not isinstance(attachment, dict):
@@ -603,6 +680,19 @@ def _project_message(event: dict[str, object]) -> dict[str, object]:
         ),
         "display_name": clean_room_text(event.get("display_name"), limit=80),
         "content": str(event.get("content") or "")[:_MAX_ROOM_MESSAGE_CHARS],
+        "message_kind": clean_room_text(event.get("message_kind"), limit=64),
+        "vote_id": clean_room_text(event.get("vote_id") or event.get("id"), limit=128),
+        "vote_question": clean_room_text(event.get("vote_question"), limit=500),
+        "vote_options": [
+            clean_room_text(option, limit=200)
+            for option in (
+                event.get("vote_options")
+                if isinstance(event.get("vote_options"), list)
+                else []
+            )[:20]
+            if clean_room_text(option, limit=200)
+        ],
+        "vote_choice": clean_room_text(event.get("vote_choice"), limit=200),
         "attachments": [
             {
                 "id": clean_room_text(item.get("id"), limit=64),
@@ -616,6 +706,34 @@ def _project_message(event: dict[str, object]) -> dict[str, object]:
     }
 
 
+def _visible_message_content(message: dict[str, object]) -> str:
+    content = str(message.get("content") or "")
+    kind = clean_room_text(message.get("message_kind"), limit=64)
+    if kind == "vote":
+        question = clean_room_text(message.get("vote_question"), limit=500)
+        options = (
+            message.get("vote_options")
+            if isinstance(message.get("vote_options"), list)
+            else []
+        )
+        lines = [
+            f"[Vote {clean_room_text(message.get('vote_id'), limit=128)}]",
+            question or "(No question provided.)",
+        ]
+        lines.extend(
+            f"{index}. {clean_room_text(option, limit=200)}"
+            for index, option in enumerate(options, start=1)
+            if clean_room_text(option, limit=200)
+        )
+        return "\n".join(lines)
+    if kind == "vote_cast":
+        return (
+            f"[Vote {clean_room_text(message.get('vote_id'), limit=128)} ballot] "
+            f"{clean_room_text(message.get('vote_choice'), limit=200) or '(no choice)'}"
+        )
+    return content
+
+
 def _publication_text(value: object) -> str:
     return (
         str(value or "")
@@ -624,6 +742,11 @@ def _publication_text(value: object) -> str:
         .replace("\r", "\n")[:_MAX_ROOM_MESSAGE_CHARS]
         .strip()
     )
+
+
+def direct_outbox_target(path: object) -> str:
+    match = _DIRECT_OUTBOX_PATH.fullmatch(str(path or ""))
+    return match.group("target") if match else ""
 
 
 def _safe_filename(value: object) -> str:
@@ -646,6 +769,8 @@ def _safe_int(value: object, default: int) -> int:
 _HELPER_SCRIPT = r"""#!/usr/bin/env python3
 import json
 import os
+import re
+import secrets
 import sys
 from datetime import datetime, timezone
 from pathlib import Path
@@ -670,7 +795,7 @@ def atomic_json(path, payload):
         pass
     os.replace(temporary, path)
 
-def audit(operation, turn_id=""):
+def audit(operation, turn_id="", details=None):
     observed_through_seq = 0
     if not turn_id:
         try:
@@ -685,6 +810,8 @@ def audit(operation, turn_id=""):
         "turn_id": turn_id,
         "observed_through_seq": observed_through_seq if operation == "read" else 0,
     }
+    if details:
+        payload["details"] = details
     with ACTIVITY.open("a", encoding="utf-8") as stream:
         stream.write(json.dumps(payload, ensure_ascii=False, sort_keys=True) + "\n")
     try:
@@ -697,16 +824,30 @@ if command == "read":
     content = VIEW.read_text(encoding="utf-8")
     audit("read")
     sys.stdout.write(content)
-elif command == "speak":
-    content = " ".join(sys.argv[2:]).strip() if len(sys.argv) > 2 else sys.stdin.read().strip()
+elif command in {"speak", "speak-to"}:
+    target_agent_id = ""
+    content_start = 2
+    if command == "speak-to":
+        if len(sys.argv) < 4 or re.fullmatch(r"[A-Za-z0-9_.-]{1,128}", sys.argv[2]) is None:
+            fail("usage: agentsassemble-room speak-to <agent-id> '<message>'")
+        target_agent_id = sys.argv[2]
+        content_start = 3
+    content = " ".join(sys.argv[content_start:]).strip() if len(sys.argv) > content_start else sys.stdin.read().strip()
     if not content:
         fail("room message is empty")
     turn = json.loads(TURN.read_text(encoding="utf-8"))
     turn_id = str(turn.get("turn_id") or "")
     if not turn_id:
         fail("no room observation is active")
-    atomic_json(OUTBOX, {"turn_id": turn_id, "content": content[:12000]})
-    audit("speak", turn_id)
+    atomic_json(
+        OUTBOX,
+        {
+            "turn_id": turn_id,
+            "content": content[:12000],
+            "target_agent_id": target_agent_id,
+        },
+    )
+    audit("speak", turn_id, {"target_agent_id": target_agent_id} if target_agent_id else None)
 elif command == "media":
     attachment_id = sys.argv[2] if len(sys.argv) > 2 else ""
     index = json.loads(MEDIA.read_text(encoding="utf-8")).get("media", {})
@@ -715,8 +856,29 @@ elif command == "media":
         fail("media is unavailable")
     audit("media")
     print(item["path"])
+elif command == "roll":
+    if len(sys.argv) != 3:
+        fail("usage: agentsassemble-room roll '<NdS+M>'")
+    match = re.fullmatch(r"\s*(\d{0,3})d(\d{1,4})([+-]\d{1,5})?\s*", sys.argv[2], re.IGNORECASE)
+    if match is None:
+        fail("dice notation must look like d20, 2d6, or 1d20+3")
+    count = int(match.group(1) or 1)
+    sides = int(match.group(2))
+    modifier = int(match.group(3) or 0)
+    if not 1 <= count <= 100 or not 2 <= sides <= 1000 or not -100000 <= modifier <= 100000:
+        fail("dice notation is out of range")
+    rolls = [secrets.randbelow(sides) + 1 for _ in range(count)]
+    notation = f"{count}d{sides}" + (f"{modifier:+d}" if modifier else "")
+    result = {
+        "notation": notation,
+        "rolls": rolls,
+        "modifier": modifier,
+        "total": sum(rolls) + modifier,
+    }
+    audit("roll_dice", details=result)
+    print(json.dumps(result, ensure_ascii=False))
 elif command == "help":
-    print("agentsassemble-room read | speak [text] | media <id>")
+    print("agentsassemble-room read | speak [text] | speak-to <agent-id> [text] | media <id> | roll '<NdS+M>'")
 else:
     fail("unknown command")
 """
@@ -734,7 +896,12 @@ __all__ = [
     "ROOM_SESSION_ORIENTATION",
     "RoomPortal",
     "RoomPortalError",
+    "RoomPublication",
+    "VIRTUAL_ROOM_DIRECT_OUTBOX_PREFIX",
     "VIRTUAL_ROOM_OUTBOX_PATH",
     "VIRTUAL_ROOM_VIEW_PATH",
+    "automatic_turn_orientation",
+    "direct_outbox_target",
+    "room_wake_orientation",
     "room_session_orientation",
 ]

@@ -22,11 +22,11 @@ from agentsassemble.providers.grok_acp.room_access import (
     permission_context_update,
     permission_is_room_outbox_write,
     room_outbox_content,
+    room_outbox_path,
 )
 from agentsassemble.providers.grok_acp.session import GrokAcpSessionStore
 from agentsassemble.providers.grok_acp.turns import GrokAcpTurnProjectionMixin
 from agentsassemble.providers.grok_acp.transport import GrokAcpTransportMixin
-from agentsassemble.providers.room_portal import VIRTUAL_ROOM_OUTBOX_PATH
 from agentsassemble.providers.runtime_contracts import AdapterContractError
 from agentsassemble.room.text import clean_room_text
 
@@ -576,10 +576,11 @@ class GrokAcpRuntime(GrokAcpTransportMixin, GrokAcpTurnProjectionMixin):
                 self._tool_permission_context.get((session_id, tool_call_id)) or {}
             )
         content = room_outbox_content(tool_call, cached=cached)
-        if not content:
+        outbox_path = room_outbox_path(tool_call, cached=cached)
+        if not content or not outbox_path:
             return False
         try:
-            portal.acp_write_text(VIRTUAL_ROOM_OUTBOX_PATH, content)
+            portal.acp_write_text(outbox_path, content)
         except Exception as error:
             self._last_error = clean_room_text(error, limit=1000)
             return False
