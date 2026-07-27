@@ -294,6 +294,23 @@ class LiveCliRuntime:
             if chunks and last_read_at is not None:
                 wait_until = min(deadline, last_read_at + quiet)
             readable = _select_readable(fd, min(0.1, max(0.0, wait_until - now)))
+            chunk = b""
+            empty_read = False
+            if readable:
+                chunk = _read_chunk(fd, process)
+                if not chunk:
+                    if process.poll() is not None:
+                        raise RuntimeError(
+                            f"Live CLI runtime exited with return code {process.returncode}."
+                        )
+                    if not self._fd_is_current(fd):
+                        raise RuntimeError("Live CLI runtime stopped while reading.")
+                    # PTYs can report readability immediately before a
+                    # nonblocking read returns EAGAIN. Treat that race as an
+                    # idle poll so transcript-backed providers can still
+                    # expose their completed message.
+                    readable = False
+                    empty_read = True
             if not readable:
                 final_snapshot = self._poll_message_source(
                     b"".join(chunks),
@@ -326,13 +343,8 @@ class LiveCliRuntime:
                     self._needs_terminal_settle = True
                     self._room_observation_active = False
                     return self._output_message(b"".join(chunks))
-                continue
-            chunk = _read_chunk(fd, process)
-            if not chunk:
-                if process.poll() is not None:
-                    raise RuntimeError(f"Live CLI runtime exited with return code {process.returncode}.")
-                if not self._fd_is_current(fd):
-                    raise RuntimeError("Live CLI runtime stopped while reading.")
+                if empty_read:
+                    time.sleep(0.05)
                 continue
             chunks.append(chunk)
             total_bytes += len(chunk)

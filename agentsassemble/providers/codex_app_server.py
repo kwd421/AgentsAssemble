@@ -5,7 +5,7 @@ from __future__ import annotations
 from collections import deque
 import json
 from pathlib import Path
-import select
+import queue
 import subprocess
 import threading
 import time
@@ -71,6 +71,9 @@ class CodexAppServerRuntime:
         self._stderr_lock = threading.Lock()
         self._diagnostics_lock = threading.RLock()
         self._turn_lock = threading.RLock()
+        self._stdout_queue: queue.Queue[object] = queue.Queue()
+        self._stdout_eof = object()
+        self._stdout_thread: threading.Thread | None = None
         self._stderr_tail: deque[str] = deque()
         self._app_server_method_tail: deque[str] = deque(maxlen=CODEX_APP_SERVER_METHOD_TAIL_LENGTH)
         self._stderr_thread: threading.Thread | None = None
@@ -96,6 +99,7 @@ class CodexAppServerRuntime:
             self._reset_stderr_drain_state()
             self.process = self._spawn_process()
             self._update_diagnostics({"app_server_pid": getattr(self.process, "pid", "")})
+            self._start_stdout_drain()
             self._start_stderr_drain()
         else:
             self._update_diagnostics({"runtime_reused": True, "app_server_reused": True})
@@ -339,21 +343,9 @@ class CodexAppServerRuntime:
         self.release_thread(handle)
         process = self.process
         if process is not None:
-            if hasattr(process, "terminate"):
-                try:
-                    process.terminate()
-                except ProcessLookupError:
-                    pass
-            if hasattr(process, "wait"):
-                try:
-                    process.wait(timeout=5)
-                except subprocess.TimeoutExpired:
-                    if hasattr(process, "kill"):
-                        process.kill()
-                        process.wait(timeout=5)
-                except ProcessLookupError:
-                    pass
+            self._terminate_process(process, timeout_seconds=5)
             self._close_process_streams(process)
+            self._join_stdout_drain()
             self._join_stderr_drain()
             self.process = None
         self._initialized = False
@@ -421,6 +413,33 @@ class CodexAppServerRuntime:
             daemon=True,
         )
         self._stderr_thread.start()
+
+    def _start_stdout_drain(self) -> None:
+        if self.process is None:
+            return
+        stdout = getattr(self.process, "stdout", None)
+        if stdout is None:
+            return
+        self._stdout_queue = queue.Queue()
+        self._stdout_thread = threading.Thread(
+            target=self._drain_stdout,
+            args=(stdout,),
+            name="CodexAppServerStdout",
+            daemon=True,
+        )
+        self._stdout_thread.start()
+
+    def _drain_stdout(self, stdout: object) -> None:
+        try:
+            while True:
+                line = stdout.readline()
+                if line in ("", b""):
+                    break
+                self._stdout_queue.put(line)
+        except Exception as error:
+            self._stdout_queue.put(error)
+        finally:
+            self._stdout_queue.put(self._stdout_eof)
 
     def _drain_stderr(self, stderr: object) -> None:
         while True:
@@ -526,6 +545,9 @@ class CodexAppServerRuntime:
                 "app_server_last_turn_status": "",
                 "app_server_method_tail": "",
                 "app_server_turn_event_count": "",
+                "mcp_elicitation_meta_keys": "",
+                "mcp_elicitation_mode": "",
+                "mcp_elicitation_server_name": "",
                 "provider_thread_id": "",
                 "provider_turn_id": "",
                 "pending_notification_count": "",
@@ -553,7 +575,9 @@ class CodexAppServerRuntime:
         )
         process = self.process
         if process is not None:
+            self._terminate_process(process, timeout_seconds=1)
             self._close_process_streams(process)
+            self._join_stdout_drain()
             self._join_stderr_drain()
         self.process = None
         self._initialized = False
@@ -567,6 +591,12 @@ class CodexAppServerRuntime:
         self._stderr_thread = None
         self._publish_stderr_diagnostics()
 
+    def _join_stdout_drain(self) -> None:
+        thread = self._stdout_thread
+        if thread is not None and thread.is_alive():
+            thread.join(timeout=1)
+        self._stdout_thread = None
+
     def _close_process_streams(self, process: object) -> None:
         for stream_name in ("stdin", "stdout", "stderr"):
             stream = getattr(process, stream_name, None)
@@ -575,6 +605,24 @@ class CodexAppServerRuntime:
                     stream.close()
                 except Exception:
                     pass
+
+    @staticmethod
+    def _terminate_process(process: object, *, timeout_seconds: float) -> None:
+        if hasattr(process, "terminate"):
+            try:
+                process.terminate()
+            except ProcessLookupError:
+                return
+        if not hasattr(process, "wait"):
+            return
+        try:
+            process.wait(timeout=timeout_seconds)
+        except subprocess.TimeoutExpired:
+            if hasattr(process, "kill"):
+                process.kill()
+                process.wait(timeout=timeout_seconds)
+        except ProcessLookupError:
+            pass
 
     def _send_request(
         self,
@@ -725,20 +773,59 @@ class CodexAppServerRuntime:
             if method == "item/tool/call" and "id" in message:
                 self._handle_dynamic_tool_request(message)
                 continue
-            if (
-                method == "mcpServer/elicitation/request"
-                and "id" in message
-                and _is_agentsassemble_room_mcp_approval(message)
-            ):
-                self._write_json(
-                    {
-                        "jsonrpc": "2.0",
-                        "id": message.get("id"),
-                        "result": {"action": "accept", "content": {}},
-                    }
+            if method == "mcpServer/elicitation/request" and "id" in message:
+                self._record_mcp_elicitation_shape(message)
+                if _is_agentsassemble_room_mcp_approval(message):
+                    self._write_json(
+                        {
+                            "jsonrpc": "2.0",
+                            "id": message.get("id"),
+                            "result": {"action": "accept", "content": {}},
+                        }
+                    )
+                    continue
+                params = (
+                    message.get("params")
+                    if isinstance(message.get("params"), dict)
+                    else {}
                 )
-                continue
+                metadata = (
+                    params.get("_meta")
+                    if isinstance(params.get("_meta"), dict)
+                    else {}
+                )
+                raise RuntimeError(
+                    "Codex requested an unrecognized MCP approval "
+                    f"(server={clean_room_text(params.get('serverName'), limit=128) or 'missing'}, "
+                    f"mode={clean_room_text(params.get('mode'), limit=64) or 'missing'}, "
+                    "meta_keys="
+                    f"{','.join(sorted(clean_room_text(key, limit=128) for key in metadata if clean_room_text(key, limit=128))) or 'none'})."
+                )
             return message
+
+    def _record_mcp_elicitation_shape(self, message: dict[str, object]) -> None:
+        """Keep only routing metadata needed to diagnose app-server drift."""
+        params = message.get("params") if isinstance(message.get("params"), dict) else {}
+        metadata = params.get("_meta") if isinstance(params.get("_meta"), dict) else {}
+        self._update_diagnostics(
+            {
+                "mcp_elicitation_server_name": clean_room_text(
+                    params.get("serverName"),
+                    limit=128,
+                ),
+                "mcp_elicitation_mode": clean_room_text(
+                    params.get("mode"),
+                    limit=64,
+                ),
+                "mcp_elicitation_meta_keys": ",".join(
+                    sorted(
+                        clean_room_text(key, limit=128)
+                        for key in metadata
+                        if clean_room_text(key, limit=128)
+                    )
+                ),
+            }
+        )
 
     def _handle_dynamic_tool_request(self, message: dict[str, object]) -> None:
         request_id = message.get("id")
@@ -772,14 +859,31 @@ class CodexAppServerRuntime:
 
     def _read_json_line(self, *, timeout_deadline: float | None = None) -> dict[str, object]:
         assert self.process is not None
-        stdout = getattr(self.process, "stdout", None)
-        if stdout is None:
+        if self._stdout_thread is None:
             raise RuntimeError("Codex app-server stdout is unavailable.")
-        if timeout_deadline is not None and hasattr(stdout, "fileno"):
-            self._wait_for_stdout(stdout, timeout_deadline)
-        line = stdout.readline()
-        if line == "":
+        try:
+            if timeout_deadline is None:
+                queued = self._stdout_queue.get()
+            else:
+                remaining = timeout_deadline - time.monotonic()
+                if remaining <= 0:
+                    raise queue.Empty
+                queued = self._stdout_queue.get(timeout=remaining)
+        except queue.Empty as error:
+            raise TimeoutError(
+                "Codex app-server timed out before completing the request."
+            ) from error
+        if queued is self._stdout_eof:
             raise RuntimeError("Codex app-server stopped before completing the request.")
+        if isinstance(queued, Exception):
+            raise RuntimeError(
+                f"Codex app-server stdout reader failed: {queued}"
+            ) from queued
+        line = (
+            queued.decode("utf-8", errors="replace")
+            if isinstance(queued, bytes)
+            else str(queued)
+        )
         try:
             message = json.loads(line)
         except json.JSONDecodeError as error:
@@ -787,25 +891,6 @@ class CodexAppServerRuntime:
         if "error" in message and not message.get("method"):
             raise RuntimeError(clean_room_text(message.get("error"), limit=1000) or "Codex app-server request failed.")
         return message
-
-    def _wait_for_stdout(self, stdout: object, timeout_deadline: float) -> None:
-        while True:
-            remaining = timeout_deadline - time.monotonic()
-            if remaining <= 0:
-                raise TimeoutError("Codex app-server timed out before completing the request.")
-            try:
-                readable, _, _ = select.select([stdout], [], [], min(remaining, 0.25))
-            except (OSError, ValueError):
-                return
-            if readable:
-                return
-            process = self.process
-            if process is not None and hasattr(process, "poll"):
-                try:
-                    if process.poll() is not None:
-                        return
-                except Exception:
-                    return
 
     def _cached_thread(self, *, provider_session_id: str, provider_thread_id: str, session_id: str) -> dict[str, object]:
         for key in (provider_thread_id, provider_session_id, session_id):

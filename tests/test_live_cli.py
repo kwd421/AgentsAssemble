@@ -273,6 +273,46 @@ class LiveCliRuntimeTests(unittest.TestCase):
         self.assertGreater(health["terminal_byte_count"], 100_000)
 
     @unittest.skipUnless(live_cli_supported(), "requires POSIX PTY support")
+    def test_transcript_completion_survives_readable_pty_eagain_race(self):
+        class TranscriptOnlyMessageSource:
+            strict = True
+
+            def prepare_start(self) -> None:
+                return
+
+            def begin_turn(self, expected_input: str = "") -> None:
+                self.expected_input = expected_input
+
+            def poll(self, terminal_output: bytes, *, quiet: bool = False) -> LiveCliMessageSnapshot:
+                del terminal_output, quiet
+                return LiveCliMessageSnapshot(
+                    content=f"transcript:{self.expected_input}",
+                    complete=True,
+                    source="fake-transcript",
+                    source_kind="fake_strict",
+                )
+
+            def describe(self) -> dict[str, object]:
+                return {"message_source": "fake_strict", "message_source_strict": True}
+
+        runtime = LiveCliRuntime(
+            "strict",
+            [sys.executable, "-u", "-c", "import time; time.sleep(5)"],
+            message_source=TranscriptOnlyMessageSource(),
+        )
+        try:
+            runtime.send("room observation")
+            with (
+                patch("agentsassemble.providers.live_cli._select_readable", return_value=True),
+                patch("agentsassemble.providers.live_cli._read_chunk", return_value=b""),
+            ):
+                output = runtime.read_output(timeout_seconds=1)
+        finally:
+            runtime.stop()
+
+        self.assertEqual(output["content"], "transcript:room observation")
+
+    @unittest.skipUnless(live_cli_supported(), "requires POSIX PTY support")
     def test_live_cli_runtime_does_not_inherit_parent_agent_session_identity(self):
         script = "\n".join(
             [

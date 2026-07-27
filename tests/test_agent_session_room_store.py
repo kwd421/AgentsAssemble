@@ -1,4 +1,6 @@
 import json
+import subprocess
+import sys
 import tempfile
 import threading
 import time
@@ -877,6 +879,16 @@ class AgentSessionRoomStoreTests(unittest.TestCase):
         self.assertIn('"id": "tool-1", "result": {"success": true', writes)
         self.assertNotIn('"provider_session_id"', writes)
         self.assertEqual(tool_calls, [("room_read", {})])
+        diagnostics = runtime.diagnose({})
+        self.assertEqual(
+            diagnostics["mcp_elicitation_server_name"],
+            "agentsassemble_room",
+        )
+        self.assertEqual(diagnostics["mcp_elicitation_mode"], "form")
+        self.assertEqual(
+            diagnostics["mcp_elicitation_meta_keys"],
+            "codex_approval_kind",
+        )
 
     def test_app_server_provider_session_is_persisted_as_resumable(self):
         resume_agent_session_payload(
@@ -1335,6 +1347,105 @@ class AgentSessionRoomStoreTests(unittest.TestCase):
 
         self.assertTrue(_is_agentsassemble_room_mcp_approval(room_request))
         self.assertFalse(_is_agentsassemble_room_mcp_approval(foreign_request))
+
+    def test_app_server_fails_fast_for_unrecognized_mcp_approval_shape(self):
+        class Pipe:
+            def __init__(self, lines=None):
+                self.lines = list(lines or [])
+                self.writes = []
+
+            def write(self, value):
+                self.writes.append(value)
+
+            def flush(self):
+                return None
+
+            def readline(self):
+                if not self.lines:
+                    return ""
+                return self.lines.pop(0)
+
+        class FakeProcess:
+            pid = 129
+
+            def __init__(self):
+                self.stdin = Pipe()
+                self.stdout = Pipe(
+                    [
+                        '{"jsonrpc":"2.0","id":1,"result":{}}\n',
+                        '{"jsonrpc":"2.0","id":2,"result":{"thread":{"id":"thread-2"}}}\n',
+                        '{"jsonrpc":"2.0","id":3,"result":{"turn":{"id":"turn-a"}}}\n',
+                        (
+                            '{"jsonrpc":"2.0","id":"mcp-approval-2",'
+                            '"method":"mcpServer/elicitation/request",'
+                            '"params":{"serverName":"unexpected_server","mode":"form",'
+                            '"_meta":{"codex_approval_kind":"mcp_tool_call"},'
+                            '"message":"private request details"}}\n'
+                        ),
+                    ]
+                )
+
+            def poll(self):
+                return None
+
+            def terminate(self):
+                return None
+
+        runtime = CodexAppServerRuntime(process_factory=FakeProcess)
+
+        chunks = list(
+            runtime.send_turn(
+                {},
+                {"room_id": "room-a", "current_turn_instruction": "x"},
+            )
+        )
+
+        self.assertEqual(chunks[-1]["type"], "error")
+        diagnostics = chunks[-1]["diagnostics"]
+        self.assertTrue(
+            any(
+                item.get("setting") == "app_server"
+                and "server=unexpected_server" in item.get("message", "")
+                for item in diagnostics
+            )
+        )
+        self.assertNotIn("private request details", str(diagnostics))
+
+    def test_app_server_reads_batched_protocol_lines_before_timeout(self):
+        process = subprocess.Popen(
+            [
+                sys.executable,
+                "-c",
+                (
+                    "import sys, time; "
+                    "sys.stdout.write('{\"jsonrpc\":\"2.0\",\"id\":1,\"result\":{}}\\n"
+                    "{\"jsonrpc\":\"2.0\",\"id\":2,\"result\":{}}\\n'); "
+                    "sys.stdout.flush(); "
+                    "time.sleep(2)"
+                ),
+            ],
+            stdin=subprocess.PIPE,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            text=True,
+            bufsize=1,
+        )
+        runtime = CodexAppServerRuntime()
+        runtime.process = process
+        runtime._start_stdout_drain()
+        try:
+            deadline = time.monotonic() + 0.5
+
+            first = runtime._read_json_line(timeout_deadline=deadline)
+            second = runtime._read_json_line(timeout_deadline=deadline)
+
+            self.assertEqual(first["id"], 1)
+            self.assertEqual(second["id"], 2)
+        finally:
+            process.terminate()
+            process.wait(timeout=5)
+            runtime._close_process_streams(process)
+            runtime._join_stdout_drain()
 
     def test_codex_app_server_drains_stderr_and_reports_bounded_tail(self):
         class Pipe:
