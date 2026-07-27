@@ -1,10 +1,10 @@
 {
  "readme": "AgentsAssemble codebase map. Regenerate with `make codebase-map`; verify committed outputs with `make codebase-map-verify`. modules[] columns: name, path, package, domain, classification, migration_status, lines, docstring, imports[], imported_by[] (indexes into modules), classes[[name, [[base, defining_module], ...]]] (best-effort, top-level classes only). frontend[] columns: path, group, lines, doc, imports[], imported_by[] (indexes into frontend). package_edges go importer -> dependency with module-import counts; `points` is the precomputed polyline for that edge and `intra_cycle` marks imports whose endpoints share one cycle group. graph{} holds the layered package drawing: layers[] top-to-bottom (each with members[] package ids, member_count, and the dominant domain), (a package sits below everything importing it), clusters[] are mutually dependent packages (import cycles at package level) drawn as one labelled block, plus width/height of the drawing. health{} ranks findings for a reader who has to act: cycles[] (mutually dependent packages, with the lines they hold), leaning_on_retiring[] (current modules importing legacy/compatibility modules - the reason legacy cannot be deleted), highest_leverage_migrations[] (retiring modules with the most current importers), unreferenced_shims[] (compatibility modules with no importer in agentsassemble/ and no reference in tests/; callers outside this repository are not visible, so verify before deleting), and hotspots[] (largest modules). health.scope states exactly what was measured. class_graph{} is the UML generalization DAG over base classes that resolve inside the repo: edges go base -> subclass, so a subclass always sits below the class it extends. Coordinates in graph and class_graph are laid out with a Sugiyama pipeline (cycle condensation, Coffman-Graham layering, dummy-node edge routing, median/transpose crossing reduction) and are deterministic.",
- "generated_at": "2026-07-27T12:20:16Z",
- "fingerprint": "52652a7e510597a5",
+ "generated_at": "2026-07-27T12:31:48Z",
+ "fingerprint": "42448dc89ba6c608",
  "stats": {
   "backend_modules": 783,
-  "backend_lines": 127639,
+  "backend_lines": 127713,
   "frontend_files": 143,
   "frontend_lines": 37196,
   "packages": 30,
@@ -63,7 +63,7 @@
    "kind": "backend",
    "doc": "Current room domain contracts and behavior.",
    "files": 47,
-   "lines": 11900,
+   "lines": 11902,
    "domains": {
     "room": 47
    },
@@ -164,7 +164,7 @@
    "kind": "backend",
    "doc": "Persistence adapters composed by the application layer.",
    "files": 31,
-   "lines": 9312,
+   "lines": 9384,
    "domains": {
     "persistence": 31
    },
@@ -3700,7 +3700,7 @@
      "web"
     ],
     "internal_edges": 80,
-    "lines": 122610,
+    "lines": 122684,
     "heaviest": "legacy"
    },
    {
@@ -4082,7 +4082,7 @@
    },
    {
     "module": "agentsassemble.room.realtime",
-    "lines": 1686,
+    "lines": 1684,
     "cls": "current",
     "imported_by": 7
    },
@@ -4094,7 +4094,7 @@
    },
    {
     "module": "agentsassemble.persistence.local.room.repository",
-    "lines": 1324,
+    "lines": 1366,
     "cls": "current",
     "imported_by": 9
    },
@@ -14711,7 +14711,7 @@
    "persistence",
    "current",
    "in-target-package",
-   1324,
+   1366,
    "",
    [
     490,
@@ -15085,7 +15085,7 @@
    "persistence",
    "current",
    "in-target-package",
-   918,
+   948,
    "",
    [
     496,
@@ -19276,7 +19276,7 @@
    "room",
    "current",
    "in-target-package",
-   1686,
+   1684,
    "",
    [
     15,
@@ -19357,7 +19357,7 @@
    "room",
    "current",
    "in-target-package",
-   329,
+   333,
    "",
    [
     651,
@@ -24223,7 +24223,7 @@
    "name": "agentsassemble",
    "note": "Backend package (Python)",
    "files": 783,
-   "lines": 127639
+   "lines": 127713
   },
   {
    "name": "frontend/src",
@@ -24235,7 +24235,7 @@
    "name": "tests",
    "note": "Backend test suite",
    "files": 349,
-   "lines": 138344
+   "lines": 138523
   },
   {
    "name": "scripts",
@@ -24247,7 +24247,7 @@
    "name": "docs",
    "note": "Product and architecture docs",
    "files": 77,
-   "lines": 28996
+   "lines": 29004
   },
   {
    "name": "configs",
