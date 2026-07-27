@@ -3,11 +3,20 @@ from __future__ import annotations
 import json
 import re
 import subprocess
+import tempfile
 import textwrap
 import unittest
 from pathlib import Path
+from unittest.mock import patch
 
-from scripts.generate_codebase_map import build_map, render_html
+from scripts.generate_codebase_map import (
+    build_map,
+    generated_outputs,
+    prepare_generated_map,
+    render_html,
+    stale_generated_outputs,
+    write_generated_outputs,
+)
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -20,10 +29,9 @@ class CodebaseMapTests(unittest.TestCase):
         json_path = ROOT / "docs" / "product" / "CODEBASE_MAP.json"
         try:
             committed = json.loads(json_path.read_text(encoding="utf-8"))
-            cls.data["generated_at"] = committed["generated_at"]
-            cls.data["repo"] = committed["repo"]
-        except (OSError, ValueError, KeyError):
-            pass
+        except (OSError, ValueError):
+            committed = None
+        cls.data = prepare_generated_map(ROOT, cls.data, committed)
 
     def test_committed_codebase_map_matches_source_tree(self) -> None:
         expected_json = json.dumps(self.data, ensure_ascii=False, indent=1) + "\n"
@@ -261,6 +269,87 @@ class CodebaseMapTests(unittest.TestCase):
         self.assertNotIn('href="http', html)
         self.assertNotIn("url(http", html)
         self.assertIn('<script id="mapdata" type="application/json">', html)
+
+
+class CodebaseMapOutputTests(unittest.TestCase):
+    def test_noop_generation_preserves_the_recorded_timestamp(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            existing = {
+                "generated_at": "2026-07-01T00:00:00Z",
+                "stats": {"backend_modules": 2},
+                "repo": [{"name": "agentsassemble", "lines": 20}],
+            }
+            fresh = {
+                **existing,
+                "generated_at": "2026-07-27T00:00:00Z",
+            }
+            write_generated_outputs(root, generated_outputs(existing))
+
+            prepared = prepare_generated_map(root, fresh, existing)
+
+            self.assertEqual(prepared, existing)
+
+    def test_real_generated_fact_change_keeps_the_fresh_timestamp(self) -> None:
+        existing = {
+            "generated_at": "2026-07-01T00:00:00Z",
+            "stats": {"backend_modules": 2},
+            "repo": [{"name": "agentsassemble", "lines": 20}],
+        }
+        fresh = {
+            **existing,
+            "generated_at": "2026-07-27T00:00:00Z",
+            "repo": [{"name": "agentsassemble", "lines": 21}],
+        }
+
+        with tempfile.TemporaryDirectory() as temp_dir:
+            prepared = prepare_generated_map(Path(temp_dir), fresh, existing)
+
+        self.assertEqual(prepared, fresh)
+
+    def test_changed_rendered_output_keeps_the_fresh_timestamp(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            existing = {
+                "generated_at": "2026-07-01T00:00:00Z",
+                "stats": {"backend_modules": 2},
+            }
+            fresh = {
+                **existing,
+                "generated_at": "2026-07-27T00:00:00Z",
+            }
+            write_generated_outputs(root, generated_outputs(existing))
+            html_path = root / "docs" / "product" / "CODEBASE_MAP.html"
+            html_path.write_text(
+                html_path.read_text(encoding="utf-8") + "\ncorrupt",
+                encoding="utf-8",
+            )
+
+            prepared = prepare_generated_map(root, fresh, existing)
+
+            self.assertEqual(prepared, fresh)
+
+    def test_identical_outputs_are_not_rewritten(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            outputs = generated_outputs(
+                {
+                    "generated_at": "2026-07-01T00:00:00Z",
+                    "stats": {"backend_modules": 2},
+                }
+            )
+            first_write = write_generated_outputs(root, outputs)
+
+            with patch.object(
+                Path,
+                "write_text",
+                side_effect=AssertionError("unchanged output was rewritten"),
+            ):
+                second_write = write_generated_outputs(root, outputs)
+
+            self.assertTrue(all(first_write.values()))
+            self.assertFalse(any(second_write.values()))
+            self.assertEqual(stale_generated_outputs(root, outputs), [])
 
 
 class CodebaseMapRenderSmokeTests(unittest.TestCase):

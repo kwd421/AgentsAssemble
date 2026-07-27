@@ -15,7 +15,8 @@ Outputs:
 - `docs/product/CODEBASE_MAP.html` - self-contained interactive view
   (no build step, no network assets; open directly or serve statically).
 
-Regenerate: `python3 scripts/generate_codebase_map.py`
+Regenerate: `make codebase-map`
+Verify: `make codebase-map-check`
 """
 from __future__ import annotations
 
@@ -4048,42 +4049,98 @@ def render_html(data: dict) -> str:
     return HTML_TEMPLATE.replace("__DATA__", payload)
 
 
+def preserve_generation_timestamp(
+    fresh: dict[str, object],
+    existing: dict[str, object] | None,
+) -> dict[str, object]:
+    """Keep generated_at stable when every generated fact is unchanged."""
+    if not existing:
+        return fresh
+    recorded_at = existing.get("generated_at")
+    if not isinstance(recorded_at, str) or not recorded_at:
+        return fresh
+    fresh_facts = {key: value for key, value in fresh.items() if key != "generated_at"}
+    existing_facts = {
+        key: value for key, value in existing.items() if key != "generated_at"
+    }
+    if fresh_facts != existing_facts:
+        return fresh
+    return {**fresh, "generated_at": recorded_at}
+
+
+def generated_outputs(data: dict[str, object]) -> dict[Path, str]:
+    return {
+        JSON_RELATIVE_PATH: json.dumps(data, ensure_ascii=False, indent=1) + "\n",
+        HTML_RELATIVE_PATH: render_html(data),
+    }
+
+
+def stale_generated_outputs(root: Path, outputs: dict[Path, str]) -> list[Path]:
+    return [
+        relative_path
+        for relative_path, content in outputs.items()
+        if not (root / relative_path).exists()
+        or (root / relative_path).read_text(encoding="utf-8") != content
+    ]
+
+
+def write_generated_outputs(
+    root: Path,
+    outputs: dict[Path, str],
+) -> dict[Path, bool]:
+    changed_outputs: dict[Path, bool] = {}
+    for relative_path, content in outputs.items():
+        path = root / relative_path
+        changed = not path.exists() or path.read_text(encoding="utf-8") != content
+        changed_outputs[relative_path] = changed
+        if not changed:
+            continue
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(content, encoding="utf-8")
+    return changed_outputs
+
+
+def load_existing_map(root: Path) -> dict[str, object] | None:
+    try:
+        existing = json.loads(
+            (root / JSON_RELATIVE_PATH).read_text(encoding="utf-8")
+        )
+    except (OSError, ValueError):
+        return None
+    return existing if isinstance(existing, dict) else None
+
+
+def prepare_generated_map(
+    root: Path,
+    fresh: dict[str, object],
+    existing: dict[str, object] | None,
+) -> dict[str, object]:
+    """Reuse the timestamp only when the complete generated output is current."""
+    prepared = preserve_generation_timestamp(fresh, existing)
+    if prepared is fresh:
+        return fresh
+    if stale_generated_outputs(root, generated_outputs(prepared)):
+        return fresh
+    return prepared
+
+
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--check", action="store_true",
                         help="fail if the generated outputs are stale")
     args = parser.parse_args(argv)
     root = Path(__file__).resolve().parents[1]
-    data = build_map(root)
+    data = prepare_generated_map(root, build_map(root), load_existing_map(root))
+    outputs = generated_outputs(data)
     if args.check:
-        # generated_at changes every run, and the repo-area trivia (docs/tests
-        # line counts) shifts on any documentation edit. Keep the recorded
-        # values so the staleness gate reacts to structural code changes only.
-        try:
-            existing = json.loads((root / JSON_RELATIVE_PATH).read_text(encoding="utf-8"))
-            data["generated_at"] = existing["generated_at"]
-            data["repo"] = existing["repo"]
-        except (OSError, ValueError, KeyError):
-            pass
-    outputs = {
-        root / JSON_RELATIVE_PATH: json.dumps(data, ensure_ascii=False, indent=1) + "\n",
-        root / HTML_RELATIVE_PATH: render_html(data),
-    }
-    if args.check:
-        stale = [
-            path.relative_to(root)
-            for path, content in outputs.items()
-            if not path.exists() or path.read_text(encoding="utf-8") != content
-        ]
+        stale = stale_generated_outputs(root, outputs)
         if stale:
             print("Codebase map is stale: " + ", ".join(str(p) for p in stale))
             return 1
         return 0
-    for path, content in outputs.items():
-        path.parent.mkdir(parents=True, exist_ok=True)
-        changed = not path.exists() or path.read_text(encoding="utf-8") != content
-        path.write_text(content, encoding="utf-8")
-        print(f"{'Updated' if changed else 'Unchanged'} {path.relative_to(root)}")
+    changed_outputs = write_generated_outputs(root, outputs)
+    for path, changed in changed_outputs.items():
+        print(f"{'Updated' if changed else 'Unchanged'} {path}")
     return 0
 
 
