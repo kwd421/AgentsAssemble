@@ -211,6 +211,45 @@ def read_event_by_id(
     return payload_from_row(row, column="payload_json")
 
 
+def read_vote_events(
+    connection: Connection,
+    room_id: str,
+    vote_id: str,
+) -> list[dict[str, object]]:
+    poll = read_event_by_id(
+        connection,
+        room_id,
+        vote_id,
+        include_hidden=False,
+    )
+    if (
+        not poll
+        or str(poll.get("type") or "") != "message_final"
+        or str(poll.get("message_kind") or "") != "vote"
+    ):
+        return []
+    rows = connection.execute(
+        """SELECT payload_json FROM room_events
+           WHERE room_id = %s
+             AND visibility = %s
+             AND event_type = 'message_final'
+             AND seq > %s
+             AND payload_json->>'message_kind' = 'vote_cast'
+             AND payload_json->>'vote_id' = %s
+           ORDER BY seq""",
+        (
+            room_id,
+            VISIBLE,
+            int(poll.get("seq") or 0),
+            vote_id,
+        ),
+    ).fetchall()
+    return [
+        poll,
+        *[payload_from_row(row, column="payload_json") for row in rows],
+    ]
+
+
 def read_event_sequence(connection: Connection, room_id: str, event_id: str) -> int:
     row = connection.execute(
         "SELECT seq FROM room_events WHERE room_id = %s AND event_id = %s",

@@ -62,6 +62,7 @@ from agentsassemble.persistence.postgres.room.queries import (
     read_rooms,
     read_session,
     read_sessions,
+    read_vote_events,
     room_is_deleted as query_room_is_deleted,
 )
 from agentsassemble.persistence.postgres.schema import upgrade_postgres_room_schema
@@ -109,6 +110,17 @@ class _PostgresRoomTransaction:
             self._room_id,
             clean_room_text(principal_id, limit=256),
             clean_room_text(request_id, limit=128),
+        )
+
+    def event_by_id(self, event_id: str) -> dict[str, object]:
+        clean_event = clean_room_text(event_id, limit=128)
+        if not clean_event:
+            return {}
+        return read_event_by_id(
+            self._connection,
+            self._room_id,
+            clean_event,
+            include_hidden=False,
         )
 
     def room_settings(self) -> RoomGlobalSettingsRecord:
@@ -717,6 +729,14 @@ class PostgresRoomRepository:
                 clean_event,
                 include_hidden=include_hidden,
             )
+
+    def vote_events(self, room_id: str, vote_id: str) -> list[dict[str, object]]:
+        clean_room = clean_room_id(room_id)
+        clean_vote = clean_room_text(vote_id, limit=128)
+        if not clean_vote:
+            return []
+        with self._read_connection() as connection:
+            return read_vote_events(connection, clean_room, clean_vote)
 
     def event_sequence(self, room_id: str, event_id: str) -> int:
         clean_room = clean_room_id(room_id)

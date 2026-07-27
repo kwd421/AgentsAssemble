@@ -11,7 +11,7 @@ from agentsassemble.room.votes import (
     normalize_vote_duration_seconds,
     resolve_vote_choice,
     vote_deadline_has_passed,
-    vote_summary,
+    vote_poll,
 )
 
 
@@ -28,7 +28,6 @@ class RoomMessageService:
         *,
         unit: RoomCommandUnitOfWork,
         compatibility_muted: bool,
-        room_events: list[dict[str, object]],
     ) -> dict[str, object]:
         content = room_message_text(
             payload.get("content") or payload.get("message"),
@@ -99,10 +98,7 @@ class RoomMessageService:
         if kind == "vote_cast":
             vote_id = clean_room_text(payload.get("vote_id"), 128)
             try:
-                poll = vote_summary(
-                    room_events,
-                    vote_id,
-                )
+                poll = vote_poll(unit.event_by_id(vote_id), vote_id)
             except ValueError as error:
                 raise RoomCommandRejected(
                     str(error),
@@ -122,7 +118,7 @@ class RoomMessageService:
                 )
             vote_choice = resolve_vote_choice(
                 payload.get("vote_choice"),
-                list(poll.get("options") or []),
+                list(poll.get("vote_options") or []),
             )
             if not vote_choice:
                 raise RoomCommandRejected(

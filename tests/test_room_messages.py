@@ -3,6 +3,7 @@ from __future__ import annotations
 import tempfile
 import unittest
 from pathlib import Path
+from unittest.mock import patch
 
 from agentsassemble.persistence.local.room.repository import RoomStore
 from agentsassemble.room.attachments import FileAttachmentStore, store_uploaded_attachment
@@ -67,7 +68,6 @@ class RoomMessageServiceTests(unittest.TestCase):
                 payload,
                 unit=unit,
                 compatibility_muted=False,
-                room_events=self.store.read_events("general"),
             )
             unit.build_ack(result)
             unit.record_ack()
@@ -116,6 +116,33 @@ class RoomMessageServiceTests(unittest.TestCase):
             }
         )
         self.assertEqual(vote["event"]["message_kind"], "vote")
+
+    def test_vote_cast_reads_its_poll_inside_the_command_transaction(self) -> None:
+        poll = self._send(
+            {
+                "request_id": "vote-poll",
+                "kind": "vote",
+                "vote_question": "Choose",
+                "vote_options": ["A", "B"],
+            }
+        )["event"]
+
+        with patch.object(
+            self.store,
+            "read_events",
+            side_effect=AssertionError("vote casts must not scan room history"),
+        ):
+            cast = self._send(
+                {
+                    "request_id": "vote-cast",
+                    "kind": "vote_cast",
+                    "vote_id": poll["id"],
+                    "vote_choice": "2",
+                }
+            )["event"]
+
+        self.assertEqual(cast["vote_id"], poll["id"])
+        self.assertEqual(cast["vote_choice"], "B")
 
     def test_attachment_only_message_is_allowed_and_must_own_the_attachment(self) -> None:
         attachment = store_uploaded_attachment(
@@ -178,7 +205,6 @@ class RoomMessageServiceTests(unittest.TestCase):
                 {"content": "blocked"},
                 unit=unit,  # type: ignore[arg-type]
                 compatibility_muted=True,
-                room_events=[],
             )
 
         self.assertEqual(raised.exception.code, "muted")

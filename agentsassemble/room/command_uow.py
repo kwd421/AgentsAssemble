@@ -109,6 +109,9 @@ class RoomCommandUnitOfWork:
     def session(self, session_id: str) -> dict[str, object]:
         return self._require_transaction().session(session_id)
 
+    def event_by_id(self, event_id: str) -> dict[str, object]:
+        return self._require_transaction().event_by_id(event_id)
+
     def update_room_settings(
         self,
         updates: dict[str, object],

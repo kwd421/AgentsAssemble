@@ -100,6 +100,13 @@ class _SQLiteRoomTransaction:
             request_id,
         )
 
+    def event_by_id(self, event_id: str) -> dict[str, object]:
+        return self._store._event_by_id(
+            self._connection,
+            self._room_id,
+            event_id,
+        )
+
     def room_settings(self) -> RoomGlobalSettingsRecord:
         return self._store._room_settings(self._connection, self._room_id)
 
@@ -754,17 +761,47 @@ class RoomStore:
 
     def event_by_id(self, room_id: str, event_id: str, *, include_hidden: bool = False) -> dict[str, object]:
         clean_room_id = _clean_room_id(room_id)
-        clean_event_id = clean_room_text(event_id, limit=128)
-        if not clean_event_id:
-            return {}
-        query = "SELECT payload_json FROM room_events WHERE room_id = ? AND event_id = ?"
-        parameters: tuple[object, ...] = (clean_room_id, clean_event_id)
-        if not include_hidden:
-            query += " AND visibility = ?"
-            parameters = (clean_room_id, clean_event_id, VISIBLE)
         with self._connection() as connection:
-            row = connection.execute(query, parameters).fetchone()
-        return _row_payload(row, column="payload_json")
+            return self._event_by_id(
+                connection,
+                clean_room_id,
+                event_id,
+                include_hidden=include_hidden,
+            )
+
+    def vote_events(self, room_id: str, vote_id: str) -> list[dict[str, object]]:
+        clean_room_id = _clean_room_id(room_id)
+        clean_vote_id = clean_room_text(vote_id, limit=128)
+        if not clean_vote_id:
+            return []
+        with self._connection() as connection:
+            poll = self._event_by_id(connection, clean_room_id, clean_vote_id)
+            if (
+                not poll
+                or str(poll.get("type") or "") != "message_final"
+                or str(poll.get("message_kind") or "") != "vote"
+            ):
+                return []
+            rows = connection.execute(
+                """SELECT payload_json FROM room_events
+                   WHERE room_id = ?
+                     AND visibility = ?
+                     AND event_type = 'message_final'
+                     AND seq > ?
+                     AND json_extract(payload_json, '$.message_kind') = 'vote_cast'
+                     AND json_extract(payload_json, '$.vote_id') = ?
+                   ORDER BY seq""",
+                (
+                    clean_room_id,
+                    VISIBLE,
+                    int(poll.get("seq") or 0),
+                    clean_vote_id,
+                ),
+            ).fetchall()
+        return [
+            poll,
+            *[_row_payload(row, column="payload_json") for row in rows],
+        ]
 
     def event_sequence(self, room_id: str, event_id: str) -> int:
         clean_room_id = _clean_room_id(room_id)
@@ -1229,6 +1266,25 @@ class RoomStore:
             (room_id, clean_session_id),
         ).fetchone()
         return _row_payload(row)
+
+    def _event_by_id(
+        self,
+        connection: sqlite3.Connection,
+        room_id: str,
+        event_id: str,
+        *,
+        include_hidden: bool = False,
+    ) -> dict[str, object]:
+        clean_event_id = clean_room_text(event_id, limit=128)
+        if not clean_event_id:
+            return {}
+        query = "SELECT payload_json FROM room_events WHERE room_id = ? AND event_id = ?"
+        parameters: tuple[object, ...] = (room_id, clean_event_id)
+        if not include_hidden:
+            query += " AND visibility = ?"
+            parameters = (room_id, clean_event_id, VISIBLE)
+        row = connection.execute(query, parameters).fetchone()
+        return _row_payload(row, column="payload_json")
 
     def _append_event(
         self,

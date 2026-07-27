@@ -468,6 +468,81 @@ class RoomRepositoryContractMixin:
         case.assertEqual(stored_event["actor"]["participant_id"], "agent-a")
         case.assertNotIn("display_name", stored_event["actor"])
 
+    def test_vote_query_returns_only_the_poll_and_its_visible_later_ballots(self) -> None:
+        self.repository.create_room("vote-query")
+        with self.repository.transaction("vote-query") as transaction:
+            poll = transaction.append_event(
+                "message_final",
+                participant_id="host-a",
+                participant_type="human",
+                display_name="Host",
+                message_kind="vote",
+                vote_question="Choose",
+                vote_options=["A", "B"],
+            )
+            self._test_case().assertEqual(
+                transaction.event_by_id(str(poll["id"])),
+                poll,
+            )
+            transaction.append_event(
+                "message_final",
+                participant_id="host-a",
+                participant_type="human",
+                content="unrelated",
+                message_kind="message",
+            )
+            first_ballot = transaction.append_event(
+                "message_final",
+                participant_id="guest-a",
+                participant_type="human",
+                display_name="Guest A",
+                message_kind="vote_cast",
+                vote_id=poll["id"],
+                vote_choice="A",
+            )
+            transaction.append_event(
+                "message_final",
+                participant_id="guest-hidden",
+                participant_type="human",
+                display_name="Hidden",
+                message_kind="vote_cast",
+                vote_id=poll["id"],
+                vote_choice="B",
+                visibility="legacy_hidden",
+            )
+            transaction.append_event(
+                "message_final",
+                participant_id="guest-other",
+                participant_type="human",
+                display_name="Other",
+                message_kind="vote_cast",
+                vote_id="another-vote",
+                vote_choice="A",
+            )
+            latest_ballot = transaction.append_event(
+                "message_final",
+                participant_id="guest-a",
+                participant_type="human",
+                display_name="Guest A",
+                message_kind="vote_cast",
+                vote_id=poll["id"],
+                vote_choice="B",
+            )
+
+        vote_events = self.repository.vote_events(
+            "vote-query",
+            str(poll["id"]),
+        )
+
+        self._test_case().assertEqual(
+            [event["id"] for event in vote_events],
+            [poll["id"], first_ballot["id"], latest_ballot["id"]],
+        )
+        self._test_case().assertEqual(
+            self.repository.vote_events("vote-query", "missing-vote"),
+            [],
+        )
+
     def test_session_pending_and_inflight_state_survives_reopen_contract(self) -> None:
         self.repository.create_room("general")
         with self.repository.transaction("general") as transaction:

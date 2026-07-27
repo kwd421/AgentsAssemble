@@ -634,9 +634,10 @@ class RoomRealtimeController:
                     code="permission_denied",
                 )
             try:
+                vote_id = clean_lobby_text(payload.get("vote_id"), limit=128)
                 result = vote_summary(
-                    self.store.read_events(room_id),
-                    clean_lobby_text(payload.get("vote_id"), limit=128),
+                    self.store.vote_events(room_id, vote_id),
+                    vote_id,
                 )
             except ValueError as error:
                 raise RoomCommandRejected(
@@ -682,12 +683,6 @@ class RoomRealtimeController:
                     room_id,
                     participant_id,
                 )
-                room_events = (
-                    self.store.read_events(room_id)
-                    if clean_lobby_text(payload.get("kind"), limit=64)
-                    == "vote_cast"
-                    else []
-                )
                 return self._execute_durable_command(
                     identity,
                     room_id,
@@ -699,7 +694,6 @@ class RoomRealtimeController:
                         payload,
                         unit=unit,
                         compatibility_muted=compatibility_muted,
-                        room_events=room_events,
                     ),
                 )
         if action == "agent.configure" and not AGENT_RUNTIME_PROFILE_KEYS.intersection(payload):
@@ -1098,14 +1092,12 @@ class RoomRealtimeController:
         *,
         unit: RoomCommandUnitOfWork,
         compatibility_muted: bool,
-        room_events: list[dict[str, object]],
     ) -> dict[str, object]:
         return self._messages.send_in_unit(
             identity,
             payload,
             unit=unit,
             compatibility_muted=compatibility_muted,
-            room_events=room_events,
         )
 
     def _create_agent(

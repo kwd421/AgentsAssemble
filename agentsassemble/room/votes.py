@@ -1,7 +1,7 @@
-"""Poll tallying over lobby events (issue 7: /vote).
+"""Canonical room vote validation and tallying.
 
-A poll is one lobby event (kind "vote": question + options; its event id is the
-vote_id) and any number of ballots (kind "vote_cast" referencing that vote_id).
+A poll is one room message (message_kind "vote"; its event id is the vote_id)
+and any number of ballots (message_kind "vote_cast" referencing that vote_id).
 The log is the source of truth — no separate vote store — and the latest cast
 per voter wins, so re-voting just changes your choice.
 """
@@ -101,8 +101,48 @@ def vote_deadline_has_passed(
     return (now or datetime.now(UTC)) >= deadline
 
 
+def vote_poll(
+    event: dict[str, object],
+    vote_id: object,
+) -> dict[str, object]:
+    """Return a canonical poll event matching ``vote_id`` or raise ValueError."""
+
+    clean_vote_id = clean_lobby_text(vote_id, limit=128)
+    if not clean_vote_id:
+        raise ValueError("vote_id is required.")
+    kind = str(event.get("message_kind") or event.get("kind") or "")
+    event_vote_id = str(
+        event.get("vote_id")
+        or (event.get("id") if kind == "vote" else "")
+        or ""
+    )
+    if kind != "vote" or event_vote_id != clean_vote_id:
+        raise ValueError(f"Vote {clean_vote_id} was not found.")
+    return event
+
+
+def _participant_id(event: dict[str, object]) -> str:
+    actor = event.get("actor") if isinstance(event.get("actor"), dict) else {}
+    return clean_lobby_text(
+        actor.get("participant_id")
+        or event.get("participant_id")
+        or event.get("actor_id"),
+        limit=128,
+    )
+
+
+def _display_name(event: dict[str, object], participant_id: str) -> str:
+    return (
+        clean_lobby_text(
+            event.get("display_name") or event.get("name"),
+            limit=64,
+        )
+        or participant_id
+    )
+
+
 def vote_summary(events: list[dict[str, object]], vote_id: str) -> dict[str, object]:
-    """Aggregate one poll from (chronological) lobby events.
+    """Aggregate one poll from chronological canonical vote events.
 
     Raises ValueError when the poll event is missing from the given events.
     """
@@ -110,9 +150,9 @@ def vote_summary(events: list[dict[str, object]], vote_id: str) -> dict[str, obj
     if not clean_vote_id:
         raise ValueError("vote_id is required.")
     poll: dict[str, object] | None = None
-    latest_choice_by_voter: dict[str, tuple[str, str]] = {}  # voter key -> (choice, display name)
+    latest_choice_by_voter: dict[str, tuple[str, str]] = {}
     for event in events:
-        kind = str(event.get("kind") or event.get("message_kind") or "")
+        kind = str(event.get("message_kind") or event.get("kind") or "")
         event_vote_id = str(
             event.get("vote_id")
             or (event.get("id") if kind == "vote" else "")
@@ -130,12 +170,12 @@ def vote_summary(events: list[dict[str, object]], vote_id: str) -> dict[str, obj
         matched = resolve_vote_choice(choice, options)
         if not matched:
             continue
-        voter_key = str(event.get("actor_id") or "") or f"name:{str(event.get('name') or '')}"
-        if voter_key in {"", "name:"}:
+        participant_id = _participant_id(event)
+        if not participant_id:
             continue
-        latest_choice_by_voter[voter_key] = (
+        latest_choice_by_voter[participant_id] = (
             matched,
-            str(event.get("name") or event.get("display_name") or voter_key),
+            _display_name(event, participant_id),
         )
     if poll is None:
         raise ValueError(f"Vote {clean_vote_id} was not found.")
@@ -143,9 +183,11 @@ def vote_summary(events: list[dict[str, object]], vote_id: str) -> dict[str, obj
     options = [str(option) for option in poll.get("vote_options") or []]
     tallies = {option: 0 for option in options}
     voters: dict[str, list[str]] = {option: [] for option in options}
-    for choice, display_name in latest_choice_by_voter.values():
+    voter_ids: dict[str, list[str]] = {option: [] for option in options}
+    for participant_id, (choice, display_name) in latest_choice_by_voter.items():
         tallies[choice] += 1
         voters[choice].append(display_name)
+        voter_ids[choice].append(participant_id)
     return {
         "vote_id": clean_vote_id,
         "question": str(poll.get("vote_question") or ""),
@@ -156,8 +198,39 @@ def vote_summary(events: list[dict[str, object]], vote_id: str) -> dict[str, obj
         "created_at": str(poll.get("created_at") or ""),
         "tallies": tallies,
         "voters": voters,
+        "voter_ids": voter_ids,
         "total_votes": len(latest_choice_by_voter),
     }
+
+
+def legacy_vote_summary(
+    events: list[dict[str, object]],
+    vote_id: str,
+) -> dict[str, object]:
+    """Preserve retained lobby ballots that predate participant identities.
+
+    Canonical room votes must never use a display name as identity. Retained
+    lobby records did not always persist ``actor_id``, so their HTTP adapter
+    supplies an explicit compatibility key before using the canonical tally.
+    """
+
+    adapted_events: list[dict[str, object]] = []
+    for event in events:
+        kind = str(event.get("message_kind") or event.get("kind") or "")
+        if kind != "vote_cast" or _participant_id(event):
+            adapted_events.append(event)
+            continue
+        display_name = _display_name(event, "")
+        if not display_name:
+            adapted_events.append(event)
+            continue
+        adapted_events.append(
+            {
+                **event,
+                "actor_id": f"legacy-name:{display_name.casefold()}",
+            }
+        )
+    return vote_summary(adapted_events, vote_id)
 
 
 def resolve_vote_choice(choice: object, options: list[object]) -> str:

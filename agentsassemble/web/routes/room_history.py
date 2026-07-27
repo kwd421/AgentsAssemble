@@ -12,7 +12,7 @@ from agentsassemble.room.speech import (
     ensure_lobby_say_allowed,
     governed_lobby_say,
 )
-from agentsassemble.room.votes import vote_summary
+from agentsassemble.room.votes import legacy_vote_summary
 from agentsassemble.web.router import RequestContext, Router
 
 
@@ -184,7 +184,7 @@ def register_room_history_routes(
             meeting_id=meeting_id,
         )
         try:
-            ctx.send_json(vote_summary(events, vote_id))
+            ctx.send_json(legacy_vote_summary(events, vote_id))
         except ValueError as error:
             ctx.send_error(HTTPStatus.NOT_FOUND, str(error))
 
