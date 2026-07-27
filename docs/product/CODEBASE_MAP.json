@@ -1,10 +1,10 @@
 {
  "readme": "AgentsAssemble codebase map. Regenerate with `make codebase-map`; verify committed outputs with `make codebase-map-verify`. modules[] columns: name, path, package, domain, classification, migration_status, lines, docstring, imports[], imported_by[] (indexes into modules), classes[[name, [[base, defining_module], ...]]] (best-effort, top-level classes only). frontend[] columns: path, group, lines, doc, imports[], imported_by[] (indexes into frontend). package_edges go importer -> dependency with module-import counts; `points` is the precomputed polyline for that edge and `intra_cycle` marks imports whose endpoints share one cycle group. graph{} holds the layered package drawing: layers[] top-to-bottom (each with members[] package ids, member_count, and the dominant domain), (a package sits below everything importing it), clusters[] are mutually dependent packages (import cycles at package level) drawn as one labelled block, plus width/height of the drawing. health{} ranks findings for a reader who has to act: cycles[] (mutually dependent packages, with the lines they hold), leaning_on_retiring[] (current modules importing legacy/compatibility modules - the reason legacy cannot be deleted), highest_leverage_migrations[] (retiring modules with the most current importers), unreferenced_shims[] (compatibility modules with no importer in agentsassemble/ and no reference in tests/; callers outside this repository are not visible, so verify before deleting), and hotspots[] (largest modules). health.scope states exactly what was measured. class_graph{} is the UML generalization DAG over base classes that resolve inside the repo: edges go base -> subclass, so a subclass always sits below the class it extends. Coordinates in graph and class_graph are laid out with a Sugiyama pipeline (cycle condensation, Coffman-Graham layering, dummy-node edge routing, median/transpose crossing reduction) and are deterministic.",
- "generated_at": "2026-07-27T12:31:48Z",
- "fingerprint": "42448dc89ba6c608",
+ "generated_at": "2026-07-27T13:00:58Z",
+ "fingerprint": "42a8dfded73f03a4",
  "stats": {
   "backend_modules": 783,
-  "backend_lines": 127713,
+  "backend_lines": 127872,
   "frontend_files": 143,
   "frontend_lines": 37196,
   "packages": 30,
@@ -124,7 +124,7 @@
    "kind": "backend",
    "doc": "Provider runtime contracts and implementations.",
    "files": 82,
-   "lines": 20322,
+   "lines": 20481,
    "domains": {
     "providers": 82
    },
@@ -3700,7 +3700,7 @@
      "web"
     ],
     "internal_edges": 80,
-    "lines": 122684,
+    "lines": 122843,
     "heaviest": "legacy"
    },
    {
@@ -16896,10 +16896,11 @@
    "providers",
    "current",
    "in-target-package",
-   224,
+   318,
    "Room portal permission policy for Grok ACP tool requests.",
    [
     603,
+    614,
     672
    ],
    [
@@ -16914,7 +16915,7 @@
    "providers",
    "current",
    "in-target-package",
-   716,
+   737,
    "",
    [
     582,
@@ -17492,7 +17493,7 @@
    "providers",
    "current",
    "in-target-package",
-   907,
+   910,
    "Private room-view boundary used by autonomous provider sessions.",
    [
     672
@@ -17863,7 +17864,7 @@
    "providers",
    "current",
    "in-target-package",
-   144,
+   185,
    "",
    [
     569,
@@ -17871,6 +17872,7 @@
     607
    ],
    [
+    583,
     592,
     608,
     626
@@ -24223,7 +24225,7 @@
    "name": "agentsassemble",
    "note": "Backend package (Python)",
    "files": 783,
-   "lines": 127713
+   "lines": 127872
   },
   {
    "name": "frontend/src",
@@ -24235,7 +24237,7 @@
    "name": "tests",
    "note": "Backend test suite",
    "files": 349,
-   "lines": 138523
+   "lines": 138726
   },
   {
    "name": "scripts",
@@ -24247,7 +24249,7 @@
    "name": "docs",
    "note": "Product and architecture docs",
    "files": 77,
-   "lines": 29004
+   "lines": 29010
   },
   {
    "name": "configs",
