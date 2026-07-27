@@ -22,6 +22,7 @@ type RoomConnectionPanelProps = {
   room: RoomSummary;
   agents: LiveAgent[];
   members: RoomMember[];
+  roomSessionToken?: string;
   viewerParticipantId?: string;
   roleOverrides?: Record<string, string>;
   onRoleChange?: (memberId: string, role: RoleId) => void;
@@ -64,6 +65,7 @@ export default function RoomConnectionPanel({
   room,
   agents,
   members,
+  roomSessionToken = "",
   viewerParticipantId = "operator-local",
   roleOverrides,
   onRoleChange,
@@ -146,6 +148,7 @@ export default function RoomConnectionPanel({
       <MemberList
         agents={agents}
         members={members}
+        roomSessionToken={roomSessionToken}
         viewerParticipantId={viewerParticipantId}
         roomId={room.id}
         roomName={room.label}

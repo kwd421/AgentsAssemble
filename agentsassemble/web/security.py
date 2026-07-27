@@ -82,10 +82,12 @@ def _public_invite_route_allowed(path: str, method: str) -> bool:
                 "/api/provider-usage/grok",
                 "/api/provider-usage/deepseek",
             }
+            or path.startswith("/api/attachments/")
             or path.startswith("/app/assets/")
         )
     if method == "POST":
         return path in {
+            "/api/attachments",
             "/api/ws-ticket",
             "/api/room-invite/admission",
             "/api/room-invite/agent-join",

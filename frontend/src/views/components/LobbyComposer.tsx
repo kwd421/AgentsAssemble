@@ -135,7 +135,12 @@ export default function LobbyComposer({
     try {
       const uploaded: LobbyAttachmentRef[] = [];
       for (const file of filesToUpload) {
-        uploaded.push(await uploadLobbyAttachment(file, meetingId));
+        uploaded.push(
+          await uploadLobbyAttachment(file, {
+            roomId: meetingId,
+            sessionToken: roomSessionToken,
+          })
+        );
       }
       setPendingAttachments((current) =>
         [...current, ...uploaded].slice(0, MAX_ATTACHMENTS_PER_EVENT)

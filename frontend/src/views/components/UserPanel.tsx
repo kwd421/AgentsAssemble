@@ -154,7 +154,9 @@ export default function UserPanel({
   async function handleAvatarCropped(file: File) {
     setAvatarStatus("프로필 사진 저장 중...");
     try {
-      const attachment = await uploadLobbyAttachment(file);
+      const attachment = await uploadLobbyAttachment(file, {
+        purpose: "profile_avatar",
+      });
       await persistProfile({ ...profile, avatarImage: attachment.url });
       setAvatarCropFile(null);
       setAvatarEditorOpen(false);

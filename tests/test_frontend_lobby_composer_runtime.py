@@ -41,7 +41,11 @@ class FrontendLobbyComposerRuntimeTests(unittest.TestCase):
             globalThis.FileReader = FakeFileReader;
             const calls = [];
             globalThis.fetch = async (url, options = {}) => {
-              calls.push({ url: String(url), body: options.body ? JSON.parse(options.body) : null });
+              calls.push({
+                url: String(url),
+                headers: options.headers || {},
+                body: options.body ? JSON.parse(options.body) : null,
+              });
               if (url === "/api/attachments") {
                 return jsonResponse({
                   attachment: {
@@ -66,6 +70,9 @@ class FrontendLobbyComposerRuntimeTests(unittest.TestCase):
               name: "notes.txt",
               type: "text/plain",
               payload: "cm9vbSBub3Rl",
+            }, {
+              roomId: "room-a",
+              sessionToken: "room-session-a",
             });
             await api.postLobbyMessage({
               name: "나",
@@ -76,6 +83,9 @@ class FrontendLobbyComposerRuntimeTests(unittest.TestCase):
             });
 
             assert.equal(calls[0].url, "/api/attachments");
+            assert.equal(calls[0].headers.Authorization, "Bearer room-session-a");
+            assert.equal(calls[0].body.room_id, "room-a");
+            assert.equal(calls[0].body.purpose, "room_attachment");
             assert.equal(calls[0].body.data_base64, "cm9vbSBub3Rl");
             assert.equal(calls[1].url, "/api/lobby");
             assert.equal(calls[1].body.attachments[0].id, "att-12345678");

@@ -23,6 +23,7 @@ import type { MemberEntry } from "./memberTypes";
 export default function AgentIdentitySettings({
   entry,
   agent,
+  roomSessionToken = "",
   processGroups,
   onSessionActionComplete,
   onAgentProfileSettingsChange,
@@ -30,6 +31,7 @@ export default function AgentIdentitySettings({
 }: {
   entry: MemberEntry;
   agent: NonNullable<MemberEntry["agent"]>;
+  roomSessionToken?: string;
   processGroups: LiveAgentProcessGroup[];
   onSessionActionComplete?: () => void;
   onAgentProfileSettingsChange?: (settings: Record<string, AgentProfileSettings>) => void;
@@ -86,7 +88,10 @@ export default function AgentIdentitySettings({
   async function handleAgentAvatarCropped(file: File) {
     setAgentProfileStatus("프로필 사진 저장 중...");
     try {
-      const attachment = await uploadLobbyAttachment(file);
+      const attachment = await uploadLobbyAttachment(file, {
+        purpose: "profile_avatar",
+        sessionToken: roomSessionToken,
+      });
       setAgentAvatarImage(attachment.url);
       setAgentProfileCropFile(null);
       setAgentProfileStatus("프로필 사진 준비됨");

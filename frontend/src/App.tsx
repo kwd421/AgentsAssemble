@@ -1489,6 +1489,7 @@ export default function App() {
 
       {(guestJoinToken || operatorPairingPending) && !guestSession && !guestExpired && (
         <GuestJoinProfilePanel
+          inviteToken={guestJoinToken}
           pairing={operatorPairingPending}
           pairingState={operatorPairingState}
           displayName={pendingGuestDisplayName}
@@ -1978,6 +1979,7 @@ export default function App() {
                 room={activeRoom}
                 agents={scopedAgents}
                 members={activeRoomMembers}
+                roomSessionToken={admittedSessionToken}
                 viewerParticipantId={guestSession?.agentId || "operator-local"}
                 roleOverrides={activeMemberRoles}
                 onRoleChange={updateMemberRole}

@@ -5,6 +5,7 @@ import type { OperatorPairingState } from "../../app/useRoomAdmission";
 import ImageCropper from "./ImageCropper";
 
 type GuestJoinProfilePanelProps = {
+  inviteToken: string;
   displayName: string;
   avatarImage?: string;
   status?: string;
@@ -18,6 +19,7 @@ type GuestJoinProfilePanelProps = {
 };
 
 export default function GuestJoinProfilePanel({
+  inviteToken,
   displayName,
   avatarImage,
   status = "",
@@ -36,7 +38,10 @@ export default function GuestJoinProfilePanel({
   async function handleCropped(file: File) {
     setUploadStatus("프로필 사진 저장 중...");
     try {
-      const attachment = await uploadLobbyAttachment(file);
+      const attachment = await uploadLobbyAttachment(file, {
+        inviteToken,
+        purpose: "profile_avatar",
+      });
       onAvatarImageChange(attachment.url);
       setCropFile(null);
       setUploadStatus("프로필 사진 저장됨");

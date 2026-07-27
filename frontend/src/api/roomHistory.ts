@@ -6,6 +6,7 @@ import {
   fetchJsonWithToken,
   fileToBase64,
   postJson,
+  postJsonModerator,
   postJsonWithToken,
   queryString,
 } from "./http";
@@ -19,6 +20,13 @@ export interface LobbyAttachmentRef {
   url: string;
   download_url: string;
 }
+
+export type LobbyAttachmentUploadOptions = {
+  roomId?: string;
+  sessionToken?: string;
+  inviteToken?: string;
+  purpose?: "room_attachment" | "profile_avatar";
+};
 
 export interface LobbyEvent {
   id: string;
@@ -103,14 +111,24 @@ export function fetchRoomLobby(sessionToken: string, options: { before?: string;
   );
 }
 
-export function uploadLobbyAttachment(file: File, roomId = ""): Promise<LobbyAttachmentRef> {
+export function uploadLobbyAttachment(
+  file: File,
+  options: LobbyAttachmentUploadOptions | string = {}
+): Promise<LobbyAttachmentRef> {
+  const resolved = typeof options === "string" ? { roomId: options } : options;
   return fileToBase64(file).then((dataBase64) => {
-    return postJson<{ attachment: LobbyAttachmentRef }>("/api/attachments", {
-      room_id: roomId,
-      filename: file.name || "attachment.bin",
-      content_type: file.type || "application/octet-stream",
-      data_base64: dataBase64,
-    });
+    return postJsonModerator<{ attachment: LobbyAttachmentRef }>(
+      "/api/attachments",
+      {
+        room_id: resolved.roomId || "",
+        purpose: resolved.purpose || "room_attachment",
+        invite_token: resolved.inviteToken || "",
+        filename: file.name || "attachment.bin",
+        content_type: file.type || "application/octet-stream",
+        data_base64: dataBase64,
+      },
+      resolved.sessionToken || ""
+    );
   }).then((payload) => {
     return payload.attachment;
   });

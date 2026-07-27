@@ -14,6 +14,7 @@ import type { MemberEntry } from "./memberTypes";
 
 export type MemberDetailModalProps = {
   entry: MemberEntry;
+  roomSessionToken?: string;
   onClose: () => void;
   processGroups?: LiveAgentProcessGroup[];
   onSessionActionComplete?: () => void;
@@ -34,6 +35,7 @@ export type MemberDetailModalProps = {
 
 export default function MemberDetailModal({
   entry,
+  roomSessionToken = "",
   onClose,
   processGroups = [],
   onSessionActionComplete,
@@ -140,6 +142,7 @@ export default function MemberDetailModal({
         <AgentIdentitySettings
           entry={entry}
           agent={agent}
+          roomSessionToken={roomSessionToken}
           processGroups={processGroups}
           onSessionActionComplete={onSessionActionComplete}
           onAgentProfileSettingsChange={onAgentProfileSettingsChange}

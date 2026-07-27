@@ -921,6 +921,26 @@ class GuiServerStreamsHttpTests(unittest.TestCase):
                     public_url=public_url,
                 )
             )
+            self.assertTrue(
+                _request_trusted(
+                    "127.0.0.1",
+                    "room.example.com",
+                    "https://room.example.com",
+                    path="/api/attachments",
+                    method="POST",
+                    public_url=public_url,
+                )
+            )
+            self.assertTrue(
+                _request_trusted(
+                    "127.0.0.1",
+                    "room.example.com",
+                    "https://room.example.com",
+                    path="/api/attachments/avatar-12345678",
+                    method="GET",
+                    public_url=public_url,
+                )
+            )
             self.assertFalse(
                 _request_trusted(
                     "127.0.0.1",

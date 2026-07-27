@@ -45,6 +45,7 @@ function roleStorageKey(roomId: string) {
 export default function MemberList({
   agents,
   members = [],
+  roomSessionToken = "",
   viewerParticipantId = "operator-local",
   roomId,
   roomName,
@@ -69,6 +70,7 @@ export default function MemberList({
 }: {
   agents: LiveAgent[];
   members?: RoomMember[];
+  roomSessionToken?: string;
   viewerParticipantId?: string;
   roomId: string;
   roomName: string;
@@ -448,6 +450,7 @@ export default function MemberList({
       {detailEntry && (
         <MemberDetailModal
           entry={detailEntry}
+          roomSessionToken={roomSessionToken}
           onClose={() => setDetailEntryId("")}
           processGroups={processGroups}
           onSessionActionComplete={onSessionActionComplete}
