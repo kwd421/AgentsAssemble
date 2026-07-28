@@ -386,6 +386,79 @@ describe("useCanonicalRoom", () => {
     expect(result.current.timelineEvents[0].avatar_image_url).toBeUndefined();
   });
 
+  it.each(["participant_left", "participant_kicked"])(
+    "removes a participant from canonical browser state after %s",
+    async (eventType) => {
+      let handlers: RoomSocketHandlers | undefined;
+      const openSocket = vi.fn((_auth, _streams, nextHandlers: RoomSocketHandlers) => {
+        handlers = nextHandlers;
+        return {
+          close: vi.fn(),
+          ready: () => true,
+          command: vi.fn(),
+          say: vi.fn(),
+          historyBefore: vi.fn(),
+        } satisfies RoomSocketHandle;
+      });
+      const { result } = renderHook(() =>
+        useCanonicalRoom({
+          roomId: "general",
+          auth: { kind: "host", meetingId: "general" },
+          openSocket,
+        })
+      );
+      await waitFor(() => expect(openSocket).toHaveBeenCalledOnce());
+      const initial = snapshot([
+        {
+          ...event(1, eventType),
+          turn_id: undefined,
+          participant_id: "codex",
+        },
+      ]);
+      initial.participants = [
+        {
+          meeting_id: "general",
+          participant_id: "codex",
+          display_name: "Codex",
+          role: "agent",
+          participant_type: "local",
+          provider_kind: "codex_live_session",
+          connection_kind: "native_cli_bridge",
+          status: "joined",
+          source: "agent_session",
+          created_at: "",
+          updated_at: "",
+        },
+      ];
+      act(() => handlers?.onRoomSnapshot?.(initial));
+      expect(result.current.participants.map((participant) => participant.participant_id)).toEqual([
+        "codex",
+      ]);
+
+      act(() =>
+        handlers?.onRoomEvents?.([
+          {
+            ...event(2, eventType),
+            turn_id: undefined,
+            participant_id: "codex",
+          },
+        ])
+      );
+
+      expect(result.current.participants).toEqual([]);
+
+      const terminalSnapshot = snapshot([]);
+      terminalSnapshot.participants = [
+        {
+          ...initial.participants[0],
+          status: eventType === "participant_left" ? "left" : "kicked",
+        },
+      ];
+      act(() => handlers?.onRoomSnapshot?.(terminalSnapshot));
+      expect(result.current.participants).toEqual([]);
+    }
+  );
+
   it("preserves session provider branding when a participant snapshot omits it", async () => {
     let handlers: RoomSocketHandlers | undefined;
     const openSocket = vi.fn((_auth, _streams, nextHandlers: RoomSocketHandlers) => {

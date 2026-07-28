@@ -95,6 +95,10 @@ function normalizeRoomParticipant(participant: RoomMember, roomId: string): Room
   };
 }
 
+function participantIsActive(participant: RoomMember) {
+  return !["left", "kicked"].includes(String(participant.status || ""));
+}
+
 function upsertRoomParticipants(
   current: RoomMember[],
   incoming: RoomMember[],
@@ -111,20 +115,32 @@ function upsertRoomParticipants(
   return [...byId.values()];
 }
 
-function applyParticipantProfileEvents(current: RoomMember[], incoming: RoomEvent[]) {
+function applyParticipantEvents(current: RoomMember[], incoming: RoomEvent[]) {
   const updatesByParticipant = new Map<string, RoomEvent>();
+  const latestMembershipEvent = new Map<string, RoomEvent["type"]>();
   incoming.forEach((event) => {
     if (event.type === "participant_updated" && event.participant_id) {
       updatesByParticipant.set(event.participant_id, event);
     }
+    if (
+      event.participant_id &&
+      ["participant_joined", "participant_left", "participant_kicked"].includes(event.type)
+    ) {
+      latestMembershipEvent.set(event.participant_id, event.type);
+    }
   });
-  if (!updatesByParticipant.size) return current;
+  if (!updatesByParticipant.size && !latestMembershipEvent.size) return current;
   let changed = false;
-  const next = current.map((participant) => {
+  const next = current.flatMap((participant) => {
+    const membershipEvent = latestMembershipEvent.get(participant.participant_id);
+    if (membershipEvent === "participant_left" || membershipEvent === "participant_kicked") {
+      changed = true;
+      return [];
+    }
     const update = updatesByParticipant.get(participant.participant_id);
-    if (!update) return participant;
+    if (!update) return [participant];
     changed = true;
-    return {
+    return [{
       ...participant,
       display_name: String(update.display_name || participant.display_name),
       avatar_image_url:
@@ -132,7 +148,7 @@ function applyParticipantProfileEvents(current: RoomMember[], incoming: RoomEven
           ? String(update.avatar_image_url || "") || undefined
           : participant.avatar_image_url,
       updated_at: update.created_at || participant.updated_at,
-    };
+    }];
   });
   return changed ? next : current;
 }
@@ -140,6 +156,7 @@ function applyParticipantProfileEvents(current: RoomMember[], incoming: RoomEven
 type ApplyRoomEventsOptions = {
   replace?: boolean;
   projectProgress?: boolean;
+  projectParticipantState?: boolean;
   projectSessionState?: boolean;
 };
 
@@ -191,6 +208,7 @@ export function useCanonicalRoom(options: UseCanonicalRoomOptions) {
     const {
       replace = false,
       projectProgress = true,
+      projectParticipantState = true,
       projectSessionState = true,
     } = options;
     const next = mergeRoomEvents(eventsRef.current[targetRoomId] || [], incoming, replace);
@@ -236,10 +254,15 @@ export function useCanonicalRoom(options: UseCanonicalRoomOptions) {
       }));
     }
 
-    if (incoming.some((event) => event.type === "participant_updated")) {
+    if (
+      projectParticipantState &&
+      incoming.some((event) =>
+        ["participant_updated", "participant_left", "participant_kicked"].includes(event.type)
+      )
+    ) {
       setParticipantsByRoom((previous) => ({
         ...previous,
-        [targetRoomId]: applyParticipantProfileEvents(previous[targetRoomId] || [], incoming),
+        [targetRoomId]: applyParticipantEvents(previous[targetRoomId] || [], incoming),
       }));
     }
 
@@ -299,9 +322,9 @@ export function useCanonicalRoom(options: UseCanonicalRoomOptions) {
         }
         setParticipantsByRoom((previous) => ({
           ...previous,
-          [roomId]: (snapshot.participants || []).map((participant) =>
-            normalizeRoomParticipant(participant, roomId)
-          ),
+          [roomId]: (snapshot.participants || [])
+            .filter(participantIsActive)
+            .map((participant) => normalizeRoomParticipant(participant, roomId)),
         }));
         setSessionsByRoom((previous) => ({
           ...previous,
@@ -334,6 +357,7 @@ export function useCanonicalRoom(options: UseCanonicalRoomOptions) {
         });
         applyEvents(roomId, snapshot.events || [], {
           replace: snapshot.snapshot_mode !== "resume",
+          projectParticipantState: false,
           projectSessionState: snapshot.snapshot_mode === "resume",
         });
         setMembershipRevision((previous) => previous + 1);

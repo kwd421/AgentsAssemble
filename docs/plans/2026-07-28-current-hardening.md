@@ -107,7 +107,9 @@ restart, reconnect, room switching, and refresh.
 
 ### D. Browser behavior
 
-- [ ] Remove left and kicked participants from canonical browser state so an
+- [ ] Publish canonical membership change state for human invite admission so
+      already-connected browsers refresh when a guest joins.
+- [x] Remove left and kicked participants from canonical browser state so an
       HTTP roster refresh cannot resurrect ghost members.
 - [ ] Expire a stored guest session during startup and provide a usable exit
       from the guest surface.
@@ -187,6 +189,7 @@ remaining limitation.
 | `cdfe18cd` | Correlate OpenCode SSE activity, assistant messages, idle completion, and message-history fallback to a generated request message ID | red delayed-event verification failed before prompt submission because no correlation ID existed; corrected path ignored the prior turn and returned only the current parent-linked reply; 234 OpenCode/provider/room-runtime tests; `python3 scripts/check_test_quality.py --base HEAD`; `make generated-artifacts-check`; `git diff --check` | the real OpenCode provider was not launched, per this plan's provider-launch non-goal; protocol fields were verified against installed v1.17.18 and its official schema |
 | `005d074d` | Invalidate POSIX PTY and Windows ConPTY sessions after a turn timeout so late output cannot cross into the next turn | red real-PTY and controlled-ConPTY verification returned the first turn's late output as the second reply before the fix; 180 actual PTY/transcript/bridge/provider tests; `python3 scripts/check_test_quality.py --base HEAD`; `make generated-artifacts-check`; `git diff --check` | timed-out terminal sessions intentionally restart and lose in-process conversational state rather than risk cross-turn output |
 | `6f82f3e0` | Drain resident Codex and Grok stderr concurrently with stdout while preserving complete diagnostics for existing authentication classification | red real-subprocess verification timed out after each child filled stderr before writing its streamed reply; corrected paths returned in 0.3 seconds and retained early authentication markers across large diagnostics; 216 resident/stream/runner/continuity tests; `python3 scripts/check_test_quality.py --base HEAD`; `make generated-artifacts-check`; `git diff --check` | diagnostic retention intentionally remains equivalent to the previous full stderr read; this change removes the pipe deadlock without changing error classification |
+| `7f77c2f9` | Serialize same-session Agent Bridge creation and registration under a ref-counted per-session launch owner | red concurrent start verification created two child processes and leaked the overwritten one; corrected concurrent callers share one handle while unrelated sessions remain independent; 217 bridge/lifecycle/realtime/native-E2E/package tests; `python3 scripts/check_test_quality.py --base HEAD`; `make generated-artifacts-check`; `git diff --check` | direct manager shutdown concurrent with an in-progress start is outside the application lifecycle, whose controller lock closes only after active commands finish |
 
 ## Resume Rule
 

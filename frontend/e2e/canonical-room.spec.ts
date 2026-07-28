@@ -226,6 +226,53 @@ test("recovers a failed join and keeps incognito credentials distinct", async ({
   await incognitoContext.close();
 });
 
+test("removes a kicked participant immediately and after roster reload", async ({
+  browser,
+  page,
+}) => {
+  const guestInviteUrl = await createGuestInviteUrl(page);
+  await page.getByRole("button", { name: "초대 닫기" }).click();
+  const guestContext = await browser.newContext();
+  try {
+    const guestPage = await guestContext.newPage();
+    const guestSession = await joinGuest(guestPage, guestInviteUrl, "Departing Guest");
+    expect(guestSession.meetingId).toBe("general");
+    await expect
+      .poll(async () => {
+        const response = await page.request.get(
+          "/api/room-members?meeting_id=general",
+          { headers: { "X-Host-Token": E2E_HOST_TOKEN } }
+        );
+        if (!response.ok()) return [`http-${response.status()}`];
+        const payload = (await response.json()) as {
+          members?: Array<{ display_name?: string }>;
+        };
+        return (payload.members || []).map((member) => member.display_name || "");
+      })
+      .toContain("Departing Guest");
+    await page.reload();
+    await page.getByRole("button", { name: "#general", exact: true }).click();
+
+    const guestMember = page
+      .locator(".dc-member")
+      .filter({ hasText: "Departing Guest" })
+      .first();
+    await expect(guestMember).toBeVisible();
+    await guestMember.click({ button: "right" });
+    page.once("dialog", (dialog) => dialog.accept());
+    await page.getByRole("menuitem", { name: "내보내기", exact: true }).click();
+
+    await expect(guestMember).toHaveCount(0);
+    await page.reload();
+    await page.getByRole("button", { name: "#general", exact: true }).click();
+    await expect(
+      page.locator(".dc-member").filter({ hasText: "Departing Guest" })
+    ).toHaveCount(0);
+  } finally {
+    await guestContext.close();
+  }
+});
+
 test("sends and restores an attachment-only canonical room message", async ({ browser, page }) => {
   await installHostCredential(page);
   await page.goto("/");
