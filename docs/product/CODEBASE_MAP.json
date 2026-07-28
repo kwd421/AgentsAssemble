@@ -1,10 +1,10 @@
 {
  "readme": "AgentsAssemble codebase map. Regenerate with `make codebase-map`; verify committed outputs with `make codebase-map-verify`. modules[] columns: name, path, package, domain, classification, migration_status, lines, docstring, imports[], imported_by[] (indexes into modules), classes[[name, [[base, defining_module], ...]]] (best-effort, top-level classes only). frontend[] columns: path, group, lines, doc, imports[], imported_by[] (indexes into frontend). package_edges go importer -> dependency with module-import counts; `points` is the precomputed polyline for that edge and `intra_cycle` marks imports whose endpoints share one cycle group. graph{} holds the layered package drawing: layers[] top-to-bottom (each with members[] package ids, member_count, and the dominant domain), (a package sits below everything importing it), clusters[] are mutually dependent packages (import cycles at package level) drawn as one labelled block, plus width/height of the drawing. health{} ranks findings for a reader who has to act: cycles[] (mutually dependent packages, with the lines they hold), leaning_on_retiring[] (current modules importing legacy/compatibility modules - the reason legacy cannot be deleted), highest_leverage_migrations[] (retiring modules with the most current importers), unreferenced_shims[] (compatibility modules with no importer in agentsassemble/ and no reference in tests/; callers outside this repository are not visible, so verify before deleting), and hotspots[] (largest modules). health.scope states exactly what was measured. class_graph{} is the UML generalization DAG over base classes that resolve inside the repo: edges go base -> subclass, so a subclass always sits below the class it extends. Coordinates in graph and class_graph are laid out with a Sugiyama pipeline (cycle condensation, Coffman-Graham layering, dummy-node edge routing, median/transpose crossing reduction) and are deterministic.",
- "generated_at": "2026-07-28T07:54:50Z",
- "fingerprint": "ab0be0edce47bf33",
+ "generated_at": "2026-07-28T11:25:59Z",
+ "fingerprint": "cf067111d777fd86",
  "stats": {
   "backend_modules": 787,
-  "backend_lines": 129720,
+  "backend_lines": 129768,
   "frontend_files": 147,
   "frontend_lines": 38812,
   "packages": 30,
@@ -22,7 +22,7 @@
    "kind": "backend",
    "doc": "HTTP and WebSocket transport boundaries for the current GUI.",
    "files": 28,
-   "lines": 4788,
+   "lines": 4827,
    "domains": {
     "web": 28
    },
@@ -124,7 +124,7 @@
    "kind": "backend",
    "doc": "Provider runtime contracts and implementations.",
    "files": 82,
-   "lines": 20748,
+   "lines": 20755,
    "domains": {
     "providers": 82
    },
@@ -488,7 +488,7 @@
    "kind": "backend",
    "doc": "Flat root modules owned by the web domain that have not been physically moved into the target package yet.",
    "files": 41,
-   "lines": 535,
+   "lines": 537,
    "domains": {
     "web": 41
    },
@@ -3677,7 +3677,7 @@
  "health": {
   "scope": "Imports are counted inside agentsassemble/ only; test references are counted separately from tests/. Callers outside this repository are not visible to the generator.",
   "totals": {
-   "retiring_lines": 57104,
+   "retiring_lines": 57106,
    "current_to_retiring_imports": 106,
    "unreferenced_shim_lines": 2014,
    "test_only_shims": 196
@@ -3700,7 +3700,7 @@
      "web"
     ],
     "internal_edges": 80,
-    "lines": 124621,
+    "lines": 124667,
     "heaviest": "legacy"
    },
    {
@@ -17901,7 +17901,7 @@
    "providers",
    "current",
    "in-target-package",
-   185,
+   192,
    "",
    [
     571,
@@ -21091,7 +21091,7 @@
    "web",
    "compatibility",
    "compatibility-shim",
-   72,
+   74,
    "Compatibility exports for the web-owned WebSocket protocol codec.",
    [
     782
@@ -21515,7 +21515,7 @@
    "web",
    "current",
    "in-target-package",
-   523,
+   542,
    "Route-table dispatcher + unified request identity for the GUI HTTP server.",
    [
     13,
@@ -22010,7 +22010,7 @@
    "web",
    "current",
    "in-target-package",
-   145,
+   144,
    "WebSocket HTTP upgrade and connection lifecycle for the GUI server.",
    [
     761,
@@ -22033,7 +22033,7 @@
    "web",
    "current",
    "in-target-package",
-   298,
+   319,
    "Pure-stdlib RFC 6455 WebSocket codec + handshake (master plan WS 전환, WS-3).",
    [],
    [
@@ -24393,7 +24393,7 @@
    "name": "agentsassemble",
    "note": "Backend package (Python)",
    "files": 787,
-   "lines": 129720
+   "lines": 129768
   },
   {
    "name": "frontend/src",
@@ -24405,7 +24405,7 @@
    "name": "tests",
    "note": "Backend test suite",
    "files": 352,
-   "lines": 142090
+   "lines": 142165
   },
   {
    "name": "scripts",
@@ -24416,8 +24416,8 @@
   {
    "name": "docs",
    "note": "Product and architecture docs",
-   "files": 77,
-   "lines": 29099
+   "files": 79,
+   "lines": 29513
   },
   {
    "name": "configs",

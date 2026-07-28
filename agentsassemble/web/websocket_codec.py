@@ -40,12 +40,17 @@ CLOSE_MESSAGE_TOO_BIG = 1009
 CLOSE_INTERNAL_ERROR = 1011
 
 # Control-frame payloads are capped at 125 bytes by spec; reject oversized
-# message payloads defensively (a room message is small).
+# frame and aggregate message payloads defensively (a room message is small).
 MAX_PAYLOAD_BYTES = 8 * 1024 * 1024
+MAX_MESSAGE_FRAGMENTS = 256
 
 
 class WebSocketProtocolError(Exception):
     """Malformed frame or handshake — the connection should be closed."""
+
+    def __init__(self, message: str, *, close_code: int = CLOSE_PROTOCOL_ERROR) -> None:
+        super().__init__(message)
+        self.close_code = close_code
 
 
 # --------------------------------------------------------------------------- #
@@ -178,7 +183,10 @@ def _parse_frame(buffer: bytes, *, expect_mask: bool) -> tuple[Frame | None, byt
         (length,) = struct.unpack("!Q", buffer[offset:offset + 8])
         offset += 8
     if length > MAX_PAYLOAD_BYTES:
-        raise WebSocketProtocolError("Frame payload too large.")
+        raise WebSocketProtocolError(
+            "Frame payload too large.",
+            close_code=CLOSE_MESSAGE_TOO_BIG,
+        )
     if opcode in CONTROL_OPCODES and length > 125:
         raise WebSocketProtocolError("Control frame payload exceeds 125 bytes.")
     if expect_mask and not masked:
@@ -266,6 +274,8 @@ class MessageAssembler:
         self._buffer = b""
         self._fragments: list[bytes] = []
         self._fragment_opcode: int | None = None
+        self._fragment_bytes = 0
+        self._fragment_count = 0
         self._expect_mask = expect_mask
 
     def feed(self, data: bytes) -> None:
@@ -284,15 +294,26 @@ class MessageAssembler:
             if frame.opcode == OP_CONTINUATION:
                 if self._fragment_opcode is None:
                     raise WebSocketProtocolError("Continuation frame with no start.")
-                self._fragments.append(frame.payload)
             else:
                 if self._fragment_opcode is not None:
                     raise WebSocketProtocolError("New data frame before previous finished.")
                 self._fragment_opcode = frame.opcode
-                self._fragments.append(frame.payload)
+            self._fragments.append(frame.payload)
+            self._fragment_bytes += len(frame.payload)
+            self._fragment_count += 1
+            if (
+                self._fragment_bytes > MAX_PAYLOAD_BYTES
+                or self._fragment_count > MAX_MESSAGE_FRAGMENTS
+            ):
+                raise WebSocketProtocolError(
+                    "WebSocket message exceeds fragmentation limits.",
+                    close_code=CLOSE_MESSAGE_TOO_BIG,
+                )
             if frame.fin:
                 opcode = self._fragment_opcode
                 payload = b"".join(self._fragments)
                 self._fragments = []
                 self._fragment_opcode = None
+                self._fragment_bytes = 0
+                self._fragment_count = 0
                 yield opcode, payload

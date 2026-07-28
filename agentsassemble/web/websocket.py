@@ -8,7 +8,6 @@ from http import HTTPStatus
 from typing import Any
 
 from agentsassemble.web.websocket_codec import (
-    CLOSE_PROTOCOL_ERROR,
     MessageAssembler,
     WebSocketProtocolError,
     compute_accept_key,
@@ -134,9 +133,9 @@ def handle_ws_upgrade(
                     break
             if not _send_all(ws.poll()):
                 break
-    except WebSocketProtocolError:
+    except WebSocketProtocolError as error:
         try:
-            sock.sendall(encode_close(CLOSE_PROTOCOL_ERROR))
+            sock.sendall(encode_close(error.close_code))
         except OSError:
             pass
     except (BrokenPipeError, ConnectionResetError, OSError, ValueError):

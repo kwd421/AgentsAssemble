@@ -147,6 +147,32 @@ class RequestContextBodyTests(unittest.TestCase):
         self.assertEqual(_context(handler).read_json_body(coerce_non_object=True), {})
         self.assertIsNone(handler.sent_error)
 
+    def test_read_json_body_rejects_invalid_content_length_without_reading(self):
+        class UnreadableBody:
+            def read(self, _length):
+                raise AssertionError("invalid Content-Length must be rejected before reading")
+
+        for content_length in ("-1", "not-a-number", "+12"):
+            with self.subTest(content_length=content_length):
+                handler = FakeHandler(headers={"Content-Length": content_length})
+                handler.rfile = UnreadableBody()
+
+                self.assertIsNone(_context(handler).read_json_body())
+                self.assertEqual(handler.sent_error[0], HTTPStatus.BAD_REQUEST)
+
+    def test_read_json_body_rejects_oversized_body_without_reading(self):
+        class UnreadableBody:
+            def read(self, _length):
+                raise AssertionError("oversized request must be rejected before reading")
+
+        for content_length in (str(100 * 1024 * 1024), "9" * 5000):
+            with self.subTest(content_length_size=len(content_length)):
+                handler = FakeHandler(headers={"Content-Length": content_length})
+                handler.rfile = UnreadableBody()
+
+                self.assertIsNone(_context(handler).read_json_body())
+                self.assertEqual(handler.sent_error[0], HTTPStatus.REQUEST_ENTITY_TOO_LARGE)
+
 
 class RequestContextIdentityTests(unittest.TestCase):
     def setUp(self):

@@ -74,6 +74,24 @@ class AntigravityRoomPortalInteractionTests(unittest.TestCase):
         self.assertEqual(raised.exception.code, "unexpected_provider_permission_request")
         self.assertEqual(policy.describe()["room_portal_permission_rejection_count"], 1)
 
+    def test_multiline_command_cannot_extend_an_approved_room_command(self):
+        policy = AntigravityRoomPortalInteraction()
+        policy.begin_turn()
+        prompt = b"\n".join(
+            [
+                b"Requesting permission for:",
+                b"   agentsassemble-room speak 'Approved room message.'",
+                b"   whoami",
+                b"Do you want to proceed?",
+            ]
+        )
+
+        with self.assertRaises(AdapterContractError) as raised:
+            policy.response_for(prompt)
+
+        self.assertEqual(raised.exception.code, "unexpected_provider_permission_request")
+        self.assertEqual(policy.describe()["room_portal_permission_approval_count"], 0)
+
     def test_markdown_is_safe_only_inside_single_quoted_room_message(self):
         policy = AntigravityRoomPortalInteraction()
         policy.begin_turn()

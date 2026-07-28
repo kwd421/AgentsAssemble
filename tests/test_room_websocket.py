@@ -3,6 +3,9 @@ import unittest
 
 from agentsassemble.web.websocket_codec import (
     CLOSE_NORMAL,
+    CLOSE_MESSAGE_TOO_BIG,
+    MAX_MESSAGE_FRAGMENTS,
+    MAX_PAYLOAD_BYTES,
     OP_BINARY,
     OP_CLOSE,
     OP_PING,
@@ -166,6 +169,34 @@ class MessageAssemblerTests(unittest.TestCase):
         asm.feed(_client_frame(b"Hel", opcode=OP_TEXT, fin=False))
         asm.feed(_client_frame(b"lo", opcode=0x0, fin=True))  # continuation
         self.assertEqual(list(asm.messages()), [(OP_TEXT, b"Hello")])
+
+    def test_fragmented_message_cannot_exceed_aggregate_payload_limit(self):
+        asm = MessageAssembler()
+        first = b"a" * (MAX_PAYLOAD_BYTES // 2 + 1)
+        second = b"b" * (MAX_PAYLOAD_BYTES // 2)
+        asm.feed(_client_frame(first, opcode=OP_TEXT, fin=False))
+        self.assertEqual(list(asm.messages()), [])
+        asm.feed(_client_frame(second, opcode=0x0, fin=True))
+
+        with self.assertRaises(WebSocketProtocolError) as raised:
+            list(asm.messages())
+
+        self.assertEqual(raised.exception.close_code, CLOSE_MESSAGE_TOO_BIG)
+
+    def test_fragmented_message_cannot_grow_an_unbounded_fragment_list(self):
+        asm = MessageAssembler()
+        asm.feed(_client_frame(b"", opcode=OP_TEXT, fin=False))
+        asm.feed(
+            b"".join(
+                _client_frame(b"", opcode=0x0, fin=False)
+                for _ in range(MAX_MESSAGE_FRAGMENTS)
+            )
+        )
+
+        with self.assertRaises(WebSocketProtocolError) as raised:
+            list(asm.messages())
+
+        self.assertEqual(raised.exception.close_code, CLOSE_MESSAGE_TOO_BIG)
 
     def test_control_frame_interleaved_passes_through(self):
         asm = MessageAssembler()

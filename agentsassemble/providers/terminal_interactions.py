@@ -74,11 +74,18 @@ def _latest_permission_command(output: bytes) -> str:
         matches = list(_PERMISSION_BLOCK.finditer(text))
         if not matches:
             continue
-        return " ".join(matches[-1].group("command").split())
+        command = matches[-1].group("command").strip()
+        if "\r" in command or "\n" in command:
+            return command
+        return " ".join(command.split())
     return ""
 
 
 def _is_safe_room_portal_command(command: str) -> bool:
+    # A newline is a shell command separator. Never normalize it into a space
+    # before the allow-list sees it, even when the leading line is safe.
+    if "\r" in command or "\n" in command:
+        return False
     try:
         parts = _room_portal_command_parts(command)
     except ValueError:

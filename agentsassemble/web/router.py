@@ -41,6 +41,8 @@ from agentsassemble.web.security import (
     _split_authority_host_port,
 )
 
+MAX_JSON_BODY_BYTES = 16 * 1024 * 1024
+
 
 @dataclass
 class GuiDeps:
@@ -218,7 +220,24 @@ class RequestContext:
                 before_invalid_json_response()
             self.send_error(HTTPStatus.BAD_REQUEST, "Invalid JSON")
 
-        length = int(self.headers.get("Content-Length", "0") or "0")
+        raw_length = str(self.headers.get("Content-Length", "0") or "0").strip()
+        if not raw_length.isascii() or not raw_length.isdigit():
+            self.send_error(HTTPStatus.BAD_REQUEST, "Invalid Content-Length")
+            return None
+        normalized_length = raw_length.lstrip("0") or "0"
+        if len(normalized_length) > len(str(MAX_JSON_BODY_BYTES)):
+            self.send_error(
+                HTTPStatus.REQUEST_ENTITY_TOO_LARGE,
+                "JSON request is too large",
+            )
+            return None
+        length = int(normalized_length)
+        if length > MAX_JSON_BODY_BYTES:
+            self.send_error(
+                HTTPStatus.REQUEST_ENTITY_TOO_LARGE,
+                "JSON request is too large",
+            )
+            return None
         try:
             payload = json.loads(self.handler.rfile.read(length).decode("utf-8")) if length else {}
         except (UnicodeDecodeError, json.JSONDecodeError):
