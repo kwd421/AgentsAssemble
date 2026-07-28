@@ -217,11 +217,14 @@ Profile-only `agent.configure`, canonical participant mute, and the durable
 part of participant leave use the same command transaction boundary. Agent
 name/avatar changes update participant, Agent Session, `participant_updated`,
 and ACK together. Compatibility roster synchronization, voice cleanup, token
-revocation, and other process/network effects run only after commit; canonical
-participant mute state takes precedence over an older compatibility roster
-copy. The browser resolves old and new messages, roster/detail state, and typing
-labels from the current participant by stable `participant_id`; an explicitly
-empty canonical avatar clears event-time and legacy local avatar fallbacks.
+revocation, and other process/network effects run only after commit. A
+participant leave marks that participant and every Agent Session they own as
+left in the same room transaction; after commit those agents are stopped,
+disconnected, and removed from the provider registry. Canonical participant
+mute state takes precedence over an older compatibility roster copy. The
+browser resolves old and new messages, roster/detail state, and typing labels
+from the current participant by stable `participant_id`; an explicitly empty
+canonical avatar clears event-time and legacy local avatar fallbacks.
 
 A successful provider `message.final` commits its visible answer,
 `turn_finished`, attention spoke/provider-sync cursors, active lease release,

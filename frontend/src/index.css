@@ -5510,6 +5510,15 @@ body[data-sidebar-resizing="true"] {
   gap: 10px;
 }
 
+.dc-leave-room-confirm {
+  background: var(--color-danger, #ed4245);
+}
+
+.dc-leave-room-confirm:hover:not(:disabled),
+.dc-leave-room-confirm:focus-visible:not(:disabled) {
+  background: #d83c3e;
+}
+
 .dc-settings-field {
   display: grid;
   gap: 7px;

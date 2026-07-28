@@ -60,6 +60,7 @@ import type { ChannelHeaderActions } from "./views/components/ChannelHeader";
 import AgentCreateModal from "./views/components/AgentCreateModal";
 import GuestJoinProfilePanel from "./views/components/GuestJoinProfilePanel";
 import HomeSidebar from "./views/components/HomeSidebar";
+import LeaveRoomDialog from "./views/components/LeaveRoomDialog";
 import RoomConnectionPanel from "./views/components/RoomConnectionPanel";
 import RoomInviteModal from "./views/components/RoomInviteModal";
 import MobileRoomInfoPanel from "./views/components/MobileRoomInfoPanel";
@@ -374,6 +375,7 @@ export default function App() {
   const [roomMenu, setRoomMenu] = useState<RoomMenuState>(null);
   const [channelMenu, setChannelMenu] = useState<ChannelMenuState>(null);
   const [settingsModal, setSettingsModal] = useState<RoomSettingsState>(null);
+  const [leaveRoomTargetId, setLeaveRoomTargetId] = useState("");
   const [agentCreateOpen, setAgentCreateOpen] = useState(false);
   const [guestAiPacketPreview, setGuestAiPacketPreview] = useState("");
   const [guestAiPacketStatus, setGuestAiPacketStatus] = useState("");
@@ -1182,6 +1184,7 @@ export default function App() {
   const settingsModalRoom = settingsModal
     ? rooms.find((room) => room.id === settingsModal.roomId)
     : undefined;
+  const leaveRoomTarget = rooms.find((room) => room.id === leaveRoomTargetId);
   const settingsModalInitialSectionId = settingsModal?.initialSectionId;
   const inviteModalAppearance = inviteModalRoom
     ? roomSettings.appearanceFor(inviteModalRoom)
@@ -1349,8 +1352,19 @@ export default function App() {
         onMarkRoomRead={markRoomRead}
         onInviteRoom={inviteRoom}
         onOpenRoomSettings={openRoomSettings}
-        onLeaveRoom={leaveRoom}
+        onLeaveRoom={(roomId) => {
+          setLeaveRoomTargetId(roomId);
+          setRoomMenu(null);
+        }}
       />
+
+      {leaveRoomTarget && (
+        <LeaveRoomDialog
+          roomLabel={leaveRoomTarget.label}
+          onClose={() => setLeaveRoomTargetId("")}
+          onConfirm={() => leaveRoom(leaveRoomTarget.id)}
+        />
+      )}
 
       {inviteModalRoom && (
         <RoomInviteModal

@@ -1,12 +1,12 @@
 {
  "readme": "AgentsAssemble codebase map. Regenerate with `make codebase-map`; verify committed outputs with `make codebase-map-verify`. modules[] columns: name, path, package, domain, classification, migration_status, lines, docstring, imports[], imported_by[] (indexes into modules), classes[[name, [[base, defining_module], ...]]] (best-effort, top-level classes only). frontend[] columns: path, group, lines, doc, imports[], imported_by[] (indexes into frontend). package_edges go importer -> dependency with module-import counts; `points` is the precomputed polyline for that edge and `intra_cycle` marks imports whose endpoints share one cycle group. graph{} holds the layered package drawing: layers[] top-to-bottom (each with members[] package ids, member_count, and the dominant domain), (a package sits below everything importing it), clusters[] are mutually dependent packages (import cycles at package level) drawn as one labelled block, plus width/height of the drawing. health{} ranks findings for a reader who has to act: cycles[] (mutually dependent packages, with the lines they hold), leaning_on_retiring[] (current modules importing legacy/compatibility modules - the reason legacy cannot be deleted), highest_leverage_migrations[] (retiring modules with the most current importers), unreferenced_shims[] (compatibility modules with no importer in agentsassemble/ and no reference in tests/; callers outside this repository are not visible, so verify before deleting), and hotspots[] (largest modules). health.scope states exactly what was measured. class_graph{} is the UML generalization DAG over base classes that resolve inside the repo: edges go base -> subclass, so a subclass always sits below the class it extends. Coordinates in graph and class_graph are laid out with a Sugiyama pipeline (cycle condensation, Coffman-Graham layering, dummy-node edge routing, median/transpose crossing reduction) and are deterministic.",
- "generated_at": "2026-07-28T01:58:12Z",
- "fingerprint": "31f552b4a30d1994",
+ "generated_at": "2026-07-28T04:01:54Z",
+ "fingerprint": "74018f6de436c441",
  "stats": {
   "backend_modules": 787,
-  "backend_lines": 129343,
-  "frontend_files": 145,
-  "frontend_lines": 38245,
+  "backend_lines": 129515,
+  "frontend_files": 146,
+  "frontend_lines": 38425,
   "packages": 30,
   "import_cycles": 0,
   "classifications": {
@@ -63,7 +63,7 @@
    "kind": "backend",
    "doc": "Current room domain contracts and behavior.",
    "files": 49,
-   "lines": 12822,
+   "lines": 12994,
    "domains": {
     "room": 49
    },
@@ -508,7 +508,7 @@
    "kind": "frontend",
    "doc": "Frontend entry files (App, main, API client, styles) living directly under src/.",
    "files": 11,
-   "lines": 11623,
+   "lines": 11640,
    "domains": {},
    "classes": {},
    "x": 102.0,
@@ -587,8 +587,8 @@
    "id": "fe:views",
    "kind": "frontend",
    "doc": "Top-level room views rendered by the shell.",
-   "files": 61,
-   "lines": 14584,
+   "files": 62,
+   "lines": 14747,
    "domains": {},
    "classes": {},
    "x": 558.0,
@@ -1008,7 +1008,7 @@
   {
    "from": "fe:(src root)",
    "to": "fe:views",
-   "count": 20,
+   "count": 21,
    "points": [
     [
      310.0,
@@ -3700,7 +3700,7 @@
      "web"
     ],
     "internal_edges": 80,
-    "lines": 124244,
+    "lines": 124416,
     "heaviest": "legacy"
    },
    {
@@ -3713,7 +3713,7 @@
      "fe:views"
     ],
     "internal_edges": 15,
-    "lines": 38245,
+    "lines": 38425,
     "heaviest": "fe:views"
    }
   ],
@@ -4082,7 +4082,7 @@
    },
    {
     "module": "agentsassemble.room.realtime",
-    "lines": 1743,
+    "lines": 1789,
     "cls": "current",
     "imported_by": 7
    },
@@ -19135,11 +19135,13 @@
    "room",
    "current",
    "in-target-package",
-   81,
+   207,
    "",
    [
     645,
-    651
+    651,
+    666,
+    676
    ],
    [
     665
@@ -19347,7 +19349,7 @@
    "room",
    "current",
    "in-target-package",
-   1743,
+   1789,
    "",
    [
     15,
@@ -19468,6 +19470,7 @@
     654,
     655,
     658,
+    659,
     662,
     665,
     671,
@@ -19839,6 +19842,7 @@
     655,
     656,
     658,
+    659,
     660,
     661,
     662,
@@ -22119,7 +22123,7 @@
   [
    "frontend/src/App.tsx",
    "(src root)",
-   2052,
+   2066,
    "",
    [
     1,
@@ -22163,13 +22167,14 @@
     97,
     104,
     105,
-    113,
-    118,
-    119,
+    108,
+    115,
     120,
+    121,
     122,
-    123,
-    124
+    124,
+    125,
+    126
    ],
    [
     77
@@ -22185,10 +22190,10 @@
    ],
    [
     0,
-    108,
-    109,
-    127,
-    128
+    110,
+    111,
+    129,
+    130
    ]
   ],
   [
@@ -22263,32 +22268,32 @@
     103,
     104,
     105,
-    107,
-    108,
     109,
     110,
     111,
+    112,
     113,
-    117,
-    118,
+    115,
     119,
-    122,
-    123,
+    120,
+    121,
     124,
     125,
+    126,
     127,
-    128,
     129,
     130,
     131,
     132,
     133,
-    136,
-    137,
+    134,
+    135,
     138,
-    141,
+    139,
+    140,
     142,
-    143
+    143,
+    144
    ]
   ],
   [
@@ -22694,7 +22699,7 @@
   [
    "frontend/src/index.css",
    "(src root)",
-   6744,
+   6747,
    "",
    [],
    [
@@ -22732,11 +22737,11 @@
    ],
    [
     45,
-    111,
     113,
-    116,
-    134,
-    137
+    115,
+    118,
+    136,
+    139
    ]
   ],
   [
@@ -22746,10 +22751,10 @@
    "",
    [],
    [
-    111,
-    131,
+    113,
     133,
-    138
+    135,
+    140
    ]
   ],
   [
@@ -22762,8 +22767,8 @@
    ],
    [
     0,
-    111,
-    118
+    113,
+    120
    ]
   ],
   [
@@ -22774,7 +22779,7 @@
    [],
    [
     101,
-    137
+    139
    ]
   ],
   [
@@ -22790,8 +22795,8 @@
     18,
     81,
     82,
-    109,
-    143
+    111,
+    144
    ]
   ],
   [
@@ -22850,7 +22855,7 @@
    [
     86,
     105,
-    119
+    121
    ]
   ],
   [
@@ -22871,7 +22876,7 @@
    "Per-provider permission/sandbox options + fast support, mirrored from the",
    [],
    [
-    131
+    133
    ]
   ],
   [
@@ -22884,8 +22889,8 @@
    ],
    [
     101,
-    132,
-    137
+    134,
+    139
    ]
   ],
   [
@@ -22907,7 +22912,7 @@
    "",
    [],
    [
-    109
+    111
    ]
   ],
   [
@@ -22930,9 +22935,9 @@
     67,
     68,
     89,
-    109,
-    112,
-    123
+    111,
+    114,
+    125
    ]
   ],
   [
@@ -22949,9 +22954,9 @@
     100,
     101,
     102,
-    111,
     113,
-    119
+    115,
+    121
    ]
   ],
   [
@@ -22967,10 +22972,10 @@
     100,
     101,
     102,
-    113,
-    119,
-    132,
-    137
+    115,
+    121,
+    134,
+    139
    ]
   ],
   [
@@ -23026,11 +23031,11 @@
     59,
     65,
     89,
-    113,
-    119,
-    120,
+    115,
     121,
-    122
+    122,
+    123,
+    124
    ]
   ],
   [
@@ -23071,9 +23076,9 @@
     64,
     88,
     89,
-    120,
     122,
-    143
+    124,
+    144
    ]
   ],
   [
@@ -23122,7 +23127,7 @@
    [
     0,
     89,
-    109
+    111
    ]
   ],
   [
@@ -23162,7 +23167,7 @@
    [
     0,
     24,
-    119
+    121
    ]
   ],
   [
@@ -23197,7 +23202,7 @@
    [],
    [
     0,
-    120
+    122
    ]
   ],
   [
@@ -23225,8 +23230,8 @@
     70,
     88,
     89,
-    141,
-    143
+    142,
+    144
    ]
   ],
   [
@@ -23240,8 +23245,8 @@
    [
     30,
     89,
-    123,
-    141
+    125,
+    142
    ]
   ],
   [
@@ -23263,7 +23268,7 @@
     2
    ],
    [
-    124
+    126
    ]
   ],
   [
@@ -23273,7 +23278,7 @@
    "",
    [],
    [
-    109
+    111
    ]
   ],
   [
@@ -23285,7 +23290,7 @@
     2
    ],
    [
-    129
+    131
    ]
   ],
   [
@@ -23329,16 +23334,16 @@
     91,
     92,
     93,
-    108,
-    109,
+    110,
     111,
     113,
-    117,
-    118,
+    115,
     119,
-    127,
-    133,
-    136
+    120,
+    121,
+    129,
+    135,
+    138
    ]
   ],
   [
@@ -23407,7 +23412,7 @@
     2,
     40,
     96,
-    129
+    131
    ],
    [
     0
@@ -23456,7 +23461,7 @@
     48,
     96,
     99,
-    107
+    109
    ],
    [
     0
@@ -23489,11 +23494,11 @@
     71,
     72,
     96,
-    109,
-    128,
-    141,
+    111,
+    130,
     142,
-    143
+    143,
+    144
    ],
    [
     0,
@@ -23536,7 +23541,7 @@
     3,
     55,
     79,
-    115
+    117
    ],
    [
     0,
@@ -23554,11 +23559,11 @@
     79
    ],
    [
-    111,
     113,
-    133,
+    115,
     135,
-    136
+    137,
+    138
    ]
   ],
   [
@@ -23631,8 +23636,8 @@
     87,
     98,
     100,
-    123,
-    141
+    125,
+    142
    ]
   ],
   [
@@ -23716,7 +23721,7 @@
     2,
     10,
     44,
-    124
+    126
    ],
    [
     0
@@ -23730,8 +23735,29 @@
    [],
    [
     104,
-    124,
-    131
+    126,
+    133
+   ]
+  ],
+  [
+   "frontend/src/views/components/LeaveRoomDialog.test.tsx",
+   "views",
+   46,
+   "",
+   [
+    108
+   ],
+   []
+  ],
+  [
+   "frontend/src/views/components/LeaveRoomDialog.tsx",
+   "views",
+   124,
+   "",
+   [],
+   [
+    0,
+    107
    ]
   ],
   [
@@ -23744,7 +23770,7 @@
    ],
    [
     87,
-    141
+    142
    ]
   ],
   [
@@ -23756,7 +23782,7 @@
     1,
     2,
     79,
-    109
+    111
    ],
    []
   ],
@@ -23774,12 +23800,12 @@
     63,
     75,
     79,
-    112,
-    126
+    114,
+    128
    ],
    [
     89,
-    108
+    110
    ]
   ],
   [
@@ -23789,7 +23815,7 @@
    "",
    [
     2,
-    111
+    113
    ],
    []
   ],
@@ -23806,15 +23832,15 @@
     52,
     79,
     93,
-    116,
-    133,
+    118,
     135,
     137,
-    138
+    139,
+    140
    ],
    [
-    110,
-    118
+    112,
+    120
    ]
   ],
   [
@@ -23826,8 +23852,8 @@
     51
    ],
    [
-    109,
-    123
+    111,
+    125
    ]
   ],
   [
@@ -23843,8 +23869,8 @@
     57,
     79,
     93,
-    115,
-    137
+    117,
+    139
    ],
    [
     0
@@ -23856,27 +23882,26 @@
    36,
    "",
    [
-    115
+    117
    ],
    []
   ],
   [
    "frontend/src/views/components/ProviderLogo.tsx",
    "views",
-   49,
+   51,
    "",
    [
-    139,
-    140
+    141
    ],
    [
     92,
-    113,
-    114,
-    131,
+    115,
+    116,
     133,
     135,
-    141
+    137,
+    142
    ]
   ],
   [
@@ -23888,8 +23913,8 @@
     35
    ],
    [
-    111,
-    134
+    113,
+    136
    ]
   ],
   [
@@ -23900,7 +23925,7 @@
    [
     2,
     79,
-    118
+    120
    ],
    []
   ],
@@ -23913,11 +23938,11 @@
     2,
     37,
     79,
-    111
+    113
    ],
    [
     0,
-    117
+    119
    ]
   ],
   [
@@ -23959,7 +23984,7 @@
    "",
    [
     57,
-    122
+    124
    ],
    []
   ],
@@ -23975,7 +24000,7 @@
    ],
    [
     0,
-    121
+    123
    ]
   ],
   [
@@ -23988,7 +24013,7 @@
     51,
     72,
     99,
-    112
+    114
    ],
    [
     0
@@ -24003,7 +24028,7 @@
     2,
     74,
     106,
-    125
+    127
    ],
    [
     0,
@@ -24019,7 +24044,7 @@
     2
    ],
    [
-    124
+    126
    ]
   ],
   [
@@ -24029,7 +24054,7 @@
    "",
    [],
    [
-    109
+    111
    ]
   ],
   [
@@ -24041,7 +24066,7 @@
     1,
     2,
     79,
-    128
+    130
    ],
    []
   ],
@@ -24056,7 +24081,7 @@
    ],
    [
     89,
-    127
+    129
    ]
   ],
   [
@@ -24079,8 +24104,8 @@
    "",
    [
     2,
-    131,
-    138
+    133,
+    140
    ],
    []
   ],
@@ -24094,13 +24119,13 @@
     36,
     46,
     106,
-    115,
-    137,
-    138
+    117,
+    139,
+    140
    ],
    [
-    130,
-    133
+    132,
+    135
    ]
   ],
   [
@@ -24112,11 +24137,11 @@
     2,
     47,
     53,
-    137,
-    138
+    139,
+    140
    ],
    [
-    133
+    135
    ]
   ],
   [
@@ -24129,15 +24154,15 @@
     36,
     79,
     93,
-    115,
-    131,
-    132,
+    117,
+    133,
     134,
     136,
-    138
+    138,
+    140
    ],
    [
-    111
+    113
    ]
   ],
   [
@@ -24147,12 +24172,12 @@
    "",
    [
     35,
-    116,
-    137,
-    138
+    118,
+    139,
+    140
    ],
    [
-    133
+    135
    ]
   ],
   [
@@ -24162,12 +24187,12 @@
    "",
    [
     93,
-    115,
-    137,
-    138
+    117,
+    139,
+    140
    ],
    [
-    111
+    113
    ]
   ],
   [
@@ -24179,10 +24204,10 @@
     2,
     79,
     93,
-    138
+    140
    ],
    [
-    133
+    135
    ]
   ],
   [
@@ -24196,15 +24221,15 @@
     38,
     47,
     53,
-    138
+    140
    ],
    [
-    111,
     113,
-    131,
-    132,
+    115,
+    133,
     134,
-    135
+    136,
+    137
    ]
   ],
   [
@@ -24217,38 +24242,25 @@
     36
    ],
    [
-    111,
-    130,
-    131,
+    113,
     132,
     133,
     134,
     135,
     136,
-    137
-   ]
-  ],
-  [
-   "frontend/src/views/components/providerBrandPaths.ts",
-   "views",
-   33,
-   "Vector marks are vendored from @lobehub/icons 5.15.0. See",
-   [
-    140
-   ],
-   [
-    115
+    137,
+    138,
+    139
    ]
   ],
   [
    "frontend/src/views/components/providerBranding.ts",
    "views",
-   78,
+   102,
    "",
    [],
    [
-    115,
-    139
+    117
    ]
   ],
   [
@@ -24261,8 +24273,8 @@
     71,
     72,
     99,
-    107,
-    115
+    109,
+    117
    ],
    [
     89
@@ -24308,7 +24320,7 @@
  "hubs": [
   {
    "name": "agentsassemble.room.text",
-   "imported_by": 96,
+   "imported_by": 97,
    "doc": "Bounded text normalization shared by current room code."
   },
   {
@@ -24323,7 +24335,7 @@
   },
   {
    "name": "agentsassemble.room.repository",
-   "imported_by": 46,
+   "imported_by": 47,
    "doc": ""
   },
   {
@@ -24362,19 +24374,19 @@
    "name": "agentsassemble",
    "note": "Backend package (Python)",
    "files": 787,
-   "lines": 129343
+   "lines": 129515
   },
   {
    "name": "frontend/src",
    "note": "React room client (TS/TSX)",
-   "files": 145,
-   "lines": 38245
+   "files": 146,
+   "lines": 38425
   },
   {
    "name": "tests",
    "note": "Backend test suite",
    "files": 351,
-   "lines": 141104
+   "lines": 141281
   },
   {
    "name": "scripts",
@@ -24386,7 +24398,7 @@
    "name": "docs",
    "note": "Product and architecture docs",
    "files": 77,
-   "lines": 29096
+   "lines": 29099
   },
   {
    "name": "configs",

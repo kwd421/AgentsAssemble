@@ -3424,6 +3424,52 @@ class RoomRealtimeControllerTests(unittest.TestCase):
         self.assertEqual(len(left_events), 1)
         self.controller.disconnect(channel)
 
+    def test_member_leave_stops_and_removes_agents_owned_by_that_member(self):
+        member = {
+            **HOST,
+            "agent_id": "member",
+            "user_id": "member-user",
+            "operator": False,
+        }
+        self.controller.connect(member)
+        self.controller.store.update_participant_fields(
+            "general",
+            "codex",
+            owner_id="member-user",
+            created_by="member-user",
+            role="director",
+        )
+        self._command("start-member-agent", "agent.start", {"agent_id": "codex"})
+
+        left = self._command(
+            "member-leave-with-agent",
+            "participant.leave",
+            {},
+            member,
+        )
+
+        self.assertEqual(left["result"]["owned_agent_ids"], ["codex"])
+        self.assertEqual(
+            self.controller.store.participant("general", "codex")["status"],
+            "left",
+        )
+        self.assertEqual(
+            self.controller.store.session("general", "codex")["runtime_status"],
+            "stopped",
+        )
+        self.assertEqual(self.manager.stops, [("general", "codex")])
+        self.assertNotIn("codex", self.controller._room_providers("general"))
+        owner_leave_events = [
+            event
+            for event in self.controller.store.read_events("general")
+            if event.get("type") == "participant_left"
+            and event.get("reason") == "owner_left"
+        ]
+        self.assertEqual(
+            [event.get("participant_id") for event in owner_leave_events],
+            ["codex"],
+        )
+
     def test_room_delete_keeps_data_when_agent_cleanup_fails(self):
         identity_store = identity_store_for_output_root(self.root)
         identity_store.upsert_room(room_id="general", owner_id="owner-user", label="Council")

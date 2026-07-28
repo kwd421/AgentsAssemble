@@ -252,6 +252,7 @@ class RoomRealtimeController:
             ),
         )
         self._participant_leave = RoomParticipantLeaveService(
+            store=self.store,
             remove_membership=lambda room_id, participant_id: (
                 identity_store_for_output_root(self.output_root).remove_membership(
                     room_id,
@@ -268,6 +269,20 @@ class RoomRealtimeController:
                     participant_id,
                 )
             ),
+            disconnect_participant=lambda room_id, participant_id: (
+                self.broker.disconnect_participant(
+                    room_id,
+                    participant_id,
+                )
+            ),
+            stop_agent=lambda room_id, participant_id, operation_id: (
+                self._agent_lifecycle.stop(
+                    room_id,
+                    participant_id,
+                    operation_id=operation_id,
+                )
+            ),
+            remove_provider=self._provider_registry.remove,
             schedule_cleanup=lambda delay, callback: schedule_daemon_timer(
                 delay,
                 callback,
@@ -743,7 +758,20 @@ class RoomRealtimeController:
             self._require_capability(identity, "participant.leave")
             with self._lock:
                 participant_id = clean_lobby_text(identity.get("agent_id"), limit=128)
+                owned_agent_ids = self._participant_leave.owned_agent_ids(
+                    room_id,
+                    owner_ids=(
+                        participant_id,
+                        clean_lobby_text(identity.get("user_id"), limit=128),
+                    ),
+                )
                 is_owner = self._is_room_owner(identity, room_id)
+                operation_id = _external_effect_operation_id(
+                    room_id,
+                    _command_principal(identity),
+                    request_id,
+                    action,
+                )
                 ack = self._execute_durable_command(
                     identity,
                     room_id,
@@ -753,10 +781,17 @@ class RoomRealtimeController:
                     lambda unit: self._leave_participant_durable(
                         participant_id,
                         is_owner=is_owner,
+                        owned_agent_ids=owned_agent_ids,
                         unit=unit,
                     ),
                 )
-                self._schedule_participant_leave_cleanup(room_id, participant_id)
+                result = dict(ack.get("result") or {})
+                self._schedule_participant_leave_cleanup(
+                    room_id,
+                    participant_id,
+                    owned_agent_ids=list(result.get("owned_agent_ids") or []),
+                    operation_id=operation_id,
+                )
                 return ack
         if action == "participant.kick":
             self._require_capability(identity, "participant.kick")
@@ -1234,18 +1269,29 @@ class RoomRealtimeController:
         participant_id: str,
         *,
         is_owner: bool,
+        owned_agent_ids: list[str],
         unit: RoomCommandUnitOfWork,
     ) -> dict[str, object]:
         return self._participant_leave.update_in_unit(
             participant_id,
             is_owner=is_owner,
+            owned_agent_ids=owned_agent_ids,
             unit=unit,
         )
 
-    def _schedule_participant_leave_cleanup(self, room_id: str, participant_id: str) -> None:
+    def _schedule_participant_leave_cleanup(
+        self,
+        room_id: str,
+        participant_id: str,
+        *,
+        owned_agent_ids: list[str],
+        operation_id: str,
+    ) -> None:
         self._participant_leave.apply_after_commit(
             room_id,
             participant_id,
+            owned_agent_ids=owned_agent_ids,
+            operation_id=operation_id,
         )
 
     def _delete_room(

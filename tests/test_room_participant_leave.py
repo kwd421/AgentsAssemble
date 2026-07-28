@@ -30,10 +30,14 @@ class RoomParticipantLeaveServiceTests(unittest.TestCase):
         self.membership_removals: list[tuple[str, str]] = []
         self.voice_leaves: list[tuple[str, str]] = []
         self.session_revocations: list[tuple[str, str]] = []
+        self.disconnections: list[tuple[str, str]] = []
+        self.agent_stops: list[tuple[str, str, str]] = []
+        self.provider_removals: list[tuple[str, str]] = []
         self.scheduled_cleanup: list[
             tuple[float, Callable[[], None]]
         ] = []
         self.service = RoomParticipantLeaveService(
+            store=self.store,
             remove_membership=lambda room_id, participant_id: (
                 self.membership_removals.append((room_id, participant_id))
             ),
@@ -42,6 +46,15 @@ class RoomParticipantLeaveServiceTests(unittest.TestCase):
             ),
             revoke_participant_sessions=lambda room_id, participant_id: (
                 self.session_revocations.append((room_id, participant_id))
+            ),
+            disconnect_participant=lambda room_id, participant_id: (
+                self.disconnections.append((room_id, participant_id))
+            ),
+            stop_agent=lambda room_id, participant_id, operation_id: (
+                self.agent_stops.append((room_id, participant_id, operation_id))
+            ),
+            remove_provider=lambda room_id, participant_id: (
+                self.provider_removals.append((room_id, participant_id))
             ),
             schedule_cleanup=lambda delay, callback: (
                 self.scheduled_cleanup.append((delay, callback))
@@ -57,6 +70,7 @@ class RoomParticipantLeaveServiceTests(unittest.TestCase):
         participant_id: str = "member",
         *,
         is_owner: bool = False,
+        owned_agent_ids: tuple[str, ...] = (),
     ) -> dict[str, object]:
         payload: dict[str, object] = {}
         with RoomCommandUnitOfWork(
@@ -70,6 +84,7 @@ class RoomParticipantLeaveServiceTests(unittest.TestCase):
             result = self.service.update_in_unit(
                 participant_id,
                 is_owner=is_owner,
+                owned_agent_ids=owned_agent_ids,
                 unit=unit,
             )
             unit.build_ack(result)
@@ -138,6 +153,122 @@ class RoomParticipantLeaveServiceTests(unittest.TestCase):
         self.assertEqual(
             self.session_revocations,
             [("general", "member")],
+        )
+
+    def test_owner_leave_marks_owned_agents_left_in_the_same_transaction(self) -> None:
+        self.store.upsert_participant(
+            "general",
+            {
+                "participant_id": "member-agent",
+                "display_name": "Member Agent",
+                "participant_type": "agent",
+                "role": "agent",
+                "owner_id": "member-user",
+                "status": "joined",
+            },
+        )
+        self.store.upsert_participant(
+            "general",
+            {
+                "participant_id": "other-agent",
+                "display_name": "Other Agent",
+                "participant_type": "agent",
+                "role": "agent",
+                "owner_id": "other-user",
+                "status": "joined",
+            },
+        )
+        for agent_id in ("member-agent", "other-agent"):
+            self.store.upsert_session(
+                "general",
+                {
+                    "session_id": agent_id,
+                    "participant_id": agent_id,
+                    "runtime_status": "available",
+                    "enabled": False,
+                },
+            )
+
+        owned = self.service.owned_agent_ids(
+            "general",
+            owner_ids=("member", "member-user"),
+        )
+        result = self._update_in_unit(owned_agent_ids=tuple(owned))
+
+        self.assertEqual(result["owned_agent_ids"], ["member-agent"])
+        self.assertEqual(
+            self.store.participant("general", "member-agent")["status"],
+            "left",
+        )
+        self.assertEqual(
+            self.store.participant("general", "other-agent")["status"],
+            "joined",
+        )
+        owner_leave_events = [
+            event
+            for event in self.store.read_events("general")
+            if event["type"] == "participant_left"
+            and event.get("reason") == "owner_left"
+        ]
+        self.assertEqual(
+            [event["participant_id"] for event in owner_leave_events],
+            ["member-agent"],
+        )
+
+    def test_post_commit_cleanup_stops_and_removes_owned_agents(self) -> None:
+        self.store.upsert_participant(
+            "general",
+            {
+                "participant_id": "member-agent",
+                "display_name": "Member Agent",
+                "participant_type": "agent",
+                "role": "agent",
+                "owner_id": "member",
+                "status": "left",
+            },
+        )
+        self.store.upsert_session(
+            "general",
+            {
+                "session_id": "member-agent",
+                "participant_id": "member-agent",
+                "runtime_status": "idle",
+                "enabled": True,
+            },
+        )
+
+        self.service.apply_after_commit(
+            "general",
+            "member",
+            owned_agent_ids=("member-agent",),
+            operation_id="leave-operation",
+        )
+
+        self.assertEqual(
+            self.agent_stops,
+            [
+                (
+                    "general",
+                    "member-agent",
+                    "leave-operation:owned-agent:member-agent",
+                )
+            ],
+        )
+        self.assertEqual(
+            self.session_revocations,
+            [("general", "member-agent")],
+        )
+        self.assertEqual(
+            self.disconnections,
+            [("general", "member-agent")],
+        )
+        self.assertEqual(
+            self.provider_removals,
+            [("general", "member-agent")],
+        )
+        self.assertEqual(
+            self.membership_removals,
+            [("general", "member-agent"), ("general", "member")],
         )
 
 
