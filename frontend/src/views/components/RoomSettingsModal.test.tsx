@@ -1,12 +1,24 @@
 import { cleanup, render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { Radio } from "lucide-react";
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { DEFAULT_ROOM_APPEARANCE } from "../../lib/roomAppearance";
 import RoomSettingsModal from "./RoomSettingsModal";
 
 afterEach(cleanup);
+
+const apiMocks = vi.hoisted(() => ({
+  uploadLobbyAttachment: vi.fn(),
+}));
+
+vi.mock("../../api", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("../../api")>();
+  return {
+    ...actual,
+    uploadLobbyAttachment: apiMocks.uploadLobbyAttachment,
+  };
+});
 
 const room = {
   id: "server-general",
@@ -24,7 +36,8 @@ function renderSettings(
   onConversationModeChange = vi.fn(),
   settingsStatus: "loading" | "ready" | "saving" | "stale" | "error" = "ready",
   onRetrySettings = vi.fn(),
-  onOrderedExcludePreviousSpeakerChange = vi.fn()
+  onOrderedExcludePreviousSpeakerChange = vi.fn(),
+  onAppearanceChange = vi.fn().mockResolvedValue(undefined)
 ) {
   render(
     <RoomSettingsModal
@@ -40,7 +53,7 @@ function renderSettings(
       onClose={() => undefined}
       onInvite={() => undefined}
       onRoomChange={() => undefined}
-      onAppearanceChange={() => undefined}
+      onAppearanceChange={onAppearanceChange}
       onChannelSettingChange={() => undefined}
       onConversationModeChange={onConversationModeChange}
       onOrderedExcludePreviousSpeakerChange={onOrderedExcludePreviousSpeakerChange}
@@ -53,6 +66,43 @@ function renderSettings(
 }
 
 describe("RoomSettingsModal conversation mode", () => {
+  beforeEach(() => {
+    apiMocks.uploadLobbyAttachment.mockReset();
+  });
+
+  it("binds a banner upload to the room and waits for canonical appearance persistence", async () => {
+    const onAppearanceChange = vi.fn().mockResolvedValue(undefined);
+    apiMocks.uploadLobbyAttachment.mockResolvedValue({
+      id: "banner-asset",
+      filename: "banner.png",
+      content_type: "image/png",
+      size: 3,
+      is_image: true,
+      url: "/api/attachments/banner-asset?view=1",
+      download_url: "/api/attachments/banner-asset?download=1",
+    });
+    renderSettings(
+      "ordered",
+      vi.fn(),
+      "ready",
+      vi.fn(),
+      vi.fn(),
+      onAppearanceChange
+    );
+
+    const file = new File(["png"], "banner.png", { type: "image/png" });
+    await userEvent.upload(screen.getByLabelText("배너 이미지"), file);
+
+    expect(apiMocks.uploadLobbyAttachment).toHaveBeenCalledWith(file, {
+      roomId: "general",
+    });
+    expect(onAppearanceChange).toHaveBeenCalledWith({
+      bannerImage: "/api/attachments/banner-asset?view=1",
+      bannerPreset: "custom",
+    });
+    expect(await screen.findByText("배너 이미지 저장됨")).toBeTruthy();
+  });
+
   it("lets the user activate ambient discussion from the room settings UI", async () => {
     const onConversationModeChange = renderSettings("ordered");
 
@@ -87,7 +137,7 @@ describe("RoomSettingsModal conversation mode", () => {
         onClose={() => undefined}
         onInvite={() => undefined}
         onRoomChange={() => undefined}
-        onAppearanceChange={() => undefined}
+        onAppearanceChange={async () => undefined}
         onChannelSettingChange={() => undefined}
         onConversationModeChange={() => undefined}
         onOrderedExcludePreviousSpeakerChange={() => undefined}
@@ -113,7 +163,7 @@ describe("RoomSettingsModal conversation mode", () => {
         onClose={() => undefined}
         onInvite={() => undefined}
         onRoomChange={() => undefined}
-        onAppearanceChange={() => undefined}
+        onAppearanceChange={async () => undefined}
         onChannelSettingChange={() => undefined}
         onConversationModeChange={() => undefined}
         onOrderedExcludePreviousSpeakerChange={() => undefined}

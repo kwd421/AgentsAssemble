@@ -293,14 +293,16 @@ export function useRoomSettingsController({
       updates: RoomGlobalSettingsUpdate,
       optimisticValue: AuthoritativeRoomSettings | null
     ) => {
-      if (!room.meetingId || !Object.keys(updates).length) return;
+      if (!room.meetingId || !Object.keys(updates).length) {
+        return Promise.resolve();
+      }
       const key = roomSettingsKey(room);
       const generation = beginSettingsOperation(key);
       setAuthorityStates((previous) => ({
         ...previous,
         [key]: { status: "saving", value: optimisticValue, error: null },
       }));
-      void saveCanonicalGlobalSettings(updates)
+      return saveCanonicalGlobalSettings(updates)
         .then((settings) => {
           if (isCurrentSettingsOperation(key, generation)) {
             applyGlobalSettings(room.meetingId, key, settings);
@@ -315,6 +317,7 @@ export function useRoomSettingsController({
               ? { status: "stale", value: optimisticValue, error }
               : { status: "error", value: null, error },
           }));
+          throw error;
         });
     },
     [
@@ -337,7 +340,7 @@ export function useRoomSettingsController({
             maxRelayTurns: overrides.maxRelayTurns ?? currentValue.maxRelayTurns,
           }
         : null;
-      saveGlobalSettings(room, overrides, nextValue);
+      return saveGlobalSettings(room, overrides, nextValue);
     },
     [saveGlobalSettings, settingsStateFor]
   );
@@ -368,12 +371,16 @@ export function useRoomSettingsController({
         return { ...previous, [key]: nextAppearance };
       });
       const { notifications, ...globalUpdates } = updates;
-      if (Object.keys(globalUpdates).length > 0) {
-        persist(room, { appearance: globalUpdates as Partial<RoomGlobalAppearance> });
-      }
+      const globalWrite =
+        Object.keys(globalUpdates).length > 0
+          ? persist(room, {
+              appearance: globalUpdates as Partial<RoomGlobalAppearance>,
+            })
+          : Promise.resolve();
       if (notifications) {
         persistPreferences(room, { notifications });
       }
+      return globalWrite;
     },
     [appearanceFor, persist, persistPreferences]
   );
@@ -416,7 +423,7 @@ export function useRoomSettingsController({
     (room: RoomDockItem, mode: ConversationMode) => {
       const currentValue = settingsStateFor(room).value;
       if (!currentValue) return;
-      persist(room, { conversationMode: mode });
+      void persist(room, { conversationMode: mode }).catch(() => undefined);
     },
     [persist, settingsStateFor]
   );
@@ -425,7 +432,7 @@ export function useRoomSettingsController({
     (room: RoomDockItem, turns: number) => {
       const currentValue = settingsStateFor(room).value;
       if (!currentValue) return;
-      persist(room, { maxRelayTurns: turns });
+      void persist(room, { maxRelayTurns: turns }).catch(() => undefined);
     },
     [persist, settingsStateFor]
   );
@@ -434,7 +441,9 @@ export function useRoomSettingsController({
     (room: RoomDockItem, exclude: boolean) => {
       const currentValue = settingsStateFor(room).value;
       if (!currentValue) return;
-      persist(room, { orderedExcludePreviousSpeaker: exclude });
+      void persist(room, {
+        orderedExcludePreviousSpeaker: exclude,
+      }).catch(() => undefined);
     },
     [persist, settingsStateFor]
   );

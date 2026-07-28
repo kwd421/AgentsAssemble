@@ -67,7 +67,7 @@ describe("useRoomSideChat", () => {
     ]);
   });
 
-  it("projects the selected lobby thread from the room side-chat history", async () => {
+  it("keeps general side chat separate while projecting the selected lobby thread", async () => {
     const roomMessage = makeEvent("room-message");
     const threadReply = makeEvent("thread-reply", { thread_source_event_id: "source-1" });
     apiMocks.fetchSideChat.mockResolvedValueOnce({ events: [roomMessage, threadReply] });
@@ -80,7 +80,8 @@ describe("useRoomSideChat", () => {
       sourceEventId: "source-1",
       channelLabel: "general",
     });
-    expect(result.current.displayedEvents.map((event) => event.id)).toEqual(["thread-reply"]);
+    expect(result.current.sideChatEvents.map((event) => event.id)).toEqual(["room-message"]);
+    expect(result.current.threadEvents.map((event) => event.id)).toEqual(["thread-reply"]);
   });
 
   it("ignores a stale response after switching rooms", async () => {

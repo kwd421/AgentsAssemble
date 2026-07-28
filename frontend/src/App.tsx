@@ -112,7 +112,7 @@ const CustomChannelView = lazy(() => import("./views/CustomChannelView"));
 const RecordsView = lazy(() => import("./views/RecordsView"));
 
 type Channel = "friends" | "lobby" | "live" | "board" | "records";
-type MobileRoomInfoInitialMode = "info" | "side-chat";
+type MobileRoomInfoInitialMode = "info" | "side-chat" | "thread";
 
 type ChannelConfig = {
   id: Channel;
@@ -155,14 +155,15 @@ type RoomSettingsSectionId =
   | "settings-appearance"
   | "settings-channels"
   | "settings-notify"
-  | "settings-invite";
+  | "settings-invite"
+  | "settings-delete";
 
 type RoomSettingsState = {
   roomId: string;
   initialSectionId?: RoomSettingsSectionId;
 } | null;
 
-type RightPanelMode = "room-info" | "side-chat";
+type RightPanelMode = "room-info" | "side-chat" | "thread";
 
 const CHANNELS: ChannelConfig[] = [
   { id: "lobby", label: "general", icon: Hash },
@@ -499,13 +500,13 @@ export default function App() {
   const {
     error: sideChatError,
     selectedThread: sideChatThread,
-    displayedEvents: displayedSideChatEvents,
+    sideChatEvents,
+    threadEvents: sideChatThreadEvents,
     threadSummaries: sideChatThreadSummaries,
     handleRealtimeEvents: handleSideChatRealtimeEvents,
     handlePostedEvents: handleSideChatPosted,
     handleRealtimeError: handleSideChatError,
     selectThread: selectSideChatThread,
-    clearThread: clearSideChatThread,
   } = useRoomSideChat({ meetingId: activeSideChatMeetingId });
   // Rooms-as-server-objects: when a room becomes active, promote it to a
   // server-backed meeting (idempotent) so adding agents / roster / lobby always
@@ -805,17 +806,12 @@ export default function App() {
     selectSideChatThread(event, LOBBY_CHANNEL_LABEL);
     if (mobileViewportIsActive()) {
       setMobileSidebarOpen(false);
-      setMobileRoomInfoInitialMode("side-chat");
+      setMobileRoomInfoInitialMode("thread");
       setMobileRoomInfoOpen(true);
     } else {
       setMembersOpen(true);
-      setRightPanelMode("side-chat");
+      setRightPanelMode("thread");
     }
-  }
-
-  function closeSideChatThread() {
-    clearSideChatThread();
-    setRightPanelMode("side-chat");
   }
 
   const flowRunning = flow.status === "running";
@@ -1440,13 +1436,15 @@ export default function App() {
           onRoomChange={(updates) => {
             const nextRoom = { ...settingsModalRoom, ...updates };
             updateRoom(settingsModalRoom.id, updates);
-            roomSettings.persist(nextRoom, {
-              ...(updates.label !== undefined ? { label: updates.label } : {}),
-              ...(updates.topic !== undefined ? { topic: updates.topic } : {}),
-              ...(updates.shortLabel !== undefined
-                ? { shortLabel: updates.shortLabel }
-                : {}),
-            });
+            void roomSettings
+              .persist(nextRoom, {
+                ...(updates.label !== undefined ? { label: updates.label } : {}),
+                ...(updates.topic !== undefined ? { topic: updates.topic } : {}),
+                ...(updates.shortLabel !== undefined
+                  ? { shortLabel: updates.shortLabel }
+                  : {}),
+              })
+              .catch(() => undefined);
           }}
           onAppearanceChange={(updates) => roomSettings.updateAppearance(settingsModalRoom, updates)}
           onChannelSettingChange={(channelId, updates) =>
@@ -1927,12 +1925,22 @@ export default function App() {
           sideChatContent={
             <SideChatDock
               meetingId={activeSideChatMeetingId}
-              events={displayedSideChatEvents}
+              events={sideChatEvents}
               error={sideChatError}
               onPosted={handleSideChatPosted}
               mentionables={scopedMentionables}
+              canPostMessages={!guestLocked}
+            />
+          }
+          threadContent={
+            <SideChatDock
+              meetingId={activeSideChatMeetingId}
+              events={sideChatThreadEvents}
+              error={sideChatError}
+              onPosted={handleSideChatPosted}
+              mentionables={scopedMentionables}
+              mode="thread"
               threadContext={sideChatThread}
-              onCloseThread={closeSideChatThread}
               canPostMessages={!guestLocked}
             />
           }
@@ -1949,7 +1957,7 @@ export default function App() {
       {showMembers && membersOpen && (
         <aside
           className="dc-members hidden shrink-0 xl:flex xl:flex-col"
-          aria-label="방 연결 정보와 사이드챗"
+          aria-label="방 연결 정보, 사이드챗과 스레드"
           data-testid="room-right-panel"
           data-panel-mode={rightPanelMode}
         >
@@ -1998,6 +2006,18 @@ export default function App() {
             >
               사이드챗
             </button>
+            <button
+              type="button"
+              role="tab"
+              id="thread-panel-tab"
+              data-active={rightPanelMode === "thread"}
+              aria-selected={rightPanelMode === "thread"}
+              aria-controls="thread-panel"
+              onPointerUp={(event) => activateRightPanelModeFromPointer("thread", event)}
+              onClick={() => activateRightPanelMode("thread")}
+            >
+              스레드
+            </button>
           </div>
           {rightPanelMode === "room-info" ? (
             <section
@@ -2038,7 +2058,7 @@ export default function App() {
                 onParticipantMute={sendParticipantMute}
               />
             </section>
-          ) : (
+          ) : rightPanelMode === "side-chat" ? (
             <section
               id="side-chat-panel"
               role="tabpanel"
@@ -2048,12 +2068,29 @@ export default function App() {
             >
               <SideChatDock
                 meetingId={activeSideChatMeetingId}
-                events={displayedSideChatEvents}
+                events={sideChatEvents}
                 error={sideChatError}
                 onPosted={handleSideChatPosted}
                 mentionables={scopedMentionables}
+                canPostMessages={!guestLocked}
+              />
+            </section>
+          ) : (
+            <section
+              id="thread-panel"
+              role="tabpanel"
+              aria-labelledby="thread-panel-tab"
+              className="min-h-0 flex-1"
+              data-testid="thread-panel"
+            >
+              <SideChatDock
+                meetingId={activeSideChatMeetingId}
+                events={sideChatThreadEvents}
+                error={sideChatError}
+                onPosted={handleSideChatPosted}
+                mentionables={scopedMentionables}
+                mode="thread"
                 threadContext={sideChatThread}
-                onCloseThread={closeSideChatThread}
                 canPostMessages={!guestLocked}
               />
             </section>

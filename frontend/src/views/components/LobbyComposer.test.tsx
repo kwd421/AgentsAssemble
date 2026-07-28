@@ -59,6 +59,28 @@ describe("LobbyComposer", () => {
     expect(apiMocks.postRoomSay).not.toHaveBeenCalled();
   });
 
+  it("keeps the composer focused after an Enter submission finishes", async () => {
+    const say = vi.fn().mockResolvedValue({ events: [] });
+    const socket = {
+      ready: () => true,
+      say,
+    } as unknown as RoomSocketHandle;
+    render(
+      <RoomSocketProvider socket={socket}>
+        <LobbyComposer meetingId="room-a" onPosted={vi.fn()} />
+      </RoomSocketProvider>
+    );
+
+    const input = screen.getByLabelText("채팅 입력") as HTMLTextAreaElement;
+    input.focus();
+    fireEvent.change(input, { target: { value: "첫 메시지" } });
+    fireEvent.keyDown(input, { key: "Enter" });
+
+    await waitFor(() => expect(say).toHaveBeenCalledTimes(1));
+    await waitFor(() => expect(document.activeElement).toBe(input));
+    expect(input.value).toBe("");
+  });
+
   it("uploads attachments from a writable public room session", async () => {
     apiMocks.uploadLobbyAttachment.mockResolvedValue({
       id: "attachment-a",

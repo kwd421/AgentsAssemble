@@ -34,7 +34,8 @@ type RoomSettingsSectionId =
   | "settings-appearance"
   | "settings-channels"
   | "settings-notify"
-  | "settings-invite";
+  | "settings-invite"
+  | "settings-delete";
 
 export default function RoomSettingsModal({
   room,
@@ -71,7 +72,7 @@ export default function RoomSettingsModal({
   onClose: () => void;
   onInvite: () => void;
   onRoomChange: (updates: Partial<Pick<RoomDockItem, "label" | "topic" | "shortLabel">>) => void;
-  onAppearanceChange: (updates: Partial<RoomAppearance>) => void;
+  onAppearanceChange: (updates: Partial<RoomAppearance>) => Promise<void>;
   onChannelSettingChange: (channelId: string, updates: Partial<ChannelSettings>) => void;
   onConversationModeChange: (mode: ConversationMode) => void;
   onOrderedExcludePreviousSpeakerChange: (exclude: boolean) => void;
@@ -118,8 +119,13 @@ export default function RoomSettingsModal({
     if (!file) return;
     setUploadStatus("배너 업로드 중...");
     try {
-      const attachment = await uploadLobbyAttachment(file);
-      onAppearanceChange({ bannerImage: attachment.url, bannerPreset: "custom" });
+      const attachment = await uploadLobbyAttachment(file, {
+        roomId: room.meetingId,
+      });
+      await onAppearanceChange({
+        bannerImage: attachment.url,
+        bannerPreset: "custom",
+      });
       setUploadStatus("배너 이미지 저장됨");
     } catch (error) {
       setUploadStatus(error instanceof Error ? error.message : "배너 업로드 실패");
@@ -132,8 +138,10 @@ export default function RoomSettingsModal({
     if (!file) return;
     setUploadStatus("아이콘 업로드 중...");
     try {
-      const attachment = await uploadLobbyAttachment(file);
-      onAppearanceChange({ iconImage: attachment.url });
+      const attachment = await uploadLobbyAttachment(file, {
+        roomId: room.meetingId,
+      });
+      await onAppearanceChange({ iconImage: attachment.url });
       setUploadStatus("채팅방 아이콘 저장됨");
     } catch (error) {
       setUploadStatus(error instanceof Error ? error.message : "아이콘 업로드 실패");
@@ -305,7 +313,12 @@ export default function RoomSettingsModal({
                     type="button"
                     data-active={appearance.bannerPreset === preset}
                     data-preset={preset}
-                    onClick={() => onAppearanceChange({ bannerPreset: preset, bannerImage: undefined })}
+                    onClick={() => {
+                      void onAppearanceChange({
+                        bannerPreset: preset,
+                        bannerImage: undefined,
+                      }).catch(() => undefined);
+                    }}
                   >
                     {preset === "default" ? "기본" : preset === "forest" ? "그린" : preset === "midnight" ? "미드나잇" : "엠버"}
                   </button>
@@ -331,7 +344,7 @@ export default function RoomSettingsModal({
                   maxLength={2}
                   onChange={(event) => {
                     const iconLabel = event.target.value.slice(0, 2).toUpperCase();
-                    onAppearanceChange({ iconLabel });
+                    void onAppearanceChange({ iconLabel }).catch(() => undefined);
                     onRoomChange({ shortLabel: iconLabel || room.shortLabel });
                   }}
                 />
@@ -387,7 +400,9 @@ export default function RoomSettingsModal({
                     name="room-notifications"
                     checked={appearance.notifications === value}
                     onChange={() =>
-                      onAppearanceChange({ notifications: value as RoomAppearance["notifications"] })
+                      void onAppearanceChange({
+                        notifications: value as RoomAppearance["notifications"],
+                      }).catch(() => undefined)
                     }
                   />
                   {label}
@@ -404,7 +419,11 @@ export default function RoomSettingsModal({
                   type="radio"
                   name="invite-scope"
                   checked={appearance.inviteScope === "room"}
-                  onChange={() => onAppearanceChange({ inviteScope: "room" })}
+                  onChange={() => {
+                    void onAppearanceChange({ inviteScope: "room" }).catch(
+                      () => undefined
+                    );
+                  }}
                 />
                 초대 링크는 이 방만 표시
               </label>
@@ -413,7 +432,11 @@ export default function RoomSettingsModal({
                   type="radio"
                   name="invite-scope"
                   checked={appearance.inviteScope === "read_only"}
-                  onChange={() => onAppearanceChange({ inviteScope: "read_only" })}
+                  onChange={() => {
+                    void onAppearanceChange({ inviteScope: "read_only" }).catch(
+                      () => undefined
+                    );
+                  }}
                 />
                 읽기 전용 초대처럼 표시
               </label>
@@ -428,7 +451,8 @@ export default function RoomSettingsModal({
           <section id="settings-delete" className="dc-settings-section">
             <h3>서버 삭제</h3>
             <p className="text-[13px] text-text-muted preserve-words">
-              이 작업은 복구할 수 없습니다. 확인하려면 서버 이름을 정확히 입력하세요.
+              이 작업은 복구할 수 없습니다. 확인하려면 서버 이름{" "}
+              <strong>“{room.label}”</strong>을 정확히 입력하세요.
             </p>
             <label>
               서버 이름
@@ -440,6 +464,7 @@ export default function RoomSettingsModal({
                   setDeleteError("");
                 }}
                 autoComplete="off"
+                placeholder={room.label}
               />
             </label>
             {deleteError && <p className="text-[13px] text-red-400 preserve-words">{deleteError}</p>}

@@ -85,8 +85,15 @@ export function useRoomSideChat({ meetingId }: UseRoomSideChatOptions) {
     setSelectedThread(null);
   }, []);
 
-  const displayedEvents = useMemo(
-    () => sideChatEventsForThreadContext(events, selectedThread),
+  const sideChatEvents = useMemo(
+    () => sideChatEventsForThreadContext(events, null),
+    [events]
+  );
+  const threadEvents = useMemo(
+    () =>
+      selectedThread
+        ? sideChatEventsForThreadContext(events, selectedThread)
+        : [],
     [events, selectedThread]
   );
   const threadSummaries = useMemo(() => threadSummariesForSideChat(events), [events]);
@@ -95,7 +102,8 @@ export function useRoomSideChat({ meetingId }: UseRoomSideChatOptions) {
     events,
     error,
     selectedThread,
-    displayedEvents,
+    sideChatEvents,
+    threadEvents,
     threadSummaries,
     handleRealtimeEvents,
     handlePostedEvents,

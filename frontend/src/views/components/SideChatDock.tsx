@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import { AtSign, ChevronLeft, MessageSquare, Send, Smile, X } from "lucide-react";
+import { AtSign, MessageCircle, MessageSquare, Send, Smile } from "lucide-react";
 import { postSideChatMessage, type SideChatEvent } from "../../api";
 import type { SideChatThreadContext } from "../../lib/sideChatThreadModel";
 import type { Mentionable } from "../../lib/mentionComposerModel";
@@ -17,8 +17,18 @@ function formatTime(iso: string): string {
   }
 }
 
-function draftKeyForThread(threadContext: SideChatThreadContext | null): string {
-  return threadContext?.sourceEventId ? `thread:${threadContext.sourceEventId}` : "side-chat";
+type SideChatDockMode = "side-chat" | "thread";
+
+function draftKeyForContext(
+  mode: SideChatDockMode,
+  threadContext: SideChatThreadContext | null
+): string {
+  if (mode === "thread") {
+    return threadContext?.sourceEventId
+      ? `thread:${threadContext.sourceEventId}`
+      : "thread:none";
+  }
+  return "side-chat";
 }
 
 function SideChatMessage({ event }: { event: SideChatEvent }) {
@@ -43,8 +53,8 @@ export default function SideChatDock({
   error,
   onPosted,
   mentionables = [],
+  mode = "side-chat",
   threadContext = null,
-  onCloseThread,
   canPostMessages = true,
 }: {
   meetingId: string;
@@ -52,22 +62,34 @@ export default function SideChatDock({
   error: Error | null;
   onPosted: (events: SideChatEvent[]) => void;
   mentionables?: Mentionable[];
+  mode?: SideChatDockMode;
   threadContext?: SideChatThreadContext | null;
-  onCloseThread?: () => void;
   canPostMessages?: boolean;
 }) {
   const inputRef = useRef<HTMLTextAreaElement>(null);
+  const restoreFocusAfterSendRef = useRef(false);
   const [draftsByContext, setDraftsByContext] = useState<Record<string, string>>({});
   const [busy, setBusy] = useState(false);
   const [sendError, setSendError] = useState("");
-  const draftKey = draftKeyForThread(threadContext);
-  const threadSourceEventId = threadContext?.sourceEventId || "";
+  const isThread = mode === "thread";
+  const draftKey = draftKeyForContext(mode, threadContext);
+  const threadSourceEventId = isThread ? threadContext?.sourceEventId || "" : "";
   const message = draftsByContext[draftKey] || "";
   const readOnlyReason = canPostMessages
     ? ""
     : "읽기 전용 초대입니다. 사이드챗도 보기만 가능합니다.";
-  const composerDisabled = Boolean(readOnlyReason);
-  const composerAriaLabel = threadContext ? "비공식 스레드 입력" : "비공식 사이드챗 입력";
+  const missingThreadReason =
+    isThread && !threadContext
+      ? "본채팅 메시지에서 스레드를 먼저 열어 주세요."
+      : "";
+  const composerDisabled = Boolean(readOnlyReason || missingThreadReason);
+  const composerAriaLabel = isThread ? "비공식 스레드 입력" : "비공식 사이드챗 입력";
+
+  useEffect(() => {
+    if (busy || !restoreFocusAfterSendRef.current) return;
+    restoreFocusAfterSendRef.current = false;
+    inputRef.current?.focus();
+  }, [busy]);
 
   function setMessage(nextMessage: string) {
     if (composerDisabled) return;
@@ -105,6 +127,7 @@ export default function SideChatDock({
     if (!trimmed || busy || composerDisabled) return;
     const previousMessage = message;
     setMessage("");
+    restoreFocusAfterSendRef.current = true;
     setBusy(true);
     setSendError("");
     try {
@@ -113,7 +136,7 @@ export default function SideChatDock({
         side: "mine",
         message: trimmed,
         meetingId,
-        threadSourceEventId: threadContext?.sourceEventId || "",
+        threadSourceEventId,
       });
       onPosted(payload.events?.length ? payload.events : payload.event ? [payload.event] : []);
     } catch (errorValue) {
@@ -127,44 +150,20 @@ export default function SideChatDock({
   return (
     <section
       className="dc-side-chat-dock"
-      aria-label="비공식 사이드챗"
-      data-thread-active={threadContext ? "true" : "false"}
+      aria-label={isThread ? "비공식 스레드" : "비공식 사이드챗"}
+      data-thread-active={isThread ? "true" : "false"}
       data-readonly={composerDisabled ? "true" : "false"}
     >
       <header className="dc-side-chat-head">
         <span className="flex min-w-0 items-center gap-2">
-          {threadContext && onCloseThread ? (
-            <button
-              type="button"
-              className="dc-side-thread-back"
-              onClick={onCloseThread}
-              aria-label="사이드챗으로 돌아가기"
-              title="사이드챗"
-            >
-              <ChevronLeft size={15} />
-            </button>
-          ) : (
-            <MessageSquare size={15} />
-          )}
+          {isThread ? <MessageCircle size={15} /> : <MessageSquare size={15} />}
           <span className="truncate preserve-words">
-            {threadContext ? "스레드" : "사이드챗"}
+            {isThread ? "스레드" : "사이드챗"}
           </span>
         </span>
-        {threadContext && onCloseThread ? (
-          <button
-            type="button"
-            className="dc-side-thread-close"
-            onClick={onCloseThread}
-            aria-label="스레드 닫기"
-            title="닫기"
-          >
-            <X size={14} />
-          </button>
-        ) : (
         <span className="text-[10px] font-bold text-text-muted">공식 기록 제외</span>
-        )}
       </header>
-      {threadContext && (
+      {isThread && threadContext && (
         <article
           className="dc-side-thread-source"
           aria-label={`${threadContext.sourceName} 메시지에서 열린 스레드`}
@@ -181,10 +180,10 @@ export default function SideChatDock({
         {events.length === 0 ? (
           <p className="dc-side-empty preserve-words">
             {composerDisabled
-              ? "읽기 전용 초대에서는 사이드챗과 스레드를 보기만 할 수 있습니다."
-              : threadContext && events.length === 0
+              ? readOnlyReason || missingThreadReason
+              : isThread
               ? "이 메시지에 대한 비공식 스레드를 시작하세요."
-              : "메시지에서 스레드를 열면 여기에 표시됩니다. 필요하면 비공식 메모도 남길 수 있습니다."}
+              : "사이드챗 메시지가 아직 없습니다."}
           </p>
         ) : (
           events.map((event) => <SideChatMessage key={event.id} event={event} />)
@@ -213,7 +212,11 @@ export default function SideChatDock({
               void handleSend();
             }
           }}
-          placeholder={readOnlyReason || (threadContext ? "스레드에 답장" : "스레드 메모")}
+          placeholder={
+            readOnlyReason ||
+            missingThreadReason ||
+            (isThread ? "스레드에 답장" : "사이드챗 메시지")
+          }
           disabled={busy || composerDisabled}
           ariaLabel={composerAriaLabel}
           mentionables={mentionables}
@@ -222,7 +225,7 @@ export default function SideChatDock({
           type="button"
           onClick={() => insertText("@")}
           disabled={busy || composerDisabled}
-          aria-label="사이드챗 멘션 삽입"
+          aria-label={`${isThread ? "스레드" : "사이드챗"} 멘션 삽입`}
         >
           <AtSign size={15} />
         </button>
@@ -230,7 +233,7 @@ export default function SideChatDock({
           type="button"
           onClick={() => insertText("🙂")}
           disabled={busy || composerDisabled}
-          aria-label="사이드챗 이모지 삽입"
+          aria-label={`${isThread ? "스레드" : "사이드챗"} 이모지 삽입`}
         >
           <Smile size={15} />
         </button>
@@ -238,7 +241,7 @@ export default function SideChatDock({
           type="button"
           onClick={handleSend}
           disabled={busy || composerDisabled || !message.trim()}
-          aria-label="사이드챗 보내기"
+          aria-label={`${isThread ? "스레드" : "사이드챗"} 보내기`}
         >
           <Send size={15} />
         </button>

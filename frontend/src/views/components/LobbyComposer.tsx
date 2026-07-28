@@ -95,6 +95,7 @@ export default function LobbyComposer({
 }) {
   const fileInputRef = useRef<HTMLInputElement>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
+  const restoreFocusAfterSubmitRef = useRef(false);
   const [message, setMessage] = useState("");
   const [pendingAttachments, setPendingAttachments] = useState<LobbyAttachmentRef[]>([]);
   const [busy, setBusy] = useState(false);
@@ -113,6 +114,12 @@ export default function LobbyComposer({
   useEffect(() => {
     setVoteDialogOpen(false);
   }, [meetingId]);
+
+  useEffect(() => {
+    if (busy || !restoreFocusAfterSubmitRef.current) return;
+    restoreFocusAfterSubmitRef.current = false;
+    inputRef.current?.focus();
+  }, [busy]);
 
   function insertText(text: string) {
     const input = inputRef.current;
@@ -189,6 +196,7 @@ export default function LobbyComposer({
       return;
     }
 
+    restoreFocusAfterSubmitRef.current = true;
     setBusy(true);
     setError("");
     try {
