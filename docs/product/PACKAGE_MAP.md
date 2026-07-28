@@ -4,7 +4,7 @@ Status: generated architecture inventory
 
 Generator: `python3 scripts/generate_package_map.py`
 
-Source fingerprint: `461af0f0cc045371`
+Source fingerprint: `e8af6cf6d5c7b998`
 
 This file describes current evidence and proposed ownership. It does not by
 itself authorize a module move or a product behavior change.
@@ -688,7 +688,7 @@ itself authorize a module move or a product behavior change.
 | `agentsassemble.room.members` | `agentsassemble/room/members.py` | 416 | room | current | `agentsassemble.application.agent_sessions`, `agentsassemble.features.social.friends`, `agentsassemble.persistence.local.identity.registry`, `agentsassemble.room.moderation`, `agentsassemble.room.repository`, `agentsassemble.room.text` | 5 | `call:Lock@144` | test-import:2 | `tests/test_room_members_presence.py`, `tests/test_room_package.py` | `room/` | in-target-package |
 | `agentsassemble.room.messages` | `agentsassemble/room/messages.py` | 158 | room | current | `agentsassemble.room.attachments`, `agentsassemble.room.command_uow`, `agentsassemble.room.errors`, `agentsassemble.room.text`, `agentsassemble.room.turn_coordinator`, `agentsassemble.room.votes` | 1 | - | test-import:1 | `tests/test_room_messages.py` | `room/` | in-target-package |
 | `agentsassemble.room.moderation` | `agentsassemble/room/moderation.py` | 58 | room | current | `agentsassemble.persistence.local.identity.registry` | 6 | - | test-import:5, monkeypatch:1 | `tests/gui_server_test_support.py`, `tests/test_room_members_presence.py`, `tests/test_room_moderation.py`, `+2` | `room/` | in-target-package |
-| `agentsassemble.room.participant_kick` | `agentsassemble/room/participant_kick.py` | 232 | room | current | `agentsassemble.room.command_uow`, `agentsassemble.room.errors`, `agentsassemble.room.projection`, `agentsassemble.room.repository`, `agentsassemble.room.text` | 1 | - | test-import:1 | `tests/test_room_participant_kick.py` | `room/` | in-target-package |
+| `agentsassemble.room.participant_kick` | `agentsassemble/room/participant_kick.py` | 244 | room | current | `agentsassemble.room.command_uow`, `agentsassemble.room.errors`, `agentsassemble.room.projection`, `agentsassemble.room.repository`, `agentsassemble.room.text` | 1 | - | test-import:1 | `tests/test_room_participant_kick.py` | `room/` | in-target-package |
 | `agentsassemble.room.participant_leave` | `agentsassemble/room/participant_leave.py` | 207 | room | current | `agentsassemble.room.command_uow`, `agentsassemble.room.errors`, `agentsassemble.room.repository`, `agentsassemble.room.text` | 1 | - | test-import:1 | `tests/test_room_participant_leave.py` | `room/` | in-target-package |
 | `agentsassemble.room.projection` | `agentsassemble/room/projection.py` | 248 | room | current | `agentsassemble.room.text`, `agentsassemble.room.types` | 12 | `call:compile@18`, `call:compile@28`, `call:compile@36`, `call:compile@37`, `call:compile@40`, `+7` | test-import:2 | `tests/test_room_package.py`, `tests/test_room_projection.py` | `room/` | in-target-package |
 | `agentsassemble.room.provider_registry` | `agentsassemble/room/provider_registry.py` | 115 | room | current | `agentsassemble.providers.launch_specs`, `agentsassemble.room.errors`, `agentsassemble.room.text` | 5 | - | test-import:4 | `tests/test_room_agent_profiles.py`, `tests/test_room_agent_reactivation.py`, `tests/test_room_provider_registry.py`, `+1` | `room/` | in-target-package |

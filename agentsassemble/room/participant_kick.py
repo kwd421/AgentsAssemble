@@ -106,22 +106,21 @@ class RoomParticipantKickService:
         ):
             return _cleanup_from_participant(participant)
         stop_warning = ""
-        if participant.get("role") == "agent":
-            session = self.store.session(room_id, participant_id)
-            if session and session.get("runtime_status") not in {
-                "stopped",
-                "available",
-            }:
-                try:
-                    self._stop_agent(
-                        room_id,
-                        participant_id,
-                        f"{operation_id}:stop",
-                    )
-                except RoomCommandRejected as error:
-                    # Room access must still be revoked when provider shutdown
-                    # cannot be confirmed.
-                    stop_warning = f"{error.code}: {error}"
+        session = self._provider_session(room_id, participant_id)
+        if session and session.get("runtime_status") not in {
+            "stopped",
+            "available",
+        }:
+            try:
+                self._stop_agent(
+                    room_id,
+                    participant_id,
+                    f"{operation_id}:stop",
+                )
+            except RoomCommandRejected as error:
+                # Room access must still be revoked when provider shutdown
+                # cannot be confirmed.
+                stop_warning = f"{error.code}: {error}"
         revoked_sessions = self._revoke_participant_sessions(
             room_id,
             participant_id,
@@ -198,13 +197,26 @@ class RoomParticipantKickService:
         room_id: str,
         participant: dict[str, object],
     ) -> None:
-        if participant.get("role") != "agent":
-            return
         participant_id = clean_room_text(
             participant.get("participant_id"),
             128,
         )
+        if not self._provider_session(room_id, participant_id):
+            return
         self._remove_provider(room_id, participant_id)
+
+    def _provider_session(
+        self,
+        room_id: str,
+        participant_id: str,
+    ) -> dict[str, object]:
+        session = self.store.session(room_id, participant_id)
+        if (
+            clean_room_text(session.get("participant_id"), 128)
+            != participant_id
+        ):
+            return {}
+        return session
 
 
 def _cleanup_from_participant(

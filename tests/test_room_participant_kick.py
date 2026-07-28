@@ -176,6 +176,33 @@ class RoomParticipantKickServiceTests(unittest.TestCase):
         self.assertTrue(cleanup["removed_member"])
         self.assertEqual(self.revocations, [("general", "codex")])
 
+    def test_provider_backed_participant_is_stopped_after_its_display_role_changes(self) -> None:
+        self.store.update_participant_fields(
+            "general",
+            "codex",
+            role="director",
+        )
+        participant = self.service.prepare_intent(
+            "general",
+            "codex",
+            operation_id="kick-1",
+        )
+
+        cleanup = self.service.apply_effects(
+            "general",
+            participant,
+            operation_id="kick-1",
+        )
+        self._finalize(cleanup)
+        self.service.apply_after_commit(
+            "general",
+            self.store.participant("general", "codex"),
+        )
+
+        self.assertEqual(self.stops, [("general", "codex", "kick-1:stop")])
+        self.assertEqual(self.provider_removals, [("general", "codex")])
+        self.assertEqual(self.store.participant("general", "codex")["status"], "kicked")
+
     def test_finalize_requires_matching_completed_cleanup(self) -> None:
         self.service.prepare_intent(
             "general",
