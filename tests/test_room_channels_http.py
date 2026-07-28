@@ -14,7 +14,11 @@ from urllib.error import HTTPError
 from urllib.request import Request, urlopen
 
 from agentsassemble.gui import _make_handler
-from agentsassemble.admission.invite import reset_state, set_runtime_host_token
+from agentsassemble.admission.invite import (
+    reset_state,
+    set_runtime_host_token,
+    set_runtime_public_url,
+)
 from agentsassemble.room_store import RoomStore
 
 
@@ -35,10 +39,24 @@ class RoomChannelsHttpTests(unittest.TestCase):
         self._servers.append(server)
         return f"http://127.0.0.1:{server.server_port}"
 
-    def _post(self, base: str, payload: dict, *, host_token: str | None = "host-secret") -> dict:
+    def _post(
+        self,
+        base: str,
+        payload: dict,
+        *,
+        host_token: str | None = "host-secret",
+        public_origin: bool = False,
+    ) -> dict:
         headers = {"Content-Type": "application/json"}
         if host_token is not None:
             headers["X-Host-Token"] = host_token
+        if public_origin:
+            headers.update(
+                {
+                    "Host": "shared-room.example.com",
+                    "Origin": "https://shared-room.example.com",
+                }
+            )
         request = Request(
             f"{base}/api/room-channels",
             data=json.dumps(payload).encode("utf-8"),
@@ -87,11 +105,17 @@ class RoomChannelsHttpTests(unittest.TestCase):
     def test_mutation_requires_moderator(self):
         with tempfile.TemporaryDirectory() as temp_dir:
             set_runtime_host_token("host-secret")
+            set_runtime_public_url("https://shared-room.example.com")
             root = Path(temp_dir) / "room"
             RoomStore(root).create_room("r1", label="Room 1")
             base = self._start(root)
             with self.assertRaises(HTTPError) as ctx:
-                self._post(base, {"meeting_id": "r1", "action": "create", "name": "x"}, host_token="wrong")
+                self._post(
+                    base,
+                    {"meeting_id": "r1", "action": "create", "name": "x"},
+                    host_token="wrong",
+                    public_origin=True,
+                )
             self.assertEqual(ctx.exception.code, 403)
             ctx.exception.close()
 

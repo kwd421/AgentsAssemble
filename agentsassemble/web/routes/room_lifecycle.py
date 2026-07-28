@@ -101,6 +101,7 @@ def register_room_lifecycle_routes(router: Router) -> None:
             ctx.send_error(HTTPStatus.BAD_REQUEST, "room_id is required")
             return
         archived = bool(payload.get("archived"))
+        identity_room = ctx.deps.identities.get_room(room_id)
         updated = ctx.deps.identities.set_room_archived(room_id, archived)
         store_updated = False
         try:
@@ -110,8 +111,21 @@ def register_room_lifecycle_routes(router: Router) -> None:
                     "archived" if archived else "active",
                 )
                 store_updated = True
-        except ValueError:
-            store_updated = False
+        except ValueError as error:
+            if updated and identity_room is not None:
+                ctx.deps.identities.set_room_archived(
+                    room_id,
+                    bool(identity_room.get("archived")),
+                )
+            ctx.send_error(HTTPStatus.BAD_REQUEST, str(error))
+            return
+        except Exception:
+            if updated and identity_room is not None:
+                ctx.deps.identities.set_room_archived(
+                    room_id,
+                    bool(identity_room.get("archived")),
+                )
+            raise
         if not updated and not store_updated:
             ctx.send_error(HTTPStatus.NOT_FOUND, "room not found")
             return

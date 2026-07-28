@@ -787,6 +787,186 @@ class PublicInviteHttpTests(unittest.TestCase):
                 restarted.shutdown()
                 restarted.server_close()
 
+    def test_public_guest_room_capability_and_preferences_survive_restart(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir) / "room"
+            store = RoomStore(root)
+            store.create_room("guest-room", label="Guest room")
+            store.create_room("private-room", label="Private room")
+            set_runtime_host_token("host-secret")
+            set_runtime_public_url("https://shared-room.example.com")
+            server = self._start_server(root)
+            try:
+                base = f"http://127.0.0.1:{server.server_port}"
+                with urlopen(
+                    _json_request(
+                        f"{base}/api/room-invite/create",
+                        {
+                            "meeting_id": "guest-room",
+                            "display_name": "Friend",
+                        },
+                        {"X-Host-Token": "host-secret"},
+                    ),
+                    timeout=4,
+                ) as response:
+                    invite = json.loads(response.read().decode("utf-8"))
+                public_headers = {
+                    "Host": "shared-room.example.com",
+                    "Origin": "https://shared-room.example.com",
+                    "X-Device-Token": "persistent-guest-device",
+                }
+                with urlopen(
+                    _json_request(
+                        f"{base}/api/room-invite/join",
+                        {
+                            "invite_token": invite["invite_token"],
+                            "request_id": str(uuid4()),
+                            "device_token": "persistent-guest-device",
+                        },
+                        public_headers,
+                    ),
+                    timeout=4,
+                ) as response:
+                    admitted = json.loads(response.read().decode("utf-8"))
+                session_headers = {
+                    **public_headers,
+                    "Authorization": f"Bearer {admitted['session_token']}",
+                }
+
+                with urlopen(
+                    Request(f"{base}/api/rooms", headers=session_headers),
+                    timeout=4,
+                ) as response:
+                    rooms = json.loads(response.read().decode("utf-8"))
+                with urlopen(
+                    Request(
+                        f"{base}/api/room-settings?room_id=guest-room",
+                        headers=session_headers,
+                    ),
+                    timeout=4,
+                ) as response:
+                    own_settings = json.loads(response.read().decode("utf-8"))
+                with urlopen(
+                    Request(
+                        f"{base}/api/room-channels?meeting_id=guest-room",
+                        headers=session_headers,
+                    ),
+                    timeout=4,
+                ) as response:
+                    own_channels = json.loads(response.read().decode("utf-8"))
+                with urlopen(
+                    Request(
+                        f"{base}/api/room-members?meeting_id=guest-room",
+                        headers=session_headers,
+                    ),
+                    timeout=4,
+                ) as response:
+                    own_members = json.loads(response.read().decode("utf-8"))
+                with urlopen(
+                    _json_request(
+                        f"{base}/api/room-settings",
+                        {
+                            "room_id": "guest-room",
+                            "appearance": {"notifications": "mute"},
+                        },
+                        session_headers,
+                    ),
+                    timeout=4,
+                ) as response:
+                    saved_preferences = json.loads(
+                        response.read().decode("utf-8")
+                    )
+                with self.assertRaises(HTTPError) as global_write:
+                    urlopen(
+                        _json_request(
+                            f"{base}/api/room-settings",
+                            {
+                                "room_id": "guest-room",
+                                "label": "Guest overwrite",
+                            },
+                            session_headers,
+                        ),
+                        timeout=4,
+                    )
+                self.addCleanup(global_write.exception.close)
+                cross_room_codes: list[int] = []
+                for path in (
+                    "/api/room-settings?room_id=private-room",
+                    "/api/room-channels?meeting_id=private-room",
+                    "/api/room-members?meeting_id=private-room",
+                ):
+                    with self.assertRaises(HTTPError) as cross_room:
+                        urlopen(
+                            Request(f"{base}{path}", headers=session_headers),
+                            timeout=4,
+                        )
+                    self.addCleanup(cross_room.exception.close)
+                    cross_room_codes.append(cross_room.exception.code)
+            finally:
+                server.shutdown()
+                server.server_close()
+
+            self.assertEqual(
+                [room["room_id"] for room in rooms["rooms"]],
+                ["guest-room"],
+            )
+            self.assertEqual(
+                own_settings["settings"]["room_id"],
+                "guest-room",
+            )
+            self.assertEqual(own_channels["room_id"], "guest-room")
+            self.assertEqual(own_members["meeting_id"], "guest-room")
+            self.assertEqual(
+                saved_preferences["settings"]["appearance"]["notifications"],
+                "mute",
+            )
+            self.assertEqual(global_write.exception.code, 403)
+            self.assertEqual(cross_room_codes, [403, 403, 403])
+
+            reset_state()
+            set_runtime_host_token("host-secret")
+            set_runtime_public_url("https://shared-room.example.com")
+            restarted = self._start_server(root)
+            try:
+                restarted_base = (
+                    f"http://127.0.0.1:{restarted.server_port}"
+                )
+                with urlopen(
+                    Request(
+                        f"{restarted_base}/api/room-settings"
+                        "?room_id=guest-room",
+                        headers=session_headers,
+                    ),
+                    timeout=4,
+                ) as response:
+                    restored_settings = json.loads(
+                        response.read().decode("utf-8")
+                    )
+                with urlopen(
+                    Request(
+                        f"{restarted_base}/api/rooms",
+                        headers=session_headers,
+                    ),
+                    timeout=4,
+                ) as response:
+                    restored_rooms = json.loads(response.read().decode("utf-8"))
+            finally:
+                restarted.shutdown()
+                restarted.server_close()
+
+        self.assertEqual(
+            restored_settings["settings"]["appearance"]["notifications"],
+            "mute",
+        )
+        self.assertEqual(
+            restored_settings["settings"]["label"],
+            "Guest room",
+        )
+        self.assertEqual(
+            [room["room_id"] for room in restored_rooms["rooms"]],
+            ["guest-room"],
+        )
+
     def test_guest_companion_packet_uses_session_room_and_does_not_reflect_guest_secrets(self):
         with tempfile.TemporaryDirectory() as temp_dir:
             root = Path(temp_dir) / "room"

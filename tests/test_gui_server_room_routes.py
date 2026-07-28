@@ -1,3 +1,5 @@
+from unittest.mock import Mock
+
 from tests.gui_server_test_support import (
     HTTPError,
     HTTPStatus,
@@ -398,6 +400,144 @@ class GuiServerRoomRouteTests(unittest.TestCase):
             [room["room_id"] for room in payload["rooms"]],
             ["injected-room"],
         )
+
+    def test_guest_room_capability_cannot_read_another_canonical_room(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            deps = _invite_route_dependencies(root)
+            deps.public_invite.set_public_url("https://room.example.com")
+            deps.public_invite.set_host_token("host-secret")
+            deps.rooms.create_room("guest-room", label="Guest Room")
+            deps.rooms.create_room("private-room", label="Private Room")
+            invite = deps.invites.create(
+                room_url="http://127.0.0.1:8765",
+                meeting_id="guest-room",
+                display_name="Guest",
+            )
+            joined = _dispatch_room_route(
+                root,
+                path="/api/room-invite/join",
+                method="POST",
+                payload={
+                    "invite_token": invite["join_code"],
+                    "request_id": "b42cce95-8b47-48aa-8690-5c05d38ec708",
+                    "device_token": "guest-device-token",
+                },
+                deps=deps,
+            ).sent_json
+            headers = {
+                "Authorization": f"Bearer {joined['session_token']}",
+                "Host": "room.example.com",
+                "Origin": "https://room.example.com",
+            }
+
+            listed = _dispatch_room_route(
+                root,
+                path="/api/rooms",
+                headers=headers,
+                loopback=False,
+                deps=deps,
+            )
+            allowed = _dispatch_room_route(
+                root,
+                path="/api/room-settings?room_id=guest-room",
+                headers=headers,
+                loopback=False,
+                deps=deps,
+            )
+            forbidden = [
+                _dispatch_room_route(
+                    root,
+                    path=path,
+                    headers=headers,
+                    loopback=False,
+                    deps=deps,
+                )
+                for path in (
+                    "/api/room-settings?room_id=private-room",
+                    "/api/room-members?meeting_id=private-room",
+                    "/api/room-channels?meeting_id=private-room",
+                    "/api/rooms/state?room_id=private-room",
+                )
+            ]
+
+        self.assertEqual(
+            [room["room_id"] for room in listed.sent_json["rooms"]],
+            ["guest-room"],
+        )
+        self.assertEqual(
+            allowed.sent_json["settings"]["room_id"],
+            "guest-room",
+        )
+        self.assertTrue(
+            all(
+                response.sent_error
+                == (
+                    HTTPStatus.FORBIDDEN,
+                    "session is not authorized for this room",
+                )
+                for response in forbidden
+            )
+        )
+
+    def test_room_creation_rolls_back_identity_projection_when_canonical_create_fails(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            deps = _invite_route_dependencies(root)
+            failing_rooms = Mock(wraps=deps.rooms)
+            failing_rooms.create_room.side_effect = ValueError(
+                "canonical create failed",
+            )
+            deps.room_repository = failing_rooms
+
+            response = _dispatch_room_route(
+                root,
+                path="/api/rooms",
+                method="POST",
+                payload={"room_id": "partial-room", "label": "Partial Room"},
+                deps=deps,
+            )
+            identity_room = deps.identities.get_room("partial-room")
+
+        self.assertEqual(
+            response.sent_error,
+            (HTTPStatus.BAD_REQUEST, "canonical create failed"),
+        )
+        self.assertIsNone(identity_room)
+
+    def test_archive_failure_restores_the_identity_projection(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            deps = _invite_route_dependencies(root)
+            deps.rooms.create_room("archive-room", label="Archive Room")
+            deps.identities.upsert_room(
+                room_id="archive-room",
+                label="Archive Room",
+            )
+            failing_rooms = Mock(wraps=deps.rooms)
+            failing_rooms.set_room_status.side_effect = ValueError(
+                "canonical archive failed",
+            )
+            deps.room_repository = failing_rooms
+
+            response = _dispatch_room_route(
+                root,
+                path="/api/rooms/archive",
+                method="POST",
+                payload={"room_id": "archive-room", "archived": True},
+                deps=deps,
+            )
+            identity_archived = bool(
+                deps.identities.get_room("archive-room")["archived"]
+            )
+            canonical_status = deps.rooms.room("archive-room")["status"]
+
+        self.assertEqual(
+            response.sent_error,
+            (HTTPStatus.BAD_REQUEST, "canonical archive failed"),
+        )
+        self.assertFalse(identity_archived)
+        self.assertEqual(canonical_status, "active")
 
     def test_room_ensure_route_materializes_server_room_for_local_operator(self):
         with tempfile.TemporaryDirectory() as temp_dir:

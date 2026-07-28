@@ -4,6 +4,7 @@ import base64
 import tempfile
 import unittest
 from pathlib import Path
+from unittest.mock import Mock
 from urllib.parse import parse_qs, urlparse
 
 from agentsassemble.admission.invite_service import InviteApplicationService
@@ -169,6 +170,43 @@ class AttachmentAuthorizationTests(unittest.TestCase):
                 [event["type"] for event in deps.rooms.read_events("room-a")],
             )
             self.assertEqual(len(list((root / "attachments").iterdir())), 1)
+
+    def test_failed_canonical_media_write_removes_the_staged_upload(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            deps = _attachment_dependencies(root)
+            deps.rooms.create_room("room-a")
+            failing_rooms = Mock(wraps=deps.rooms)
+            failing_rooms.attach_media.side_effect = ValueError(
+                "canonical media write failed",
+            )
+            deps.room_repository = failing_rooms
+            session_token, _session = deps.sessions.issue(
+                {
+                    "agent_id": "guest-a",
+                    "display_name": "Guest A",
+                    "meeting_id": "room-a",
+                    "invite_scope": "room",
+                    "participant_type": "human",
+                    "client_type": "browser",
+                }
+            )
+
+            response = _dispatch_attachment_upload(
+                deps,
+                _image_payload(),
+                headers={"Authorization": f"Bearer {session_token}"},
+            )
+
+            self.assertEqual(
+                response.sent_error,
+                (HTTPStatus.BAD_REQUEST, "canonical media write failed"),
+            )
+            self.assertEqual(list((root / "attachments").iterdir()), [])
+            self.assertNotIn(
+                "media_attached",
+                [event["type"] for event in deps.rooms.read_events("room-a")],
+            )
 
     def test_read_only_session_cannot_upload(self):
         with tempfile.TemporaryDirectory() as temp_dir:

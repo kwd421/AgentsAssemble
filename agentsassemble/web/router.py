@@ -307,8 +307,8 @@ class RequestContext:
         )
 
     def require_moderator(self) -> bool:
-        """Gate moderation endpoints: host token OR operator session (403 otherwise)."""
-        if self.is_host() or self.is_operator_session():
+        """Gate moderation endpoints for the local operator or remote operator."""
+        if self.is_local_operator() or self.is_host() or self.is_operator_session():
             return True
         self.send_error(HTTPStatus.FORBIDDEN, "host token or operator session required")
         return False
@@ -362,6 +362,29 @@ class RequestContext:
             self.send_error(HTTPStatus.FORBIDDEN, f"read-only invite session cannot {action}")
             return None
         return session
+
+    def require_room_access(self, room_id: object) -> bool:
+        """Allow operators or a session admitted to exactly this room.
+
+        Public invite sessions are room capabilities, not general server
+        credentials. Keeping this check on the request identity facade avoids
+        subtly different cross-room rules in roster, settings, channel, and
+        state endpoints.
+        """
+
+        clean_room_id = str(room_id or "").strip()
+        if self.is_local_operator() or self.is_host() or self.is_operator_session():
+            return True
+        session = self.require_session()
+        if session is None:
+            return False
+        if str(session.get("meeting_id") or "").strip() == clean_room_id:
+            return True
+        self.send_error(
+            HTTPStatus.FORBIDDEN,
+            "session is not authorized for this room",
+        )
+        return False
 
 
 RouteHandler = Callable[[RequestContext], None]

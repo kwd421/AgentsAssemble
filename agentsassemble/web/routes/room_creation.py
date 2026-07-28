@@ -20,17 +20,29 @@ def register_room_creation_routes(router: Router) -> None:
         if not room_id:
             ctx.send_error(HTTPStatus.BAD_REQUEST, "room_id is required")
             return
+        previous_identity_room = ctx.deps.identities.get_room(room_id)
         try:
-            room = ctx.deps.rooms.create_room(room_id, label=label or room_id)
             identity_room = ctx.deps.identities.upsert_room(
                 room_id=room_id,
                 owner_id=(
                     ctx.preference_user_id()
                     or ctx.deps.identities.operator_user_id()
                 ),
-                label=str(room.get("label") or label or room_id),
+                label=label or room_id,
                 origin="frontend_room",
             )
+            try:
+                room = ctx.deps.rooms.create_room(
+                    room_id,
+                    label=label or room_id,
+                )
+            except Exception:
+                _restore_identity_room(
+                    ctx,
+                    room_id,
+                    previous_identity_room,
+                )
+                raise
         except ValueError as error:
             ctx.send_error(HTTPStatus.BAD_REQUEST, str(error))
             return
@@ -47,6 +59,28 @@ def register_room_creation_routes(router: Router) -> None:
                 },
             }
         )
+
+
+def _restore_identity_room(
+    ctx: RequestContext,
+    room_id: str,
+    previous: dict[str, object] | None,
+) -> None:
+    """Compensate the identity projection when canonical creation fails."""
+
+    if previous is None:
+        ctx.deps.identities.delete_room(room_id)
+        return
+    ctx.deps.identities.upsert_room(
+        room_id=room_id,
+        owner_id=str(previous.get("owner_id") or ""),
+        label=str(previous.get("label") or ""),
+        origin=str(previous.get("origin") or ""),
+    )
+    ctx.deps.identities.set_room_archived(
+        room_id,
+        bool(previous.get("archived")),
+    )
 
 
 __all__ = ["register_room_creation_routes"]

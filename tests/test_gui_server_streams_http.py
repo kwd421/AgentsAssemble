@@ -911,6 +911,28 @@ class GuiServerStreamsHttpTests(unittest.TestCase):
                     public_url=public_url,
                 )
             )
+            for path, method in (
+                ("/api/room-settings", "GET"),
+                ("/api/room-settings", "POST"),
+                ("/api/room-channels", "GET"),
+                ("/api/room/channel-lobby", "GET"),
+                ("/api/room/voice", "GET"),
+                ("/api/room/channel-say", "POST"),
+                ("/api/room/voice/join", "POST"),
+                ("/api/room/voice/leave", "POST"),
+                ("/api/room-members", "POST"),
+            ):
+                with self.subTest(path=path, method=method):
+                    self.assertTrue(
+                        _request_trusted(
+                            "127.0.0.1",
+                            "room.example.com",
+                            "https://room.example.com",
+                            path=path,
+                            method=method,
+                            public_url=public_url,
+                        )
+                    )
             self.assertTrue(
                 _request_trusted(
                     "127.0.0.1",

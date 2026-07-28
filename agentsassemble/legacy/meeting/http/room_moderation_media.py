@@ -146,14 +146,9 @@ def register_legacy_moderation_media_routes(
 
     @router.get("/api/room-channels")
     def room_channels_list(ctx: RequestContext) -> None:
-        if (
-            not ctx.uses_loopback_host()
-            and ctx.session() is None
-            and not ctx.is_host()
-        ):
-            ctx.send_error(HTTPStatus.UNAUTHORIZED, "session token required")
-            return
         meeting_id = ctx.query_value("meeting_id") or ctx.query_value("room_id")
+        if not ctx.require_room_access(meeting_id):
+            return
         if not _require_room(ctx, meeting_id):
             return
         ctx.send_json({"room_id": meeting_id, "channels": _channels_for(ctx.deps.rooms, meeting_id)})

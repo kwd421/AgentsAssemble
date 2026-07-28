@@ -74,6 +74,12 @@ def register_attachment_routes(router: Router) -> None:
                     supported=str(attachment.get("content_type") or "") in INLINE_SAFE_IMAGE_TYPES,
                 )
             except (AttachmentError, OSError, ValueError) as error:
+                try:
+                    ctx.deps.media.delete(
+                        str(attachment.get("id") or ""),
+                    )
+                except AttachmentError:
+                    pass
                 ctx.send_error(HTTPStatus.BAD_REQUEST, str(error))
                 return
         ctx.send_json(response)

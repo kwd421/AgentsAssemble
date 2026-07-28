@@ -17,6 +17,15 @@ def register_room_settings_routes(router: Router) -> None:
     @router.get("/api/room-settings")
     def room_settings(ctx: RequestContext) -> None:
         room_id = ctx.query_value("room_id")
+        if not room_id and not (
+            ctx.is_local_operator()
+            or ctx.is_host()
+            or ctx.is_operator_session()
+        ):
+            ctx.send_error(HTTPStatus.FORBIDDEN, "operator credential required")
+            return
+        if room_id and not ctx.require_room_access(room_id):
+            return
         if room_id:
             try:
                 room = ctx.deps.rooms.room(room_id)
@@ -39,6 +48,9 @@ def register_room_settings_routes(router: Router) -> None:
     def post_room_settings(ctx: RequestContext) -> None:
         payload = ctx.read_json_body()
         if payload is None:
+            return
+        room_id = str(payload.get("room_id") or "").strip()
+        if not ctx.require_room_access(room_id):
             return
         if (
             has_room_global_updates(payload)

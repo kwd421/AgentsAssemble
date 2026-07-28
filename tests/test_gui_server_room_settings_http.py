@@ -17,6 +17,7 @@ from agentsassemble.gui import _make_handler
 from agentsassemble.web.routes.room_settings import register_room_settings_routes
 from agentsassemble.web.router import GuiDeps, RequestContext, Router
 from agentsassemble.persistence.local.identity.repository import IdentityStore
+from agentsassemble.identity.repository import device_auth_key
 from agentsassemble.room_store import RoomStore
 
 
@@ -29,6 +30,7 @@ class FakeHandler:
         device_token: str = "room-settings-test-device",
         local_operator: bool = True,
         host_token: str = "",
+        session_room_id: str = "",
     ) -> None:
         self.path = path
         self.headers = {
@@ -38,6 +40,8 @@ class FakeHandler:
         }
         if host_token:
             self.headers["X-Host-Token"] = host_token
+        if session_room_id:
+            self.headers["Authorization"] = "Bearer room-settings-session"
         self.server = SimpleNamespace(
             server_address=("127.0.0.1" if local_operator else "0.0.0.0", 8765)
         )
@@ -67,6 +71,7 @@ class RoomSettingsHttpTests(unittest.TestCase):
         device_token: str = "room-settings-test-device",
         local_operator: bool = True,
         host_token: str = "",
+        session_room_id: str = "",
     ) -> FakeHandler:
         handler = FakeHandler(
             path,
@@ -74,9 +79,23 @@ class RoomSettingsHttpTests(unittest.TestCase):
             device_token=device_token,
             local_operator=local_operator,
             host_token=host_token,
+            session_room_id=session_room_id,
         )
         parsed = urlparse(path)
         repository = RoomStore(output_root)
+        identities = IdentityStore(output_root / "identity.db")
+        session: dict[str, object] | None = None
+        if session_room_id:
+            user = identities.resolve_credential_user(
+                device_auth_key(device_token),
+                provider="device",
+                participant_type="human",
+            )
+            session = {
+                "agent_id": str((user or {}).get("participant_id") or ""),
+                "meeting_id": session_room_id,
+                "invite_scope": "room",
+            }
         public_invite = PublicInviteRuntime(environ={})
         public_invite.set_host_token("host-secret")
         context = RequestContext(
@@ -84,9 +103,13 @@ class RoomSettingsHttpTests(unittest.TestCase):
             GuiDeps(
                 output_root=output_root,
                 room_repository=repository,
-                identity_backend=IdentityStore(output_root / "identity.db"),
+                identity_backend=identities,
                 public_invite_runtime=public_invite,
-                room_sessions=SimpleNamespace(verify=lambda _token: None),
+                room_sessions=SimpleNamespace(
+                    verify=lambda token: session
+                    if token == "room-settings-session"
+                    else None
+                ),
             ),
             parsed,
             parse_qs(parsed.query),
@@ -176,7 +199,7 @@ class RoomSettingsHttpTests(unittest.TestCase):
             )
             stored_label = repository.room_settings("room-1")["label"]
 
-        self.assertEqual(response.sent_error[0], HTTPStatus.FORBIDDEN)
+        self.assertEqual(response.sent_error[0], HTTPStatus.UNAUTHORIZED)
         self.assertEqual(stored_label, "Original")
 
     def test_remote_host_can_use_the_authorized_global_compatibility_surface(self) -> None:
@@ -218,6 +241,7 @@ class RoomSettingsHttpTests(unittest.TestCase):
                 ).encode(),
                 device_token="device-user-alpha",
                 local_operator=False,
+                session_room_id="room-1",
             )
 
             first = self._dispatch(
@@ -225,12 +249,16 @@ class RoomSettingsHttpTests(unittest.TestCase):
                 "/api/room-settings?room_id=room-1",
                 "GET",
                 device_token="device-user-alpha",
+                local_operator=False,
+                session_room_id="room-1",
             )
             second = self._dispatch(
                 root,
                 "/api/room-settings?room_id=room-1",
                 "GET",
                 device_token="device-user-bravo",
+                local_operator=False,
+                session_room_id="room-1",
             )
 
         self.assertEqual(first.sent_json["settings"]["appearance"]["notifications"], "mute")

@@ -94,6 +94,8 @@ def register_room_history_routes(
         if not room_id:
             ctx.send_error(HTTPStatus.BAD_REQUEST, "room_id is required")
             return
+        if not ctx.require_room_access(room_id):
+            return
         if ctx.send_room_events_sse_stream(
             room_id=room_id,
             cursor=ctx.query_value("cursor") or ctx.last_event_id(),
@@ -225,16 +227,25 @@ def register_room_history_routes(
             "on",
         }
         owner_id = "" if operator_view else _owner_id_for_session(ctx, session)
+        session_room_id = (
+            ""
+            if operator_view or session is None
+            else str(session.get("meeting_id") or "").strip()
+        )
         rooms_by_id = {
             str(room.get("room_id") or ""): _room_payload(room)
             for room in ctx.deps.identities.list_rooms(
                 owner_id=owner_id,
                 include_archived=include_archived,
             )
+            if not session_room_id
+            or str(room.get("room_id") or "") == session_room_id
         }
         for room in ctx.deps.rooms.list_rooms(include_archived=include_archived):
             room_id = str(room.get("room_id") or "")
-            if not room_id:
+            if not room_id or (
+                session_room_id and room_id != session_room_id
+            ):
                 continue
             rooms_by_id[room_id] = {
                 **rooms_by_id.get(room_id, {}),
@@ -255,6 +266,8 @@ def register_room_history_routes(
         room_id = ctx.query_value("room_id") or ctx.query_value("meeting_id")
         if not room_id:
             ctx.send_error(HTTPStatus.BAD_REQUEST, "room_id is required")
+            return
+        if not ctx.require_room_access(room_id):
             return
         try:
             ctx.send_json(

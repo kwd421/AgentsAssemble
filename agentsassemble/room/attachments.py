@@ -55,6 +55,9 @@ class FileAttachmentStore:
     def read_file(self, attachment_id: str) -> tuple[dict[str, object], Path]:
         return read_attachment_file(self.output_root, attachment_id)
 
+    def delete(self, attachment_id: str) -> bool:
+        return delete_attachment(self.output_root, attachment_id)
+
 
 def store_uploaded_attachment(output_root: Path, payload: dict[str, object]) -> dict[str, object]:
     filename = sanitize_attachment_filename(payload.get("filename"))
@@ -140,6 +143,19 @@ def read_attachment_metadata(output_root: Path, attachment_id: str) -> dict[str,
         raise AttachmentError("Attachment metadata is invalid")
     metadata["id"] = normalized_id
     return metadata
+
+
+def delete_attachment(output_root: Path, attachment_id: str) -> bool:
+    """Delete one exact attachment directory after validating its opaque id."""
+
+    normalized_id = normalize_attachment_id(attachment_id)
+    directory = attachment_root(output_root) / normalized_id
+    if not directory.exists():
+        return False
+    if not directory.is_dir() or directory.is_symlink():
+        raise AttachmentError("Attachment storage is invalid")
+    shutil.rmtree(directory)
+    return True
 
 
 def public_attachment_metadata(metadata: dict[str, object]) -> dict[str, object]:

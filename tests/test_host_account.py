@@ -2,6 +2,7 @@ import tempfile
 import unittest
 from http import HTTPStatus
 from pathlib import Path
+from types import SimpleNamespace
 from urllib.parse import parse_qs, urlparse
 
 from agentsassemble import room_invite
@@ -22,6 +23,8 @@ DEVICE_TOKEN = "phone-device-token-1234"
 class FakeHandler:
     def __init__(self, *, headers=None):
         self.headers = dict(headers or {})
+        self.headers.setdefault("Host", "room.example.com")
+        self.server = SimpleNamespace(server_address=("0.0.0.0", 8765))
         self.sent_json = None
         self.sent_error = None
 
@@ -118,6 +121,14 @@ class HostAccountTests(unittest.TestCase):
     def test_host_token_still_passes_require_moderator(self):
         handler = FakeHandler(headers={"X-Host-Token": "host-secret"})
         self.assertTrue(_context(handler, self.deps).require_moderator())
+
+    def test_loopback_operator_does_not_depend_on_the_public_host_token(self):
+        handler = FakeHandler(headers={"Host": "127.0.0.1:8765"})
+        handler.server = SimpleNamespace(server_address=("127.0.0.1", 8765))
+        self.deps.public_invite.set_host_token("different-host-secret")
+
+        self.assertTrue(_context(handler, self.deps).require_moderator())
+        self.assertIsNone(handler.sent_error)
 
     def test_grant_requires_meaningful_device_token(self):
         self.assertIsNone(room_users.grant_operator_to_device("short"))

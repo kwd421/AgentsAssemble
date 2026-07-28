@@ -40,17 +40,15 @@ def register_room_member_routes(router: Router) -> None:
 
     @router.get("/api/room-members")
     def room_members(ctx: RequestContext) -> None:
-        if (
-            not ctx.uses_loopback_host()
-            and ctx.session() is None
-            and not ctx.is_host()
-        ):
-            ctx.send_error(HTTPStatus.UNAUTHORIZED, "session token required")
+        meeting_id = ctx.query_value("meeting_id")
+        if not ctx.require_room_access(meeting_id):
             return
-        ctx.send_json(room_members_response(ctx, ctx.query_value("meeting_id")))
+        ctx.send_json(room_members_response(ctx, meeting_id))
 
     @router.post("/api/room-members")
     def room_members_upsert(ctx: RequestContext) -> None:
+        if not ctx.is_local_operator() and not ctx.require_moderator():
+            return
         payload = ctx.read_json_body()
         if payload is None:
             return
