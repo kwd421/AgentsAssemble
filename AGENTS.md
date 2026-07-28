@@ -248,6 +248,37 @@ similarly meaningful contract. If the test would still pass while the actual
 user workflow is broken, it is not sufficient evidence and usually should not
 exist.
 
+### Test Admission Rule
+
+Treat test creation as a claim that must be falsified, not as a default coding
+step. This rule remains in force after chat compaction, task handoff, and a new
+agent taking over.
+
+Before adding or materially changing a test, identify all four of these:
+
+1. The product or system contract being protected.
+2. The concrete regression that could violate it.
+3. The public boundary or durable state where the failure is observed.
+4. The production change or controlled mutation that would make the test fail.
+
+Do not add the test if any answer is missing. For a bug fix, run the regression
+test against the unfixed behavior and record the expected failure before making
+it pass. For behavior that already works, prove the test's sensitivity with a
+temporary controlled mutation of the owning behavior, then restore that
+mutation before committing. Never commit a mutation used only for this proof.
+
+Assertions on names, copy, constants, source text, exports, mock calls, or the
+mere absence of an exception are not behavioral proof. A helper, fixture,
+mixin, subprocess, browser script, or generated test does not relax this rule;
+its final oracle must still observe the contract at the boundary that owns it.
+
+An agent must not weaken the quality gate, narrow its selected diff, add an
+exception, or modify CI so that a test written in the same task can pass.
+Changing `scripts/check_test_quality.py`,
+`tests/test_quality_exceptions.toml`, or the `test-quality` CI job requires an
+explicit user request naming that gate change; a general request to fix tests,
+make CI green, or finish a feature is not permission.
+
 Every added or modified Python test must pass
 `python3 scripts/check_test_quality.py --base <comparison-commit>`. The CI
 test-quality job applies this gate to the complete pull-request or push diff.

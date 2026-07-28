@@ -61,11 +61,11 @@ restart, reconnect, room switching, and refresh.
 
 ### A. Security and transport
 
-- [ ] Reject multiline or otherwise ambiguous Antigravity permission commands
+- [x] Reject multiline or otherwise ambiguous Antigravity permission commands
       before terminal auto-approval.
-- [ ] Bound and validate HTTP JSON `Content-Length`, including negative and
+- [x] Bound and validate HTTP JSON `Content-Length`, including negative and
       non-numeric values.
-- [ ] Bound the aggregate size and fragment count of one WebSocket message.
+- [x] Bound the aggregate size and fragment count of one WebSocket message.
 - [ ] Make `WsTicketStore` thread-safe.
 - [ ] Close partially constructed WebSocket clients and upgrade channels on
       failure.
@@ -166,7 +166,8 @@ remaining limitation.
 
 | Commit | Completed scope | Verification | Remaining limitation |
 | --- | --- | --- | --- |
-| pending | Plan and legacy audit record | documentation review | implementation not started |
+| `82ce4c66` | Plan and legacy audit record | documentation review | implementation not started |
+| `6ed536be` | Antigravity multiline command rejection; bounded HTTP JSON bodies; bounded WebSocket aggregate messages | `python3 -m unittest tests.test_terminal_interactions tests.test_gui_router tests.test_room_websocket tests.test_web_transport_package`; `python3 -m unittest tests.test_gui_server tests.test_gui_server_room_routes tests.test_ws_room_session tests.test_antigravity_resident` (524 tests); `python3 scripts/check_test_quality.py --base HEAD`; `make generated-artifacts-check`; `git diff --check` | full-suite and browser verification remain completion-gate work |
 
 ## Resume Rule
 
