@@ -73,6 +73,58 @@ async function openActiveServerSettings(page: import("@playwright/test").Page) {
   await page.getByRole("menuitem", { name: "서버 설정", exact: true }).click();
 }
 
+test("leaves server voice presence when the user navigates away from a joined channel", async ({
+  page,
+}) => {
+  await installHostCredential(page);
+  await page.goto("/");
+  await page.getByRole("button", { name: "#general", exact: true }).click();
+
+  await page.getByRole("button", { name: "채널 만들기" }).click();
+  const dialog = page.getByRole("dialog", { name: "채널 만들기" });
+  await dialog.getByRole("radio", { name: /^음성/ }).check();
+  await dialog.getByRole("textbox", { name: "채널 이름" }).fill("이탈 정리 검증");
+  await dialog.getByRole("button", { name: "만들기", exact: true }).click();
+  await page.getByRole("button", { name: "음성 참여" }).click();
+  await expect(page.getByRole("button", { name: "나가기" })).toBeVisible();
+
+  const channelsResponse = await page.request.get("/api/room-channels?meeting_id=general");
+  expect(channelsResponse.ok()).toBe(true);
+  const channelsPayload = (await channelsResponse.json()) as {
+    channels?: Array<{ id?: string; name?: string }>;
+  };
+  const channelId = String(
+    (channelsPayload.channels || []).find((channel) => channel.name === "이탈 정리 검증")?.id || ""
+  );
+  expect(channelId).not.toBe("");
+
+  const voiceParticipants = async () => {
+    const response = await page.request.get(
+      `/api/room/voice?channel_id=${encodeURIComponent(channelId)}&meeting_id=general`
+    );
+    expect(response.ok()).toBe(true);
+    const payload = (await response.json()) as { participants?: unknown[] };
+    return payload.participants || [];
+  };
+  await expect.poll(voiceParticipants).toHaveLength(1);
+
+  await page.getByRole("button", { name: "#general", exact: true }).click();
+  await expect.poll(voiceParticipants).toHaveLength(0);
+
+  const deleteResponse = await page.request.post("/api/room-channels", {
+    headers: {
+      "Content-Type": "application/json",
+      "X-Host-Token": E2E_HOST_TOKEN,
+    },
+    data: {
+      meeting_id: "general",
+      action: "delete",
+      channel_id: channelId,
+    },
+  });
+  expect(deleteResponse.ok()).toBe(true);
+});
+
 test("keeps ordinary invites separate from one-time cross-origin operator pairing", async ({
   browser,
   page,

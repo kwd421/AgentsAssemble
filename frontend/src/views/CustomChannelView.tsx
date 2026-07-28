@@ -227,6 +227,7 @@ function VoiceChannelBody({
   const [connected, setConnected] = useState(false);
   const [selfMuted, setSelfMuted] = useState(false);
   const [actionError, setActionError] = useState("");
+  const activeConnectionRef = useRef<Parameters<typeof leaveVoiceChannel>[0] | null>(null);
 
   const tokenOpt = sessionToken || undefined;
   const presenceFetcher = useCallback(
@@ -245,27 +246,41 @@ function VoiceChannelBody({
         meetingId,
         name: localDisplayName || undefined,
         muted: selfMuted,
-      }).then(() => refresh());
+      })
+        .then(() => refresh())
+        .catch((err) => {
+          setActionError(err instanceof Error ? err.message : "음성 채널 연결을 유지하지 못했습니다");
+        });
     };
     const id = window.setInterval(beat, 20000);
     return () => window.clearInterval(id);
   }, [connected, channel.id, tokenOpt, meetingId, localDisplayName, selfMuted, refresh]);
 
-  // Leave when the channel changes or the view unmounts while connected.
+  // The ref owns the exact successful join identity. Render state is not a
+  // reliable cleanup source because an effect cleanup closes over an earlier
+  // render, and the room/channel identity can change before it runs.
   useEffect(() => {
+    setConnected(false);
+    setSelfMuted(false);
+    setActionError("");
     return () => {
-      if (connected) {
-        void leaveVoiceChannel({ channelId: channel.id, sessionToken: tokenOpt, meetingId });
-      }
+      const connection = activeConnectionRef.current;
+      activeConnectionRef.current = null;
+      if (connection) void leaveVoiceChannel(connection);
     };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [channel.id]);
+  }, [channel.id, meetingId, tokenOpt]);
 
   async function toggleConnected() {
     setActionError("");
     try {
       if (connected) {
-        await leaveVoiceChannel({ channelId: channel.id, sessionToken: tokenOpt, meetingId });
+        const connection = activeConnectionRef.current || {
+          channelId: channel.id,
+          sessionToken: tokenOpt,
+          meetingId,
+        };
+        await leaveVoiceChannel(connection);
+        activeConnectionRef.current = null;
         setConnected(false);
       } else {
         await joinVoiceChannel({
@@ -275,6 +290,11 @@ function VoiceChannelBody({
           name: localDisplayName || undefined,
           muted: selfMuted,
         });
+        activeConnectionRef.current = {
+          channelId: channel.id,
+          sessionToken: tokenOpt,
+          meetingId,
+        };
         setConnected(true);
       }
       refresh();
