@@ -35,6 +35,24 @@ export default function SessionOnlyMemberDetails({
   onActivityVisibilityChange?: (session: RoomAgentSession, visible: boolean) => void;
 }) {
   const [sessionActionBusy, setSessionActionBusy] = useState(false);
+  const [sessionActionStatus, setSessionActionStatus] = useState("");
+
+  async function kickParticipant() {
+    if (!onParticipantKick || sessionActionBusy) return;
+    if (!window.confirm(`${entry.displayName}을 이 방에서 추방할까요?`)) return;
+    setSessionActionBusy(true);
+    setSessionActionStatus("");
+    try {
+      await onParticipantKick(entry.id);
+      onClose();
+    } catch (error) {
+      setSessionActionStatus(
+        error instanceof Error ? error.message : "멤버를 추방하지 못했습니다"
+      );
+    } finally {
+      setSessionActionBusy(false);
+    }
+  }
 
   return (
     <>
@@ -53,17 +71,16 @@ export default function SessionOnlyMemberDetails({
             className="dc-member-session-button"
             data-variant="danger"
             disabled={sessionActionBusy}
-            onClick={() => {
-              if (!window.confirm(`${entry.displayName}을 이 방에서 추방할까요?`)) return;
-              setSessionActionBusy(true);
-              void Promise.resolve(onParticipantKick(entry.id))
-                .then(onClose)
-                .finally(() => setSessionActionBusy(false));
-            }}
+            onClick={() => void kickParticipant()}
           >
             <LogOut size={15} />
             추방
           </button>
+          {sessionActionStatus && (
+            <p className="dc-member-action-status preserve-words" role="alert">
+              {sessionActionStatus}
+            </p>
+          )}
         </section>
       )}
     </>

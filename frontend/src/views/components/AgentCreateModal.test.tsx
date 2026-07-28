@@ -7,12 +7,14 @@ import AgentCreateModal from "./AgentCreateModal";
 
 const apiMocks = vi.hoisted(() => ({
   chooseLocalWorkspace: vi.fn(),
+  deleteDeepSeekCredential: vi.fn(),
   fetchDeepSeekCredentialStatus: vi.fn(),
 }));
 
 vi.mock("../../api", async (importOriginal) => ({
   ...(await importOriginal<typeof import("../../api")>()),
   chooseLocalWorkspace: apiMocks.chooseLocalWorkspace,
+  deleteDeepSeekCredential: apiMocks.deleteDeepSeekCredential,
   fetchDeepSeekCredentialStatus: apiMocks.fetchDeepSeekCredentialStatus,
 }));
 
@@ -29,6 +31,7 @@ beforeEach(() => {
     configured: false,
     source: "missing",
   });
+  apiMocks.deleteDeepSeekCredential.mockReset();
 });
 
 function primaryActionButton(): HTMLButtonElement {
@@ -489,6 +492,38 @@ describe("AgentCreateModal", () => {
     );
 
     expect((await screen.findByLabelText("API 키") as HTMLInputElement).value).toBe("");
+  });
+
+  it("keeps credential deletion retryable when the secure store rejects it", async () => {
+    apiMocks.fetchDeepSeekCredentialStatus.mockResolvedValue({
+      configured: true,
+      source: "keyring",
+    });
+    apiMocks.deleteDeepSeekCredential.mockRejectedValue(
+      new Error("secure store unavailable")
+    );
+    render(
+      <AgentCreateModal
+        open
+        meetingId="room-a"
+        roomLabel="Room A"
+        catalogRevision="cat-secret"
+        providers={[deepSeekProvider()]}
+        onClose={() => undefined}
+        onCreate={vi.fn()}
+      />
+    );
+
+    await userEvent.click(screen.getByRole("listitem", { name: "DeepSeek" }));
+    const deleteButton = await screen.findByRole("button", { name: "저장 키 삭제" });
+    await userEvent.click(deleteButton);
+
+    await waitFor(() =>
+      expect(screen.getByText("secure store unavailable")).toBeTruthy()
+    );
+    expect(screen.getByRole("dialog", { name: "에이전트 추가" })).toBeTruthy();
+    expect((deleteButton as HTMLButtonElement).disabled).toBe(false);
+    expect(screen.getByText(/키 설정됨/)).toBeTruthy();
   });
 });
 

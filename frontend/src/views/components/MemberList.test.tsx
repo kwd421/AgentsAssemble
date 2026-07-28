@@ -77,6 +77,51 @@ describe("MemberList component wiring", () => {
     expect(within(dialog).queryByRole("button", { name: "세션 삭제" })).toBeNull();
   });
 
+  it("keeps a session-only member open and retryable when moderation fails", async () => {
+    const onParticipantKick = vi.fn().mockRejectedValue(
+      new Error("moderation service unavailable")
+    );
+    const confirm = vi.spyOn(window, "confirm").mockReturnValue(true);
+    render(
+      <MemberList
+        agents={[]}
+        members={[
+          {
+            meeting_id: "room-1",
+            participant_id: "agent-1",
+            display_name: "Agent One",
+            role: "agent",
+            participant_type: "subscription_ai",
+            provider_kind: "codex",
+            connection_kind: "agent_session",
+            owner_id: "operator-local",
+            status: "joined",
+            source: "agent_session",
+            created_at: "",
+            updated_at: "",
+          },
+        ]}
+        agentSessions={[SESSION]}
+        roomId="room-1"
+        roomName="Room One"
+        canModerate
+        onParticipantKick={onParticipantKick}
+      />
+    );
+
+    fireEvent.click(screen.getByText("Agent One"));
+    const dialog = screen.getByRole("dialog", { name: "Agent One" });
+    const kickButton = within(dialog).getByRole("button", { name: "추방" });
+    fireEvent.click(kickButton);
+
+    await waitFor(() =>
+      expect(within(dialog).getByText("moderation service unavailable")).toBeTruthy()
+    );
+    expect((kickButton as HTMLButtonElement).disabled).toBe(false);
+    expect(screen.getByRole("dialog", { name: "Agent One" })).toBeTruthy();
+    confirm.mockRestore();
+  });
+
   it("keeps the canonical host in the people group for an invited browser viewer", () => {
     const members: RoomMember[] = [
       {

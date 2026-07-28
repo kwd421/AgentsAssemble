@@ -229,6 +229,21 @@ export default function AgentCreateModal({
     }
   }
 
+  async function deleteDeepSeekKey() {
+    if (credentialBusy) return;
+    setCredentialBusy(true);
+    setStatus("");
+    try {
+      setCredentialStatus(await deleteDeepSeekCredential());
+      setDeepSeekKey("");
+      setStatus("DeepSeek 저장 키를 삭제했습니다");
+    } catch (error) {
+      setStatus(error instanceof Error ? error.message : "DeepSeek 키 삭제 실패");
+    } finally {
+      setCredentialBusy(false);
+    }
+  }
+
   async function pickWorkspace() {
     if (workspaceBusy || existingSessionId) return;
     setWorkspaceBusy(true);
@@ -401,15 +416,7 @@ export default function AgentCreateModal({
                     <button
                       type="button"
                       disabled={credentialBusy}
-                      onClick={() => {
-                        setCredentialBusy(true);
-                        void deleteDeepSeekCredential()
-                          .then((next) => {
-                            setCredentialStatus(next);
-                            setDeepSeekKey("");
-                          })
-                          .finally(() => setCredentialBusy(false));
-                      }}
+                      onClick={() => void deleteDeepSeekKey()}
                     >
                       저장 키 삭제
                     </button>

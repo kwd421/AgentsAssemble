@@ -1,12 +1,12 @@
 {
  "readme": "AgentsAssemble codebase map. Regenerate with `make codebase-map`; verify committed outputs with `make codebase-map-verify`. modules[] columns: name, path, package, domain, classification, migration_status, lines, docstring, imports[], imported_by[] (indexes into modules), classes[[name, [[base, defining_module], ...]]] (best-effort, top-level classes only). frontend[] columns: path, group, lines, doc, imports[], imported_by[] (indexes into frontend). package_edges go importer -> dependency with module-import counts; `points` is the precomputed polyline for that edge and `intra_cycle` marks imports whose endpoints share one cycle group. graph{} holds the layered package drawing: layers[] top-to-bottom (each with members[] package ids, member_count, and the dominant domain), (a package sits below everything importing it), clusters[] are mutually dependent packages (import cycles at package level) drawn as one labelled block, plus width/height of the drawing. health{} ranks findings for a reader who has to act: cycles[] (mutually dependent packages, with the lines they hold), leaning_on_retiring[] (current modules importing legacy/compatibility modules - the reason legacy cannot be deleted), highest_leverage_migrations[] (retiring modules with the most current importers), unreferenced_shims[] (compatibility modules with no importer in agentsassemble/ and no reference in tests/; callers outside this repository are not visible, so verify before deleting), and hotspots[] (largest modules). health.scope states exactly what was measured. class_graph{} is the UML generalization DAG over base classes that resolve inside the repo: edges go base -> subclass, so a subclass always sits below the class it extends. Coordinates in graph and class_graph are laid out with a Sugiyama pipeline (cycle condensation, Coffman-Graham layering, dummy-node edge routing, median/transpose crossing reduction) and are deterministic.",
- "generated_at": "2026-07-28T14:29:30Z",
+ "generated_at": "2026-07-28T14:35:00Z",
  "fingerprint": "83f4bcdd2908b8d7",
  "stats": {
   "backend_modules": 789,
   "backend_lines": 130237,
   "frontend_files": 151,
-  "frontend_lines": 39681,
+  "frontend_lines": 39785,
   "packages": 30,
   "import_cycles": 0,
   "classifications": {
@@ -588,7 +588,7 @@
    "kind": "frontend",
    "doc": "Top-level room views rendered by the shell.",
    "files": 65,
-   "lines": 15428,
+   "lines": 15532,
    "domains": {},
    "classes": {},
    "x": 558.0,
@@ -3713,7 +3713,7 @@
      "fe:views"
     ],
     "internal_edges": 15,
-    "lines": 39681,
+    "lines": 39785,
     "heaviest": "fe:views"
    }
   ],
@@ -23624,7 +23624,7 @@
   [
    "frontend/src/views/components/AgentCreateModal.test.tsx",
    "views",
-   622,
+   657,
    "",
    [
     2,
@@ -23636,7 +23636,7 @@
   [
    "frontend/src/views/components/AgentCreateModal.tsx",
    "views",
-   565,
+   572,
    "",
    [
     2,
@@ -23926,7 +23926,7 @@
   [
    "frontend/src/views/components/MemberList.test.tsx",
    "views",
-   219,
+   264,
    "",
    [
     2,
@@ -24326,7 +24326,7 @@
   [
    "frontend/src/views/components/member/SessionOnlyMemberDetails.tsx",
    "views",
-   71,
+   88,
    "",
    [
     2,
@@ -24508,7 +24508,7 @@
    "name": "frontend/src",
    "note": "React room client (TS/TSX)",
    "files": 151,
-   "lines": 39681
+   "lines": 39785
   },
   {
    "name": "tests",
@@ -24526,7 +24526,7 @@
    "name": "docs",
    "note": "Product and architecture docs",
    "files": 79,
-   "lines": 29548
+   "lines": 29549
   },
   {
    "name": "configs",
