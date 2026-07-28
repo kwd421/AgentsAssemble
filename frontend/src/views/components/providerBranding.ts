@@ -10,6 +10,7 @@ export type ProviderBrandKey =
 export type ProviderBrand = {
   label: string;
   background: string;
+  foreground: string;
 };
 
 const PROVIDER_ALIASES: Record<string, ProviderBrandKey> = {
@@ -35,31 +36,38 @@ const PROVIDER_ALIASES: Record<string, ProviderBrandKey> = {
 export const PROVIDER_BRANDS: Record<ProviderBrandKey, ProviderBrand> = {
   codex: {
     label: "OpenAI",
-    background: "linear-gradient(145deg, #19c37d, #0a8f68)",
+    background: "#ffffff",
+    foreground: "#0a8f68",
   },
   antigravity: {
     label: "Google Gemini",
-    background: "linear-gradient(145deg, #3186ff 8%, #8d64ff 56%, #dc6bca)",
+    background: "#ffffff",
+    foreground: "#7257d9",
   },
   grok: {
     label: "Grok",
-    background: "linear-gradient(145deg, #252a50 12%, #684dff)",
+    background: "#ffffff",
+    foreground: "#171717",
   },
   claude: {
     label: "Claude",
-    background: "linear-gradient(145deg, #e48b6c, #c65f40)",
+    background: "#ffffff",
+    foreground: "#c65f40",
   },
   cursor: {
     label: "Cursor",
-    background: "linear-gradient(145deg, #2b3045 12%, #5068ed)",
+    background: "#ffffff",
+    foreground: "#2b3045",
   },
   opencode: {
     label: "OpenCode",
-    background: "linear-gradient(145deg, #254331 12%, #32a65a)",
+    background: "#ffffff",
+    foreground: "#238149",
   },
   deepseek: {
     label: "DeepSeek",
-    background: "linear-gradient(145deg, #6280ff, #3651d6)",
+    background: "#ffffff",
+    foreground: "#4366e8",
   },
 };
 

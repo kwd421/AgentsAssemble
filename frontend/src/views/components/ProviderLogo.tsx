@@ -39,6 +39,7 @@ export default function ProviderLogo({
         width: size,
         height: size,
         background: brand.background,
+        color: brand.foreground,
       }}
     >
       <svg viewBox="0 0 24 24" fill="currentColor" fillRule="evenodd" focusable="false">
