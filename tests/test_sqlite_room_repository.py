@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import sqlite3
 import tempfile
 import unittest
 from contextlib import closing
@@ -139,6 +140,81 @@ class SQLiteRoomRepositoryContractTests(RoomRepositoryContractMixin, unittest.Te
         self.assertEqual(self.repository.session("deleted-room", "late-agent"), {})
         self.assertEqual(self.repository.read_events("deleted-room"), [])
         self.assertTrue(self.repository.room_is_deleted("deleted-room"))
+
+    def test_participant_status_rolls_back_when_lifecycle_event_cannot_be_recorded(self) -> None:
+        self.repository.create_room("participant-lifecycle")
+        self.repository.upsert_participant(
+            "participant-lifecycle",
+            {
+                "participant_id": "agent-a",
+                "display_name": "Agent A",
+                "participant_type": "agent",
+            },
+        )
+        self.repository.upsert_session(
+            "participant-lifecycle",
+            {
+                "session_id": "session-a",
+                "participant_id": "agent-a",
+                "status": "attached",
+                "runtime_status": "idle",
+            },
+        )
+        with closing(open_room_database(self.repository.database_path)) as connection:
+            connection.execute(
+                """CREATE TRIGGER reject_participant_kicked
+                   BEFORE INSERT ON room_events
+                   WHEN NEW.event_type = 'participant_kicked'
+                   BEGIN
+                       SELECT RAISE(ABORT, 'participant lifecycle event rejected');
+                   END"""
+            )
+
+        with self.assertRaisesRegex(sqlite3.IntegrityError, "participant lifecycle event rejected"):
+            self.repository.set_participant_status(
+                "participant-lifecycle",
+                "agent-a",
+                "kicked",
+                reason="test rejection",
+            )
+
+        self.assertEqual(
+            self.repository.participant("participant-lifecycle", "agent-a")["status"],
+            "joined",
+        )
+        self.assertEqual(
+            self.repository.session("participant-lifecycle", "session-a")["status"],
+            "attached",
+        )
+        self.assertNotIn(
+            "participant_kicked",
+            [event["type"] for event in self.repository.read_events("participant-lifecycle")],
+        )
+
+    def test_room_status_rolls_back_when_lifecycle_event_cannot_be_recorded(self) -> None:
+        self.repository.create_room("room-lifecycle", label="Lifecycle")
+        with closing(open_room_database(self.repository.database_path)) as connection:
+            connection.execute(
+                """CREATE TRIGGER reject_room_archived
+                   BEFORE INSERT ON room_events
+                   WHEN NEW.event_type = 'room_archived'
+                   BEGIN
+                       SELECT RAISE(ABORT, 'room lifecycle event rejected');
+                   END"""
+            )
+
+        with self.assertRaisesRegex(sqlite3.IntegrityError, "room lifecycle event rejected"):
+            self.repository.set_room_status("room-lifecycle", "archived")
+
+        self.assertEqual(self.repository.room("room-lifecycle")["status"], "active")
+        self.assertIn(
+            "room-lifecycle",
+            [room["room_id"] for room in self.repository.list_rooms()],
+        )
+        self.assertNotIn(
+            "room_archived",
+            [event["type"] for event in self.repository.read_events("room-lifecycle")],
+        )
 
 
 if __name__ == "__main__":

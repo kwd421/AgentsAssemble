@@ -338,6 +338,7 @@ class CanonicalRoomEventStoreTests(unittest.TestCase):
             root = Path(temp_dir)
             first_store = RoomStore(root)
             second_store = RoomStore(root)
+            first_store.create_room("general")
             received: list[dict[str, object]] = []
             remove_listener = first_store.add_event_listener("general", received.append)
 
@@ -358,7 +359,7 @@ class CanonicalRoomEventStoreTests(unittest.TestCase):
             remove_listener()
             third = second_store.append_event("general", "system", content="third")
 
-        self.assertEqual([first["seq"], second["seq"], third["seq"]], [1, 2, 3])
+        self.assertEqual([first["seq"], second["seq"], third["seq"]], [2, 3, 4])
         self.assertEqual([event["id"] for event in received], [first["id"], second["id"]])
         self.assertEqual(first["actor"], {"participant_id": "human", "participant_type": "human"})
         self.assertEqual(second["actor"], {"participant_id": "codex", "participant_type": "agent"})

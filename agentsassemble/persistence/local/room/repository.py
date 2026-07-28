@@ -125,6 +125,13 @@ class _SQLiteRoomTransaction:
             updates,
         )
 
+    def update_room_status(self, status: str) -> dict[str, object]:
+        return self._store._update_room_status(
+            self._connection,
+            self._room_id,
+            status,
+        )
+
     def create_room(self, *, label: str = "", status: str = "active") -> tuple[dict[str, object], bool]:
         return self._store._create_room(self._connection, self._room_id, label=label, status=status)
 
@@ -154,6 +161,13 @@ class _SQLiteRoomTransaction:
             self._room_id,
             session_id,
             **updates,
+        )
+
+    def detach_participant_sessions(self, participant_id: str) -> list[dict[str, object]]:
+        return self._store._detach_participant_sessions(
+            self._connection,
+            self._room_id,
+            participant_id,
         )
 
     def append_event(self, event_type: str, **payload: object) -> dict[str, object]:
@@ -564,22 +578,25 @@ class RoomStore:
         clean_room_id = _clean_room_id(room_id)
         clean_participant_id = _clean_participant_id(participant_id)
         clean_status = _participant_status(status)
-        updated = self.update_participant_fields(clean_room_id, clean_participant_id, status=clean_status)
-        event_type = {
-            "left": "participant_left",
-            "kicked": "participant_kicked",
-            "exported": "participant_exported",
-            "detached": "session_detached",
-        }.get(clean_status)
-        if event_type:
-            self.append_event(
-                clean_room_id,
-                event_type,
-                participant_id=clean_participant_id,
-                reason=clean_room_text(reason, limit=500),
+        with self.transaction(clean_room_id) as transaction:
+            updated = transaction.update_participant_fields(
+                clean_participant_id,
+                status=clean_status,
             )
-        if clean_status in {"left", "kicked", "exported", "detached"}:
-            self.detach_participant_sessions(clean_room_id, clean_participant_id)
+            event_type = {
+                "left": "participant_left",
+                "kicked": "participant_kicked",
+                "exported": "participant_exported",
+                "detached": "session_detached",
+            }.get(clean_status)
+            if event_type:
+                transaction.append_event(
+                    event_type,
+                    participant_id=clean_participant_id,
+                    reason=clean_room_text(reason, limit=500),
+                )
+            if clean_status in {"left", "kicked", "exported", "detached"}:
+                transaction.detach_participant_sessions(clean_participant_id)
         return updated
 
     def sessions(self, room_id: str) -> list[dict[str, object]]:
@@ -653,18 +670,8 @@ class RoomStore:
     def detach_participant_sessions(self, room_id: str, participant_id: str) -> list[dict[str, object]]:
         clean_room_id = _clean_room_id(room_id)
         clean_participant_id = _clean_participant_id(participant_id)
-        detached: list[dict[str, object]] = []
-        with self._lock, self._write_transaction() as connection:
-            rows = connection.execute(
-                "SELECT data_json FROM agent_sessions WHERE room_id = ? AND participant_id = ? ORDER BY rowid",
-                (clean_room_id, clean_participant_id),
-            ).fetchall()
-            for row in rows:
-                session = _row_payload(row)
-                updated = {**session, "status": "detached", "updated_at": _now()}
-                self._write_session(connection, updated)
-                detached.append(updated)
-        return detached
+        with self.transaction(clean_room_id) as transaction:
+            return transaction.detach_participant_sessions(clean_participant_id)
 
     def append_event(self, room_id: str, event_type: str, **payload: object) -> dict[str, object]:
         clean_room_id = _clean_room_id(room_id)
@@ -910,27 +917,12 @@ class RoomStore:
     def set_room_status(self, room_id: str, status: str) -> dict[str, object]:
         clean_room_id = _clean_room_id(room_id)
         clean_status = _room_status(status)
-        with self._lock, self._write_transaction() as connection:
-            row = connection.execute("SELECT data_json FROM rooms WHERE room_id = ?", (clean_room_id,)).fetchone()
-            room = _row_payload(row)
-            if not room:
-                raise ValueError(f"Room {clean_room_id} was not found.")
-            room = {**room, "status": clean_status, "updated_at": _now()}
-            connection.execute(
-                """UPDATE rooms SET status = ?, archived = ?, updated_at = ?, data_json = ?
-                   WHERE room_id = ?""",
-                (
-                    clean_status,
-                    1 if clean_status == "archived" else 0,
-                    str(room["updated_at"]),
-                    _json_dumps(room),
-                    clean_room_id,
-                ),
-            )
-        if clean_status == "archived":
-            self.append_event(clean_room_id, "room_archived")
-        elif clean_status == "closed":
-            self.append_event(clean_room_id, "room_closed")
+        with self.transaction(clean_room_id) as transaction:
+            room = transaction.update_room_status(clean_status)
+            if clean_status == "archived":
+                transaction.append_event("room_archived")
+            elif clean_status == "closed":
+                transaction.append_event("room_closed")
         return room
 
     def export_participant(self, room_id: str, participant_id: str, *, reason: str = "") -> dict[str, object]:
@@ -1108,6 +1100,33 @@ class RoomStore:
                 ),
             )
         return settings
+
+    def _update_room_status(
+        self,
+        connection: sqlite3.Connection,
+        room_id: str,
+        status: str,
+    ) -> dict[str, object]:
+        row = connection.execute(
+            "SELECT data_json FROM rooms WHERE room_id = ?",
+            (room_id,),
+        ).fetchone()
+        room = _row_payload(row)
+        if not room:
+            raise ValueError(f"Room {room_id} was not found.")
+        room = {**room, "status": status, "updated_at": _now()}
+        connection.execute(
+            """UPDATE rooms SET status = ?, archived = ?, updated_at = ?, data_json = ?
+               WHERE room_id = ?""",
+            (
+                status,
+                1 if status == "archived" else 0,
+                str(room["updated_at"]),
+                _json_dumps(room),
+                room_id,
+            ),
+        )
+        return room
 
     def _write_room_settings(
         self,
@@ -1287,6 +1306,26 @@ class RoomStore:
             (room_id, clean_session_id),
         ).fetchone()
         return _row_payload(row)
+
+    def _detach_participant_sessions(
+        self,
+        connection: sqlite3.Connection,
+        room_id: str,
+        participant_id: str,
+    ) -> list[dict[str, object]]:
+        clean_participant_id = _clean_participant_id(participant_id)
+        rows = connection.execute(
+            """SELECT data_json FROM agent_sessions
+               WHERE room_id = ? AND participant_id = ? ORDER BY rowid""",
+            (room_id, clean_participant_id),
+        ).fetchall()
+        detached: list[dict[str, object]] = []
+        for row in rows:
+            session = _row_payload(row)
+            updated = {**session, "status": "detached", "updated_at": _now()}
+            self._write_session(connection, updated)
+            detached.append(updated)
+        return detached
 
     def _event_by_id(
         self,

@@ -133,6 +133,9 @@ class _PostgresRoomTransaction:
             updates,
         )
 
+    def update_room_status(self, status: str) -> dict[str, object]:
+        return update_room_status(self._connection, self._room_id, status)
+
     def create_room(self, *, label: str = "", status: str = "active") -> tuple[dict[str, object], bool]:
         return create_room_record(self._connection, self._room_id, label=label, status=status)
 
@@ -169,6 +172,13 @@ class _PostgresRoomTransaction:
 
     def update_session_fields(self, session_id: str, **updates: object) -> dict[str, object]:
         return update_session(self._connection, self._room_id, session_id, dict(updates))
+
+    def detach_participant_sessions(self, participant_id: str) -> list[dict[str, object]]:
+        return detach_sessions(
+            self._connection,
+            self._room_id,
+            clean_participant_id(participant_id),
+        )
 
     def append_event(self, event_type: str, **payload: object) -> dict[str, object]:
         event = append_room_event(self._connection, self._room_id, event_type, dict(payload))
@@ -565,7 +575,6 @@ class PostgresRoomRepository:
         clean_participant = clean_participant_id(participant_id)
         clean_status = participant_status(status)
         with self.transaction(clean_room) as transaction:
-            concrete = _require_postgres_transaction(transaction)
             updated = transaction.update_participant_fields(clean_participant, status=clean_status)
             event_type = {
                 "left": "participant_left",
@@ -580,11 +589,7 @@ class PostgresRoomRepository:
                     reason=clean_room_text(reason, limit=500),
                 )
             if clean_status in {"left", "kicked", "exported", "detached"}:
-                detach_sessions(
-                    concrete._connection,
-                    clean_room,
-                    clean_participant,
-                )
+                transaction.detach_participant_sessions(clean_participant)
         return updated
 
     def sessions(self, room_id: str) -> list[dict[str, object]]:
@@ -620,13 +625,8 @@ class PostgresRoomRepository:
     def detach_participant_sessions(self, room_id: str, participant_id: str) -> list[dict[str, object]]:
         clean_room = clean_room_id(room_id)
         clean_participant = clean_participant_id(participant_id)
-        with self._connection() as connection:
-            with connection.transaction():
-                connection.execute(
-                    "SELECT pg_advisory_xact_lock(hashtextextended(%s, 0))",
-                    (clean_room,),
-                )
-                return detach_sessions(connection, clean_room, clean_participant)
+        with self.transaction(clean_room) as transaction:
+            return transaction.detach_participant_sessions(clean_participant)
 
     def command_record(self, room_id: str, principal_id: str, request_id: str) -> dict[str, object]:
         clean_room = clean_room_id(room_id)
@@ -783,8 +783,7 @@ class PostgresRoomRepository:
         clean_id = clean_room_id(room_id)
         clean_status = room_status(status)
         with self.transaction(clean_id) as transaction:
-            concrete = _require_postgres_transaction(transaction)
-            room = update_room_status(concrete._connection, clean_id, clean_status)
+            room = transaction.update_room_status(clean_status)
             if clean_status == "archived":
                 transaction.append_event("room_archived")
             elif clean_status == "closed":
@@ -960,9 +959,3 @@ class PostgresRoomRepository:
         if self.output_root is None:
             raise RuntimeError("This PostgreSQL room repository has no configured media output root.")
         return self.output_root
-
-
-def _require_postgres_transaction(transaction: RoomTransaction) -> _PostgresRoomTransaction:
-    if not isinstance(transaction, _PostgresRoomTransaction):
-        raise TypeError("PostgreSQL repository received an incompatible transaction.")
-    return transaction
