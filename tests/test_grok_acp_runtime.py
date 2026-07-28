@@ -145,8 +145,12 @@ class GrokAcpRuntimeTests(unittest.TestCase):
 
     def test_permission_stages_targeted_room_outbox_write_atomically(self):
         with tempfile.TemporaryDirectory() as temp_dir:
-            runtime = self.make_runtime(Path(temp_dir))
-            runtime.room_portal = Mock()
+            root = Path(temp_dir)
+            portal = RoomPortal(root / "portal", participant_id="grok")
+            portal.prepare()
+            portal.begin_observation("turn-targeted")
+            runtime = self.make_runtime(root)
+            runtime.room_portal = portal
             runtime._session_id = "session-1"
             runtime._active_room_observation = True
             target_path = f"{VIRTUAL_ROOM_DIRECT_OUTBOX_PREFIX}sonnet.txt"
@@ -161,7 +165,7 @@ class GrokAcpRuntimeTests(unittest.TestCase):
                         "title": "write",
                         "rawInput": {
                             "file_path": target_path,
-                            "content": "소넷, 다음 판단을 부탁해.",
+                            "content": "Sonnet, please make the next judgment.",
                         },
                     },
                     "options": [
@@ -174,10 +178,10 @@ class GrokAcpRuntimeTests(unittest.TestCase):
             with patch.object(runtime, "_send_json"):
                 runtime._respond_to_permission_request(request)
 
-        runtime.room_portal.acp_write_text.assert_called_once_with(
-            target_path,
-            "소넷, 다음 판단을 부탁해.",
-        )
+            publication = portal.consume_publication_result("turn-targeted")
+
+        self.assertEqual(publication.target_agent_id, "sonnet")
+        self.assertEqual(publication.content, "Sonnet, please make the next judgment.")
 
     def test_outbox_is_not_staged_when_request_has_no_allow_once_option(self):
         with tempfile.TemporaryDirectory() as temp_dir:
@@ -342,6 +346,8 @@ class GrokAcpRuntimeTests(unittest.TestCase):
             send_json.call_args.args[0]["result"],
             {"outcome": {"outcome": "selected", "optionId": "reject-once"}},
         )
+        self.assertEqual(runtime._permission_request_count, 1)
+        self.assertEqual(runtime._permission_denied_count, 1)
 
     def test_room_roll_permission_is_correlated_to_exact_tool_session_and_turn(self):
         with tempfile.TemporaryDirectory() as temp_dir:

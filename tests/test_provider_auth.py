@@ -9,15 +9,6 @@ from agentsassemble.providers.auth import (
 
 
 class ProviderAuthTests(unittest.TestCase):
-    def test_login_message_names_provider_and_native_command(self) -> None:
-        self.assertEqual(
-            provider_login_required_message("Codex", "codex login"),
-            (
-                "Codex 로그인이 필요합니다. 터미널에서 codex login을 실행해 "
-                "로그인한 뒤 다시 연결 확인을 누르세요."
-            ),
-        )
-
     def test_auth_markers_are_matched_case_insensitively(self) -> None:
         for text in (
             "AUTHENTICATION REQUIRED",

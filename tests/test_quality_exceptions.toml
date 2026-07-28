@@ -6,3 +6,13 @@
 # test_id = "tests.test_example.ExampleTests.test_published_compatibility_import"
 # rules = ["symbol_only"]
 # reason = "Protects the documented plugin import until the compatibility shim is retired."
+
+[[allow]]
+test_id = "tests.test_grok_acp_runtime.GrokAcpRuntimeTests.test_permission_stages_targeted_room_outbox_write_atomically"
+rules = ["private_patch"]
+reason = "Captures the ACP JSON-RPC reply at its transport seam while the real RoomPortal proves the durable targeted outbox publication."
+
+[[allow]]
+test_id = "tests.test_grok_acp_runtime.GrokAcpRuntimeTests.test_permission_rejects_conflicting_command_updates_for_one_tool"
+rules = ["private_patch"]
+reason = "Captures the ACP JSON-RPC rejection at its transport seam and also verifies the runtime permission denial counters."

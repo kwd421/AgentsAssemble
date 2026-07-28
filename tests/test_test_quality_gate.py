@@ -105,6 +105,26 @@ class TestQualityGateTests(unittest.TestCase):
 
         self.assertEqual(rules, {"exact_ui_copy", "symbol_only"})
 
+    def test_korean_protocol_data_and_mixed_behavior_are_not_ui_copy_tests(self) -> None:
+        rules = _rules(
+            """
+            import unittest
+
+            class ExampleTests(unittest.TestCase):
+                def test_round_trip(self):
+                    stored = store_message("자동 응답")
+                    self.assertEqual(stored["content"], "자동 응답")
+                    self.assertEqual(read_message(stored["id"])["id"], stored["id"])
+
+                def test_label_mapping_also_enforces_safe_state(self):
+                    result = summarize_state("waiting")
+                    self.assertEqual(result["label"], "응답 대기")
+                    self.assertEqual(result["pending_count"], 2)
+            """
+        )
+
+        self.assertEqual(rules, set())
+
     def test_runtime_state_boolean_is_not_mistaken_for_symbol_existence(self) -> None:
         rules = _rules(
             """
@@ -135,6 +155,139 @@ class TestQualityGateTests(unittest.TestCase):
         )
 
         self.assertEqual(rules, {"source_text"})
+
+    def test_source_path_alias_is_rejected(self) -> None:
+        rules = _rules(
+            """
+            import unittest
+            from pathlib import Path
+
+            class ExampleTests(unittest.TestCase):
+                def test_aliased_source_read(self):
+                    target = Path("agentsassemble") / "service.py"
+                    source = target.read_text()
+                    self.assertIn("publish", source)
+            """
+        )
+
+        self.assertEqual(rules, {"source_text"})
+
+    def test_tautological_assertions_are_rejected(self) -> None:
+        rules = _rules(
+            """
+            import unittest
+
+            class ExampleTests(unittest.TestCase):
+                def test_constant_truth(self):
+                    self.assertTrue(True)
+
+                def test_same_value(self):
+                    result = execute_workflow()
+                    self.assertEqual(result, result)
+            """
+        )
+
+        self.assertEqual(rules, {"tautological"})
+
+    def test_mock_only_oracle_is_rejected_through_aliases_and_helpers(self) -> None:
+        rules = _rules(
+            """
+            import unittest
+
+            class ExampleTests(unittest.TestCase):
+                def _assert_published(self):
+                    assertion = self.publisher.assert_called_once_with
+                    assertion("room-a")
+
+                def test_publish(self):
+                    run()
+                    self._assert_published()
+            """
+        )
+
+        self.assertEqual(rules, {"mock_only"})
+
+    def test_mock_observation_fields_are_not_behavioral_oracles(self) -> None:
+        rules = _rules(
+            """
+            import unittest
+
+            class ExampleTests(unittest.TestCase):
+                def test_publish(self):
+                    run()
+                    self.assertEqual(self.publisher.call_args.args[0], "room-a")
+            """
+        )
+
+        self.assertEqual(rules, {"mock_only"})
+
+    def test_bare_mock_observation_is_not_a_behavioral_oracle(self) -> None:
+        rules = _rules(
+            """
+            import unittest
+
+            class ExampleTests(unittest.TestCase):
+                def test_publish(self):
+                    run()
+                    assert self.publisher.called
+            """
+        )
+
+        self.assertEqual(rules, {"mock_only"})
+
+    def test_private_patch_is_rejected_through_import_and_target_aliases(self) -> None:
+        rules = _rules(
+            """
+            import unittest
+            from unittest.mock import patch as replace
+
+            class ExampleTests(unittest.TestCase):
+                def test_private_call(self):
+                    target = "agentsassemble.service._publish"
+                    with replace(target):
+                        run()
+                    self.assertEqual(read_state(), "unchanged")
+            """
+        )
+
+        self.assertEqual(rules, {"private_patch"})
+
+    def test_module_helper_private_patch_is_part_of_the_test_boundary(self) -> None:
+        rules = _rules(
+            """
+            import unittest
+            from unittest.mock import patch
+
+            def exercise_private_path():
+                with patch("agentsassemble.service._publish"):
+                    run()
+
+            class ExampleTests(unittest.TestCase):
+                def test_publish(self):
+                    exercise_private_path()
+                    self.assertEqual(read_state(), "unchanged")
+            """
+        )
+
+        self.assertEqual(rules, {"private_patch"})
+
+    def test_class_setup_private_patch_is_part_of_each_test_boundary(self) -> None:
+        rules = _rules(
+            """
+            import unittest
+            from unittest.mock import patch
+
+            class ExampleTests(unittest.TestCase):
+                def setUp(self):
+                    self.patcher = patch("agentsassemble.service._publish")
+                    self.patcher.start()
+
+                def test_publish(self):
+                    self.assertEqual(read_state(), "unchanged")
+            """
+        )
+
+        self.assertEqual(rules, {"private_patch"})
 
     def test_exception_requires_a_specific_reason_and_suppresses_only_named_rule(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:
@@ -186,12 +339,13 @@ class TestQualityGateTests(unittest.TestCase):
             with self.assertRaisesRegex(ValueError, "Unknown test-quality"):
                 load_exceptions(path)
 
-    def test_git_diff_selects_only_changed_test_function_lines(self) -> None:
+    def test_git_diff_audits_the_whole_test_file_when_a_helper_changes(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:
             root = Path(temp_dir)
             (root / "tests").mkdir()
             (root / "tests" / "test_sample.py").write_text(
-                "def test_original():\n    assert True\n",
+                "def helper():\n    return 'before'\n\n"
+                "def test_original():\n    assert result() == 'created'\n",
                 encoding="utf-8",
             )
             self._git(root, "init")
@@ -201,14 +355,54 @@ class TestQualityGateTests(unittest.TestCase):
             self._git(root, "commit", "-m", "baseline")
             base = self._git(root, "rev-parse", "HEAD").strip()
             (root / "tests" / "test_sample.py").write_text(
-                "def test_original():\n    assert True\n\n"
-                "def test_added():\n    assert result() == 'created'\n",
+                "def helper():\n    return 'after'\n\n"
+                "def test_original():\n    assert result() == 'created'\n",
                 encoding="utf-8",
             )
 
             changed = changed_python_test_lines(root, base=base)
 
-        self.assertEqual(changed, {"tests/test_sample.py": frozenset({3, 4, 5})})
+        self.assertEqual(changed, {"tests/test_sample.py": None})
+
+    def test_git_diff_selects_support_contracts_and_deletion_only_changes(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            (root / "tests").mkdir()
+            contract = root / "tests" / "repository_contract.py"
+            removed = root / "tests" / "test_removed.py"
+            contract.write_text(
+                "class RepositoryContract:\n"
+                "    def test_round_trip(self):\n"
+                "        assert read(write('value')) == 'value'\n",
+                encoding="utf-8",
+            )
+            removed.write_text(
+                "def test_removed():\n    assert workflow().status == 'done'\n",
+                encoding="utf-8",
+            )
+            self._git(root, "init")
+            self._git(root, "config", "user.email", "tests@example.invalid")
+            self._git(root, "config", "user.name", "Tests")
+            self._git(root, "add", "tests")
+            self._git(root, "commit", "-m", "baseline")
+            base = self._git(root, "rev-parse", "HEAD").strip()
+            contract.write_text(
+                "class RepositoryContract:\n"
+                "    def test_round_trip(self):\n"
+                "        assert read(write('next')) == 'next'\n",
+                encoding="utf-8",
+            )
+            removed.unlink()
+
+            changed = changed_python_test_lines(root, base=base)
+
+        self.assertEqual(
+            changed,
+            {
+                "tests/repository_contract.py": None,
+                "tests/test_removed.py": frozenset(),
+            },
+        )
 
     def _git(self, root: Path, *arguments: str) -> str:
         import subprocess

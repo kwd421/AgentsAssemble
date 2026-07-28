@@ -265,15 +265,30 @@ class PostgresRoomRepositoryContractTests(RoomRepositoryContractMixin, unittest.
         self.assertNotIn(self.test_dsn, repr(self.repository))
 
     def test_repository_constructor_does_not_migrate_by_default(self) -> None:
-        with patch(
-            "agentsassemble.persistence.postgres.room.repository."
-            "upgrade_postgres_room_schema"
-        ) as upgrade:
-            repository = PostgresRoomRepository(self.test_dsn)
-
-        repository.close()
-
-        upgrade.assert_not_called()
+        schema_name = f"agentsassemble_unmigrated_{uuid4().hex[:12]}"
+        with psycopg.connect(_POSTGRES_DSN, autocommit=True) as connection:
+            connection.execute(
+                sql.SQL("CREATE SCHEMA {}").format(sql.Identifier(schema_name))
+            )
+        repository = None
+        try:
+            unmigrated_dsn = _dsn_with_search_path(_POSTGRES_DSN, schema_name)
+            repository = PostgresRoomRepository(unmigrated_dsn)
+            repository.close()
+            repository = None
+            with psycopg.connect(_POSTGRES_DSN) as connection:
+                table_count = connection.execute(
+                    "SELECT COUNT(*) FROM pg_tables WHERE schemaname = %s",
+                    (schema_name,),
+                ).fetchone()[0]
+            self.assertEqual(table_count, 0)
+        finally:
+            if repository is not None:
+                repository.close()
+            with psycopg.connect(_POSTGRES_DSN, autocommit=True) as connection:
+                connection.execute(
+                    sql.SQL("DROP SCHEMA {} CASCADE").format(sql.Identifier(schema_name))
+                )
 
     def test_factory_builds_postgres_without_opening_sqlite(self) -> None:
         output_root = Path(self._temporary_directory.name) / "factory"

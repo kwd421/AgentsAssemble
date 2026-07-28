@@ -1400,6 +1400,7 @@ class RoomRealtimeControllerTests(unittest.TestCase):
     def test_server_shutdown_does_not_revoke_external_bridge_access(self):
         identity = _bridge_identity("external-shutdown")
         identity["provider_kind"] = "codex"
+        session_token, _ = self.room_access.sessions.issue(identity)
         self.controller.connect(identity)
         self._command(
             "external-shutdown-ready",
@@ -1408,10 +1409,11 @@ class RoomRealtimeControllerTests(unittest.TestCase):
             identity,
         )
 
-        with patch.object(self.room_access.sessions, "revoke_participant") as revoke_sessions:
-            self.controller.close()
+        self.controller.close()
 
-        revoke_sessions.assert_not_called()
+        retained = self.room_access.sessions.verify(session_token)
+        self.assertIsNotNone(retained)
+        self.assertEqual(retained["agent_id"], "external-shutdown")
 
     def test_external_bridge_ready_requires_requested_model_for_known_provider(self):
         identity = _bridge_identity("external-no-model")

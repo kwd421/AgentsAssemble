@@ -11,12 +11,11 @@ import threading
 ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(ROOT))
 
-from http.server import ThreadingHTTPServer
-
 from agentsassemble.gui import _make_handler
 from agentsassemble.admission.invite import PUBLIC_URL_ENV
 from agentsassemble.providers.bridge_process import NativeCliBridgeProcessManager
 from agentsassemble.room.realtime import NativeCliProviderSpec, RoomRealtimeController
+from agentsassemble.web.http_server import AgentsAssembleHTTPServer
 from tests.room_realtime_test_support import memory_room_access_services
 
 
@@ -55,7 +54,7 @@ def main() -> int:
             bridge_manager=manager,
         )
         manager.set_exit_listener(controller.bridge_process_exited)
-        server = ThreadingHTTPServer(
+        server = AgentsAssembleHTTPServer(
             ("127.0.0.1", port),
             _make_handler(
                 output_root,

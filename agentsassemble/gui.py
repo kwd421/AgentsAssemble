@@ -8,7 +8,7 @@ import urllib.error
 from collections.abc import Callable
 from datetime import datetime
 from http import HTTPStatus
-from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+from http.server import BaseHTTPRequestHandler
 from pathlib import Path
 from urllib.parse import parse_qs, urlparse
 
@@ -26,6 +26,9 @@ from agentsassemble.web.routes.providers import (
     register_provider_routes,
 )
 from agentsassemble.web.routes.gui import register_current_gui_routes
+from agentsassemble.web.http_server import (
+    AgentsAssembleHTTPServer as ThreadingHTTPServer,
+)
 from agentsassemble.application.gui import ApplicationDatabase, GuiApplicationServices
 from agentsassemble.application.gui_runtime import GuiRuntimeDependencies, serve_gui_runtime
 from agentsassemble.application.gui_factory import (

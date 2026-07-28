@@ -181,7 +181,7 @@ class GroupConfigMappingTests(unittest.TestCase):
 
 class ValidationTests(unittest.TestCase):
     def test_known_provider_and_model_pass(self):
-        cli._validate_resident_config(_api_config())  # should not raise
+        self.assertIsNone(cli._validate_resident_config(_api_config()))
 
     def test_unknown_provider_rejected(self):
         with self.assertRaises(ValueError) as ctx:

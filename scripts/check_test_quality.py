@@ -17,11 +17,10 @@ from typing import Iterable, Iterator, Mapping
 
 REPOSITORY_ROOT = Path(__file__).resolve().parents[1]
 DEFAULT_EXCEPTIONS_PATH = REPOSITORY_ROOT / "tests" / "test_quality_exceptions.toml"
-TEST_FILE_PATTERN = re.compile(r"(?:^|/)test_[^/]+\.py$")
+HANGUL_PATTERN = re.compile(r"[\uac00-\ud7a3]")
 HUNK_PATTERN = re.compile(
     r"^@@ -\d+(?:,\d+)? \+(?P<start>\d+)(?:,(?P<count>\d+))? @@"
 )
-HANGUL_PATTERN = re.compile(r"[\uac00-\ud7a3]")
 SOURCE_ROOT_MARKERS = ("agentsassemble/", "frontend/src/", "scripts/")
 KNOWN_RULES = frozenset(
     {
@@ -31,6 +30,34 @@ KNOWN_RULES = frozenset(
         "private_patch",
         "source_text",
         "symbol_only",
+        "tautological",
+    }
+)
+
+MOCK_ASSERTION_NAMES = frozenset(
+    {
+        "assert_called",
+        "assert_called_once",
+        "assert_called_once_with",
+        "assert_called_with",
+        "assert_not_called",
+        "assert_awaited",
+        "assert_awaited_once",
+        "assert_awaited_once_with",
+        "assert_awaited_with",
+        "assert_not_awaited",
+    }
+)
+MOCK_OBSERVATION_ATTRIBUTES = frozenset(
+    {
+        "await_args",
+        "await_args_list",
+        "await_count",
+        "call_args",
+        "call_args_list",
+        "call_count",
+        "called",
+        "mock_calls",
     }
 )
 
@@ -60,12 +87,39 @@ class TestFunction:
         return ".".join(parts)
 
 
-def _call_name(call: ast.Call) -> str:
+def _call_name(call: ast.Call, aliases: Mapping[str, str] | None = None) -> str:
     if isinstance(call.func, ast.Name):
-        return call.func.id
-    if isinstance(call.func, ast.Attribute):
-        return call.func.attr
-    return ""
+        name = call.func.id
+    elif isinstance(call.func, ast.Attribute):
+        name = call.func.attr
+    else:
+        return ""
+    return (aliases or {}).get(name, name)
+
+
+def _import_aliases(tree: ast.Module) -> Mapping[str, str]:
+    aliases: dict[str, str] = {}
+    for statement in tree.body:
+        if not isinstance(statement, ast.ImportFrom):
+            continue
+        for imported in statement.names:
+            aliases[imported.asname or imported.name] = imported.name
+    return aliases
+
+
+def _call_aliases(node: ast.AST) -> Mapping[str, str]:
+    aliases: dict[str, str] = {}
+    for child in ast.walk(node):
+        if not isinstance(child, (ast.Assign, ast.AnnAssign)):
+            continue
+        value = child.value
+        if not isinstance(value, ast.Attribute) or value.attr not in MOCK_ASSERTION_NAMES:
+            continue
+        targets = child.targets if isinstance(child, ast.Assign) else (child.target,)
+        for target in targets:
+            if isinstance(target, ast.Name):
+                aliases[target.id] = value.attr
+    return aliases
 
 
 def _iter_test_functions(path: str, tree: ast.Module) -> Iterator[TestFunction]:
@@ -99,12 +153,67 @@ def _class_helpers(
     return helpers
 
 
-def _assertion_calls(node: ast.AST) -> tuple[ast.Call, ...]:
+def _module_helpers(
+    tree: ast.Module,
+) -> Mapping[str, ast.FunctionDef | ast.AsyncFunctionDef]:
+    return {
+        statement.name: statement
+        for statement in tree.body
+        if isinstance(statement, (ast.FunctionDef, ast.AsyncFunctionDef))
+        and not statement.name.startswith("test_")
+    }
+
+
+def _reachable_test_nodes(
+    test: TestFunction,
+    helpers_by_class: Mapping[str, Mapping[str, ast.FunctionDef | ast.AsyncFunctionDef]],
+    module_helpers: Mapping[str, ast.FunctionDef | ast.AsyncFunctionDef],
+) -> tuple[ast.FunctionDef | ast.AsyncFunctionDef, ...]:
+    helpers = helpers_by_class.get(test.class_name, {})
+    pending: list[ast.FunctionDef | ast.AsyncFunctionDef] = [test.node]
+    if test.class_name:
+        pending.extend(
+            helper
+            for name in ("setUp", "asyncSetUp", "setUpClass")
+            if (helper := helpers.get(name)) is not None
+        )
+    seen: set[str] = set()
+    reachable: list[ast.FunctionDef | ast.AsyncFunctionDef] = []
+    while pending:
+        node = pending.pop()
+        identity = f"{node.name}:{node.lineno}"
+        if identity in seen:
+            continue
+        seen.add(identity)
+        reachable.append(node)
+        for child in ast.walk(node):
+            if not isinstance(child, ast.Call):
+                continue
+            if (
+                isinstance(child.func, ast.Attribute)
+                and isinstance(child.func.value, ast.Name)
+                and child.func.value.id == "self"
+            ):
+                helper = helpers.get(child.func.attr)
+                if helper is not None:
+                    pending.append(helper)
+            elif isinstance(child.func, ast.Name):
+                helper = module_helpers.get(child.func.id)
+                if helper is not None:
+                    pending.append(helper)
+    return tuple(reachable)
+
+
+def _assertion_calls(
+    node: ast.AST,
+    import_aliases: Mapping[str, str] | None = None,
+) -> tuple[ast.Call, ...]:
+    aliases = {**(import_aliases or {}), **_call_aliases(node)}
     calls = []
     for child in ast.walk(node):
         if not isinstance(child, ast.Call):
             continue
-        name = _call_name(child)
+        name = _call_name(child, aliases)
         if name.startswith("assert") or name in {"raises", "fail"}:
             calls.append(child)
     return tuple(calls)
@@ -130,54 +239,50 @@ def _subprocess_check_call(node: ast.AST) -> bool:
     return False
 
 
-def _helper_has_oracle(
-    helper_name: str,
-    helpers: Mapping[str, ast.FunctionDef | ast.AsyncFunctionDef],
-    seen: set[str],
-) -> bool:
-    if helper_name in seen or helper_name not in helpers:
-        return False
-    seen.add(helper_name)
-    helper = helpers[helper_name]
-    if any(isinstance(child, ast.Assert) for child in ast.walk(helper)):
-        return True
-    if _assertion_calls(helper) or _subprocess_check_call(helper):
-        return True
-    return any(
-        _helper_has_oracle(child.func.attr, helpers, seen)
-        for child in ast.walk(helper)
-        if isinstance(child, ast.Call)
-        and isinstance(child.func, ast.Attribute)
-        and isinstance(child.func.value, ast.Name)
-        and child.func.value.id == "self"
-    )
-
-
 def _has_oracle(
-    test: TestFunction,
-    helpers_by_class: Mapping[str, Mapping[str, ast.FunctionDef | ast.AsyncFunctionDef]],
+    nodes: Iterable[ast.AST],
+    import_aliases: Mapping[str, str],
 ) -> bool:
-    if any(isinstance(child, ast.Assert) for child in ast.walk(test.node)):
-        return True
-    if _assertion_calls(test.node) or _subprocess_check_call(test.node):
-        return True
-    helpers = helpers_by_class.get(test.class_name, {})
     return any(
-        _helper_has_oracle(child.func.attr, helpers, set())
-        for child in ast.walk(test.node)
-        if isinstance(child, ast.Call)
-        and isinstance(child.func, ast.Attribute)
-        and isinstance(child.func.value, ast.Name)
-        and child.func.value.id == "self"
+        any(isinstance(child, ast.Assert) for child in ast.walk(node))
+        or bool(_assertion_calls(node, import_aliases))
+        or _subprocess_check_call(node)
+        for node in nodes
     )
 
 
-def _private_patch_targets(node: ast.AST) -> tuple[tuple[int, str], ...]:
+def _string_constants(node: ast.AST) -> Mapping[str, str]:
+    values: dict[str, str] = {}
+    for child in ast.walk(node):
+        if not isinstance(child, (ast.Assign, ast.AnnAssign)):
+            continue
+        if not isinstance(child.value, ast.Constant) or not isinstance(child.value.value, str):
+            continue
+        targets = child.targets if isinstance(child, ast.Assign) else (child.target,)
+        for target in targets:
+            if isinstance(target, ast.Name):
+                values[target.id] = child.value.value
+    return values
+
+
+def _resolved_string(node: ast.AST | None, constants: Mapping[str, str]) -> str:
+    if isinstance(node, ast.Constant) and isinstance(node.value, str):
+        return node.value
+    if isinstance(node, ast.Name):
+        return constants.get(node.id, "")
+    return ""
+
+
+def _private_patch_targets(
+    node: ast.AST,
+    import_aliases: Mapping[str, str],
+) -> tuple[tuple[int, str], ...]:
     targets: list[tuple[int, str]] = []
+    constants = _string_constants(node)
     for child in ast.walk(node):
         if not isinstance(child, ast.Call):
             continue
-        name = _call_name(child)
+        name = _call_name(child, import_aliases)
         if name not in {"patch", "object"}:
             continue
         candidate: ast.AST | None = None
@@ -185,9 +290,9 @@ def _private_patch_targets(node: ast.AST) -> tuple[tuple[int, str], ...]:
             candidate = child.args[0]
         elif name == "object" and len(child.args) >= 2:
             candidate = child.args[1]
-        if not isinstance(candidate, ast.Constant) or not isinstance(candidate.value, str):
+        target = _resolved_string(candidate, constants)
+        if not target:
             continue
-        target = candidate.value
         final_name = target.rsplit(".", 1)[-1]
         if target.startswith("agentsassemble.") and final_name.startswith("_"):
             targets.append((child.lineno, target))
@@ -196,41 +301,117 @@ def _private_patch_targets(node: ast.AST) -> tuple[tuple[int, str], ...]:
     return tuple(targets)
 
 
-def _mock_only_oracle(node: ast.AST) -> bool:
-    assertions = _assertion_calls(node)
-    if not assertions:
-        return False
-    has_mock = any(
-        isinstance(child, ast.Call)
-        and _call_name(child) in {"patch", "Mock", "MagicMock", "AsyncMock"}
-        for child in ast.walk(node)
+def _mock_only_oracle(
+    nodes: Iterable[ast.AST],
+    import_aliases: Mapping[str, str],
+) -> bool:
+    node_list = tuple(nodes)
+    assertions = tuple(
+        (
+            assertion,
+            _call_name(
+                assertion,
+                {**import_aliases, **_call_aliases(node)},
+            ),
+        )
+        for node in node_list
+        for assertion in _assertion_calls(node, import_aliases)
     )
-    if not has_mock:
+    bare_assertions = tuple(
+        child
+        for node in node_list
+        for child in ast.walk(node)
+        if isinstance(child, ast.Assert)
+    )
+    if not assertions and not bare_assertions:
         return False
-    mock_assertion_names = {
-        "assert_called",
-        "assert_called_once",
-        "assert_called_once_with",
-        "assert_called_with",
-        "assert_not_called",
-        "assert_awaited",
-        "assert_awaited_once",
-        "assert_awaited_once_with",
-        "assert_awaited_with",
-        "assert_not_awaited",
+
+    def references_mock_observation(node: ast.AST) -> bool:
+        return any(
+            isinstance(child, ast.Attribute)
+            and child.attr in MOCK_OBSERVATION_ATTRIBUTES
+            for child in ast.walk(node)
+        )
+
+    def is_mock_call_observation(call: ast.Call, name: str) -> bool:
+        if name in MOCK_ASSERTION_NAMES:
+            return True
+        return references_mock_observation(call)
+
+    return all(
+        is_mock_call_observation(call, name)
+        for call, name in assertions
+    ) and all(
+        references_mock_observation(assertion.test)
+        for assertion in bare_assertions
+    )
+
+
+def _tautological_assertion(
+    nodes: Iterable[ast.AST],
+    import_aliases: Mapping[str, str],
+) -> int | None:
+    equality_assertions = {
+        "assertEqual",
+        "assertIs",
+        "assertListEqual",
+        "assertMultiLineEqual",
+        "assertSequenceEqual",
+        "assertSetEqual",
+        "assertTupleEqual",
     }
-    return all(_call_name(call) in mock_assertion_names for call in assertions)
+
+    def stable_expression(node: ast.AST) -> bool:
+        return not any(
+            isinstance(child, (ast.Await, ast.Call, ast.Yield, ast.YieldFrom))
+            for child in ast.walk(node)
+        )
+
+    for node in nodes:
+        for child in ast.walk(node):
+            if isinstance(child, ast.Assert):
+                if isinstance(child.test, ast.Constant) and bool(child.test.value):
+                    return child.lineno
+                if (
+                    isinstance(child.test, ast.Compare)
+                    and len(child.test.comparators) == 1
+                    and ast.dump(child.test.left) == ast.dump(child.test.comparators[0])
+                    and stable_expression(child.test.left)
+                ):
+                    return child.lineno
+        aliases = {**import_aliases, **_call_aliases(node)}
+        for call in _assertion_calls(node, import_aliases):
+            name = _call_name(call, aliases)
+            if name == "assertTrue" and call.args:
+                value = call.args[0]
+                if isinstance(value, ast.Constant) and bool(value.value):
+                    return call.lineno
+            if name == "assertFalse" and call.args:
+                value = call.args[0]
+                if isinstance(value, ast.Constant) and not bool(value.value):
+                    return call.lineno
+            if (
+                name in equality_assertions
+                and len(call.args) >= 2
+                and ast.dump(call.args[0]) == ast.dump(call.args[1])
+                and stable_expression(call.args[0])
+            ):
+                return call.lineno
+    return None
 
 
-def _looks_like_production_source_read(call: ast.Call) -> bool:
-    if _call_name(call) not in {"read_text", "read"}:
-        return False
-    rendered = ast.unparse(call)
+def _looks_like_production_path(
+    node: ast.AST,
+    known_paths: Iterable[str] = (),
+) -> bool:
+    if _references_any(node, known_paths):
+        return True
+    rendered = ast.unparse(node)
     if any(marker in rendered for marker in SOURCE_ROOT_MARKERS):
         return True
     fragments = {
         child.value.strip("/")
-        for child in ast.walk(call)
+        for child in ast.walk(node)
         if isinstance(child, ast.Constant) and isinstance(child.value, str)
     }
     return "agentsassemble" in fragments or (
@@ -238,18 +419,46 @@ def _looks_like_production_source_read(call: ast.Call) -> bool:
     )
 
 
+def _looks_like_production_source_read(
+    call: ast.Call,
+    known_paths: Iterable[str] = (),
+) -> bool:
+    if _call_name(call) not in {"read_text", "read"}:
+        return False
+    return _looks_like_production_path(call, known_paths)
+
+
 def _production_source_variables(node: ast.AST) -> frozenset[str]:
+    assignments = tuple(
+        child
+        for child in ast.walk(node)
+        if isinstance(child, (ast.Assign, ast.AnnAssign))
+    )
+    path_variables: set[str] = set()
     variables: set[str] = set()
-    for child in ast.walk(node):
-        if not isinstance(child, (ast.Assign, ast.AnnAssign)):
-            continue
-        value = child.value
-        if not isinstance(value, ast.Call) or not _looks_like_production_source_read(value):
-            continue
-        targets = child.targets if isinstance(child, ast.Assign) else (child.target,)
-        for target in targets:
-            if isinstance(target, ast.Name):
-                variables.add(target.id)
+    changed = True
+    while changed:
+        changed = False
+        for child in assignments:
+            targets = child.targets if isinstance(child, ast.Assign) else (child.target,)
+            names = {
+                target.id
+                for target in targets
+                if isinstance(target, ast.Name)
+            }
+            value = child.value
+            if isinstance(value, ast.Call) and _looks_like_production_source_read(
+                value,
+                path_variables,
+            ):
+                new_variables = names - variables
+                variables.update(new_variables)
+                changed = changed or bool(new_variables)
+                continue
+            if _looks_like_production_path(value, path_variables):
+                new_paths = names - path_variables
+                path_variables.update(new_paths)
+                changed = changed or bool(new_paths)
     return frozenset(variables)
 
 
@@ -286,27 +495,71 @@ def _source_text_assertion(node: ast.AST) -> bool:
 
 
 def _exact_hangul_assertion(node: ast.AST) -> tuple[int, str] | None:
-    for call in _assertion_calls(node):
+    copy_identifiers = (
+        "button",
+        "copy",
+        "description",
+        "error_message",
+        "label",
+        "login_required",
+        "placeholder",
+        "title",
+        "tooltip",
+        "user_message",
+    )
+
+    def is_copy_expression(candidate: ast.AST) -> bool:
+        identifiers = [
+            child.id
+            for child in ast.walk(candidate)
+            if isinstance(child, ast.Name)
+        ]
+        identifiers.extend(
+            child.attr
+            for child in ast.walk(candidate)
+            if isinstance(child, ast.Attribute)
+        )
+        identifiers.extend(
+            str(child.value)
+            for child in ast.walk(candidate)
+            if isinstance(child, ast.Constant) and isinstance(child.value, str)
+        )
+        return any(
+            marker in identifier.lower()
+            for identifier in identifiers
+            for marker in copy_identifiers
+        )
+
+    def copy_assertion(call: ast.Call) -> tuple[int, str] | None:
         name = _call_name(call)
         if name not in {"assertEqual", "assertMultiLineEqual"} or len(call.args) < 2:
-            continue
-        for candidate in call.args[:2]:
+            return None
+        for index, candidate in enumerate(call.args[:2]):
             if isinstance(candidate, ast.Constant) and isinstance(candidate.value, str):
-                if HANGUL_PATTERN.search(candidate.value):
+                other = call.args[1 - index]
+                if HANGUL_PATTERN.search(candidate.value) and is_copy_expression(other):
                     return call.lineno, candidate.value
-    for child in ast.walk(node):
-        if not isinstance(child, ast.Constant) or not isinstance(child.value, str):
-            continue
-        script = child.value
-        if "node:assert" not in script:
-            continue
-        match = re.search(
-            r"assert\.equal\([^;]+?,\s*([\"'`])(?P<value>.*?[\uac00-\ud7a3].*?)\1\s*\)",
-            script,
-            flags=re.DOTALL,
+        return None
+
+    def is_subprocess_success_boilerplate(call: ast.Call) -> bool:
+        if _call_name(call) not in {"assertEqual", "assertFalse"}:
+            return False
+        return any(
+            isinstance(child, ast.Attribute) and child.attr == "returncode"
+            for child in ast.walk(call)
         )
-        if match:
-            return child.lineno, match.group("value")
+
+    assertions = _assertion_calls(node)
+    copies = tuple(
+        copy
+        for call in assertions
+        if (copy := copy_assertion(call)) is not None
+    )
+    if copies and not any(
+        copy_assertion(call) is None and not is_subprocess_success_boilerplate(call)
+        for call in assertions
+    ):
+        return copies[0]
     return None
 
 
@@ -339,6 +592,8 @@ def analyze_python_test_source(
 ) -> tuple[Violation, ...]:
     tree = ast.parse(source, filename=path)
     helpers = _class_helpers(tree)
+    module_helpers = _module_helpers(tree)
+    import_aliases = _import_aliases(tree)
     allowed = exceptions or {}
     violations: list[Violation] = []
     for test in _iter_test_functions(path, tree):
@@ -353,31 +608,47 @@ def analyze_python_test_source(
                 return
             violations.append(Violation(path, line, test.test_id, rule, message))
 
-        if not _has_oracle(test, helpers):
+        reachable_nodes = _reachable_test_nodes(test, helpers, module_helpers)
+        if not _has_oracle(reachable_nodes, import_aliases):
             add(
                 "no_oracle",
                 test.node.lineno,
                 "The test has no observable assertion, expected failure, or checked subprocess.",
             )
-        if _source_text_assertion(test.node):
+        if any(_source_text_assertion(node) for node in reachable_nodes):
             add(
                 "source_text",
                 test.node.lineno,
                 "The test inspects implementation source text instead of executing behavior.",
             )
-        for line, target in _private_patch_targets(test.node):
-            add(
-                "private_patch",
-                line,
-                f"The test patches the private production target {target!r}.",
-            )
-        if _mock_only_oracle(test.node):
+        private_targets = {
+            (line, target)
+            for node in reachable_nodes
+            for line, target in _private_patch_targets(node, import_aliases)
+        }
+        for line, target in sorted(private_targets):
+            add("private_patch", line, f"The test patches the private production target {target!r}.")
+        if _mock_only_oracle(reachable_nodes, import_aliases):
             add(
                 "mock_only",
                 test.node.lineno,
                 "Every oracle is a mock interaction; assert a result, state change, or side effect.",
             )
-        exact_copy = _exact_hangul_assertion(test.node)
+        tautology_line = _tautological_assertion(reachable_nodes, import_aliases)
+        if tautology_line is not None:
+            add(
+                "tautological",
+                tautology_line,
+                "The assertion is true independently of the behavior under test.",
+            )
+        exact_copy = next(
+            (
+                exact_copy
+                for node in reachable_nodes
+                if (exact_copy := _exact_hangul_assertion(node))
+            ),
+            None,
+        )
         if exact_copy:
             line, value = exact_copy
             add(
@@ -385,7 +656,11 @@ def analyze_python_test_source(
                 line,
                 f"The test freezes exact Korean copy {value!r} instead of a behavior contract.",
             )
-        if _symbol_only_test(test.node):
+        if all(
+            _symbol_only_test(node)
+            for node in reachable_nodes
+            if _assertion_calls(node, import_aliases)
+        ) and any(_assertion_calls(node, import_aliases) for node in reachable_nodes):
             add(
                 "symbol_only",
                 test.node.lineno,
@@ -420,8 +695,39 @@ def changed_python_test_lines(
     repository_root: Path,
     *,
     base: str,
-) -> Mapping[str, frozenset[int]]:
+) -> Mapping[str, frozenset[int] | None]:
+    """Select changed Python tests without losing support or helper edits.
+
+    Direct edits inside a test body select that body. Any helper, setup,
+    fixture, import, support-contract, or deletion-only change selects the
+    whole surviving file because it can alter multiple tests.
+    """
     merge_base = _valid_base(base, repository_root)
+    name_status = _git_output(
+        [
+            "diff",
+            "--name-status",
+            "--no-ext-diff",
+            "--no-renames",
+            merge_base,
+            "--",
+            "tests",
+        ],
+        repository_root,
+    )
+    candidates: set[str] = set()
+    deleted: set[str] = set()
+    for line in name_status.splitlines():
+        parts = line.split("\t", 1)
+        if len(parts) != 2:
+            continue
+        status, candidate = parts
+        if not candidate.endswith(".py"):
+            continue
+        candidates.add(candidate)
+        if status.startswith("D"):
+            deleted.add(candidate)
+
     diff = _git_output(
         [
             "diff",
@@ -434,29 +740,62 @@ def changed_python_test_lines(
         ],
         repository_root,
     )
-    changed: dict[str, set[int]] = {}
+    added_lines: dict[str, set[int]] = {path: set() for path in candidates}
     current_path = ""
     for line in diff.splitlines():
+        if line.startswith("diff --git "):
+            current_path = ""
+            continue
         if line.startswith("+++ b/"):
             candidate = line[6:]
-            current_path = candidate if TEST_FILE_PATTERN.search(candidate) else ""
+            current_path = candidate if candidate in candidates else ""
+            continue
+        if line == "+++ /dev/null":
+            current_path = ""
             continue
         match = HUNK_PATTERN.match(line)
         if not current_path or not match:
             continue
         start = int(match.group("start"))
         count = int(match.group("count") or "1")
-        changed.setdefault(current_path, set()).update(range(start, start + count))
+        added_lines[current_path].update(range(start, start + count))
+
+    changed: dict[str, frozenset[int] | None] = {}
+    for relative_path in sorted(candidates):
+        path = repository_root / relative_path
+        if relative_path in deleted or not path.is_file():
+            changed[relative_path] = frozenset()
+            continue
+        lines = added_lines.get(relative_path, set())
+        if not lines or not path.name.startswith("test_"):
+            changed[relative_path] = None
+            continue
+        source = path.read_text(encoding="utf-8")
+        tree = ast.parse(source, filename=relative_path)
+        test_ranges = tuple(
+            (
+                min(
+                    (decorator.lineno for decorator in test.node.decorator_list),
+                    default=test.node.lineno,
+                ),
+                test.node.end_lineno or test.node.lineno,
+            )
+            for test in _iter_test_functions(relative_path, tree)
+        )
+        if all(any(start <= line <= end for start, end in test_ranges) for line in lines):
+            changed[relative_path] = frozenset(lines)
+        else:
+            changed[relative_path] = None
+
     untracked = _git_output(
         ["ls-files", "--others", "--exclude-standard", "--", "tests"],
         repository_root,
     )
     for relative_path in untracked.splitlines():
-        if not TEST_FILE_PATTERN.search(relative_path):
+        if not relative_path.endswith(".py"):
             continue
-        path = repository_root / relative_path
-        changed[relative_path] = set(range(1, len(path.read_text(encoding="utf-8").splitlines()) + 1))
-    return {path: frozenset(lines) for path, lines in changed.items()}
+        changed[relative_path] = None
+    return changed
 
 
 def load_exceptions(path: Path) -> Mapping[str, frozenset[str]]:
@@ -488,7 +827,7 @@ def load_exceptions(path: Path) -> Mapping[str, frozenset[str]]:
 def _all_python_tests(repository_root: Path) -> Mapping[str, frozenset[int] | None]:
     return {
         path.relative_to(repository_root).as_posix(): None
-        for path in sorted((repository_root / "tests").rglob("test_*.py"))
+        for path in sorted((repository_root / "tests").rglob("*.py"))
     }
 
 
@@ -522,7 +861,10 @@ def main() -> int:
         )
         violations: list[Violation] = []
         for relative_path, changed_lines in selected.items():
-            source = (REPOSITORY_ROOT / relative_path).read_text(encoding="utf-8")
+            test_path = REPOSITORY_ROOT / relative_path
+            if not test_path.is_file():
+                continue
+            source = test_path.read_text(encoding="utf-8")
             violations.extend(
                 analyze_python_test_source(
                     relative_path,

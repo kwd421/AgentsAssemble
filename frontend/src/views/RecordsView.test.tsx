@@ -2,7 +2,11 @@ import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-libra
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import type { MeetingDetailResponse, MeetingSummary } from "../api";
-import RecordsView from "./RecordsView";
+import RecordsView, {
+  canonicalArchiveArtifactRows,
+  defaultArchiveArtifactSelection,
+  otherArchiveArtifactNames,
+} from "./RecordsView";
 
 const apiMocks = vi.hoisted(() => ({
   fetchMeetingDetail: vi.fn(),
@@ -82,5 +86,35 @@ describe("RecordsView detail ownership", () => {
     await act(async () => firstDetail.resolve(detail("meeting-a", "Stale Detail")));
     expect(screen.getByText("Current Detail")).not.toBeNull();
     expect(screen.queryByText("Stale Detail")).toBeNull();
+  });
+
+  it("chooses an available canonical artifact before unrelated archive files", () => {
+    const artifacts = {
+      "agenda.md": "# Agenda",
+      "meeting.json": "{}",
+      "decision.md": "# Decision",
+      "shared_memory/action-items.md": "# Action Items",
+      "shared_memory/open-questions.md": "",
+      "transcript.md": null,
+    };
+
+    expect(defaultArchiveArtifactSelection(artifacts)).toBe("decision.md");
+    expect(otherArchiveArtifactNames(artifacts)).toEqual(["agenda.md", "meeting.json"]);
+    expect(
+      canonicalArchiveArtifactRows(artifacts)
+        .filter((row) => row.available)
+        .map((row) => row.path)
+    ).toEqual(["decision.md", "shared_memory/action-items.md"]);
+  });
+
+  it("preserves a valid current artifact and falls back to the first available file", () => {
+    expect(
+      defaultArchiveArtifactSelection(
+        { "decision.md": "# Decision", "agenda.md": "# Agenda" },
+        "agenda.md"
+      )
+    ).toBe("agenda.md");
+    expect(defaultArchiveArtifactSelection({ "meeting.json": "{}" })).toBe("meeting.json");
+    expect(defaultArchiveArtifactSelection({})).toBeNull();
   });
 });
