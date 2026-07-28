@@ -1111,6 +1111,15 @@ export default function App() {
     setChannelMenu(null);
   }
 
+  function exitGuestSurface() {
+    clearGuestSession();
+    const url = new URL(window.location.href);
+    url.pathname = "/";
+    url.search = "";
+    url.hash = "";
+    window.location.href = url.toString();
+  }
+
   function handleDeletedRoom(deletedMeetingId: string) {
     const deletedRoom = rooms.find(
       (room) => room.meetingId === deletedMeetingId
@@ -1124,28 +1133,23 @@ export default function App() {
     );
     removeAcknowledgedRoom(deletedRoom.id);
     if (guestLocked) {
-      clearGuestSession();
-      const url = new URL(window.location.href);
-      url.pathname = "/join";
-      url.search = "";
-      url.hash = "";
-      window.location.href = url.toString();
+      exitGuestSurface();
     }
   }
 
   async function leaveRoom(roomId: string) {
+    if (guestLocked && guestExpired && roomId === activeRoom.id) {
+      removeAcknowledgedRoom(roomId);
+      exitGuestSurface();
+      return;
+    }
     if (roomId !== activeRoom.id || !roomSocket?.ready()) {
       throw new Error("나갈 서버를 먼저 열고 연결이 완료될 때까지 기다려 주세요.");
     }
     await roomSocket.command("participant.leave", {});
     removeAcknowledgedRoom(roomId);
     if (guestLocked) {
-      clearGuestSession();
-      const url = new URL(window.location.href);
-      url.pathname = "/join";
-      url.search = "";
-      url.hash = "";
-      window.location.href = url.toString();
+      exitGuestSurface();
     }
   }
 
@@ -1784,6 +1788,7 @@ export default function App() {
             agentCount={scopedAgents.length || 0}
             hasBackendError={Boolean(flowError)}
             guestProfile={guestPanelProfile}
+            onGuestExit={guestExpired ? exitGuestSurface : undefined}
           />
         </footer>
         <nav className="dc-mobile-bottom-nav" aria-label="모바일 하단 탐색">

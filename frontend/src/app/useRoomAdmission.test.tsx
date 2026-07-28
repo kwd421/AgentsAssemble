@@ -309,6 +309,32 @@ describe("useRoomAdmission", () => {
     expect(onResetToLobby).toHaveBeenCalledOnce();
   });
 
+  it("expires and removes a stale stored session during startup", async () => {
+    const expiredSession = {
+      ...SESSION,
+      expiresAt: "2000-01-01T00:00:00Z",
+    };
+    guestSessionStore.current = expiredSession;
+
+    const { result } = renderHook(() =>
+      useRoomAdmission({
+        guestInvite: null,
+        guestJoinToken: "",
+        operatorPairingToken: "",
+        onPairingTokenConsumed: vi.fn(),
+        initialSession: expiredSession,
+        onRoomJoined: vi.fn(),
+        onResetToLobby: vi.fn(),
+      })
+    );
+
+    await waitFor(() => expect(guestSessionStore.current).toBeNull());
+    expect(result.current.admissionState).toMatchObject({ kind: "expired" });
+    expect(result.current.guestSession).toBeNull();
+    expect(result.current.admittedSessionToken).toBe("");
+    expect(result.current.guestLocked).toBe(true);
+  });
+
   it("redeems a dedicated pairing into the canonical operator session", async () => {
     apiMocks.redeemOperatorPairing.mockResolvedValue({
       status: "admitted",

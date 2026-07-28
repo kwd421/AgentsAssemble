@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import {
   ChevronDown,
   Headphones,
+  LogOut,
   Mic,
   MicOff,
   Pencil,
@@ -27,6 +28,7 @@ export default function UserPanel({
   agentCount,
   hasBackendError,
   guestProfile,
+  onGuestExit,
 }: {
   onlineCount: number;
   agentCount: number;
@@ -38,6 +40,7 @@ export default function UserPanel({
     statusLabel: string;
     expired?: boolean;
   };
+  onGuestExit?: () => void;
 }) {
   const [profile, setProfile] = useState<UserProfile>(DEFAULT_USER_PROFILE);
   const [draft, setDraft] = useState<UserProfile>(DEFAULT_USER_PROFILE);
@@ -197,6 +200,19 @@ export default function UserPanel({
               </span>
             </span>
           </div>
+          {guestProfile.expired && onGuestExit && (
+            <div className="dc-user-actions">
+              <button
+                type="button"
+                aria-label="게스트 화면 나가기"
+                title="게스트 화면 나가기"
+                data-danger
+                onClick={onGuestExit}
+              >
+                <LogOut size={18} />
+              </button>
+            </div>
+          )}
         </div>
       </div>
     );

@@ -1,12 +1,12 @@
 {
  "readme": "AgentsAssemble codebase map. Regenerate with `make codebase-map`; verify committed outputs with `make codebase-map-verify`. modules[] columns: name, path, package, domain, classification, migration_status, lines, docstring, imports[], imported_by[] (indexes into modules), classes[[name, [[base, defining_module], ...]]] (best-effort, top-level classes only). frontend[] columns: path, group, lines, doc, imports[], imported_by[] (indexes into frontend). package_edges go importer -> dependency with module-import counts; `points` is the precomputed polyline for that edge and `intra_cycle` marks imports whose endpoints share one cycle group. graph{} holds the layered package drawing: layers[] top-to-bottom (each with members[] package ids, member_count, and the dominant domain), (a package sits below everything importing it), clusters[] are mutually dependent packages (import cycles at package level) drawn as one labelled block, plus width/height of the drawing. health{} ranks findings for a reader who has to act: cycles[] (mutually dependent packages, with the lines they hold), leaning_on_retiring[] (current modules importing legacy/compatibility modules - the reason legacy cannot be deleted), highest_leverage_migrations[] (retiring modules with the most current importers), unreferenced_shims[] (compatibility modules with no importer in agentsassemble/ and no reference in tests/; callers outside this repository are not visible, so verify before deleting), and hotspots[] (largest modules). health.scope states exactly what was measured. class_graph{} is the UML generalization DAG over base classes that resolve inside the repo: edges go base -> subclass, so a subclass always sits below the class it extends. Coordinates in graph and class_graph are laid out with a Sugiyama pipeline (cycle condensation, Coffman-Graham layering, dummy-node edge routing, median/transpose crossing reduction) and are deterministic.",
- "generated_at": "2026-07-28T13:24:19Z",
+ "generated_at": "2026-07-28T13:29:36Z",
  "fingerprint": "83f4bcdd2908b8d7",
  "stats": {
   "backend_modules": 789,
   "backend_lines": 130237,
   "frontend_files": 147,
-  "frontend_lines": 38909,
+  "frontend_lines": 38965,
   "packages": 30,
   "import_cycles": 0,
   "classifications": {
@@ -508,7 +508,7 @@
    "kind": "frontend",
    "doc": "Frontend entry files (App, main, API client, styles) living directly under src/.",
    "files": 11,
-   "lines": 11875,
+   "lines": 11880,
    "domains": {},
    "classes": {},
    "x": 102.0,
@@ -540,7 +540,7 @@
    "kind": "frontend",
    "doc": "Application shell, routing, and global client state.",
    "files": 21,
-   "lines": 5612,
+   "lines": 5647,
    "domains": {},
    "classes": {},
    "x": 558.0,
@@ -588,7 +588,7 @@
    "kind": "frontend",
    "doc": "Top-level room views rendered by the shell.",
    "files": 63,
-   "lines": 14942,
+   "lines": 14958,
    "domains": {},
    "classes": {},
    "x": 558.0,
@@ -3713,7 +3713,7 @@
      "fe:views"
     ],
     "internal_edges": 15,
-    "lines": 38909,
+    "lines": 38965,
     "heaviest": "fe:views"
    }
   ],
@@ -22183,7 +22183,7 @@
   [
    "frontend/src/App.tsx",
    "(src root)",
-   2126,
+   2131,
    "",
    [
     1,
@@ -22553,7 +22553,7 @@
   [
    "frontend/src/app/useRoomAdmission.test.tsx",
    "app",
-   574,
+   600,
    "",
    [
     2,
@@ -22566,7 +22566,7 @@
   [
    "frontend/src/app/useRoomAdmission.ts",
    "app",
-   570,
+   579,
    "",
    [
     2,
@@ -24097,7 +24097,7 @@
   [
    "frontend/src/views/components/UserPanel.tsx",
    "views",
-   463,
+   479,
    "",
    [
     2,
@@ -24455,7 +24455,7 @@
    "name": "frontend/src",
    "note": "React room client (TS/TSX)",
    "files": 147,
-   "lines": 38909
+   "lines": 38965
   },
   {
    "name": "tests",
@@ -24473,7 +24473,7 @@
    "name": "docs",
    "note": "Product and architecture docs",
    "files": 79,
-   "lines": 29539
+   "lines": 29540
   },
   {
    "name": "configs",

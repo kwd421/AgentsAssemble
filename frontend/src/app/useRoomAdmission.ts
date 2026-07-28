@@ -88,6 +88,9 @@ function initialAdmissionState({
     return { kind: "preflighting", session: initialSession, status: "" };
   }
   if (initialSession) {
+    if (roomGuestSessionExpired(initialSession)) {
+      return { kind: "expired", session: null, status: GUEST_SESSION_EXPIRED_MESSAGE };
+    }
     return { kind: "joined", session: initialSession, source: "initial", status: "" };
   }
   return { kind: "idle", session: null, status: "" };
@@ -187,6 +190,12 @@ export function useRoomAdmission({
   useEffect(() => {
     onPairingTokenConsumedRef.current = onPairingTokenConsumed;
   }, [onPairingTokenConsumed]);
+
+  useEffect(() => {
+    if (admissionState.kind === "expired") {
+      persistRoomGuestSession(null);
+    }
+  }, [admissionState.kind]);
 
   const guestSession = admissionState.session;
   const admittedSessionToken =

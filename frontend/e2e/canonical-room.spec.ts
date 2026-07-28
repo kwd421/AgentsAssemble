@@ -271,6 +271,36 @@ test("removes a kicked participant immediately and after roster reload", async (
   }
 });
 
+test("expires a stale stored guest session and offers a working exit", async ({ page }) => {
+  await page.goto("/");
+  await page.evaluate(
+    ([key, session]) => window.localStorage.setItem(key, JSON.stringify(session)),
+    [
+      GUEST_SESSION_STORAGE_KEY,
+      {
+        inviteToken: "",
+        sessionToken: "aas1.expired-startup-session",
+        meetingId: "general",
+        agentId: "expired-guest",
+        displayName: "Expired Guest",
+        inviteScope: "room",
+        expiresAt: "2000-01-01T00:00:00Z",
+        joinedAt: "2000-01-01T00:00:00Z",
+        roomLabel: "General",
+      },
+    ]
+  );
+  await page.reload();
+
+  await expect(page.getByText("게스트 세션 만료", { exact: true })).toBeVisible();
+  await expect.poll(() => readGuestSession(page)).toBeNull();
+  await page.getByRole("button", { name: "게스트 화면 나가기" }).click();
+
+  await expect.poll(() => new URL(page.url()).pathname).toBe("/");
+  await expect(page.getByLabel("게스트 프로필")).toHaveCount(0);
+  await expect(page.getByRole("button", { name: "새 방 만들기" })).toBeVisible();
+});
+
 test("sends and restores an attachment-only canonical room message", async ({ browser, page }) => {
   await installHostCredential(page);
   await page.goto("/");

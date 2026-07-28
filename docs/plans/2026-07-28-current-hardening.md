@@ -111,7 +111,7 @@ restart, reconnect, room switching, and refresh.
       already-connected browsers refresh when a guest joins.
 - [x] Remove left and kicked participants from canonical browser state so an
       HTTP roster refresh cannot resurrect ghost members.
-- [ ] Expire a stored guest session during startup and provide a usable exit
+- [x] Expire a stored guest session during startup and provide a usable exit
       from the guest surface.
 - [ ] Add generation or cancellation ownership to polling and Records detail
       requests.
@@ -191,6 +191,7 @@ remaining limitation.
 | `6f82f3e0` | Drain resident Codex and Grok stderr concurrently with stdout while preserving complete diagnostics for existing authentication classification | red real-subprocess verification timed out after each child filled stderr before writing its streamed reply; corrected paths returned in 0.3 seconds and retained early authentication markers across large diagnostics; 216 resident/stream/runner/continuity tests; `python3 scripts/check_test_quality.py --base HEAD`; `make generated-artifacts-check`; `git diff --check` | diagnostic retention intentionally remains equivalent to the previous full stderr read; this change removes the pipe deadlock without changing error classification |
 | `7f77c2f9` | Serialize same-session Agent Bridge creation and registration under a ref-counted per-session launch owner | red concurrent start verification created two child processes and leaked the overwritten one; corrected concurrent callers share one handle while unrelated sessions remain independent; 217 bridge/lifecycle/realtime/native-E2E/package tests; `python3 scripts/check_test_quality.py --base HEAD`; `make generated-artifacts-check`; `git diff --check` | direct manager shutdown concurrent with an in-progress start is outside the application lifecycle, whose controller lock closes only after active commands finish |
 | `745f0ed5` | Remove left and kicked participants from incremental and snapshot-backed canonical browser state | red browser verification showed a kicked participant disappear immediately and return after reload; corrected path stayed absent across both boundaries; 186 frontend unit tests; production-build Playwright kick workflow; `make generated-artifacts-check`; `git diff --check` | human invite admission still lacked the canonical membership event needed for an already-open browser to discover the initial join |
+| `395b841a` | Publish one canonical participant-join event with invite admission and preserve idempotency across workflow retry | red durable-state test found zero join events and the real browser failed to show the admitted guest without reload; corrected path recorded one event across retry and refreshed the open roster immediately; 63 focused Python tests plus 13 subtests; 186 frontend tests; production-build Playwright join/kick/reload workflow; `python3 scripts/check_test_quality.py --base HEAD`; `make generated-artifacts-check`; `git diff --check` | mandatory live PostgreSQL contract run remains completion-gate work |
 
 ## Resume Rule
 
