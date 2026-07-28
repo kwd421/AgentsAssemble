@@ -6,6 +6,7 @@ from typing import Mapping
 
 from agentsassemble.legacy.meeting.core.events import clean_lobby_text
 from agentsassemble.room_attention import AttentionEvaluation
+from agentsassemble.room_engagement import message_mentions_all
 
 
 SHADOW_ATTENTION_MODES = frozenset({"off", "sample", "full"})
@@ -78,7 +79,7 @@ def evaluate_attention(
             reasons=(*reasons, "explicit_target_unavailable"),
         )
 
-    if _contains_all_mention(content):
+    if message_mentions_all(content):
         if eligible:
             return AttentionEvaluation(
                 room_id=room_id,
@@ -262,10 +263,6 @@ def _explicit_targets(
     if mentioned:
         reasons.append("direct_mention")
     return tuple(dict.fromkeys((*field_targets, *mentioned))), tuple(dict.fromkeys(reasons))
-
-
-def _contains_all_mention(content: str) -> bool:
-    return bool(re.search(r"(?<![\w-])@all(?![\w-])", content.casefold()))
 
 
 def _looks_like_room_question(content: str) -> bool:

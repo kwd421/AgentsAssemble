@@ -6,6 +6,7 @@ from typing import Mapping
 
 from agentsassemble.legacy.meeting.core.events import clean_lobby_text
 from agentsassemble.providers.launch_specs import NativeCliProviderSpec
+from agentsassemble.room_engagement import message_mentions_all
 
 
 _DISPLAY_ALIAS_SPLIT = re.compile(r"[\s/|·—–:()]+")
@@ -39,7 +40,7 @@ def route_message_targets(
         target_agent_id = clean_lobby_text(event.get("target_agent_id"), limit=128)
         if target_agent_id in providers:
             mentioned.add(target_agent_id)
-        if "@all" in content.casefold():
+        if message_mentions_all(content):
             targets = set(providers)
         elif mentioned:
             targets = mentioned

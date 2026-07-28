@@ -4,6 +4,8 @@ import random
 from dataclasses import dataclass
 from typing import Callable, Iterable, Mapping, Sequence
 
+from agentsassemble.room_engagement import message_mentions_all
+
 
 @dataclass(frozen=True)
 class AgentFloorEligibility:
@@ -49,7 +51,7 @@ def continuous_floor_targets(
     providers = tuple(provider_ids)
     targets = tuple(routed_targets)
     normalized_content = str(content or "").casefold()
-    explicitly_routed = "@all" in normalized_content or any(
+    explicitly_routed = message_mentions_all(content) or any(
         f"@{agent_id.casefold()}" in normalized_content for agent_id in providers
     )
     if explicitly_routed:

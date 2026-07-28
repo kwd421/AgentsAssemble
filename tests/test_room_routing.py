@@ -44,6 +44,15 @@ class RoomRoutingPolicyTests(unittest.TestCase):
 
         self.assertEqual(decision.targets, ("codex",))
 
+    def test_all_substring_inside_a_larger_token_does_not_broadcast(self):
+        decision = route_message_targets(
+            _event("contact me at user@allow.example"),
+            _providers(),
+            max_agent_relay_depth=2,
+        )
+
+        self.assertEqual(decision.targets, ("codex",))
+
     def test_agent_relay_never_targets_self_and_stops_at_depth_limit(self):
         allowed = route_message_targets(
             _event("@all continue", actor_id="codex", actor_type="agent", relay_depth=1),

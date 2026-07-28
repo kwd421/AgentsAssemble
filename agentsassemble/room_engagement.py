@@ -17,6 +17,7 @@ import re
 # excluded ("haiku" does not match inside "haiku-duo").
 _ASCII_BOUNDARY_BEFORE = r"(?<![A-Za-z0-9_-])"
 _ASCII_BOUNDARY_AFTER = r"(?![A-Za-z0-9_-])"
+_ALL_MENTION_RE = re.compile(r"(?<![\w-])@all(?![\w-])", re.IGNORECASE)
 
 # "SeiNel's 페이블" / "ㅁㅁ’s 에이전트" / "정지훈의 페이블" — strip the owner
 # prefix so the bare agent name still works as a mention.
@@ -97,6 +98,10 @@ def message_directly_mentions_agent(message: str, agent_id: str, display_name: s
         _contains_direct_mention_token(normalized_message, alias.casefold())
         for alias in mention_aliases(agent_id, display_name)
     )
+
+
+def message_mentions_all(message: str) -> bool:
+    return _ALL_MENTION_RE.search(str(message or "")) is not None
 
 
 def _contains_mention_token(normalized_message: str, normalized_mention: str) -> bool:

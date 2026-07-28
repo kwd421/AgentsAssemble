@@ -87,7 +87,7 @@ restart, reconnect, room switching, and refresh.
       the repository transaction contract.
 - [x] Preserve real SSE heartbeat cadence during an idle room stream.
 - [x] Scope side-chat history before applying its retention limit.
-- [ ] Match `@all` as a mention token rather than an arbitrary substring.
+- [x] Match `@all` as a mention token rather than an arbitrary substring.
 - [ ] Parse persisted boolean values with the existing strict boolean parser.
 - [ ] Serialize stable-public-URL publication so an old retry cannot overwrite
       a newer URL.
@@ -178,6 +178,7 @@ remaining limitation.
 | `d23b5323` | Reject SQLite transactions that attempt to restore canonical state after room deletion | red verification showed a stale transaction recreating participant, session, and event rows after deletion; 190 deletion/repository/realtime tests; `python3 scripts/check_test_quality.py --base HEAD`; `git diff --check` | full suite remains completion-gate work |
 | `ce742cfe` | Atomically commit SQLite participant/room lifecycle state, related session detachment, and lifecycle events | real SQLite trigger failures reproduced split durable state before the fix; 152 repository/lifecycle tests (38 PostgreSQL-environment skips); `python3 scripts/check_test_quality.py --base HEAD`; `make generated-artifacts-check`; `git diff --check` | mandatory live PostgreSQL contract run remains completion-gate work |
 | `d94fec0c` | Enforce the actual idle-room SSE heartbeat cadence while preserving standalone frame-generator compatibility | red HTTP timing verification measured a 0.007-second heartbeat instead of the configured one-second cadence; 128 SSE/Agent Session/room-route tests plus a 591-test expansion with one corrected stale secure-endpoint fixture; `python3 scripts/check_test_quality.py --base HEAD`; `make generated-artifacts-check`; `git diff --check` | full suite remains completion-gate work |
+| `3ae54e0d` | Apply side-chat retention after room scoping using a bounded newest-first scan | red file-backed verification showed room-a history disappearing behind room-b's newer rows; 45 side-chat/HTTP/frontend/deletion tests; `python3 scripts/check_test_quality.py --base HEAD`; `make generated-artifacts-check`; `git diff --check` | side chat remains an explicitly separate JSONL feature, not canonical room events |
 
 ## Resume Rule
 

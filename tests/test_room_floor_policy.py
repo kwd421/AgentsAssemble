@@ -88,6 +88,17 @@ class RoomFloorPolicyTests(unittest.TestCase):
 
         self.assertEqual(result, ())
 
+    def test_continuous_floor_does_not_treat_all_substring_as_an_explicit_broadcast(self):
+        result = continuous_floor_targets(
+            provider_ids=["alpha", "bravo"],
+            actor_id="operator-local",
+            routed_targets=["alpha", "bravo"],
+            eligible_agent_ids=["bravo"],
+            content="contact me at user@allow.example",
+        )
+
+        self.assertEqual(result, ("bravo",))
+
     def test_ordered_floor_samples_two_and_chooses_the_less_frequent_speaker(self):
         sampled = []
 
