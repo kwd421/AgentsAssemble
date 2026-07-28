@@ -81,7 +81,7 @@ restart, reconnect, room switching, and refresh.
       not mutable display role.
 - [x] Make Agent Session creation compensate or resume safely after partial
       participant/session/event persistence.
-- [ ] Prevent stale callbacks from recreating canonical state after SQLite room
+- [x] Prevent stale callbacks from recreating canonical state after SQLite room
       deletion.
 - [ ] Make SQLite participant/room mutation and lifecycle event recording match
       the repository transaction contract.
@@ -174,6 +174,7 @@ remaining limitation.
 | `4d8557de` | Preserve valid attention jobs and leases when bounded session-reference scanning truncates | red verification showed `leased` work becoming `cancelled`; 232 attention/repository/realtime tests (40 PostgreSQL-environment skips); `python3 scripts/check_test_quality.py --base HEAD`; `git diff --check` | mandatory live PostgreSQL contract run remains completion-gate work |
 | `8b248baa` | Execute valid deterministic persona probability decorators | red verification reproduced `NameError`; 60 persona rendering/artifact/finalization tests; `python3 scripts/check_test_quality.py --base HEAD`; `git diff --check` | full suite remains completion-gate work |
 | `ee21c513` | Stop and unregister provider-backed participants by canonical Agent Session identity rather than mutable role | red verification showed both provider effects skipped after a role change; 146 kick/realtime/native-E2E tests; `python3 scripts/check_test_quality.py --base HEAD`; `git diff --check` | full suite remains completion-gate work |
+| `072678f4` | Atomic participant/session/attention/event creation for provider Agent Sessions; post-commit registry publication | red event-write fault injection left no durable or in-memory partial state and retry succeeded; 217 provider-session/agent-create/realtime/native-E2E/repository tests (38 PostgreSQL-environment skips); `python3 scripts/check_test_quality.py --base HEAD`; `git diff --check` | mandatory live PostgreSQL contract run remains completion-gate work |
 
 ## Resume Rule
 

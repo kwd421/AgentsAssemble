@@ -108,6 +108,38 @@ class SQLiteRoomRepositoryContractTests(RoomRepositoryContractMixin, unittest.Te
         self.assertIn(f"USING INDEX {VOTE_BALLOT_INDEX_NAME}", plan_detail)
         self.assertNotIn("USE TEMP B-TREE", plan_detail)
 
+    def test_deleted_room_rejects_a_late_transaction_without_restoring_canonical_rows(self) -> None:
+        self.repository.create_room("deleted-room")
+        self.repository.delete_room("deleted-room", reason="test cleanup")
+
+        with self.assertRaisesRegex(ValueError, "deleted"):
+            with self.repository.transaction("deleted-room") as transaction:
+                transaction.upsert_participant(
+                    {
+                        "participant_id": "late-agent",
+                        "display_name": "Late Agent",
+                        "participant_type": "agent",
+                    }
+                )
+                transaction.upsert_session(
+                    {
+                        "session_id": "late-agent",
+                        "participant_id": "late-agent",
+                        "status": "attached",
+                    }
+                )
+                transaction.append_event(
+                    "session_attached",
+                    participant_id="late-agent",
+                    session_id="late-agent",
+                )
+
+        self.assertEqual(self.repository.room("deleted-room"), {})
+        self.assertEqual(self.repository.participant("deleted-room", "late-agent"), {})
+        self.assertEqual(self.repository.session("deleted-room", "late-agent"), {})
+        self.assertEqual(self.repository.read_events("deleted-room"), [])
+        self.assertTrue(self.repository.room_is_deleted("deleted-room"))
+
 
 if __name__ == "__main__":
     unittest.main()

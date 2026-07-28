@@ -322,6 +322,7 @@ class RoomStore:
             transaction = _SQLiteRoomTransaction(self, connection, clean_room_id, pending_events)
             try:
                 yield transaction
+                self._require_transaction_room(connection, clean_room_id)
                 connection.commit()
             except Exception:
                 connection.rollback()
@@ -1008,6 +1009,25 @@ class RoomStore:
             )
         self._write_room_settings(connection, room_id, settings)
         return room, not bool(existing)
+
+    @staticmethod
+    def _require_transaction_room(
+        connection: sqlite3.Connection,
+        room_id: str,
+    ) -> None:
+        if connection.execute(
+            "SELECT 1 FROM rooms WHERE room_id = ?",
+            (room_id,),
+        ).fetchone() is not None:
+            return
+        if connection.execute(
+            "SELECT 1 FROM deleted_rooms WHERE room_id = ?",
+            (room_id,),
+        ).fetchone() is not None:
+            raise ValueError(
+                f"Room {room_id} was deleted and cannot accept late writes."
+            )
+        raise ValueError(f"Room {room_id} was not found.")
 
     def _ensure_room(
         self,
