@@ -4,17 +4,17 @@ Status: generated architecture inventory
 
 Generator: `python3 scripts/generate_package_map.py`
 
-Source fingerprint: `57c2ed75689078e5`
+Source fingerprint: `1013507ad05d52be`
 
 This file describes current evidence and proposed ownership. It does not by
 itself authorize a module move or a product behavior change.
 
 ## Summary
 
-- Python modules: 787
+- Python modules: 788
 - Top-level package modules: 302
-- Domains: admission=33, application=128, diagnostics=27, features=19, identity=9, legacy=226, persistence=60, providers=127, room=89, web=69
-- Classifications: compatibility=297, current=293, legacy=185, optional=12
+- Domains: admission=33, application=128, diagnostics=27, features=19, identity=9, legacy=226, persistence=60, providers=128, room=89, web=69
+- Classifications: compatibility=297, current=294, legacy=185, optional=12
 
 ## Classification Rules
 
@@ -581,8 +581,8 @@ itself authorize a module move or a product behavior change.
 | `agentsassemble.providers` | `agentsassemble/providers/__init__.py` | 1 | providers | current | - | 4 | - | test-import:2 | `tests/test_provider_catalog.py`, `tests/test_provider_package.py` | `providers/` | in-target-package |
 | `agentsassemble.providers.adapters` | `agentsassemble/providers/adapters/__init__.py` | 23 | providers | current | `agentsassemble.providers.adapters.base`, `agentsassemble.providers.adapters.codex`, `agentsassemble.providers.adapters.codex_live`, `agentsassemble.providers.adapters.mock`, `agentsassemble.providers.adapters.registry`, `agentsassemble.providers.adapters.unsupported` | 2 | - | test-import:1 | `tests/test_provider_package.py` | `providers/` | in-target-package |
 | `agentsassemble.providers.adapters.base` | `agentsassemble/providers/adapters/base.py` | 45 | providers | current | `agentsassemble.models` | 10 | - | test-import:3 | `tests/test_demo_meeting.py`, `tests/test_partial_failure.py`, `tests/test_provider_registry.py` | `providers/` | in-target-package |
-| `agentsassemble.providers.adapters.codex` | `agentsassemble/providers/adapters/codex.py` | 444 | providers | current | `agentsassemble.models`, `agentsassemble.providers.adapters.base`, `agentsassemble.providers.codex_resident`, `agentsassemble.providers.codex_session_ids`, `agentsassemble.providers.speech_policy` | 5 | - | test-import:2 | `tests/test_codex_adapter.py`, `tests/test_decision_context.py` | `providers/` | in-target-package |
-| `agentsassemble.providers.adapters.codex_live` | `agentsassemble/providers/adapters/codex_live.py` | 103 | providers | current | `agentsassemble.models`, `agentsassemble.providers.adapters.codex`, `agentsassemble.providers.codex_resident` | 4 | - | test-import:2 | `tests/test_codex_live_adapter.py`, `tests/test_provider_registry.py` | `providers/` | in-target-package |
+| `agentsassemble.providers.adapters.codex` | `agentsassemble/providers/adapters/codex.py` | 446 | providers | current | `agentsassemble.models`, `agentsassemble.providers.adapters.base`, `agentsassemble.providers.codex_output`, `agentsassemble.providers.codex_resident`, `agentsassemble.providers.codex_session_ids`, `agentsassemble.providers.speech_policy` | 5 | - | test-import:2 | `tests/test_codex_adapter.py`, `tests/test_decision_context.py` | `providers/` | in-target-package |
+| `agentsassemble.providers.adapters.codex_live` | `agentsassemble/providers/adapters/codex_live.py` | 105 | providers | current | `agentsassemble.models`, `agentsassemble.providers.adapters.codex`, `agentsassemble.providers.codex_output`, `agentsassemble.providers.codex_resident` | 4 | - | test-import:2 | `tests/test_codex_live_adapter.py`, `tests/test_provider_registry.py` | `providers/` | in-target-package |
 | `agentsassemble.providers.adapters.http_llm` | `agentsassemble/providers/adapters/http_llm.py` | 335 | providers | current | `agentsassemble.models`, `agentsassemble.providers.adapters.base`, `agentsassemble.providers.speech_policy` | 4 | - | test-import:2, monkeypatch:1 | `tests/test_http_llm_adapters.py`, `tests/test_provider_health.py`, `tests/test_provider_registry.py` | `providers/` | in-target-package |
 | `agentsassemble.providers.adapters.local_cli` | `agentsassemble/providers/adapters/local_cli.py` | 257 | providers | current | `agentsassemble.models`, `agentsassemble.providers.adapters.base`, `agentsassemble.providers.adapters.http_llm`, `agentsassemble.providers.speech_policy` | 2 | - | test-import:3 | `tests/test_local_cli_adapter.py`, `tests/test_partial_failure.py`, `tests/test_provider_registry.py` | `providers/` | in-target-package |
 | `agentsassemble.providers.adapters.mock` | `agentsassemble/providers/adapters/mock.py` | 244 | providers | current | `agentsassemble.models`, `agentsassemble.providers.adapters.base` | 4 | - | test-import:1 | `tests/test_mock_adapter.py` | `providers/` | in-target-package |
@@ -606,7 +606,8 @@ itself authorize a module move or a product behavior change.
 | `agentsassemble.providers.claude_usage` | `agentsassemble/providers/claude_usage.py` | 141 | providers | current | `agentsassemble.providers.terminal_usage`, `agentsassemble.providers.usage_contract` | 1 | `call:compile@20`, `call:compile@24`, `call:ClaudeUsageService@133` | test-import:1 | `tests/test_provider_runtime_controls.py` | `providers/` | in-target-package |
 | `agentsassemble.providers.codex_app_server` | `agentsassemble/providers/codex_app_server.py` | 1323 | providers | current | `agentsassemble.providers.process_environment`, `agentsassemble.providers.turn_input`, `agentsassemble.room.projection`, `agentsassemble.room.text` | 10 | - | test-import:3 | `tests/test_agent_session_cli.py`, `tests/test_agent_session_room_store.py`, `tests/test_provider_package.py` | `providers/` | in-target-package |
 | `agentsassemble.providers.codex_app_server_live` | `agentsassemble/providers/codex_app_server_live.py` | 211 | providers | current | `agentsassemble.providers.codex_app_server`, `agentsassemble.providers.room_portal`, `agentsassemble.providers.room_portal_mcp`, `agentsassemble.room.text` | 3 | - | test-import:3 | `tests/test_provider_package.py`, `tests/test_provider_runtime_controls.py`, `tests/test_room_agent_bridge.py` | `providers/` | in-target-package |
-| `agentsassemble.providers.codex_resident` | `agentsassemble/providers/codex_resident.py` | 347 | providers | current | `agentsassemble.providers.auth`, `agentsassemble.providers.codex_session_ids`, `agentsassemble.providers.codex_stream`, `agentsassemble.providers.resident_config`, `agentsassemble.providers.sandbox_launcher` | 7 | `call:provider_login_required_message@23` | test-import:3 | `tests/test_codex_resident.py`, `tests/test_live_agent_runner.py`, `tests/test_provider_package.py` | `providers/` | in-target-package |
+| `agentsassemble.providers.codex_output` | `agentsassemble/providers/codex_output.py` | 9 | providers | current | - | 3 | - | - | - | `providers/` | in-target-package |
+| `agentsassemble.providers.codex_resident` | `agentsassemble/providers/codex_resident.py` | 353 | providers | current | `agentsassemble.providers.auth`, `agentsassemble.providers.codex_output`, `agentsassemble.providers.codex_session_ids`, `agentsassemble.providers.codex_stream`, `agentsassemble.providers.resident_config`, `agentsassemble.providers.sandbox_launcher` | 7 | `call:provider_login_required_message@24` | test-import:3 | `tests/test_codex_resident.py`, `tests/test_live_agent_runner.py`, `tests/test_provider_package.py` | `providers/` | in-target-package |
 | `agentsassemble.providers.codex_session_ids` | `agentsassemble/providers/codex_session_ids.py` | 73 | providers | current | - | 3 | `call:compile@11`, `call:compile@12` | test-import:2 | `tests/test_codex_live_adapter.py`, `tests/test_provider_package.py` | `providers/` | in-target-package |
 | `agentsassemble.providers.codex_stream` | `agentsassemble/providers/codex_stream.py` | 63 | providers | current | - | 2 | - | test-import:2 | `tests/test_codex_stream.py`, `tests/test_provider_package.py` | `providers/` | in-target-package |
 | `agentsassemble.providers.codex_usage` | `agentsassemble/providers/codex_usage.py` | 171 | providers | current | `agentsassemble.providers.codex_app_server`, `agentsassemble.providers.usage_contract` | 1 | `call:CodexUsageService@164` | test-import:1 | `tests/test_provider_runtime_controls.py` | `providers/` | in-target-package |

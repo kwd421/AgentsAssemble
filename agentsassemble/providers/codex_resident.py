@@ -13,6 +13,7 @@ from subprocess import TimeoutExpired
 from typing import Any
 
 from agentsassemble.providers.auth import provider_auth_error_message, provider_login_required_message
+from agentsassemble.providers.codex_output import prepare_codex_output_file
 from agentsassemble.providers.codex_session_ids import extract_codex_session_id
 from agentsassemble.providers.codex_stream import parse_codex_stream_line
 from agentsassemble.providers.resident_config import ResidentCommandConfig
@@ -57,6 +58,7 @@ class CodexResidentCommandRunner:
         if getattr(self.config, "stream_thinking", False):
             return self._streaming_call(prompt, timeout_seconds=timeout_seconds)
         output_path = Path(self._output_dir.name) / f"{_safe_stem(self.config.agent_id)}-last-message.txt"
+        prepare_codex_output_file(output_path)
         codex_command = self._build_command(output_path)
         try:
             completed = self.command_runner(
@@ -103,6 +105,7 @@ class CodexResidentCommandRunner:
         agent_message is held back and returned so the normal reply path posts it
         once — no duplicate."""
         output_path = Path(self._output_dir.name) / f"{_safe_stem(self.config.agent_id)}-last-message.txt"
+        prepare_codex_output_file(output_path)
         codex_command = self._build_command(output_path, json_stream=True)
         try:
             process = subprocess.Popen(  # noqa: S603 - command is built from a fixed codex prefix
@@ -158,6 +161,9 @@ class CodexResidentCommandRunner:
             process.wait(timeout=5)
         finally:
             watchdog.cancel()
+            for stream in (process.stdin, process.stdout, process.stderr):
+                if stream is not None and not stream.closed:
+                    stream.close()
         if killed["value"]:
             raise RuntimeError(f"Codex live session command timed out after {timeout_seconds} seconds.")
         returncode = int(process.returncode or 0)

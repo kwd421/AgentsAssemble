@@ -8,6 +8,7 @@ from typing import Any
 
 from agentsassemble.providers.adapters.base import ProviderAdapter
 from agentsassemble.models import ResearchDepth, ResearchSteering, Role
+from agentsassemble.providers.codex_output import prepare_codex_output_file
 from agentsassemble.providers.codex_resident import codex_exec_prefix
 from agentsassemble.providers.codex_session_ids import extract_codex_session_id
 from agentsassemble.providers.speech_policy import ROUND_RESPONSE_SCHEMA, ROUND_SPEECH_POLICY
@@ -230,6 +231,7 @@ Return only this JSON shape:
         meeting_path = Path(meeting_dir)
         output_path = meeting_path / "roles" / session["role_id"] / f"codex-{step}-last-message.txt"
         output_path.parent.mkdir(parents=True, exist_ok=True)
+        prepare_codex_output_file(output_path)
         command = ["codex"]
         if self.search_enabled and use_search:
             command.append("--search")

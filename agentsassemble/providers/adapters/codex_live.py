@@ -6,6 +6,7 @@ from typing import Any
 
 from agentsassemble.providers.adapters.codex import CodexAdapter
 from agentsassemble.models import Role
+from agentsassemble.providers.codex_output import prepare_codex_output_file
 from agentsassemble.providers.codex_resident import codex_exec_prefix
 
 
@@ -32,6 +33,7 @@ class CodexLiveSessionAdapter(CodexAdapter):
         meeting_path = Path(meeting_dir)
         output_path = meeting_path / "roles" / session["role_id"] / f"codex-live-{step}-last-message.txt"
         output_path.parent.mkdir(parents=True, exist_ok=True)
+        prepare_codex_output_file(output_path)
         command = ["codex"]
         if self.search_enabled and use_search:
             command.append("--search")

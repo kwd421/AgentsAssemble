@@ -9,6 +9,33 @@ from agentsassemble.models import get_research_depth, ResearchSteering, Role
 
 
 class CodexAdapterTests(unittest.TestCase):
+    def test_repeated_round_does_not_reuse_previous_output_file(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            meeting_dir = Path(temp_dir)
+            (meeting_dir / "roles" / "speaker").mkdir(parents=True)
+            calls = 0
+
+            def fake_runner(command, input, text, capture_output, timeout, check):
+                nonlocal calls
+                calls += 1
+                output_path = Path(command[command.index("--output-last-message") + 1])
+                if calls == 1:
+                    output_path.write_text('{"content":"previous reply"}', encoding="utf-8")
+                    stdout = ""
+                else:
+                    stdout = '{"content":"current reply"}'
+                return subprocess.CompletedProcess(command, 0, stdout=stdout, stderr="")
+
+            adapter = CodexAdapter(command_runner=fake_runner)
+            role = Role("speaker", "Speaker", "Speaker", "discussion")
+            session = adapter.start_session(role, {"meeting_dir": str(meeting_dir)})
+
+            first = adapter.run_round(role, session, "round_1", "first", {})
+            second = adapter.run_round(role, session, "round_1", "second", {})
+
+            self.assertEqual(first["content"], "previous reply")
+            self.assertEqual(second["content"], "current reply")
+
     def test_codex_research_uses_output_last_message_and_records_session_id(self):
         with tempfile.TemporaryDirectory() as temp_dir:
             meeting_dir = Path(temp_dir)

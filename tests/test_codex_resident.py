@@ -31,6 +31,63 @@ def _codex_config(**overrides) -> ResidentAgentConfig:
 
 
 class CodexResidentFastModeTests(unittest.TestCase):
+    def test_repeated_turn_does_not_reuse_previous_output_file(self):
+        calls = 0
+
+        def command_runner(command, **kwargs):
+            nonlocal calls
+            calls += 1
+            output_path = Path(command[command.index("--output-last-message") + 1])
+            if calls == 1:
+                output_path.write_text("previous reply", encoding="utf-8")
+                stdout = ""
+            else:
+                stdout = "current reply"
+            return subprocess.CompletedProcess(command, 0, stdout=stdout, stderr="")
+
+        runner = CodexResidentCommandRunner(
+            _codex_config(),
+            command_runner=command_runner,
+        )
+        try:
+            first = runner([], "first", timeout_seconds=5)
+            second = runner([], "second", timeout_seconds=5)
+        finally:
+            runner.close()
+
+        self.assertEqual(first, "previous reply")
+        self.assertEqual(second, "current reply")
+
+    def test_streaming_turn_rejects_previous_output_when_current_turn_is_empty(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            temp_path = Path(temp_dir)
+            state_path = temp_path / "called"
+            executable = temp_path / "fake-codex"
+            executable.write_text(
+                "#!/usr/bin/env python3\n"
+                "import pathlib\n"
+                "import sys\n"
+                f"state = pathlib.Path({str(state_path)!r})\n"
+                "output = pathlib.Path(sys.argv[sys.argv.index('--output-last-message') + 1])\n"
+                "if not state.exists():\n"
+                "    state.write_text('called', encoding='utf-8')\n"
+                "    output.write_text('previous streamed reply', encoding='utf-8')\n",
+                encoding="utf-8",
+            )
+            executable.chmod(0o755)
+            runner = CodexResidentCommandRunner(
+                _codex_config(command=[str(executable)], stream_thinking=True),
+                cwd=temp_path,
+            )
+            try:
+                first = runner([], "first", timeout_seconds=5)
+                with self.assertRaisesRegex(ValueError, "empty reply"):
+                    runner([], "second", timeout_seconds=5)
+            finally:
+                runner.close()
+
+        self.assertEqual(first, "previous streamed reply")
+
     def test_build_command_enables_fast_mode_when_toggled(self):
         runner = CodexResidentCommandRunner(_codex_config(fast_mode=True))
         command = runner._build_command(Path(tempfile.gettempdir()) / "out.txt")

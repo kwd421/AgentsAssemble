@@ -69,6 +69,33 @@ class CodexLiveSessionAdapterTests(unittest.TestCase):
             self.assertEqual(calls[1]["cwd"], str(meeting_dir))
             self.assertEqual(message["codex"]["session_mode"], "resumed")
 
+    def test_resumed_round_does_not_reuse_previous_output_file(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            meeting_dir = Path(temp_dir)
+            (meeting_dir / "roles" / "speaker").mkdir(parents=True)
+            calls = 0
+
+            def fake_runner(command, input, text, capture_output, timeout, check, cwd=None):
+                nonlocal calls
+                calls += 1
+                output_path = Path(command[command.index("--output-last-message") + 1])
+                if calls == 1:
+                    output_path.write_text('{"content":"previous reply"}', encoding="utf-8")
+                    stdout = ""
+                else:
+                    stdout = '{"content":"current reply"}'
+                return subprocess.CompletedProcess(command, 0, stdout=stdout, stderr="")
+
+            adapter = CodexLiveSessionAdapter(command_runner=fake_runner)
+            role = Role("speaker", "Speaker", "Speaker", "discussion")
+            session = adapter.start_session(role, {"meeting_dir": str(meeting_dir)})
+
+            first = adapter.run_round(role, session, "round_1", "first", {})
+            second = adapter.run_round(role, session, "round_1", "second", {})
+
+            self.assertEqual(first["content"], "previous reply")
+            self.assertEqual(second["content"], "current reply")
+
     def test_session_id_extractor_accepts_jsonl_and_label_variants(self):
         self.assertEqual(
             extract_codex_session_id('{"type":"session.started","session":{"id":"019e02af-c287-7cd1-aab7-c1e059c5ed44"}}\n'),
