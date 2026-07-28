@@ -5,7 +5,6 @@ import {
   providerBrandKey,
   type ProviderBrandKey,
 } from "./providerBranding";
-import { PROVIDER_BRAND_PATHS } from "./providerBrandPaths";
 
 export { providerBrandKey };
 export type { ProviderBrandKey };
@@ -38,13 +37,14 @@ export default function ProviderLogo({
       style={{
         width: size,
         height: size,
-        background: brand.background,
-        color: brand.foreground,
       }}
     >
-      <svg viewBox="0 0 24 24" fill="currentColor" fillRule="evenodd" focusable="false">
-        <path d={PROVIDER_BRAND_PATHS[brandKey].path} />
-      </svg>
+      <img
+        src={brand.logo}
+        alt=""
+        draggable={false}
+        style={{ width: brand.scale, height: brand.scale }}
+      />
     </span>
   );
 }
