@@ -91,14 +91,16 @@ class HandshakeUnitTests(unittest.TestCase):
         sock.queue_recv(
             b"HTTP/1.1 101 Switching Protocols\r\nSec-WebSocket-Accept: wrong\r\n\r\n"
         )
-        with self.assertRaises(Exception):
+        with self.assertRaises(WebSocketProtocolError):
             WsRoomClient(sock).open("/ws?ticket=abc")
+        self.assertTrue(sock.closed)
 
     def test_open_rejects_non_101(self):
         sock = FakeSocket(auto_handshake=False)
         sock.queue_recv(b"HTTP/1.1 401 Unauthorized\r\n\r\n")
-        with self.assertRaises(Exception):
+        with self.assertRaises(WebSocketProtocolError):
             WsRoomClient(sock).open("/ws?ticket=abc")
+        self.assertTrue(sock.closed)
 
 
 class SendUnitTests(unittest.TestCase):
@@ -356,6 +358,34 @@ class ConnectRoomWsTests(unittest.TestCase):
             self.assertIn(b"GET /aa/ws?ticket=ticket HTTP/1.1", sock.sent)
         finally:
             client.close()
+
+    def test_tls_setup_failure_closes_the_connected_socket(self):
+        sock = FakeSocket()
+
+        class FailingContext:
+            def wrap_socket(self, _raw_sock, *, server_hostname: str):
+                raise OSError(f"TLS setup failed for {server_hostname}")
+
+        class FakeSslModule:
+            @staticmethod
+            def create_default_context():
+                return FailingContext()
+
+        with (
+            patch(
+                "agentsassemble.web.room_client.socket_module.create_connection",
+                return_value=sock,
+            ),
+            patch.object(ws_room_client, "ssl", FakeSslModule, create=True),
+            self.assertRaisesRegex(OSError, "TLS setup failed"),
+        ):
+            connect_room_ws_with_ticket(
+                "https://room.example",
+                "internal-ticket",
+                ["room_events"],
+            )
+
+        self.assertTrue(sock.closed)
 
 
 if __name__ == "__main__":

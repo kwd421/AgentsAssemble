@@ -1,5 +1,6 @@
 import json
 import struct
+import threading
 import unittest
 
 from agentsassemble.web.websocket_codec import OP_CLOSE, OP_PING, OP_PONG, OP_TEXT
@@ -66,6 +67,51 @@ class TicketStoreTests(unittest.TestCase):
 
     def test_unknown_ticket_is_none(self):
         self.assertIsNone(WsTicketStore().consume("wst_nope"))
+
+    def test_concurrent_prune_and_consume_preserve_single_use_without_runtime_error(self):
+        class InterleavingClock:
+            def __init__(self):
+                self.enabled = False
+                self.triggered = False
+                self.consume = lambda: None
+                self.consumer_done = threading.Event()
+                self.consumer: threading.Thread | None = None
+
+            def __call__(self):
+                return self
+
+            def __add__(self, seconds):
+                return 1000.0 + float(seconds)
+
+            def __gt__(self, _other):
+                if self.enabled and not self.triggered:
+                    self.triggered = True
+
+                    def consume_ticket():
+                        self.consume()
+                        self.consumer_done.set()
+
+                    self.consumer = threading.Thread(target=consume_ticket)
+                    self.consumer.start()
+                    self.consumer_done.wait(0.1)
+                return False
+
+        clock = InterleavingClock()
+        store = WsTicketStore(now_fn=clock)
+        ticket = store.issue({"agent_id": "guest-1"})
+        store.issue({"agent_id": "guest-2"})
+        consumed: list[dict | None] = []
+        clock.consume = lambda: consumed.append(store.consume(ticket))
+        clock.enabled = True
+
+        try:
+            store.issue({"agent_id": "guest-3"})
+        finally:
+            if clock.consumer is not None:
+                clock.consumer.join(timeout=1)
+
+        self.assertEqual([item["agent_id"] for item in consumed if item], ["guest-1"])
+        self.assertIsNone(store.consume(ticket))
 
 
 class FakeDeps:

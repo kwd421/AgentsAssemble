@@ -6,6 +6,7 @@ core are unit-tested elsewhere (test_room_websocket, test_ws_room_session); this
 proves the wiring (ticket issuance, socket hijack, select loop, governed say).
 """
 import base64
+import io
 import json
 import socket
 import struct
@@ -22,8 +23,9 @@ from agentsassemble.admission.invite import (
     join_room_with_invite,
     reset_state,
 )
+from agentsassemble.web.websocket import handle_ws_upgrade
 from agentsassemble.web.websocket_codec import OP_TEXT, compute_accept_key
-from agentsassemble.web.room_session import WS_SESSION_REVOKED_CATEGORY
+from agentsassemble.web.room_session import WS_SESSION_REVOKED_CATEGORY, WsTicketStore
 
 
 def _client_text_frame(text: str) -> bytes:
@@ -288,6 +290,65 @@ class WsEndpointTests(unittest.TestCase):
                     sock.close()
             finally:
                 self._stop_server(server)
+
+    def test_upgrade_setup_failure_disconnects_the_open_realtime_channel(self):
+        class Handler:
+            def __init__(self):
+                self.headers = {
+                    "Upgrade": "websocket",
+                    "Connection": "Upgrade",
+                    "Sec-WebSocket-Key": base64.b64encode(b"0123456789abcdef").decode(),
+                }
+                self.wfile = io.BytesIO()
+                self.connection = object()
+                self.close_connection = False
+
+            def send_response(self, _status):
+                return None
+
+            def send_header(self, _name, _value):
+                return None
+
+            def end_headers(self):
+                return None
+
+        class Channel:
+            closed = False
+
+        class Controller:
+            def __init__(self):
+                self.channel = Channel()
+                self.disconnected = []
+
+            def connect(self, _identity):
+                return self.channel
+
+            def disconnect(self, channel):
+                self.disconnected.append(channel)
+
+        tickets = WsTicketStore()
+        ticket = tickets.issue(
+            {
+                "agent_id": "guest-1",
+                "meeting_id": "room-1",
+                "client_type": "browser",
+            }
+        )
+        controller = Controller()
+
+        def fail_dependency_setup(_channel, _handler):
+            raise RuntimeError("dependency setup failed")
+
+        with self.assertRaisesRegex(RuntimeError, "dependency setup failed"):
+            handle_ws_upgrade(
+                Handler(),
+                {"ticket": [ticket]},
+                ws_ticket_store=tickets,
+                room_realtime_controller=controller,
+                ws_room_deps_factory=fail_dependency_setup,
+            )
+
+        self.assertEqual(controller.disconnected, [controller.channel])
 
 
 if __name__ == "__main__":

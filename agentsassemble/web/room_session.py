@@ -12,6 +12,7 @@ from __future__ import annotations
 
 import json
 import secrets
+import threading
 import time
 from dataclasses import dataclass, field
 from typing import Callable
@@ -99,24 +100,31 @@ class WsTicketStore:
         self._ttl = float(ttl_seconds)
         self._now = now_fn
         self._tickets: dict[str, tuple[dict, str, float]] = {}
+        self._lock = threading.Lock()
 
     def issue(self, session: dict, *, session_token: str = "") -> str:
-        self._prune()
-        ticket = "wst_" + secrets.token_urlsafe(24)
-        self._tickets[ticket] = (dict(session), str(session_token or ""), self._now() + self._ttl)
-        return ticket
+        with self._lock:
+            self._prune()
+            ticket = "wst_" + secrets.token_urlsafe(24)
+            self._tickets[ticket] = (
+                dict(session),
+                str(session_token or ""),
+                self._now() + self._ttl,
+            )
+            return ticket
 
     def consume(self, ticket: str) -> dict | None:
-        self._prune()
-        entry = self._tickets.pop(str(ticket or ""), None)
-        if entry is None:
-            return None
-        session, session_token, expires_at = entry
-        if self._now() > expires_at:
-            return None
-        if session_token:
-            session[WS_SESSION_TOKEN_KEY] = session_token
-        return session
+        with self._lock:
+            self._prune()
+            entry = self._tickets.pop(str(ticket or ""), None)
+            if entry is None:
+                return None
+            session, session_token, expires_at = entry
+            if self._now() > expires_at:
+                return None
+            if session_token:
+                session[WS_SESSION_TOKEN_KEY] = session_token
+            return session
 
     def _prune(self) -> None:
         now = self._now()

@@ -64,22 +64,29 @@ class WsRoomClient:
     def open(self, path: str) -> None:
         """Send the upgrade request, verify the 101 + accept key, and buffer any
         frame bytes that arrived with the response."""
-        request, key = client_handshake_request(path, self.host)
-        self.sock.sendall(request)
-        head = b""
-        while b"\r\n\r\n" not in head:
-            chunk = self.sock.recv(4096)
-            if not chunk:
-                raise WebSocketProtocolError("Connection closed during handshake.")
-            head += chunk
-        header_blob, _, rest = head.partition(b"\r\n\r\n")
-        status, headers = _parse_response_headers(header_blob)
-        if b"101" not in status:
-            raise WebSocketProtocolError(f"WebSocket upgrade rejected: {status.decode('latin-1', 'replace')}")
-        if not handshake_accept_ok(headers, key):
-            raise WebSocketProtocolError("Sec-WebSocket-Accept mismatch.")
-        if rest:
-            self._assembler.feed(rest)
+        try:
+            request, key = client_handshake_request(path, self.host)
+            self.sock.sendall(request)
+            head = b""
+            while b"\r\n\r\n" not in head:
+                chunk = self.sock.recv(4096)
+                if not chunk:
+                    raise WebSocketProtocolError("Connection closed during handshake.")
+                head += chunk
+            header_blob, _, rest = head.partition(b"\r\n\r\n")
+            status, headers = _parse_response_headers(header_blob)
+            if b"101" not in status:
+                raise WebSocketProtocolError(
+                    "WebSocket upgrade rejected: "
+                    f"{status.decode('latin-1', 'replace')}"
+                )
+            if not handshake_accept_ok(headers, key):
+                raise WebSocketProtocolError("Sec-WebSocket-Accept mismatch.")
+            if rest:
+                self._assembler.feed(rest)
+        except Exception:
+            self._close_protocol_connection()
+            raise
 
     def subscribe(self, streams: list[str], *, resume_from_id: str = "") -> None:
         message: dict[str, object] = {"op": "subscribe", "streams": list(streams)}
@@ -370,12 +377,25 @@ def connect_room_ws_with_ticket(
     parsed = urlparse(server_url)
     host = parsed.hostname or "127.0.0.1"
     port = parsed.port or (443 if parsed.scheme == "https" else 80)
-    sock = socket_module.create_connection((host, port), timeout=timeout)
-    if parsed.scheme == "https":
-        sock = ssl.create_default_context().wrap_socket(sock, server_hostname=host)
-    client = WsRoomClient(sock, host=f"{host}:{port}")
-    prefix = parsed.path.rstrip("/")
-    ws_path = f"{prefix}/ws" if prefix else "/ws"
-    client.open(f"{ws_path}?ticket={ticket}")
-    client.subscribe(streams)
-    return client
+    raw_sock = socket_module.create_connection((host, port), timeout=timeout)
+    sock = raw_sock
+    try:
+        if parsed.scheme == "https":
+            sock = ssl.create_default_context().wrap_socket(raw_sock, server_hostname=host)
+        client = WsRoomClient(sock, host=f"{host}:{port}")
+        prefix = parsed.path.rstrip("/")
+        ws_path = f"{prefix}/ws" if prefix else "/ws"
+        client.open(f"{ws_path}?ticket={ticket}")
+        client.subscribe(streams)
+        return client
+    except Exception:
+        try:
+            sock.close()
+        except OSError:
+            pass
+        if sock is not raw_sock:
+            try:
+                raw_sock.close()
+            except OSError:
+                pass
+        raise

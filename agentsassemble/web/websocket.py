@@ -92,14 +92,8 @@ def handle_ws_upgrade(
     handler.send_header("Sec-WebSocket-Accept", compute_accept_key(key))
     handler.end_headers()
     handler.wfile.flush()
-    channel = room_realtime_controller.connect(identity)
-    ws = WsRoomSession(
-        identity=identity,
-        deps=ws_room_deps_factory(channel, handler),
-        session_token=session_token,
-    )
-    assembler = MessageAssembler()
     sock = handler.connection
+    channel = None
 
     def _send_all(frames: list[bytes]) -> bool:
         # Processed room side effects must survive a peer closing during send.
@@ -111,6 +105,13 @@ def handle_ws_upgrade(
         return True
 
     try:
+        channel = room_realtime_controller.connect(identity)
+        ws = WsRoomSession(
+            identity=identity,
+            deps=ws_room_deps_factory(channel, handler),
+            session_token=session_token,
+        )
+        assembler = MessageAssembler()
         while not ws.closed:
             if channel.closed:
                 break
@@ -141,4 +142,5 @@ def handle_ws_upgrade(
     except (BrokenPipeError, ConnectionResetError, OSError, ValueError):
         pass
     finally:
-        room_realtime_controller.disconnect(channel)
+        if channel is not None:
+            room_realtime_controller.disconnect(channel)

@@ -1,10 +1,10 @@
 {
  "readme": "AgentsAssemble codebase map. Regenerate with `make codebase-map`; verify committed outputs with `make codebase-map-verify`. modules[] columns: name, path, package, domain, classification, migration_status, lines, docstring, imports[], imported_by[] (indexes into modules), classes[[name, [[base, defining_module], ...]]] (best-effort, top-level classes only). frontend[] columns: path, group, lines, doc, imports[], imported_by[] (indexes into frontend). package_edges go importer -> dependency with module-import counts; `points` is the precomputed polyline for that edge and `intra_cycle` marks imports whose endpoints share one cycle group. graph{} holds the layered package drawing: layers[] top-to-bottom (each with members[] package ids, member_count, and the dominant domain), (a package sits below everything importing it), clusters[] are mutually dependent packages (import cycles at package level) drawn as one labelled block, plus width/height of the drawing. health{} ranks findings for a reader who has to act: cycles[] (mutually dependent packages, with the lines they hold), leaning_on_retiring[] (current modules importing legacy/compatibility modules - the reason legacy cannot be deleted), highest_leverage_migrations[] (retiring modules with the most current importers), unreferenced_shims[] (compatibility modules with no importer in agentsassemble/ and no reference in tests/; callers outside this repository are not visible, so verify before deleting), and hotspots[] (largest modules). health.scope states exactly what was measured. class_graph{} is the UML generalization DAG over base classes that resolve inside the repo: edges go base -> subclass, so a subclass always sits below the class it extends. Coordinates in graph and class_graph are laid out with a Sugiyama pipeline (cycle condensation, Coffman-Graham layering, dummy-node edge routing, median/transpose crossing reduction) and are deterministic.",
- "generated_at": "2026-07-28T11:29:52Z",
- "fingerprint": "cf067111d777fd86",
+ "generated_at": "2026-07-28T11:34:20Z",
+ "fingerprint": "bb3c9633330d8580",
  "stats": {
   "backend_modules": 787,
-  "backend_lines": 129768,
+  "backend_lines": 129798,
   "frontend_files": 147,
   "frontend_lines": 38812,
   "packages": 30,
@@ -22,7 +22,7 @@
    "kind": "backend",
    "doc": "HTTP and WebSocket transport boundaries for the current GUI.",
    "files": 28,
-   "lines": 4827,
+   "lines": 4857,
    "domains": {
     "web": 28
    },
@@ -3700,7 +3700,7 @@
      "web"
     ],
     "internal_edges": 80,
-    "lines": 124667,
+    "lines": 124697,
     "heaviest": "legacy"
    },
    {
@@ -21399,7 +21399,7 @@
    "web",
    "current",
    "in-target-package",
-   381,
+   401,
    "Canonical Python room client over HTTP admission and WebSocket transport.",
    [
     782
@@ -21435,7 +21435,7 @@
    "web",
    "current",
    "in-target-package",
-   387,
+   395,
    "WebSocket room ticket and per-connection protocol core.",
    [
     185,
@@ -22010,7 +22010,7 @@
    "web",
    "current",
    "in-target-package",
-   144,
+   146,
    "WebSocket HTTP upgrade and connection lifecycle for the GUI server.",
    [
     761,
@@ -24393,7 +24393,7 @@
    "name": "agentsassemble",
    "note": "Backend package (Python)",
    "files": 787,
-   "lines": 129768
+   "lines": 129798
   },
   {
    "name": "frontend/src",
@@ -24405,7 +24405,7 @@
    "name": "tests",
    "note": "Backend test suite",
    "files": 352,
-   "lines": 142165
+   "lines": 142302
   },
   {
    "name": "scripts",
