@@ -4,7 +4,7 @@ Status: generated architecture inventory
 
 Generator: `python3 scripts/generate_package_map.py`
 
-Source fingerprint: `96c79296f1e91e24`
+Source fingerprint: `95d410e4440924f9`
 
 This file describes current evidence and proposed ownership. It does not by
 itself authorize a module move or a product behavior change.
@@ -648,7 +648,7 @@ itself authorize a module move or a product behavior change.
 | `agentsassemble.providers.terminal_interactions` | `agentsassemble/providers/terminal_interactions.py` | 185 | providers | current | `agentsassemble.providers.claude_resident`, `agentsassemble.providers.live_cli_output`, `agentsassemble.providers.runtime_contracts` | 4 | `call:compile@12`, `call:compile@16`, `call:compile@17`, `call:compile@18`, `call:frozenset@22` | test-import:1 | `tests/test_terminal_interactions.py` | `providers/` | in-target-package |
 | `agentsassemble.providers.terminal_usage` | `agentsassemble/providers/terminal_usage.py` | 411 | providers | current | `agentsassemble.providers.claude_resident`, `agentsassemble.providers.live_cli`, `agentsassemble.providers.live_cli_output`, `agentsassemble.providers.process_environment`, `agentsassemble.providers.usage_contract` | 2 | `control-flow@28`, `call:compile@35`, `call:compile@36`, `call:compile@37`, `call:compile@38`, `+3` | - | - | `providers/` | in-target-package |
 | `agentsassemble.providers.transcripts` | `agentsassemble/providers/transcripts/__init__.py` | 29 | providers | current | `agentsassemble.providers.transcripts.antigravity`, `agentsassemble.providers.transcripts.claude`, `agentsassemble.providers.transcripts.codex`, `agentsassemble.providers.transcripts.core`, `agentsassemble.providers.transcripts.cursor`, `agentsassemble.providers.transcripts.factory`, `agentsassemble.providers.transcripts.grok` | 1 | - | - | - | `providers/` | in-target-package |
-| `agentsassemble.providers.transcripts.antigravity` | `agentsassemble/providers/transcripts/antigravity.py` | 126 | providers | current | `agentsassemble.providers.transcripts.core`, `agentsassemble.room.text` | 2 | - | - | - | `providers/` | in-target-package |
+| `agentsassemble.providers.transcripts.antigravity` | `agentsassemble/providers/transcripts/antigravity.py` | 130 | providers | current | `agentsassemble.providers.transcripts.core`, `agentsassemble.room.text` | 2 | - | - | - | `providers/` | in-target-package |
 | `agentsassemble.providers.transcripts.claude` | `agentsassemble/providers/transcripts/claude.py` | 124 | providers | current | `agentsassemble.providers.transcripts.core`, `agentsassemble.room.text` | 2 | - | - | - | `providers/` | in-target-package |
 | `agentsassemble.providers.transcripts.codex` | `agentsassemble/providers/transcripts/codex.py` | 130 | providers | current | `agentsassemble.providers.transcripts.core`, `agentsassemble.room.text` | 2 | - | - | - | `providers/` | in-target-package |
 | `agentsassemble.providers.transcripts.core` | `agentsassemble/providers/transcripts/core.py` | 448 | providers | current | `agentsassemble.providers.live_cli_output`, `agentsassemble.room.text` | 7 | - | - | - | `providers/` | in-target-package |

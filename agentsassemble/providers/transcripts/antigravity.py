@@ -64,7 +64,9 @@ class AntigravityTranscriptMessageSource(_JsonlOffsetMessageSource):
             entry_type = str(entry.get("type") or "")
             if entry_type != "PLANNER_RESPONSE":
                 continue
-            for tool_call in list(entry.get("tool_calls") or []):
+            tool_calls = entry.get("tool_calls")
+            pending_tool_calls = tool_calls if isinstance(tool_calls, list) else []
+            for tool_call in pending_tool_calls:
                 if not isinstance(tool_call, dict):
                     continue
                 name = clean_room_text(tool_call.get("name"), limit=120) or "tool"
@@ -81,6 +83,8 @@ class AntigravityTranscriptMessageSource(_JsonlOffsetMessageSource):
                         "content": f"{name}: {detail}" if detail else name,
                     }
                 )
+            if pending_tool_calls:
+                continue
             if str(entry.get("status") or "") and str(entry.get("status") or "") != "DONE":
                 continue
             content = _clean_provider_message_text(entry.get("content"), limit=12000)

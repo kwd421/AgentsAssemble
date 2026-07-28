@@ -1235,6 +1235,98 @@ class TranscriptMessageSourceTests(unittest.TestCase):
         )
         self.assertNotIn("private command output", str(activities))
 
+    def test_antigravity_source_waits_for_tool_execution_before_completing_turn(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            transcript = (
+                root
+                / ".gemini"
+                / "antigravity-cli"
+                / "brain"
+                / "conv-a"
+                / ".system_generated"
+                / "logs"
+                / "transcript.jsonl"
+            )
+            transcript.parent.mkdir(parents=True)
+            source = AntigravityTranscriptMessageSource(home=root)
+            source.prepare_start()
+            source.begin_turn("room.wake turn-a")
+            transcript.write_text(
+                "\n".join(
+                    [
+                        json.dumps(
+                            {
+                                "source": "USER_EXPLICIT",
+                                "type": "USER_INPUT",
+                                "content": "<USER_REQUEST>room.wake turn-a</USER_REQUEST>",
+                            }
+                        ),
+                        json.dumps(
+                            {
+                                "source": "MODEL",
+                                "type": "PLANNER_RESPONSE",
+                                "status": "DONE",
+                                "content": "I will publish this action to the room.",
+                                "tool_calls": [
+                                    {
+                                        "name": "run_command",
+                                        "args": {
+                                            "CommandLine": 'agentsassemble-room speak "action"',
+                                        },
+                                    }
+                                ],
+                            }
+                        ),
+                    ]
+                )
+                + "\n",
+                encoding="utf-8",
+            )
+
+            before_tool_result = source.poll(b"", quiet=True)
+            activities = source.drain_activities()
+            with transcript.open("a", encoding="utf-8") as handle:
+                handle.write(
+                    json.dumps(
+                        {
+                            "source": "MODEL",
+                            "type": "RUN_COMMAND",
+                            "status": "DONE",
+                            "content": "The command exited with code 0.",
+                        }
+                    )
+                    + "\n"
+                )
+                handle.write(
+                    json.dumps(
+                        {
+                            "source": "MODEL",
+                            "type": "PLANNER_RESPONSE",
+                            "status": "DONE",
+                            "content": "The room action was published.",
+                        }
+                    )
+                    + "\n"
+                )
+
+            after_tool_result = source.poll(b"", quiet=True)
+
+        self.assertFalse(before_tool_result.complete)
+        self.assertEqual(before_tool_result.content, "")
+        self.assertEqual(
+            activities,
+            [
+                {
+                    "category": "command",
+                    "status": "running",
+                    "content": 'run_command: agentsassemble-room speak "action"',
+                }
+            ],
+        )
+        self.assertTrue(after_tool_result.complete)
+        self.assertEqual(after_tool_result.content, "The room action was published.")
+
     def test_codex_source_ignores_late_previous_completion_until_next_user_input(self):
         with tempfile.TemporaryDirectory() as temp_dir:
             root = Path(temp_dir)
