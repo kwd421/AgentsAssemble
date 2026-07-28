@@ -563,6 +563,47 @@ describe("useCanonicalRoom", () => {
     expect(result.current.connectionState).toBe("connected");
   });
 
+  it("forwards deletion only from the currently connected room", async () => {
+    const handlersByRoom = new Map<string, RoomSocketHandlers>();
+    const openSocket = vi.fn((auth, _streams, handlers: RoomSocketHandlers) => {
+      const targetRoom = auth.kind === "host" ? auth.meetingId : "guest";
+      handlersByRoom.set(targetRoom, handlers);
+      return {
+        close: vi.fn(),
+        ready: () => true,
+        command: vi.fn(),
+        say: vi.fn(),
+        historyBefore: vi.fn(),
+      } satisfies RoomSocketHandle;
+    });
+    const onRoomDeleted = vi.fn();
+    const { rerender } = renderHook(
+      ({ roomId }) =>
+        useCanonicalRoom({
+          roomId,
+          auth: { kind: "host", meetingId: roomId },
+          openSocket,
+          onRoomDeleted,
+        }),
+      { initialProps: { roomId: "general" } }
+    );
+    await waitFor(() => expect(openSocket).toHaveBeenCalledTimes(1));
+
+    rerender({ roomId: "second-room" });
+    await waitFor(() => expect(openSocket).toHaveBeenCalledTimes(2));
+    act(() =>
+      handlersByRoom.get("general")?.onRoomDeleted?.("general", "General")
+    );
+    expect(onRoomDeleted).not.toHaveBeenCalled();
+
+    act(() =>
+      handlersByRoom
+        .get("second-room")
+        ?.onRoomDeleted?.("second-room", "Second")
+    );
+    expect(onRoomDeleted).toHaveBeenCalledWith("second-room", "Second");
+  });
+
   it("expires a guest only when the canonical room connection is unauthorized", async () => {
     let handlers: RoomSocketHandlers | undefined;
     const openSocket = vi.fn((_auth, _streams, nextHandlers: RoomSocketHandlers) => {

@@ -134,7 +134,11 @@ describe("useRoomInviteController", () => {
     });
 
     expect(apiMocks.upsertRoomMember).toHaveBeenCalledWith(
-      expect.objectContaining({ meeting_id: room.meetingId, participant_id: "codex-friend" })
+      expect.objectContaining({
+        meeting_id: room.meetingId,
+        participant_id: "codex-friend",
+      }),
+      ""
     );
     expect(apiMocks.onMembersChanged).toHaveBeenCalledWith(
       room,

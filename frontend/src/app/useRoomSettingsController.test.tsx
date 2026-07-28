@@ -375,9 +375,11 @@ describe("useRoomSettingsController", () => {
         maxRelayTurns: 6,
       },
     });
-    expect(saveCanonicalGlobalSettings).toHaveBeenCalledWith({
-      conversationMode: "ambient",
-    });
+    await waitFor(() =>
+      expect(saveCanonicalGlobalSettings).toHaveBeenCalledWith({
+        conversationMode: "ambient",
+      })
+    );
     expect(apiMocks.saveRoomSettings).not.toHaveBeenCalled();
 
     await act(async () => {
@@ -415,9 +417,11 @@ describe("useRoomSettingsController", () => {
       status: "saving",
       value: { orderedExcludePreviousSpeaker: false },
     });
-    expect(saveCanonicalGlobalSettings).toHaveBeenCalledWith({
-      orderedExcludePreviousSpeaker: false,
-    });
+    await waitFor(() =>
+      expect(saveCanonicalGlobalSettings).toHaveBeenCalledWith({
+        orderedExcludePreviousSpeaker: false,
+      })
+    );
 
     await act(async () => {
       saveRequest.resolve(
@@ -434,7 +438,7 @@ describe("useRoomSettingsController", () => {
     ).toBe(false);
   });
 
-  it("ignores an older save failure after a newer settings save succeeds", async () => {
+  it("persists rapid global changes in user order and keeps the newest result", async () => {
     const firstSave = deferred<RoomGlobalSettings>();
     const secondSave = deferred<RoomGlobalSettings>();
     saveCanonicalGlobalSettings
@@ -455,6 +459,29 @@ describe("useRoomSettingsController", () => {
 
     act(() => hook.result.current.updateConversationMode(roomA, "ambient"));
     act(() => hook.result.current.updateMaxRelayTurns(roomA, 8));
+    await waitFor(() =>
+      expect(saveCanonicalGlobalSettings).toHaveBeenCalledTimes(1)
+    );
+    expect(saveCanonicalGlobalSettings).toHaveBeenNthCalledWith(1, {
+      conversationMode: "ambient",
+    });
+    expect(hook.result.current.settingsStateFor(roomA).status).toBe("saving");
+
+    await act(async () => {
+      firstSave.resolve(
+        globalSettings(roomA, "forest", {
+          conversationMode: "ambient",
+        })
+      );
+      await firstSave.promise;
+    });
+    await waitFor(() =>
+      expect(saveCanonicalGlobalSettings).toHaveBeenCalledTimes(2)
+    );
+    expect(saveCanonicalGlobalSettings).toHaveBeenNthCalledWith(2, {
+      maxRelayTurns: 8,
+    });
+
     await act(async () => {
       secondSave.resolve(
         globalSettings(roomA, "forest", {
@@ -464,32 +491,17 @@ describe("useRoomSettingsController", () => {
       );
       await secondSave.promise;
     });
-    expect(hook.result.current.settingsStateFor(roomA)).toMatchObject({
-      status: "ready",
-      value: {
-        conversationMode: "ambient",
-        orderedExcludePreviousSpeaker: true,
-        maxRelayTurns: 8,
-      },
-    });
 
-    await act(async () => {
-      firstSave.reject(new Error("late failure"));
-      try {
-        await firstSave.promise;
-      } catch {
-        // A superseded save is ignored by the hook.
-      }
-    });
-
-    expect(hook.result.current.settingsStateFor(roomA)).toMatchObject({
-      status: "ready",
-      value: {
-        conversationMode: "ambient",
-        orderedExcludePreviousSpeaker: true,
-        maxRelayTurns: 8,
-      },
-    });
+    await waitFor(() =>
+      expect(hook.result.current.settingsStateFor(roomA)).toMatchObject({
+        status: "ready",
+        value: {
+          conversationMode: "ambient",
+          orderedExcludePreviousSpeaker: true,
+          maxRelayTurns: 8,
+        },
+      })
+    );
   });
 
   it("applies empty canonical metadata instead of retaining stale text", async () => {

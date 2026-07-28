@@ -543,6 +543,7 @@ export default function App() {
     onSideChat: handleSideChatRealtimeEvents,
     onError: handleSideChatError,
     onUnauthorized: admittedSessionToken ? expireGuestSession : undefined,
+    onRoomDeleted: handleDeletedRoom,
   });
   const roomMembers = useRoomMembers({
     activeRoom,
@@ -1108,6 +1109,28 @@ export default function App() {
     }
     setRoomMenu(null);
     setChannelMenu(null);
+  }
+
+  function handleDeletedRoom(deletedMeetingId: string) {
+    const deletedRoom = rooms.find(
+      (room) => room.meetingId === deletedMeetingId
+    );
+    if (!deletedRoom) return;
+    setSettingsModal((current) =>
+      current?.roomId === deletedRoom.id ? null : current
+    );
+    setLeaveRoomTargetId((current) =>
+      current === deletedRoom.id ? "" : current
+    );
+    removeAcknowledgedRoom(deletedRoom.id);
+    if (guestLocked) {
+      clearGuestSession();
+      const url = new URL(window.location.href);
+      url.pathname = "/join";
+      url.search = "";
+      url.hash = "";
+      window.location.href = url.toString();
+    }
   }
 
   async function leaveRoom(roomId: string) {

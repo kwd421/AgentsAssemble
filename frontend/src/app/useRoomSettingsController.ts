@@ -84,6 +84,7 @@ export function useRoomSettingsController({
     Record<string, RoomSettingsAuthorityState>
   >({});
   const operationGenerationsRef = useRef<Record<string, number>>({});
+  const globalWriteChainsRef = useRef<Record<string, Promise<void>>>({});
   const preferenceOperationGenerationsRef = useRef<Record<string, number>>({});
   const preferenceWriteChainsRef = useRef<Record<string, Promise<void>>>({});
   const onRoomMetadataLoadedRef = useRef(onRoomMetadataLoaded);
@@ -302,7 +303,11 @@ export function useRoomSettingsController({
         ...previous,
         [key]: { status: "saving", value: optimisticValue, error: null },
       }));
-      return saveCanonicalGlobalSettings(updates)
+      const previousWrite =
+        globalWriteChainsRef.current[key] || Promise.resolve();
+      const write = previousWrite
+        .catch(() => undefined)
+        .then(() => saveCanonicalGlobalSettings(updates))
         .then((settings) => {
           if (isCurrentSettingsOperation(key, generation)) {
             applyGlobalSettings(room.meetingId, key, settings);
@@ -319,6 +324,11 @@ export function useRoomSettingsController({
           }));
           throw error;
         });
+      globalWriteChainsRef.current[key] = write.then(
+        () => undefined,
+        () => undefined
+      );
+      return write;
     },
     [
       applyGlobalSettings,

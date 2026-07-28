@@ -21,6 +21,7 @@ export interface RoomSocketHandlers {
   onRoomSnapshot?: (snapshot: RoomSocketSnapshot) => void;
   onProviderCatalog?: (catalog: ProviderCatalogSnapshot) => void;
   onRoomEvents?: (events: RoomEvent[]) => void;
+  onRoomDeleted?: (roomId: string, roomName: string) => void;
   onOpen?: () => void;
   onClose?: () => void;
   onError?: (err: Event | Error) => void;
@@ -214,6 +215,8 @@ export function openRoomSocket(
       message?: string;
       reason?: string;
       catalog?: ProviderCatalogSnapshot;
+      room_id?: string;
+      room_name?: string;
     };
     if ((msg.op === "ack" || msg.op === "nack") && msg.request_id) {
       const command = pending.get(msg.request_id);
@@ -247,6 +250,19 @@ export function openRoomSocket(
           String(msg.reason || "Room event delivery fell behind; reconnecting."),
           "resync_required"
         )
+      );
+      socket?.close();
+      return;
+    }
+    if (msg.op === "room_deleted") {
+      closed = true;
+      window.clearTimeout(reconnectTimer);
+      rejectAll(
+        new RoomSocketSayError("Room was deleted.", "room_deleted")
+      );
+      handlers.onRoomDeleted?.(
+        String(msg.room_id || ""),
+        String(msg.room_name || "")
       );
       socket?.close();
       return;

@@ -42,6 +42,7 @@ type CanonicalRoomCallbacks = {
   onSideChat?: (events: SideChatEvent[]) => void;
   onError?: (error: Event | Error) => void;
   onUnauthorized?: () => void;
+  onRoomDeleted?: (roomId: string, roomName: string) => void;
 };
 
 export type UseCanonicalRoomOptions = CanonicalRoomCallbacks & {
@@ -150,6 +151,7 @@ export function useCanonicalRoom(options: UseCanonicalRoomOptions) {
     onSideChat: options.onSideChat,
     onError: options.onError,
     onUnauthorized: options.onUnauthorized,
+    onRoomDeleted: options.onRoomDeleted,
   };
   const connectionGenerationRef = useRef(0);
 
@@ -346,6 +348,14 @@ export function useCanonicalRoom(options: UseCanonicalRoomOptions) {
       },
       onSideChat: (events) => {
         if (connectionIsCurrent()) callbacksRef.current.onSideChat?.(events);
+      },
+      onRoomDeleted: (deletedRoomId, roomName) => {
+        if (connectionIsCurrent()) {
+          callbacksRef.current.onRoomDeleted?.(
+            deletedRoomId || roomId,
+            roomName
+          );
+        }
       },
       onOpen: () => {
         if (!connectionIsCurrent()) return;

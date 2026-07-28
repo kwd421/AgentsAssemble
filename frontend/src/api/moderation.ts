@@ -8,7 +8,7 @@ import {
   normalizeRoomChannelList,
   type ApiRoomChannel,
 } from "./roomChannelCodec";
-import { postJson, postJsonHost, postJsonModerator } from "./http";
+import { postJsonHost, postJsonModerator } from "./http";
 
 export function archiveRoom(roomId: string, archived: boolean) {
   return postJsonModerator<{ status: string; room_id: string }>("/api/rooms/archive", {
@@ -17,8 +17,15 @@ export function archiveRoom(roomId: string, archived: boolean) {
   });
 }
 
-export function upsertRoomMember(member: Partial<RoomMember>) {
-  return postJson<RoomMembersResponse & { member: RoomMember }>("/api/room-members", member);
+export function upsertRoomMember(
+  member: Partial<RoomMember>,
+  sessionToken = ""
+) {
+  return postJsonModerator<RoomMembersResponse & { member: RoomMember }>(
+    "/api/room-members",
+    member,
+    sessionToken
+  );
 }
 
 export function updateRoomMemberRole(params: {
