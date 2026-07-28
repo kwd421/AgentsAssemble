@@ -1,6 +1,6 @@
 .DEFAULT_GOAL := test
 
-.PHONY: help test test-module frontend-deps frontend-build
+.PHONY: help test test-module test-quality-check frontend-deps frontend-build
 .PHONY: codebase-map codebase-map-check codebase-map-commit-check codebase-map-verify
 .PHONY: room-event-types room-event-types-check room-event-types-commit-check room-event-types-verify
 .PHONY: generated-artifacts generated-artifacts-check generated-artifacts-commit-check generated-artifacts-verify
@@ -14,8 +14,9 @@ ROOM_EVENT_TYPE_OUTPUT := frontend/src/types/generatedRoomEvent.ts
 
 help:
 	@printf '%s\n' \
-		'make test                 Refresh generated artifacts, run the full suite, require committed outputs' \
+		'make test                 Check changed tests, refresh artifacts, run the full suite' \
 		'make test-module M=...    Refresh generated artifacts, run one module, require committed outputs' \
+		'make test-quality-check   Reject shallow Python tests changed since TEST_QUALITY_BASE (default HEAD)' \
 		'make frontend-deps        Install frontend dependencies' \
 		'make frontend-build       Build the frontend' \
 		'make codebase-map         Regenerate all three checked-in architecture maps' \
@@ -26,14 +27,19 @@ help:
 		'make generated-artifacts-verify  Regenerate and verify every checked-in generated artifact'
 
 # Refresh generated artifacts, run the full suite, then reject uncommitted changes.
-test: generated-artifacts
+test: test-quality-check generated-artifacts
 	$(PYTHON) -m unittest discover -s tests -t .
 	$(MAKE) generated-artifacts-commit-check
 
 # Run one module with the same generated-artifact contract as the full suite.
-test-module: generated-artifacts
+test-module: test-quality-check generated-artifacts
 	$(PYTHON) -m unittest $(M)
 	$(MAKE) generated-artifacts-commit-check
+
+TEST_QUALITY_BASE ?= HEAD
+
+test-quality-check:
+	$(PYTHON) scripts/check_test_quality.py --base $(TEST_QUALITY_BASE)
 
 frontend-deps:
 	npm --prefix frontend ci

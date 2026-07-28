@@ -1,8 +1,13 @@
 from __future__ import annotations
 
+import os
+import subprocess
+import sys
+import textwrap
 import unittest
 from collections.abc import Callable
 from io import StringIO
+from pathlib import Path
 
 from tests.run_postgres_contracts import (
     POSTGRES_REQUIRED_MODULES,
@@ -23,6 +28,61 @@ def _suite_with(
 
 
 class PostgresContractRunnerTests(unittest.TestCase):
+    def test_mandatory_suite_contains_every_postgres_gated_test(self) -> None:
+        environment = dict(os.environ)
+        environment.pop(POSTGRES_TEST_DSN_ENV, None)
+        probe = subprocess.run(
+            [
+                sys.executable,
+                "-c",
+                textwrap.dedent(
+                    """
+                    import unittest
+                    from tests.run_postgres_contracts import load_postgres_contract_suite
+
+                    def flatten(suite):
+                        for item in suite:
+                            if isinstance(item, unittest.TestSuite):
+                                yield from flatten(item)
+                            else:
+                                yield item
+
+                    def postgres_gated(test):
+                        method = getattr(test, test._testMethodName)
+                        reasons = (
+                            getattr(test.__class__, "__unittest_skip_why__", ""),
+                            getattr(method, "__unittest_skip_why__", ""),
+                        )
+                        return any("postgres" in str(reason).lower() for reason in reasons)
+
+                    discovered = unittest.defaultTestLoader.discover(
+                        "tests",
+                        top_level_dir=".",
+                    )
+                    gated_ids = {
+                        test.id() for test in flatten(discovered) if postgres_gated(test)
+                    }
+                    mandatory_ids = {
+                        test.id() for test in flatten(load_postgres_contract_suite())
+                    }
+                    if not gated_ids:
+                        raise SystemExit("No PostgreSQL-gated tests were discovered.")
+                    missing = sorted(gated_ids - mandatory_ids)
+                    if missing:
+                        raise SystemExit(
+                            "Mandatory PostgreSQL suite omitted: " + ", ".join(missing)
+                        )
+                    """
+                ),
+            ],
+            cwd=Path(__file__).resolve().parents[1],
+            env=environment,
+            capture_output=True,
+            text=True,
+        )
+
+        self.assertEqual(probe.returncode, 0, probe.stdout + probe.stderr)
+
     def test_preflight_requires_dsn_and_every_postgres_module(self) -> None:
         missing = missing_postgres_contract_requirements(
             {},
@@ -86,7 +146,6 @@ class PostgresContractRunnerTests(unittest.TestCase):
 
         self.assertEqual(exit_code, 1)
         self.assertIn("contract failed", output.getvalue())
-
 
 if __name__ == "__main__":
     unittest.main()

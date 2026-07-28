@@ -248,6 +248,16 @@ similarly meaningful contract. If the test would still pass while the actual
 user workflow is broken, it is not sufficient evidence and usually should not
 exist.
 
+Every added or modified Python test must pass
+`python3 scripts/check_test_quality.py --base <comparison-commit>`. The CI
+test-quality job applies this gate to the complete pull-request or push diff.
+It rejects implementation-source text checks, assertion-free tests, private
+production patches, mock-interaction-only oracles, exact Korean UI copy, and
+symbol-only tests. This static check is a review gate, not evidence that the
+tested workflow works. A legitimate compatibility or architecture contract
+requires a narrow entry in `tests/test_quality_exceptions.toml` that names the
+test, the exact rule, and the consumer-facing reason it must remain structural.
+
 Never use unit-test success as a substitute for the required verification path.
 GUI behavior must be exercised through the GUI, provider behavior through the
 real provider path when requested, and integration behavior through the actual

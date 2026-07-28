@@ -1,0 +1,8 @@
+# Structural-only test exceptions belong here, not beside the test they waive.
+# Each exception must identify one test, the exact gate rules, and the
+# consumer-facing compatibility or architecture contract it protects.
+#
+# [[allow]]
+# test_id = "tests.test_example.ExampleTests.test_published_compatibility_import"
+# rules = ["symbol_only"]
+# reason = "Protects the documented plugin import until the compatibility shim is retired."

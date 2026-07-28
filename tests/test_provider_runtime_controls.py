@@ -972,8 +972,18 @@ class ProviderRuntimeControlTests(unittest.TestCase):
     def test_leave_treats_an_already_revoked_session_as_complete(self):
         revoked = HTTPError("https://room.example/api/room-invite/leave", 401, "Unauthorized", {}, None)
 
-        with patch("agentsassemble.application.room_attendee.urlopen", side_effect=revoked):
+        with patch(
+            "agentsassemble.application.room_attendee.urlopen",
+            side_effect=revoked,
+        ) as open_request:
             _leave_room("https://room.example", "session-secret")
+
+        open_request.assert_called_once()
+        request = open_request.call_args.args[0]
+        self.assertEqual(request.full_url, "https://room.example/api/room-invite/leave")
+        self.assertEqual(request.get_method(), "POST")
+        self.assertEqual(request.get_header("Authorization"), "Bearer session-secret")
+        self.assertEqual(open_request.call_args.kwargs, {"timeout": 5.0})
 
     def test_windows_runtime_keeps_one_process_and_stops_it(self):
         fake = FakeConPtyProcess()

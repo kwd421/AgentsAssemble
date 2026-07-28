@@ -30,7 +30,7 @@ itself authorize a module move or a product behavior change.
 
 | Module | Path | Lines | Domain | Class | Internal imports | Reverse | Import-time markers | Reference evidence | Primary tests | Proposed owner | Migration |
 | --- | --- | ---: | --- | --- | --- | ---: | --- | --- | --- | --- | --- |
-| `agentsassemble` | `agentsassemble/__init__.py` | 1 | application | current | - | 0 | - | test-import:15, monkeypatch:6 | `scripts/check_package_architecture.py`, `scripts/compatibility_shims.py`, `tests/test_agent_session_room_store.py`, `+18` | `root entrypoint` | retained-entrypoint |
+| `agentsassemble` | `agentsassemble/__init__.py` | 1 | application | current | - | 0 | - | test-import:15, monkeypatch:7 | `scripts/check_package_architecture.py`, `scripts/check_test_quality.py`, `scripts/compatibility_shims.py`, `+19` | `root entrypoint` | retained-entrypoint |
 | `agentsassemble.adapters` | `agentsassemble/adapters/__init__.py` | 19 | providers | compatibility | `agentsassemble.providers.adapters.base`, `agentsassemble.providers.adapters.codex`, `agentsassemble.providers.adapters.codex_live`, `agentsassemble.providers.adapters.mock`, `agentsassemble.providers.adapters.registry`, `agentsassemble.providers.adapters.unsupported` | 0 | - | test-import:1 | `tests/test_provider_package.py` | `providers/` | compatibility-shim |
 | `agentsassemble.adapters.base` | `agentsassemble/adapters/base.py` | 5 | providers | compatibility | `agentsassemble.providers.adapters.base` | 0 | - | - | - | `providers/` | compatibility-shim |
 | `agentsassemble.adapters.codex` | `agentsassemble/adapters/codex.py` | 5 | providers | compatibility | `agentsassemble.providers.adapters.codex` | 0 | - | - | - | `providers/` | compatibility-shim |

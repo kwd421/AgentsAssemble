@@ -5,6 +5,30 @@ on:
   pull_request:
 
 jobs:
+  test-quality:
+    runs-on: ubuntu-latest
+    env:
+      PULL_REQUEST_BASE: ${{ github.event.pull_request.base.sha }}
+      PUSH_BASE: ${{ github.event.before }}
+      DEFAULT_BRANCH: ${{ github.event.repository.default_branch }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+      - name: Reject shallow changed tests
+        run: |
+          base="$PULL_REQUEST_BASE"
+          if [ -z "$base" ]; then
+            base="$PUSH_BASE"
+          fi
+          if [ -z "$base" ] || [ "$base" = "0000000000000000000000000000000000000000" ]; then
+            base="$(git merge-base HEAD "origin/$DEFAULT_BRANCH")"
+          fi
+          python scripts/check_test_quality.py --base "$base"
+
   codebase-map:
     runs-on: ubuntu-latest
     steps:

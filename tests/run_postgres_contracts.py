@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import importlib.util
 import os
+from pathlib import Path
 import sys
 import unittest
 from collections.abc import Callable, Mapping
@@ -9,14 +10,16 @@ from typing import TextIO
 
 
 POSTGRES_TEST_DSN_ENV = "AGENTSASSEMBLE_TEST_POSTGRES_DSN"
-POSTGRES_CONTRACT_MODULES = (
-    "tests.test_postgres_connection_pool",
-    "tests.test_postgres_room_schema",
-    "tests.test_postgres_room_repository",
-    "tests.test_postgres_invite_repository",
-    "tests.test_postgres_identity_repository",
-    "tests.test_postgres_cross_authority_transactions",
-    "tests.test_room_repository_migration",
+POSTGRES_CONTRACT_MODULES = tuple(
+    sorted(
+        {
+            *(
+                f"tests.{path.stem}"
+                for path in Path(__file__).parent.glob("test_postgres_*.py")
+            ),
+            "tests.test_room_repository_migration",
+        }
+    )
 )
 POSTGRES_REQUIRED_MODULES = (
     "alembic",
