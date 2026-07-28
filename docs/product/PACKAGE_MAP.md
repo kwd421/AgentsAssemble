@@ -4,7 +4,7 @@ Status: generated architecture inventory
 
 Generator: `python3 scripts/generate_package_map.py`
 
-Source fingerprint: `1013507ad05d52be`
+Source fingerprint: `e68cc7fab179c520`
 
 This file describes current evidence and proposed ownership. It does not by
 itself authorize a module move or a product behavior change.
@@ -631,7 +631,7 @@ itself authorize a module move or a product behavior change.
 | `agentsassemble.providers.live_session_adapter` | `agentsassemble/providers/live_session_adapter.py` | 141 | providers | current | - | 3 | - | test-import:1 | `tests/test_live_agent_runner.py` | `providers/` | in-target-package |
 | `agentsassemble.providers.live_session_transport` | `agentsassemble/providers/live_session_transport.py` | 746 | providers | current | - | 5 | `control-flow@14`, `control-flow@19`, `control-flow@24` | test-import:3, monkeypatch:1 | `tests/gui_server_test_support.py`, `tests/test_live_agent_runner.py`, `tests/test_live_session_transport.py` | `providers/` | in-target-package |
 | `agentsassemble.providers.model_verification` | `agentsassemble/providers/model_verification.py` | 91 | providers | current | - | 4 | `call:compile@8`, `call:compile@9`, `call:frozenset@10`, `call:frozenset@11` | test-import:2 | `tests/test_provider_model_verification.py`, `tests/test_provider_package.py` | `providers/` | in-target-package |
-| `agentsassemble.providers.opencode` | `agentsassemble/providers/opencode.py` | 485 | providers | current | `agentsassemble.providers.process_environment`, `agentsassemble.room.text` | 4 | - | test-import:2 | `tests/test_opencode_runtime.py`, `tests/test_provider_package.py` | `providers/` | in-target-package |
+| `agentsassemble.providers.opencode` | `agentsassemble/providers/opencode.py` | 545 | providers | current | `agentsassemble.providers.process_environment`, `agentsassemble.room.text` | 4 | - | test-import:2 | `tests/test_opencode_runtime.py`, `tests/test_provider_package.py` | `providers/` | in-target-package |
 | `agentsassemble.providers.process_environment` | `agentsassemble/providers/process_environment.py` | 75 | providers | current | - | 10 | `call:frozenset@7` | test-import:2 | `tests/test_provider_package.py`, `tests/test_provider_runtime_controls.py` | `providers/` | in-target-package |
 | `agentsassemble.providers.provider_usage` | `agentsassemble/providers/provider_usage.py` | 53 | providers | current | `agentsassemble.providers.claude_usage`, `agentsassemble.providers.codex_usage`, `agentsassemble.providers.deepseek_usage`, `agentsassemble.providers.terminal_usage`, `agentsassemble.providers.usage_contract` | 2 | - | - | - | `providers/` | in-target-package |
 | `agentsassemble.providers.remote_bridge_config` | `agentsassemble/providers/remote_bridge_config.py` | 68 | providers | current | - | 6 | - | - | - | `providers/` | in-target-package |

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import secrets
 import shutil
 import socket
 import subprocess
@@ -160,9 +161,12 @@ class OpenCodeRuntime:
             raise RuntimeError("OpenCode runtime has no pending turn.")
         deadline = time.monotonic() + max(1.0, float(timeout_seconds))
         assistant_message_ids: set[str] = set()
+        ignored_assistant_message_ids: set[str] = set()
         part_types: dict[str, str] = {}
+        pending_parts: dict[str, list[dict[str, object]]] = {}
         buffered_deltas: dict[tuple[str, str], list[str]] = {}
         emitted = ""
+        current_final = ""
         observed_model_id = ""
         activity_states: set[tuple[str, str]] = set()
         reasoning_active = False
@@ -203,7 +207,13 @@ class OpenCodeRuntime:
             event_response = self._open("GET", "/event", timeout_seconds=timeout_seconds, stream=True)
             with self._lock:
                 self._response = event_response
-            self._prompt_async(session_id, prompt, timeout_seconds=min(10.0, timeout_seconds))
+            request_message_id = _new_message_id()
+            self._prompt_async(
+                session_id,
+                prompt,
+                message_id=request_message_id,
+                timeout_seconds=min(10.0, timeout_seconds),
+            )
             for raw_line in event_response:
                 if self._interrupted.is_set():
                     raise RuntimeError("OpenCode turn interrupted.")
@@ -220,6 +230,13 @@ class OpenCodeRuntime:
                     info = properties.get("info") if isinstance(properties.get("info"), dict) else {}
                     message_id = str(info.get("id") or "")
                     if str(info.get("role") or "") == "assistant" and message_id:
+                        if str(info.get("parentID") or "") != request_message_id:
+                            ignored_assistant_message_ids.add(message_id)
+                            pending_parts.pop(message_id, None)
+                            for key in tuple(buffered_deltas):
+                                if key[0] == message_id:
+                                    buffered_deltas.pop(key, None)
+                            continue
                         model_value = info.get("model") if isinstance(info.get("model"), dict) else {}
                         observed_provider = clean_room_text(
                             info.get("providerID") or model_value.get("providerID"),
@@ -234,6 +251,11 @@ class OpenCodeRuntime:
                         elif observed_model:
                             observed_model_id = observed_model
                         assistant_message_ids.add(message_id)
+                        for pending_part in pending_parts.pop(message_id, []):
+                            emit_activity(pending_part)
+                            pending_part_id = str(pending_part.get("id") or "")
+                            if str(pending_part.get("type") or "") == "text":
+                                emit_text_part(message_id, pending_part_id)
                         for buffered_message_id, part_id in list(buffered_deltas):
                             if buffered_message_id == message_id:
                                 emit_text_part(message_id, part_id)
@@ -245,11 +267,16 @@ class OpenCodeRuntime:
                     part_type = str(part.get("type") or "")
                     if part_id and part_type:
                         part_types[part_id] = part_type
-                        emit_activity(part)
-                        if part_type == "text":
-                            emit_text_part(message_id, part_id)
-                        else:
+                        if message_id in assistant_message_ids:
+                            emit_activity(part)
+                            if part_type == "text":
+                                emit_text_part(message_id, part_id)
+                            else:
+                                buffered_deltas.pop((message_id, part_id), None)
+                        elif message_id in ignored_assistant_message_ids:
                             buffered_deltas.pop((message_id, part_id), None)
+                        elif message_id:
+                            pending_parts.setdefault(message_id, []).append(part)
                     continue
                 if event_type == "message.part.delta" and str(properties.get("field") or "") == "text":
                     message_id = str(properties.get("messageID") or "")
@@ -261,14 +288,25 @@ class OpenCodeRuntime:
                         emitted += delta
                         if on_delta is not None:
                             on_delta(delta)
-                    elif part_id not in part_types:
+                    elif message_id not in ignored_assistant_message_ids and part_id not in part_types:
                         buffered_deltas.setdefault((message_id, part_id), []).append(delta)
                     continue
                 if event_type == "session.idle":
+                    current_final = self._assistant_text_for_parent(
+                        session_id,
+                        request_message_id,
+                        timeout_seconds=max(1.0, deadline - time.monotonic()),
+                    )
+                    if not assistant_message_ids and not current_final:
+                        continue
                     if reasoning_active and on_activity is not None:
                         on_activity({"category": "reasoning", "status": "completed"})
                     break
-            final = self._latest_assistant_text(session_id, timeout_seconds=max(1.0, deadline - time.monotonic()))
+            final = current_final or self._assistant_text_for_parent(
+                session_id,
+                request_message_id,
+                timeout_seconds=max(1.0, deadline - time.monotonic()),
+            )
             content = final or emitted.strip()
             if not content:
                 raise RuntimeError("OpenCode completed without a final assistant message.")
@@ -288,6 +326,7 @@ class OpenCodeRuntime:
                     "message_source": "opencode_sse",
                     "model": self.model,
                     "observed_model_id": observed_model_id,
+                    "request_message_id": request_message_id,
                 },
             }
         except Exception as error:
@@ -361,8 +400,16 @@ class OpenCodeRuntime:
             raise RuntimeError("OpenCode did not return a session id.")
         return session_id
 
-    def _prompt_async(self, session_id: str, prompt: str, *, timeout_seconds: float) -> None:
+    def _prompt_async(
+        self,
+        session_id: str,
+        prompt: str,
+        *,
+        message_id: str,
+        timeout_seconds: float,
+    ) -> None:
         payload = {
+            "messageID": message_id,
             "model": {"providerID": self.provider_id, "modelID": self.model_id},
             "parts": [{"type": "text", "text": prompt}],
             "tools": {},
@@ -377,7 +424,13 @@ class OpenCodeRuntime:
         )
         response.close()
 
-    def _latest_assistant_text(self, session_id: str, *, timeout_seconds: float) -> str:
+    def _assistant_text_for_parent(
+        self,
+        session_id: str,
+        parent_message_id: str,
+        *,
+        timeout_seconds: float,
+    ) -> str:
         response = self._open(
             "GET",
             f"/session/{quote(session_id)}/message",
@@ -387,7 +440,10 @@ class OpenCodeRuntime:
         response.close()
         for message in reversed(payload if isinstance(payload, list) else []):
             info = message.get("info") if isinstance(message, dict) and isinstance(message.get("info"), dict) else {}
-            if str(info.get("role") or "") != "assistant":
+            if (
+                str(info.get("role") or "") != "assistant"
+                or str(info.get("parentID") or "") != parent_message_id
+            ):
                 continue
             parts = message.get("parts") if isinstance(message, dict) else []
             return "".join(
@@ -477,6 +533,10 @@ def _now() -> str:
     from datetime import UTC, datetime
 
     return datetime.now(UTC).isoformat()
+
+
+def _new_message_id() -> str:
+    return f"msg_{secrets.token_hex(13)}"
 
 
 def _reserve_loopback_port() -> int:
