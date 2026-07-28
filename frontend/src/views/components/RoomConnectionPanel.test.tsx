@@ -441,6 +441,61 @@ describe("RoomConnectionPanel", () => {
     expect(screen.queryByRole("heading", { name: "권한 / 속도" })).toBeNull();
   });
 
+  it("shows canonical runtime-setting changes received for the open session", async () => {
+    const provider = codexProvider();
+    const initialSession = {
+      ...agentSession("stopped"),
+      runtime_profile_key: "profile-test",
+      model: "gpt-current",
+      reasoning_effort: "low",
+      service_tier: "default",
+      permission_mode: "meeting_read_only",
+    };
+    const view = render(
+      <RoomConnectionPanel
+        room={room}
+        agents={[agent("offline")]}
+        members={[member("stopped")]}
+        agentSessions={[initialSession]}
+        capabilities={agentControlCapability}
+        availableProviders={[provider]}
+        onAgentConfigure={vi.fn()}
+      />
+    );
+
+    openAgentDetails();
+    await waitFor(() =>
+      expect((screen.getByLabelText(/모델/) as HTMLSelectElement).value).toBe("gpt-current")
+    );
+
+    view.rerender(
+      <RoomConnectionPanel
+        room={room}
+        agents={[agent("offline")]}
+        members={[member("stopped")]}
+        agentSessions={[
+          {
+            ...initialSession,
+            model: "gpt-next",
+            reasoning_effort: "high",
+            service_tier: "fast",
+            permission_mode: "workspace_write",
+          },
+        ]}
+        capabilities={agentControlCapability}
+        availableProviders={[provider]}
+        onAgentConfigure={vi.fn()}
+      />
+    );
+
+    await waitFor(() =>
+      expect((screen.getByLabelText(/모델/) as HTMLSelectElement).value).toBe("gpt-next")
+    );
+    expect((screen.getByLabelText(/추론 강도/) as HTMLSelectElement).value).toBe("high");
+    expect((screen.getByLabelText(/응답 속도/) as HTMLSelectElement).value).toBe("fast");
+    expect((screen.getByLabelText(/권한/) as HTMLSelectElement).value).toBe("workspace_write");
+  });
+
   it("does not save a stopped runtime profile that conflicts with the current catalog", async () => {
     const session = {
       ...agentSession("stopped"),

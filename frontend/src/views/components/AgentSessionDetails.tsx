@@ -133,7 +133,16 @@ export default function AgentSessionDetails({
       permission_mode:
         session.permission_mode || controlDefault(provider, "permission_mode") || "meeting_read_only",
     });
-  }, [provider, session.session_id, session.runtime_profile_key]);
+  }, [
+    provider,
+    session.session_id,
+    session.runtime_profile_key,
+    session.model,
+    session.reasoning_effort,
+    session.service_tier,
+    session.variant,
+    session.permission_mode,
+  ]);
 
   async function runControl(action: AgentSessionControlAction) {
     if (!onControl || pendingAction) return;
