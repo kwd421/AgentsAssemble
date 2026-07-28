@@ -54,6 +54,25 @@ async function joinGuest(
   return readGuestSession(page);
 }
 
+async function roomWithLabel(page: import("@playwright/test").Page, label: string) {
+  const response = await page.request.get("/api/rooms");
+  expect(response.ok()).toBe(true);
+  const payload = (await response.json()) as {
+    rooms?: Array<{ room_id?: string; label?: string }>;
+  };
+  return (payload.rooms || []).find((room) => room.label === label) || null;
+}
+
+async function openActiveServerSettings(page: import("@playwright/test").Page) {
+  const header = page.getByRole("button", { name: /서버 메뉴 열기$/ });
+  const accessibleName = await header.getAttribute("aria-label");
+  const roomLabel = String(accessibleName || "").replace(/ 서버 메뉴 열기$/, "");
+  await page.getByRole("button", { name: roomLabel, exact: true }).click({
+    button: "right",
+  });
+  await page.getByRole("menuitem", { name: "서버 설정", exact: true }).click();
+}
+
 test("keeps ordinary invites separate from one-time cross-origin operator pairing", async ({
   browser,
   page,
@@ -234,6 +253,69 @@ test("sends and restores an attachment-only canonical room message", async ({ br
   await observerPage.getByRole("button", { name: "#general", exact: true }).click();
   await expect(observerPage.getByRole("img", { name: "attachment-only.png" })).toBeVisible();
   await observerContext.close();
+});
+
+test("persists a created server and removes it from every connected browser", async ({
+  browser,
+  page,
+}) => {
+  const serverLabel = "E2E Lifecycle Server";
+  const serverTopic = "Persists through reload and disappears after deletion";
+  await installHostCredential(page);
+  await page.goto("/");
+  await page.getByRole("button", { name: "새 방 만들기" }).click();
+  await openActiveServerSettings(page);
+
+  let settings = page.getByRole("dialog", { name: "서버 설정" });
+  await settings.getByLabel("서버 이름").first().fill(serverLabel);
+  await settings.getByLabel("방 주제").fill(serverTopic);
+  await expect.poll(() => roomWithLabel(page, serverLabel)).not.toBeNull();
+  const createdRoom = await roomWithLabel(page, serverLabel);
+  expect(createdRoom?.room_id).toBeTruthy();
+  await settings.getByRole("button", { name: "설정 닫기" }).click();
+
+  await page.reload();
+  const firstRoomButton = page.getByRole("button", {
+    name: serverLabel,
+    exact: true,
+  });
+  await expect(firstRoomButton).toBeVisible();
+  await firstRoomButton.click();
+  await openActiveServerSettings(page);
+  settings = page.getByRole("dialog", { name: "서버 설정" });
+  await expect(settings.getByLabel("서버 이름").first()).toHaveValue(serverLabel);
+  await expect(settings.getByLabel("방 주제")).toHaveValue(serverTopic);
+  await settings.getByRole("button", { name: "설정 닫기" }).click();
+
+  const observerContext = await browser.newContext();
+  try {
+    const observerPage = await observerContext.newPage();
+    await installHostCredential(observerPage);
+    await observerPage.goto("/");
+    const observerRoomButton = observerPage.getByRole("button", {
+      name: serverLabel,
+      exact: true,
+    });
+    await expect(observerRoomButton).toBeVisible();
+    await observerRoomButton.click();
+
+    await openActiveServerSettings(page);
+    settings = page.getByRole("dialog", { name: "서버 설정" });
+    await settings.getByRole("link", { name: "서버 삭제" }).click();
+    await settings.getByLabel("서버 이름").last().fill(serverLabel);
+    await settings.getByRole("button", { name: "서버 영구 삭제" }).click();
+
+    await expect(firstRoomButton).toHaveCount(0);
+    await expect(observerRoomButton).toHaveCount(0);
+    await expect.poll(() => roomWithLabel(page, serverLabel)).toBeNull();
+
+    await observerPage.reload();
+    await expect(
+      observerPage.getByRole("button", { name: serverLabel, exact: true })
+    ).toHaveCount(0);
+  } finally {
+    await observerContext.close();
+  }
 });
 
 test("streams on desktop and controls the same canonical session on mobile", async ({ page }) => {
