@@ -1,10 +1,10 @@
 {
  "readme": "AgentsAssemble codebase map. Regenerate with `make codebase-map`; verify committed outputs with `make codebase-map-verify`. modules[] columns: name, path, package, domain, classification, migration_status, lines, docstring, imports[], imported_by[] (indexes into modules), classes[[name, [[base, defining_module], ...]]] (best-effort, top-level classes only). frontend[] columns: path, group, lines, doc, imports[], imported_by[] (indexes into frontend). package_edges go importer -> dependency with module-import counts; `points` is the precomputed polyline for that edge and `intra_cycle` marks imports whose endpoints share one cycle group. graph{} holds the layered package drawing: layers[] top-to-bottom (each with members[] package ids, member_count, and the dominant domain), (a package sits below everything importing it), clusters[] are mutually dependent packages (import cycles at package level) drawn as one labelled block, plus width/height of the drawing. health{} ranks findings for a reader who has to act: cycles[] (mutually dependent packages, with the lines they hold), leaning_on_retiring[] (current modules importing legacy/compatibility modules - the reason legacy cannot be deleted), highest_leverage_migrations[] (retiring modules with the most current importers), unreferenced_shims[] (compatibility modules with no importer in agentsassemble/ and no reference in tests/; callers outside this repository are not visible, so verify before deleting), and hotspots[] (largest modules). health.scope states exactly what was measured. class_graph{} is the UML generalization DAG over base classes that resolve inside the repo: edges go base -> subclass, so a subclass always sits below the class it extends. Coordinates in graph and class_graph are laid out with a Sugiyama pipeline (cycle condensation, Coffman-Graham layering, dummy-node edge routing, median/transpose crossing reduction) and are deterministic.",
- "generated_at": "2026-07-28T13:03:29Z",
- "fingerprint": "403117cb59d5d165",
+ "generated_at": "2026-07-28T13:08:36Z",
+ "fingerprint": "8a7638e95bd9c3e0",
  "stats": {
   "backend_modules": 789,
-  "backend_lines": 130182,
+  "backend_lines": 130232,
   "frontend_files": 147,
   "frontend_lines": 38812,
   "packages": 30,
@@ -124,7 +124,7 @@
    "kind": "backend",
    "doc": "Provider runtime contracts and implementations.",
    "files": 84,
-   "lines": 20967,
+   "lines": 21017,
    "domains": {
     "providers": 84
    },
@@ -3700,7 +3700,7 @@
      "web"
     ],
     "internal_edges": 80,
-    "lines": 125081,
+    "lines": 125131,
     "heaviest": "legacy"
    },
    {
@@ -16350,7 +16350,7 @@
    "providers",
    "current",
    "in-target-package",
-   456,
+   506,
    "Server-owned provider Agent Bridge process lifecycle.",
    [
     106,
@@ -16369,6 +16369,10 @@
    [
     [
      "_BridgeHandle",
+     []
+    ],
+    [
+     "_BridgeLaunchOwnership",
      []
     ],
     [
@@ -24445,7 +24449,7 @@
    "name": "agentsassemble",
    "note": "Backend package (Python)",
    "files": 789,
-   "lines": 130182
+   "lines": 130232
   },
   {
    "name": "frontend/src",
@@ -24457,7 +24461,7 @@
    "name": "tests",
    "note": "Backend test suite",
    "files": 353,
-   "lines": 143303
+   "lines": 143379
   },
   {
    "name": "scripts",
@@ -24469,7 +24473,7 @@
    "name": "docs",
    "note": "Product and architecture docs",
    "files": 79,
-   "lines": 29534
+   "lines": 29535
   },
   {
    "name": "configs",

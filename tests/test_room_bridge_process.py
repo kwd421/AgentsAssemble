@@ -69,6 +69,25 @@ class FakePopenFactory:
         return self.process
 
 
+class ConcurrentPopenFactory:
+    def __init__(self):
+        self.calls = []
+        self.processes = []
+        self._lock = threading.Lock()
+        self._rendezvous = threading.Barrier(2)
+
+    def __call__(self, command, **kwargs):
+        with self._lock:
+            process = FakeProcess(pid=3300 + len(self.processes))
+            self.calls.append((list(command), kwargs))
+            self.processes.append(process)
+        try:
+            self._rendezvous.wait(timeout=0.3)
+        except threading.BrokenBarrierError:
+            pass
+        return process
+
+
 class RefusingProcess(FakeProcess):
     def terminate(self):
         self.terminated = True
@@ -86,6 +105,63 @@ class TerminateIgnoringProcess(FakeProcess):
 
 
 class NativeCliBridgeProcessManagerTests(unittest.TestCase):
+    def test_concurrent_start_creates_one_owned_bridge_process(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            popen = ConcurrentPopenFactory()
+            manager = NativeCliBridgeProcessManager(
+                Path(temp_dir),
+                popen_factory=popen,
+                executable_resolver=lambda executable: f"/resolved/{executable}",
+            )
+            spec = _spec()
+            start_together = threading.Barrier(2)
+            launches = []
+            errors = []
+
+            def start_bridge():
+                try:
+                    start_together.wait(timeout=1)
+                    launches.append(
+                        manager.start(
+                            "general",
+                            {"session_id": "codex"},
+                            spec,
+                            server_url="http://127.0.0.1:9999",
+                            ticket_issuer=lambda identity: f"ticket-{identity['session_id']}",
+                        )
+                    )
+                except Exception as error:
+                    errors.append(error)
+
+            threads = [threading.Thread(target=start_bridge) for _ in range(2)]
+            for thread in threads:
+                thread.start()
+            for thread in threads:
+                thread.join(timeout=2)
+            health = manager.health("general", "codex")
+            if health.get("bridge_handle_id"):
+                manager.stop(
+                    "general",
+                    "codex",
+                    handle_id=str(health["bridge_handle_id"]),
+                )
+            for process in popen.processes:
+                if process.poll() is None:
+                    process.terminate()
+
+        self.assertFalse(any(thread.is_alive() for thread in threads))
+        self.assertEqual(errors, [])
+        self.assertEqual(len(popen.calls), 1)
+        self.assertEqual(len(launches), 2)
+        self.assertEqual(
+            {str(launch["bridge_handle_id"]) for launch in launches},
+            {str(launches[0]["bridge_handle_id"])},
+        )
+        self.assertEqual(
+            sorted(bool(launch["runtime_reused"]) for launch in launches),
+            [False, True],
+        )
+
     def test_stale_bridge_watcher_cannot_report_a_replacement_as_crashed(self):
         with tempfile.TemporaryDirectory() as temp_dir:
             root = Path(temp_dir)

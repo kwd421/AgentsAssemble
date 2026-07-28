@@ -4,7 +4,7 @@ Status: generated architecture inventory
 
 Generator: `python3 scripts/generate_package_map.py`
 
-Source fingerprint: `0806fce29aabe858`
+Source fingerprint: `3936a2c0703379a7`
 
 This file describes current evidence and proposed ownership. It does not by
 itself authorize a module move or a product behavior change.
@@ -593,7 +593,7 @@ itself authorize a module move or a product behavior change.
 | `agentsassemble.providers.antigravity_resident` | `agentsassemble/providers/antigravity_resident.py` | 423 | providers | current | `agentsassemble.providers.auth`, `agentsassemble.providers.resident_config` | 5 | `call:compile@17`, `call:compile@18`, `call:compile@19`, `call:provider_login_required_message@27` | test-import:4 | `tests/test_antigravity_resident.py`, `tests/test_live_agent_continuity_proof.py`, `tests/test_live_agent_runner.py`, `+1` | `providers/` | in-target-package |
 | `agentsassemble.providers.api` | `agentsassemble/providers/api.py` | 258 | providers | current | `agentsassemble.providers`, `agentsassemble.providers.catalog` | 3 | - | test-import:2 | `tests/test_provider_package.py`, `tests/test_room_api_provider.py` | `providers/` | in-target-package |
 | `agentsassemble.providers.auth` | `agentsassemble/providers/auth.py` | 29 | providers | current | - | 5 | - | test-import:2 | `tests/test_provider_auth.py`, `tests/test_provider_package.py` | `providers/` | in-target-package |
-| `agentsassemble.providers.bridge_process` | `agentsassemble/providers/bridge_process.py` | 456 | providers | current | `agentsassemble.diagnostics.cleanup`, `agentsassemble.providers.launch_specs`, `agentsassemble.providers.opencode`, `agentsassemble.providers.process_environment`, `agentsassemble.providers.runtime_config`, `agentsassemble.providers.secrets` | 4 | - | test-import:4 | `tests/fixtures/room_ui_server.py`, `tests/test_provider_package.py`, `tests/test_room_bridge_process.py`, `+1` | `providers/` | in-target-package |
+| `agentsassemble.providers.bridge_process` | `agentsassemble/providers/bridge_process.py` | 506 | providers | current | `agentsassemble.diagnostics.cleanup`, `agentsassemble.providers.launch_specs`, `agentsassemble.providers.opencode`, `agentsassemble.providers.process_environment`, `agentsassemble.providers.runtime_config`, `agentsassemble.providers.secrets` | 4 | - | test-import:4 | `tests/fixtures/room_ui_server.py`, `tests/test_provider_package.py`, `tests/test_room_bridge_process.py`, `+1` | `providers/` | in-target-package |
 | `agentsassemble.providers.bridge_protocol` | `agentsassemble/providers/bridge_protocol.py` | 281 | providers | current | `agentsassemble.providers.runtime_contracts`, `agentsassemble.room.text` | 3 | - | test-import:4 | `tests/test_bridge_protocol.py`, `tests/test_bridge_report_tracker.py`, `tests/test_provider_package.py`, `+1` | `providers/` | in-target-package |
 | `agentsassemble.providers.bridge_report_tracker` | `agentsassemble/providers/bridge_report_tracker.py` | 109 | providers | current | `agentsassemble.providers.bridge_protocol` | 2 | - | test-import:2 | `tests/test_bridge_report_tracker.py`, `tests/test_provider_package.py` | `providers/` | in-target-package |
 | `agentsassemble.providers.bridges` | `agentsassemble/providers/bridges/__init__.py` | 1 | providers | current | - | 0 | - | test-import:1 | `tests/test_provider_package.py` | `providers/` | in-target-package |

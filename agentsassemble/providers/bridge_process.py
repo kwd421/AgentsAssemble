@@ -8,6 +8,8 @@ import shutil
 import subprocess
 import sys
 import threading
+from collections.abc import Iterator
+from contextlib import contextmanager
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Callable
@@ -49,6 +51,12 @@ class _BridgeHandle:
     provider_process_shared: bool = False
 
 
+@dataclass
+class _BridgeLaunchOwnership:
+    lock: threading.Lock = field(default_factory=threading.Lock)
+    users: int = 0
+
+
 class NativeCliBridgeProcessManager:
     """Launches server-owned Agent Bridge processes without exposing tickets."""
 
@@ -68,6 +76,7 @@ class NativeCliBridgeProcessManager:
         self._on_exit = on_exit
         self._lock = threading.RLock()
         self._handles: dict[tuple[str, str], _BridgeHandle] = {}
+        self._launch_ownership: dict[tuple[str, str], _BridgeLaunchOwnership] = {}
         self._opencode_server: OpenCodeServerProcess | None = None
         self.last_cleanup_report = CleanupReport("native_cli_bridge_process_manager")
 
@@ -87,6 +96,29 @@ class NativeCliBridgeProcessManager:
         validate_native_cli_provider_spec(spec)
         session_id = str(session.get("session_id") or spec.agent_id)
         runtime_profile_key = spec.runtime_profile_key()
+        key = (room_id, session_id)
+        with self._own_bridge_launch(key):
+            return self._start_owned_bridge(
+                room_id,
+                session,
+                spec,
+                server_url=server_url,
+                ticket_issuer=ticket_issuer,
+                session_id=session_id,
+                runtime_profile_key=runtime_profile_key,
+            )
+
+    def _start_owned_bridge(
+        self,
+        room_id: str,
+        session: dict[str, object],
+        spec: NativeCliProviderSpec,
+        *,
+        server_url: str,
+        ticket_issuer: Callable[[dict[str, object]], str] | None,
+        session_id: str,
+        runtime_profile_key: str,
+    ) -> dict[str, object]:
         key = (room_id, session_id)
         with self._lock:
             existing = self._handles.get(key)
@@ -242,6 +274,24 @@ class NativeCliBridgeProcessManager:
             daemon=True,
         ).start()
         return self._launch_payload(handle, spec, runtime_reused=False, resolved_executable=executable)
+
+    @contextmanager
+    def _own_bridge_launch(self, key: tuple[str, str]) -> Iterator[None]:
+        with self._lock:
+            ownership = self._launch_ownership.get(key)
+            if ownership is None:
+                ownership = _BridgeLaunchOwnership()
+                self._launch_ownership[key] = ownership
+            ownership.users += 1
+        ownership.lock.acquire()
+        try:
+            yield
+        finally:
+            ownership.lock.release()
+            with self._lock:
+                ownership.users -= 1
+                if ownership.users == 0 and self._launch_ownership.get(key) is ownership:
+                    self._launch_ownership.pop(key, None)
 
     def stop(
         self,
