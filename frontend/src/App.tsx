@@ -23,6 +23,7 @@ import {
   UserPlus,
   UserRound,
   Volume2,
+  X,
 } from "lucide-react";
 import {
   createCompanionRoomInvite,
@@ -1939,6 +1940,14 @@ export default function App() {
           data-panel-mode={rightPanelMode}
         >
           <div className="dc-right-panel-search">
+            <button
+              type="button"
+              className="dc-compact-panel-close"
+              onClick={toggleMembers}
+              aria-label="멤버 목록 닫기"
+            >
+              <X size={18} />
+            </button>
             <label className="dc-member-search-box">
               <span className="sr-only">{activeRoom.label} 검색</span>
               <input

@@ -58,7 +58,7 @@ const MOBILE_INFO_TABS: Array<{ id: MobileInfoTab; label: string; icon: LucideIc
 ];
 
 function roleLabel(role: string) {
-  if (role === "director") return "디렉터";
+  if (role === "director") return "진행";
   if (role === "implementer") return "구현";
   if (role === "reviewer") return "리뷰어";
   if (role === "human") return "사람";

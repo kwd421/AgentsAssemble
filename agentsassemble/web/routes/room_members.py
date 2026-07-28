@@ -4,7 +4,11 @@ from __future__ import annotations
 from http import HTTPStatus
 
 from agentsassemble.room.moderation import set_room_member_muted
-from agentsassemble.room.members import room_members_payload, upsert_room_member
+from agentsassemble.room.members import (
+    room_members_payload,
+    set_canonical_room_member_role,
+    upsert_room_member,
+)
 from agentsassemble.web.router import RequestContext, Router
 
 
@@ -61,6 +65,33 @@ def register_room_member_routes(router: Router) -> None:
                 **room_members_response(
                     ctx,
                     str(member.get("meeting_id") or ""),
+                ),
+            }
+        )
+
+    @router.post("/api/room-members/role")
+    def room_member_role_update(ctx: RequestContext) -> None:
+        if not ctx.require_moderator():
+            return
+        payload = ctx.read_json_body()
+        if payload is None:
+            return
+        try:
+            member = set_canonical_room_member_role(
+                ctx.deps.rooms,
+                meeting_id=payload.get("meeting_id"),
+                participant_id=payload.get("participant_id"),
+                role=payload.get("role"),
+            )
+        except ValueError as error:
+            ctx.send_error(HTTPStatus.BAD_REQUEST, str(error))
+            return
+        ctx.send_json(
+            {
+                "member": member,
+                **room_members_response(
+                    ctx,
+                    str(member.get("room_id") or payload.get("meeting_id") or ""),
                 ),
             }
         )

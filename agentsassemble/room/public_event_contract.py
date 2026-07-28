@@ -64,6 +64,7 @@ class PublicRoomEvent(TypedDict):
     display_name: NotRequired[str]
     avatar_image_url: NotRequired[str]
     provider_kind: NotRequired[str]
+    role: NotRequired[str]
     content: NotRequired[str]
     message_kind: NotRequired[str]
     target_agent_id: NotRequired[str]

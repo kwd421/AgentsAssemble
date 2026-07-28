@@ -118,6 +118,7 @@ class WebRoutesPackageTests(unittest.TestCase):
         )
 
         self.assertIn(("GET", "/api/room-members"), router.routes())
+        self.assertIn(("POST", "/api/room-members/role"), router.routes())
         self.assertIn(("POST", "/api/room-members/kick"), router.routes())
         self.assertIn(("GET", "/api/room/voice"), router.routes())
 

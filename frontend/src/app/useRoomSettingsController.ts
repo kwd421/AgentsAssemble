@@ -2,7 +2,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import {
   fetchRoomSettings,
   saveRoomSettings,
-  upsertRoomMember,
+  updateRoomMemberRole as saveRoomMemberRole,
   type ChannelSettings,
   type ConversationMode,
   type RoomGlobalAppearance,
@@ -382,13 +382,18 @@ export function useRoomSettingsController({
     (room: RoomDockItem, members: RoomMember[], memberId: string, role: RoomMember["role"]) => {
       const existingMember = members.find((member) => member.participant_id === memberId);
       if (!existingMember || !room.meetingId) return;
-      void upsertRoomMember({ ...existingMember, meeting_id: room.meetingId, role })
+      void saveRoomMemberRole({
+        meetingId: room.meetingId,
+        participantId: memberId,
+        role,
+        sessionToken,
+      })
         .then((payload) => onMembersChanged(room, payload.members || []))
         .catch(() => {
           // Keep the optimistic grouping; the next roster refresh reconciles persistence.
         });
     },
-    [onMembersChanged]
+    [onMembersChanged, sessionToken]
   );
 
   const updateChannelSetting = useCallback(

@@ -8,7 +8,7 @@ import { useRoomSettingsController } from "./useRoomSettingsController";
 const apiMocks = vi.hoisted(() => ({
   fetchRoomSettings: vi.fn(),
   saveRoomSettings: vi.fn(),
-  upsertRoomMember: vi.fn(),
+  updateRoomMemberRole: vi.fn(),
 }));
 
 vi.mock("../api", async () => ({
@@ -161,7 +161,7 @@ describe("useRoomSettingsController", () => {
 
   it("persists a role change and publishes the canonical member list", async () => {
     apiMocks.fetchRoomSettings.mockResolvedValue(settings(roomA, "forest"));
-    apiMocks.upsertRoomMember.mockResolvedValue({
+    apiMocks.updateRoomMemberRole.mockResolvedValue({
       members: [{ participant_id: "agent-a", role: "reviewer" }],
     });
     const onMembersChanged = vi.fn();
@@ -190,9 +190,12 @@ describe("useRoomSettingsController", () => {
 
     await waitFor(() => expect(onMembersChanged).toHaveBeenCalledTimes(1));
     expect(apiMocks.saveRoomSettings).not.toHaveBeenCalled();
-    expect(apiMocks.upsertRoomMember).toHaveBeenCalledWith(
-      expect.objectContaining({ meeting_id: roomA.meetingId, role: "reviewer" })
-    );
+    expect(apiMocks.updateRoomMemberRole).toHaveBeenCalledWith({
+      meetingId: roomA.meetingId,
+      participantId: "agent-a",
+      role: "reviewer",
+      sessionToken: "",
+    });
     expect(onMembersChanged).toHaveBeenCalledWith(
       roomA,
       [{ participant_id: "agent-a", role: "reviewer" }]

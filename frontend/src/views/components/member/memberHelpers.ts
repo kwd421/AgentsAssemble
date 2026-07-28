@@ -14,7 +14,7 @@ export { agentSessionResumeStatus } from "../../../lib/agentSessionStatus";
 
 export const ROLE_OPTIONS: Array<{ id: RoleId; label: string; icon: LucideIcon }> = [
   { id: "human", label: "사람", icon: User },
-  { id: "director", label: "디렉터", icon: Crown },
+  { id: "director", label: "진행", icon: Crown },
   { id: "implementer", label: "구현", icon: Code2 },
   { id: "reviewer", label: "리뷰어", icon: ShieldCheck },
   { id: "agent", label: "에이전트", icon: Bot },

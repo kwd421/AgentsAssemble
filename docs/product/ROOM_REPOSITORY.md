@@ -50,6 +50,11 @@ they are never replaced with defaults. User-preference-only changes do not
 invalidate the room-global fingerprint. The legacy file remains temporarily for
 preference migration input but can no longer replay the same migrated globals.
 
+Room member role changes for canonical participants write the participant row
+through the room repository. The retained identity roster remains the authority
+only for members that do not have a canonical participant row; it is not a
+shadow source for Agent Session routing roles.
+
 Legacy notification and read preferences have a separate target because the
 old file did not identify their owner. Choose an existing identity user and run
 `assemble room migrate-room-preferences --user-id <user-id> --dry-run`, repair

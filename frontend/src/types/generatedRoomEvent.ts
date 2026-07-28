@@ -60,6 +60,7 @@ export interface RoomEvent {
   display_name?: string;
   avatar_image_url?: string;
   provider_kind?: string;
+  role?: string;
   content?: string;
   message_kind?: string;
   target_agent_id?: string;

@@ -3,7 +3,12 @@ import unittest
 from pathlib import Path
 
 from agentsassemble.room.moderation import set_room_member_muted
-from agentsassemble.room.members import read_room_members, room_members_payload, upsert_room_member
+from agentsassemble.room.members import (
+    read_room_members,
+    room_members_payload,
+    set_canonical_room_member_role,
+    upsert_room_member,
+)
 from agentsassemble.persistence.local.room.repository import RoomStore
 
 ROOM = "room-presence-test"
@@ -32,6 +37,44 @@ class RoomMembersPresenceTests(unittest.TestCase):
                 "updated_at": updated_at,
             },
         )
+
+    def test_canonical_role_change_updates_room_authority_and_emits_an_event(self):
+        self.repository.create_room(ROOM)
+        self.repository.upsert_participant(
+            ROOM,
+            {
+                "participant_id": "agent-director",
+                "display_name": "Director",
+                "role": "agent",
+                "participant_type": "subscription_ai",
+                "status": "joined",
+            },
+        )
+
+        member = set_canonical_room_member_role(
+            self.repository,
+            meeting_id=ROOM,
+            participant_id="agent-director",
+            role="director",
+        )
+        events = self.repository.read_events(
+            ROOM,
+            event_types=("participant_updated",),
+        )
+
+        self.assertEqual(member["role"], "director")
+        self.assertEqual(
+            self.repository.participant(ROOM, "agent-director")["role"],
+            "director",
+        )
+        self.assertEqual(events[-1]["role"], "director")
+        with self.assertRaisesRegex(ValueError, "Unsupported room member role"):
+            set_canonical_room_member_role(
+                self.repository,
+                meeting_id=ROOM,
+                participant_id="agent-director",
+                role="unknown-role",
+            )
 
     def test_invite_member_without_live_session_shows_offline(self):
         self._saved_guest("guest-dead01", "유령", updated_at="2026-06-10T00:00:00+00:00")

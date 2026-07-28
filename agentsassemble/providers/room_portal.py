@@ -98,6 +98,10 @@ def room_session_orientation(provider_kind: object = "") -> str:
   clearly and do not claim it was counted by the structured tally.
 - Public room messages follow the language of the latest human or host message,
   unless that message explicitly asks for another language.
+- The private room mirror shows your canonical room role. In ordered mode, a
+  `director` is the 진행 participant: ordinary agent replies return to it, and
+  it can deliberately hand the floor to the next participant with the targeted
+  publication form documented for its provider.
 - Room norm: public messages add new substance. Resolving an open decision is new
   substance; after a point is settled, receipt, thanks, repeated agreement,
   restatement, a silence explanation, or another closing is not."""
@@ -206,6 +210,7 @@ class RoomPortal:
         self._message_ids: set[str] = set()
         self._display_name = self.participant_id
         self._participants: dict[str, str] = {}
+        self._participant_roles: dict[str, str] = {}
         self._media: dict[str, dict[str, object]] = {}
         self._active_media_ids: tuple[str, ...] = ()
         self._active_messages: tuple[dict[str, object], ...] | None = None
@@ -577,6 +582,8 @@ class RoomPortal:
             if isinstance(value.get("participants"), list)
             else []
         )
+        if clean_room_text(value.get("type"), limit=64) == "participant_updated":
+            participants = [*participants, value]
         sessions = (
             value.get("agent_sessions")
             if isinstance(value.get("agent_sessions"), list)
@@ -599,6 +606,9 @@ class RoomPortal:
                 item.get("participant_type"),
                 limit=32,
             )
+            role = clean_room_text(item.get("role"), limit=32)
+            if role:
+                self._participant_roles[identity] = role
             if participant_type == "agent" or item in sessions:
                 self._participants[identity] = name or identity
             if identity == self.participant_id and name:
@@ -637,6 +647,7 @@ class RoomPortal:
         lines = [
             "# Shared room",
             f"Your display name: {self._display_name or self.participant_id}",
+            f"Your room role: {self._participant_roles.get(self.participant_id, 'agent')}",
             "",
         ]
         peers = [

@@ -50,6 +50,17 @@ export default function ChannelHeader({
     setActivePanel(nextQuery.trim() ? "search" : null);
   }
 
+  function openMemberSurface() {
+    if (
+      onOpenMobileInfo
+      && window.matchMedia("(max-width: 760px)").matches
+    ) {
+      onOpenMobileInfo();
+      return;
+    }
+    onToggleMembers?.();
+  }
+
   const notificationSummary = headerActions?.notificationSummary || "서버 기본 알림을 사용 중입니다.";
   const lastReadSummary = headerActions?.lastReadSummary || "아직 이 채널을 읽음으로 표시하지 않았습니다.";
   const pinnedSummary = headerActions?.pinnedSummary || "아직 고정된 메시지가 없습니다.";
@@ -136,10 +147,10 @@ export default function ChannelHeader({
         {onToggleMembers && (
           <button
             type="button"
-            onClick={onToggleMembers}
+            onClick={openMemberSurface}
             aria-label="멤버 목록 토글"
             aria-pressed={membersOpen}
-            className={`dc-head-icon hidden xl:grid ${
+            className={`dc-head-icon ${
               membersOpen ? "text-text-primary" : "text-text-muted"
             }`}
           >

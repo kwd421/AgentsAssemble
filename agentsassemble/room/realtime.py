@@ -1445,6 +1445,22 @@ class RoomRealtimeController:
             eligibility = self.agent_floor_eligibility(room_id, agent_id)
             if eligibility.eligible or eligibility.reason_code == "runtime_busy":
                 eligible_agent_ids.append(agent_id)
+        actor_role = clean_lobby_text(
+            self.store.participant(room_id, actor_id).get("role"),
+            limit=32,
+        )
+        if actor_id in providers and actor_role != "director" and not direct_targets:
+            eligible_directors = [
+                agent_id
+                for agent_id in eligible_agent_ids
+                if clean_lobby_text(
+                    self.store.participant(room_id, agent_id).get("role"),
+                    limit=32,
+                )
+                == "director"
+            ]
+            if eligible_directors:
+                eligible_agent_ids = eligible_directors
         message_counts, previous_speaker_id = self._recent_agent_speaking_state(
             room_id,
             providers,

@@ -400,6 +400,40 @@ class RoomAgentBridgeTests(unittest.TestCase):
         self.assertIn("## Agent handles", view)
         self.assertIn("`sonnet` — 소넷", view)
 
+    def test_room_portal_view_tracks_the_sessions_canonical_room_role(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            portal = RoomPortal(Path(temp_dir) / "portal", participant_id="gemini")
+            portal.prepare()
+            portal.ingest_frame(
+                {
+                    "participants": [
+                        {
+                            "participant_id": "gemini",
+                            "participant_type": "subscription_ai",
+                            "display_name": "제미나이",
+                            "role": "agent",
+                        },
+                    ]
+                }
+            )
+            portal.ingest_frame(
+                {
+                    "stream": "room_events",
+                    "events": [
+                        {
+                            "type": "participant_updated",
+                            "participant_id": "gemini",
+                            "participant_type": "agent",
+                            "role": "director",
+                        }
+                    ]
+                }
+            )
+
+            view = portal.acp_read_text("/agentsassemble-room/current.md")
+
+        self.assertIn("Your room role: director", view)
+
     def test_terminal_room_portal_rolls_audited_dice_for_non_codex_game_master(self):
         with tempfile.TemporaryDirectory() as temp_dir:
             portal = RoomPortal(Path(temp_dir) / "portal", participant_id="gemini")

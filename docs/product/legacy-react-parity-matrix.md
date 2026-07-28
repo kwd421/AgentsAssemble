@@ -213,6 +213,7 @@ surface rather than silently counted as React parity.
 | `/api/ws-ticket` | POST | exact | `getWsTicket()` | yes | WS 전환 (WS-4/5): issues a single-use short-TTL ticket (authed session) so the browser can open `/ws?ticket=...` without an Authorization header. `connectRoomSocket()` uses it for guest roster + lobby push. |
 | `/api/room-members` | GET | exact | `fetchRoomMembers()` | yes | React reads persisted selected-room members, including saved friends invited from the Discord home surface. |
 | `/api/room-members` | POST | exact | `upsertRoomMember()` | yes | React writes saved-friend invitations into selected-room member state; this does not start providers or send external Discord invites. |
+| `/api/room-members/role` | POST | exact | `updateRoomMemberRole()` | yes | React writes host-selected roles to the canonical room participant so ordered routing and provider room mirrors observe the same role. |
 | `/api/room-members/mute` | POST | exact | `-` | no | Legacy HTTP compatibility endpoint. React moderation sends `participant.mute` through the canonical room WebSocket. |
 | `/api/room-members/kick` | POST | exact | `-` | no | Legacy HTTP compatibility endpoint. React moderation sends `participant.kick` through the canonical room WebSocket. |
 | `/api/room-participants/leave` | POST | exact | `-` | no | Agent Session participant leave endpoint with participant-token or moderator authorization; not wrapped by React preview yet. |

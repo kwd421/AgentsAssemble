@@ -1858,6 +1858,76 @@ class RoomRealtimeControllerTests(unittest.TestCase):
         self.assertEqual(len(next_wakes), 1)
         self.assertNotEqual(next_wakes[0], "codex")
 
+    def test_ordered_room_returns_an_ordinary_agent_reply_to_the_director(self):
+        self.controller.create_provider_session("general", _spec("peer"))
+        self.controller.create_provider_session("general", _spec("director"))
+        self.controller.store.update_participant_fields(
+            "general",
+            "director",
+            role="director",
+        )
+        identities = {}
+        channels = {}
+        for agent_id in ("codex", "peer", "director"):
+            identities[agent_id], channels[agent_id] = self._connect_bridge(agent_id)
+            channels[agent_id].drain()
+        self.controller.store.update_room_settings(
+            "general",
+            {"conversation_mode": "ordered"},
+        )
+
+        self._command(
+            "ordered-director-player",
+            "message.send",
+            {"content": "@peer 네 행동을 말해"},
+        )
+        peer_wake = next(
+            message
+            for message in channels["peer"].drain()
+            if message.get("op") == "room.wake"
+        )
+        peer_final = self._command(
+            "ordered-director-player-final",
+            "message.final",
+            {
+                "turn_id": peer_wake["turn_id"],
+                "content": "플레이어 행동을 마쳤어.",
+                "observed_through_seq": peer_wake["input_up_to_seq"],
+            },
+            identities["peer"],
+        )["result"]["event"]
+
+        director_wake = next(
+            message
+            for message in channels["director"].drain()
+            if message.get("op") == "room.wake"
+        )
+        self.assertEqual(director_wake["source_event_id"], peer_final["id"])
+        self.assertFalse(
+            any(
+                message.get("op") == "room.wake"
+                for message in channels["codex"].drain()
+            )
+        )
+
+        self._command(
+            "ordered-director-handoff",
+            "message.final",
+            {
+                "turn_id": director_wake["turn_id"],
+                "content": "다음은 codex 차례야.",
+                "target_agent_id": "codex",
+                "observed_through_seq": director_wake["input_up_to_seq"],
+            },
+            identities["director"],
+        )
+        codex_wake = next(
+            message
+            for message in channels["codex"].drain()
+            if message.get("op") == "room.wake"
+        )
+        self.assertEqual(codex_wake["observation_kind"], "ordered_floor")
+
     def test_ordered_room_direct_mention_gets_the_next_observation(self):
         self.controller.create_provider_session("general", _spec("peer"))
         _codex_identity, codex_channel = self._connect_bridge("codex")

@@ -21,6 +21,29 @@ from agentsassemble.room.repository import RoomRepository
 
 ROOM_MEMBERS_FILE = "room_members.json"  # legacy JSON store; imported into identity.db once
 ROOM_MEMBER_ROLES = ("human", "director", "implementer", "reviewer", "agent")
+ROOM_MEMBER_ROLE_ALIASES = {
+    "person": "human",
+    "user": "human",
+    "people": "human",
+    "host": "director",
+    "owner": "director",
+    "lead": "director",
+    "manager": "director",
+    "planner": "director",
+    "pm": "director",
+    "coder": "implementer",
+    "developer": "implementer",
+    "engineer": "implementer",
+    "builder": "implementer",
+    "critic": "reviewer",
+    "review": "reviewer",
+    "qa": "reviewer",
+    "auditor": "reviewer",
+    "viewer": "agent",
+    "watcher": "agent",
+    "guest": "agent",
+    "observer": "agent",
+}
 
 ROOM_MEMBER_ROLE_OPTIONS = [
     {
@@ -30,8 +53,8 @@ ROOM_MEMBER_ROLE_OPTIONS = [
     },
     {
         "id": "director",
-        "label": "디렉터",
-        "description": "방향 결정과 최종 승인",
+        "label": "진행",
+        "description": "순차 대화에서 다음 참여자를 호출하고 일반 에이전트의 발언을 이어받음",
     },
     {
         "id": "implementer",
@@ -56,33 +79,47 @@ def normalize_room_member_role(value: object) -> str:
     return normalized if normalized in ROOM_MEMBER_ROLES else "agent"
 
 
+def set_canonical_room_member_role(
+    repository: RoomRepository,
+    *,
+    meeting_id: object,
+    participant_id: object,
+    role: object,
+) -> dict[str, object]:
+    room_id = clean_lobby_text(meeting_id, limit=128)
+    member_id = clean_lobby_text(participant_id, limit=128)
+    requested_role = clean_lobby_text(role, limit=32)
+    canonical_role = _canonical_room_member_role(requested_role)
+    if not room_id:
+        raise ValueError("meeting_id is required")
+    if not member_id:
+        raise ValueError("participant_id is required")
+    if not _room_member_role_is_supported(requested_role):
+        raise ValueError(f"Unsupported room member role: {role}")
+    if not repository.participant(room_id, member_id):
+        raise ValueError(f"Room participant does not exist: {member_id}")
+    with repository.transaction(room_id) as transaction:
+        member = transaction.update_participant_fields(
+            member_id,
+            role=canonical_role,
+        )
+        transaction.append_event(
+            "participant_updated",
+            participant_id=member_id,
+            role=canonical_role,
+        )
+    return member
+
+
 def _canonical_room_member_role(value: object) -> str:
     normalized = clean_lobby_text(value, limit=32).lower().replace("-", "_")
-    aliases = {
-        "person": "human",
-        "user": "human",
-        "people": "human",
-        "host": "director",
-        "owner": "director",
-        "lead": "director",
-        "manager": "director",
-        "planner": "director",
-        "pm": "director",
-        "coder": "implementer",
-        "developer": "implementer",
-        "engineer": "implementer",
-        "builder": "implementer",
-        "critic": "reviewer",
-        "review": "reviewer",
-        "qa": "reviewer",
-        "auditor": "reviewer",
-        "viewer": "agent",
-        "watcher": "agent",
-        "guest": "agent",
-        "observer": "agent",
-    }
-    normalized = aliases.get(normalized, normalized)
+    normalized = ROOM_MEMBER_ROLE_ALIASES.get(normalized, normalized)
     return normalized
+
+
+def _room_member_role_is_supported(value: object) -> bool:
+    normalized = clean_lobby_text(value, limit=32).lower().replace("-", "_")
+    return normalized in ROOM_MEMBER_ROLES or normalized in ROOM_MEMBER_ROLE_ALIASES
 
 
 def read_room_members(output_root: Path, meeting_id: str = "") -> list[dict[str, object]]:

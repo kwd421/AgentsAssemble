@@ -21,6 +21,23 @@ export function upsertRoomMember(member: Partial<RoomMember>) {
   return postJson<RoomMembersResponse & { member: RoomMember }>("/api/room-members", member);
 }
 
+export function updateRoomMemberRole(params: {
+  meetingId: string;
+  participantId: string;
+  role: RoomMember["role"];
+  sessionToken?: string;
+}) {
+  return postJsonModerator<RoomMembersResponse & { member: RoomMember }>(
+    "/api/room-members/role",
+    {
+      meeting_id: params.meetingId,
+      participant_id: params.participantId,
+      role: params.role,
+    },
+    params.sessionToken || ""
+  );
+}
+
 export function claimHostDevice(params: { deviceToken: string; displayName?: string }) {
   return postJsonHost<{ status: string; user_id: string; participant_id: string; operator: boolean }>("/api/host/claim", {
     device_token: params.deviceToken,

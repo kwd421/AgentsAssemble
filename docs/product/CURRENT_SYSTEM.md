@@ -269,6 +269,13 @@ provider is available; a direct mention still overrides the setting. If a turn
 is already active, the chosen observation remains queued until it finishes,
 preserving one room-wide provider turn at a time.
 
+The canonical participant role `director` is shown as `진행` in the room UI.
+In ordered mode, a non-director agent message without an explicit handoff
+returns the next observation to an eligible 진행 agent. An explicit handoff
+still takes precedence, and rooms without an eligible 진행 agent keep the
+general ordered selector. Role changes update the canonical participant row and
+affect the next committed message without restarting the provider session.
+
 A room explicitly set to `ambient` does not use that selector to choose one
 speaker. Each committed room message wakes all connected, idle, unmuted Agent
 Sessions except its author. Each provider independently decides whether to
