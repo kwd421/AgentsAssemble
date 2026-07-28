@@ -1203,6 +1203,37 @@ class GuiServerLobbySocialTests(unittest.TestCase):
             self.assertEqual([event["message"] for event in room_b_events], ["room-b only"])
             self.assertEqual([event["message"] for event in side_payload["events"]], ["room-a only"])
 
+    def test_side_chat_applies_retention_limit_within_the_requested_room(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            for message in ("room-a first", "room-a second"):
+                append_side_chat_event(
+                    root,
+                    {
+                        "name": "A",
+                        "side": "other",
+                        "message": message,
+                        "flow_meeting_id": "room-a",
+                    },
+                )
+            for message in ("room-b first", "room-b second"):
+                append_side_chat_event(
+                    root,
+                    {
+                        "name": "B",
+                        "side": "other",
+                        "message": message,
+                        "flow_meeting_id": "room-b",
+                    },
+                )
+
+            room_a_events = read_side_chat(root, limit=2, meeting_id="room-a")
+
+            self.assertEqual(
+                [event["message"] for event in room_a_events],
+                ["room-a first", "room-a second"],
+            )
+
 
     def test_side_chat_preserves_thread_source_event_id(self):
         with tempfile.TemporaryDirectory() as temp_dir:

@@ -86,7 +86,7 @@ restart, reconnect, room switching, and refresh.
 - [x] Make SQLite participant/room mutation and lifecycle event recording match
       the repository transaction contract.
 - [x] Preserve real SSE heartbeat cadence during an idle room stream.
-- [ ] Scope side-chat history before applying its retention limit.
+- [x] Scope side-chat history before applying its retention limit.
 - [ ] Match `@all` as a mention token rather than an arbitrary substring.
 - [ ] Parse persisted boolean values with the existing strict boolean parser.
 - [ ] Serialize stable-public-URL publication so an old retry cannot overwrite
@@ -177,6 +177,7 @@ remaining limitation.
 | `072678f4` | Atomic participant/session/attention/event creation for provider Agent Sessions; post-commit registry publication | red event-write fault injection left no durable or in-memory partial state and retry succeeded; 217 provider-session/agent-create/realtime/native-E2E/repository tests (38 PostgreSQL-environment skips); `python3 scripts/check_test_quality.py --base HEAD`; `git diff --check` | mandatory live PostgreSQL contract run remains completion-gate work |
 | `d23b5323` | Reject SQLite transactions that attempt to restore canonical state after room deletion | red verification showed a stale transaction recreating participant, session, and event rows after deletion; 190 deletion/repository/realtime tests; `python3 scripts/check_test_quality.py --base HEAD`; `git diff --check` | full suite remains completion-gate work |
 | `ce742cfe` | Atomically commit SQLite participant/room lifecycle state, related session detachment, and lifecycle events | real SQLite trigger failures reproduced split durable state before the fix; 152 repository/lifecycle tests (38 PostgreSQL-environment skips); `python3 scripts/check_test_quality.py --base HEAD`; `make generated-artifacts-check`; `git diff --check` | mandatory live PostgreSQL contract run remains completion-gate work |
+| `d94fec0c` | Enforce the actual idle-room SSE heartbeat cadence while preserving standalone frame-generator compatibility | red HTTP timing verification measured a 0.007-second heartbeat instead of the configured one-second cadence; 128 SSE/Agent Session/room-route tests plus a 591-test expansion with one corrected stale secure-endpoint fixture; `python3 scripts/check_test_quality.py --base HEAD`; `make generated-artifacts-check`; `git diff --check` | full suite remains completion-gate work |
 
 ## Resume Rule
 

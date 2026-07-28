@@ -4,7 +4,7 @@ Status: generated architecture inventory
 
 Generator: `python3 scripts/generate_package_map.py`
 
-Source fingerprint: `7cbdf0f1eb943509`
+Source fingerprint: `61eebd631f57ca3e`
 
 This file describes current evidence and proposed ownership. It does not by
 itself authorize a module move or a product behavior change.
@@ -154,7 +154,7 @@ itself authorize a module move or a product behavior change.
 | `agentsassemble.features.mafia.routes` | `agentsassemble/features/mafia/routes.py` | 134 | features | optional | `agentsassemble.features.mafia.game`, `agentsassemble.web.router` | 3 | - | test-import:2 | `tests/test_feature_routes_package.py`, `tests/test_gui_server_mafia_http.py` | `features/mafia/` | in-target-package |
 | `agentsassemble.features.side_chat` | `agentsassemble/features/side_chat/__init__.py` | 1 | features | optional | - | 0 | - | test-import:1 | `tests/test_feature_routes_package.py` | `features/side_chat/` | in-target-package |
 | `agentsassemble.features.side_chat.routes` | `agentsassemble/features/side_chat/routes.py` | 48 | features | optional | `agentsassemble.features.side_chat.service`, `agentsassemble.web.router` | 3 | - | test-import:1, monkeypatch:1 | `tests/test_feature_routes_package.py`, `tests/test_gui_server_lobby_social.py` | `features/side_chat/` | in-target-package |
-| `agentsassemble.features.side_chat.service` | `agentsassemble/features/side_chat/service.py` | 92 | features | optional | `agentsassemble.legacy.meeting.core.events` | 6 | `call:Lock@16` | test-import:3 | `tests/gui_server_test_support.py`, `tests/test_feature_routes_package.py`, `tests/test_room_deleted_cleanup.py` | `features/side_chat/` | in-target-package |
+| `agentsassemble.features.side_chat.service` | `agentsassemble/features/side_chat/service.py` | 104 | features | optional | `agentsassemble.legacy.meeting.core.events` | 6 | `call:Lock@17` | test-import:3 | `tests/gui_server_test_support.py`, `tests/test_feature_routes_package.py`, `tests/test_room_deleted_cleanup.py` | `features/side_chat/` | in-target-package |
 | `agentsassemble.features.social` | `agentsassemble/features/social/__init__.py` | 1 | features | optional | - | 0 | - | test-import:1 | `tests/test_feature_routes_package.py` | `features/social/` | in-target-package |
 | `agentsassemble.features.social.direct_messages` | `agentsassemble/features/social/direct_messages.py` | 303 | features | optional | `agentsassemble.features.social.friends`, `agentsassemble.legacy.meeting.core.events` | 5 | - | test-import:2 | `tests/test_feature_routes_package.py`, `tests/test_room_friends.py` | `features/social/` | in-target-package |
 | `agentsassemble.features.social.friends` | `agentsassemble/features/social/friends.py` | 289 | features | optional | `agentsassemble.legacy.meeting.core.events` | 4 | - | test-import:2 | `tests/test_feature_routes_package.py`, `tests/test_room_friends.py` | `features/social/` | in-target-package |

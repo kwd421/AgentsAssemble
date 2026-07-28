@@ -10,6 +10,7 @@ from uuid import uuid4
 from agentsassemble.legacy.meeting.core.events import (
     append_side_chat_event_to_file,
     clean_lobby_text,
+    iter_lobby_events_newest_first,
     read_side_chat_events,
 )
 
@@ -38,13 +39,24 @@ def _filter_side_chat_events_for_meeting(
 
 def read_side_chat(
     output_root: Path,
-    limit: int = 120,
+    limit: int | None = 120,
     meeting_id: str | None = None,
 ) -> list[dict[str, object]]:
-    return _filter_side_chat_events_for_meeting(
-        read_side_chat_events(output_root / "side_chat.jsonl", limit=limit),
-        meeting_id,
-    )
+    path = output_root / "side_chat.jsonl"
+    scoped_meeting_id = _side_chat_scope_id(meeting_id)
+    if not scoped_meeting_id:
+        return read_side_chat_events(path, limit=limit)
+    if limit is not None and limit <= 0:
+        return []
+    newest_matches: list[dict[str, object]] = []
+    for event in iter_lobby_events_newest_first(path, default_channel="side_chat"):
+        if not _side_chat_event_matches_meeting(event, scoped_meeting_id):
+            continue
+        newest_matches.append(event)
+        if limit is not None and len(newest_matches) >= limit:
+            break
+    newest_matches.reverse()
+    return newest_matches
 
 
 def append_side_chat_event(output_root: Path, event: dict[str, object]) -> dict[str, object]:
