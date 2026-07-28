@@ -1,12 +1,12 @@
 {
  "readme": "AgentsAssemble codebase map. Regenerate with `make codebase-map`; verify committed outputs with `make codebase-map-verify`. modules[] columns: name, path, package, domain, classification, migration_status, lines, docstring, imports[], imported_by[] (indexes into modules), classes[[name, [[base, defining_module], ...]]] (best-effort, top-level classes only). frontend[] columns: path, group, lines, doc, imports[], imported_by[] (indexes into frontend). package_edges go importer -> dependency with module-import counts; `points` is the precomputed polyline for that edge and `intra_cycle` marks imports whose endpoints share one cycle group. graph{} holds the layered package drawing: layers[] top-to-bottom (each with members[] package ids, member_count, and the dominant domain), (a package sits below everything importing it), clusters[] are mutually dependent packages (import cycles at package level) drawn as one labelled block, plus width/height of the drawing. health{} ranks findings for a reader who has to act: cycles[] (mutually dependent packages, with the lines they hold), leaning_on_retiring[] (current modules importing legacy/compatibility modules - the reason legacy cannot be deleted), highest_leverage_migrations[] (retiring modules with the most current importers), unreferenced_shims[] (compatibility modules with no importer in agentsassemble/ and no reference in tests/; callers outside this repository are not visible, so verify before deleting), and hotspots[] (largest modules). health.scope states exactly what was measured. class_graph{} is the UML generalization DAG over base classes that resolve inside the repo: edges go base -> subclass, so a subclass always sits below the class it extends. Coordinates in graph and class_graph are laid out with a Sugiyama pipeline (cycle condensation, Coffman-Graham layering, dummy-node edge routing, median/transpose crossing reduction) and are deterministic.",
- "generated_at": "2026-07-28T04:01:54Z",
- "fingerprint": "74018f6de436c441",
+ "generated_at": "2026-07-28T06:50:40Z",
+ "fingerprint": "ab0be0edce47bf33",
  "stats": {
   "backend_modules": 787,
-  "backend_lines": 129515,
-  "frontend_files": 146,
-  "frontend_lines": 38425,
+  "backend_lines": 129720,
+  "frontend_files": 147,
+  "frontend_lines": 38812,
   "packages": 30,
   "import_cycles": 0,
   "classifications": {
@@ -22,7 +22,7 @@
    "kind": "backend",
    "doc": "HTTP and WebSocket transport boundaries for the current GUI.",
    "files": 28,
-   "lines": 4678,
+   "lines": 4788,
    "domains": {
     "web": 28
    },
@@ -63,7 +63,7 @@
    "kind": "backend",
    "doc": "Current room domain contracts and behavior.",
    "files": 49,
-   "lines": 12994,
+   "lines": 13047,
    "domains": {
     "room": 49
    },
@@ -184,7 +184,7 @@
    "kind": "backend",
    "doc": "Optional product feature packages.",
    "files": 12,
-   "lines": 1594,
+   "lines": 1641,
    "domains": {
     "features": 12
    },
@@ -264,7 +264,7 @@
    "kind": "backend",
    "doc": "Compatibility adapters for product paths that have not been retired yet.",
    "files": 181,
-   "lines": 47154,
+   "lines": 47149,
    "domains": {
     "legacy": 181
    },
@@ -508,7 +508,7 @@
    "kind": "frontend",
    "doc": "Frontend entry files (App, main, API client, styles) living directly under src/.",
    "files": 11,
-   "lines": 11640,
+   "lines": 11778,
    "domains": {},
    "classes": {},
    "x": 102.0,
@@ -524,7 +524,7 @@
    "kind": "frontend",
    "doc": "Room protocol client: HTTP calls, WebSocket wiring, DTO mapping.",
    "files": 7,
-   "lines": 1747,
+   "lines": 1754,
    "domains": {},
    "classes": {},
    "x": 330.0,
@@ -540,7 +540,7 @@
    "kind": "frontend",
    "doc": "Application shell, routing, and global client state.",
    "files": 21,
-   "lines": 5565,
+   "lines": 5612,
    "domains": {},
    "classes": {},
    "x": 558.0,
@@ -587,8 +587,8 @@
    "id": "fe:views",
    "kind": "frontend",
    "doc": "Top-level room views rendered by the shell.",
-   "files": 62,
-   "lines": 14747,
+   "files": 63,
+   "lines": 14942,
    "domains": {},
    "classes": {},
    "x": 558.0,
@@ -1120,7 +1120,7 @@
   {
    "from": "fe:views",
    "to": "fe:(src root)",
-   "count": 64,
+   "count": 66,
    "points": [
     [
      558.0,
@@ -1680,7 +1680,7 @@
   {
    "from": "room",
    "to": "features",
-   "count": 1,
+   "count": 2,
    "points": [
     [
      1350.0,
@@ -3677,7 +3677,7 @@
  "health": {
   "scope": "Imports are counted inside agentsassemble/ only; test references are counted separately from tests/. Callers outside this repository are not visible to the generator.",
   "totals": {
-   "retiring_lines": 57109,
+   "retiring_lines": 57104,
    "current_to_retiring_imports": 106,
    "unreferenced_shim_lines": 2014,
    "test_only_shims": 196
@@ -3700,7 +3700,7 @@
      "web"
     ],
     "internal_edges": 80,
-    "lines": 124416,
+    "lines": 124621,
     "heaviest": "legacy"
    },
    {
@@ -3713,7 +3713,7 @@
      "fe:views"
     ],
     "internal_edges": 15,
-    "lines": 38425,
+    "lines": 38812,
     "heaviest": "fe:views"
    }
   ],
@@ -6893,7 +6893,7 @@
    "features",
    "optional",
    "in-target-package",
-   45,
+   92,
    "Legacy side-chat JSONL storage and meeting-scoped reads.",
    [
     317
@@ -6903,6 +6903,7 @@
     133,
     210,
     274,
+    649,
     745
    ],
    []
@@ -11749,7 +11750,7 @@
    "legacy",
    "legacy",
    "in-target-package",
-   388,
+   383,
    "Canonical room roster, moderation, and channel/media-adjacent routes.",
    [
     296,
@@ -18558,7 +18559,7 @@
    "room",
    "current",
    "in-target-package",
-   211,
+   260,
    "",
    [
     676
@@ -18569,6 +18570,7 @@
     67,
     200,
     326,
+    649,
     656,
     665,
     759,
@@ -18827,9 +18829,11 @@
    "room",
    "current",
    "in-target-package",
-   115,
+   119,
    "",
    [
+    124,
+    641,
     652,
     661,
     666
@@ -21511,7 +21515,7 @@
    "web",
    "current",
    "in-target-package",
-   500,
+   523,
    "Route-table dispatcher + unified request identity for the GUI HTTP server.",
    [
     13,
@@ -21633,7 +21637,7 @@
    "web",
    "current",
    "in-target-package",
-   212,
+   218,
    "Canonical room attachment upload and download routes.",
    [
     641,
@@ -21821,7 +21825,7 @@
    "web",
    "current",
    "in-target-package",
-   52,
+   86,
    "Explicit canonical room creation for the browser room directory.",
    [
     676,
@@ -21839,7 +21843,7 @@
    "web",
    "current",
    "in-target-package",
-   268,
+   281,
    "Canonical room history, registry, message, and vote HTTP routes.",
    [
     32,
@@ -21885,7 +21889,7 @@
    "web",
    "current",
    "in-target-package",
-   123,
+   137,
    "Canonical participant and room lifecycle HTTP routes.",
    [
     32,
@@ -21905,7 +21909,7 @@
    "web",
    "current",
    "in-target-package",
-   127,
+   125,
    "Canonical room roster and member HTTP routes.",
    [
     655,
@@ -21925,7 +21929,7 @@
    "web",
    "current",
    "in-target-package",
-   59,
+   71,
    "Room settings HTTP routes for the GUI server.",
    [
     671,
@@ -21945,7 +21949,7 @@
    "web",
    "current",
    "in-target-package",
-   146,
+   156,
    "Host, origin, and public-route trust policy for the GUI server.",
    [],
    [
@@ -22123,7 +22127,7 @@
   [
    "frontend/src/App.tsx",
    "(src root)",
-   2066,
+   2126,
    "",
    [
     1,
@@ -22173,8 +22177,8 @@
     121,
     122,
     124,
-    125,
-    126
+    126,
+    127
    ],
    [
     77
@@ -22192,8 +22196,8 @@
     0,
     110,
     111,
-    129,
-    130
+    130,
+    131
    ]
   ],
   [
@@ -22277,23 +22281,25 @@
     119,
     120,
     121,
+    123,
     124,
     125,
     126,
     127,
-    129,
+    128,
     130,
     131,
     132,
     133,
     134,
     135,
-    138,
+    136,
     139,
     140,
-    142,
+    141,
     143,
-    144
+    144,
+    145
    ]
   ],
   [
@@ -22345,7 +22351,7 @@
   [
    "frontend/src/api/moderation.ts",
    "api",
-   95,
+   102,
    "",
    [
     4,
@@ -22576,7 +22582,7 @@
   [
    "frontend/src/app/useRoomInviteController.test.tsx",
    "app",
-   228,
+   232,
    "",
    [
     2,
@@ -22588,7 +22594,7 @@
   [
    "frontend/src/app/useRoomInviteController.ts",
    "app",
-   580,
+   583,
    "",
    [
     2,
@@ -22633,7 +22639,7 @@
   [
    "frontend/src/app/useRoomSettingsController.test.tsx",
    "app",
-   521,
+   533,
    "",
    [
     2,
@@ -22645,7 +22651,7 @@
   [
    "frontend/src/app/useRoomSettingsController.ts",
    "app",
-   482,
+   501,
    "",
    [
     2,
@@ -22660,7 +22666,7 @@
   [
    "frontend/src/app/useRoomSideChat.test.tsx",
    "app",
-   146,
+   147,
    "",
    [
     2,
@@ -22671,7 +22677,7 @@
   [
    "frontend/src/app/useRoomSideChat.ts",
    "app",
-   106,
+   114,
    "",
    [
     2,
@@ -22699,7 +22705,7 @@
   [
    "frontend/src/index.css",
    "(src root)",
-   6747,
+   6718,
    "",
    [],
    [
@@ -22740,8 +22746,8 @@
     113,
     115,
     118,
-    136,
-    139
+    137,
+    140
    ]
   ],
   [
@@ -22752,9 +22758,9 @@
    [],
    [
     113,
-    133,
-    135,
-    140
+    134,
+    136,
+    141
    ]
   ],
   [
@@ -22779,7 +22785,7 @@
    [],
    [
     101,
-    139
+    140
    ]
   ],
   [
@@ -22796,7 +22802,7 @@
     81,
     82,
     111,
-    144
+    145
    ]
   ],
   [
@@ -22876,7 +22882,7 @@
    "Per-provider permission/sandbox options + fast support, mirrored from the",
    [],
    [
-    133
+    134
    ]
   ],
   [
@@ -22889,8 +22895,8 @@
    ],
    [
     101,
-    134,
-    139
+    135,
+    140
    ]
   ],
   [
@@ -22937,7 +22943,7 @@
     89,
     111,
     114,
-    125
+    126
    ]
   ],
   [
@@ -22974,8 +22980,8 @@
     102,
     115,
     121,
-    134,
-    139
+    135,
+    140
    ]
   ],
   [
@@ -23078,7 +23084,7 @@
     89,
     122,
     124,
-    144
+    145
    ]
   ],
   [
@@ -23230,8 +23236,8 @@
     70,
     88,
     89,
-    142,
-    144
+    143,
+    145
    ]
   ],
   [
@@ -23245,8 +23251,8 @@
    [
     30,
     89,
-    125,
-    142
+    126,
+    143
    ]
   ],
   [
@@ -23268,7 +23274,7 @@
     2
    ],
    [
-    126
+    127
    ]
   ],
   [
@@ -23290,7 +23296,7 @@
     2
    ],
    [
-    131
+    132
    ]
   ],
   [
@@ -23307,7 +23313,7 @@
   [
    "frontend/src/roomSocketClient.test.ts",
    "(src root)",
-   201,
+   241,
    "",
    [
     79
@@ -23317,7 +23323,7 @@
   [
    "frontend/src/roomSocketClient.ts",
    "(src root)",
-   372,
+   388,
    "",
    [
     2,
@@ -23341,9 +23347,9 @@
     119,
     120,
     121,
-    129,
-    135,
-    138
+    130,
+    136,
+    139
    ]
   ],
   [
@@ -23362,7 +23368,7 @@
   [
    "frontend/src/useCanonicalRoom.test.tsx",
    "(src root)",
-   595,
+   636,
    "",
    [
     2,
@@ -23375,7 +23381,7 @@
   [
    "frontend/src/useCanonicalRoom.ts",
    "(src root)",
-   551,
+   561,
    "",
    [
     2,
@@ -23412,7 +23418,7 @@
     2,
     40,
     96,
-    131
+    132
    ],
    [
     0
@@ -23495,10 +23501,10 @@
     72,
     96,
     111,
-    130,
-    142,
+    131,
     143,
-    144
+    144,
+    145
    ],
    [
     0,
@@ -23561,9 +23567,9 @@
    [
     113,
     115,
-    135,
-    137,
-    138
+    136,
+    138,
+    139
    ]
   ],
   [
@@ -23636,8 +23642,8 @@
     87,
     98,
     100,
-    125,
-    142
+    126,
+    143
    ]
   ],
   [
@@ -23721,7 +23727,7 @@
     2,
     10,
     44,
-    126
+    127
    ],
    [
     0
@@ -23735,8 +23741,8 @@
    [],
    [
     104,
-    126,
-    133
+    127,
+    134
    ]
   ],
   [
@@ -23770,13 +23776,13 @@
    ],
    [
     87,
-    142
+    143
    ]
   ],
   [
    "frontend/src/views/components/LobbyComposer.test.tsx",
    "views",
-   263,
+   285,
    "",
    [
     1,
@@ -23789,7 +23795,7 @@
   [
    "frontend/src/views/components/LobbyComposer.tsx",
    "views",
-   428,
+   436,
    "",
    [
     1,
@@ -23801,7 +23807,7 @@
     75,
     79,
     114,
-    128
+    129
    ],
    [
     89,
@@ -23833,10 +23839,10 @@
     79,
     93,
     118,
-    135,
-    137,
-    139,
-    140
+    136,
+    138,
+    140,
+    141
    ],
    [
     112,
@@ -23853,13 +23859,13 @@
    ],
    [
     111,
-    125
+    126
    ]
   ],
   [
    "frontend/src/views/components/MobileRoomInfoPanel.tsx",
    "views",
-   413,
+   431,
    "",
    [
     2,
@@ -23870,7 +23876,7 @@
     79,
     93,
     117,
-    139
+    140
    ],
    [
     0
@@ -23892,16 +23898,16 @@
    51,
    "",
    [
-    141
+    142
    ],
    [
     92,
     115,
     116,
-    133,
-    135,
-    137,
-    142
+    134,
+    136,
+    138,
+    143
    ]
   ],
   [
@@ -23914,7 +23920,7 @@
    ],
    [
     113,
-    136
+    137
    ]
   ],
   [
@@ -23980,9 +23986,10 @@
   [
    "frontend/src/views/components/RoomSettingsModal.test.tsx",
    "views",
-   146,
+   196,
    "",
    [
+    2,
     57,
     124
    ],
@@ -23991,7 +23998,7 @@
   [
    "frontend/src/views/components/RoomSettingsModal.tsx",
    "views",
-   470,
+   495,
    "",
    [
     2,
@@ -24004,9 +24011,20 @@
    ]
   ],
   [
+   "frontend/src/views/components/SideChatDock.test.tsx",
+   "views",
+   69,
+   "",
+   [
+    2,
+    126
+   ],
+   []
+  ],
+  [
    "frontend/src/views/components/SideChatDock.tsx",
    "views",
-   248,
+   251,
    "",
    [
     2,
@@ -24016,7 +24034,8 @@
     114
    ],
    [
-    0
+    0,
+    125
    ]
   ],
   [
@@ -24028,7 +24047,7 @@
     2,
     74,
     106,
-    127
+    128
    ],
    [
     0,
@@ -24044,7 +24063,7 @@
     2
    ],
    [
-    126
+    127
    ]
   ],
   [
@@ -24066,7 +24085,7 @@
     1,
     2,
     79,
-    130
+    131
    ],
    []
   ],
@@ -24081,7 +24100,7 @@
    ],
    [
     89,
-    129
+    130
    ]
   ],
   [
@@ -24104,8 +24123,8 @@
    "",
    [
     2,
-    133,
-    140
+    134,
+    141
    ],
    []
   ],
@@ -24120,12 +24139,12 @@
     46,
     106,
     117,
-    139,
-    140
+    140,
+    141
    ],
    [
-    132,
-    135
+    133,
+    136
    ]
   ],
   [
@@ -24137,11 +24156,11 @@
     2,
     47,
     53,
-    139,
-    140
+    140,
+    141
    ],
    [
-    135
+    136
    ]
   ],
   [
@@ -24155,11 +24174,11 @@
     79,
     93,
     117,
-    133,
     134,
-    136,
-    138,
-    140
+    135,
+    137,
+    139,
+    141
    ],
    [
     113
@@ -24173,11 +24192,11 @@
    [
     35,
     118,
-    139,
-    140
+    140,
+    141
    ],
    [
-    135
+    136
    ]
   ],
   [
@@ -24188,8 +24207,8 @@
    [
     93,
     117,
-    139,
-    140
+    140,
+    141
    ],
    [
     113
@@ -24204,10 +24223,10 @@
     2,
     79,
     93,
-    140
+    141
    ],
    [
-    135
+    136
    ]
   ],
   [
@@ -24221,15 +24240,15 @@
     38,
     47,
     53,
-    140
+    141
    ],
    [
     113,
     115,
-    133,
     134,
-    136,
-    137
+    135,
+    137,
+    138
    ]
   ],
   [
@@ -24243,14 +24262,14 @@
    ],
    [
     113,
-    132,
     133,
     134,
     135,
     136,
     137,
     138,
-    139
+    139,
+    140
    ]
   ],
   [
@@ -24374,19 +24393,19 @@
    "name": "agentsassemble",
    "note": "Backend package (Python)",
    "files": 787,
-   "lines": 129515
+   "lines": 129720
   },
   {
    "name": "frontend/src",
    "note": "React room client (TS/TSX)",
-   "files": 146,
-   "lines": 38425
+   "files": 147,
+   "lines": 38812
   },
   {
    "name": "tests",
    "note": "Backend test suite",
    "files": 351,
-   "lines": 141281
+   "lines": 141792
   },
   {
    "name": "scripts",
