@@ -4,7 +4,7 @@ Status: generated architecture inventory
 
 Generator: `python3 scripts/generate_package_map.py`
 
-Source fingerprint: `1b88bfacbbabf447`
+Source fingerprint: `57c2ed75689078e5`
 
 This file describes current evidence and proposed ownership. It does not by
 itself authorize a module move or a product behavior change.
@@ -616,7 +616,7 @@ itself authorize a module move or a product behavior change.
 | `agentsassemble.providers.grok_acp` | `agentsassemble/providers/grok_acp/__init__.py` | 5 | providers | current | `agentsassemble.providers.grok_acp.runtime` | 2 | - | test-import:3 | `tests/test_grok_acp_runtime.py`, `tests/test_provider_package.py`, `tests/test_room_agent_bridge.py` | `providers/` | in-target-package |
 | `agentsassemble.providers.grok_acp.process` | `agentsassemble/providers/grok_acp/process.py` | 59 | providers | current | - | 1 | - | - | - | `providers/` | in-target-package |
 | `agentsassemble.providers.grok_acp.room_access` | `agentsassemble/providers/grok_acp/room_access.py` | 318 | providers | current | `agentsassemble.providers.room_portal`, `agentsassemble.providers.terminal_interactions`, `agentsassemble.room.text` | 1 | - | - | - | `providers/` | in-target-package |
-| `agentsassemble.providers.grok_acp.runtime` | `agentsassemble/providers/grok_acp/runtime.py` | 737 | providers | current | `agentsassemble.providers.grok_acp.process`, `agentsassemble.providers.grok_acp.room_access`, `agentsassemble.providers.grok_acp.session`, `agentsassemble.providers.grok_acp.transport`, `agentsassemble.providers.grok_acp.turns`, `agentsassemble.providers.process_environment`, `agentsassemble.providers.room_portal`, `agentsassemble.providers.runtime_contracts`, +1 | 1 | - | - | - | `providers/` | in-target-package |
+| `agentsassemble.providers.grok_acp.runtime` | `agentsassemble/providers/grok_acp/runtime.py` | 748 | providers | current | `agentsassemble.providers.grok_acp.process`, `agentsassemble.providers.grok_acp.room_access`, `agentsassemble.providers.grok_acp.session`, `agentsassemble.providers.grok_acp.transport`, `agentsassemble.providers.grok_acp.turns`, `agentsassemble.providers.process_environment`, `agentsassemble.providers.room_portal`, `agentsassemble.providers.runtime_contracts`, +1 | 1 | - | - | - | `providers/` | in-target-package |
 | `agentsassemble.providers.grok_acp.session` | `agentsassemble/providers/grok_acp/session.py` | 51 | providers | current | `agentsassemble.room.text` | 1 | - | - | - | `providers/` | in-target-package |
 | `agentsassemble.providers.grok_acp.transport` | `agentsassemble/providers/grok_acp/transport.py` | 198 | providers | current | - | 1 | - | - | - | `providers/` | in-target-package |
 | `agentsassemble.providers.grok_acp.turns` | `agentsassemble/providers/grok_acp/turns.py` | 243 | providers | current | `agentsassemble.room.text` | 1 | - | - | - | `providers/` | in-target-package |

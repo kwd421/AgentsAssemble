@@ -36,6 +36,16 @@ if TYPE_CHECKING:
     from agentsassemble.providers.room_portal import RoomPortal
 
 
+def _permission_option_id(params: dict[str, object], kind: str) -> str:
+    for option in list(params.get("options") or []):
+        if not isinstance(option, dict) or str(option.get("kind") or "") != kind:
+            continue
+        option_id = clean_room_text(option.get("optionId"), limit=128)
+        if option_id:
+            return option_id
+    return ""
+
+
 class GrokAcpRuntime(GrokAcpTransportMixin, GrokAcpTurnProjectionMixin):
     """Persistent Grok CLI runtime using its structured ACP stdio transport."""
 
@@ -504,18 +514,20 @@ class GrokAcpRuntime(GrokAcpTransportMixin, GrokAcpTurnProjectionMixin):
         params = message.get("params") if isinstance(message.get("params"), dict) else {}
         tool_call = params.get("toolCall") if isinstance(params.get("toolCall"), dict) else {}
         allow_outbox = self._permission_is_room_outbox_write(params, tool_call)
-        if allow_outbox:
-            allow_outbox = self._stage_room_outbox_write(params, tool_call)
         allow_roll = self._permission_is_room_roll(params, tool_call)
-        allow_request = allow_outbox or allow_roll
+        allow_option_id = ""
+        if allow_outbox or allow_roll:
+            allow_option_id = _permission_option_id(params, "allow_once")
+        allow_request = bool(allow_option_id)
+        if allow_request and allow_outbox:
+            allow_outbox = self._stage_room_outbox_write(params, tool_call)
+            allow_request = allow_outbox or allow_roll
         option_kind = "allow_once" if allow_request else "reject_once"
-        option_id = ""
-        for option in list(params.get("options") or []):
-            if not isinstance(option, dict) or str(option.get("kind") or "") != option_kind:
-                continue
-            option_id = clean_room_text(option.get("optionId"), limit=128)
-            if option_id:
-                break
+        option_id = (
+            allow_option_id
+            if allow_request
+            else _permission_option_id(params, option_kind)
+        )
         with self._lock:
             self._permission_request_count += 1
             if not allow_request:
@@ -627,7 +639,6 @@ class GrokAcpRuntime(GrokAcpTransportMixin, GrokAcpTurnProjectionMixin):
             )
             while len(self._tool_permission_context) > 256:
                 self._tool_permission_context.pop(next(iter(self._tool_permission_context)))
-
     def _handle_room_portal_request(self, message: dict[str, object]) -> None:
         request_id = message.get("id")
         if not isinstance(request_id, (int, str)) or isinstance(request_id, bool):

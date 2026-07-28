@@ -94,7 +94,7 @@ restart, reconnect, room switching, and refresh.
 
 ### C. Provider correctness
 
-- [ ] Do not stage or publish a Grok ACP outbox write unless an actual
+- [x] Do not stage or publish a Grok ACP outbox write unless an actual
       `allow_once` option was selected.
 - [ ] Establish output-file freshness before accepting Codex adapter or
       resident output.
@@ -181,6 +181,7 @@ remaining limitation.
 | `3ae54e0d` | Apply side-chat retention after room scoping using a bounded newest-first scan | red file-backed verification showed room-a history disappearing behind room-b's newer rows; 45 side-chat/HTTP/frontend/deletion tests; `python3 scripts/check_test_quality.py --base HEAD`; `make generated-artifacts-check`; `git diff --check` | side chat remains an explicitly separate JSONL feature, not canonical room events |
 | `32e237a7` | Match `@all` through one token-boundary rule shared by routing, continuous-floor, and attention policies | red policy verification showed `user@allow.example` broadcasting to all providers and bypassing floor eligibility; 56 routing/floor/attention tests; `python3 scripts/check_test_quality.py --base HEAD`; `make generated-artifacts-check`; `git diff --check` | provider-specific mention aliases retain their existing matching rules |
 | `7112a81b` | Parse persisted resident `fast_mode` and `stream_thinking` values with the existing strict boolean parser | red JSON-load verification showed the string `"false"` enabling fast mode; 165 resident-runner tests; `python3 scripts/check_test_quality.py --base HEAD`; `make generated-artifacts-check`; `git diff --check` | CLI argparse booleans remain native booleans and intentionally keep direct conversion |
+| `78afc805` | Serialize stable-entry KV publication and discard retries superseded by a newer tunnel URL | red controlled wrangler ordering published `new` then overwrote it with `old`; corrected ordering ends on the latest URL; 19 stable-entry/tunnel/package tests; `python3 scripts/check_test_quality.py --base HEAD`; `make generated-artifacts-check`; `git diff --check` | publication remains asynchronous and best-effort when wrangler itself never succeeds |
 
 ## Resume Rule
 

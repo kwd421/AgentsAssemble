@@ -8,6 +8,7 @@ from unittest.mock import Mock, patch
 
 from agentsassemble.providers.grok_acp import GrokAcpRuntime
 from agentsassemble.providers.room_portal import (
+    RoomPortal,
     VIRTUAL_ROOM_DIRECT_OUTBOX_PREFIX,
     VIRTUAL_ROOM_OUTBOX_PATH,
 )
@@ -177,6 +178,43 @@ class GrokAcpRuntimeTests(unittest.TestCase):
             target_path,
             "소넷, 다음 판단을 부탁해.",
         )
+
+    def test_outbox_is_not_staged_when_request_has_no_allow_once_option(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            portal = RoomPortal(root / "portal", participant_id="grok")
+            portal.prepare()
+            portal.begin_observation("turn-1")
+            runtime = self.make_runtime(root)
+            runtime.room_portal = portal
+            runtime._session_id = "session-1"
+            runtime._active_room_observation = True
+            runtime._respond_to_permission_request(
+                {
+                    "jsonrpc": "2.0",
+                    "id": "permission-without-allow",
+                    "method": "session/request_permission",
+                    "params": {
+                        "sessionId": "session-1",
+                        "toolCall": {
+                            "toolCallId": "tool-write",
+                            "title": "write",
+                            "rawInput": {
+                                "file_path": VIRTUAL_ROOM_OUTBOX_PATH,
+                                "content": "must not be published",
+                            },
+                        },
+                        "options": [
+                            {"optionId": "reject-once", "kind": "reject_once"},
+                        ],
+                    },
+                }
+            )
+
+            publication = portal.consume_publication_result("turn-1")
+
+        self.assertEqual(publication.content, "")
+        self.assertEqual(runtime._permission_denied_count, 1)
 
     def test_permission_allows_only_bounded_room_roll_during_observation(self):
         with tempfile.TemporaryDirectory() as temp_dir:
