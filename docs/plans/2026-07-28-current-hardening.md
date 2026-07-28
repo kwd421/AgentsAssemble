@@ -89,7 +89,7 @@ restart, reconnect, room switching, and refresh.
 - [x] Scope side-chat history before applying its retention limit.
 - [x] Match `@all` as a mention token rather than an arbitrary substring.
 - [x] Parse persisted boolean values with the existing strict boolean parser.
-- [ ] Serialize stable-public-URL publication so an old retry cannot overwrite
+- [x] Serialize stable-public-URL publication so an old retry cannot overwrite
       a newer URL.
 
 ### C. Provider correctness
@@ -180,6 +180,7 @@ remaining limitation.
 | `d94fec0c` | Enforce the actual idle-room SSE heartbeat cadence while preserving standalone frame-generator compatibility | red HTTP timing verification measured a 0.007-second heartbeat instead of the configured one-second cadence; 128 SSE/Agent Session/room-route tests plus a 591-test expansion with one corrected stale secure-endpoint fixture; `python3 scripts/check_test_quality.py --base HEAD`; `make generated-artifacts-check`; `git diff --check` | full suite remains completion-gate work |
 | `3ae54e0d` | Apply side-chat retention after room scoping using a bounded newest-first scan | red file-backed verification showed room-a history disappearing behind room-b's newer rows; 45 side-chat/HTTP/frontend/deletion tests; `python3 scripts/check_test_quality.py --base HEAD`; `make generated-artifacts-check`; `git diff --check` | side chat remains an explicitly separate JSONL feature, not canonical room events |
 | `32e237a7` | Match `@all` through one token-boundary rule shared by routing, continuous-floor, and attention policies | red policy verification showed `user@allow.example` broadcasting to all providers and bypassing floor eligibility; 56 routing/floor/attention tests; `python3 scripts/check_test_quality.py --base HEAD`; `make generated-artifacts-check`; `git diff --check` | provider-specific mention aliases retain their existing matching rules |
+| `7112a81b` | Parse persisted resident `fast_mode` and `stream_thinking` values with the existing strict boolean parser | red JSON-load verification showed the string `"false"` enabling fast mode; 165 resident-runner tests; `python3 scripts/check_test_quality.py --base HEAD`; `make generated-artifacts-check`; `git diff --check` | CLI argparse booleans remain native booleans and intentionally keep direct conversion |
 
 ## Resume Rule
 

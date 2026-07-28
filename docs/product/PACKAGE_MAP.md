@@ -4,7 +4,7 @@ Status: generated architecture inventory
 
 Generator: `python3 scripts/generate_package_map.py`
 
-Source fingerprint: `b36142f7c25b31c5`
+Source fingerprint: `1b88bfacbbabf447`
 
 This file describes current evidence and proposed ownership. It does not by
 itself authorize a module move or a product behavior change.
@@ -91,7 +91,7 @@ itself authorize a module move or a product behavior change.
 | `agentsassemble.application.room_repository_factory` | `agentsassemble/application/room_repository_factory.py` | 169 | application | current | `agentsassemble.persistence.local.room.repository`, `agentsassemble.persistence.postgres.schema`, `agentsassemble.room.repository` | 11 | `call:frozenset@19`, `call:compile@21` | test-import:7, monkeypatch:1 | `tests/test_cli_timeout_core.py`, `tests/test_gui_room_repository_injection.py`, `tests/test_identity_repository_factory.py`, `+4` | `application/` | in-target-package |
 | `agentsassemble.application.room_users` | `agentsassemble/application/room_users.py` | 226 | application | current | `agentsassemble.identity.repository`, `agentsassemble.persistence.local.identity.migration`, `agentsassemble.persistence.local.identity.registry`, `agentsassemble.persistence.local.identity.repository` | 5 | `call:Lock@44` | test-import:9 | `tests/gui_server_test_support.py`, `tests/test_application_package.py`, `tests/test_gui_server_room_routes.py`, `+6` | `application/` | in-target-package |
 | `agentsassemble.application.session_run_monitor` | `agentsassemble/application/session_run_monitor.py` | 142 | application | current | - | 6 | - | test-import:1 | `tests/test_application_package.py` | `application/` | in-target-package |
-| `agentsassemble.application.stable_entry` | `agentsassemble/application/stable_entry.py` | 83 | application | current | - | 4 | - | test-import:1 | `tests/test_application_package.py` | `application/` | in-target-package |
+| `agentsassemble.application.stable_entry` | `agentsassemble/application/stable_entry.py` | 100 | application | current | - | 4 | `call:Lock@25`, `call:Lock@26` | test-import:2, monkeypatch:1 | `tests/test_application_package.py`, `tests/test_stable_entry.py` | `application/` | in-target-package |
 | `agentsassemble.application.transaction` | `agentsassemble/application/transaction.py` | 11 | application | current | - | 4 | - | test-import:1 | `tests/test_application_package.py` | `application/` | in-target-package |
 | `agentsassemble.application_transaction` | `agentsassemble/application_transaction.py` | 4 | application | compatibility | `agentsassemble.application.transaction` | 0 | - | test-import:1 | `tests/test_application_package.py` | `application/` | compatibility-shim |
 | `agentsassemble.artifact_packets` | `agentsassemble/artifact_packets.py` | 11 | application | compatibility | `agentsassemble.legacy.meeting.support.artifact_packets` | 0 | - | - | - | `application/` | compatibility-shim |

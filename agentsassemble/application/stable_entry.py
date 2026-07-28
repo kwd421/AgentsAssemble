@@ -22,6 +22,9 @@ _CONFIG_PATH = _REDIRECTOR_DIR / "stable-entry.json"
 _ANNOUNCE_TIMEOUT_SECONDS = 90
 _ANNOUNCE_ATTEMPTS = 3
 _ANNOUNCE_RETRY_DELAY_SECONDS = 15
+_ANNOUNCE_STATE_LOCK = threading.Lock()
+_ANNOUNCE_PUBLISH_LOCK = threading.Lock()
+_ANNOUNCE_GENERATION = 0
 
 
 def stable_entry_config() -> dict[str, str] | None:
@@ -47,37 +50,51 @@ def stable_entry_url() -> str:
 
 def announce_stable_entry(public_url: str) -> None:
     """Point the stable worker at the current tunnel URL (async, best-effort)."""
+    global _ANNOUNCE_GENERATION
     config = stable_entry_config()
     clean_url = str(public_url or "").strip().rstrip("/")
     if not config or not clean_url.startswith("https://"):
         return
+    with _ANNOUNCE_STATE_LOCK:
+        _ANNOUNCE_GENERATION += 1
+        generation = _ANNOUNCE_GENERATION
 
     def push() -> None:
         # npx/wrangler can hiccup right after boot (network, cold npx cache),
         # which would leave the permanent URL pointing at a dead tunnel — so
         # retry a few times before giving up.
         for attempt in range(1, _ANNOUNCE_ATTEMPTS + 1):
-            try:
-                completed = subprocess.run(
-                    [
-                        "npx", "wrangler", "kv", "key", "put",
-                        config["kv_key"], clean_url,
-                        f"--namespace-id={config['namespace_id']}",
-                        "--remote",
-                    ],
-                    cwd=_REDIRECTOR_DIR,
-                    capture_output=True,
-                    text=True,
-                    timeout=_ANNOUNCE_TIMEOUT_SECONDS,
-                    check=False,
-                )
-                if completed.returncode == 0:
-                    print(f"Stable entry updated: {config['url']} -> {clean_url}")
+            with _ANNOUNCE_PUBLISH_LOCK:
+                if not _announcement_is_current(generation):
                     return
-            except (OSError, subprocess.TimeoutExpired):
-                pass
+                try:
+                    completed = subprocess.run(
+                        [
+                            "npx", "wrangler", "kv", "key", "put",
+                            config["kv_key"], clean_url,
+                            f"--namespace-id={config['namespace_id']}",
+                            "--remote",
+                        ],
+                        cwd=_REDIRECTOR_DIR,
+                        capture_output=True,
+                        text=True,
+                        timeout=_ANNOUNCE_TIMEOUT_SECONDS,
+                        check=False,
+                    )
+                    if completed.returncode == 0:
+                        print(f"Stable entry updated: {config['url']} -> {clean_url}")
+                        return
+                except (OSError, subprocess.TimeoutExpired):
+                    pass
             if attempt < _ANNOUNCE_ATTEMPTS:
+                if not _announcement_is_current(generation):
+                    return
                 time.sleep(_ANNOUNCE_RETRY_DELAY_SECONDS)
         print("Stable entry update failed (room stays reachable on the tunnel URL).")
 
     threading.Thread(target=push, daemon=True, name="AgentsAssembleStableEntryAnnounce").start()
+
+
+def _announcement_is_current(generation: int) -> bool:
+    with _ANNOUNCE_STATE_LOCK:
+        return generation == _ANNOUNCE_GENERATION
