@@ -500,6 +500,7 @@ export default function App() {
   const {
     error: sideChatError,
     selectedThread: sideChatThread,
+    draftsByContext: sideChatDraftsByContext,
     sideChatEvents,
     threadEvents: sideChatThreadEvents,
     threadSummaries: sideChatThreadSummaries,
@@ -507,6 +508,7 @@ export default function App() {
     handlePostedEvents: handleSideChatPosted,
     handleRealtimeError: handleSideChatError,
     selectThread: selectSideChatThread,
+    updateDraft: updateSideChatDraft,
   } = useRoomSideChat({ meetingId: activeSideChatMeetingId });
   // Rooms-as-server-objects: when a room becomes active, promote it to a
   // server-backed meeting (idempotent) so adding agents / roster / lobby always
@@ -1958,6 +1960,8 @@ export default function App() {
               onPosted={handleSideChatPosted}
               mentionables={scopedMentionables}
               canPostMessages={!guestLocked}
+              draftsByContext={sideChatDraftsByContext}
+              onDraftChange={updateSideChatDraft}
             />
           }
           threadContent={
@@ -1970,6 +1974,8 @@ export default function App() {
               mode="thread"
               threadContext={sideChatThread}
               canPostMessages={!guestLocked}
+              draftsByContext={sideChatDraftsByContext}
+              onDraftChange={updateSideChatDraft}
             />
           }
           agentSessions={activeRoomAgentSessions}
@@ -2101,6 +2107,8 @@ export default function App() {
                 onPosted={handleSideChatPosted}
                 mentionables={scopedMentionables}
                 canPostMessages={!guestLocked}
+                draftsByContext={sideChatDraftsByContext}
+                onDraftChange={updateSideChatDraft}
               />
             </section>
           ) : (
@@ -2120,6 +2128,8 @@ export default function App() {
                 mode="thread"
                 threadContext={sideChatThread}
                 canPostMessages={!guestLocked}
+                draftsByContext={sideChatDraftsByContext}
+                onDraftChange={updateSideChatDraft}
               />
             </section>
           )}

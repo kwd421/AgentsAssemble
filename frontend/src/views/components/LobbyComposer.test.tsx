@@ -117,6 +117,48 @@ describe("LobbyComposer", () => {
     expect(await screen.findByText("map.png")).toBeTruthy();
   });
 
+  it("keeps message and attachment drafts owned by their room", async () => {
+    apiMocks.uploadLobbyAttachment.mockResolvedValue({
+      id: "attachment-a",
+      filename: "map.png",
+      content_type: "image/png",
+      size: 3,
+      is_image: true,
+      url: "/api/rooms/room-a/attachments/attachment-a",
+      download_url: "/api/rooms/room-a/attachments/attachment-a/download",
+    });
+    const view = render(
+      <LobbyComposer meetingId="room-a" onPosted={vi.fn()} />
+    );
+
+    fireEvent.change(screen.getByLabelText("채팅 입력"), {
+      target: { value: "room A draft" },
+    });
+    fireEvent.change(screen.getByLabelText("채팅 첨부 선택"), {
+      target: {
+        files: [new File(["map"], "map.png", { type: "image/png" })],
+      },
+    });
+    expect(await screen.findByText("map.png")).toBeTruthy();
+
+    view.rerender(
+      <LobbyComposer meetingId="room-b" onPosted={vi.fn()} />
+    );
+    expect((screen.getByLabelText("채팅 입력") as HTMLTextAreaElement).value).toBe("");
+    expect(screen.queryByText("map.png")).toBeNull();
+    fireEvent.change(screen.getByLabelText("채팅 입력"), {
+      target: { value: "room B draft" },
+    });
+
+    view.rerender(
+      <LobbyComposer meetingId="room-a" onPosted={vi.fn()} />
+    );
+    expect((screen.getByLabelText("채팅 입력") as HTMLTextAreaElement).value).toBe(
+      "room A draft"
+    );
+    expect(screen.getByText("map.png")).toBeTruthy();
+  });
+
   it("keeps attachment upload blocked for a read-only public room session", () => {
     render(
       <LobbyComposer

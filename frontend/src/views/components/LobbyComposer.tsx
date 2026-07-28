@@ -40,6 +40,16 @@ type ComposerAccessory = {
   icon?: LucideIcon;
 };
 
+type LobbyComposerDraft = {
+  message: string;
+  pendingAttachments: LobbyAttachmentRef[];
+};
+
+const EMPTY_LOBBY_COMPOSER_DRAFT: LobbyComposerDraft = {
+  message: "",
+  pendingAttachments: [],
+};
+
 const COMPOSER_ACCESSORIES: ComposerAccessory[] = [
   {
     id: "gift",
@@ -96,20 +106,55 @@ export default function LobbyComposer({
   const fileInputRef = useRef<HTMLInputElement>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
   const restoreFocusAfterSubmitRef = useRef(false);
-  const [message, setMessage] = useState("");
-  const [pendingAttachments, setPendingAttachments] = useState<LobbyAttachmentRef[]>([]);
+  const [draftsByRoom, setDraftsByRoom] = useState<Record<string, LobbyComposerDraft>>({});
   const [busy, setBusy] = useState(false);
   const [uploading, setUploading] = useState(false);
   const [error, setError] = useState("");
   const [accessoryNotice, setAccessoryNotice] = useState("");
   const [voteDialogOpen, setVoteDialogOpen] = useState(false);
   const roomSocket = useRoomSocket();
+  const activeDraft = draftsByRoom[meetingId] || EMPTY_LOBBY_COMPOSER_DRAFT;
+  const message = activeDraft.message;
+  const pendingAttachments = activeDraft.pendingAttachments;
   const disabled = Boolean(disabledReason);
   const canUploadAttachments =
     postingMode === "host" ||
     (postingMode === "guest" && Boolean(roomSessionToken.trim()));
   const canSubmit = Boolean(message.trim() || pendingAttachments.length) && !busy && !uploading && !disabled;
   const closeVoteDialog = useCallback(() => setVoteDialogOpen(false), []);
+
+  function setMessage(nextMessage: string) {
+    setDraftsByRoom((previous) => {
+      const current = previous[meetingId] || EMPTY_LOBBY_COMPOSER_DRAFT;
+      if (current.message === nextMessage) return previous;
+      return {
+        ...previous,
+        [meetingId]: { ...current, message: nextMessage },
+      };
+    });
+  }
+
+  function setPendingAttachments(
+    update:
+      | LobbyAttachmentRef[]
+      | ((current: LobbyAttachmentRef[]) => LobbyAttachmentRef[])
+  ) {
+    setDraftsByRoom((previous) => {
+      const current = previous[meetingId] || EMPTY_LOBBY_COMPOSER_DRAFT;
+      const nextAttachments =
+        typeof update === "function"
+          ? update(current.pendingAttachments)
+          : update;
+      if (current.pendingAttachments === nextAttachments) return previous;
+      return {
+        ...previous,
+        [meetingId]: {
+          ...current,
+          pendingAttachments: nextAttachments,
+        },
+      };
+    });
+  }
 
   useEffect(() => {
     setVoteDialogOpen(false);

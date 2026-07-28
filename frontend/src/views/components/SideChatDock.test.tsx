@@ -1,3 +1,4 @@
+import { useState } from "react";
 import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
@@ -15,6 +16,29 @@ vi.mock("../../api", async (importOriginal) => {
   };
 });
 
+function SideChatDockHarness({
+  meetingId,
+  mode = "side-chat",
+}: {
+  meetingId: string;
+  mode?: "side-chat" | "thread";
+}) {
+  const [draftsByContext, setDraftsByContext] = useState<Record<string, string>>({});
+  return (
+    <SideChatDock
+      meetingId={meetingId}
+      events={[]}
+      error={null}
+      onPosted={vi.fn()}
+      mode={mode}
+      draftsByContext={draftsByContext}
+      onDraftChange={(key, value) =>
+        setDraftsByContext((previous) => ({ ...previous, [key]: value }))
+      }
+    />
+  );
+}
+
 describe("SideChatDock", () => {
   afterEach(cleanup);
 
@@ -25,12 +49,7 @@ describe("SideChatDock", () => {
 
   it("posts general side chat without a thread id and keeps input focus", async () => {
     render(
-      <SideChatDock
-        meetingId="room-a"
-        events={[]}
-        error={null}
-        onPosted={vi.fn()}
-      />
+      <SideChatDockHarness meetingId="room-a" />
     );
 
     const input = screen.getByLabelText("비공식 사이드챗 입력") as HTMLTextAreaElement;
@@ -50,15 +69,35 @@ describe("SideChatDock", () => {
     await waitFor(() => expect(document.activeElement).toBe(input));
   });
 
+  it("keeps general side-chat drafts owned by their room", () => {
+    const view = render(
+      <SideChatDockHarness meetingId="room-a" />
+    );
+
+    fireEvent.change(screen.getByLabelText("비공식 사이드챗 입력"), {
+      target: { value: "room A aside" },
+    });
+    view.rerender(
+      <SideChatDockHarness meetingId="room-b" />
+    );
+    expect(
+      (screen.getByLabelText("비공식 사이드챗 입력") as HTMLTextAreaElement).value
+    ).toBe("");
+    fireEvent.change(screen.getByLabelText("비공식 사이드챗 입력"), {
+      target: { value: "room B aside" },
+    });
+
+    view.rerender(
+      <SideChatDockHarness meetingId="room-a" />
+    );
+    expect(
+      (screen.getByLabelText("비공식 사이드챗 입력") as HTMLTextAreaElement).value
+    ).toBe("room A aside");
+  });
+
   it("keeps the standalone thread tab disabled until a source message is selected", () => {
     render(
-      <SideChatDock
-        meetingId="room-a"
-        events={[]}
-        error={null}
-        onPosted={vi.fn()}
-        mode="thread"
-      />
+      <SideChatDockHarness meetingId="room-a" mode="thread" />
     );
 
     expect(screen.getByText("본채팅 메시지에서 스레드를 먼저 열어 주세요.")).toBeTruthy();

@@ -330,6 +330,54 @@ test("sends and restores an attachment-only canonical room message", async ({ br
   await observerContext.close();
 });
 
+test("keeps unsent lobby and side-chat drafts scoped to their server", async ({ page }) => {
+  const serverLabel = "E2E Draft Scope Server";
+  await page.setViewportSize({ width: 1440, height: 900 });
+  await installHostCredential(page);
+  await page.goto("/");
+  await page.getByRole("button", { name: "새 방 만들기" }).click();
+  await openActiveServerSettings(page);
+
+  let settings = page.getByRole("dialog", { name: "서버 설정" });
+  await settings.getByLabel("서버 이름").first().fill(serverLabel);
+  await expect.poll(() => roomWithLabel(page, serverLabel)).not.toBeNull();
+  await settings.getByRole("button", { name: "설정 닫기" }).click();
+
+  const lobbyInput = page.getByLabel("채팅 입력");
+  await lobbyInput.fill("created room lobby draft");
+  await page.getByLabel("채팅 첨부 선택").setInputFiles({
+    name: "created-room-draft.png",
+    mimeType: "image/png",
+    buffer: PROFILE_PNG,
+  });
+  await expect(page.getByText("created-room-draft.png", { exact: true })).toBeVisible();
+
+  await page.getByRole("tab", { name: "사이드챗" }).click();
+  const sideChatInput = page.getByLabel("비공식 사이드챗 입력");
+  await sideChatInput.fill("created room side draft");
+
+  await page.getByRole("button", { name: "#general", exact: true }).click();
+  await expect(lobbyInput).toHaveValue("");
+  await expect(page.getByText("created-room-draft.png", { exact: true })).toHaveCount(0);
+  await page.getByRole("tab", { name: "사이드챗" }).click();
+  await expect(sideChatInput).toHaveValue("");
+  await lobbyInput.fill("general lobby draft");
+  await sideChatInput.fill("general side draft");
+
+  await page.getByRole("button", { name: serverLabel, exact: true }).click();
+  await expect(lobbyInput).toHaveValue("created room lobby draft");
+  await expect(page.getByText("created-room-draft.png", { exact: true })).toBeVisible();
+  await page.getByRole("tab", { name: "사이드챗" }).click();
+  await expect(sideChatInput).toHaveValue("created room side draft");
+
+  await openActiveServerSettings(page);
+  settings = page.getByRole("dialog", { name: "서버 설정" });
+  await settings.getByRole("link", { name: "서버 삭제" }).click();
+  await settings.getByLabel("서버 이름").last().fill(serverLabel);
+  await settings.getByRole("button", { name: "서버 영구 삭제" }).click();
+  await expect.poll(() => roomWithLabel(page, serverLabel)).toBeNull();
+});
+
 test("persists a created server and removes it from every connected browser", async ({
   browser,
   page,

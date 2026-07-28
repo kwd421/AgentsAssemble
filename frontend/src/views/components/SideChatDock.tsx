@@ -20,15 +20,16 @@ function formatTime(iso: string): string {
 type SideChatDockMode = "side-chat" | "thread";
 
 function draftKeyForContext(
+  meetingId: string,
   mode: SideChatDockMode,
   threadContext: SideChatThreadContext | null
 ): string {
   if (mode === "thread") {
     return threadContext?.sourceEventId
-      ? `thread:${threadContext.sourceEventId}`
-      : "thread:none";
+      ? `${meetingId}:thread:${threadContext.sourceEventId}`
+      : `${meetingId}:thread:none`;
   }
-  return "side-chat";
+  return `${meetingId}:side-chat`;
 }
 
 function SideChatMessage({ event }: { event: SideChatEvent }) {
@@ -56,6 +57,8 @@ export default function SideChatDock({
   mode = "side-chat",
   threadContext = null,
   canPostMessages = true,
+  draftsByContext,
+  onDraftChange,
 }: {
   meetingId: string;
   events: SideChatEvent[];
@@ -65,14 +68,15 @@ export default function SideChatDock({
   mode?: SideChatDockMode;
   threadContext?: SideChatThreadContext | null;
   canPostMessages?: boolean;
+  draftsByContext: Record<string, string>;
+  onDraftChange: (key: string, value: string) => void;
 }) {
   const inputRef = useRef<HTMLTextAreaElement>(null);
   const restoreFocusAfterSendRef = useRef(false);
-  const [draftsByContext, setDraftsByContext] = useState<Record<string, string>>({});
   const [busy, setBusy] = useState(false);
   const [sendError, setSendError] = useState("");
   const isThread = mode === "thread";
-  const draftKey = draftKeyForContext(mode, threadContext);
+  const draftKey = draftKeyForContext(meetingId, mode, threadContext);
   const threadSourceEventId = isThread ? threadContext?.sourceEventId || "" : "";
   const message = draftsByContext[draftKey] || "";
   const readOnlyReason = canPostMessages
@@ -93,10 +97,7 @@ export default function SideChatDock({
 
   function setMessage(nextMessage: string) {
     if (composerDisabled) return;
-    setDraftsByContext((previous) => {
-      if ((previous[draftKey] || "") === nextMessage) return previous;
-      return { ...previous, [draftKey]: nextMessage };
-    });
+    onDraftChange(draftKey, nextMessage);
   }
 
   useEffect(() => {

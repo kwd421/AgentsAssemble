@@ -19,6 +19,7 @@ export function useRoomSideChat({ meetingId }: UseRoomSideChatOptions) {
   const [events, setEvents] = useState<SideChatEvent[]>([]);
   const [error, setError] = useState<Error | null>(null);
   const [selectedThread, setSelectedThread] = useState<SideChatThreadContext | null>(null);
+  const [draftsByContext, setDraftsByContext] = useState<Record<string, string>>({});
   const activeMeetingIdRef = useRef(meetingId);
   activeMeetingIdRef.current = meetingId;
 
@@ -85,6 +86,19 @@ export function useRoomSideChat({ meetingId }: UseRoomSideChatOptions) {
     setSelectedThread(null);
   }, []);
 
+  const updateDraft = useCallback((key: string, value: string) => {
+    setDraftsByContext((previous) => {
+      if ((previous[key] || "") === value) return previous;
+      const next = { ...previous };
+      if (value) {
+        next[key] = value;
+      } else {
+        delete next[key];
+      }
+      return next;
+    });
+  }, []);
+
   const sideChatEvents = useMemo(
     () => sideChatEventsForThreadContext(events, null),
     [events]
@@ -102,6 +116,7 @@ export function useRoomSideChat({ meetingId }: UseRoomSideChatOptions) {
     events,
     error,
     selectedThread,
+    draftsByContext,
     sideChatEvents,
     threadEvents,
     threadSummaries,
@@ -110,5 +125,6 @@ export function useRoomSideChat({ meetingId }: UseRoomSideChatOptions) {
     handleRealtimeError,
     selectThread,
     clearThread,
+    updateDraft,
   };
 }
