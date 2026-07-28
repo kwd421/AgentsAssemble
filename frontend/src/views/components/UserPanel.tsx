@@ -122,10 +122,7 @@ export default function UserPanel({
     setSettingsSection(section);
   }
 
-  async function persistProfile(nextProfile: UserProfile) {
-    setProfile(nextProfile);
-    setDraft(nextProfile);
-    saveDisplayNameForComposers(nextProfile);
+  async function persistProfile(nextProfile: UserProfile): Promise<string> {
     setSaving(true);
     setProfileError("");
     try {
@@ -133,8 +130,11 @@ export default function UserPanel({
       setProfile(savedProfile);
       setDraft(savedProfile);
       saveDisplayNameForComposers(savedProfile);
+      return "";
     } catch (error) {
-      setProfileError(error instanceof Error ? error.message : "프로필을 저장하지 못했습니다.");
+      const message = error instanceof Error ? error.message : "프로필을 저장하지 못했습니다.";
+      setProfileError(message);
+      return message;
     } finally {
       setSaving(false);
     }
@@ -150,8 +150,8 @@ export default function UserPanel({
   }
 
   async function saveDraft() {
-    await persistProfile(draft);
-    setSettingsOpen(false);
+    const error = await persistProfile(draft);
+    if (!error) setSettingsOpen(false);
   }
 
   async function handleAvatarCropped(file: File) {
@@ -160,7 +160,11 @@ export default function UserPanel({
       const attachment = await uploadLobbyAttachment(file, {
         purpose: "profile_avatar",
       });
-      await persistProfile({ ...profile, avatarImage: attachment.url });
+      const error = await persistProfile({ ...profile, avatarImage: attachment.url });
+      if (error) {
+        setAvatarStatus(error);
+        return;
+      }
       setAvatarCropFile(null);
       setAvatarEditorOpen(false);
       setAvatarStatus("");

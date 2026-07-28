@@ -125,6 +125,69 @@ test("leaves server voice presence when the user navigates away from a joined ch
   expect(deleteResponse.ok()).toBe(true);
 });
 
+test("keeps the confirmed profile visible and the editor open when saving fails", async ({
+  page,
+}) => {
+  const originalResponse = await page.request.get("/api/user-profile");
+  expect(originalResponse.ok()).toBe(true);
+  const originalPayload = (await originalResponse.json()) as {
+    profile?: Record<string, unknown>;
+  };
+  const confirmedResponse = await page.request.post("/api/user-profile", {
+    data: {
+      ...(originalPayload.profile || {}),
+      display_name: "Confirmed Profile",
+      handle: "confirmed.profile",
+    },
+  });
+  expect(confirmedResponse.ok()).toBe(true);
+
+  let failedSave = false;
+  await page.route("**/api/user-profile", async (route) => {
+    if (route.request().method() === "POST" && !failedSave) {
+      failedSave = true;
+      await route.fulfill({
+        status: 503,
+        contentType: "application/json",
+        body: JSON.stringify({ error: "injected_profile_save_failure" }),
+      });
+      return;
+    }
+    await route.continue();
+  });
+
+  try {
+    await installHostCredential(page);
+    await page.goto("/");
+    const userArea = page.locator(".dc-user-area");
+    await expect(userArea.locator(".dc-user-identity")).toContainText("Confirmed Profile");
+
+    await userArea.getByRole("button", { name: "사용자 설정" }).click();
+    const dialog = page.getByRole("dialog", { name: "프로필 편집" });
+    await dialog.getByRole("textbox", { name: "표시 이름" }).fill("Unsaved Profile");
+    await dialog.getByRole("button", { name: "저장", exact: true }).click();
+
+    await expect(dialog).toBeVisible();
+    await expect(dialog).toContainText("injected_profile_save_failure");
+    await expect(dialog.getByRole("textbox", { name: "표시 이름" })).toHaveValue(
+      "Unsaved Profile"
+    );
+    await expect(userArea.locator(".dc-user-identity")).toContainText("Confirmed Profile");
+
+    const durableResponse = await page.request.get("/api/user-profile");
+    expect(durableResponse.ok()).toBe(true);
+    const durablePayload = (await durableResponse.json()) as {
+      profile?: { display_name?: string };
+    };
+    expect(durablePayload.profile?.display_name).toBe("Confirmed Profile");
+  } finally {
+    const restoreResponse = await page.request.post("/api/user-profile", {
+      data: originalPayload.profile || {},
+    });
+    expect(restoreResponse.ok()).toBe(true);
+  }
+});
+
 test("keeps ordinary invites separate from one-time cross-origin operator pairing", async ({
   browser,
   page,
