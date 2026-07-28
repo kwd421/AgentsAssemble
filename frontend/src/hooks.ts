@@ -7,31 +7,38 @@ export function usePoll<T>(
   const [data, setData] = useState<T | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<Error | null>(null);
-  const mountedRef = useRef(true);
+  const requestOwnerRef = useRef({ generation: 0, request: 0 });
 
   const doFetch = useCallback(() => {
+    const generation = requestOwnerRef.current.generation;
+    const request = requestOwnerRef.current.request + 1;
+    requestOwnerRef.current.request = request;
     fetcher()
       .then((d) => {
-        if (mountedRef.current) {
-          setData(d);
-          setError(null);
-          setLoading(false);
-        }
+        if (
+          requestOwnerRef.current.generation !== generation ||
+          requestOwnerRef.current.request !== request
+        ) return;
+        setData(d);
+        setError(null);
+        setLoading(false);
       })
       .catch((e) => {
-        if (mountedRef.current) {
-          setError(e);
-          setLoading(false);
-        }
+        if (
+          requestOwnerRef.current.generation !== generation ||
+          requestOwnerRef.current.request !== request
+        ) return;
+        setError(e);
+        setLoading(false);
       });
   }, [fetcher]);
 
   useEffect(() => {
-    mountedRef.current = true;
+    requestOwnerRef.current.generation += 1;
     doFetch();
     const id = setInterval(doFetch, intervalMs);
     return () => {
-      mountedRef.current = false;
+      requestOwnerRef.current.generation += 1;
       clearInterval(id);
     };
   }, [doFetch, intervalMs]);

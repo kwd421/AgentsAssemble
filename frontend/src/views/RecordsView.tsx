@@ -371,34 +371,47 @@ export default function RecordsView({
   const [selectedId, setSelectedId] = useState<string | undefined>();
   const [detail, setDetail] = useState<MeetingDetailResponse | null>(null);
   const [detailLoading, setDetailLoading] = useState(false);
+  const detailRequestRef = useRef(0);
 
   const meetings = useMemo(
     () => (Array.isArray(data?.meetings) ? data.meetings : []),
     [data?.meetings]
   );
 
+  const loadDetail = useCallback((meetingId: string) => {
+    const request = detailRequestRef.current + 1;
+    detailRequestRef.current = request;
+    setDetailLoading(true);
+    fetchMeetingDetail(meetingId)
+      .then((nextDetail) => {
+        if (detailRequestRef.current !== request) return;
+        setDetail(nextDetail);
+        setDetailLoading(false);
+      })
+      .catch(() => {
+        if (detailRequestRef.current === request) {
+          setDetailLoading(false);
+        }
+      });
+  }, []);
+
+  useEffect(
+    () => () => {
+      detailRequestRef.current += 1;
+    },
+    []
+  );
+
   useEffect(() => {
     if (selectedId || meetings.length === 0) return;
     const firstId = meetings[0].meeting_id;
     setSelectedId(firstId);
-    setDetailLoading(true);
-    fetchMeetingDetail(firstId)
-      .then((nextDetail) => {
-        setDetail(nextDetail);
-        setDetailLoading(false);
-      })
-      .catch(() => setDetailLoading(false));
-  }, [meetings, selectedId]);
+    loadDetail(firstId);
+  }, [loadDetail, meetings, selectedId]);
 
   function handleSelect(id: string) {
     setSelectedId(id);
-    setDetailLoading(true);
-    fetchMeetingDetail(id)
-      .then((nextDetail) => {
-        setDetail(nextDetail);
-        setDetailLoading(false);
-      })
-      .catch(() => setDetailLoading(false));
+    loadDetail(id);
   }
 
   return (

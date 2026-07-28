@@ -113,7 +113,7 @@ restart, reconnect, room switching, and refresh.
       HTTP roster refresh cannot resurrect ghost members.
 - [x] Expire a stored guest session during startup and provide a usable exit
       from the guest surface.
-- [ ] Add generation or cancellation ownership to polling and Records detail
+- [x] Add generation or cancellation ownership to polling and Records detail
       requests.
 - [ ] Roll back or reload the authoritative value after room-setting save
       failure; do not label the failed optimistic value as previously confirmed.
@@ -192,6 +192,7 @@ remaining limitation.
 | `7f77c2f9` | Serialize same-session Agent Bridge creation and registration under a ref-counted per-session launch owner | red concurrent start verification created two child processes and leaked the overwritten one; corrected concurrent callers share one handle while unrelated sessions remain independent; 217 bridge/lifecycle/realtime/native-E2E/package tests; `python3 scripts/check_test_quality.py --base HEAD`; `make generated-artifacts-check`; `git diff --check` | direct manager shutdown concurrent with an in-progress start is outside the application lifecycle, whose controller lock closes only after active commands finish |
 | `745f0ed5` | Remove left and kicked participants from incremental and snapshot-backed canonical browser state | red browser verification showed a kicked participant disappear immediately and return after reload; corrected path stayed absent across both boundaries; 186 frontend unit tests; production-build Playwright kick workflow; `make generated-artifacts-check`; `git diff --check` | human invite admission still lacked the canonical membership event needed for an already-open browser to discover the initial join |
 | `395b841a` | Publish one canonical participant-join event with invite admission and preserve idempotency across workflow retry | red durable-state test found zero join events and the real browser failed to show the admitted guest without reload; corrected path recorded one event across retry and refreshed the open roster immediately; 63 focused Python tests plus 13 subtests; 186 frontend tests; production-build Playwright join/kick/reload workflow; `python3 scripts/check_test_quality.py --base HEAD`; `make generated-artifacts-check`; `git diff --check` | mandatory live PostgreSQL contract run remains completion-gate work |
+| `eb06cb3f` | Expire a stale persisted guest bearer during startup and expose a connection-independent exit from the locked guest surface | red hook and production-browser verification left the stale bearer stored and exposed no expiry exit before the fix; corrected startup removed the bearer, rendered expiry state, and returned to the ordinary root; 187 frontend tests; 8 production-build canonical Playwright scenarios; `make generated-artifacts-check`; `git diff --check` | an expired guest cannot authenticate a final participant-leave command, so expiry exit intentionally clears the local surface without pretending that server-side leave succeeded |
 
 ## Resume Rule
 
