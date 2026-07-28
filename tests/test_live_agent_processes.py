@@ -302,7 +302,7 @@ class LiveAgentProcessSupervisorTests(unittest.TestCase):
                                 "display_name": "Friend B",
                                 "provider_kind": "claude_code",
                                 "connection_kind": "remote_bridge",
-                                "endpoint": "http://friend.local:8777",
+                                "endpoint": "https://friend.local:8777",
                                 "auth_ref": "env:SECRET_TOKEN",
                             },
                         ]
@@ -331,7 +331,7 @@ class LiveAgentProcessSupervisorTests(unittest.TestCase):
                             "display_name": "Preflight Friend B",
                             "provider_kind": "preflight_provider",
                             "connection_kind": "remote_bridge",
-                            "endpoint": "http://friend.local:8777",
+                            "endpoint": "https://friend.local:8777",
                             "auth_ref": "env:SECRET_TOKEN",
                         },
                         {

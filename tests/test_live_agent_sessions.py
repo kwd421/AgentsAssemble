@@ -945,7 +945,7 @@ class LiveAgentSessionStartTests(unittest.TestCase):
                 ["agent-a"],
                 provider_kind="claude_code",
                 connection_kind="remote_bridge",
-                endpoint="http://bridge.local:8777",
+                endpoint="https://bridge.local:8777",
                 auth_ref="literal:test-token",
             )
 
@@ -4024,7 +4024,7 @@ def _write_agent_config(root: Path, agent_ids: list[str], *, provider_kind: str 
                         "id": "local-cli",
                         "kind": provider_kind,
                         "display_name": "Local CLI",
-                        "endpoint": "http://bridge.local" if provider_kind == "remote_http_bridge" else None,
+                        "endpoint": "https://bridge.local" if provider_kind == "remote_http_bridge" else None,
                         "command": [sys.executable, "-c", "print('ok')"],
                     }
                 ],

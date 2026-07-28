@@ -31,7 +31,7 @@ class CliTimeoutRunTests(unittest.TestCase):
                 "--connection-kind",
                 "remote_bridge",
                 "--endpoint",
-                "http://friend.local:8777",
+                "https://friend.local:8777",
                 "--auth-ref",
                 "env:BRIDGE_TOKEN",
                 "--max-ticks",
@@ -41,7 +41,7 @@ class CliTimeoutRunTests(unittest.TestCase):
 
         self.assertEqual(args.live_agent_command, "run")
         self.assertEqual(args.connection_kind, "remote_bridge")
-        self.assertEqual(args.endpoint, "http://friend.local:8777")
+        self.assertEqual(args.endpoint, "https://friend.local:8777")
         self.assertEqual(args.auth_ref, "env:BRIDGE_TOKEN")
         self.assertEqual(args.resident_command, [])
 

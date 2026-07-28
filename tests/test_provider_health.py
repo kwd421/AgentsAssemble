@@ -289,7 +289,7 @@ class ProviderHealthTests(unittest.TestCase):
                             "id": "bridge",
                             "kind": "remote_http_bridge",
                             "display_name": "Friend Bridge",
-                            "endpoint": "http://192.0.2.10:8777",
+                            "endpoint": "https://192.0.2.10:8777",
                             "auth_ref": "literal:bridge-token",
                         },
                         {
@@ -508,6 +508,7 @@ class ProviderHealthTests(unittest.TestCase):
             "http://user:super-secret@example.test:8777",
             "http://example.test:8777?token=super-secret",
             "http://example.test:8777#super-secret",
+            "http://example.test:8777",
         ]
         for endpoint in disallowed_endpoints:
             with self.subTest(endpoint=endpoint):
@@ -529,8 +530,15 @@ class ProviderHealthTests(unittest.TestCase):
                         },
                     )
 
+                    calls = []
+
                     def requester(url, headers, timeout_seconds):
-                        raise AssertionError("bridge probe must not call disallowed endpoints")
+                        calls.append((url, headers, timeout_seconds))
+                        return {
+                            "status": "ok",
+                            "health_endpoint": "/agentsassemble/health",
+                            "run_endpoint": "/agentsassemble/run",
+                        }
 
                     report = provider_health_report(
                         config_path,
@@ -539,16 +547,15 @@ class ProviderHealthTests(unittest.TestCase):
                     )
 
                     self.assertEqual(report["status"], "failed")
+                    self.assertEqual(calls, [])
                     self.assertNotIn("super-secret", json.dumps(report))
                     self.assertNotIn("bridge-token", json.dumps(report))
-                    self.assertIn(
-                        {
-                            "id": "bridge_probe",
-                            "status": "failed",
-                            "message": "Bridge probe requires an HTTP or HTTPS endpoint without userinfo, query, or fragment.",
-                        },
-                        report["providers"][0]["checks"],
+                    bridge_check = next(
+                        check
+                        for check in report["providers"][0]["checks"]
+                        if check["id"] == "bridge_probe"
                     )
+                    self.assertEqual(bridge_check["status"], "failed")
 
     def test_provider_health_bridge_probe_does_not_follow_redirects_to_run_endpoint(self):
         paths = []

@@ -4,7 +4,7 @@ Status: generated architecture inventory
 
 Generator: `python3 scripts/generate_package_map.py`
 
-Source fingerprint: `8b10287be7660a05`
+Source fingerprint: `53d199d8ef330e06`
 
 This file describes current evidence and proposed ownership. It does not by
 itself authorize a module move or a product behavior change.
@@ -141,7 +141,7 @@ itself authorize a module move or a product behavior change.
 | `agentsassemble.diagnostics.codex_app_server_smoke` | `agentsassemble/diagnostics/codex_app_server_smoke.py` | 452 | diagnostics | current | `agentsassemble.application.room_repository_factory`, `agentsassemble.providers.codex_app_server`, `agentsassemble.room.text` | 1 | - | - | - | `diagnostics/` | in-target-package |
 | `agentsassemble.diagnostics.live_cli_smoke` | `agentsassemble/diagnostics/live_cli_smoke.py` | 326 | diagnostics | current | `agentsassemble.providers.live_cli`, `agentsassemble.room.text` | 4 | `call:Path@15` | test-import:1 | `tests/test_diagnostics_package.py` | `diagnostics/` | in-target-package |
 | `agentsassemble.diagnostics.local_resources` | `agentsassemble/diagnostics/local_resources.py` | 340 | diagnostics | current | - | 2 | `call:compile@16`, `call:compile@17`, `call:LocalResourceMonitor@103` | test-import:1 | `tests/test_local_resources.py` | `diagnostics/` | in-target-package |
-| `agentsassemble.diagnostics.provider_health` | `agentsassemble/diagnostics/provider_health.py` | 919 | diagnostics | current | `agentsassemble.config`, `agentsassemble.models`, `agentsassemble.providers.adapters.registry` | 4 | - | test-import:1, monkeypatch:1 | `tests/test_provider_health.py` | `diagnostics/` | in-target-package |
+| `agentsassemble.diagnostics.provider_health` | `agentsassemble/diagnostics/provider_health.py` | 935 | diagnostics | current | `agentsassemble.config`, `agentsassemble.models`, `agentsassemble.providers.adapters.registry`, `agentsassemble.providers.remote_bridge_config` | 4 | - | test-import:1, monkeypatch:1 | `tests/test_provider_health.py` | `diagnostics/` | in-target-package |
 | `agentsassemble.diagnostics.release_health` | `agentsassemble/diagnostics/release_health.py` | 759 | diagnostics | current | `agentsassemble.diagnostics.room_event_benchmark_contract` | 4 | `call:compile@23` | test-import:1 | `tests/test_release_health.py` | `diagnostics/` | in-target-package |
 | `agentsassemble.diagnostics.report_projection` | `agentsassemble/diagnostics/report_projection.py` | 54 | diagnostics | current | `agentsassemble.diagnostics.sensitive_text` | 4 | - | test-import:1 | `tests/test_diagnostics_package.py` | `diagnostics/` | in-target-package |
 | `agentsassemble.diagnostics.room_call_metrics` | `agentsassemble/diagnostics/room_call_metrics.py` | 283 | diagnostics | current | - | 0 | - | test-import:1 | `tests/test_room_call_metrics.py` | `diagnostics/` | in-target-package |
@@ -633,7 +633,7 @@ itself authorize a module move or a product behavior change.
 | `agentsassemble.providers.opencode` | `agentsassemble/providers/opencode.py` | 485 | providers | current | `agentsassemble.providers.process_environment`, `agentsassemble.room.text` | 4 | - | test-import:2 | `tests/test_opencode_runtime.py`, `tests/test_provider_package.py` | `providers/` | in-target-package |
 | `agentsassemble.providers.process_environment` | `agentsassemble/providers/process_environment.py` | 75 | providers | current | - | 10 | `call:frozenset@7` | test-import:2 | `tests/test_provider_package.py`, `tests/test_provider_runtime_controls.py` | `providers/` | in-target-package |
 | `agentsassemble.providers.provider_usage` | `agentsassemble/providers/provider_usage.py` | 53 | providers | current | `agentsassemble.providers.claude_usage`, `agentsassemble.providers.codex_usage`, `agentsassemble.providers.deepseek_usage`, `agentsassemble.providers.terminal_usage`, `agentsassemble.providers.usage_contract` | 2 | - | - | - | `providers/` | in-target-package |
-| `agentsassemble.providers.remote_bridge_config` | `agentsassemble/providers/remote_bridge_config.py` | 55 | providers | current | - | 5 | - | - | - | `providers/` | in-target-package |
+| `agentsassemble.providers.remote_bridge_config` | `agentsassemble/providers/remote_bridge_config.py` | 68 | providers | current | - | 6 | - | - | - | `providers/` | in-target-package |
 | `agentsassemble.providers.resident_config` | `agentsassemble/providers/resident_config.py` | 24 | providers | current | - | 6 | - | - | - | `providers/` | in-target-package |
 | `agentsassemble.providers.room_portal` | `agentsassemble/providers/room_portal.py` | 1086 | providers | current | `agentsassemble.providers.runtime_contracts`, `agentsassemble.room.system_results`, `agentsassemble.room.text` | 7 | `call:compile@31`, `call:compile@32`, `call:room_session_orientation@154` | test-import:4 | `tests/test_grok_acp_runtime.py`, `tests/test_room_agent_bridge.py`, `tests/test_room_portal.py`, `+1` | `providers/` | in-target-package |
 | `agentsassemble.providers.room_portal_mcp` | `agentsassemble/providers/room_portal_mcp.py` | 172 | providers | current | `agentsassemble.providers.room_random`, `agentsassemble.room.text` | 1 | - | test-import:1 | `tests/test_room_portal_mcp.py` | `providers/` | in-target-package |

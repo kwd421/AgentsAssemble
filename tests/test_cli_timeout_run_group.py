@@ -254,7 +254,7 @@ class CliTimeoutRunGroupTests(unittest.TestCase):
                             {
                                 "agent_id": "friend-bridge",
                                 "connection_kind": "remote_bridge",
-                                "endpoint": "http://friend.local:8777",
+                                "endpoint": "https://friend.local:8777",
                                 "auth_ref": "literal:<redacted>",
                             }
                         ]
@@ -587,7 +587,7 @@ class CliTimeoutRunGroupTests(unittest.TestCase):
                 provider_kind="claude_code",
                 connection_kind="remote_bridge",
                 session_id="",
-                endpoint="http://friend.local:8777",
+                endpoint="https://friend.local:8777",
                 auth_ref="literal:<redacted>",
                 meeting_id="",
                 engagement_mode="always",

@@ -18,6 +18,7 @@ from agentsassemble.config import (
     providers_from_config,
 )
 from agentsassemble.models import AgentBinding, PermissionProfile, ProviderConfig
+from agentsassemble.providers.remote_bridge_config import remote_bridge_endpoint_error
 
 
 AUTH_REQUIRED_PROVIDER_KINDS = {"anthropic", "gemini", "grok"}
@@ -288,6 +289,14 @@ def _endpoint_check(provider: ProviderConfig) -> dict[str, str]:
             "status": "failed",
             "message": f"Provider kind {provider.kind} requires endpoint.",
         }
+    if provider.kind in ENDPOINT_REQUIRED_PROVIDER_KINDS and provider.endpoint:
+        endpoint_error = remote_bridge_endpoint_error(provider.endpoint)
+        if endpoint_error:
+            return {
+                "id": "endpoint",
+                "status": "failed",
+                "message": endpoint_error,
+            }
     if provider.endpoint:
         return {"id": "endpoint", "status": "ok", "message": "Endpoint is configured."}
     if provider.kind == "local_openai_compatible":
@@ -481,6 +490,13 @@ def _bridge_probe_check(
         }
     if provider.endpoint is not None and not isinstance(provider.endpoint, str):
         return {"id": "bridge_probe", "status": "failed", "message": "Endpoint must be a string."}
+    endpoint_error = remote_bridge_endpoint_error(provider.endpoint or "")
+    if endpoint_error:
+        return {
+            "id": "bridge_probe",
+            "status": "failed",
+            "message": endpoint_error,
+        }
     health_url = _bridge_health_url(provider.endpoint or "")
     if health_url is None:
         return {

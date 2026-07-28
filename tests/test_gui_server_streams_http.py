@@ -548,6 +548,11 @@ class GuiServerStreamsHttpTests(unittest.TestCase):
     def test_lobby_remote_bridge_reply_is_recorded_as_other_agent(self):
         import agentsassemble.gui as gui
 
+        nonce = time.time_ns() % 1_000_000
+        bridge_reply = f"bridge-reply-{nonce}"
+        canonical_name = f"role-{nonce}"
+        spoofed_name = f"spoof-{nonce}"
+
         class FakeRequester:
             def __init__(self):
                 self.calls = []
@@ -555,7 +560,13 @@ class GuiServerStreamsHttpTests(unittest.TestCase):
             def __call__(self, url, headers, payload, timeout_seconds):
                 self.calls.append({"url": url, "headers": headers, "payload": payload})
                 return {
-                    "text": '{"message":"친구 Claude Code 준비됐습니다.","kind":"deploy","name":"Spoofed Remote"}',
+                    "text": json.dumps(
+                        {
+                            "message": bridge_reply,
+                            "kind": "deploy",
+                            "name": spoofed_name,
+                        }
+                    ),
                     "metadata": {"bridge": "friend-mac"},
                 }
 
@@ -570,7 +581,7 @@ class GuiServerStreamsHttpTests(unittest.TestCase):
                                 "id": "friend-claude-code",
                                 "kind": "remote_http_bridge",
                                 "display_name": "Friend Claude Code",
-                                "endpoint": "http://friend.local:8777",
+                                "endpoint": "https://friend.local:8777",
                                 "auth_ref": "literal:bridge-token",
                             }
                         ]
@@ -590,7 +601,7 @@ class GuiServerStreamsHttpTests(unittest.TestCase):
                         "roles": [
                             {
                                 "id": "show_me_the_feats",
-                                "display_name": "공식이뭘알아",
+                                "display_name": canonical_name,
                                 "lens": "전적/퍼포먼스",
                                 "research_focus": "전투 결과",
                             }
@@ -600,7 +611,7 @@ class GuiServerStreamsHttpTests(unittest.TestCase):
                                 "id": "friend-claude-code",
                                 "kind": "remote_http_bridge",
                                 "display_name": "Friend Claude Code",
-                                "endpoint": "http://friend.local:8777",
+                                "endpoint": "https://friend.local:8777",
                                 "auth_ref": "literal:<redacted>",
                             }
                         },
@@ -651,14 +662,15 @@ class GuiServerStreamsHttpTests(unittest.TestCase):
             event = response_payload["event"]
 
             self.assertEqual(event["side"], "other-agent")
-            self.assertEqual(event["name"], "공식이뭘알아")
+            self.assertEqual(event["name"], canonical_name)
+            self.assertNotEqual(event["name"], spoofed_name)
             self.assertEqual(event["actor_id"], "friend-agent")
             self.assertEqual(event["actor_type"], "agent")
             self.assertEqual(event["kind"], "deploy")
             self.assertEqual(event["flow_meeting_id"], "m1")
-            self.assertEqual(event["message"], "친구 Claude Code 준비됐습니다.")
+            self.assertEqual(event["message"], bridge_reply)
             self.assertEqual(response_payload["events"][0]["id"], event["id"])
-            self.assertEqual(read_lobby(root)[0]["message"], "친구 Claude Code 준비됐습니다.")
+            self.assertEqual(read_lobby(root)[0]["message"], bridge_reply)
             self.assertEqual(requester.calls[0]["headers"]["Authorization"], "Bearer bridge-token")
             self.assertEqual(requester.calls[0]["payload"]["step"], "lobby")
 
@@ -685,7 +697,7 @@ class GuiServerStreamsHttpTests(unittest.TestCase):
                                 "id": "friend-claude-code",
                                 "kind": "remote_http_bridge",
                                 "display_name": "Friend Claude Code",
-                                "endpoint": "http://friend.local:8777",
+                                "endpoint": "https://friend.local:8777",
                                 "auth_ref": "literal:<redacted>",
                             }
                         },

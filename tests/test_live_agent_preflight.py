@@ -464,7 +464,7 @@ class LiveAgentPreflightTests(unittest.TestCase):
                                 "display_name": "Friend Claude",
                                 "provider_kind": "claude_code",
                                 "connection_kind": "remote_bridge",
-                                "endpoint": "http://friend.local:8777",
+                                "endpoint": "https://friend.local:8777",
                                 "auth_ref": "literal:token-for-test",
                                 "command": ["claude", "-p"],
                             }
@@ -788,7 +788,7 @@ class LiveAgentPreflightTests(unittest.TestCase):
                                 "agent_id": "friend",
                                 "provider_kind": "claude_code",
                                 "connection_kind": "remote_bridge",
-                                "endpoint": "http://friend.local:8777",
+                                "endpoint": "https://friend.local:8777",
                                 "auth_ref": "env:BRIDGE_TOKEN",
                             }
                         ]
@@ -1665,7 +1665,7 @@ class LiveAgentPreflightTests(unittest.TestCase):
                             {
                                 "agent_id": "friend",
                                 "connection_kind": "remote_bridge",
-                                "endpoint": "http://friend.local:8777",
+                                "endpoint": "https://friend.local:8777",
                                 "auth_ref": "literal:<redacted>",
                             }
                         ]
@@ -1697,7 +1697,7 @@ class LiveAgentPreflightTests(unittest.TestCase):
                             {
                                 "agent_id": "friend",
                                 "connection_kind": "remote_bridge",
-                                "endpoint": "http://friend.local:8777",
+                                "endpoint": "https://friend.local:8777",
                                 "auth_ref": "env:BRIDGE_TOKEN",
                             }
                         ]
@@ -1729,7 +1729,7 @@ class LiveAgentPreflightTests(unittest.TestCase):
                             {
                                 "agent_id": "friend",
                                 "connection_kind": "remote_bridge",
-                                "endpoint": "http://friend.local:8777",
+                                "endpoint": "https://friend.local:8777",
                                 "auth_ref": ["literal:<redacted>"],
                             }
                         ]

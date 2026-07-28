@@ -245,7 +245,7 @@ class ProviderRegistryTests(unittest.TestCase):
                     id="friend-claude-code",
                     kind="remote_http_bridge",
                     display_name="Friend Claude Code",
-                    endpoint="http://100.64.0.10:8777",
+                    endpoint="https://100.64.0.10:8777",
                 )
             ),
             RemoteBridgeAdapter,

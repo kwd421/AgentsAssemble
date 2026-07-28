@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import ipaddress
 import os
 from urllib.parse import urlsplit
 
@@ -23,6 +24,8 @@ def remote_bridge_endpoint_error(endpoint: str) -> str:
         return "Remote bridge endpoint must be an HTTP(S) URL with a valid host and port."
     if parsed.username or parsed.password or parsed.query or parsed.fragment:
         return "Remote bridge endpoint must be HTTP(S) without userinfo, query, or fragment."
+    if parsed.scheme == "http" and not _is_loopback_host(hostname):
+        return "Remote bridge endpoint must use HTTPS unless it targets loopback."
     return ""
 
 
@@ -53,3 +56,13 @@ def _usable_auth_value(value: str) -> str:
 def _is_redacted_auth_value(value: str) -> bool:
     cleaned = str(value or "").strip()
     return cleaned in {"<redacted>", "literal:<redacted>"}
+
+
+def _is_loopback_host(hostname: str) -> bool:
+    normalized = str(hostname or "").strip().rstrip(".").lower()
+    if normalized == "localhost":
+        return True
+    try:
+        return ipaddress.ip_address(normalized).is_loopback
+    except ValueError:
+        return False

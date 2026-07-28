@@ -66,10 +66,10 @@ restart, reconnect, room switching, and refresh.
 - [x] Bound and validate HTTP JSON `Content-Length`, including negative and
       non-numeric values.
 - [x] Bound the aggregate size and fragment count of one WebSocket message.
-- [ ] Make `WsTicketStore` thread-safe.
-- [ ] Close partially constructed WebSocket clients and upgrade channels on
+- [x] Make `WsTicketStore` thread-safe.
+- [x] Close partially constructed WebSocket clients and upgrade channels on
       failure.
-- [ ] Validate remote-bridge transport security rather than recommending a
+- [x] Validate remote-bridge transport security rather than recommending a
       bearer token over non-loopback cleartext HTTP.
 
 ### B. Canonical state, lifecycle, and persistence
@@ -168,6 +168,8 @@ remaining limitation.
 | --- | --- | --- | --- |
 | `82ce4c66` | Plan and legacy audit record | documentation review | implementation not started |
 | `6ed536be` | Antigravity multiline command rejection; bounded HTTP JSON bodies; bounded WebSocket aggregate messages | `python3 -m unittest tests.test_terminal_interactions tests.test_gui_router tests.test_room_websocket tests.test_web_transport_package`; `python3 -m unittest tests.test_gui_server tests.test_gui_server_room_routes tests.test_ws_room_session tests.test_antigravity_resident` (524 tests); `python3 scripts/check_test_quality.py --base HEAD`; `make generated-artifacts-check`; `git diff --check` | full-suite and browser verification remain completion-gate work |
+| `5ee8926f` | Durable test-admission rule in `AGENTS.md` | instruction and diff review; `make generated-artifacts` | static quality-gate bypasses remain separate checklist work |
+| `026f84c3` | Thread-safe single-use WS tickets; client socket cleanup; server realtime-channel cleanup | red verification on five lifecycle regressions; `python3 -m unittest tests.test_ws_room_session tests.test_ws_room_client tests.test_ws_endpoint tests.test_room_websocket tests.test_web_transport_package` (95 tests); `python3 scripts/check_test_quality.py --base HEAD`; `git diff --check` | full-suite and browser verification remain completion-gate work |
 
 ## Resume Rule
 
