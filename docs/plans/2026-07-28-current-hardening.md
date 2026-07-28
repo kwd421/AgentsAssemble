@@ -1,6 +1,6 @@
 # Current-Code Hardening Plan — 2026-07-28
 
-Status: active execution ledger
+Status: active execution ledger — mandatory PostgreSQL completion evidence pending
 
 Owner boundary: canonical shared-room product only
 
@@ -125,19 +125,19 @@ restart, reconnect, room switching, and refresh.
 
 ### E. Verification system
 
-- [ ] Audit all executable Python test bodies, including support-file contract
+- [x] Audit all executable Python test bodies, including support-file contract
       mixins.
-- [ ] Treat deletion-only diffs and helper/setup/fixture changes as test
+- [x] Treat deletion-only diffs and helper/setup/fixture changes as test
       changes.
-- [ ] Reject tautological or implementation-only oracles that currently pass
+- [x] Reject tautological or implementation-only oracles that currently pass
       the quality gate.
-- [ ] Inspect helper- and alias-mediated private patches and mock-only oracles.
-- [ ] Add adversarial self-tests for every quality-gate bypass fixed here.
-- [ ] Replace the misleading local "full suite" label with one canonical
+- [x] Inspect helper- and alias-mediated private patches and mock-only oracles.
+- [x] Add adversarial self-tests for every quality-gate bypass fixed here.
+- [x] Replace the misleading local "full suite" label with one canonical
       verification command that runs Python, PostgreSQL contracts, frontend
       unit tests, frontend build, browser E2E, generated artifacts, and
       `git diff --check`.
-- [ ] Add focused mutation canaries for critical authorization, rollback,
+- [x] Add focused mutation canaries for critical authorization, rollback,
       room-scoping, and response-order contracts.
 
 ## Completion Gate
@@ -202,6 +202,8 @@ remaining limitation.
 | `cd22769d` | Refresh an open Agent Session detail editor when its canonical model, reasoning, speed, variant, or permission changes | red rendered-GUI regression kept the prior model after a same-session canonical update; corrected panel displayed all four changed controls; 197 frontend tests; production build; 12 canonical Playwright scenarios; `python3 scripts/check_test_quality.py --base HEAD`; `make generated-artifacts-check`; `git diff --check` | the browser fixture exposes only its fake provider, so the cross-provider runtime-profile update was verified at the rendered component boundary rather than by launching or configuring a real provider |
 | `d090346b` | Clear an unsaved DeepSeek credential whenever the Agent Session creation modal closes or leaves that provider | red rendered-GUI regression reopened the modal with the rejected secret still present; corrected UI reopened with an empty password field; 198 frontend tests; production build; 12 canonical Playwright scenarios; `python3 scripts/check_test_quality.py --base HEAD`; `make generated-artifacts-check`; `git diff --check` | Homebrew Node became unusable during verification; repository tests passed with the bundled Node runtime and all canonical Playwright scenarios passed with Cursor's Node 22 runtime without changing the repository or system |
 | `46532560` | Surface failed DeepSeek credential deletion and session-only moderation without closing the dialog or leaking rejected promises | both rendered-GUI regressions emitted unhandled rejections and left no retry feedback before the fix; corrected dialogs retained confirmed state, showed the failure, and re-enabled the action; 200 frontend tests; production build; 12 canonical Playwright scenarios; `python3 scripts/check_test_quality.py --base HEAD`; `make generated-artifacts-check`; `git diff --check` | secure-store and moderation failure ownership was verified at the rendered component boundary with rejected API callbacks; no real provider was launched |
+| `751dfc62` | Remove inactive room controls and disable thought-visibility input when its owner callback is absent | four hidden legacy channel choices and an enabled no-op thought checkbox failed rendered-component regressions before the fix; 202 frontend tests; production build; 12 canonical Playwright scenarios | the first browser rerun hit one transient socket disconnect; the targeted scenario and subsequent full run passed |
+| `7b65d0a1` | Audit every Python test body; harden changed-test selection and oracle detection; replace production-source tests with real Vitest imports; add one complete verification command and four critical canaries; increase the GUI connection backlog after a real browser asset-reset failure | 19 adversarial gate self-tests; changed-test gate passed for 9 files; 3,986 Python tests passed with 79 PostgreSQL-environment skips; 207 frontend tests; production build; 12 canonical Playwright scenarios passed twice after the backlog correction; four mutation canaries passed; generated artifacts and `git diff --check` passed after regeneration | `python3 -m tests.run_postgres_contracts` correctly failed closed because the local DSN and PostgreSQL packages are absent; this plan cannot claim its mandatory PostgreSQL completion gate locally |
 
 ## Resume Rule
 

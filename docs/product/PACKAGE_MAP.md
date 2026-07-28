@@ -4,7 +4,7 @@ Status: generated architecture inventory
 
 Generator: `python3 scripts/generate_package_map.py`
 
-Source fingerprint: `c9f15a24d29b87cb`
+Source fingerprint: `b39914187c19cca3`
 
 This file describes current evidence and proposed ownership. It does not by
 itself authorize a module move or a product behavior change.
@@ -791,7 +791,7 @@ itself authorize a module move or a product behavior change.
 | `agentsassemble.web.cli_errors` | `agentsassemble/web/cli_errors.py` | 20 | web | current | - | 3 | - | test-import:2 | `tests/test_cli_timeout_session_ensure.py`, `tests/test_gui_server_session_lifecycle.py` | `web/` | in-target-package |
 | `agentsassemble.web.frontend_runtime` | `agentsassemble/web/frontend_runtime.py` | 67 | web | current | - | 4 | - | test-import:2 | `tests/test_frontend_runtime.py`, `tests/test_web_transport_package.py` | `web/` | in-target-package |
 | `agentsassemble.web.gui_server` | `agentsassemble/web/gui_server.py` | 315 | web | current | `agentsassemble.application.gui`, `agentsassemble.room.realtime`, `agentsassemble.room.repository`, `agentsassemble.web.response`, `agentsassemble.web.router`, `agentsassemble.web.security`, `agentsassemble.web.sse_cadence`, `agentsassemble.web.static`, +1 | 1 | - | - | - | `web/` | in-target-package |
-| `agentsassemble.web.http_server` | `agentsassemble/web/http_server.py` | 15 | web | current | - | 1 | - | test-import:1 | `tests/fixtures/room_ui_server.py` | `web/` | in-target-package |
+| `agentsassemble.web.http_server` | `agentsassemble/web/http_server.py` | 14 | web | current | - | 1 | - | test-import:1 | `tests/fixtures/room_ui_server.py` | `web/` | in-target-package |
 | `agentsassemble.web.response` | `agentsassemble/web/response.py` | 173 | web | current | `agentsassemble.room.attachments`, `agentsassemble.web.frontend_runtime` | 3 | - | test-import:2 | `tests/test_gui_response.py`, `tests/test_web_transport_package.py` | `web/` | in-target-package |
 | `agentsassemble.web.room_client` | `agentsassemble/web/room_client.py` | 401 | web | current | `agentsassemble.web.websocket_codec` | 6 | - | test-import:4, monkeypatch:2 | `tests/test_room_native_cli_e2e.py`, `tests/test_room_social_flows.py`, `tests/test_web_transport_package.py`, `+2` | `web/` | in-target-package |
 | `agentsassemble.web.room_session` | `agentsassemble/web/room_session.py` | 395 | web | current | `agentsassemble.identity.repository`, `agentsassemble.web.websocket_codec` | 5 | - | test-import:3 | `tests/test_web_transport_package.py`, `tests/test_ws_endpoint.py`, `tests/test_ws_room_session.py` | `web/` | in-target-package |
