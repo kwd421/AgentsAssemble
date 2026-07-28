@@ -85,6 +85,7 @@ export function useRoomSettingsController({
   >({});
   const operationGenerationsRef = useRef<Record<string, number>>({});
   const globalWriteChainsRef = useRef<Record<string, Promise<void>>>({});
+  const confirmedGlobalSettingsRef = useRef<Record<string, RoomGlobalSettings>>({});
   const preferenceOperationGenerationsRef = useRef<Record<string, number>>({});
   const preferenceWriteChainsRef = useRef<Record<string, Promise<void>>>({});
   const onRoomMetadataLoadedRef = useRef(onRoomMetadataLoaded);
@@ -150,6 +151,7 @@ export function useRoomSettingsController({
 
   const applyGlobalSettings = useCallback(
     (meetingId: string, key: string, settings: RoomGlobalSettings) => {
+      confirmedGlobalSettingsRef.current[key] = settings;
       onRoomMetadataLoadedRef.current(meetingId, {
         label: settings.label,
         topic: settings.topic,
@@ -309,6 +311,7 @@ export function useRoomSettingsController({
         .catch(() => undefined)
         .then(() => saveCanonicalGlobalSettings(updates))
         .then((settings) => {
+          confirmedGlobalSettingsRef.current[key] = settings;
           if (isCurrentSettingsOperation(key, generation)) {
             applyGlobalSettings(room.meetingId, key, settings);
           }
@@ -316,12 +319,23 @@ export function useRoomSettingsController({
         .catch((errorValue) => {
           if (!isCurrentSettingsOperation(key, generation)) return;
           const error = settingsError(errorValue, "Room settings save failed");
-          setAuthorityStates((previous) => ({
-            ...previous,
-            [key]: optimisticValue
-              ? { status: "stale", value: optimisticValue, error }
-              : { status: "error", value: null, error },
-          }));
+          const confirmedSettings = confirmedGlobalSettingsRef.current[key];
+          if (confirmedSettings) {
+            applyGlobalSettings(room.meetingId, key, confirmedSettings);
+            setAuthorityStates((previous) => ({
+              ...previous,
+              [key]: {
+                status: "stale",
+                value: authoritativeSettings(confirmedSettings),
+                error,
+              },
+            }));
+          } else {
+            setAuthorityStates((previous) => ({
+              ...previous,
+              [key]: { status: "error", value: null, error },
+            }));
+          }
           throw error;
         });
       globalWriteChainsRef.current[key] = write.then(

@@ -438,6 +438,124 @@ describe("useRoomSettingsController", () => {
     ).toBe(false);
   });
 
+  it("restores the last confirmed routing value after a save failure", async () => {
+    saveCanonicalGlobalSettings.mockRejectedValue(new Error("canonical save failed"));
+    const hook = renderHook(() =>
+      useRoomSettingsController({
+        activeRoom: roomA,
+        sessionToken: "",
+        deviceToken: "device-test",
+        canonicalGlobalSettings: globalSettings(roomA, "forest"),
+        saveCanonicalGlobalSettings,
+        onRoomMetadataLoaded: vi.fn(),
+        onMembersChanged: vi.fn(),
+      })
+    );
+    await waitFor(() =>
+      expect(hook.result.current.settingsStateFor(roomA).status).toBe("ready")
+    );
+
+    act(() => hook.result.current.updateConversationMode(roomA, "ambient"));
+    await waitFor(() =>
+      expect(hook.result.current.settingsStateFor(roomA).status).toBe("stale")
+    );
+
+    expect(hook.result.current.settingsStateFor(roomA)).toMatchObject({
+      status: "stale",
+      value: {
+        conversationMode: "ordered",
+        orderedExcludePreviousSpeaker: true,
+        maxRelayTurns: 6,
+      },
+      error: { message: "canonical save failed" },
+    });
+  });
+
+  it("restores the last confirmed appearance after a save failure", async () => {
+    saveCanonicalGlobalSettings.mockRejectedValue(new Error("appearance save failed"));
+    const hook = renderHook(() =>
+      useRoomSettingsController({
+        activeRoom: roomA,
+        sessionToken: "",
+        deviceToken: "device-test",
+        canonicalGlobalSettings: globalSettings(roomA, "forest"),
+        saveCanonicalGlobalSettings,
+        onRoomMetadataLoaded: vi.fn(),
+        onMembersChanged: vi.fn(),
+      })
+    );
+    await waitFor(() =>
+      expect(hook.result.current.appearanceFor(roomA).bannerPreset).toBe("forest")
+    );
+
+    let saveResult!: Promise<void>;
+    act(() => {
+      saveResult = hook.result.current.updateAppearance(roomA, {
+        bannerPreset: "ember",
+      });
+    });
+    expect(hook.result.current.appearanceFor(roomA).bannerPreset).toBe("ember");
+    await act(async () => {
+      await saveResult.catch(() => undefined);
+    });
+
+    expect(hook.result.current.appearanceFor(roomA).bannerPreset).toBe("forest");
+    expect(hook.result.current.settingsStateFor(roomA).status).toBe("stale");
+  });
+
+  it("restores the last successful write when a queued successor fails", async () => {
+    const firstSave = deferred<RoomGlobalSettings>();
+    const secondSave = deferred<RoomGlobalSettings>();
+    saveCanonicalGlobalSettings
+      .mockReturnValueOnce(firstSave.promise)
+      .mockReturnValueOnce(secondSave.promise);
+    const hook = renderHook(() =>
+      useRoomSettingsController({
+        activeRoom: roomA,
+        sessionToken: "",
+        deviceToken: "device-test",
+        canonicalGlobalSettings: globalSettings(roomA, "forest"),
+        saveCanonicalGlobalSettings,
+        onRoomMetadataLoaded: vi.fn(),
+        onMembersChanged: vi.fn(),
+      })
+    );
+    await waitFor(() =>
+      expect(hook.result.current.settingsStateFor(roomA).status).toBe("ready")
+    );
+
+    act(() => hook.result.current.updateConversationMode(roomA, "ambient"));
+    act(() => hook.result.current.updateMaxRelayTurns(roomA, 8));
+    await waitFor(() =>
+      expect(saveCanonicalGlobalSettings).toHaveBeenCalledTimes(1)
+    );
+    await act(async () => {
+      firstSave.resolve(
+        globalSettings(roomA, "forest", {
+          conversationMode: "ambient",
+        })
+      );
+      await firstSave.promise;
+    });
+    await waitFor(() =>
+      expect(saveCanonicalGlobalSettings).toHaveBeenCalledTimes(2)
+    );
+    await act(async () => secondSave.reject(new Error("second save failed")));
+    await waitFor(() =>
+      expect(hook.result.current.settingsStateFor(roomA).status).toBe("stale")
+    );
+
+    expect(hook.result.current.settingsStateFor(roomA)).toMatchObject({
+      status: "stale",
+      value: {
+        conversationMode: "ambient",
+        orderedExcludePreviousSpeaker: true,
+        maxRelayTurns: 6,
+      },
+      error: { message: "second save failed" },
+    });
+  });
+
   it("persists rapid global changes in user order and keeps the newest result", async () => {
     const firstSave = deferred<RoomGlobalSettings>();
     const secondSave = deferred<RoomGlobalSettings>();
