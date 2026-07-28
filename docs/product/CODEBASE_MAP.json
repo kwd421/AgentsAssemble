@@ -1,10 +1,10 @@
 {
  "readme": "AgentsAssemble codebase map. Regenerate with `make codebase-map`; verify committed outputs with `make codebase-map-verify`. modules[] columns: name, path, package, domain, classification, migration_status, lines, docstring, imports[], imported_by[] (indexes into modules), classes[[name, [[base, defining_module], ...]]] (best-effort, top-level classes only). frontend[] columns: path, group, lines, doc, imports[], imported_by[] (indexes into frontend). package_edges go importer -> dependency with module-import counts; `points` is the precomputed polyline for that edge and `intra_cycle` marks imports whose endpoints share one cycle group. graph{} holds the layered package drawing: layers[] top-to-bottom (each with members[] package ids, member_count, and the dominant domain), (a package sits below everything importing it), clusters[] are mutually dependent packages (import cycles at package level) drawn as one labelled block, plus width/height of the drawing. health{} ranks findings for a reader who has to act: cycles[] (mutually dependent packages, with the lines they hold), leaning_on_retiring[] (current modules importing legacy/compatibility modules - the reason legacy cannot be deleted), highest_leverage_migrations[] (retiring modules with the most current importers), unreferenced_shims[] (compatibility modules with no importer in agentsassemble/ and no reference in tests/; callers outside this repository are not visible, so verify before deleting), and hotspots[] (largest modules). health.scope states exactly what was measured. class_graph{} is the UML generalization DAG over base classes that resolve inside the repo: edges go base -> subclass, so a subclass always sits below the class it extends. Coordinates in graph and class_graph are laid out with a Sugiyama pipeline (cycle condensation, Coffman-Graham layering, dummy-node edge routing, median/transpose crossing reduction) and are deterministic.",
- "generated_at": "2026-07-28T12:13:00Z",
- "fingerprint": "25f75cee5f140322",
+ "generated_at": "2026-07-28T12:24:28Z",
+ "fingerprint": "da5163047d285f3c",
  "stats": {
   "backend_modules": 787,
-  "backend_lines": 129944,
+  "backend_lines": 129949,
   "frontend_files": 147,
   "frontend_lines": 38812,
   "packages": 30,
@@ -22,7 +22,7 @@
    "kind": "backend",
    "doc": "HTTP and WebSocket transport boundaries for the current GUI.",
    "files": 28,
-   "lines": 4857,
+   "lines": 4859,
    "domains": {
     "web": 28
    },
@@ -42,7 +42,7 @@
    "kind": "backend",
    "doc": "Application composition and cross-domain transaction contracts.",
    "files": 33,
-   "lines": 7200,
+   "lines": 7201,
    "domains": {
     "application": 33
    },
@@ -325,7 +325,7 @@
    "kind": "backend",
    "doc": "Flat root modules owned by the application domain that have not been physically moved into the target package yet.",
    "files": 87,
-   "lines": 5646,
+   "lines": 5648,
    "domains": {
     "application": 87
    },
@@ -3677,7 +3677,7 @@
  "health": {
   "scope": "Imports are counted inside agentsassemble/ only; test references are counted separately from tests/. Callers outside this repository are not visible to the generator.",
   "totals": {
-   "retiring_lines": 57106,
+   "retiring_lines": 57108,
    "current_to_retiring_imports": 106,
    "unreferenced_shim_lines": 2014,
    "test_only_shims": 196
@@ -3700,7 +3700,7 @@
      "web"
     ],
     "internal_edges": 80,
-    "lines": 124843,
+    "lines": 124848,
     "heaviest": "legacy"
    },
    {
@@ -4848,7 +4848,7 @@
    "application",
    "compatibility",
    "compatibility-shim",
-   336,
+   338,
    "Compatibility exports for current Agent Session application services.",
    [
     30,
@@ -4989,7 +4989,7 @@
    "application",
    "current",
    "in-target-package",
-   205,
+   206,
    "Canonical room command and projection adapters used by Agent Sessions.",
    [
     666,
@@ -21351,7 +21351,7 @@
    "web",
    "current",
    "in-target-package",
-   313,
+   315,
    "HTTP handler transport for the local GUI server.",
    [
     51,
@@ -24395,7 +24395,7 @@
    "name": "agentsassemble",
    "note": "Backend package (Python)",
    "files": 787,
-   "lines": 129944
+   "lines": 129949
   },
   {
    "name": "frontend/src",
@@ -24407,7 +24407,7 @@
    "name": "tests",
    "note": "Backend test suite",
    "files": 352,
-   "lines": 142604
+   "lines": 142637
   },
   {
    "name": "scripts",
@@ -24419,7 +24419,7 @@
    "name": "docs",
    "note": "Product and architecture docs",
    "files": 79,
-   "lines": 29522
+   "lines": 29523
   },
   {
    "name": "configs",

@@ -239,13 +239,14 @@ def make_gui_http_handler(
             self._send_public_invite_cors_headers()
             self.end_headers()
             current_cursor = cursor or ""
-            last_write_at = 0.0
+            last_write_at = time.monotonic()
             while True:
                 try:
                     frames = room_sse_frames_after_cursor(
                         output_root,
                         room_id,
                         cursor=current_cursor,
+                        include_heartbeat=False,
                         repository=room_repository,
                     )
                     for frame in frames:
@@ -253,8 +254,9 @@ def make_gui_http_handler(
                         event_id = sse_frame_id(frame)
                         if event_id:
                             current_cursor = event_id
-                    self.wfile.flush()
-                    last_write_at = time.monotonic()
+                    if frames:
+                        self.wfile.flush()
+                        last_write_at = time.monotonic()
                     time.sleep(SSE_EVENT_POLL_INTERVAL_SECONDS)
                     if time.monotonic() - last_write_at >= SSE_KEEPALIVE_INTERVAL_SECONDS:
                         self.wfile.write(b"event: heartbeat\ndata: {}\n\n")

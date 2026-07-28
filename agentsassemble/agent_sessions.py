@@ -167,12 +167,14 @@ def room_sse_frames_after_cursor(
     room_id: str,
     *,
     cursor: str = "",
+    include_heartbeat: bool = True,
     repository: RoomRepository | None = None,
 ) -> list[str]:
     return _owned.room_sse_frames_after_cursor(
         output_root,
         room_id,
         cursor=cursor,
+        include_heartbeat=include_heartbeat,
         repository=_local_repository(output_root, repository),
     )
 

@@ -15,12 +15,13 @@ def room_sse_frames_after_cursor(
     room_id: str,
     *,
     cursor: str = "",
+    include_heartbeat: bool = True,
     repository: RoomRepository,
 ) -> list[str]:
     del output_root
     events = repository.read_events(room_id, after=cursor)
     if not events:
-        return ["event: heartbeat\ndata: {}\n\n"]
+        return ["event: heartbeat\ndata: {}\n\n"] if include_heartbeat else []
     frames = []
     for event in events:
         event_type = str(event.get("type") or "message")

@@ -464,7 +464,7 @@ class GuiServerRosterTests(unittest.TestCase):
                     "connection_kind": "remote_bridge",
                     "meeting_id": "resident-m1",
                     "session_id": "private-session",
-                    "endpoint": "http://secret.local:8777/bridge",
+                    "endpoint": "https://secret.local:8777/bridge",
                     "last_error": "token=secret-token config /Users/seinel/private/live-agents.json",
                 },
             )

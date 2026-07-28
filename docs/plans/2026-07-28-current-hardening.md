@@ -85,7 +85,7 @@ restart, reconnect, room switching, and refresh.
       deletion.
 - [x] Make SQLite participant/room mutation and lifecycle event recording match
       the repository transaction contract.
-- [ ] Preserve real SSE heartbeat cadence during an idle room stream.
+- [x] Preserve real SSE heartbeat cadence during an idle room stream.
 - [ ] Scope side-chat history before applying its retention limit.
 - [ ] Match `@all` as a mention token rather than an arbitrary substring.
 - [ ] Parse persisted boolean values with the existing strict boolean parser.
@@ -176,6 +176,7 @@ remaining limitation.
 | `ee21c513` | Stop and unregister provider-backed participants by canonical Agent Session identity rather than mutable role | red verification showed both provider effects skipped after a role change; 146 kick/realtime/native-E2E tests; `python3 scripts/check_test_quality.py --base HEAD`; `git diff --check` | full suite remains completion-gate work |
 | `072678f4` | Atomic participant/session/attention/event creation for provider Agent Sessions; post-commit registry publication | red event-write fault injection left no durable or in-memory partial state and retry succeeded; 217 provider-session/agent-create/realtime/native-E2E/repository tests (38 PostgreSQL-environment skips); `python3 scripts/check_test_quality.py --base HEAD`; `git diff --check` | mandatory live PostgreSQL contract run remains completion-gate work |
 | `d23b5323` | Reject SQLite transactions that attempt to restore canonical state after room deletion | red verification showed a stale transaction recreating participant, session, and event rows after deletion; 190 deletion/repository/realtime tests; `python3 scripts/check_test_quality.py --base HEAD`; `git diff --check` | full suite remains completion-gate work |
+| `ce742cfe` | Atomically commit SQLite participant/room lifecycle state, related session detachment, and lifecycle events | real SQLite trigger failures reproduced split durable state before the fix; 152 repository/lifecycle tests (38 PostgreSQL-environment skips); `python3 scripts/check_test_quality.py --base HEAD`; `make generated-artifacts-check`; `git diff --check` | mandatory live PostgreSQL contract run remains completion-gate work |
 
 ## Resume Rule
 

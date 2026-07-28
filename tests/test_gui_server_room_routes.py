@@ -1038,6 +1038,10 @@ class GuiServerRoomRouteTests(unittest.TestCase):
                 ) as response:
                     frame = _read_sse_frame(response)
                     content_type = response.headers.get_content_type()
+                store.append_event("session-room", "system", content="close stream")
+                time.sleep(0.25)
+                store.append_event("session-room", "system", content="confirm stream close")
+                time.sleep(0.25)
             finally:
                 server.shutdown()
                 server.server_close()
@@ -1045,6 +1049,35 @@ class GuiServerRoomRouteTests(unittest.TestCase):
             self.assertEqual(content_type, "text/event-stream")
             self.assertIn("event: message_final", frame)
             self.assertIn('"content": "hello"', frame)
+
+    def test_room_events_stream_route_emits_heartbeat_while_room_is_idle(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            store = RoomStore(root)
+            store.create_room("idle-room")
+            cursor = store.read_events("idle-room")[-1]["id"]
+            server = ThreadingHTTPServer(("127.0.0.1", 0), _make_handler(root))
+            thread = threading.Thread(target=server.serve_forever, daemon=True)
+            thread.start()
+            started_at = time.monotonic()
+            try:
+                with urlopen(
+                    f"http://127.0.0.1:{server.server_port}/api/room-events/stream?room_id=idle-room&cursor={cursor}",
+                    timeout=2.5,
+                ) as response:
+                    frame = _read_sse_frame(response, timeout=2.0)
+                    elapsed = time.monotonic() - started_at
+                store.append_event("idle-room", "system", content="close stream")
+                time.sleep(0.25)
+                store.append_event("idle-room", "system", content="confirm stream close")
+                time.sleep(0.25)
+            finally:
+                server.shutdown()
+                server.server_close()
+
+            self.assertEqual(frame, "event: heartbeat\ndata: {}")
+            self.assertGreaterEqual(elapsed, 0.8)
+            self.assertLess(elapsed, 2.0)
 
 
     def test_roomstore_joined_row_wins_over_old_live_agent_roster_row(self):
