@@ -37,6 +37,7 @@ export default function ProviderLogo({
       style={{
         width: size,
         height: size,
+        background: brand.background,
       }}
     >
       <img

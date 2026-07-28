@@ -1,10 +1,10 @@
 import claudeLogo from "../../assets/provider-logos/claude.svg";
-import cursorLogo from "../../assets/provider-logos/cursor.svg";
+import cursorLogo from "../../assets/provider-logos/cursor.png";
 import deepSeekLogo from "../../assets/provider-logos/deepseek.png";
 import geminiLogo from "../../assets/provider-logos/gemini.webp";
 import grokLogo from "../../assets/provider-logos/grok.png";
 import openAILogo from "../../assets/provider-logos/openai.svg";
-import openCodeLogo from "../../assets/provider-logos/opencode.svg";
+import openCodeLogo from "../../assets/provider-logos/opencode.png";
 
 export type ProviderBrandKey =
   | "codex"
@@ -18,6 +18,7 @@ export type ProviderBrandKey =
 export type ProviderBrand = {
   label: string;
   logo: string;
+  background: string;
   scale: string;
 };
 
@@ -45,36 +46,43 @@ export const PROVIDER_BRANDS: Record<ProviderBrandKey, ProviderBrand> = {
   codex: {
     label: "OpenAI",
     logo: openAILogo,
+    background: "#000000",
     scale: "100%",
   },
   antigravity: {
     label: "Google Gemini",
     logo: geminiLogo,
+    background: "#ffffff",
     scale: "72%",
   },
   grok: {
     label: "Grok",
     logo: grokLogo,
-    scale: "82%",
+    background: "#000000",
+    scale: "100%",
   },
   claude: {
     label: "Claude",
     logo: claudeLogo,
-    scale: "70%",
+    background: "#d97757",
+    scale: "100%",
   },
   cursor: {
     label: "Cursor",
     logo: cursorLogo,
-    scale: "64%",
+    background: "#0f0e0b",
+    scale: "100%",
   },
   opencode: {
     label: "OpenCode",
     logo: openCodeLogo,
-    scale: "64%",
+    background: "#171515",
+    scale: "100%",
   },
   deepseek: {
     label: "DeepSeek",
     logo: deepSeekLogo,
+    background: "#ffffff",
     scale: "76%",
   },
 };
