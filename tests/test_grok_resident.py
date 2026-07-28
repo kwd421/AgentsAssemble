@@ -5,12 +5,14 @@ import unittest
 from pathlib import Path
 
 from agentsassemble.providers.grok_resident import (
+    GROK_AUTH_REQUIRED,
     GROK_EMPTY_TEXT,
     GROK_JSON_PARSE_FAILURE,
     GROK_MISSING_SESSION_ID,
     GROK_SUBPROCESS_NONZERO,
     GROK_SUBPROCESS_TIMEOUT,
     GrokResidentCommandRunner,
+    GrokResidentRuntimeError,
     clean_grok_session_id,
     default_grok_resident_command,
     grok_auth_check,
@@ -46,6 +48,58 @@ def config(**overrides):
 
 
 class GrokResidentTests(unittest.TestCase):
+    def test_streaming_turn_drains_large_stderr_while_reading_stdout(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            temp_path = Path(temp_dir)
+            executable = temp_path / "fake-grok"
+            executable.write_text(
+                "#!/usr/bin/env python3\n"
+                "import json\n"
+                "import sys\n"
+                "sys.stderr.write('diagnostic line\\n' * 100000)\n"
+                "sys.stderr.flush()\n"
+                "print(json.dumps({'type': 'text', 'data': 'current grok reply'}), flush=True)\n"
+                "print(json.dumps({'type': 'end', 'sessionId': 'grok-session-current'}), flush=True)\n",
+                encoding="utf-8",
+            )
+            executable.chmod(0o755)
+            runner = GrokResidentCommandRunner(
+                config(command=[str(executable)], stream_thinking=True),
+                cwd=temp_path,
+            )
+            try:
+                reply = runner([], "prompt", timeout_seconds=1)
+            finally:
+                runner.close()
+
+        self.assertEqual(reply, "current grok reply")
+
+    def test_streaming_turn_preserves_auth_error_before_large_stderr(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            temp_path = Path(temp_dir)
+            executable = temp_path / "fake-grok"
+            executable.write_text(
+                "#!/usr/bin/env python3\n"
+                "import sys\n"
+                "sys.stderr.write('not authenticated\\n')\n"
+                "sys.stderr.write('diagnostic line\\n' * 100000)\n"
+                "sys.stderr.flush()\n"
+                "raise SystemExit(1)\n",
+                encoding="utf-8",
+            )
+            executable.chmod(0o755)
+            runner = GrokResidentCommandRunner(
+                config(command=[str(executable)], stream_thinking=True),
+                cwd=temp_path,
+            )
+            try:
+                with self.assertRaises(GrokResidentRuntimeError) as raised:
+                    runner([], "prompt", timeout_seconds=1)
+            finally:
+                runner.close()
+
+        self.assertEqual(grok_error_category(raised.exception), GROK_AUTH_REQUIRED)
+
     def test_runner_starts_with_prompt_file_then_resumes_session(self):
         calls = []
         session_id = "grok-session-abc123"

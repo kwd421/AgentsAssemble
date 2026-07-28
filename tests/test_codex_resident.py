@@ -4,7 +4,11 @@ import unittest
 from pathlib import Path
 
 from agentsassemble.live_agent_runner import ResidentAgentConfig
-from agentsassemble.providers.codex_resident import CodexResidentCommandRunner, codex_auth_check
+from agentsassemble.providers.codex_resident import (
+    CODEX_LOGIN_REQUIRED_MESSAGE,
+    CodexResidentCommandRunner,
+    codex_auth_check,
+)
 
 
 def _codex_config(**overrides) -> ResidentAgentConfig:
@@ -31,6 +35,56 @@ def _codex_config(**overrides) -> ResidentAgentConfig:
 
 
 class CodexResidentFastModeTests(unittest.TestCase):
+    def test_streaming_turn_drains_large_stderr_while_reading_stdout(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            temp_path = Path(temp_dir)
+            executable = temp_path / "fake-codex"
+            executable.write_text(
+                "#!/usr/bin/env python3\n"
+                "import json\n"
+                "import sys\n"
+                "sys.stderr.write('diagnostic line\\n' * 100000)\n"
+                "sys.stderr.flush()\n"
+                "print(json.dumps({'type': 'item.completed', "
+                "'item': {'type': 'agent_message', 'text': 'current streamed reply'}}), flush=True)\n",
+                encoding="utf-8",
+            )
+            executable.chmod(0o755)
+            runner = CodexResidentCommandRunner(
+                _codex_config(command=[str(executable)], stream_thinking=True),
+                cwd=temp_path,
+            )
+            try:
+                reply = runner([], "prompt", timeout_seconds=1)
+            finally:
+                runner.close()
+
+        self.assertEqual(reply, "current streamed reply")
+
+    def test_streaming_turn_preserves_auth_error_before_large_stderr(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            temp_path = Path(temp_dir)
+            executable = temp_path / "fake-codex"
+            executable.write_text(
+                "#!/usr/bin/env python3\n"
+                "import sys\n"
+                "sys.stderr.write('not authenticated\\n')\n"
+                "sys.stderr.write('diagnostic line\\n' * 100000)\n"
+                "sys.stderr.flush()\n"
+                "raise SystemExit(1)\n",
+                encoding="utf-8",
+            )
+            executable.chmod(0o755)
+            runner = CodexResidentCommandRunner(
+                _codex_config(command=[str(executable)], stream_thinking=True),
+                cwd=temp_path,
+            )
+            try:
+                with self.assertRaisesRegex(RuntimeError, CODEX_LOGIN_REQUIRED_MESSAGE):
+                    runner([], "prompt", timeout_seconds=1)
+            finally:
+                runner.close()
+
     def test_repeated_turn_does_not_reuse_previous_output_file(self):
         calls = 0
 

@@ -16,6 +16,7 @@ from agentsassemble.providers.auth import provider_auth_error_message, provider_
 from agentsassemble.providers.codex_output import prepare_codex_output_file
 from agentsassemble.providers.codex_session_ids import extract_codex_session_id
 from agentsassemble.providers.codex_stream import parse_codex_stream_line
+from agentsassemble.providers.process_streams import ConcurrentTextStreamDrain
 from agentsassemble.providers.resident_config import ResidentCommandConfig
 from agentsassemble.providers.sandbox_launcher import CODEX_EXEC_SAFETY_FLAGS, sandbox_launcher_for
 
@@ -131,7 +132,13 @@ class CodexResidentCommandRunner:
         watchdog = threading.Timer(max(1.0, float(timeout_seconds)), _kill_on_timeout)
         watchdog.daemon = True
         watchdog.start()
+        stderr_drain = ConcurrentTextStreamDrain(
+            process.stderr,
+            thread_name=f"codex-resident-stderr-{_safe_stem(self.config.agent_id)}",
+        )
+        stderr_drain.start()
         pending_message: str | None = None
+        stderr = ""
         try:
             try:
                 if process.stdin is not None:
@@ -157,13 +164,24 @@ class CodexResidentCommandRunner:
                     self._post_thought(f"🔧 {event['text']}", kind="command")
                 elif kind == "reasoning":
                     self._post_thought(event["text"], kind="reasoning")
-            stderr = _text(process.stderr.read()) if process.stderr is not None else ""
             process.wait(timeout=5)
+            stderr = stderr_drain.finish()
         finally:
             watchdog.cancel()
-            for stream in (process.stdin, process.stdout, process.stderr):
+            if process.poll() is None:
+                try:
+                    process.kill()
+                except OSError:
+                    pass
+                try:
+                    process.wait(timeout=1)
+                except TimeoutExpired:
+                    pass
+            stderr = stderr or stderr_drain.finish()
+            for stream in (process.stdin, process.stdout):
                 if stream is not None and not stream.closed:
                     stream.close()
+            stderr_drain.close()
         if killed["value"]:
             raise RuntimeError(f"Codex live session command timed out after {timeout_seconds} seconds.")
         returncode = int(process.returncode or 0)

@@ -101,7 +101,7 @@ restart, reconnect, room switching, and refresh.
 - [x] Correlate OpenCode completion and assistant messages to the current turn.
 - [x] On PTY/ConPTY timeout, explicitly interrupt or invalidate the provider
       turn so late output cannot become a later turn.
-- [ ] Drain resident stdout and stderr concurrently to avoid pipe deadlock.
+- [x] Drain resident stdout and stderr concurrently to avoid pipe deadlock.
 - [ ] Resolve bridge-process creation and registration under one ownership
       boundary so duplicate children cannot be spawned.
 
@@ -185,6 +185,7 @@ remaining limitation.
 | `24e63d85` | Gate Grok ACP RoomPortal outbox staging on selection of a concrete `allow_once` permission option | red real-outbox verification showed denied content persisted before the fix; 74 Grok ACP/RoomPortal/bridge/resident tests; `python3 scripts/check_test_quality.py --base HEAD`; `make generated-artifacts-check`; `git diff --check` | provider permission schemas without an allow-once option now reject the write rather than guessing |
 | `0680846e` | Clear Codex output targets before every adapter, resumed-adapter, resident, and streaming-resident call | red repeated-turn verification returned the prior reply through all three non-streaming paths; a controlled streaming mutation did the same; 294 adapter/resident/continuity tests; `python3 scripts/check_test_quality.py --base HEAD`; `make generated-artifacts-check`; `git diff --check` | Codex stdout remains the compatibility fallback only when this call did not create its output file |
 | `cdfe18cd` | Correlate OpenCode SSE activity, assistant messages, idle completion, and message-history fallback to a generated request message ID | red delayed-event verification failed before prompt submission because no correlation ID existed; corrected path ignored the prior turn and returned only the current parent-linked reply; 234 OpenCode/provider/room-runtime tests; `python3 scripts/check_test_quality.py --base HEAD`; `make generated-artifacts-check`; `git diff --check` | the real OpenCode provider was not launched, per this plan's provider-launch non-goal; protocol fields were verified against installed v1.17.18 and its official schema |
+| `005d074d` | Invalidate POSIX PTY and Windows ConPTY sessions after a turn timeout so late output cannot cross into the next turn | red real-PTY and controlled-ConPTY verification returned the first turn's late output as the second reply before the fix; 180 actual PTY/transcript/bridge/provider tests; `python3 scripts/check_test_quality.py --base HEAD`; `make generated-artifacts-check`; `git diff --check` | timed-out terminal sessions intentionally restart and lose in-process conversational state rather than risk cross-turn output |
 
 ## Resume Rule
 

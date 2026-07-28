@@ -12,6 +12,7 @@ from subprocess import TimeoutExpired
 from typing import Any
 
 from agentsassemble.providers.auth import provider_auth_error_message, provider_login_required_message
+from agentsassemble.providers.process_streams import ConcurrentTextStreamDrain
 from agentsassemble.providers.resident_config import ResidentCommandConfig
 from agentsassemble.room_thought import ThoughtChunker, post_room_thought
 
@@ -161,8 +162,14 @@ class GrokResidentCommandRunner:
         watchdog = threading.Timer(max(1.0, float(timeout_seconds)), _kill_on_timeout)
         watchdog.daemon = True
         watchdog.start()
+        stderr_drain = ConcurrentTextStreamDrain(
+            process.stderr,
+            thread_name=f"grok-resident-stderr-{_safe_stem(self.config.agent_id)}",
+        )
+        stderr_drain.start()
         chunker = ThoughtChunker()
         answer_parts: list[str] = []
+        stderr = ""
         try:
             for line in process.stdout or ():
                 event = parse_grok_stream_line(line)
@@ -180,10 +187,24 @@ class GrokResidentCommandRunner:
             leftover = chunker.flush()
             if leftover:
                 post_room_thought(self.config, leftover, kind="reasoning")
-            stderr = _text(process.stderr.read()) if process.stderr is not None else ""
             process.wait(timeout=5)
+            stderr = stderr_drain.finish()
         finally:
             watchdog.cancel()
+            if process.poll() is None:
+                try:
+                    process.kill()
+                except OSError:
+                    pass
+                try:
+                    process.wait(timeout=1)
+                except TimeoutExpired:
+                    pass
+            stderr = stderr or stderr_drain.finish()
+            for stream in (process.stdout,):
+                if stream is not None and not stream.closed:
+                    stream.close()
+            stderr_drain.close()
         if killed["value"]:
             raise GrokResidentRuntimeError(
                 f"Grok live session command timed out after {timeout_seconds} seconds.",

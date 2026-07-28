@@ -4,17 +4,17 @@ Status: generated architecture inventory
 
 Generator: `python3 scripts/generate_package_map.py`
 
-Source fingerprint: `d7b80f49d203117f`
+Source fingerprint: `0806fce29aabe858`
 
 This file describes current evidence and proposed ownership. It does not by
 itself authorize a module move or a product behavior change.
 
 ## Summary
 
-- Python modules: 788
+- Python modules: 789
 - Top-level package modules: 302
-- Domains: admission=33, application=128, diagnostics=27, features=19, identity=9, legacy=226, persistence=60, providers=128, room=89, web=69
-- Classifications: compatibility=297, current=294, legacy=185, optional=12
+- Domains: admission=33, application=128, diagnostics=27, features=19, identity=9, legacy=226, persistence=60, providers=129, room=89, web=69
+- Classifications: compatibility=297, current=295, legacy=185, optional=12
 
 ## Classification Rules
 
@@ -607,7 +607,7 @@ itself authorize a module move or a product behavior change.
 | `agentsassemble.providers.codex_app_server` | `agentsassemble/providers/codex_app_server.py` | 1323 | providers | current | `agentsassemble.providers.process_environment`, `agentsassemble.providers.turn_input`, `agentsassemble.room.projection`, `agentsassemble.room.text` | 10 | - | test-import:3 | `tests/test_agent_session_cli.py`, `tests/test_agent_session_room_store.py`, `tests/test_provider_package.py` | `providers/` | in-target-package |
 | `agentsassemble.providers.codex_app_server_live` | `agentsassemble/providers/codex_app_server_live.py` | 211 | providers | current | `agentsassemble.providers.codex_app_server`, `agentsassemble.providers.room_portal`, `agentsassemble.providers.room_portal_mcp`, `agentsassemble.room.text` | 3 | - | test-import:3 | `tests/test_provider_package.py`, `tests/test_provider_runtime_controls.py`, `tests/test_room_agent_bridge.py` | `providers/` | in-target-package |
 | `agentsassemble.providers.codex_output` | `agentsassemble/providers/codex_output.py` | 9 | providers | current | - | 3 | - | - | - | `providers/` | in-target-package |
-| `agentsassemble.providers.codex_resident` | `agentsassemble/providers/codex_resident.py` | 353 | providers | current | `agentsassemble.providers.auth`, `agentsassemble.providers.codex_output`, `agentsassemble.providers.codex_session_ids`, `agentsassemble.providers.codex_stream`, `agentsassemble.providers.resident_config`, `agentsassemble.providers.sandbox_launcher` | 7 | `call:provider_login_required_message@24` | test-import:3 | `tests/test_codex_resident.py`, `tests/test_live_agent_runner.py`, `tests/test_provider_package.py` | `providers/` | in-target-package |
+| `agentsassemble.providers.codex_resident` | `agentsassemble/providers/codex_resident.py` | 371 | providers | current | `agentsassemble.providers.auth`, `agentsassemble.providers.codex_output`, `agentsassemble.providers.codex_session_ids`, `agentsassemble.providers.codex_stream`, `agentsassemble.providers.process_streams`, `agentsassemble.providers.resident_config`, `agentsassemble.providers.sandbox_launcher` | 7 | `call:provider_login_required_message@25` | test-import:3 | `tests/test_codex_resident.py`, `tests/test_live_agent_runner.py`, `tests/test_provider_package.py` | `providers/` | in-target-package |
 | `agentsassemble.providers.codex_session_ids` | `agentsassemble/providers/codex_session_ids.py` | 73 | providers | current | - | 3 | `call:compile@11`, `call:compile@12` | test-import:2 | `tests/test_codex_live_adapter.py`, `tests/test_provider_package.py` | `providers/` | in-target-package |
 | `agentsassemble.providers.codex_stream` | `agentsassemble/providers/codex_stream.py` | 63 | providers | current | - | 2 | - | test-import:2 | `tests/test_codex_stream.py`, `tests/test_provider_package.py` | `providers/` | in-target-package |
 | `agentsassemble.providers.codex_usage` | `agentsassemble/providers/codex_usage.py` | 171 | providers | current | `agentsassemble.providers.codex_app_server`, `agentsassemble.providers.usage_contract` | 1 | `call:CodexUsageService@164` | test-import:1 | `tests/test_provider_runtime_controls.py` | `providers/` | in-target-package |
@@ -621,7 +621,7 @@ itself authorize a module move or a product behavior change.
 | `agentsassemble.providers.grok_acp.session` | `agentsassemble/providers/grok_acp/session.py` | 51 | providers | current | `agentsassemble.room.text` | 1 | - | - | - | `providers/` | in-target-package |
 | `agentsassemble.providers.grok_acp.transport` | `agentsassemble/providers/grok_acp/transport.py` | 198 | providers | current | - | 1 | - | - | - | `providers/` | in-target-package |
 | `agentsassemble.providers.grok_acp.turns` | `agentsassemble/providers/grok_acp/turns.py` | 243 | providers | current | `agentsassemble.room.text` | 1 | - | - | - | `providers/` | in-target-package |
-| `agentsassemble.providers.grok_resident` | `agentsassemble/providers/grok_resident.py` | 397 | providers | current | `agentsassemble.providers.auth`, `agentsassemble.providers.resident_config`, `agentsassemble.room_thought` | 5 | `call:compile@19`, `call:provider_login_required_message@27` | test-import:5 | `tests/test_grok_live_session_lifecycle.py`, `tests/test_grok_resident.py`, `tests/test_live_agent_runner.py`, `+2` | `providers/` | in-target-package |
+| `agentsassemble.providers.grok_resident` | `agentsassemble/providers/grok_resident.py` | 418 | providers | current | `agentsassemble.providers.auth`, `agentsassemble.providers.process_streams`, `agentsassemble.providers.resident_config`, `agentsassemble.room_thought` | 5 | `call:compile@20`, `call:provider_login_required_message@28` | test-import:5 | `tests/test_grok_live_session_lifecycle.py`, `tests/test_grok_resident.py`, `tests/test_live_agent_runner.py`, `+2` | `providers/` | in-target-package |
 | `agentsassemble.providers.hermes_resident` | `agentsassemble/providers/hermes_resident.py` | 231 | providers | current | `agentsassemble.providers.resident_config` | 5 | `call:compile@14`, `call:compile@15` | test-import:2 | `tests/test_hermes_resident.py`, `tests/test_provider_package.py` | `providers/` | in-target-package |
 | `agentsassemble.providers.kiro_resident` | `agentsassemble/providers/kiro_resident.py` | 229 | providers | current | `agentsassemble.providers.resident_config` | 5 | `call:compile@15`, `call:compile@16`, `call:compile@19`, `call:Lock@25` | test-import:2 | `tests/test_kiro_resident.py`, `tests/test_provider_package.py` | `providers/` | in-target-package |
 | `agentsassemble.providers.launch_specs` | `agentsassemble/providers/launch_specs.py` | 957 | providers | current | `agentsassemble.room.text` | 18 | `call:frozenset@591` | test-import:14 | `tests/test_native_cli_providers.py`, `tests/test_provider_package.py`, `tests/test_provider_runtime_controls.py`, `+11` | `providers/` | in-target-package |
@@ -633,6 +633,7 @@ itself authorize a module move or a product behavior change.
 | `agentsassemble.providers.model_verification` | `agentsassemble/providers/model_verification.py` | 91 | providers | current | - | 4 | `call:compile@8`, `call:compile@9`, `call:frozenset@10`, `call:frozenset@11` | test-import:2 | `tests/test_provider_model_verification.py`, `tests/test_provider_package.py` | `providers/` | in-target-package |
 | `agentsassemble.providers.opencode` | `agentsassemble/providers/opencode.py` | 545 | providers | current | `agentsassemble.providers.process_environment`, `agentsassemble.room.text` | 4 | - | test-import:2 | `tests/test_opencode_runtime.py`, `tests/test_provider_package.py` | `providers/` | in-target-package |
 | `agentsassemble.providers.process_environment` | `agentsassemble/providers/process_environment.py` | 75 | providers | current | - | 10 | `call:frozenset@7` | test-import:2 | `tests/test_provider_package.py`, `tests/test_provider_runtime_controls.py` | `providers/` | in-target-package |
+| `agentsassemble.providers.process_streams` | `agentsassemble/providers/process_streams.py` | 48 | providers | current | - | 2 | - | - | - | `providers/` | in-target-package |
 | `agentsassemble.providers.provider_usage` | `agentsassemble/providers/provider_usage.py` | 53 | providers | current | `agentsassemble.providers.claude_usage`, `agentsassemble.providers.codex_usage`, `agentsassemble.providers.deepseek_usage`, `agentsassemble.providers.terminal_usage`, `agentsassemble.providers.usage_contract` | 2 | - | - | - | `providers/` | in-target-package |
 | `agentsassemble.providers.remote_bridge_config` | `agentsassemble/providers/remote_bridge_config.py` | 68 | providers | current | - | 6 | - | - | - | `providers/` | in-target-package |
 | `agentsassemble.providers.resident_config` | `agentsassemble/providers/resident_config.py` | 24 | providers | current | - | 6 | - | - | - | `providers/` | in-target-package |
