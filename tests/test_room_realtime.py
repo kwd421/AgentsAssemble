@@ -3378,7 +3378,7 @@ class RoomRealtimeControllerTests(unittest.TestCase):
         with self.assertRaises(RoomCommandRejected) as mismatch:
             self._command("delete-wrong", "room.delete", {"confirmation_name": "Wrong"}, owner)
         self.assertEqual(mismatch.exception.code, "confirmation_mismatch")
-        deleted = self._command("delete-right", "room.delete", {"confirmation_name": "Council"}, owner)
+        deleted = self._command("delete-right", "room.delete", {"confirmation_name": "#general"}, owner)
         self.assertTrue(deleted["result"]["deleted"])
         self.assertEqual(deleted["result"]["purged_admission_workflows"], 1)
         self.assertIsNone(
@@ -3488,7 +3488,7 @@ class RoomRealtimeControllerTests(unittest.TestCase):
             self._command(
                 "cleanup-delete",
                 "room.delete",
-                {"confirmation_name": "Council"},
+                {"confirmation_name": "#general"},
                 owner,
             )
 
@@ -3528,7 +3528,7 @@ class RoomRealtimeControllerTests(unittest.TestCase):
             deleted = self._command(
                 "delete-disconnected-external",
                 "room.delete",
-                {"confirmation_name": "Council"},
+                {"confirmation_name": "#general"},
                 owner,
             )["result"]
 
@@ -3559,7 +3559,7 @@ class RoomRealtimeControllerTests(unittest.TestCase):
                 self._command(
                     "delete-retry-request",
                     "room.delete",
-                    {"confirmation_name": "Council"},
+                    {"confirmation_name": "#general"},
                     owner,
                 )
 
@@ -3572,7 +3572,7 @@ class RoomRealtimeControllerTests(unittest.TestCase):
         recovered = self._command(
             "delete-retry-request",
             "room.delete",
-            {"confirmation_name": "Council"},
+            {"confirmation_name": "#general"},
             owner,
         )
 
@@ -3595,7 +3595,7 @@ class RoomRealtimeControllerTests(unittest.TestCase):
             self._command(
                 "different-delete-request",
                 "room.delete",
-                {"confirmation_name": "Council"},
+                {"confirmation_name": "#general"},
                 owner,
             )
         self.assertEqual(deleted.exception.code, "room_deleted")

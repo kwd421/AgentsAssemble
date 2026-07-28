@@ -5,6 +5,7 @@ import binascii
 import json
 import mimetypes
 import re
+import shutil
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from pathlib import Path
@@ -166,6 +167,38 @@ def attachment_content_disposition(filename: str, *, inline: bool) -> str:
 
 def attachment_root(output_root: Path) -> Path:
     return output_root / "attachments"
+
+
+def delete_room_attachments(output_root: Path, room_id: str) -> int:
+    """Remove uploaded files owned by one room.
+
+    Invalid or unscoped attachment directories are preserved because their
+    ownership cannot be established safely.
+    """
+    scoped_room_id = clean_room_text(room_id, limit=128)
+    if not scoped_room_id:
+        return 0
+    root = attachment_root(output_root)
+    if not root.is_dir():
+        return 0
+    removed = 0
+    for directory in root.iterdir():
+        if not directory.is_dir() or directory.is_symlink():
+            continue
+        try:
+            metadata = json.loads(
+                (directory / "metadata.json").read_text(encoding="utf-8")
+            )
+        except (OSError, json.JSONDecodeError):
+            continue
+        if not isinstance(metadata, dict):
+            continue
+        owner_room_id = clean_room_text(metadata.get("room_id"), limit=128)
+        if owner_room_id != scoped_room_id:
+            continue
+        shutil.rmtree(directory)
+        removed += 1
+    return removed
 
 
 def normalize_attachment_id(value: object) -> str:

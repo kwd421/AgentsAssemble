@@ -6,7 +6,12 @@ from collections.abc import Callable
 from pathlib import Path
 from unittest.mock import Mock
 
+from agentsassemble.features.side_chat.service import (
+    append_side_chat_event,
+    read_side_chat,
+)
 from agentsassemble.persistence.local.room.repository import RoomStore
+from agentsassemble.room.attachments import store_uploaded_attachment
 from agentsassemble.room.deleted_cleanup import RoomDeletedCleanupService
 from agentsassemble.room.event_broker import RoomEventBroker
 
@@ -67,6 +72,40 @@ class RoomDeletedCleanupServiceTests(unittest.TestCase):
                 "delete me",
                 encoding="utf-8",
             )
+        self.owned_attachment = store_uploaded_attachment(
+            self.root,
+            {
+                "filename": "owned.png",
+                "content_type": "image/png",
+                "data_base64": "eA==",
+                "room_id": "general",
+            },
+        )
+        self.other_attachment = store_uploaded_attachment(
+            self.root,
+            {
+                "filename": "other.png",
+                "content_type": "image/png",
+                "data_base64": "eQ==",
+                "room_id": "other-room",
+            },
+        )
+        append_side_chat_event(
+            self.root,
+            {
+                "flow_meeting_id": "general",
+                "display_name": "Owner",
+                "message": "delete me",
+            },
+        )
+        append_side_chat_event(
+            self.root,
+            {
+                "flow_meeting_id": "other-room",
+                "display_name": "Other",
+                "message": "keep me",
+            },
+        )
         self.service = RoomDeletedCleanupService(
             store=self.store,
             broker=self.broker,
@@ -137,6 +176,31 @@ class RoomDeletedCleanupServiceTests(unittest.TestCase):
         self.provider_registry.remove_room.assert_called_once_with("general")
         self.assertFalse((self.root / "rooms" / "general").exists())
         self.assertFalse((self.root / "meetings" / "general").exists())
+        self.assertFalse(
+            (
+                self.root
+                / "attachments"
+                / str(self.owned_attachment["id"])
+            ).exists()
+        )
+        self.assertTrue(
+            (
+                self.root
+                / "attachments"
+                / str(self.other_attachment["id"])
+            ).exists()
+        )
+        self.assertEqual(read_side_chat(self.root, meeting_id="general"), [])
+        self.assertEqual(
+            [
+                event["message"]
+                for event in read_side_chat(
+                    self.root,
+                    meeting_id="other-room",
+                )
+            ],
+            ["keep me"],
+        )
         self.assertEqual(
             self.store.deleted_room_record("general")["cleanup_status"],
             "complete",

@@ -4,6 +4,8 @@ import shutil
 from pathlib import Path
 from typing import Callable
 
+from agentsassemble.features.side_chat.service import delete_room_side_chat_events
+from agentsassemble.room.attachments import delete_room_attachments
 from agentsassemble.room.event_broker import RoomEventBroker
 from agentsassemble.room.provider_registry import RoomProviderRegistry
 from agentsassemble.room.repository import RoomRepository
@@ -100,6 +102,8 @@ class RoomDeletedCleanupService:
         ):
             if path.exists() and path.is_dir():
                 shutil.rmtree(path)
+        delete_room_attachments(self.output_root, room_id)
+        delete_room_side_chat_events(self.output_root, room_id)
 
     def _schedule_disconnect(self, room_id: str) -> None:
         self._schedule_cleanup(

@@ -17,7 +17,7 @@ class RoomDeletionServiceTests(unittest.TestCase):
         self.root = Path(self.temporary_directory.name)
         self.store = RoomStore(self.root)
         self.store.create_room("general", label="#general")
-        self.identity_room = {"label": "Council"}
+        self.identity_room = {"label": "Stale identity label"}
         self.bridges: set[tuple[str, str]] = set()
         self.stops: list[tuple[str, str, str]] = []
         self.revocations: list[tuple[str, str]] = []
@@ -103,7 +103,7 @@ class RoomDeletionServiceTests(unittest.TestCase):
     def _delete(
         self,
         *,
-        confirmation_name: str = "Council",
+        confirmation_name: str = "#general",
         is_owner: bool = True,
         request_id: str = "delete-1",
     ) -> dict[str, object]:
@@ -151,7 +151,7 @@ class RoomDeletionServiceTests(unittest.TestCase):
         )
         self.assertEqual(
             self.completions,
-            [("general", "Council", False)],
+            [("general", "#general", False)],
         )
 
     def test_server_cleanup_failure_keeps_canonical_room(self) -> None:
@@ -239,7 +239,7 @@ class RoomDeletionServiceTests(unittest.TestCase):
             "general",
             principal_id="browser:owner",
             request_id="delete-1",
-            payload_hash="hash:Council",
+            payload_hash="hash:#general",
             tombstone=tombstone,
         )
 

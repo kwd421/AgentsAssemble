@@ -59,8 +59,8 @@ class RoomDeletionService:
         identity_room = self._identity_room(room_id)
         canonical_room = self.store.room(room_id)
         room_name = clean_room_text(
-            identity_room.get("label")
-            or canonical_room.get("label")
+            canonical_room.get("label")
+            or identity_room.get("label")
             or room_id,
             128,
         )
