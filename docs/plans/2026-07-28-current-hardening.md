@@ -79,7 +79,7 @@ restart, reconnect, room switching, and refresh.
 - [x] Import and execute valid persona probability blocks without `NameError`.
 - [x] Kick provider-backed participants by stable participant/session identity,
       not mutable display role.
-- [ ] Make Agent Session creation compensate or resume safely after partial
+- [x] Make Agent Session creation compensate or resume safely after partial
       participant/session/event persistence.
 - [ ] Prevent stale callbacks from recreating canonical state after SQLite room
       deletion.
@@ -173,6 +173,7 @@ remaining limitation.
 | `59aa3cc2` | HTTPS-or-loopback remote bridge policy in execution and diagnostics; secure examples | red verification for adapter request and diagnostic Bearer probe; 621 focused/integration tests; `python3 scripts/check_test_quality.py --base HEAD`; `make generated-artifacts-check`; `git diff --check` | bundled bridge itself remains loopback HTTP and requires SSH forwarding or an HTTPS terminator for remote use |
 | `4d8557de` | Preserve valid attention jobs and leases when bounded session-reference scanning truncates | red verification showed `leased` work becoming `cancelled`; 232 attention/repository/realtime tests (40 PostgreSQL-environment skips); `python3 scripts/check_test_quality.py --base HEAD`; `git diff --check` | mandatory live PostgreSQL contract run remains completion-gate work |
 | `8b248baa` | Execute valid deterministic persona probability decorators | red verification reproduced `NameError`; 60 persona rendering/artifact/finalization tests; `python3 scripts/check_test_quality.py --base HEAD`; `git diff --check` | full suite remains completion-gate work |
+| `ee21c513` | Stop and unregister provider-backed participants by canonical Agent Session identity rather than mutable role | red verification showed both provider effects skipped after a role change; 146 kick/realtime/native-E2E tests; `python3 scripts/check_test_quality.py --base HEAD`; `git diff --check` | full suite remains completion-gate work |
 
 ## Resume Rule
 

@@ -125,24 +125,13 @@ class RoomProviderSessionService:
         validate_native_cli_provider_spec(spec)
         self._ensure_room(clean_room_id)
         with self._lock:
-            if self.store.session(clean_room_id, spec.agent_id) or self.store.participant(
+            current = self._create_provider_records(
                 clean_room_id,
-                spec.agent_id,
-            ):
-                raise RoomCommandRejected(
-                    "An Agent Session with this identity already exists; re-add or configure the existing session instead.",
-                    code="session_exists",
-                )
-            self.registry.register(clean_room_id, spec)
-            self.ensure_provider_session(clean_room_id, spec)
-            current = self.store.session(clean_room_id, spec.agent_id)
-            self.store.append_event(
-                clean_room_id,
-                "agent_session_created",
-                participant_id=spec.agent_id,
-                session_id=spec.agent_id,
-                provider_kind=spec.normalized_provider_kind(),
+                spec,
+                require_absent=True,
+                append_created_event=True,
             )
+            self.registry.register(clean_room_id, spec)
             self._publish_session_state(clean_room_id, current)
         return public_session(current)
 
@@ -320,7 +309,8 @@ class RoomProviderSessionService:
     def ensure_provider_session(self, room_id: str, spec: NativeCliProviderSpec) -> None:
         agent_id = clean_room_text(spec.agent_id, 128)
         participant = self.store.participant(room_id, agent_id)
-        if not participant:
+        session = self.store.session(room_id, agent_id)
+        if session and not participant:
             self.store.upsert_participant(
                 room_id,
                 {
@@ -335,7 +325,6 @@ class RoomProviderSessionService:
                     "status": "detached",
                 },
             )
-        session = self.store.session(room_id, agent_id)
         if session:
             self.store.update_participant_fields(
                 room_id,
@@ -392,6 +381,22 @@ class RoomProviderSessionService:
                 **cursor_updates,
             )
             return
+        self._create_provider_records(
+            room_id,
+            spec,
+            require_absent=False,
+            append_created_event=False,
+        )
+
+    def _create_provider_records(
+        self,
+        room_id: str,
+        spec: NativeCliProviderSpec,
+        *,
+        require_absent: bool,
+        append_created_event: bool,
+    ) -> dict[str, object]:
+        agent_id = clean_room_text(spec.agent_id, 128)
         latest_events = self.store.read_events(
             room_id,
             event_types=("message_final",),
@@ -402,6 +407,29 @@ class RoomProviderSessionService:
         latest_public = clean_room_text(latest_public_event.get("id"), 128)
         latest_public_seq = int(latest_public_event.get("seq") or 0)
         with self.store.transaction(room_id) as transaction:
+            existing_participant = transaction.participant(agent_id)
+            existing_session = transaction.session(agent_id)
+            if require_absent and (existing_participant or existing_session):
+                raise RoomCommandRejected(
+                    "An Agent Session with this identity already exists; re-add or configure the existing session instead.",
+                    code="session_exists",
+                )
+            if existing_session:
+                return existing_session
+            if not existing_participant:
+                transaction.upsert_participant(
+                    {
+                        "participant_id": agent_id,
+                        "display_name": spec.display_name,
+                        "role": "agent",
+                        "participant_type": "agent",
+                        "owner_id": "operator-local",
+                        "created_by": "operator-local",
+                        "provider_kind": spec.normalized_provider_kind(),
+                        "connection_kind": "native_cli_bridge",
+                        "status": "detached",
+                    },
+                )
             created_session, _ = transaction.upsert_session(
                 {
                     "session_id": agent_id,
@@ -457,6 +485,14 @@ class RoomProviderSessionService:
                 provider_sync_seq=latest_public_seq,
             )
             assert_provider_sync_cursor_parity(created_session, state)
+            if append_created_event:
+                transaction.append_event(
+                    "agent_session_created",
+                    participant_id=agent_id,
+                    session_id=agent_id,
+                    provider_kind=spec.normalized_provider_kind(),
+                )
+            return created_session
 
 
 def restorable_process_ownership(session: dict[str, object]) -> str:

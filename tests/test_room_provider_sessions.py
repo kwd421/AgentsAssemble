@@ -3,6 +3,7 @@ from __future__ import annotations
 import tempfile
 import threading
 import unittest
+from contextlib import contextmanager
 from pathlib import Path
 
 from agentsassemble.persistence.local.room.repository import RoomStore
@@ -72,6 +73,68 @@ class RoomProviderSessionServiceTests(unittest.TestCase):
         self.assertEqual(session["runtime_status"], "stopped")
         self.assertTrue(self.registry.contains("general", "codex"))
         self.assertEqual(self.published_sessions[-1][1]["session_id"], "codex")
+
+    def test_create_provider_session_rolls_back_all_durable_records_when_event_write_fails(self) -> None:
+        base_store = self.store
+
+        class FailingEventTransaction:
+            def __init__(self, transaction):
+                self.transaction = transaction
+
+            def __getattr__(self, name):
+                return getattr(self.transaction, name)
+
+            def append_event(self, event_type, **payload):
+                self.transaction.append_event(event_type, **payload)
+                raise RuntimeError("injected event write failure")
+
+        class FailingEventRepository:
+            def __getattr__(self, name):
+                return getattr(base_store, name)
+
+            @contextmanager
+            def transaction(self, room_id):
+                with base_store.transaction(room_id) as transaction:
+                    yield FailingEventTransaction(transaction)
+
+            def append_event(self, room_id, event_type, **payload):
+                raise RuntimeError("injected event write failure")
+
+        registry = RoomProviderRegistry(
+            lock=self.lock,
+            default_room_id="general",
+        )
+        service = RoomProviderSessionService(
+            store=FailingEventRepository(),
+            broker=self.broker,
+            lock=self.lock,
+            registry=registry,
+            ensure_room=lambda room_id: base_store.create_room(room_id),
+            publish_session_state=lambda room_id, session: self.published_sessions.append(
+                (room_id, dict(session))
+            ),
+        )
+
+        with self.assertRaisesRegex(RuntimeError, "injected event write failure"):
+            service.create_provider_session("general", _spec())
+
+        self.assertEqual(base_store.participant("general", "codex"), {})
+        self.assertEqual(base_store.session("general", "codex"), {})
+        self.assertEqual(
+            [
+                event
+                for event in base_store.read_events("general")
+                if event.get("type") == "agent_session_created"
+            ],
+            [],
+        )
+        self.assertFalse(registry.contains("general", "codex"))
+        self.assertEqual(self.published_sessions, [])
+
+        recovered = self.service.create_provider_session("general", _spec())
+
+        self.assertEqual(recovered["session_id"], "codex")
+        self.assertTrue(self.registry.contains("general", "codex"))
 
     def test_external_bridge_session_preserves_invite_owner_and_external_ownership(self) -> None:
         self.store.create_room("general")
