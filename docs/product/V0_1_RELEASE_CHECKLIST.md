@@ -6,6 +6,22 @@ usable flow that already exists: local GUI room, approved agents, official
 turns, shared meeting memory, finalization, archive or CLI/API reads, and local
 stdio MCP room tooling.
 
+## Active Hardening Ledger
+
+The current correctness and test-quality work is tracked in
+`docs/plans/2026-07-28-current-hardening.md`. That file is durable execution
+state for chat compaction and task handoff: it owns the current checklist,
+verification evidence, commits, and remaining limitations.
+
+The legacy findings discovered during the same audit are recorded separately in
+`docs/reports/2026-07-28-legacy-static-audit.md`. They are not authorization to
+repair or extend legacy code. New canonical work must not depend on those
+paths.
+
+The release is not ready while the active hardening ledger has unchecked
+current-path items or an unverified completion gate. A passing raw test count
+does not override that ledger.
+
 ## Core Usable Flow
 
 v0.1 is ready when a new operator can complete this Work Mode flow without
