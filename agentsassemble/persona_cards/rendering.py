@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import hashlib
 import re
 from dataclasses import replace
 from typing import Any
@@ -485,4 +486,3 @@ def _selected_first_message(card: PersonaCard, first_message_index: int) -> str:
 
 def _keywords(value: str) -> list[str]:
     return [keyword.strip() for keyword in re.split(r"[,;\n]", str(value or "")) if keyword.strip()]
-

@@ -76,7 +76,7 @@ restart, reconnect, room switching, and refresh.
 
 - [x] Reconcile attention in a way that cannot cancel valid work merely because
       related record families were truncated independently.
-- [ ] Import and execute valid persona probability blocks without `NameError`.
+- [x] Import and execute valid persona probability blocks without `NameError`.
 - [ ] Kick provider-backed participants by stable participant/session identity,
       not mutable display role.
 - [ ] Make Agent Session creation compensate or resume safely after partial
@@ -171,6 +171,7 @@ remaining limitation.
 | `5ee8926f` | Durable test-admission rule in `AGENTS.md` | instruction and diff review; `make generated-artifacts` | static quality-gate bypasses remain separate checklist work |
 | `026f84c3` | Thread-safe single-use WS tickets; client socket cleanup; server realtime-channel cleanup | red verification on five lifecycle regressions; `python3 -m unittest tests.test_ws_room_session tests.test_ws_room_client tests.test_ws_endpoint tests.test_room_websocket tests.test_web_transport_package` (95 tests); `python3 scripts/check_test_quality.py --base HEAD`; `git diff --check` | full-suite and browser verification remain completion-gate work |
 | `59aa3cc2` | HTTPS-or-loopback remote bridge policy in execution and diagnostics; secure examples | red verification for adapter request and diagnostic Bearer probe; 621 focused/integration tests; `python3 scripts/check_test_quality.py --base HEAD`; `make generated-artifacts-check`; `git diff --check` | bundled bridge itself remains loopback HTTP and requires SSH forwarding or an HTTPS terminator for remote use |
+| `4d8557de` | Preserve valid attention jobs and leases when bounded session-reference scanning truncates | red verification showed `leased` work becoming `cancelled`; 232 attention/repository/realtime tests (40 PostgreSQL-environment skips); `python3 scripts/check_test_quality.py --base HEAD`; `git diff --check` | mandatory live PostgreSQL contract run remains completion-gate work |
 
 ## Resume Rule
 

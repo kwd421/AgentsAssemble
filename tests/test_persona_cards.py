@@ -528,6 +528,27 @@ class RisuModulePersonaTests(unittest.TestCase):
             ["Still active."],
         )
 
+    def test_scan_persona_lore_applies_valid_probability_deterministically(self):
+        card = PersonaCardForTests.with_lore(
+            [
+                {
+                    "key": f"trigger-{probability}",
+                    "content": f"@@probability {probability}\nentry-{probability}",
+                    "always_active": True,
+                    "insert_order": probability,
+                }
+                for probability in range(1, 100)
+            ]
+        )
+
+        first = scan_persona_lore(card, "context", state={}, max_chars=100_000)
+        second = scan_persona_lore(card, "context", state={}, max_chars=100_000)
+        selected_keys = [entry.key for entry in first.entries]
+
+        self.assertEqual(selected_keys, [entry.key for entry in second.entries])
+        self.assertGreater(len(selected_keys), 0)
+        self.assertLess(len(selected_keys), len(card.lorebook))
+
     def test_scan_persona_lore_honors_recursive_scanning_flag_and_depth_cap(self):
         entries = []
         for index in range(12):
