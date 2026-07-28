@@ -4275,6 +4275,39 @@ class LiveAgentRunnerTests(unittest.TestCase):
         self.assertEqual(loaded[0].flow_fairness_min_gap, 1)
         self.assertTrue(loaded[0].flow_fairness_start_order)
 
+    def test_group_config_parses_persisted_fast_and_thinking_boolean_strings(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            path = Path(temp_dir) / "live-agents.json"
+            path.write_text(
+                json.dumps(
+                    {
+                        "agents": [
+                            {
+                                "agent_id": "agent-disabled",
+                                "command": ["fake"],
+                                "fast_mode": "false",
+                                "stream_thinking": "off",
+                            },
+                            {
+                                "agent_id": "agent-enabled",
+                                "command": ["fake"],
+                                "fast_mode": "yes",
+                                "stream_thinking": "1",
+                            },
+                        ],
+                    }
+                ),
+                encoding="utf-8",
+            )
+
+            loaded = load_group_configs(path)
+
+        by_id = {config.agent_id: config for config in loaded}
+        self.assertFalse(by_id["agent-disabled"].fast_mode)
+        self.assertFalse(by_id["agent-disabled"].stream_thinking)
+        self.assertTrue(by_id["agent-enabled"].fast_mode)
+        self.assertTrue(by_id["agent-enabled"].stream_thinking)
+
     def test_group_config_accepts_official_turn_timeout_without_changing_general_timeout(self):
         with tempfile.TemporaryDirectory() as temp_dir:
             path = Path(temp_dir) / "live-agents.json"
