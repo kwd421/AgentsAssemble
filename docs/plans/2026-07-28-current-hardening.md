@@ -99,7 +99,7 @@ restart, reconnect, room switching, and refresh.
 - [x] Establish output-file freshness before accepting Codex adapter or
       resident output.
 - [x] Correlate OpenCode completion and assistant messages to the current turn.
-- [ ] On PTY/ConPTY timeout, explicitly interrupt or invalidate the provider
+- [x] On PTY/ConPTY timeout, explicitly interrupt or invalidate the provider
       turn so late output cannot become a later turn.
 - [ ] Drain resident stdout and stderr concurrently to avoid pipe deadlock.
 - [ ] Resolve bridge-process creation and registration under one ownership
@@ -184,6 +184,7 @@ remaining limitation.
 | `78afc805` | Serialize stable-entry KV publication and discard retries superseded by a newer tunnel URL | red controlled wrangler ordering published `new` then overwrote it with `old`; corrected ordering ends on the latest URL; 19 stable-entry/tunnel/package tests; `python3 scripts/check_test_quality.py --base HEAD`; `make generated-artifacts-check`; `git diff --check` | publication remains asynchronous and best-effort when wrangler itself never succeeds |
 | `24e63d85` | Gate Grok ACP RoomPortal outbox staging on selection of a concrete `allow_once` permission option | red real-outbox verification showed denied content persisted before the fix; 74 Grok ACP/RoomPortal/bridge/resident tests; `python3 scripts/check_test_quality.py --base HEAD`; `make generated-artifacts-check`; `git diff --check` | provider permission schemas without an allow-once option now reject the write rather than guessing |
 | `0680846e` | Clear Codex output targets before every adapter, resumed-adapter, resident, and streaming-resident call | red repeated-turn verification returned the prior reply through all three non-streaming paths; a controlled streaming mutation did the same; 294 adapter/resident/continuity tests; `python3 scripts/check_test_quality.py --base HEAD`; `make generated-artifacts-check`; `git diff --check` | Codex stdout remains the compatibility fallback only when this call did not create its output file |
+| `cdfe18cd` | Correlate OpenCode SSE activity, assistant messages, idle completion, and message-history fallback to a generated request message ID | red delayed-event verification failed before prompt submission because no correlation ID existed; corrected path ignored the prior turn and returned only the current parent-linked reply; 234 OpenCode/provider/room-runtime tests; `python3 scripts/check_test_quality.py --base HEAD`; `make generated-artifacts-check`; `git diff --check` | the real OpenCode provider was not launched, per this plan's provider-launch non-goal; protocol fields were verified against installed v1.17.18 and its official schema |
 
 ## Resume Rule
 

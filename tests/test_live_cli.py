@@ -32,6 +32,67 @@ def _fake_cli_script(*, delay_seconds: float = 0.0) -> str:
 
 class LiveCliRuntimeTests(unittest.TestCase):
     @unittest.skipUnless(live_cli_supported(), "requires POSIX PTY support")
+    def test_timeout_cannot_promote_late_output_into_the_next_turn(self):
+        class FirstAnswerMessageSource:
+            strict = True
+
+            def prepare_start(self) -> None:
+                return
+
+            def begin_turn(self, expected_input: str = "") -> None:
+                del expected_input
+
+            def poll(self, terminal_output: bytes, *, quiet: bool = False) -> LiveCliMessageSnapshot:
+                del quiet
+                text = terminal_output.decode("utf-8", errors="replace").replace("\r", "")
+                marker = "answer:"
+                if marker not in text:
+                    return LiveCliMessageSnapshot()
+                answer = text.rsplit(marker, 1)[-1].splitlines()[0].strip()
+                return LiveCliMessageSnapshot(
+                    content=f"{marker}{answer}",
+                    complete=True,
+                    source="fake-transcript",
+                    source_kind="fake_strict",
+                )
+
+            def describe(self) -> dict[str, object]:
+                return {"message_source": "fake_strict", "message_source_strict": True}
+
+        script = "\n".join(
+            [
+                "import sys, time",
+                "handled_first = False",
+                "for line in sys.stdin:",
+                "    text = line.strip()",
+                "    if text == 'first':",
+                "        handled_first = True",
+                "        time.sleep(0.2)",
+                "        print('answer:first', flush=True)",
+                "    elif text == 'second':",
+                "        if handled_first:",
+                "            time.sleep(0.5)",
+                "        print('answer:second', flush=True)",
+            ]
+        )
+        runtime = LiveCliRuntime(
+            "alpha",
+            [sys.executable, "-u", "-c", script],
+            idle_quiet_seconds=0.02,
+            message_source=FirstAnswerMessageSource(),
+        )
+        try:
+            runtime.send("first")
+            with self.assertRaises(TimeoutError):
+                runtime.read_output(timeout_seconds=0.05)
+            runtime.send("second")
+            second = runtime.read_output(timeout_seconds=1)
+        finally:
+            runtime.stop()
+
+        self.assertEqual(second["content"], "answer:second")
+
+    @unittest.skipUnless(live_cli_supported(), "requires POSIX PTY support")
     def test_live_cli_runtime_keeps_one_process_state_across_deliveries(self):
         runtime = LiveCliRuntime("alpha", [sys.executable, "-u", "-c", _fake_cli_script()], idle_quiet_seconds=0.05)
         try:

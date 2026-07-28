@@ -289,6 +289,7 @@ class LiveCliRuntime:
         while True:
             now = time.monotonic()
             if now >= deadline:
+                self._invalidate_timed_out_turn()
                 raise TimeoutError(f"Live CLI runtime timed out after {timeout_seconds} seconds.")
             wait_until = deadline
             if chunks and last_read_at is not None:
@@ -397,6 +398,15 @@ class LiveCliRuntime:
         del process
         os.write(fd, b"\x03")
 
+    def _invalidate_timed_out_turn(self) -> None:
+        with self._lock:
+            self._last_error = "turn_timeout"
+        try:
+            self.interrupt()
+        except (OSError, RuntimeError):
+            pass
+        self.stop(timeout_seconds=0.2)
+
     def stop(self, *, timeout_seconds: float = 2.0) -> None:
         with self._lock:
             process = self.process
@@ -404,6 +414,8 @@ class LiveCliRuntime:
             self.process = None
             self._master_fd = None
             self._room_observation_active = False
+            self._message_turn_started = False
+            self._needs_terminal_settle = False
         if master_fd is not None:
             _close_fd(master_fd)
         if process is not None:

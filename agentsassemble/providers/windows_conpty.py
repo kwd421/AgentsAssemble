@@ -210,6 +210,7 @@ class WindowsConPtyRuntime:
             if not alive:
                 raise RuntimeError("ConPTY provider process exited before completing the turn.")
             time.sleep(0.02)
+        self._invalidate_timed_out_turn()
         raise TimeoutError(f"ConPTY runtime timed out after {timeout_seconds} seconds.")
 
     def interrupt(self) -> None:
@@ -217,6 +218,15 @@ class WindowsConPtyRuntime:
             process = self.process
         if process is not None:
             process.write("\x03")
+
+    def _invalidate_timed_out_turn(self) -> None:
+        with self._lock:
+            self._last_error = "turn_timeout"
+        try:
+            self.interrupt()
+        except Exception:
+            pass
+        self.stop(timeout_seconds=0.2)
 
     def stop(self, *, timeout_seconds: float = 2.0) -> None:
         del timeout_seconds

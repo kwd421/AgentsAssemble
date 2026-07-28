@@ -1022,6 +1022,50 @@ class ProviderRuntimeControlTests(unittest.TestCase):
 
         self.assertEqual(fake.writes, ["first\r"])
 
+    def test_windows_timeout_cannot_promote_late_output_into_the_next_turn(self):
+        processes = []
+
+        class TimeoutThenReplyProcess(FakeConPtyProcess):
+            def __init__(self, generation):
+                super().__init__()
+                self.generation = generation
+                self.turn_writes = 0
+
+            def write(self, value: str) -> None:
+                self.writes.append(value)
+                if value == "\x03":
+                    return
+                self.turn_writes += 1
+                if self.generation == 1 and self.turn_writes == 1:
+                    return
+                reply = "previous reply" if self.generation == 1 else "current reply"
+                self.output.append(reply + "\r\n")
+
+        def process_factory(*args, **kwargs):
+            process = TimeoutThenReplyProcess(len(processes) + 1)
+            processes.append(process)
+            return process
+
+        with tempfile.TemporaryDirectory() as temp_dir, patch("shutil.which", return_value="C:/bin/fake.exe"):
+            runtime = WindowsConPtyRuntime(
+                "fake",
+                ["fake"],
+                cwd=Path(temp_dir),
+                idle_quiet_seconds=0.01,
+                process_factory=process_factory,
+            )
+            try:
+                runtime.send("first")
+                with self.assertRaises(TimeoutError):
+                    runtime.read_output(timeout_seconds=0.05)
+                runtime.send("second")
+                second = runtime.read_output(timeout_seconds=1)
+            finally:
+                runtime.stop()
+
+        self.assertIn("current reply", second["content"])
+        self.assertNotIn("previous reply", second["content"])
+
 
 if __name__ == "__main__":
     unittest.main()
