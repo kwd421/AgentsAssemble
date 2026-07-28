@@ -33,6 +33,7 @@ type PersistedRoomSettingsOverrides = RoomGlobalSettingsUpdate;
 
 export type AuthoritativeRoomSettings = {
   conversationMode: ConversationMode;
+  orderedExcludePreviousSpeaker: boolean;
   maxRelayTurns: number;
 };
 
@@ -54,10 +55,14 @@ function settingsError(errorValue: unknown, fallback: string): Error {
 }
 
 function authoritativeSettings(
-  settings: Pick<RoomGlobalSettings, "conversationMode" | "maxRelayTurns">
+  settings: Pick<
+    RoomGlobalSettings,
+    "conversationMode" | "orderedExcludePreviousSpeaker" | "maxRelayTurns"
+  >
 ): AuthoritativeRoomSettings {
   return {
     conversationMode: settings.conversationMode,
+    orderedExcludePreviousSpeaker: settings.orderedExcludePreviousSpeaker,
     maxRelayTurns: settings.maxRelayTurns,
   };
 }
@@ -113,6 +118,11 @@ export function useRoomSettingsController({
   const maxRelayTurnsFor = useCallback(
     (room: RoomDockItem): number | null =>
       settingsStateFor(room).value?.maxRelayTurns ?? null,
+    [settingsStateFor]
+  );
+  const orderedExcludePreviousSpeakerFor = useCallback(
+    (room: RoomDockItem): boolean | null =>
+      settingsStateFor(room).value?.orderedExcludePreviousSpeaker ?? null,
     [settingsStateFor]
   );
   const beginSettingsOperation = useCallback((key: string) => {
@@ -321,6 +331,9 @@ export function useRoomSettingsController({
       const nextValue = currentValue
         ? {
             conversationMode: overrides.conversationMode ?? currentValue.conversationMode,
+            orderedExcludePreviousSpeaker:
+              overrides.orderedExcludePreviousSpeaker
+              ?? currentValue.orderedExcludePreviousSpeaker,
             maxRelayTurns: overrides.maxRelayTurns ?? currentValue.maxRelayTurns,
           }
         : null;
@@ -412,6 +425,15 @@ export function useRoomSettingsController({
     [persist, settingsStateFor]
   );
 
+  const updateOrderedExcludePreviousSpeaker = useCallback(
+    (room: RoomDockItem, exclude: boolean) => {
+      const currentValue = settingsStateFor(room).value;
+      if (!currentValue) return;
+      persist(room, { orderedExcludePreviousSpeaker: exclude });
+    },
+    [persist, settingsStateFor]
+  );
+
   const refresh = useCallback(
     (room: RoomDockItem) => {
       const key = roomSettingsKey(room);
@@ -441,6 +463,7 @@ export function useRoomSettingsController({
     channelSettingsFor,
     settingsStateFor,
     conversationModeFor,
+    orderedExcludePreviousSpeakerFor,
     maxRelayTurnsFor,
     refresh,
     persist,
@@ -448,6 +471,7 @@ export function useRoomSettingsController({
     updateMemberRole,
     updateChannelSetting,
     updateConversationMode,
+    updateOrderedExcludePreviousSpeaker,
     updateMaxRelayTurns,
   };
 }

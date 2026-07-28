@@ -23,7 +23,8 @@ function renderSettings(
   conversationMode: "ordered" | "ambient" | "continuous" | null,
   onConversationModeChange = vi.fn(),
   settingsStatus: "loading" | "ready" | "saving" | "stale" | "error" = "ready",
-  onRetrySettings = vi.fn()
+  onRetrySettings = vi.fn(),
+  onOrderedExcludePreviousSpeakerChange = vi.fn()
 ) {
   render(
     <RoomSettingsModal
@@ -33,6 +34,7 @@ function renderSettings(
       settingsStatus={settingsStatus}
       settingsError={settingsStatus === "error" ? "offline" : ""}
       conversationMode={conversationMode}
+      orderedExcludePreviousSpeaker={conversationMode ? true : null}
       maxRelayTurns={conversationMode ? 6 : null}
       canInvite
       onClose={() => undefined}
@@ -41,6 +43,7 @@ function renderSettings(
       onAppearanceChange={() => undefined}
       onChannelSettingChange={() => undefined}
       onConversationModeChange={onConversationModeChange}
+      onOrderedExcludePreviousSpeakerChange={onOrderedExcludePreviousSpeakerChange}
       onMaxRelayTurnsChange={() => undefined}
       onRetrySettings={onRetrySettings}
       onDeleteRoom={async () => undefined}
@@ -58,6 +61,17 @@ describe("RoomSettingsModal conversation mode", () => {
     expect(onConversationModeChange).toHaveBeenCalledWith("ambient");
   });
 
+  it("lets the user allow the previous speaker in general ordered selection", async () => {
+    const onChange = vi.fn();
+    renderSettings("ordered", vi.fn(), "ready", vi.fn(), onChange);
+
+    await userEvent.click(
+      screen.getByRole("checkbox", { name: /직전 발언자 연속 선택 방지/ })
+    );
+
+    expect(onChange).toHaveBeenCalledWith(false);
+  });
+
   it("shows legacy continuous mode only for a room that already uses it", () => {
     const { rerender } = render(
       <RoomSettingsModal
@@ -67,6 +81,7 @@ describe("RoomSettingsModal conversation mode", () => {
         settingsStatus="ready"
         settingsError=""
         conversationMode="ordered"
+        orderedExcludePreviousSpeaker
         maxRelayTurns={6}
         canInvite
         onClose={() => undefined}
@@ -75,6 +90,7 @@ describe("RoomSettingsModal conversation mode", () => {
         onAppearanceChange={() => undefined}
         onChannelSettingChange={() => undefined}
         onConversationModeChange={() => undefined}
+        onOrderedExcludePreviousSpeakerChange={() => undefined}
         onMaxRelayTurnsChange={() => undefined}
         onRetrySettings={() => undefined}
         onDeleteRoom={async () => undefined}
@@ -91,6 +107,7 @@ describe("RoomSettingsModal conversation mode", () => {
         settingsStatus="ready"
         settingsError=""
         conversationMode="continuous"
+        orderedExcludePreviousSpeaker
         maxRelayTurns={6}
         canInvite
         onClose={() => undefined}
@@ -99,6 +116,7 @@ describe("RoomSettingsModal conversation mode", () => {
         onAppearanceChange={() => undefined}
         onChannelSettingChange={() => undefined}
         onConversationModeChange={() => undefined}
+        onOrderedExcludePreviousSpeakerChange={() => undefined}
         onMaxRelayTurnsChange={() => undefined}
         onRetrySettings={() => undefined}
         onDeleteRoom={async () => undefined}

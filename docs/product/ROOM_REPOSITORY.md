@@ -31,11 +31,12 @@ Atomic request dedupe and ACK recording live in `room/command_uow.py`;
 | Legacy session-run monitor records | `live-agent-runs/session-runs.json` | Legacy compatibility | Keep outside the canonical room migration until that product path is removed or redesigned. |
 
 Canonical room-global settings have a strict domain record in
-`room_global_settings.py`. It contains only label, topic, room appearance,
-conversation mode, bounded relay count, and custom channels. Notification and
-read state are user preferences, while participant role belongs to the
-participant row. Both repository backends are authoritative for this record;
-`rooms.label` is an indexed projection updated in the same transaction.
+`room/global_settings.py`. It contains only label, topic, room appearance,
+conversation mode, the ordered-mode previous-speaker exclusion toggle, bounded
+relay count, and custom channels. Notification and read state are user
+preferences, while participant role belongs to the participant row. Both
+repository backends are authoritative for this record; `rooms.label` is an
+indexed projection updated in the same transaction.
 User-level notification and read preferences live in identity storage, not in
 this room-global record. Existing legacy room-global values are not silently
 imported. Run `assemble room migrate-room-settings --dry-run` against
@@ -175,8 +176,11 @@ records so a lost join response can be resumed without consuming an invite or
 issuing a second bearer. Revision `0009_resumable_operator_pairing` binds a
 consumed operator pairing to one credential fingerprint and stores bounded
 redemption phase plus session-fingerprint evidence, allowing only that device
-to finish a partial redemption or recover its existing bearer. Runtime
-repository construction never runs Alembic and
+to finish a partial redemption or recover its existing bearer. Revision
+`0010_vote_ballot_index` adds the canonical vote-ballot lookup index. Revision
+`0011_ordered_previous_speaker` backfills the ordered-mode previous-speaker
+exclusion setting as enabled. Runtime repository construction never runs
+Alembic and
 refuses PostgreSQL until both the head revision and the authority marker are
 present. The existing SQLite migrator remains responsible for upgrading
 pre-repository local files and old SQLite versions.
@@ -186,6 +190,9 @@ Revision `0004_room_global_settings`, which corresponds to SQLite schema version
 defaults derived only from the room label; it deliberately does not infer or
 copy values from legacy JSON files. A missing or invalid settings row for an
 existing room is an error, never a request to recreate defaults silently.
+SQLite schema version 7 adds the ordered-mode previous-speaker exclusion field
+to existing canonical settings rows as enabled; an existing non-boolean value
+blocks migration instead of being repaired silently.
 
 `PostgresRoomRepository` now implements the same transaction, event replay,
 participant/session lifecycle, command dedupe, media metadata, and durable

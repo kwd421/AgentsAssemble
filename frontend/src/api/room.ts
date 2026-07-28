@@ -29,6 +29,7 @@ export interface RoomGlobalSettings {
   shortLabel: string;
   appearance: RoomGlobalAppearance;
   conversationMode: ConversationMode;
+  orderedExcludePreviousSpeaker: boolean;
   maxRelayTurns: number;
   channels: RoomChannel[];
 }
@@ -39,6 +40,7 @@ export type RoomGlobalSettingsUpdate = {
   shortLabel?: string;
   appearance?: Partial<RoomGlobalAppearance>;
   conversationMode?: ConversationMode;
+  orderedExcludePreviousSpeaker?: boolean;
   maxRelayTurns?: number;
 };
 
@@ -58,6 +60,7 @@ export interface RoomSettings {
   channelSettings: Record<string, ChannelSettings>;
   // continuous is retained only for rooms that already use the legacy relay mode.
   conversationMode: ConversationMode;
+  orderedExcludePreviousSpeaker: boolean;
   maxRelayTurns: number;
 }
 
@@ -199,6 +202,7 @@ type ApiRoomSettings = {
   appearance?: ApiRoomAppearance;
   channel_settings?: Record<string, ApiChannelSettings>;
   conversation_mode?: ConversationMode;
+  ordered_exclude_previous_speaker?: boolean;
   max_relay_turns?: number;
   channels?: ApiRoomChannel[];
 };
@@ -243,6 +247,8 @@ function normalizeRoomSettings(payload: ApiRoomSettings | undefined, fallbackRoo
       payload?.conversation_mode === "ambient" || payload?.conversation_mode === "continuous"
         ? payload.conversation_mode
         : "ordered",
+    orderedExcludePreviousSpeaker:
+      payload?.ordered_exclude_previous_speaker !== false,
     maxRelayTurns: Math.min(20, Math.max(2, Number(payload?.max_relay_turns || 6))),
   };
 }
@@ -265,6 +271,7 @@ export function normalizeRoomGlobalSettings(
     typeof appearance.icon_label !== "string" ||
     typeof appearance.invite_scope !== "string" ||
     !["ordered", "ambient", "continuous"].includes(String(payload.conversation_mode || "")) ||
+    typeof payload.ordered_exclude_previous_speaker !== "boolean" ||
     !Number.isInteger(payload.max_relay_turns) ||
     !Array.isArray(payload.channels)
   ) {
@@ -283,6 +290,7 @@ export function normalizeRoomGlobalSettings(
       inviteScope: appearance.invite_scope,
     },
     conversationMode: payload.conversation_mode as ConversationMode,
+    orderedExcludePreviousSpeaker: payload.ordered_exclude_previous_speaker,
     maxRelayTurns: Number(payload.max_relay_turns),
     channels: normalizeRoomChannelList(payload.channels as ApiRoomChannel[]),
   };
@@ -296,6 +304,10 @@ export function roomGlobalSettingsUpdateToApi(
   if (updates.topic !== undefined) payload.topic = updates.topic;
   if (updates.conversationMode !== undefined) {
     payload.conversation_mode = updates.conversationMode;
+  }
+  if (updates.orderedExcludePreviousSpeaker !== undefined) {
+    payload.ordered_exclude_previous_speaker =
+      updates.orderedExcludePreviousSpeaker;
   }
   if (updates.maxRelayTurns !== undefined) {
     payload.max_relay_turns = updates.maxRelayTurns;

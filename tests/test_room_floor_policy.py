@@ -119,6 +119,55 @@ class RoomFloorPolicyTests(unittest.TestCase):
 
         self.assertEqual(result, ("bravo",))
 
+    def test_ordered_floor_can_exclude_the_previous_speaker_from_general_selection(self):
+        sampled = []
+
+        def sample(values, count):
+            sampled.append((list(values), count))
+            return list(values)
+
+        result = ordered_floor_target(
+            provider_ids=["alpha", "bravo", "charlie"],
+            actor_id="human",
+            direct_targets=[],
+            eligible_agent_ids=["alpha", "bravo", "charlie"],
+            message_counts={"alpha": 0, "bravo": 1, "charlie": 2},
+            previous_speaker_id="alpha",
+            exclude_previous_speaker=True,
+            random_sample=sample,
+        )
+
+        self.assertEqual(sampled, [(["bravo", "charlie"], 2)])
+        self.assertEqual(result, ("bravo",))
+
+    def test_ordered_floor_keeps_the_previous_speaker_when_no_alternative_is_eligible(self):
+        result = ordered_floor_target(
+            provider_ids=["alpha", "bravo"],
+            actor_id="human",
+            direct_targets=[],
+            eligible_agent_ids=["alpha"],
+            message_counts={"alpha": 1, "bravo": 0},
+            previous_speaker_id="alpha",
+            exclude_previous_speaker=True,
+            random_sample=lambda values, _count: list(values),
+        )
+
+        self.assertEqual(result, ("alpha",))
+
+    def test_ordered_floor_direct_mention_overrides_previous_speaker_exclusion(self):
+        result = ordered_floor_target(
+            provider_ids=["alpha", "bravo"],
+            actor_id="human",
+            direct_targets=["alpha"],
+            eligible_agent_ids=["bravo"],
+            message_counts={"alpha": 10, "bravo": 0},
+            previous_speaker_id="alpha",
+            exclude_previous_speaker=True,
+            random_sample=lambda _values, _count: self.fail("mention must not sample"),
+        )
+
+        self.assertEqual(result, ("alpha",))
+
     def test_ordered_floor_uses_the_final_mention_as_the_handoff(self):
         result = ordered_floor_target(
             provider_ids=["dm", "luna", "sonnet"],

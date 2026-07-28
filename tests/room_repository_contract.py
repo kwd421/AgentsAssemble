@@ -128,6 +128,7 @@ class RoomRepositoryContractMixin:
         case = self._test_case()
         case.assertEqual(defaults["label"], "Initial")
         case.assertEqual(defaults["conversation_mode"], "ordered")
+        case.assertTrue(defaults["ordered_exclude_previous_speaker"])
         case.assertEqual(updated["label"], "Renamed")
         case.assertEqual(updated["appearance"]["banner_preset"], "midnight")
         case.assertEqual(updated["appearance"]["invite_scope"], "room")

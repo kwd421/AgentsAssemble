@@ -263,8 +263,11 @@ An `ordered` room selects exactly one observer for each committed message. A
 direct provider mention takes the next observation; otherwise the server
 randomly samples two available providers and chooses the one with fewer
 messages among the latest 100 provider messages. The author is excluded. If a
-turn is already active, the chosen observation remains queued until it
-finishes, preserving one room-wide provider turn at a time.
+room's `ordered_exclude_previous_speaker` setting is enabled, the most recent
+provider speaker is also excluded from that general selection whenever another
+provider is available; a direct mention still overrides the setting. If a turn
+is already active, the chosen observation remains queued until it finishes,
+preserving one room-wide provider turn at a time.
 
 A room explicitly set to `ambient` does not use that selector to choose one
 speaker. Each committed room message wakes all connected, idle, unmuted Agent

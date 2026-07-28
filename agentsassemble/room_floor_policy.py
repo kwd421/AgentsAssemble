@@ -79,6 +79,8 @@ def ordered_floor_target(
     direct_targets: Iterable[str],
     eligible_agent_ids: Iterable[str],
     message_counts: Mapping[str, int],
+    previous_speaker_id: str = "",
+    exclude_previous_speaker: bool = False,
     random_sample: RandomSample = random.sample,
 ) -> tuple[str, ...]:
     """Choose one ordered-room speaker without asking every provider to answer."""
@@ -96,6 +98,12 @@ def ordered_floor_target(
     )
     if not eligible:
         return ()
+    if (
+        exclude_previous_speaker
+        and previous_speaker_id in eligible
+        and len(eligible) > 1
+    ):
+        eligible.remove(previous_speaker_id)
     sampled = random_sample(eligible, min(2, len(eligible)))
     selected = min(sampled, key=lambda agent_id: max(0, int(message_counts.get(agent_id, 0))))
     return (selected,)

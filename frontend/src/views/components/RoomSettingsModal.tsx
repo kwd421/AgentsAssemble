@@ -44,6 +44,7 @@ export default function RoomSettingsModal({
   settingsStatus,
   settingsError,
   conversationMode,
+  orderedExcludePreviousSpeaker,
   maxRelayTurns,
   canInvite,
   onClose,
@@ -52,6 +53,7 @@ export default function RoomSettingsModal({
   onAppearanceChange,
   onChannelSettingChange,
   onConversationModeChange,
+  onOrderedExcludePreviousSpeakerChange,
   onMaxRelayTurnsChange,
   onRetrySettings,
   onDeleteRoom,
@@ -63,6 +65,7 @@ export default function RoomSettingsModal({
   settingsStatus: "loading" | "ready" | "saving" | "stale" | "error";
   settingsError: string;
   conversationMode: ConversationMode | null;
+  orderedExcludePreviousSpeaker: boolean | null;
   maxRelayTurns: number | null;
   canInvite: boolean;
   onClose: () => void;
@@ -71,6 +74,7 @@ export default function RoomSettingsModal({
   onAppearanceChange: (updates: Partial<RoomAppearance>) => void;
   onChannelSettingChange: (channelId: string, updates: Partial<ChannelSettings>) => void;
   onConversationModeChange: (mode: ConversationMode) => void;
+  onOrderedExcludePreviousSpeakerChange: (exclude: boolean) => void;
   onMaxRelayTurnsChange: (turns: number) => void;
   onRetrySettings: () => void;
   onDeleteRoom: (confirmationName: string) => Promise<void>;
@@ -248,6 +252,21 @@ export default function RoomSettingsModal({
                   </label>
                 )}
               </div>
+              {conversationMode === "ordered" && (
+                <label className="mt-3 flex items-start gap-3">
+                  <input
+                    type="checkbox"
+                    checked={orderedExcludePreviousSpeaker === true}
+                    disabled={!routingSettingsReady}
+                    onChange={(event) =>
+                      onOrderedExcludePreviousSpeakerChange(event.target.checked)
+                    }
+                  />
+                  <span className="preserve-words">
+                    직전 발언자 연속 선택 방지 — 다른 선택 가능한 에이전트가 있으면 직전 발언자를 다음 일반 선택 후보에서 제외합니다. @멘션은 이 제한보다 우선합니다.
+                  </span>
+                </label>
+              )}
               {conversationMode === "continuous" && (
                 <label>
                   최대 연쇄 발언 수

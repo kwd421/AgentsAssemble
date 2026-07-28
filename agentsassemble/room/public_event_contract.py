@@ -41,6 +41,7 @@ class PublicRoomGlobalSettings(TypedDict):
     topic: str
     appearance: PublicRoomGlobalAppearance
     conversation_mode: str
+    ordered_exclude_previous_speaker: bool
     max_relay_turns: int
     channels: list[PublicRoomGlobalChannel]
 

@@ -22,6 +22,7 @@ def _settings() -> dict[str, object]:
             "invite_scope": "room",
         },
         "conversation_mode": "ambient",
+        "ordered_exclude_previous_speaker": False,
         "max_relay_turns": 4,
         "channels": [
             {
@@ -42,6 +43,7 @@ class RoomGlobalSettingsTests(unittest.TestCase):
         self.assertEqual(set(settings), ROOM_GLOBAL_SETTING_FIELDS)
         self.assertEqual(settings["label"], "General")
         self.assertEqual(settings["conversation_mode"], "ordered")
+        self.assertTrue(settings["ordered_exclude_previous_speaker"])
         self.assertEqual(settings["max_relay_turns"], 6)
         self.assertEqual(settings["channels"], [])
         self.assertNotIn("notifications", settings["appearance"])
@@ -85,6 +87,19 @@ class RoomGlobalSettingsTests(unittest.TestCase):
                 with self.assertRaisesRegex(ValueError, "max_relay_turns"):
                     validate_room_global_settings({**source, "max_relay_turns": invalid})
 
+        for invalid in (1, 0, "true", None):
+            with self.subTest(exclude_previous=invalid):
+                with self.assertRaisesRegex(
+                    ValueError,
+                    "ordered_exclude_previous_speaker",
+                ):
+                    validate_room_global_settings(
+                        {
+                            **source,
+                            "ordered_exclude_previous_speaker": invalid,
+                        }
+                    )
+
     def test_channels_must_be_canonical_and_ordered(self) -> None:
         source = _settings()
         channel = dict(source["channels"][0])
@@ -109,12 +124,14 @@ class RoomGlobalSettingsTests(unittest.TestCase):
             {
                 "topic": "Updated",
                 "conversation_mode": "ordered",
+                "ordered_exclude_previous_speaker": True,
                 "appearance": {"banner_preset": "ember"},
             },
         )
 
         self.assertEqual(updated["topic"], "Updated")
         self.assertEqual(updated["conversation_mode"], "ordered")
+        self.assertTrue(updated["ordered_exclude_previous_speaker"])
         self.assertEqual(updated["appearance"]["banner_preset"], "ember")
         self.assertEqual(updated["appearance"]["icon_label"], "AA")
         self.assertEqual(updated["channels"], current["channels"])

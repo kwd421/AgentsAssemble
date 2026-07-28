@@ -1383,7 +1383,13 @@ class RoomRealtimeController:
             )
             return
         if conversation_mode == "ordered":
-            self._route_ordered_event(dict(event), providers)
+            self._route_ordered_event(
+                dict(event),
+                providers,
+                exclude_previous_speaker=bool(
+                    settings.get("ordered_exclude_previous_speaker")
+                ),
+            )
             return
         self._record_shadow_attention(dict(event), providers)
         continuous = conversation_mode == "continuous"
@@ -1422,6 +1428,8 @@ class RoomRealtimeController:
         self,
         event: dict[str, object],
         providers: dict[str, NativeCliProviderSpec],
+        *,
+        exclude_previous_speaker: bool,
     ) -> None:
         room_id = clean_lobby_text(event.get("room_id"), limit=128)
         actor = event.get("actor") if isinstance(event.get("actor"), dict) else {}
@@ -1437,12 +1445,18 @@ class RoomRealtimeController:
             eligibility = self.agent_floor_eligibility(room_id, agent_id)
             if eligibility.eligible or eligibility.reason_code == "runtime_busy":
                 eligible_agent_ids.append(agent_id)
+        message_counts, previous_speaker_id = self._recent_agent_speaking_state(
+            room_id,
+            providers,
+        )
         target_ids = ordered_floor_target(
             provider_ids=providers,
             actor_id=actor_id,
             direct_targets=direct_targets,
             eligible_agent_ids=eligible_agent_ids,
-            message_counts=self._recent_agent_message_counts(room_id, providers),
+            message_counts=message_counts,
+            previous_speaker_id=previous_speaker_id,
+            exclude_previous_speaker=exclude_previous_speaker,
         )
         for agent_id in target_ids:
             participant = self.store.participant(room_id, agent_id)
@@ -1457,12 +1471,13 @@ class RoomRealtimeController:
                 observation_kind=ORDERED_FLOOR,
             )
 
-    def _recent_agent_message_counts(
+    def _recent_agent_speaking_state(
         self,
         room_id: str,
         providers: dict[str, NativeCliProviderSpec],
-    ) -> dict[str, int]:
+    ) -> tuple[dict[str, int], str]:
         counts = {agent_id: 0 for agent_id in providers}
+        previous_speaker_id = ""
         for message in self.store.read_events(
             room_id,
             event_types=("message_final",),
@@ -1476,7 +1491,8 @@ class RoomRealtimeController:
             )
             if participant_id in counts:
                 counts[participant_id] += 1
-        return counts
+                previous_speaker_id = participant_id
+        return counts, previous_speaker_id
 
     def _route_ambient_event(
         self,

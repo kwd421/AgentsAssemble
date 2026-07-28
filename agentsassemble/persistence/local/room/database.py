@@ -22,7 +22,7 @@ except ImportError:  # pragma: no cover - AgentsAssemble's supported hosts are U
 
 
 ROOM_DATABASE_FILENAME = "rooms.sqlite3"
-ROOM_SCHEMA_VERSION = 6
+ROOM_SCHEMA_VERSION = 7
 VOTE_BALLOT_INDEX_NAME = "idx_events_vote_ballots"
 VOTE_BALLOT_INDEX_STATEMENT = f"""
 CREATE INDEX IF NOT EXISTS {VOTE_BALLOT_INDEX_NAME}
@@ -416,7 +416,7 @@ def _migrate_schema(connection: sqlite3.Connection) -> None:
         raise RoomDatabaseMigrationError(
             f"Unsupported room database schema version {version}; expected {ROOM_SCHEMA_VERSION}."
         )
-    if version not in {1, 2, 3, 4, 5}:
+    if version not in {1, 2, 3, 4, 5, 6}:
         raise RoomDatabaseMigrationError(f"Unsupported room database schema version {version}.")
     connection.execute("BEGIN IMMEDIATE")
     try:
@@ -473,6 +473,9 @@ def _migrate_schema(connection: sqlite3.Connection) -> None:
         if version == 5:
             _create_vote_ballot_index(connection)
             version = 6
+        if version == 6:
+            _add_ordered_exclude_previous_speaker_setting(connection)
+            version = 7
         connection.execute(
             "INSERT OR REPLACE INTO schema_meta(key, value) VALUES('schema_version', ?)",
             (str(version),),
@@ -490,6 +493,38 @@ def _create_attention_schema(connection: sqlite3.Connection) -> None:
 
 def _create_vote_ballot_index(connection: sqlite3.Connection) -> None:
     connection.execute(VOTE_BALLOT_INDEX_STATEMENT)
+
+
+def _add_ordered_exclude_previous_speaker_setting(
+    connection: sqlite3.Connection,
+) -> None:
+    rows = connection.execute(
+        "SELECT room_id, data_json FROM room_settings"
+    ).fetchall()
+    for row in rows:
+        try:
+            settings = json.loads(str(row["data_json"] or ""))
+        except (json.JSONDecodeError, ValueError) as error:
+            raise RoomDatabaseMigrationError(
+                f"Room settings for {row['room_id']} are unreadable."
+            ) from error
+        if not isinstance(settings, dict):
+            raise RoomDatabaseMigrationError(
+                f"Room settings for {row['room_id']} are invalid."
+            )
+        existing = settings.get("ordered_exclude_previous_speaker")
+        if "ordered_exclude_previous_speaker" in settings:
+            if not isinstance(existing, bool):
+                raise RoomDatabaseMigrationError(
+                    "ordered_exclude_previous_speaker must be a boolean "
+                    f"for room {row['room_id']}."
+                )
+            continue
+        settings["ordered_exclude_previous_speaker"] = True
+        connection.execute(
+            "UPDATE room_settings SET data_json = ? WHERE room_id = ?",
+            (_json_dumps(settings), str(row["room_id"])),
+        )
 
 
 def _create_room_settings_schema(connection: sqlite3.Connection) -> None:

@@ -29,6 +29,7 @@ from agentsassemble.room.setting_values import (
 
 
 DEFAULT_CONVERSATION_MODE = "ordered"
+DEFAULT_ORDERED_EXCLUDE_PREVIOUS_SPEAKER = True
 DEFAULT_MAX_RELAY_TURNS = 6
 MIN_RELAY_TURNS = 2
 MAX_RELAY_TURNS = 20
@@ -40,6 +41,7 @@ ROOM_GLOBAL_SETTING_FIELDS = frozenset(
         "topic",
         "appearance",
         "conversation_mode",
+        "ordered_exclude_previous_speaker",
         "max_relay_turns",
         "channels",
     }
@@ -77,6 +79,7 @@ class RoomGlobalSettingsRecord(TypedDict):
     topic: str
     appearance: RoomGlobalAppearance
     conversation_mode: str
+    ordered_exclude_previous_speaker: bool
     max_relay_turns: int
     channels: list[RoomGlobalChannel]
 
@@ -96,6 +99,7 @@ def default_room_global_settings(*, label: str = "") -> RoomGlobalSettingsRecord
                 "invite_scope": "room",
             },
             "conversation_mode": DEFAULT_CONVERSATION_MODE,
+            "ordered_exclude_previous_speaker": DEFAULT_ORDERED_EXCLUDE_PREVIOUS_SPEAKER,
             "max_relay_turns": DEFAULT_MAX_RELAY_TURNS,
             "channels": [],
         }
@@ -112,6 +116,10 @@ def validate_room_global_settings(value: object) -> RoomGlobalSettingsRecord:
         "topic": _strict_text(source["topic"], field="topic", limit=ROOM_TEXT_LIMIT),
         "appearance": _validate_appearance(source["appearance"]),
         "conversation_mode": _validate_conversation_mode(source["conversation_mode"]),
+        "ordered_exclude_previous_speaker": _validate_boolean(
+            source["ordered_exclude_previous_speaker"],
+            field="ordered_exclude_previous_speaker",
+        ),
         "max_relay_turns": _validate_max_relay_turns(source["max_relay_turns"]),
         "channels": _validate_channels(source["channels"]),
     }
@@ -173,6 +181,12 @@ def _validate_appearance(value: object) -> RoomGlobalAppearance:
 def _validate_conversation_mode(value: object) -> str:
     if not isinstance(value, str) or value not in CONVERSATION_MODES:
         raise ValueError(f"Unsupported conversation_mode: {value!r}.")
+    return value
+
+
+def _validate_boolean(value: object, *, field: str) -> bool:
+    if not isinstance(value, bool):
+        raise ValueError(f"{field} must be a boolean.")
     return value
 
 

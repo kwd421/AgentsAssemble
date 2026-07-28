@@ -1412,6 +1412,9 @@ export default function App() {
           settingsStatus={roomSettings.settingsStateFor(settingsModalRoom).status}
           settingsError={roomSettings.settingsStateFor(settingsModalRoom).error?.message || ""}
           conversationMode={roomSettings.conversationModeFor(settingsModalRoom)}
+          orderedExcludePreviousSpeaker={
+            roomSettings.orderedExcludePreviousSpeakerFor(settingsModalRoom)
+          }
           maxRelayTurns={roomSettings.maxRelayTurnsFor(settingsModalRoom)}
           canInvite={!guestLocked}
           onClose={() => setSettingsModal(null)}
@@ -1436,6 +1439,12 @@ export default function App() {
           }
           onConversationModeChange={(mode) =>
             roomSettings.updateConversationMode(settingsModalRoom, mode)
+          }
+          onOrderedExcludePreviousSpeakerChange={(exclude) =>
+            roomSettings.updateOrderedExcludePreviousSpeaker(
+              settingsModalRoom,
+              exclude
+            )
           }
           onMaxRelayTurnsChange={(turns) =>
             roomSettings.updateMaxRelayTurns(settingsModalRoom, turns)

@@ -54,6 +54,7 @@ function settings(room: RoomDockItem, bannerPreset: "forest" | "ember"): RoomSet
     },
     channelSettings: {},
     conversationMode: "ordered",
+    orderedExcludePreviousSpeaker: true,
     maxRelayTurns: 6,
   };
 }
@@ -87,6 +88,7 @@ function globalSettings(
       inviteScope: "room",
     },
     conversationMode: "ordered",
+    orderedExcludePreviousSpeaker: true,
     maxRelayTurns: 6,
     channels: [],
     ...overrides,
@@ -340,6 +342,7 @@ describe("useRoomSettingsController", () => {
 
     expect(hook.result.current.settingsStateFor(roomA).status).toBe("loading");
     expect(hook.result.current.conversationModeFor(roomA)).toBeNull();
+    expect(hook.result.current.orderedExcludePreviousSpeakerFor(roomA)).toBeNull();
     expect(hook.result.current.maxRelayTurnsFor(roomA)).toBeNull();
   });
 
@@ -363,7 +366,11 @@ describe("useRoomSettingsController", () => {
 
     expect(hook.result.current.settingsStateFor(roomA)).toMatchObject({
       status: "saving",
-      value: { conversationMode: "ambient", maxRelayTurns: 6 },
+      value: {
+        conversationMode: "ambient",
+        orderedExcludePreviousSpeaker: true,
+        maxRelayTurns: 6,
+      },
     });
     expect(saveCanonicalGlobalSettings).toHaveBeenCalledWith({
       conversationMode: "ambient",
@@ -379,6 +386,49 @@ describe("useRoomSettingsController", () => {
 
     await waitFor(() => expect(hook.result.current.settingsStateFor(roomA).status).toBe("ready"));
     expect(hook.result.current.conversationModeFor(roomA)).toBe("ambient");
+  });
+
+  it("saves previous-speaker exclusion through the canonical socket path", async () => {
+    const saveRequest = deferred<RoomGlobalSettings>();
+    saveCanonicalGlobalSettings.mockReturnValue(saveRequest.promise);
+    const hook = renderHook(() =>
+      useRoomSettingsController({
+        activeRoom: roomA,
+        sessionToken: "",
+        deviceToken: "device-test",
+        canonicalGlobalSettings: globalSettings(roomA, "forest"),
+        saveCanonicalGlobalSettings,
+        onRoomMetadataLoaded: vi.fn(),
+        onMembersChanged: vi.fn(),
+      })
+    );
+    await waitFor(() => expect(hook.result.current.settingsStateFor(roomA).status).toBe("ready"));
+
+    act(() =>
+      hook.result.current.updateOrderedExcludePreviousSpeaker(roomA, false)
+    );
+
+    expect(hook.result.current.settingsStateFor(roomA)).toMatchObject({
+      status: "saving",
+      value: { orderedExcludePreviousSpeaker: false },
+    });
+    expect(saveCanonicalGlobalSettings).toHaveBeenCalledWith({
+      orderedExcludePreviousSpeaker: false,
+    });
+
+    await act(async () => {
+      saveRequest.resolve(
+        globalSettings(roomA, "forest", {
+          orderedExcludePreviousSpeaker: false,
+        })
+      );
+      await saveRequest.promise;
+    });
+
+    await waitFor(() => expect(hook.result.current.settingsStateFor(roomA).status).toBe("ready"));
+    expect(
+      hook.result.current.orderedExcludePreviousSpeakerFor(roomA)
+    ).toBe(false);
   });
 
   it("ignores an older save failure after a newer settings save succeeds", async () => {
@@ -413,7 +463,11 @@ describe("useRoomSettingsController", () => {
     });
     expect(hook.result.current.settingsStateFor(roomA)).toMatchObject({
       status: "ready",
-      value: { conversationMode: "ambient", maxRelayTurns: 8 },
+      value: {
+        conversationMode: "ambient",
+        orderedExcludePreviousSpeaker: true,
+        maxRelayTurns: 8,
+      },
     });
 
     await act(async () => {
@@ -427,7 +481,11 @@ describe("useRoomSettingsController", () => {
 
     expect(hook.result.current.settingsStateFor(roomA)).toMatchObject({
       status: "ready",
-      value: { conversationMode: "ambient", maxRelayTurns: 8 },
+      value: {
+        conversationMode: "ambient",
+        orderedExcludePreviousSpeaker: true,
+        maxRelayTurns: 8,
+      },
     });
   });
 

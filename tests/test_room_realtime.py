@@ -601,17 +601,24 @@ class RoomRealtimeControllerTests(unittest.TestCase):
         first = self._command(
             "settings-mode",
             "room.settings.update",
-            {"conversation_mode": "ambient"},
+            {
+                "conversation_mode": "ambient",
+                "ordered_exclude_previous_speaker": False,
+            },
         )
         duplicate = self._command(
             "settings-mode",
             "room.settings.update",
-            {"conversation_mode": "ambient"},
+            {
+                "conversation_mode": "ambient",
+                "ordered_exclude_previous_speaker": False,
+            },
         )
 
         settings = first["result"]["room_settings"]
         event = first["result"]["event"]
         self.assertEqual(settings["conversation_mode"], "ambient")
+        self.assertFalse(settings["ordered_exclude_previous_speaker"])
         self.assertEqual(event["type"], "room_settings_updated")
         self.assertEqual(event["room_settings"], settings)
         self.assertTrue(duplicate["deduplicated"])
@@ -1741,6 +1748,115 @@ class RoomRealtimeControllerTests(unittest.TestCase):
             if message.get("op") == "room.wake"
         )
         self.assertEqual(next_wake["source_event_id"], final["id"])
+
+    def test_ordered_speaking_state_uses_the_most_recent_agent_message(self):
+        providers = {
+            "codex": _spec("codex"),
+            "peer": _spec("peer"),
+        }
+        self.controller.store.append_event(
+            "general",
+            "message_final",
+            actor={
+                "participant_id": "codex",
+                "participant_type": "subscription_ai",
+            },
+            participant_id="codex",
+            participant_type="subscription_ai",
+            content="first",
+        )
+        self.controller.store.append_event(
+            "general",
+            "message_final",
+            actor={
+                "participant_id": "peer",
+                "participant_type": "subscription_ai",
+            },
+            participant_id="peer",
+            participant_type="subscription_ai",
+            content="second",
+        )
+
+        counts, previous_speaker_id = self.controller._recent_agent_speaking_state(
+            "general",
+            providers,
+        )
+
+        self.assertEqual(counts, {"codex": 1, "peer": 1})
+        self.assertEqual(previous_speaker_id, "peer")
+
+    def test_ordered_room_can_exclude_the_previous_speaker_after_a_human_message(self):
+        self.controller.create_provider_session("general", _spec("peer"))
+        self.controller.create_provider_session("general", _spec("third"))
+        identities = {}
+        channels = {}
+        for agent_id in ("codex", "peer", "third"):
+            identities[agent_id], channels[agent_id] = self._connect_bridge(agent_id)
+            channels[agent_id].drain()
+        self.controller.store.update_room_settings(
+            "general",
+            {
+                "conversation_mode": "ordered",
+                "ordered_exclude_previous_speaker": True,
+            },
+        )
+
+        self._command(
+            "ordered-previous-direct",
+            "message.send",
+            {"content": "@codex 먼저 의견을 말해"},
+        )
+        codex_wake = next(
+            message
+            for message in channels["codex"].drain()
+            if message.get("op") == "room.wake"
+        )
+        self._command(
+            "ordered-previous-final",
+            "message.final",
+            {
+                "turn_id": codex_wake["turn_id"],
+                "content": "첫 의견이야.",
+                "observed_through_seq": codex_wake["input_up_to_seq"],
+            },
+            identities["codex"],
+        )
+
+        follow_up_wakes = [
+            (agent_id, message)
+            for agent_id in ("peer", "third")
+            for message in channels[agent_id].drain()
+            if message.get("op") == "room.wake"
+        ]
+        self.assertEqual(len(follow_up_wakes), 1)
+        follow_up_agent_id, follow_up_wake = follow_up_wakes[0]
+        self._command(
+            "ordered-previous-decline",
+            "turn.decline",
+            {
+                "turn_id": follow_up_wake["turn_id"],
+                "reason_code": "nothing_useful_to_add",
+                "observed_through_seq": follow_up_wake["input_up_to_seq"],
+            },
+            identities[follow_up_agent_id],
+        )
+        for channel in channels.values():
+            channel.drain()
+
+        self._command(
+            "ordered-previous-general",
+            "message.send",
+            {"content": "다음 의견을 하나 더 들어보자"},
+        )
+        next_wakes = [
+            agent_id
+            for agent_id, channel in channels.items()
+            for message in channel.drain()
+            if message.get("op") == "room.wake"
+        ]
+
+        self.assertEqual(len(next_wakes), 1)
+        self.assertNotEqual(next_wakes[0], "codex")
 
     def test_ordered_room_direct_mention_gets_the_next_observation(self):
         self.controller.create_provider_session("general", _spec("peer"))

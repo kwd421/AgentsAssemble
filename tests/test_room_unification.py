@@ -242,6 +242,38 @@ class CanonicalRoomEventStoreTests(unittest.TestCase):
             [poll["id"], ballot["id"]],
         )
 
+    def test_version_six_database_adds_ordered_previous_speaker_setting(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            store = RoomStore(root)
+            store.create_room("general", label="General")
+            with closing(open_room_database(store.database_path)) as connection:
+                row = connection.execute(
+                    "SELECT data_json FROM room_settings WHERE room_id = 'general'"
+                ).fetchone()
+                settings = json.loads(str(row["data_json"]))
+                settings.pop("ordered_exclude_previous_speaker")
+                connection.execute(
+                    "UPDATE room_settings SET data_json = ? WHERE room_id = 'general'",
+                    (json.dumps(settings),),
+                )
+                connection.execute(
+                    "UPDATE schema_meta SET value = '6' WHERE key = 'schema_version'"
+                )
+
+            initialize_room_database(store.rooms_root, store.database_path)
+
+            with closing(open_room_database(store.database_path)) as connection:
+                version = int(
+                    connection.execute(
+                        "SELECT value FROM schema_meta WHERE key = 'schema_version'"
+                    ).fetchone()["value"]
+                )
+            settings = store.room_settings("general")
+
+        self.assertEqual(version, ROOM_SCHEMA_VERSION)
+        self.assertTrue(settings["ordered_exclude_previous_speaker"])
+
     def test_missing_room_global_settings_row_is_not_silently_recreated(self):
         with tempfile.TemporaryDirectory() as temp_dir:
             root = Path(temp_dir)
