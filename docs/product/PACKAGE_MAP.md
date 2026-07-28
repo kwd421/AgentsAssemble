@@ -4,7 +4,7 @@ Status: generated architecture inventory
 
 Generator: `python3 scripts/generate_package_map.py`
 
-Source fingerprint: `53d199d8ef330e06`
+Source fingerprint: `461af0f0cc045371`
 
 This file describes current evidence and proposed ownership. It does not by
 itself authorize a module move or a product behavior change.
@@ -726,7 +726,7 @@ itself authorize a module move or a product behavior change.
 | `agentsassemble.room_attention` | `agentsassemble/room_attention.py` | 179 | room | current | `agentsassemble.legacy.meeting.core.events` | 11 | `call:frozenset@16`, `call:frozenset@17`, `call:frozenset@18`, `call:frozenset@19`, `call:frozenset@20`, `+1` | test-import:6 | `tests/room_repository_contract.py`, `tests/test_room_attention.py`, `tests/test_room_attention_reconciliation.py`, `+3` | `room/` | deferred-policy |
 | `agentsassemble.room_attention_coordinator` | `agentsassemble/room_attention_coordinator.py` | 139 | room | current | `agentsassemble.legacy.meeting.core.events`, `agentsassemble.room.repository`, `agentsassemble.room_attention_policy` | 1 | - | test-import:1 | `tests/test_room_attention_policy.py` | `room/` | deferred-policy |
 | `agentsassemble.room_attention_policy` | `agentsassemble/room_attention_policy.py` | 280 | room | current | `agentsassemble.legacy.meeting.core.events`, `agentsassemble.room_attention` | 2 | `call:frozenset@11`, `call:frozenset@13` | test-import:1 | `tests/test_room_attention_policy.py` | `room/` | deferred-policy |
-| `agentsassemble.room_attention_reconciliation` | `agentsassemble/room_attention_reconciliation.py` | 480 | room | current | `agentsassemble.legacy.meeting.core.events`, `agentsassemble.room.repository`, `agentsassemble.room_attention` | 1 | `call:frozenset@10`, `call:frozenset@11` | test-import:1 | `tests/test_room_attention_reconciliation.py` | `room/` | deferred-policy |
+| `agentsassemble.room_attention_reconciliation` | `agentsassemble/room_attention_reconciliation.py` | 493 | room | current | `agentsassemble.legacy.meeting.core.events`, `agentsassemble.room.repository`, `agentsassemble.room_attention` | 1 | `call:frozenset@10`, `call:frozenset@11` | test-import:1 | `tests/test_room_attention_reconciliation.py` | `room/` | deferred-policy |
 | `agentsassemble.room_bridge_process` | `agentsassemble/room_bridge_process.py` | 14 | room | compatibility | `agentsassemble.providers.bridge_process` | 0 | - | test-import:1 | `tests/test_provider_package.py` | `room/` | compatibility-shim |
 | `agentsassemble.room_channels` | `agentsassemble/room_channels.py` | 38 | room | compatibility | `agentsassemble.room.channels` | 0 | - | test-import:1 | `tests/test_room_package.py` | `room/` | compatibility-shim |
 | `agentsassemble.room_command_uow` | `agentsassemble/room_command_uow.py` | 16 | room | compatibility | `agentsassemble.room.command_uow` | 0 | - | test-import:1 | `tests/test_room_package.py` | `room/` | compatibility-shim |

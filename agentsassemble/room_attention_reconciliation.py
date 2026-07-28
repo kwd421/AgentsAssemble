@@ -35,6 +35,7 @@ class _RoomAttentionSnapshot:
     jobs: tuple[dict[str, object], ...]
     leases: tuple[dict[str, object], ...]
     active_lease_ids_by_job: dict[str, str]
+    session_references_complete: bool
     records_checked: int
     truncated: bool
 
@@ -152,6 +153,7 @@ def _load_room_snapshot(
         jobs=jobs,
         leases=leases,
         active_lease_ids_by_job=active_lease_ids_by_job,
+        session_references_complete=len(session_rows) <= limit,
         records_checked=len(sessions) + len(jobs) + len(leases),
         truncated=truncated,
     )
@@ -366,10 +368,16 @@ def _reconcile_active_leases(
         participant = transaction.participant(
             clean_lobby_text(lease.get("participant_id"), limit=128)
         )
-        orphaned = (
-            job_id not in referenced_job_ids
-            or not participant
+        participant_unavailable = (
+            not participant
             or participant.get("status") in _TERMINAL_PARTICIPANT_STATUSES
+        )
+        orphaned = (
+            participant_unavailable
+            or (
+                snapshot.session_references_complete
+                and job_id not in referenced_job_ids
+            )
         )
         if orphaned:
             job = transaction.attention_job(job_id)
@@ -383,8 +391,10 @@ def _reconcile_active_leases(
             )
             if job.get("status") in _ACTIVE_JOB_STATUSES:
                 repairs.append(_repair(room_id, "orphan_job_cancelled", job_id=job_id))
-        elif lease_id not in referenced_lease_ids and attention_lease_is_expired(
-            lease.get("expires_at")
+        elif (
+            snapshot.session_references_complete
+            and lease_id not in referenced_lease_ids
+            and attention_lease_is_expired(lease.get("expires_at"))
         ):
             transaction.resolve_attention_lease(lease_id, status="expired")
             repairs.append(_repair(room_id, "lease_expired", job_id=job_id, lease_id=lease_id))
@@ -406,10 +416,13 @@ def _reconcile_active_jobs(
         participant = transaction.participant(
             clean_lobby_text(job.get("selected_participant_id"), limit=128)
         )
-        if (
-            job_id in referenced_job_ids
-            and participant
+        participant_available = (
+            bool(participant)
             and participant.get("status") not in _TERMINAL_PARTICIPANT_STATUSES
+        )
+        if participant_available and (
+            job_id in referenced_job_ids
+            or not snapshot.session_references_complete
         ):
             continue
         _cancel_job_and_lease(

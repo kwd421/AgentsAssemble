@@ -74,7 +74,7 @@ restart, reconnect, room switching, and refresh.
 
 ### B. Canonical state, lifecycle, and persistence
 
-- [ ] Reconcile attention in a way that cannot cancel valid work merely because
+- [x] Reconcile attention in a way that cannot cancel valid work merely because
       related record families were truncated independently.
 - [ ] Import and execute valid persona probability blocks without `NameError`.
 - [ ] Kick provider-backed participants by stable participant/session identity,
@@ -170,6 +170,7 @@ remaining limitation.
 | `6ed536be` | Antigravity multiline command rejection; bounded HTTP JSON bodies; bounded WebSocket aggregate messages | `python3 -m unittest tests.test_terminal_interactions tests.test_gui_router tests.test_room_websocket tests.test_web_transport_package`; `python3 -m unittest tests.test_gui_server tests.test_gui_server_room_routes tests.test_ws_room_session tests.test_antigravity_resident` (524 tests); `python3 scripts/check_test_quality.py --base HEAD`; `make generated-artifacts-check`; `git diff --check` | full-suite and browser verification remain completion-gate work |
 | `5ee8926f` | Durable test-admission rule in `AGENTS.md` | instruction and diff review; `make generated-artifacts` | static quality-gate bypasses remain separate checklist work |
 | `026f84c3` | Thread-safe single-use WS tickets; client socket cleanup; server realtime-channel cleanup | red verification on five lifecycle regressions; `python3 -m unittest tests.test_ws_room_session tests.test_ws_room_client tests.test_ws_endpoint tests.test_room_websocket tests.test_web_transport_package` (95 tests); `python3 scripts/check_test_quality.py --base HEAD`; `git diff --check` | full-suite and browser verification remain completion-gate work |
+| `59aa3cc2` | HTTPS-or-loopback remote bridge policy in execution and diagnostics; secure examples | red verification for adapter request and diagnostic Bearer probe; 621 focused/integration tests; `python3 scripts/check_test_quality.py --base HEAD`; `make generated-artifacts-check`; `git diff --check` | bundled bridge itself remains loopback HTTP and requires SSH forwarding or an HTTPS terminator for remote use |
 
 ## Resume Rule
 

@@ -186,6 +186,29 @@ class RoomAttentionReconciliationTests(unittest.TestCase):
         self.assertTrue(report.as_dict()["truncated"])
         self.assertEqual(report.truncated_room_ids, ("general",))
 
+    def test_truncated_session_scan_does_not_cancel_valid_work_for_an_unscanned_session(self):
+        self._participant_and_session("first-session")
+        self._participant_and_session("later-session")
+        source, job, lease = self._selected_work("later-session", 2)
+        self.store.update_session_fields(
+            "general",
+            "later-session",
+            pending_event_ids=[source["id"]],
+            pending_attention_job_id=job["job_id"],
+            pending_attention_lease_id=lease["lease_id"],
+            pending_attention_source_event_id=source["id"],
+        )
+
+        report = RoomAttentionReconciler(self.store, max_records_per_room=1).reconcile()
+
+        session = self.store.session("general", "later-session")
+        self.assertEqual(session["pending_attention_job_id"], job["job_id"])
+        self.assertEqual(session["pending_attention_lease_id"], lease["lease_id"])
+        self.assertEqual(self.store.attention_job("general", job["job_id"])["status"], "leased")
+        self.assertEqual(self.store.attention_lease("general", lease["lease_id"])["status"], "active")
+        self.assertTrue(report.as_dict()["truncated"])
+        self.assertEqual(report.repairs, ())
+
 
 if __name__ == "__main__":
     unittest.main()
