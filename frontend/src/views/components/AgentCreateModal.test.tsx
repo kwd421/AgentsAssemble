@@ -1,4 +1,4 @@
-import { cleanup, render, screen } from "@testing-library/react";
+import { cleanup, render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
@@ -7,11 +7,13 @@ import AgentCreateModal from "./AgentCreateModal";
 
 const apiMocks = vi.hoisted(() => ({
   chooseLocalWorkspace: vi.fn(),
+  fetchDeepSeekCredentialStatus: vi.fn(),
 }));
 
 vi.mock("../../api", async (importOriginal) => ({
   ...(await importOriginal<typeof import("../../api")>()),
   chooseLocalWorkspace: apiMocks.chooseLocalWorkspace,
+  fetchDeepSeekCredentialStatus: apiMocks.fetchDeepSeekCredentialStatus,
 }));
 
 afterEach(cleanup);
@@ -21,6 +23,11 @@ beforeEach(() => {
   apiMocks.chooseLocalWorkspace.mockResolvedValue({
     selected: true,
     path: "/tmp/agentsassemble-workspace",
+  });
+  apiMocks.fetchDeepSeekCredentialStatus.mockReset();
+  apiMocks.fetchDeepSeekCredentialStatus.mockResolvedValue({
+    configured: false,
+    source: "missing",
   });
 });
 
@@ -435,6 +442,54 @@ describe("AgentCreateModal", () => {
     ).not.toBeNull();
     expect(screen.getByRole("button", { name: "추가" }).hasAttribute("disabled")).toBe(true);
   });
+
+  it("does not retain an unsaved provider secret after the modal closes", async () => {
+    const provider = deepSeekProvider();
+    const view = render(
+      <AgentCreateModal
+        open
+        meetingId="room-a"
+        roomLabel="Room A"
+        catalogRevision="cat-secret"
+        providers={[provider]}
+        onClose={() => undefined}
+        onCreate={vi.fn()}
+      />
+    );
+
+    await userEvent.click(screen.getByRole("listitem", { name: "DeepSeek" }));
+    const secretInput = screen.getByLabelText("API 키") as HTMLInputElement;
+    await userEvent.type(secretInput, "sk-not-saved");
+    expect(secretInput.value).toBe("sk-not-saved");
+
+    view.rerender(
+      <AgentCreateModal
+        open={false}
+        meetingId="room-a"
+        roomLabel="Room A"
+        catalogRevision="cat-secret"
+        providers={[provider]}
+        onClose={() => undefined}
+        onCreate={vi.fn()}
+      />
+    );
+    await waitFor(() =>
+      expect(screen.queryByRole("dialog", { name: "에이전트 추가" })).toBeNull()
+    );
+    view.rerender(
+      <AgentCreateModal
+        open
+        meetingId="room-a"
+        roomLabel="Room A"
+        catalogRevision="cat-secret"
+        providers={[provider]}
+        onClose={() => undefined}
+        onCreate={vi.fn()}
+      />
+    );
+
+    expect((await screen.findByLabelText("API 키") as HTMLInputElement).value).toBe("");
+  });
 });
 
 function codexProvider(): NativeCliProviderAvailability {
@@ -486,6 +541,22 @@ function claudeProvider(): NativeCliProviderAvailability {
         ],
       },
     ],
+  };
+}
+
+function deepSeekProvider(): NativeCliProviderAvailability {
+  return {
+    id: "deepseek",
+    display_name: "DeepSeek",
+    provider_kind: "deepseek_api",
+    runtime_kind: "api",
+    connection_kind: "native_cli_bridge",
+    executable: "",
+    default_model: "deepseek-chat",
+    interactive: true,
+    startable: true,
+    available: true,
+    controls: [],
   };
 }
 

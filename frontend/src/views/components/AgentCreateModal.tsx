@@ -121,7 +121,10 @@ export default function AgentCreateModal({
   }, [displayNameEdited, existingSessionId, open, selectedProvider, settings]);
 
   useEffect(() => {
-    if (!open || selectedProvider?.id !== "deepseek") return;
+    if (!open || selectedProvider?.id !== "deepseek") {
+      setDeepSeekKey("");
+      return;
+    }
     fetchDeepSeekCredentialStatus()
       .then(setCredentialStatus)
       .catch((error) => setStatus(error instanceof Error ? error.message : "키 상태 확인 실패"));
