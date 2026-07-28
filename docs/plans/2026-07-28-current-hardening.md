@@ -119,7 +119,7 @@ restart, reconnect, room switching, and refresh.
       failure; do not label the failed optimistic value as previously confirmed.
 - [x] Scope lobby attachments/drafts and side-chat drafts to their room.
 - [x] Use the current user profile as the friend-DM sender.
-- [ ] Correct the audited stale voice cleanup, profile-save, Agent Session
+- [x] Correct the audited stale voice cleanup, profile-save, Agent Session
       detail, retained secret, unhandled action-error, and no-op control paths
       while staying within the same focused components.
 
@@ -201,6 +201,7 @@ remaining limitation.
 | `280b1078` | Keep the confirmed profile and composer identity until save succeeds; preserve the failed draft and editor for retry | red production-browser verification showed a failed save closing the editor and displaying the rejected optimistic name; corrected UI retained the server-confirmed identity while the durable profile stayed unchanged; 196 frontend tests; 12 production-build canonical Playwright scenarios; `python3 scripts/check_test_quality.py --base HEAD`; `make generated-artifacts-check`; `git diff --check` | quick status/audio changes now wait for server confirmation instead of presenting an unsaved optimistic state |
 | `cd22769d` | Refresh an open Agent Session detail editor when its canonical model, reasoning, speed, variant, or permission changes | red rendered-GUI regression kept the prior model after a same-session canonical update; corrected panel displayed all four changed controls; 197 frontend tests; production build; 12 canonical Playwright scenarios; `python3 scripts/check_test_quality.py --base HEAD`; `make generated-artifacts-check`; `git diff --check` | the browser fixture exposes only its fake provider, so the cross-provider runtime-profile update was verified at the rendered component boundary rather than by launching or configuring a real provider |
 | `d090346b` | Clear an unsaved DeepSeek credential whenever the Agent Session creation modal closes or leaves that provider | red rendered-GUI regression reopened the modal with the rejected secret still present; corrected UI reopened with an empty password field; 198 frontend tests; production build; 12 canonical Playwright scenarios; `python3 scripts/check_test_quality.py --base HEAD`; `make generated-artifacts-check`; `git diff --check` | Homebrew Node became unusable during verification; repository tests passed with the bundled Node runtime and all canonical Playwright scenarios passed with Cursor's Node 22 runtime without changing the repository or system |
+| `46532560` | Surface failed DeepSeek credential deletion and session-only moderation without closing the dialog or leaking rejected promises | both rendered-GUI regressions emitted unhandled rejections and left no retry feedback before the fix; corrected dialogs retained confirmed state, showed the failure, and re-enabled the action; 200 frontend tests; production build; 12 canonical Playwright scenarios; `python3 scripts/check_test_quality.py --base HEAD`; `make generated-artifacts-check`; `git diff --check` | secure-store and moderation failure ownership was verified at the rendered component boundary with rejected API callbacks; no real provider was launched |
 
 ## Resume Rule
 

@@ -254,6 +254,7 @@ export default function AgentSessionDetails({
           <input
             type="checkbox"
             checked={activityVisible}
+            disabled={!onActivityVisibilityChange}
             onChange={(event) => onActivityVisibilityChange?.(session, event.currentTarget.checked)}
           />
           <span>{activityVisible ? "켜짐" : "꺼짐"}</span>

@@ -1,4 +1,4 @@
-import { cleanup, render, screen } from "@testing-library/react";
+import { cleanup, render, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { Radio } from "lucide-react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
@@ -192,5 +192,42 @@ describe("RoomSettingsModal conversation mode", () => {
 
     expect(onRetrySettings).toHaveBeenCalledTimes(1);
     expect(onConversationModeChange).not.toHaveBeenCalled();
+  });
+
+  it("offers channel notification controls only for current navigable room channels", async () => {
+    const onChannelSettingChange = vi.fn();
+    render(
+      <RoomSettingsModal
+        room={room}
+        appearance={DEFAULT_ROOM_APPEARANCE}
+        channelSettings={{}}
+        settingsStatus="ready"
+        settingsError=""
+        conversationMode="ordered"
+        orderedExcludePreviousSpeaker
+        maxRelayTurns={6}
+        canInvite
+        onClose={() => undefined}
+        onInvite={() => undefined}
+        onRoomChange={() => undefined}
+        onAppearanceChange={async () => undefined}
+        onChannelSettingChange={onChannelSettingChange}
+        onConversationModeChange={() => undefined}
+        onOrderedExcludePreviousSpeakerChange={() => undefined}
+        onMaxRelayTurnsChange={() => undefined}
+        onRetrySettings={() => undefined}
+        onDeleteRoom={async () => undefined}
+      />
+    );
+
+    const section = screen.getByRole("heading", { name: "채널 설정" }).closest("section");
+    if (!section) throw new Error("Channel settings section was not rendered");
+    const channelControls = within(section).getAllByRole("combobox");
+    expect(channelControls).toHaveLength(1);
+
+    await userEvent.selectOptions(channelControls[0], "mentions");
+    expect(onChannelSettingChange).toHaveBeenCalledWith("lobby", {
+      notifications: "mentions",
+    });
   });
 });

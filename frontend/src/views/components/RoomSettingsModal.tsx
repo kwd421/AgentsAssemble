@@ -14,9 +14,6 @@ import type { RoomDockItem } from "../../lib/roomDockModel";
 
 const ROOM_CHANNEL_OPTIONS = [
   { id: "lobby", label: "general" },
-  { id: "live", label: "stage-log" },
-  { id: "board", label: "work-board" },
-  { id: "records", label: "records" },
 ];
 
 const CHANNEL_NOTIFICATION_LABELS: Array<{

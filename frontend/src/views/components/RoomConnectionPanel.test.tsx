@@ -350,6 +350,23 @@ describe("RoomConnectionPanel", () => {
     expect(screen.getByText("공개용 생각 요약과 안전하게 정리된 도구 활동만 표시합니다.")).toBeTruthy();
   });
 
+  it("does not expose an interactive thought-visibility control without an owner callback", () => {
+    render(
+      <RoomConnectionPanel
+        room={room}
+        agents={[agent()]}
+        members={[member()]}
+        agentSessions={[agentSession("idle")]}
+      />
+    );
+
+    openAgentDetails();
+
+    expect(
+      (screen.getByRole("checkbox", { name: /켜짐/ }) as HTMLInputElement).disabled
+    ).toBe(true);
+  });
+
   it("keeps canonical runtime controls locked while the session is running without a duplicate options card", async () => {
     const session = {
       ...agentSession("idle"),
