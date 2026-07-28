@@ -371,19 +371,24 @@ class RoomAdmissionCoordinator:
         display_name = str(workflow.get("display_name") or participant_id)
         connection_kind = str(workflow.get("connection_kind") or NATIVE_REMOTE_ROOM_CLIENT_KIND)
         role = "human" if participant_type == "human" else "agent"
-        self._rooms.upsert_participant(
-            prepared.meeting_id,
-            {
-                "participant_id": participant_id,
-                "display_name": display_name,
-                "participant_type": participant_type,
-                "role": role,
-                "provider_kind": prepared.provider_kind,
-                "connection_kind": connection_kind,
-                "status": "joined",
-                "owner_id": prepared.created_by_user_id,
-            },
-        )
+        participant = {
+            "participant_id": participant_id,
+            "display_name": display_name,
+            "participant_type": participant_type,
+            "role": role,
+            "provider_kind": prepared.provider_kind,
+            "connection_kind": connection_kind,
+            "status": "joined",
+            "owner_id": prepared.created_by_user_id,
+        }
+        with self._rooms.transaction(prepared.meeting_id) as transaction:
+            previous = transaction.participant(participant_id)
+            transaction.upsert_participant(participant)
+            if previous.get("status") != "joined":
+                transaction.append_event(
+                    "participant_joined",
+                    participant_id=participant_id,
+                )
         self._identities.upsert_membership(
             {
                 "meeting_id": prepared.meeting_id,

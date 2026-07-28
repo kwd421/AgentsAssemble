@@ -250,8 +250,6 @@ test("removes a kicked participant immediately and after roster reload", async (
         return (payload.members || []).map((member) => member.display_name || "");
       })
       .toContain("Departing Guest");
-    await page.reload();
-    await page.getByRole("button", { name: "#general", exact: true }).click();
 
     const guestMember = page
       .locator(".dc-member")

@@ -400,6 +400,38 @@ class RoomAdmissionCoordinatorTests(unittest.TestCase):
                 self.assertEqual(len(room_sessions), 1)
                 self.assertEqual(room_sessions[0]["agent_id"], participant_id)
 
+    def test_membership_retry_records_one_canonical_join_event(self) -> None:
+        self.rooms.create_room("room-a", label="Room A")
+        invite = self.invites.create(
+            room_url="http://127.0.0.1:8765",
+            meeting_id="room-a",
+            display_name="Guest",
+            max_uses=2,
+        )
+        arguments = {
+            "invite_token": str(invite["join_code"]),
+            "request_id": "membership-event-retry",
+            "display_name": "Visible Guest",
+            "device_token": "visible-device-token",
+        }
+
+        with self._fail_admission_once("membership_upserted"):
+            with self.assertRaisesRegex(RuntimeError, "membership_upserted failure"):
+                self.coordinator.admit(**arguments)
+
+        result = self.coordinator.admit(**arguments)
+        join_events = [
+            event
+            for event in self.rooms.read_events("room-a")
+            if event.get("type") == "participant_joined"
+        ]
+
+        self.assertEqual(result["status"], "admitted")
+        self.assertEqual(
+            [event.get("participant_id") for event in join_events],
+            [result["agent_id"]],
+        )
+
     def test_failed_atomic_session_replacement_preserves_old_session_until_retry(self) -> None:
         self.rooms.create_room("room-a", label="Room A")
         device_token = "replacement-device"
