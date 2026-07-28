@@ -8,7 +8,6 @@ import {
   fetchPublicInviteStatus,
   generatePublicInviteHostToken,
   loadHostToken,
-  postRoomFriendDm,
   saveHostToken,
   startPublicInviteTunnel,
   stopPublicInviteTunnel,
@@ -27,6 +26,7 @@ import {
 import { localPreviewInviteUrlForRoom, type RoomDockItem } from "../lib/roomDockModel";
 import type { RoomAppearance } from "../lib/roomAppearance";
 import { isActivePresence } from "../lib/presenceStatus";
+import { postCurrentUserFriendDm } from "./currentUserFriendDm";
 
 type InviteModalState = { roomId: string } | null;
 
@@ -518,10 +518,8 @@ export function useRoomInviteController({
       );
       onMembersChanged(room, memberPayload.members || []);
       if (isAiFriend) {
-        await postRoomFriendDm({
+        await postCurrentUserFriendDm({
           friendId,
-          name: "AgentsAssemble",
-          side: "mine",
           message: inviteFriendDmMessage({
             roomLabel: room.label,
             link: target.copyUrl,

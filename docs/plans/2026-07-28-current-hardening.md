@@ -118,7 +118,7 @@ restart, reconnect, room switching, and refresh.
 - [x] Roll back or reload the authoritative value after room-setting save
       failure; do not label the failed optimistic value as previously confirmed.
 - [x] Scope lobby attachments/drafts and side-chat drafts to their room.
-- [ ] Use the current user profile as the friend-DM sender.
+- [x] Use the current user profile as the friend-DM sender.
 - [ ] Correct the audited stale voice cleanup, profile-save, Agent Session
       detail, retained secret, unhandled action-error, and no-op control paths
       while staying within the same focused components.
@@ -195,6 +195,7 @@ remaining limitation.
 | `eb06cb3f` | Expire a stale persisted guest bearer during startup and expose a connection-independent exit from the locked guest surface | red hook and production-browser verification left the stale bearer stored and exposed no expiry exit before the fix; corrected startup removed the bearer, rendered expiry state, and returned to the ordinary root; 187 frontend tests; 8 production-build canonical Playwright scenarios; `make generated-artifacts-check`; `git diff --check` | an expired guest cannot authenticate a final participant-leave command, so expiry exit intentionally clears the local surface without pretending that server-side leave succeeded |
 | `96e7d69d` | Give polling and Records detail requests latest-generation ownership so superseded responses cannot replace current state | three deferred-response regressions failed before the fix: prior fetcher replacement, overlapping poll refresh, and Records A-to-B selection; corrected paths published only the current response; 190 frontend tests; 8 production-build canonical Playwright scenarios; `make generated-artifacts-check`; `git diff --check` | Records is not currently exposed by the lobby-only channel list; that separate no-op navigation path remains in the later audited-control checklist item |
 | `a8be3386` | Restore complete last-confirmed room settings after optimistic canonical save failure, including queued-write rollback ownership | red routing and appearance failures retained unsaved values; a controlled queued-write mutation restored the initial value instead of the latest successful write; corrected paths restored the latest server-confirmed snapshot; 193 frontend tests; 8 production-build canonical Playwright scenarios; `python3 scripts/check_test_quality.py --base HEAD`; `make generated-artifacts-check`; `git diff --check` | the controller has no server revision field for ordering an external writer against a local in-flight write; local serialized writes and current canonical responses are covered |
+| `ad430a9e` | Scope lobby text and attachment drafts plus side-chat and thread drafts by room and context across server switches | red component regressions showed room A text in room B; production-browser verification then exposed side-chat draft loss when the panel unmounted on room switch; corrected ownership preserved A, isolated B, and restored A through the actual UI; 195 frontend tests; 9 production-build canonical Playwright scenarios; `python3 scripts/check_test_quality.py --base HEAD`; `make generated-artifacts-check`; `git diff --check` | unsent drafts intentionally remain in-memory browser state and do not survive a full page reload |
 
 ## Resume Rule
 

@@ -2,10 +2,10 @@ import { FormEvent, useEffect, useMemo, useRef, useState } from "react";
 import { Send, UserCircle } from "lucide-react";
 import {
   fetchRoomFriendDm,
-  postRoomFriendDm,
   type RoomFriend,
   type RoomFriendDmEvent,
 } from "../../api";
+import { postCurrentUserFriendDm } from "../../app/currentUserFriendDm";
 import {
   clearFriendDmDraft,
   friendDmDraftValue,
@@ -121,11 +121,9 @@ export default function FriendDmPanel({
     setPosting(true);
     setStatus(friendIsActive ? "DM 전달 중..." : "세션 재개 중...");
     try {
-      const payload = await postRoomFriendDm({
+      const payload = await postCurrentUserFriendDm({
         friendId: friend.friend_id,
         message,
-        name: "SeiNel",
-        side: "mine",
         resumeIfNeeded: true,
       });
       setEvents(payload.events);

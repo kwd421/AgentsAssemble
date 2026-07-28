@@ -12,6 +12,7 @@ const apiMocks = vi.hoisted(() => ({
   createOperatorPairing: vi.fn(),
   createRoomInvite: vi.fn(),
   fetchPublicInviteStatus: vi.fn(),
+  fetchUserProfile: vi.fn(),
   generatePublicInviteHostToken: vi.fn(),
   loadHostToken: vi.fn(),
   onMembersChanged: vi.fn(),
@@ -68,6 +69,17 @@ describe("useRoomInviteController", () => {
   beforeEach(() => {
     vi.resetAllMocks();
     apiMocks.fetchPublicInviteStatus.mockResolvedValue(publicStatus);
+    apiMocks.fetchUserProfile.mockResolvedValue({
+      displayName: "Current Profile Owner",
+      handle: "current.owner",
+      status: "online",
+      customStatus: "",
+      avatarLabel: "CP",
+      bannerPreset: "default",
+      accentColor: "#5865f2",
+      micMuted: false,
+      deafened: false,
+    });
     apiMocks.loadHostToken.mockReturnValue("host-token");
   });
 

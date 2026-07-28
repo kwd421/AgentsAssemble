@@ -378,6 +378,105 @@ test("keeps unsent lobby and side-chat drafts scoped to their server", async ({ 
   await expect.poll(() => roomWithLabel(page, serverLabel)).toBeNull();
 });
 
+test("uses the current canonical user profile as the friend-DM sender", async ({ page }) => {
+  const friendId = "friend:e2e-profile-dm";
+  const friendName = "E2E Profile DM Friend";
+  const friend = {
+    friend_id: friendId,
+    display_name: friendName,
+    handle: "e2e-profile-dm",
+    participant_type: "local",
+    provider_kind: "local_cli",
+    connection_kind: "agent_session",
+    agent_id: "fake",
+    source_agent_id: "fake",
+    last_meeting_id: "",
+    status: "offline",
+    source: "e2e",
+    created_at: "2026-07-28T00:00:00Z",
+    updated_at: "2026-07-28T00:00:00Z",
+  };
+  let dmEvents: Array<Record<string, unknown>> = [];
+  await page.route("**/api/room-friends/dm*", async (route) => {
+    if (route.request().method() === "POST") {
+      const body = route.request().postDataJSON() as {
+        message?: string;
+        name?: string;
+      };
+      dmEvents = [
+        {
+          id: "e2e-profile-dm-event",
+          friend_id: friendId,
+          kind: "message",
+          name: body.name || "",
+          side: "mine",
+          message: body.message || "",
+          created_at: "2026-07-28T00:00:01Z",
+        },
+      ];
+    }
+    await route.fulfill({
+      status: 200,
+      contentType: "application/json",
+      body: JSON.stringify({
+        friend,
+        event: dmEvents[0],
+        events: dmEvents,
+      }),
+    });
+  });
+  const savedProfile = await page.request.post("/api/user-profile", {
+    data: {
+      display_name: "E2E Profile Owner",
+      handle: "e2e.owner",
+      status: "online",
+      custom_status: "",
+      avatar_label: "EO",
+      banner_preset: "default",
+      accent_color: "#5865f2",
+      mic_muted: false,
+      deafened: false,
+    },
+  });
+  expect(savedProfile.ok()).toBe(true);
+  const savedFriend = await page.request.post("/api/room-friends", {
+    data: friend,
+  });
+  expect(savedFriend.ok()).toBe(true);
+
+  try {
+    await installHostCredential(page);
+    await page.goto("/");
+    await page.getByRole("button", { name: "친구와 DM" }).click();
+    await page.locator(".dc-dm-row").filter({ hasText: friendName }).click();
+    const dmPanel = page.getByRole("region", { name: `${friendName} DM` });
+    await dmPanel.getByLabel(`${friendName} DM 입력`).fill("canonical profile sender");
+    await dmPanel.getByRole("button", { name: "DM 보내기" }).click();
+
+    await expect(
+      dmPanel.getByText("E2E Profile Owner", { exact: true })
+    ).toBeVisible();
+    await expect(
+      dmPanel.getByText("canonical profile sender", { exact: true })
+    ).toBeVisible();
+  } finally {
+    await page.request.delete(`/api/room-friends?friend_id=${encodeURIComponent(friendId)}`);
+    await page.request.post("/api/user-profile", {
+      data: {
+        display_name: "SeiNel",
+        handle: "seinel.",
+        status: "online",
+        custom_status: "AgentsAssemble",
+        avatar_label: "나",
+        banner_preset: "default",
+        accent_color: "#5865f2",
+        mic_muted: true,
+        deafened: false,
+      },
+    });
+  }
+});
+
 test("persists a created server and removes it from every connected browser", async ({
   browser,
   page,
