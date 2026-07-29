@@ -214,6 +214,11 @@ calls without a text fallback. Anthropic Messages and Gemini `generateContent`
 need their own protocol adapters; a text-completion endpoint alone is not a
 room provider.
 
+The Agent Session creation UI groups every catalog entry whose runtime kind is
+`api` behind one top-level API choice. That second-level provider list currently
+contains DeepSeek; adding another verified API adapter extends the inner list
+without adding another top-level provider choice.
+
 DeepSeek credentials are server-owned and read from the OS keyring (or the
 explicit process environment fallback), then sent to the bridge once over
 inherited stdin. They are not written to the bridge config, room state,

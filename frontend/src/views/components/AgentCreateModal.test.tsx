@@ -446,6 +446,37 @@ describe("AgentCreateModal", () => {
     expect(screen.getByRole("button", { name: "추가" }).hasAttribute("disabled")).toBe(true);
   });
 
+  it("routes API providers through the API choice before creating the selected provider", async () => {
+    const onCreate = vi.fn().mockResolvedValue(undefined);
+    render(
+      <AgentCreateModal
+        open
+        meetingId="room-a"
+        roomLabel="Room A"
+        catalogRevision="cat-api"
+        providers={[codexProvider(), deepSeekProvider()]}
+        onClose={() => undefined}
+        onCreate={onCreate}
+      />
+    );
+
+    expect(screen.queryByRole("listitem", { name: "DeepSeek" })).toBeNull();
+    await userEvent.click(screen.getByRole("listitem", { name: "API" }));
+    expect(screen.getByRole("list", { name: "API 프로바이더" })).toBeTruthy();
+    expect(screen.queryByLabelText("API 키")).toBeNull();
+
+    await userEvent.click(screen.getByRole("listitem", { name: "DeepSeek" }));
+    expect(screen.getByLabelText("API 키")).toBeTruthy();
+    await chooseWorkspace();
+    await userEvent.click(primaryActionButton());
+
+    expect(onCreate).toHaveBeenCalledWith(
+      expect.objectContaining({
+        providerId: "deepseek",
+      })
+    );
+  });
+
   it("does not retain an unsaved provider secret after the modal closes", async () => {
     const provider = deepSeekProvider();
     const view = render(
@@ -460,6 +491,7 @@ describe("AgentCreateModal", () => {
       />
     );
 
+    await userEvent.click(screen.getByRole("listitem", { name: "API" }));
     await userEvent.click(screen.getByRole("listitem", { name: "DeepSeek" }));
     const secretInput = screen.getByLabelText("API 키") as HTMLInputElement;
     await userEvent.type(secretInput, "sk-not-saved");
@@ -514,6 +546,7 @@ describe("AgentCreateModal", () => {
       />
     );
 
+    await userEvent.click(screen.getByRole("listitem", { name: "API" }));
     await userEvent.click(screen.getByRole("listitem", { name: "DeepSeek" }));
     const deleteButton = await screen.findByRole("button", { name: "저장 키 삭제" });
     await userEvent.click(deleteButton);

@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import { Folder, Play, Plus, X } from "lucide-react";
+import { Cloud, Folder, Play, Plus, X } from "lucide-react";
 import {
   chooseLocalWorkspace,
   deleteDeepSeekCredential,
@@ -43,6 +43,7 @@ export default function AgentCreateModal({
   onCreate,
   onCreated,
 }: AgentCreateModalProps) {
+  const [apiPickerOpen, setApiPickerOpen] = useState(false);
   const [providerId, setProviderId] = useState("");
   const [existingSessionId, setExistingSessionId] = useState("");
   const [displayName, setDisplayName] = useState("");
@@ -57,6 +58,8 @@ export default function AgentCreateModal({
   const [credentialStatus, setCredentialStatus] = useState<ProviderCredentialStatus | null>(null);
   const [credentialBusy, setCredentialBusy] = useState(false);
   const wasOpen = useRef(false);
+  const directProviders = providers.filter((provider) => provider.runtime_kind !== "api");
+  const apiProviders = providers.filter((provider) => provider.runtime_kind === "api");
   const selectedProvider = providers.find((provider) => provider.id === providerId);
   const selectedProviderMissing = Boolean(providerId && providers.length && !selectedProvider);
   const reusableSessions = existingSessions.filter(
@@ -90,6 +93,7 @@ export default function AgentCreateModal({
     hasProviders: providers.length > 0,
     invalidControl,
     existingSessionId,
+    apiPickerOpen,
   });
 
   useEffect(() => {
@@ -132,12 +136,24 @@ export default function AgentCreateModal({
 
   function applyProvider(provider: NativeCliProviderAvailability) {
     const initialSettings = initializeProviderSettings(provider);
+    setApiPickerOpen(provider.runtime_kind === "api");
     setProviderId(provider.id);
     setExistingSessionId("");
     setDisplayName(defaultAgentDisplayName(provider, initialSettings));
     setDisplayNameEdited(false);
     setSettings(initialSettings);
     setStartNow(provider.startable);
+  }
+
+  function chooseApiCategory() {
+    setApiPickerOpen(true);
+    setProviderId("");
+    setExistingSessionId("");
+    setDisplayName("");
+    setDisplayNameEdited(false);
+    setSettings({});
+    setStartNow(false);
+    setStatus("");
   }
 
   function applyExistingSession(sessionId: string) {
@@ -264,6 +280,30 @@ export default function AgentCreateModal({
     }
   }
 
+  function renderProviderChoice(provider: NativeCliProviderAvailability) {
+    return (
+      <button
+        key={provider.id}
+        type="button"
+        role="listitem"
+        aria-label={provider.display_name}
+        data-active={provider.id === selectedProvider?.id}
+        disabled={!provider.available}
+        onClick={() => {
+          applyProvider(provider);
+          setStatus(provider.discovery_error || "");
+        }}
+      >
+        <ProviderLogo
+          providerId={provider.id}
+          providerKind={provider.provider_kind}
+          size={22}
+        />
+        <span>{provider.display_name}</span>
+      </button>
+    );
+  }
+
   if (!open) return null;
 
   return (
@@ -289,29 +329,30 @@ export default function AgentCreateModal({
           <section className="dc-agent-section">
             <p className="dc-agent-section-title">종류</p>
             <div className="dc-agent-provider-grid" role="list" aria-label="에이전트 종류">
-              {providers.map((provider) => (
+              {directProviders.map(renderProviderChoice)}
+              {apiProviders.length > 0 && (
                 <button
-                  key={provider.id}
                   type="button"
                   role="listitem"
-                  aria-label={provider.display_name}
-                  data-active={provider.id === selectedProvider?.id}
-                  disabled={!provider.available}
-                  onClick={() => {
-                    applyProvider(provider);
-                    setStatus(provider.discovery_error || "");
-                  }}
+                  aria-label="API"
+                  data-active={apiPickerOpen}
+                  onClick={chooseApiCategory}
                 >
-                  <ProviderLogo
-                    providerId={provider.id}
-                    providerKind={provider.provider_kind}
-                    size={22}
-                  />
-                  <span>{provider.display_name}</span>
+                  <Cloud size={22} aria-hidden="true" />
+                  <span>API</span>
                 </button>
-              ))}
+              )}
             </div>
           </section>
+
+          {apiPickerOpen && (
+            <section className="dc-agent-section">
+              <p className="dc-agent-section-title">API 프로바이더</p>
+              <div className="dc-agent-provider-grid" role="list" aria-label="API 프로바이더">
+                {apiProviders.map(renderProviderChoice)}
+              </div>
+            </section>
+          )}
 
           <section className="dc-agent-section">
             <p className="dc-agent-section-title">기본 정보</p>
@@ -519,6 +560,7 @@ function deriveStatusMessage({
   hasProviders,
   invalidControl,
   existingSessionId,
+  apiPickerOpen,
 }: {
   status: string;
   selectedProvider: NativeCliProviderAvailability | undefined;
@@ -526,6 +568,7 @@ function deriveStatusMessage({
   hasProviders: boolean;
   invalidControl: ProviderControl | undefined;
   existingSessionId: string;
+  apiPickerOpen: boolean;
 }): string {
   if (status) return status;
   if (selectedProvider && !selectedProvider.available) {
@@ -541,6 +584,9 @@ function deriveStatusMessage({
     return "선택한 provider가 현재 catalog에 없습니다.";
   }
   if (!selectedProvider && !selectedProviderMissing && hasProviders) {
+    if (apiPickerOpen) {
+      return "사용할 API 프로바이더를 선택하세요.";
+    }
     return "사용할 provider를 선택하세요.";
   }
   if (!existingSessionId && invalidControl) {
