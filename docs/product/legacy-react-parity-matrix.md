@@ -249,9 +249,6 @@ surface rather than silently counted as React parity.
 | `/api/room-invite/sessions` | GET | exact | `-` | no | Host views active remote sessions; current Discord shell does not wrap token sessions. |
 | `/api/room-invite/invites` | GET | exact | `-` | no | Host views pending invites; current Discord shell does not wrap token sessions. |
 | `/api/room-invite/revoke` | POST | exact | `-` | no | Host revokes pending invite tokens; current Discord shell does not wrap token sessions. |
-| `/api/room/events` | GET | exact | `-` | no | Authenticated remote-client SSE stream; current Discord shell reads normal lobby/meeting streams. |
-| `/api/room/lobby` | GET | exact | `fetchRoomLobby()` | yes | React guest room view reads the admitted single-room lobby through the session token. |
-| `/api/room/say` | POST | exact | `postRoomSay()` | yes | React guest composer writes lobby messages using the admitted session identity. |
 | `/api/room-channels` | GET | exact | `fetchRoomChannels()` | yes | React channel sidebar reads a room's custom text/voice channels. |
 | `/api/room-channels` | POST | exact | `createRoomChannel(), renameRoomChannel(), deleteRoomChannel(), reorderRoomChannels()` | yes | Moderation (host token or operator session): create/rename/delete/reorder custom channels from the channel sidebar + create modal. |
 | `/api/room/channel-lobby` | GET | exact | `fetchChannelLobby()` | yes | React reads a custom text channel's own message stream with after-cursor polling. |

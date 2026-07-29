@@ -568,7 +568,6 @@ export default function App() {
   const roomInvite = useRoomInviteController({
     guestLocked,
     sessionToken: admittedSessionToken,
-    availableProviders: canonicalRoom.availableProviders,
     onMembersChanged: roomMembers.replaceMembers,
   });
   const {
@@ -577,7 +576,6 @@ export default function App() {
     secureInviteUrl,
     agentInviteUrl,
     operatorPairingUrl,
-    agentInviteProviderId,
     publicInviteStatus,
     publicUrlDraft: publicInviteUrlDraft,
     hostTokenDraft,
@@ -587,7 +585,6 @@ export default function App() {
     hostTokenRequired: inviteHostTokenRequired,
     open: openInviteModal,
     close: closeInviteModal,
-    setAgentInviteProviderId,
     setPublicUrlDraft: setPublicInviteUrlDraft,
     setHostTokenDraft,
     configurePublicUrl: configureInvitePublicUrl,
@@ -1397,8 +1394,6 @@ export default function App() {
           secureInviteUrl={secureInviteUrl}
           agentInviteUrl={agentInviteUrl}
           operatorPairingUrl={operatorPairingUrl}
-          agentInviteProviderId={agentInviteProviderId}
-          availableProviders={canonicalRoom.availableProviders}
           localPreviewUrl={localPreviewUrl}
           publicUrl={invitePublicUrl}
           publicUrlDraft={publicInviteUrlDraft}
@@ -1420,7 +1415,6 @@ export default function App() {
             )
           }
           onCopy={() => void copyInviteLink(inviteModalRoom)}
-          onAgentInviteProviderChange={setAgentInviteProviderId}
           onGenerateAgentInvite={() => void generateAgentInviteLink(inviteModalRoom)}
           onCopyAgentInvite={() => void copyAgentInviteLink()}
           onGenerateOperatorPairing={() => void generateOperatorPairingLink(inviteModalRoom)}

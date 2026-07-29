@@ -10,11 +10,9 @@ import {
 
 import {
   fetchLobby,
-  fetchRoomLobby,
   mergeLobbyEvents,
   type LobbyEvent,
 } from "../../api";
-import { isUnauthorizedApiError } from "../../lib/apiErrors";
 import type { RoomDockItem } from "../../lib/roomDockModel";
 import type { RoomTypingIndicator } from "../../lib/roomTypingIndicators";
 
@@ -39,24 +37,20 @@ type CanonicalHistoryPage = {
 
 export function useLobbyHistory({
   activeRoom,
-  roomSessionToken,
   typingIndicators,
   bindLobbyStream,
   canonicalEvents,
   canonicalOldestSeq,
   canonicalHasMoreHistory,
   loadCanonicalHistory,
-  onGuestSessionExpired,
 }: {
   activeRoom: RoomDockItem;
-  roomSessionToken: string;
   typingIndicators: RoomTypingIndicator[];
   bindLobbyStream?: (receive: (events: LobbyEvent[]) => void) => () => void;
   canonicalEvents?: LobbyEvent[];
   canonicalOldestSeq: number;
   canonicalHasMoreHistory: boolean;
   loadCanonicalHistory?: (beforeSeq: number) => Promise<CanonicalHistoryPage>;
-  onGuestSessionExpired?: () => void;
 }) {
   const scrollRef = useRef<HTMLDivElement>(null);
   const pinnedToLatestRef = useRef(true);
@@ -174,15 +168,10 @@ export function useLobbyHistory({
         });
       return;
     }
-    const request = roomSessionToken
-      ? fetchRoomLobby(roomSessionToken, {
-          before: oldest.id,
-          limit: HISTORY_PAGE_SIZE,
-        })
-      : fetchLobby(activeRoom.meetingId, {
-          before: oldest.id,
-          limit: HISTORY_PAGE_SIZE,
-        });
+    const request = fetchLobby(activeRoom.meetingId, {
+      before: oldest.id,
+      limit: HISTORY_PAGE_SIZE,
+    });
     request
       .then((page) => {
         const older = Array.isArray(page.events) ? page.events : [];
@@ -208,7 +197,6 @@ export function useLobbyHistory({
     hasMoreHistory,
     loadCanonicalHistory,
     loaded,
-    roomSessionToken,
     usesCanonicalHistory,
     visibleEvents,
   ]);
@@ -293,9 +281,7 @@ export function useLobbyHistory({
     setEvents([]);
     setLoaded(false);
     setHasMoreHistory(true);
-    const lobbyRequest = roomSessionToken
-      ? fetchRoomLobby(roomSessionToken)
-      : fetchLobby(activeRoom.meetingId);
+    const lobbyRequest = fetchLobby(activeRoom.meetingId);
     lobbyRequest
       .then((data) => {
         if (cancelled) return;
@@ -303,11 +289,8 @@ export function useLobbyHistory({
         setEvents((previous) => mergeLobbyEvents(previous, nextEvents));
         setLoaded(true);
       })
-      .catch((error) => {
+      .catch(() => {
         if (cancelled) return;
-        if (isUnauthorizedApiError(error)) {
-          onGuestSessionExpired?.();
-        }
         setLoaded(true);
       });
     return () => {
@@ -317,8 +300,6 @@ export function useLobbyHistory({
     activeRoom.meetingId,
     canonicalEvents,
     canonicalHasMoreHistory,
-    onGuestSessionExpired,
-    roomSessionToken,
     usesCanonicalHistory,
   ]);
 

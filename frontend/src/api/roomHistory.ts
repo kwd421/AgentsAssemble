@@ -1,4 +1,3 @@
-import type { RoomAppearance } from "../lib/roomAppearance";
 import type { VoiceParticipant } from "./room";
 import type { RoomEvent as GeneratedRoomEvent } from "../types/generatedRoomEvent";
 import {
@@ -104,18 +103,6 @@ export function fetchLobby(meetingId = "", options: { before?: string; limit?: n
   );
 }
 
-export function fetchRoomLobby(sessionToken: string, options: { before?: string; limit?: number } = {}) {
-  const limitText = options.limit ? String(options.limit) : undefined;
-  return fetchJsonWithToken<{
-    events: LobbyEvent[];
-    has_more?: boolean;
-    session: { agent_id: string; display_name: string; invite_scope?: RoomAppearance["inviteScope"] };
-  }>(
-    `/api/room/lobby${queryString({ before: options.before, limit: limitText })}`,
-    sessionToken
-  );
-}
-
 export function uploadLobbyAttachment(
   file: File,
   options: LobbyAttachmentUploadOptions | string = {}
@@ -174,39 +161,6 @@ export function postLobbyMessage({
     vote_options: voteOptions,
     vote_choice: voteChoice,
   });
-}
-
-export function postRoomSay({
-  sessionToken,
-  message,
-  attachments = [],
-  kind = "message",
-  voteId = "",
-  voteQuestion = "",
-  voteOptions = [],
-  voteChoice = "",
-}: {
-  sessionToken: string;
-  message: string;
-  attachments?: LobbyAttachmentRef[];
-  kind?: "message" | "vote" | "vote_cast";
-  voteId?: string;
-  voteQuestion?: string;
-  voteOptions?: string[];
-  voteChoice?: string;
-}) {
-  return postJsonWithToken<LobbyPostResponse>("/api/room/say",
-    {
-      message,
-      attachments,
-      kind,
-      vote_id: voteId,
-      vote_question: voteQuestion,
-      vote_options: voteOptions,
-      vote_choice: voteChoice,
-    },
-    sessionToken
-  );
 }
 
 export function fetchChannelLobby(

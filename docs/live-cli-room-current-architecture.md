@@ -25,6 +25,11 @@ There is no provider-specific browser socket and no second `general` event
 schema. Browser clients and provider bridges join the same room protocol with
 different authenticated principals and capabilities.
 
+The Room Connector is the current-conversation adapter described in
+`docs/product/ROOM_CONNECTOR.md`. It exposes the canonical room through five
+MCP tools and does not own a provider process. A managed Agent Bridge remains
+an explicit, separate participant lifecycle.
+
 ## Product Contract
 
 1. A real provider CLI starts only after an explicit operator command.

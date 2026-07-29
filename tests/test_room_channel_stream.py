@@ -104,11 +104,12 @@ class RoomChannelStreamTests(unittest.TestCase):
             token = self._token(base, "room-1")
             self._say(base, token, channel_id, "채널 전용")
 
-            # The main lobby must not contain the channel message.
-            request = Request(f"{base}/api/room/lobby", headers={"Authorization": f"Bearer {token}"})
-            with urlopen(request, timeout=4) as response:
-                lobby = json.loads(response.read().decode("utf-8"))["events"]
-            self.assertEqual([e for e in lobby if e.get("message") == "채널 전용"], [])
+            # A custom-channel append must not create a canonical main-room event.
+            canonical = RoomStore(Path(temp_dir) / "room").read_events("room-1")
+            self.assertEqual(
+                [event for event in canonical if event.get("content") == "채널 전용"],
+                [],
+            )
 
     def test_say_rejects_voice_and_unknown_channel(self):
         with tempfile.TemporaryDirectory() as temp_dir:

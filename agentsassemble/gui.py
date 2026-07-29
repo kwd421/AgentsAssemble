@@ -1379,23 +1379,44 @@ def _pre_join_guide_payload(
     base = (public_url or server_url).rstrip("/")
     return {
         "service": "AgentsAssemble room",
-        "how_to_join": {
-            "request": f"POST {base}/api/room-invite/join",
-            "json": {
-                "invite_token": "<the token query parameter from this /join URL>",
-                "display_name": "<your name in the room>",
-                "participant_type": "human | agent",
-                "device_token": "<generate one random string once, store it, reuse on every rejoin — keeps your identity stable>",
-                "owner_display_name": "<for agents: the human you act for>",
+        "current_ai_session": {
+            "prerequisite": (
+                "Register `assemble room connector-mcp` once as an MCP server "
+                "in the app or interactive CLI."
+            ),
+            "action": "Call room_join with this exact /join URL.",
+            "result": (
+                "The current conversation joins directly. No provider process "
+                "or replacement model is launched."
+            ),
+        },
+        "inspect_invite": {
+            "request": f"POST {base}/api/room-invite/admission",
+            "json": {"invite_token": "<the token query parameter from this /join URL>"},
+            "side_effects": "none",
+        },
+        "other_clients": {
+            "human_browser": {
+                "when": "admission status is profile_required or existing_session",
+                "request": f"POST {base}/api/room-invite/join",
+                "json": {
+                    "invite_token": "<invite token>",
+                    "display_name": "<your name in the room>",
+                    "participant_type": "human | agent",
+                    "device_token": "<one stable random string per client installation>",
+                    "owner_display_name": "<for agents: the human you act for>",
+                },
             },
-            "response": "session_token (Bearer) + guide(how_to/etiquette) — everything you need next is in that guide.",
+            "explicit_managed_agent": {
+                "when": "admission status is agent_client_required",
+                "request": f"POST {base}/api/room-invite/agent-join",
+                "note": (
+                    "This starts or attaches the provider named by the invite as a separate "
+                    "Agent Session. It does not move the AI session reading this guide into the room."
+                ),
+            },
         },
-        "after_join": {
-            "read_room": f"GET {base}/api/room/lobby (Authorization: Bearer <session_token>; snapshot — poll this)",
-            "post_message": f"POST {base}/api/room/say {{\"message\": \"...\"}}",
-            "leave": f"POST {base}/api/room-invite/leave",
-            "warning": f"{base}/api/room/events is a server-sent-events stream, not JSON — it will hang plain HTTP clients.",
-        },
+        "leave": f"POST {base}/api/room-invite/leave (Authorization: Bearer <session_token>)",
         "api_catalog": f"GET {base}/api",
     }
 
@@ -1416,17 +1437,20 @@ def _api_catalog_payload(
         },
         "public_endpoints": {
             "pre_join_guide": f"GET {base}/join?format=json (or Accept: application/json)",
+            "inspect_invite": f"POST {base}/api/room-invite/admission",
             "join": f"POST {base}/api/room-invite/join",
-            "read_room": f"GET {base}/api/room/lobby?after=<event_id>",
-            "events_sse": f"GET {base}/api/room/events (SSE stream)",
-            "say": f"POST {base}/api/room/say",
+            "agent_join": f"POST {base}/api/room-invite/agent-join",
+            "current_session_mcp": "assemble room connector-mcp",
+            "websocket_ticket": f"POST {base}/api/ws-ticket",
+            "websocket": f"{base}/ws?ticket=<single-use-ticket>",
             "leave": f"POST {base}/api/room-invite/leave",
             "companion_invite": f"POST {base}/api/room-invite/companion",
             "flow_status": f"GET {base}/api/live-agent-flow",
         },
         "notes": [
             "Send a stable device_token on join to keep one identity across rejoins.",
-            "read_room supports ?after=<event_id> for incremental polling.",
+            "Models use Room Connector tools; the connector privately owns canonical WebSocket details.",
+            "An agent-join launches or attaches a separate provider Agent Session; it is not the caller itself.",
         ],
     }
 

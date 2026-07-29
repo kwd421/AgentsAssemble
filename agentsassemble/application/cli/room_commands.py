@@ -175,6 +175,14 @@ def run_room_command(args: argparse.Namespace, *, runtime: RoomCliRuntime) -> in
             permission_mode=str(args.permission_mode or "meeting_read_only"),
         )
 
+    if args.room_command == "connector-mcp":
+        from agentsassemble.providers.room_connector_mcp import (
+            serve_room_connector_mcp,
+        )
+
+        serve_room_connector_mcp()
+        return 0
+
     if args.room_command == "smoke":
         live_cli_providers = [
             runtime.clean_text(provider, limit=128)

@@ -15,6 +15,7 @@ from agentsassemble.application.public_invite_runtime import PublicInviteRuntime
 from agentsassemble.application.public_tunnel import PublicTunnelManager
 from agentsassemble.admission.invite import get_public_url, reset_state, set_runtime_host_token, set_runtime_public_url
 from agentsassemble.room_store import RoomStore
+from agentsassemble.web.room_client import WsRoomClient, connect_room_ws_with_ticket
 
 
 def _json_request(url: str, payload: dict[str, object], headers: dict[str, str] | None = None) -> Request:
@@ -43,6 +44,39 @@ class PublicInviteHttpTests(unittest.TestCase):
         thread = threading.Thread(target=server.serve_forever, daemon=True)
         thread.start()
         return server
+
+    def _ws_ticket(
+        self,
+        base: str,
+        session_token: str,
+        headers: dict[str, str] | None = None,
+    ) -> tuple[str, dict[str, str]]:
+        with urlopen(
+            _json_request(
+                f"{base}/api/ws-ticket",
+                {},
+                {
+                    **(headers or {}),
+                    "Authorization": f"Bearer {session_token}",
+                },
+            ),
+            timeout=4,
+        ) as response:
+            return (
+                str(json.loads(response.read().decode("utf-8"))["ticket"]),
+                dict(response.headers.items()),
+            )
+
+    def _room_command_result(
+        self,
+        client: WsRoomClient,
+        request_id: str,
+    ) -> dict[str, object]:
+        for _ in range(20):
+            for message in client.receive():
+                if str(message.get("request_id") or "") == request_id:
+                    return message
+        raise AssertionError(f"room command {request_id} was not acknowledged")
 
     def test_external_invite_requires_public_url_and_never_returns_local_join_url(self):
         with tempfile.TemporaryDirectory() as temp_dir:
@@ -480,30 +514,17 @@ class PublicInviteHttpTests(unittest.TestCase):
                     self.assertEqual(session_payload["room_label"], "Friend room")
                     self.assertIn("room_created_at", session_payload)
 
-                    with urlopen(
-                        Request(
-                            f"{base}/api/room/lobby",
-                            headers={
-                                **public_headers,
-                                "Authorization": f"Bearer {session_payload['session_token']}",
-                            },
-                        ),
-                            timeout=4,
-                        ) as response:
-                            lobby_payload = json.loads(response.read().decode("utf-8"))
-                    self.assertIn("events", lobby_payload)
-
-                    with self.assertRaises(HTTPError) as unauthenticated_room_say:
+                    with self.assertRaises(HTTPError) as unauthenticated_ticket:
                         urlopen(
                             _json_request(
-                                f"{base}/api/room/say",
-                                {"message": "no session"},
+                                f"{base}/api/ws-ticket",
+                                {},
                                 public_headers,
                             ),
                             timeout=4,
                         )
-                    self.addCleanup(unauthenticated_room_say.exception.close)
-                    self.assertEqual(unauthenticated_room_say.exception.code, 401)
+                    self.addCleanup(unauthenticated_ticket.exception.close)
+                    self.assertEqual(unauthenticated_ticket.exception.code, 401)
 
                     with self.assertRaises(HTTPError) as blocked_lobby_post:
                         urlopen(
@@ -530,22 +551,29 @@ class PublicInviteHttpTests(unittest.TestCase):
                         self.addCleanup(blocked_private_post.exception.close)
                         self.assertEqual(blocked_private_post.exception.code, 403)
 
-                    with urlopen(
-                        _json_request(
-                            f"{base}/api/room/say",
-                            {"message": "hello from guest"},
-                            {
-                                **public_headers,
-                                "Authorization": f"Bearer {session_payload['session_token']}",
-                            },
-                        ),
-                        timeout=4,
-                    ) as response:
-                        say_payload = json.loads(response.read().decode("utf-8"))
-                    self.assertEqual(say_payload["event"]["message"], "hello from guest")
-                    self.assertEqual(say_payload["event"]["name"], "Friend")
-                    self.assertEqual(say_payload["event"]["side"], "other")
-                    self.assertEqual(say_payload["event"]["flow_meeting_id"], "friend-room")
+                    ticket, _headers = self._ws_ticket(
+                        base,
+                        str(session_payload["session_token"]),
+                        public_headers,
+                    )
+                    room_client = connect_room_ws_with_ticket(
+                        base,
+                        ticket,
+                        ["room_events"],
+                    )
+                    try:
+                        request_id = room_client.command(
+                            "message.send",
+                            {"content": "hello from guest"},
+                            request_id="public-message-1",
+                        )
+                        say_payload = self._room_command_result(room_client, request_id)
+                    finally:
+                        room_client.close()
+                    event = dict(say_payload["result"]["event"])
+                    self.assertEqual(event["content"], "hello from guest")
+                    self.assertEqual(event["actor_id"], session_payload["agent_id"])
+                    self.assertEqual(event["room_id"], "friend-room")
                     self.assertNotIn(session_payload["session_token"], json.dumps(say_payload))
 
                     with urlopen(
@@ -578,20 +606,27 @@ class PublicInviteHttpTests(unittest.TestCase):
                     self.assertEqual(read_only_session["status"], "admitted")
                     self.assertEqual(read_only_session["invite_scope"], "read_only")
 
-                    with self.assertRaises(HTTPError) as read_only_room_say:
-                        urlopen(
-                            _json_request(
-                                f"{base}/api/room/say",
-                                {"message": "should not post"},
-                                {
-                                    **public_headers,
-                                    "Authorization": f"Bearer {read_only_session['session_token']}",
-                                },
-                            ),
-                            timeout=4,
+                    read_only_ticket, _headers = self._ws_ticket(
+                        base,
+                        str(read_only_session["session_token"]),
+                        public_headers,
+                    )
+                    read_only_client = connect_room_ws_with_ticket(
+                        base,
+                        read_only_ticket,
+                        ["room_events"],
+                    )
+                    try:
+                        request_id = read_only_client.command(
+                            "message.send",
+                            {"content": "should not post"},
+                            request_id="read-only-message-1",
                         )
-                    self.addCleanup(read_only_room_say.exception.close)
-                    self.assertEqual(read_only_room_say.exception.code, 403)
+                        rejected = self._room_command_result(read_only_client, request_id)
+                    finally:
+                        read_only_client.close()
+                    self.assertEqual(rejected["op"], "nack")
+                    self.assertEqual(rejected["error"]["code"], "permission_denied")
 
                     with self.assertRaises(HTTPError) as read_only_companion:
                         urlopen(
@@ -680,19 +715,13 @@ class PublicInviteHttpTests(unittest.TestCase):
                     self.assertEqual(response.headers.get("Access-Control-Allow-Origin"), "null")
                 self.assertEqual(session_payload["status"], "admitted")
 
-                with urlopen(
-                    Request(
-                        f"{base}/api/room/lobby",
-                        headers={
-                            **null_origin_headers,
-                            "Authorization": f"Bearer {session_payload['session_token']}",
-                        },
-                    ),
-                    timeout=4,
-                ) as response:
-                    lobby_payload = json.loads(response.read().decode("utf-8"))
-                    self.assertEqual(response.headers.get("Access-Control-Allow-Origin"), "null")
-                self.assertIn("events", lobby_payload)
+                ticket, response_headers = self._ws_ticket(
+                    base,
+                    str(session_payload["session_token"]),
+                    null_origin_headers,
+                )
+                self.assertTrue(ticket.startswith("wst_"))
+                self.assertEqual(response_headers.get("Access-Control-Allow-Origin"), "null")
 
                 with self.assertRaises(HTTPError) as blocked_operator_route:
                     urlopen(Request(f"{base}/api/lobby", headers=null_origin_headers), timeout=4)
@@ -760,15 +789,11 @@ class PublicInviteHttpTests(unittest.TestCase):
             restarted = self._start_server(root)
             try:
                 restarted_base = f"http://127.0.0.1:{restarted.server_port}"
-                with urlopen(
-                    Request(
-                        f"{restarted_base}/api/room/lobby",
-                        headers={"Authorization": f"Bearer {session_payload['session_token']}"},
-                    ),
-                    timeout=4,
-                ) as response:
-                    lobby_payload = json.loads(response.read().decode("utf-8"))
-                self.assertIn("events", lobby_payload)
+                ticket, _headers = self._ws_ticket(
+                    restarted_base,
+                    str(session_payload["session_token"]),
+                )
+                self.assertTrue(ticket.startswith("wst_"))
 
                 with self.assertRaises(HTTPError) as reused_invite:
                     urlopen(

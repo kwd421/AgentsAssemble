@@ -16,7 +16,6 @@ import {
   type RoomFriend,
   type RoomMember,
 } from "../api";
-import type { NativeCliProviderAvailability } from "../roomSocketClient";
 import { getOrCreateDeviceToken } from "../lib/deviceIdentity";
 import {
   inviteFriendDmMessage,
@@ -38,7 +37,6 @@ type InviteRemoteClientPacketState = {
 type UseRoomInviteControllerOptions = {
   guestLocked: boolean;
   sessionToken?: string;
-  availableProviders: NativeCliProviderAvailability[];
   onMembersChanged: (room: RoomDockItem, members: RoomMember[]) => void;
 };
 
@@ -75,7 +73,6 @@ function inviteErrorLooksLikeHostToken(error: unknown) {
 export function useRoomInviteController({
   guestLocked,
   sessionToken = "",
-  availableProviders,
   onMembersChanged,
 }: UseRoomInviteControllerOptions) {
   const [modal, setModal] = useState<InviteModalState>(null);
@@ -83,7 +80,6 @@ export function useRoomInviteController({
   const [secureInviteUrl, setSecureInviteUrl] = useState("");
   const [agentInviteUrl, setAgentInviteUrl] = useState("");
   const [operatorPairingUrl, setOperatorPairingUrl] = useState("");
-  const [agentInviteProviderId, setAgentInviteProviderId] = useState("codex");
   const [publicInviteStatus, setPublicInviteStatus] = useState<PublicInviteStatus | null>(null);
   const [publicUrlDraft, setPublicUrlDraft] = useState("");
   const [hostTokenDraft, setHostTokenDraft] = useState("");
@@ -388,22 +384,18 @@ export function useRoomInviteController({
   }
 
   async function generateAgentInvite(room: RoomDockItem) {
-    const provider = availableProviders.find((candidate) => candidate.id === agentInviteProviderId);
-    if (!provider) {
-      setCopyStatus("초대할 provider를 선택하세요");
-      return;
-    }
-    setCopyStatus("Agent Session 초대 링크 생성 중...");
+    setCopyStatus("현재 AI 세션 초대 링크 생성 중...");
     try {
       await requirePublicInviteReady();
       const invite = await createRoomInvite({
         meetingId: room.meetingId,
-        agentId: `${provider.id}-guest`,
-        displayName: provider.display_name,
+        agentId: "external-agent",
+        displayName: "External Agent",
         inviteScope: "room",
-        ttlSeconds: 600,
-        clientType: "agent_bridge",
-        providerKind: provider.provider_kind,
+        ttlSeconds: 3600,
+        clientType: "browser",
+        providerKind: "manual",
+        participantType: "agent",
         maxUses: 1,
         sessionToken,
       });
@@ -413,16 +405,16 @@ export function useRoomInviteController({
       });
       if (!target.copyUrl) throw new Error(target.status);
       setAgentInviteUrl(target.copyUrl);
-      setCopyStatus("Agent Session 1회용 초대 링크 생성됨");
+      setCopyStatus("현재 AI 세션 1회용 초대 링크 생성됨");
     } catch (error) {
-      setCopyStatus(error instanceof Error ? error.message : "Agent Session 초대 생성 실패");
+      setCopyStatus(error instanceof Error ? error.message : "현재 AI 세션 초대 생성 실패");
     }
   }
 
   async function copyAgentInvite() {
     if (!agentInviteUrl) return;
     const copied = await copyText(agentInviteUrl);
-    setCopyStatus(copied ? "Agent Session 초대 링크 복사됨" : "초대 링크 복사 실패");
+    setCopyStatus(copied ? "현재 AI 세션 초대 링크 복사됨" : "초대 링크 복사 실패");
   }
 
   async function generateOperatorPairing(room: RoomDockItem) {
@@ -550,7 +542,6 @@ export function useRoomInviteController({
     secureInviteUrl,
     agentInviteUrl,
     operatorPairingUrl,
-    agentInviteProviderId,
     publicInviteStatus,
     publicUrlDraft,
     hostTokenDraft,
@@ -560,7 +551,6 @@ export function useRoomInviteController({
     hostTokenRequired: Boolean(publicInviteStatus?.host_token_configured && !loadHostToken()),
     open,
     close,
-    setAgentInviteProviderId,
     setPublicUrlDraft,
     setHostTokenDraft,
     createSecureInviteForRoom,

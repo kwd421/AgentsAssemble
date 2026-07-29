@@ -15,6 +15,7 @@ import threading
 import unittest
 from http.server import ThreadingHTTPServer
 from pathlib import Path
+from urllib.error import HTTPError
 from urllib.request import Request, urlopen
 
 from agentsassemble.gui import _make_handler
@@ -190,22 +191,66 @@ class WsEndpointTests(unittest.TestCase):
             finally:
                 self._stop_server(server)
 
-    def test_say_over_ws_appends_and_acks(self):
+    def test_remote_participant_uses_only_canonical_message_command(self):
         with tempfile.TemporaryDirectory() as tmp:
             server = self._start_server(Path(tmp))
             try:
                 host, port = server.server_address
                 base = f"http://{host}:{port}"
                 token = self._session_token(base)
+                legacy_request = Request(
+                    f"{base}/api/room/say",
+                    data=json.dumps({"message": "legacy split brain"}).encode("utf-8"),
+                    headers={
+                        "Authorization": f"Bearer {token}",
+                        "Content-Type": "application/json",
+                    },
+                    method="POST",
+                )
+                with self.assertRaises(HTTPError) as legacy_rejected:
+                    urlopen(legacy_request, timeout=4)
+                self.assertEqual(legacy_rejected.exception.code, 404)
+                legacy_rejected.exception.close()
+
                 ticket = self._ws_ticket(base, token)
                 sock = self._handshake(host, port, ticket)
                 try:
-                    sock.sendall(_client_text_frame(json.dumps({"op": "say", "message": "안녕 WS"})))
-                    msg = _recv_server_text(sock)
-                    self.assertEqual(msg["op"], "ack")
-                    self.assertEqual(msg["event"]["message"], "안녕 WS")
-                    # server-injected identity, not client-supplied
-                    self.assertEqual(msg["event"]["actor_id"], "guest-1")
+                    sock.sendall(
+                        _client_text_frame(
+                            json.dumps(
+                                {
+                                    "op": "subscribe",
+                                    "streams": ["room_events"],
+                                    "resume_from_seq": 0,
+                                }
+                            )
+                        )
+                    )
+                    self.assertEqual(_recv_server_text(sock)["op"], "subscribed")
+                    self.assertEqual(_recv_server_text(sock)["op"], "snapshot")
+
+                    sock.sendall(
+                        _client_text_frame(
+                            json.dumps(
+                                {
+                                    "op": "command",
+                                    "request_id": "remote-message-1",
+                                    "action": "message.send",
+                                    "payload": {"content": "canonical hello"},
+                                }
+                            )
+                        )
+                    )
+                    ack = _recv_server_text(sock)
+                    self.assertEqual(ack["op"], "ack")
+                    self.assertEqual(ack["request_id"], "remote-message-1")
+                    self.assertEqual(ack["result"]["event"]["content"], "canonical hello")
+                    self.assertEqual(ack["result"]["event"]["actor_id"], "guest-1")
+
+                    pushed = _recv_server_text(sock)
+                    self.assertEqual(pushed["op"], "event")
+                    self.assertEqual(pushed["stream"], "room_events")
+                    self.assertEqual(pushed["events"][-1]["content"], "canonical hello")
                 finally:
                     sock.close()
             finally:

@@ -369,6 +369,8 @@ def join_room_with_invite(
             display_name=resolved_display_name,
             reusable_invite=reusable,
             owner_display_name=clean_owner_display_name,
+            client_type=invite_client_type,
+            participant_type=resolved_participant_type,
         ),
     }
 

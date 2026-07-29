@@ -4,7 +4,7 @@ Status: generated architecture report
 
 Generator: `python3 scripts/check_package_architecture.py --write-shim-report`
 
-Source fingerprint: `3b1f465f2703d215`
+Source fingerprint: `05a27c747d3f8a9f`
 
 - Tracked shims: 281
 - Zero code callers: 88
@@ -289,7 +289,7 @@ permission to delete it; its compatibility window and export policy still apply.
 - `room_setting_values.py`; callers: `tests/test_room_package.py`; docs: none
 - `room_settings_service.py`; callers: `tests/test_room_package.py`; docs: none
 - `room_speech.py`; callers: `tests/test_room_package.py`; docs: `docs/server-governed-speech-matrix.md`
-- `room_store.py`; callers: `tests/gui_server_test_support.py`, `tests/test_agent_session_room_store.py`, `tests/test_gui_room_repository_injection.py`, `tests/test_gui_server_room_settings_http.py`, +24; docs: none
+- `room_store.py`; callers: `tests/gui_server_test_support.py`, `tests/test_agent_session_room_store.py`, `tests/test_gui_room_repository_injection.py`, `tests/test_gui_server_room_settings_http.py`, +23; docs: none
 - `room_turn_context.py`; callers: `tests/test_agent_session_room_store.py`, `tests/test_room_package.py`; docs: none
 - `room_turn_coordinator.py`; callers: `tests/test_room_package.py`; docs: none
 - `room_types.py`; callers: `tests/test_room_package.py`; docs: none

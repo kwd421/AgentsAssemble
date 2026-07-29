@@ -122,6 +122,14 @@ def register_room_parsers(subparsers: argparse._SubParsersAction) -> None:
         default="meeting_read_only",
     )
 
+    room_subparsers.add_parser(
+        "connector-mcp",
+        help=(
+            "Serve the current-session Room Connector over stdio MCP. Register "
+            "this command once in a supported app or interactive CLI."
+        ),
+    )
+
     for room_command in ("join", "resume"):
         room_join = room_subparsers.add_parser(
             room_command,

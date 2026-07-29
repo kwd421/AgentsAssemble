@@ -98,6 +98,23 @@ identity, participant, membership, workflow, or session state. The native
 match the provider kind bound to the signed invite; it cannot consume a browser
 invite.
 
+After browser or remote-app admission, room reads and writes use only the
+ticket-authenticated canonical WebSocket: request `/api/ws-ticket`, subscribe
+to `room_events`, and send correlated `message.send` commands. The former
+session-scoped lobby polling, SSE, and HTTP speech endpoints were removed before
+external adoption because they wrote a separate legacy lobby record. An
+`agent_bridge` invite starts or attaches the provider named by the invite as a
+separate Agent Session; it does not transplant the AI application session that
+opened the invite.
+
+A supported Codex/Claude-style app or interactive CLI can instead register
+`assemble room connector-mcp` once. Giving that current conversation a normal
+AI-session `/join` link then makes the same conversation call `room_join`,
+`room_read`, `room_say`, `room_wait_next`, and `room_leave`; it never starts a
+replacement provider. The connector hides canonical transport details and
+waits event-first without repeated model calls. Current decision and capability
+limits: `docs/product/ROOM_CONNECTOR.md`.
+
 The mutating join uses one browser-generated request ID and a durable admission
 workflow. Invite consumption and the workflow's consumed phase commit together;
 identity, bounded session, participant, and membership phases can then resume
@@ -406,7 +423,7 @@ Detailed product policy: `docs/product/OPERATING_MODEL.md`.
 | Codex app-server lifecycle | `providers/codex_app_server.py`; compatibility exports in `codex_app_server_runtime.py` and `agent_sessions.py` |
 | Agent Session lifecycle and provider process ownership | room state orchestration in `room/agent_lifecycle.py` with compatibility export in `room_agent_lifecycle.py`; OS process ownership in `providers/bridge_process.py`, `providers/agent_bridge.py`, `providers/live_cli.py`, and the provider adapter module; compatibility export in `room_bridge_process.py` |
 | Provider turn coordination | pending input, active turn phase, delta/final commit, and recovery in `room/turn_coordinator.py`; compatibility export in `room_turn_coordinator.py` |
-| Invites, browser admission, and operator-origin pairing | invite policy/application service in `admission/invite_service.py` with compatibility exports in `room_invite_application.py`; process-local facade in `room_invite.py`; preflight owner in `admission/preflight.py` with compatibility export in `room_admission.py`; session lifecycle in `admission/session_issuer.py` and `admission/session_service.py`; durable mutation and compensation in `admission/coordinator.py` and `admission/saga.py`, all with root compatibility exports; pairing in `identity/pairing.py` with compatibility exports in `operator_pairing.py`; HTTP in `web/routes/room_invite.py` with root compatibility export; native attendee in `room_attendee.py`; browser flow in `frontend/src/app/useRoomAdmission.ts` |
+| Invites, browser admission, current-session connector, and operator-origin pairing | invite policy/application service in `admission/invite_service.py` with compatibility exports in `room_invite_application.py`; process-local facade in `room_invite.py`; preflight owner in `admission/preflight.py` with compatibility export in `room_admission.py`; session lifecycle in `admission/session_issuer.py` and `admission/session_service.py`; durable mutation and compensation in `admission/coordinator.py` and `admission/saga.py`, all with root compatibility exports; current app/CLI session adapter in `application/room_connector.py` and stdio MCP boundary in `providers/room_connector_mcp.py`; pairing in `identity/pairing.py` with compatibility exports in `operator_pairing.py`; HTTP in `web/routes/room_invite.py` with root compatibility export; managed native attendee in `room_attendee.py`; browser flow in `frontend/src/app/useRoomAdmission.ts` |
 | Invite/session persistence | contracts and fail-closed default in `admission/repository.py`; durable workflow allowlist in `admission/workflow_record.py`; explicit terminal-workflow selection/reporting in `admission/maintenance.py` and CLI boundary in `admission/maintenance_command.py`; local memory/JSON owner in `persistence/local/admission/`; hosted owner in `persistence/postgres/admission/`; root compatibility exports retained; selection in `room_invite_repository_factory.py` |
 | Identity, credential, membership compatibility, preference, and usage persistence | storage-independent contract and normalization in `identity/repository.py` and `identity/preferences.py`; backend selection in `identity/factory.py`; process-scoped compatibility binding and local fallback in `application/room_users.py` with root export in `room_users.py`; local SQLite implementation, cache/binding registry, and one-time JSON import in `persistence/local/identity/`; hosted owner in `persistence/postgres/identity/`; compatibility exports in `identity_store.py`, `identity_room_preferences.py`, `identity_repository_factory.py`, and `postgres_identity_*.py` |
 | Provider credentials | `provider_secrets.py`, provider credential routes |
@@ -416,7 +433,7 @@ Detailed product policy: `docs/product/OPERATING_MODEL.md`.
 | Public invite runtime and stable entrypoint | server-lifetime host-token/public-URL state and validation in `application/public_invite_runtime.py`; repository-relative stable-entry configuration and asynchronous Cloudflare KV announcement in `application/stable_entry.py`; Cloudflare quick-tunnel process lifecycle in `application/public_tunnel.py`; root compatibility exports retained |
 | Durable legacy session-run monitor lifecycle | thread lifecycle and diagnostics in `application/session_run_monitor.py` with root compatibility export; reconcile policy wiring in `gui.py` |
 | Canonical room HTTP routes | `gui_room_*_http.py`; coordinator in `gui_room_http.py` |
-| Legacy lobby POST/SSE compatibility | `legacy/meeting/http/lobby.py`; root HTTP module is a compatibility export; do not attach new canonical behavior here |
+| Local legacy lobby POST/SSE compatibility | `legacy/meeting/http/lobby.py`; root HTTP module is a compatibility export; do not expose it as remote room transport or attach new canonical behavior here |
 | Legacy meeting read/lifecycle/workroom/SSE compatibility | registrars in `legacy/meeting/http/`, query projection in `legacy/meeting/queries.py`, record semantics in `legacy/meeting/records.py`; root HTTP modules are compatibility exports |
 | Legacy resident room/return-packet reads | query facade and visible-event projection in `legacy/live_agent/queries.py`; read-only HTTP registrar in `legacy/live_agent/http/read.py`; both retain root compatibility exports |
 | Legacy resident diagnostic histories | read facade, process/session history, and readiness overlay in `legacy/live_agent/diagnostics.py`; read-only HTTP registrar in `legacy/live_agent/http/read.py`; both retain root compatibility exports |

@@ -106,6 +106,7 @@ export function createRoomInvite({
   ttlSeconds = 604800,
   clientType = "browser",
   providerKind = "manual",
+  participantType = "human",
   maxUses = 0,
   sessionToken = "",
 }: {
@@ -116,6 +117,7 @@ export function createRoomInvite({
   ttlSeconds?: number;
   clientType?: "browser" | "agent_bridge";
   providerKind?: string;
+  participantType?: "human" | "agent";
   maxUses?: number;
   sessionToken?: string;
 }) {
@@ -129,6 +131,7 @@ export function createRoomInvite({
       ttl_seconds: ttlSeconds,
       client_type: clientType,
       provider_kind: providerKind,
+      participant_type: participantType,
       max_uses: maxUses,
     },
     sessionToken

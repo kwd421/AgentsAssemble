@@ -189,10 +189,7 @@ def register_room_routes(
     """Attach the canonical room route domains to the exact-path router."""
     resolved = adapters or _default_room_route_adapters()
 
-    register_room_history_routes(
-        router,
-        speech_rejection_status=resolved.speech_rejection_status,
-    )
+    register_room_history_routes(router)
     register_agent_session_routes(
         router,
         agent_session_control_allowed=resolved.agent_session_control_allowed,

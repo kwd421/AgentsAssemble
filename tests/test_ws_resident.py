@@ -64,17 +64,27 @@ class WsResidentLiveTests(unittest.TestCase):
         return str(join_room_with_invite(str(invite["invite_token"]))["session_token"])
 
     def _post_say(self, base: str, token: str, message: str) -> None:
+        del token
         request = Request(
-            f"{base}/api/room/say",
-            data=json.dumps({"message": message}).encode("utf-8"),
-            headers={"Authorization": f"Bearer {token}", "Content-Type": "application/json"},
+            f"{base}/api/lobby",
+            data=json.dumps(
+                {
+                    "message": message,
+                    "name": "human-1",
+                    "actor_id": "human-1",
+                    "actor_type": "human",
+                    "flow_meeting_id": "room-1",
+                }
+            ).encode("utf-8"),
+            headers={"Content-Type": "application/json"},
             method="POST",
         )
         with urlopen(request, timeout=4):
             pass
 
     def _lobby_messages(self, base: str, token: str) -> list[dict]:
-        request = Request(f"{base}/api/room/lobby", headers={"Authorization": f"Bearer {token}"})
+        del token
+        request = Request(f"{base}/api/lobby?meeting_id=room-1")
         with urlopen(request, timeout=4) as response:
             return json.loads(response.read().decode("utf-8")).get("events", [])
 

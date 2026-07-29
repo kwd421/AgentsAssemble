@@ -6,7 +6,6 @@ import { participantTypeMeta } from "../../lib/participantTypes";
 import { isActivePresence, presenceStatusLabel } from "../../lib/presenceStatus";
 import { inviteFriendButtonLabel, isExternalInviteUrl } from "../../lib/roomInviteCopy";
 import type { RoomAppearance } from "../../lib/roomAppearance";
-import type { NativeCliProviderAvailability } from "../../roomSocketClient";
 
 function participantIdForFriend(friend: RoomFriend): string {
   return friend.source_agent_id || friend.friend_id;
@@ -40,8 +39,6 @@ export default function RoomInviteModal({
   secureInviteUrl,
   agentInviteUrl,
   operatorPairingUrl,
-  agentInviteProviderId,
-  availableProviders,
   localPreviewUrl,
   publicUrl,
   publicUrlDraft,
@@ -58,7 +55,6 @@ export default function RoomInviteModal({
   onClose,
   onGenerateSecureInvite,
   onCopy,
-  onAgentInviteProviderChange,
   onGenerateAgentInvite,
   onCopyAgentInvite,
   onGenerateOperatorPairing,
@@ -77,8 +73,6 @@ export default function RoomInviteModal({
   secureInviteUrl: string;
   agentInviteUrl: string;
   operatorPairingUrl: string;
-  agentInviteProviderId: string;
-  availableProviders: NativeCliProviderAvailability[];
   localPreviewUrl: string;
   publicUrl?: string;
   publicUrlDraft?: string;
@@ -101,7 +95,6 @@ export default function RoomInviteModal({
   onClose: () => void;
   onGenerateSecureInvite: () => void;
   onCopy: () => void;
-  onAgentInviteProviderChange: (providerId: string) => void;
   onGenerateAgentInvite: () => void;
   onCopyAgentInvite: () => void;
   onGenerateOperatorPairing: () => void;
@@ -174,27 +167,15 @@ export default function RoomInviteModal({
           />
         </label>
         <label className="dc-invite-link-label">
-          Agent Session 초대
+          현재 AI 세션 초대
           <span className="text-[12px] font-bold text-text-muted preserve-words">
-            상대 컴퓨터에서 provider CLI를 실행한 뒤 링크를 숨김 입력으로 전달합니다. 링크는 한 번만 사용할 수 있습니다.
+            Room Connector MCP가 등록된 Codex·Claude 앱 또는 대화형 CLI에 링크만 붙여 넣습니다. 현재 대화가 참가하며 별도 provider를 만들지 않습니다.
           </span>
-          <div className="mt-2 grid gap-2 sm:grid-cols-[minmax(132px,0.45fr)_minmax(0,1fr)_112px_112px]">
-            <select
-              className="dc-invite-link-input"
-              value={agentInviteProviderId}
-              onChange={(event) => onAgentInviteProviderChange(event.currentTarget.value)}
-              aria-label="초대할 Agent Session provider"
-            >
-              {availableProviders.map((provider) => (
-                <option key={provider.id} value={provider.id} disabled={!provider.available}>
-                  {provider.display_name}{provider.available ? "" : " (사용 불가)"}
-                </option>
-              ))}
-            </select>
+          <div className="mt-2 grid gap-2 sm:grid-cols-[minmax(0,1fr)_112px_112px]">
             <input
               className="dc-invite-link-input"
               value={agentInviteUrl}
-              placeholder="1회용 Agent Session 초대 링크"
+              placeholder="1회용 현재 AI 세션 초대 링크"
               readOnly
               onFocus={(event) => event.currentTarget.select()}
             />
@@ -206,7 +187,7 @@ export default function RoomInviteModal({
               복사
             </button>
           </div>
-          <code className="mt-2 block text-[12px] text-text-muted">assemble room attend --provider {agentInviteProviderId}</code>
+          <code className="mt-2 block text-[12px] text-text-muted">assemble room connector-mcp</code>
         </label>
 
         <div className="dc-invite-friend-list" role="list" aria-label="초대할 친구">

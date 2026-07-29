@@ -43,7 +43,7 @@ MCP tool-loop 에이전트  ─┤                ├─ lobby.jsonl        (방
 ### 2.1 서버·라우팅
 | 파일 | 역할 |
 |---|---|
-| `gui.py` (8k+줄) | HTTP 서버 본체 + payload 빌더. `serve_gui()` 진입. 레거시 do_GET/do_POST if-체인은 라우트 테이블로 점진 이주 중. SSE: `/api/events/lobby`, `/api/events/side-chat`, `/api/events/roster`, `/api/room/events`, `/api/meetings/<id>/events` |
+| `gui.py` (8k+줄) | HTTP 서버 본체 + payload 빌더. `serve_gui()` 진입. 레거시 do_GET/do_POST if-체인은 라우트 테이블로 점진 이주 중. SSE: `/api/events/lobby`, `/api/events/side-chat`, `/api/events/roster`, `/api/meetings/<id>/events` |
 | `web/router.py` | **R2 라우트 테이블 + RequestContext**. `@router.get/post` 등록, 디스패처. RequestContext가 신원 판정 단일 창구: `require_host`(호스트 토큰), `require_session`(게스트 세션), `require_moderator`(호스트 또는 운영자 세션), body 파싱. `gui_router.py`는 임시 호환 export |
 | `gui_room_http.py` | 방 도메인 라우트 모듈(초대/게스트 세션/로스터/모더레이션/`/api/host/claim`/roster SSE). 신규 엔드포인트는 if-체인이 아니라 이런 도메인 모듈에 등록 |
 | `cli.py` (7.9k줄) | argparse 명령 트리: `gui`, `mcp serve`, `live-agent {register,run,run-group,room,say,lobby,heartbeat,leave,engagement,dm-reply,sessions,session-runs,processes,...}`, `invite`, `demo`, `persona`, `memory-capsule`, `health`, `claude-bridge` 등 |
@@ -80,7 +80,7 @@ MCP tool-loop 에이전트  ─┤                ├─ lobby.jsonl        (방
 |---|---|---|
 | ① **러너 관리(baseline/runtime)** | `live_agent_runner.py` `LiveAgentRunner.run()` → tick 루프 | 서버가 자식 프로세스로 러너를 띄우고, 러너가 room을 폴링→provider CLI exec/resume 호출→lobby POST. engagement_mode·cooldown·chain_depth·flow 공정성 전부 **러너(클라이언트) 측에서 판단** |
 | ② **MCP tool-loop** | `mcp_server.py` (`assemble mcp serve --profile participant`) | provider(예: claude CLI)가 register/wait_next/say 도구로 직접 참여. register 시 커서 빨리감기(입장 전 백로그 미배달) |
-| ③ **원격 클라이언트** | `room_invite.py` + `/api/room/say·lobby` | 외부(브라우저/친구의 AI)가 세션 토큰으로 REST 호출. **서버는 발화 타이밍을 전혀 제어하지 않음** |
+| ③ **원격 클라이언트** | `admission/` + `/api/ws-ticket` + canonical `/ws` | 외부 브라우저/앱이 세션 토큰으로 일회용 티켓을 받고 `room_events` 구독 및 `message.send` 명령을 사용 |
 | 프로세스 감독 | `live_agent_processes.py` `LiveAgentProcessSupervisor` | 러너 그룹 spawn/stop/restart/워치독, 그룹 manifest |
 | 세션 수명 | `live_agent_sessions.py`, `live_agent_session_runs.py` | start/resume/check/readiness, 자동 reconcile |
 | 생성 UI 백엔드 | `live_agent_frontend_create.py` | 프런트 "에이전트 추가" 모달의 옵션/생성/체크 |
@@ -161,8 +161,8 @@ handoff, bridge diagnostic, smoke artifact만 보관한다. 이전 `room.json`,
 **공개(인증 불요)**: `GET /join?format=json`(pre-join 가이드, Accept: application/json 협상) · `GET /api`(카탈로그)
 
 **공개(게스트 세션 토큰)**: `POST /api/room-invite/join`(device_token/participant_type/owner_display_name) ·
-`GET /api/room/lobby?after=<id>`(증분) `?before=<id>&limit=`(히스토리 페이지) · `GET /api/room/events`(SSE) ·
-`POST /api/room/say`(뮤트 차단) · `POST /api/room-invite/leave` · `POST /api/room-invite/companion` · `GET /api/live-agent-flow`
+`POST /api/ws-ticket` 후 canonical `/ws`의 `room_events`, `room.history`, `message.send` ·
+`POST /api/room-invite/leave` · `POST /api/room-invite/companion` · `GET /api/live-agent-flow`
 
 **히스토리 페이지네이션**: `read_lobby_before()` — JSONL 역방향 블록 스캔으로 방 필터 적용하며 페이지 채움 (`/api/lobby?before=` 도 동일). 초대 토큰 claims에 `public_room_url`(터널 주소) 포함.
 
@@ -176,7 +176,7 @@ handoff, bridge diagnostic, smoke artifact만 보관한다. 이전 `room.json`,
 - flow: `POST /api/live-agent-flow/{start,stop}` · 회의: `/api/meetings*` · 턴: `/api/meetings/<id>/live-agent-turns/{request,call,sequence,rounds,round,preset}`
 - 게임: `/api/play/mafia/*` · 친구: `/api/room-friends*` · 기타: `/api/user-profile`, `/api/attachments`, `/api/providers`, `/api/local-resources`, `/api/release-health*`
 
-SSE 스트림: `/api/events/lobby`(전역) · `/api/events/side-chat` · `/api/room/events`(게스트용) · `/api/meetings/<id>/events`(공식 타임라인)
+SSE 스트림: `/api/events/lobby`(로컬 레거시) · `/api/events/side-chat` · `/api/meetings/<id>/events`(공식 타임라인)
 
 ## 5. 프런트엔드 (`frontend/src/`)
 
@@ -212,7 +212,7 @@ flow/Mafia API와 화면은 삭제하지 않더라도 새 Agent Session의 fallb
    → event_reply_candidate(커서/체인/engagement 필터) → provider CLI 호출(수 초)
    → POST /api/live-agents/<id>/lobby (source_event_id, depth+1) → lobby.jsonl
 [MCP 에이전트] wait_next(서버측 롱폴) → say
-[게스트/원격AI] 자체 폴링 GET /api/room/lobby → POST /api/room/say
+[게스트/원격 앱] POST /api/ws-ticket → canonical WS room_events / message.send
 ```
 
 ⚠️ 후보 선택→provider 호출→POST 사이에 락이 없다. 같은 이벤트에 여러 에이전트가

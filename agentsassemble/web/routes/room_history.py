@@ -1,34 +1,15 @@
 """Canonical room history, registry, message, and vote HTTP routes."""
 from __future__ import annotations
 
-from collections.abc import Callable
 from http import HTTPStatus
 
 from agentsassemble.application.agent_sessions import room_status_payload
-from agentsassemble.room.moderation import is_room_member_muted
-from agentsassemble.room.speech import (
-    ActorIdentity,
-    GovernedLobbySayRejected,
-    ensure_lobby_say_allowed,
-    governed_lobby_say,
-)
 from agentsassemble.room.votes import legacy_vote_summary
 from agentsassemble.web.router import RequestContext, Router
 
 
-def register_room_history_routes(
-    router: Router,
-    *,
-    speech_rejection_status: Callable[[str], HTTPStatus],
-) -> None:
+def register_room_history_routes(router: Router) -> None:
     """Register lobby history, room messages, votes, and room registry routes."""
-
-    def _session_summary(session: dict[str, object]) -> dict[str, object]:
-        return {
-            "agent_id": session["agent_id"],
-            "display_name": session["display_name"],
-            "invite_scope": session.get("invite_scope", "room"),
-        }
 
     def _owner_id_for_session(
         ctx: RequestContext,
@@ -76,18 +57,6 @@ def register_room_history_routes(
             }
         )
 
-    @router.get("/api/room/events")
-    def room_events_stream(ctx: RequestContext) -> None:
-        session = ctx.require_session()
-        if session is None:
-            return
-        ctx.send_sse_stream(
-            "lobby",
-            "lobby",
-            meeting_id=str(session.get("meeting_id") or ""),
-            last_event_id=ctx.last_event_id(),
-        )
-
     @router.get("/api/room-events/stream")
     def canonical_room_events_stream(ctx: RequestContext) -> None:
         room_id = ctx.query_value("room_id") or ctx.query_value("meeting_id")
@@ -108,72 +77,6 @@ def register_room_history_routes(
                 repository=ctx.deps.rooms,
             )
         )
-
-    @router.get("/api/room/lobby")
-    def room_lobby(ctx: RequestContext) -> None:
-        session = ctx.require_session()
-        if session is None:
-            return
-        before_event_id = ctx.query_value("before").strip()
-        if before_event_id:
-            page = ctx.deps.read_lobby_before(
-                ctx.deps.output_root,
-                before_event_id=before_event_id,
-                limit=ctx.deps.history_page_limit(ctx.query),
-                meeting_id=str(session.get("meeting_id") or ""),
-            )
-            page["session"] = _session_summary(session)
-            ctx.send_json(page)
-            return
-        room_events = ctx.deps.read_lobby(
-            ctx.deps.output_root,
-            meeting_id=str(session.get("meeting_id") or ""),
-        )
-        after_event_id = ctx.query_value("after").strip()
-        if after_event_id:
-            for index, event in enumerate(room_events):
-                if str(event.get("id") or "") == after_event_id:
-                    room_events = room_events[index + 1 :]
-                    break
-        ctx.send_json({"events": room_events, "session": _session_summary(session)})
-
-    @router.post("/api/room/say")
-    def room_say(ctx: RequestContext) -> None:
-        session = ctx.require_posting_session()
-        if session is None:
-            return
-        identity = ActorIdentity.from_mapping(session)
-        try:
-            ensure_lobby_say_allowed(
-                ctx.deps.output_root,
-                identity,
-                is_muted=is_room_member_muted,
-            )
-        except GovernedLobbySayRejected as rejected:
-            message = (
-                "read-only invite session cannot post"
-                if rejected.category == "read_only"
-                else "muted by room host"
-            )
-            ctx.send_error(HTTPStatus.FORBIDDEN, message)
-            return
-        payload = ctx.read_json_body()
-        if payload is None:
-            return
-        try:
-            event = governed_lobby_say(
-                ctx.deps.output_root,
-                identity=identity,
-                payload=payload,
-                append_lobby_event=ctx.deps.append_lobby_event,
-                public_lobby_allows_room_scope=ctx.deps.public_lobby_allows_room_scope,
-                is_muted=is_room_member_muted,
-                policy_already_checked=True,
-            )
-        except GovernedLobbySayRejected as rejected:
-            ctx.send_error(speech_rejection_status(rejected.category), str(rejected))
-            return
-        ctx.send_json({"event": event})
 
     def _vote_summary_response(
         ctx: RequestContext,

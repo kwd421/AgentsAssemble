@@ -92,14 +92,12 @@ export default function LobbyView({
     visibleEvents,
   } = useLobbyHistory({
     activeRoom,
-    roomSessionToken,
     typingIndicators,
     bindLobbyStream,
     canonicalEvents,
     canonicalOldestSeq,
     canonicalHasMoreHistory,
     loadCanonicalHistory,
-    onGuestSessionExpired,
   });
 
   const mentionables = useMemo(

@@ -14,7 +14,6 @@ import LobbyComposer from "./LobbyComposer";
 
 const apiMocks = vi.hoisted(() => ({
   postLobbyMessage: vi.fn(),
-  postRoomSay: vi.fn(),
   uploadLobbyAttachment: vi.fn(),
 }));
 
@@ -23,7 +22,6 @@ vi.mock("../../api", async (importOriginal) => {
   return {
     ...actual,
     postLobbyMessage: apiMocks.postLobbyMessage,
-    postRoomSay: apiMocks.postRoomSay,
     uploadLobbyAttachment: apiMocks.uploadLobbyAttachment,
   };
 });
@@ -33,7 +31,6 @@ describe("LobbyComposer", () => {
 
   beforeEach(() => {
     apiMocks.postLobbyMessage.mockReset();
-    apiMocks.postRoomSay.mockReset();
     apiMocks.uploadLobbyAttachment.mockReset();
   });
 
@@ -56,7 +53,6 @@ describe("LobbyComposer", () => {
     ).toBeTruthy();
     await waitFor(() => expect(onPosted).not.toHaveBeenCalled());
     expect(apiMocks.postLobbyMessage).not.toHaveBeenCalled();
-    expect(apiMocks.postRoomSay).not.toHaveBeenCalled();
   });
 
   it("keeps the composer focused after an Enter submission finishes", async () => {

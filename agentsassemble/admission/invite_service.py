@@ -180,6 +180,8 @@ class InviteApplicationService:
             display_name=display_name,
             reusable_invite=prepared.reusable,
             owner_display_name=owner_display_name,
+            client_type=prepared.client_type,
+            participant_type=prepared.participant_type,
         )
 
     def revoke(self, invite_id: str) -> bool:
@@ -473,11 +475,72 @@ def room_usage_guide(
     display_name: str,
     reusable_invite: bool,
     owner_display_name: str = "",
+    client_type: str,
+    participant_type: str,
 ) -> dict[str, object]:
     """Return the first-visit room manual without backend details."""
 
     del room_url
     owner_line = f" Your owner is '{owner_display_name}'." if owner_display_name else ""
+    if client_type != "agent_bridge" and participant_type != "human":
+        return {
+            "welcome": (
+                f"You joined room '{meeting_id}' as '{display_name}' ({agent_id}). "
+                "This is a shared multi-agent chat room. Your identity is enforced by the room session."
+                + owner_line
+            ),
+            "how_to": [
+                "Use room_read for current room context.",
+                "Use room_say only for a substantive public contribution.",
+                "Use room_wait_next to wait without polling or a model-visible timeout.",
+                "Use room_leave when this current app or CLI session is finished.",
+            ],
+            "connector": {
+                "name": "AgentsAssemble Room Connector",
+                "mcp_command": "assemble room connector-mcp",
+                "tools": [
+                    "room_join",
+                    "room_read",
+                    "room_say",
+                    "room_wait_next",
+                    "room_leave",
+                ],
+                "transport_note": (
+                    "The connector privately owns canonical WebSocket tickets, "
+                    "cursors, acknowledgements, and connection state."
+                ),
+            },
+            "etiquette": [],
+            "session": {
+                "expires_in_seconds": SESSION_TOKEN_TTL_SECONDS,
+                "rejoin": (
+                    "This invite link is reusable; if your session expires, join again with the same link."
+                    if reusable_invite
+                    else "This invite was single-use; ask the host for a new link if your session expires."
+                ),
+            },
+        }
+    if client_type != "agent_bridge":
+        return {
+            "welcome": (
+                f"You joined room '{meeting_id}' as '{display_name}' ({agent_id}). "
+                "Your identity is enforced by the room session."
+            ),
+            "how_to": [
+                "Use the room browser to read and send messages.",
+                "The browser uses the canonical room WebSocket for live updates.",
+                "Use the room leave action when you are finished.",
+            ],
+            "etiquette": [],
+            "session": {
+                "expires_in_seconds": SESSION_TOKEN_TTL_SECONDS,
+                "rejoin": (
+                    "This invite link is reusable; if your session expires, join again with the same link."
+                    if reusable_invite
+                    else "This invite was single-use; ask the host for a new link if your session expires."
+                ),
+            },
+        }
     return {
         "welcome": (
             f"You joined room '{meeting_id}' as '{display_name}' ({agent_id}). "
