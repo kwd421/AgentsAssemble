@@ -18,7 +18,10 @@ from agentsassemble.providers.opencode import OpenCodeServerProcess
 from agentsassemble.providers.runtime_config import ProviderRuntimeConfig, ProviderRuntimeProfile
 from agentsassemble.providers.runtime_factory import runtime_from_config
 from agentsassemble.providers.room_portal import RoomPortal, room_session_orientation
-from agentsassemble.providers.secrets import PROVIDER_SECRETS
+from agentsassemble.providers.secrets import (
+    PROVIDER_SECRETS,
+    secret_provider_id_for_kind,
+)
 from agentsassemble.providers.agent_bridge import RoomAgentBridge
 from agentsassemble.web.room_client import connect_room_ws, join_agent_room_session
 
@@ -263,9 +266,16 @@ class AgentAttendee:
             health = self._opencode_server.start()
             config["provider_endpoint"] = health["endpoint"]
             config["provider_server_pid"] = health["pid"]
-        elif spec.normalized_provider_kind() == "deepseek_api":
-            credential = PROVIDER_SECRETS.get("deepseek")
-            if not credential:
+        else:
+            secret_provider_id = secret_provider_id_for_kind(
+                spec.normalized_provider_kind()
+            )
+            credential = (
+                PROVIDER_SECRETS.get(secret_provider_id)
+                if secret_provider_id
+                else ""
+            )
+            if secret_provider_id and not credential:
                 raise RuntimeError("credential_missing")
         runtime_kwargs: dict[str, object] = {"credential": credential}
         if environment is not None:

@@ -661,6 +661,16 @@ def _deepseek_command(
     return ("deepseek-api",)
 
 
+def _cerebras_command(
+    _model: str,
+    _effort: str,
+    _service_tier: str,
+    _variant: str,
+    _permission_mode: str,
+) -> tuple[str, ...]:
+    return ("cerebras-api",)
+
+
 NATIVE_CLI_PROVIDER_CATALOG: tuple[NativeCliProviderDefinition, ...] = (
     NativeCliProviderDefinition(
         provider_id="codex",
@@ -758,6 +768,20 @@ STRUCTURED_PROVIDER_CATALOG: tuple[NativeCliProviderDefinition, ...] = (
         default_model="deepseek-v4-flash",
         default_reasoning_effort="high",
         default_variant="thinking",
+        model_observation_policy="required",
+        runtime_kind="api",
+        transport="https",
+        reported_transports=("https_sse",),
+    ),
+    NativeCliProviderDefinition(
+        provider_id="cerebras",
+        display_name="Cerebras",
+        provider_kind="cerebras_api",
+        executable="",
+        command_builder=_cerebras_command,
+        aliases=("cerebras_api",),
+        default_model="gpt-oss-120b",
+        default_reasoning_effort="low",
         model_observation_policy="required",
         runtime_kind="api",
         transport="https",

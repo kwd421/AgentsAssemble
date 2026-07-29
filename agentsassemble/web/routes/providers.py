@@ -120,11 +120,18 @@ def register_provider_routes(
             return
         ctx.send_json({"selected": bool(path), "path": path})
 
-    @router.get("/api/provider-credentials/deepseek")
-    def provider_credentials_status(ctx: RequestContext) -> None:
+    def _credential_status(ctx: RequestContext, provider_id: str) -> None:
         if not credentials_allowed(ctx):
             return
-        _send_store_status(ctx, lambda: store.status("deepseek"))
+        _send_store_status(ctx, lambda: store.status(provider_id))
+
+    @router.get("/api/provider-credentials/deepseek")
+    def deepseek_credentials_status(ctx: RequestContext) -> None:
+        _credential_status(ctx, "deepseek")
+
+    @router.get("/api/provider-credentials/cerebras")
+    def cerebras_credentials_status(ctx: RequestContext) -> None:
+        _credential_status(ctx, "cerebras")
 
     def _send_provider_usage(ctx: RequestContext, provider_id: str) -> None:
         if not credentials_allowed(ctx):
@@ -160,15 +167,14 @@ def register_provider_routes(
     def deepseek_provider_usage(ctx: RequestContext) -> None:
         _send_provider_usage(ctx, "deepseek")
 
-    @router.post("/api/provider-credentials/deepseek")
-    def provider_credentials_set(ctx: RequestContext) -> None:
+    def _credential_set(ctx: RequestContext, provider_id: str) -> None:
         if not credentials_allowed(ctx):
             return
         payload = ctx.read_json_body()
         if payload is None:
             return
         try:
-            status = store.set("deepseek", str(payload.get("api_key") or ""))
+            status = store.set(provider_id, str(payload.get("api_key") or ""))
         except ValueError as error:
             ctx.send_error(HTTPStatus.BAD_REQUEST, str(error))
             return
@@ -177,8 +183,23 @@ def register_provider_routes(
             return
         ctx.send_json(_safe_status_payload(status))
 
-    @router.delete("/api/provider-credentials/deepseek")
-    def provider_credentials_delete(ctx: RequestContext) -> None:
+    @router.post("/api/provider-credentials/deepseek")
+    def deepseek_credentials_set(ctx: RequestContext) -> None:
+        _credential_set(ctx, "deepseek")
+
+    @router.post("/api/provider-credentials/cerebras")
+    def cerebras_credentials_set(ctx: RequestContext) -> None:
+        _credential_set(ctx, "cerebras")
+
+    def _credential_delete(ctx: RequestContext, provider_id: str) -> None:
         if not credentials_allowed(ctx):
             return
-        _send_store_status(ctx, lambda: store.delete("deepseek"))
+        _send_store_status(ctx, lambda: store.delete(provider_id))
+
+    @router.delete("/api/provider-credentials/deepseek")
+    def deepseek_credentials_delete(ctx: RequestContext) -> None:
+        _credential_delete(ctx, "deepseek")
+
+    @router.delete("/api/provider-credentials/cerebras")
+    def cerebras_credentials_delete(ctx: RequestContext) -> None:
+        _credential_delete(ctx, "cerebras")

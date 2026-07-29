@@ -7,15 +7,17 @@ import AgentCreateModal from "./AgentCreateModal";
 
 const apiMocks = vi.hoisted(() => ({
   chooseLocalWorkspace: vi.fn(),
-  deleteDeepSeekCredential: vi.fn(),
-  fetchDeepSeekCredentialStatus: vi.fn(),
+  deleteProviderCredential: vi.fn(),
+  fetchProviderCredentialStatus: vi.fn(),
+  setProviderCredential: vi.fn(),
 }));
 
 vi.mock("../../api", async (importOriginal) => ({
   ...(await importOriginal<typeof import("../../api")>()),
   chooseLocalWorkspace: apiMocks.chooseLocalWorkspace,
-  deleteDeepSeekCredential: apiMocks.deleteDeepSeekCredential,
-  fetchDeepSeekCredentialStatus: apiMocks.fetchDeepSeekCredentialStatus,
+  deleteProviderCredential: apiMocks.deleteProviderCredential,
+  fetchProviderCredentialStatus: apiMocks.fetchProviderCredentialStatus,
+  setProviderCredential: apiMocks.setProviderCredential,
 }));
 
 afterEach(cleanup);
@@ -26,12 +28,17 @@ beforeEach(() => {
     selected: true,
     path: "/tmp/agentsassemble-workspace",
   });
-  apiMocks.fetchDeepSeekCredentialStatus.mockReset();
-  apiMocks.fetchDeepSeekCredentialStatus.mockResolvedValue({
+  apiMocks.fetchProviderCredentialStatus.mockReset();
+  apiMocks.fetchProviderCredentialStatus.mockResolvedValue({
     configured: false,
     source: "missing",
   });
-  apiMocks.deleteDeepSeekCredential.mockReset();
+  apiMocks.deleteProviderCredential.mockReset();
+  apiMocks.setProviderCredential.mockReset();
+  apiMocks.setProviderCredential.mockResolvedValue({
+    configured: true,
+    source: "keyring",
+  });
 });
 
 function primaryActionButton(): HTMLButtonElement {
@@ -526,12 +533,42 @@ describe("AgentCreateModal", () => {
     expect((await screen.findByLabelText("API 키") as HTMLInputElement).value).toBe("");
   });
 
+  it("stores a Cerebras key for the API provider the operator selected", async () => {
+    render(
+      <AgentCreateModal
+        open
+        meetingId="room-a"
+        roomLabel="Room A"
+        catalogRevision="cat-cerebras"
+        providers={[deepSeekProvider(), cerebrasProvider()]}
+        onClose={() => undefined}
+        onCreate={vi.fn()}
+      />
+    );
+
+    await userEvent.click(screen.getByRole("listitem", { name: "API" }));
+    await userEvent.click(
+      screen.getByRole("listitem", { name: "Cerebras" })
+    );
+    await userEvent.type(screen.getByLabelText("API 키"), "csk-private");
+    await userEvent.click(screen.getByRole("button", { name: "보안 저장" }));
+
+    await waitFor(() =>
+      expect(apiMocks.setProviderCredential).toHaveBeenCalledWith(
+        "cerebras",
+        "csk-private"
+      )
+    );
+    expect((screen.getByLabelText("API 키") as HTMLInputElement).value).toBe("");
+    expect(screen.getByText(/키 설정됨/)).toBeTruthy();
+  });
+
   it("keeps credential deletion retryable when the secure store rejects it", async () => {
-    apiMocks.fetchDeepSeekCredentialStatus.mockResolvedValue({
+    apiMocks.fetchProviderCredentialStatus.mockResolvedValue({
       configured: true,
       source: "keyring",
     });
-    apiMocks.deleteDeepSeekCredential.mockRejectedValue(
+    apiMocks.deleteProviderCredential.mockRejectedValue(
       new Error("secure store unavailable")
     );
     render(
@@ -625,6 +662,16 @@ function deepSeekProvider(): NativeCliProviderAvailability {
     startable: true,
     available: true,
     controls: [],
+  };
+}
+
+function cerebrasProvider(): NativeCliProviderAvailability {
+  return {
+    ...deepSeekProvider(),
+    id: "cerebras",
+    display_name: "Cerebras",
+    provider_kind: "cerebras_api",
+    default_model: "gpt-oss-120b",
   };
 }
 

@@ -341,10 +341,11 @@ polling settings.
 
 Provider child environments are rebuilt from a platform allowlist. Host,
 session, and invite tokens and arbitrary `*_TOKEN`/`*_API_KEY` values are not
-inherited. DeepSeek credentials live in the OS keyring, with
-`DEEPSEEK_API_KEY` as read-only fallback. Credential HTTP responses contain
-only `configured` and `source`; a credential value is never returned, logged,
-persisted in room state, or put in a child argv/environment.
+inherited. DeepSeek and Cerebras credentials live in the OS keyring, with
+`DEEPSEEK_API_KEY` and `CEREBRAS_API_KEY` as read-only fallbacks. Credential
+HTTP responses contain only `configured` and `source`; a credential value is
+never returned, logged, persisted in room state, or put in a child
+argv/environment.
 
 ## Agent Invite Path
 

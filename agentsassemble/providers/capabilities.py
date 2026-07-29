@@ -318,6 +318,7 @@ class ProviderCapabilityCatalog:
         payload = [self._native_payload(definition) for definition in NATIVE_CLI_PROVIDER_CATALOG]
         payload.append(self._opencode_payload())
         payload.append(_deepseek_payload())
+        payload.append(_cerebras_payload())
         revision = _catalog_revision(payload)
         discovered_at = datetime.now(UTC).isoformat()
         with self._lock:
@@ -515,6 +516,7 @@ class ProviderCapabilityCatalog:
             }
         )
         payload.append(_deepseek_payload())
+        payload.append(_cerebras_payload())
         return payload
 
 
@@ -905,6 +907,44 @@ def _deepseek_payload() -> dict[str, object]:
             ),
             _control("reasoning_effort", "추론 강도", [_option("high"), _option("max")], "high"),
             _control("variant", "Thinking", [_option("thinking", "사용"), _option("non_thinking", "사용 안 함")], "thinking"),
+        ],
+    }
+
+
+def _cerebras_payload() -> dict[str, object]:
+    return {
+        "id": "cerebras",
+        "display_name": "Cerebras",
+        "provider_kind": "cerebras_api",
+        "runtime_kind": "api",
+        "connection_kind": "native_cli_bridge",
+        "executable": "",
+        "default_model": "gpt-oss-120b",
+        "interactive": True,
+        "available": True,
+        "startable": True,
+        "discovery_status": "ready",
+        "catalog_source": "static_manifest",
+        "fixed_values": {"permission_mode": "meeting_read_only"},
+        "controls": [
+            _control(
+                "model",
+                "모델",
+                [
+                    _model_option(
+                        "gpt-oss-120b",
+                        "GPT OSS 120B",
+                        relation_scope="global",
+                    )
+                ],
+                "gpt-oss-120b",
+            ),
+            _control(
+                "reasoning_effort",
+                "추론 강도",
+                [_option("low"), _option("medium"), _option("high")],
+                "low",
+            ),
         ],
     }
 

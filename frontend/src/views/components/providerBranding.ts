@@ -1,4 +1,5 @@
 import claudeLogo from "../../assets/provider-logos/claude.svg";
+import cerebrasLogo from "../../assets/provider-logos/cerebras.svg";
 import cursorLogo from "../../assets/provider-logos/cursor.png";
 import deepSeekLogo from "../../assets/provider-logos/deepseek.png";
 import geminiLogo from "../../assets/provider-logos/gemini.webp";
@@ -13,7 +14,8 @@ export type ProviderBrandKey =
   | "claude"
   | "cursor"
   | "opencode"
-  | "deepseek";
+  | "deepseek"
+  | "cerebras";
 
 export type ProviderBrand = {
   label: string;
@@ -40,6 +42,8 @@ const PROVIDER_ALIASES: Record<string, ProviderBrandKey> = {
   opencode_server: "opencode",
   deepseek: "deepseek",
   deepseek_api: "deepseek",
+  cerebras: "cerebras",
+  cerebras_api: "cerebras",
 };
 
 export const PROVIDER_BRANDS: Record<ProviderBrandKey, ProviderBrand> = {
@@ -84,6 +88,12 @@ export const PROVIDER_BRANDS: Record<ProviderBrandKey, ProviderBrand> = {
     logo: deepSeekLogo,
     background: "#ffffff",
     scale: "76%",
+  },
+  cerebras: {
+    label: "Cerebras",
+    logo: cerebrasLogo,
+    background: "#ffffff",
+    scale: "74%",
   },
 };
 

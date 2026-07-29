@@ -220,9 +220,12 @@ surface rather than silently counted as React parity.
 | `/api/room-participants/kick` | POST | exact | `-` | no | Agent Session participant kick endpoint with moderator authorization; not wrapped by React preview yet. |
 | `/api/room-participants/export` | POST | exact | `-` | no | Agent Session participant export endpoint with moderator authorization; not wrapped by React preview yet. |
 | `/api/provider-sessions` | GET | exact | `-` | no | Retired with `410 legacy_route_retired`; the canonical room snapshot supplies Agent Session state. |
-| `/api/provider-credentials/deepseek` | GET | exact | `fetchDeepSeekCredentialStatus()` | yes | Returns only configured/source metadata; never returns the credential value. |
-| `/api/provider-credentials/deepseek` | POST | exact | `setDeepSeekCredential()` | yes | Stores a DeepSeek key in the host secure store; the input is cleared by React after submission. |
-| `/api/provider-credentials/deepseek` | DELETE | exact | `deleteDeepSeekCredential()` | yes | Deletes the DeepSeek key from the host secure store; the response never returns the credential value. |
+| `/api/provider-credentials/cerebras` | GET | exact | `fetchProviderCredentialStatus()` | yes | Returns only configured/source metadata; never returns the credential value. |
+| `/api/provider-credentials/cerebras` | POST | exact | `setProviderCredential()` | yes | Stores a Cerebras key in the host secure store; the input is cleared by React after submission. |
+| `/api/provider-credentials/cerebras` | DELETE | exact | `deleteProviderCredential()` | yes | Deletes the Cerebras key from the host secure store; the response never returns the credential value. |
+| `/api/provider-credentials/deepseek` | GET | exact | `fetchProviderCredentialStatus()` | yes | Returns only configured/source metadata; never returns the credential value. |
+| `/api/provider-credentials/deepseek` | POST | exact | `setProviderCredential()` | yes | Stores a DeepSeek key in the host secure store; the input is cleared by React after submission. |
+| `/api/provider-credentials/deepseek` | DELETE | exact | `deleteProviderCredential()` | yes | Deletes the DeepSeek key from the host secure store; the response never returns the credential value. |
 | `/api/room-events/stream` | GET | sse | `-` | no | Legacy/read-only SSE compatibility endpoint. React receives canonical RoomStore snapshots and events from `/ws?ticket=...`. |
 | `/api/host/claim` | POST | exact | `claimHostDevice()` | yes | Host-token gated: binds this device's stable identity to the operator account so its sessions moderate from any entrance. |
 | `/api/live-agent-create/options` | GET | exact | `-` | no | Retired with `410 legacy_route_retired`; canonical provider controls arrive in the room WebSocket snapshot. |

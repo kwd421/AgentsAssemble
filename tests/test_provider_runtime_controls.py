@@ -188,6 +188,7 @@ class ProviderRuntimeControlTests(unittest.TestCase):
             source={
                 "HOME": "/home/test",
                 "PATH": "/bin",
+                "CEREBRAS_API_KEY": "secret",
                 "DEEPSEEK_API_KEY": "secret",
                 "AGENTSASSEMBLE_INVITE_TOKEN": "invite",
             }
@@ -196,15 +197,26 @@ class ProviderRuntimeControlTests(unittest.TestCase):
         self.assertEqual(environment, {"HOME": "/home/test", "PATH": "/bin"})
         self.assertFalse(environment_contains_secret_names(environment))
 
-    def test_secret_status_never_returns_value_or_secret_metadata(self):
+    def test_api_provider_secret_status_never_returns_value_or_secret_metadata(self):
         backend = FakeKeyring()
-        store = ProviderSecretStore(backend=backend, environment={"DEEPSEEK_API_KEY": "fallback"})
+        store = ProviderSecretStore(
+            backend=backend,
+            environment={
+                "CEREBRAS_API_KEY": "cerebras-fallback",
+                "DEEPSEEK_API_KEY": "deepseek-fallback",
+            },
+        )
 
-        status = store.set("deepseek", "sk-private-value")
-
-        self.assertEqual(status, {"configured": True, "source": "keyring"})
-        self.assertNotIn("sk-private-value", json.dumps(status))
-        self.assertEqual(store.get("deepseek"), "sk-private-value")
+        for provider_id in ("cerebras", "deepseek"):
+            with self.subTest(provider_id=provider_id):
+                secret = f"{provider_id}-private-value"
+                status = store.set(provider_id, secret)
+                self.assertEqual(
+                    status,
+                    {"configured": True, "source": "keyring"},
+                )
+                self.assertNotIn(secret, json.dumps(status))
+                self.assertEqual(store.get(provider_id), secret)
 
     def test_capability_probe_returns_native_controls_without_commands(self):
         def runner(command: list[str], _timeout: float):
@@ -654,7 +666,13 @@ class ProviderRuntimeControlTests(unittest.TestCase):
 
         self.assertEqual(initial["status"], "loading")
         self.assertEqual(initial["catalog_revision"], "")
-        self.assertTrue(all(not provider["startable"] for provider in initial["providers"] if provider["id"] != "deepseek"))
+        self.assertTrue(
+            all(
+                not provider["startable"]
+                for provider in initial["providers"]
+                if provider["runtime_kind"] != "api"
+            )
+        )
         self.assertTrue(all(not provider["controls"] for provider in initial["providers"] if provider["catalog_source"] == "discovered"))
         self.assertTrue(all("resolved_executable" not in provider for provider in initial["providers"]))
 
@@ -845,10 +863,21 @@ class ProviderRuntimeControlTests(unittest.TestCase):
             tempfile.TemporaryDirectory() as temp_dir,
             patch("agentsassemble.application.room_attendee.runtime_from_config", side_effect=capture),
             patch("agentsassemble.application.room_attendee.OpenCodeServerProcess", return_value=opencode_server),
-            patch("agentsassemble.application.room_attendee.PROVIDER_SECRETS.get", return_value="deepseek-secret"),
+            patch(
+                "agentsassemble.application.room_attendee.PROVIDER_SECRETS.get",
+                side_effect=lambda provider_id: f"{provider_id}-secret",
+            ),
         ):
             workspace = Path(temp_dir)
-            for provider_id in ("claude", "grok", "antigravity", "cursor", "opencode", "deepseek"):
+            for provider_id in (
+                "claude",
+                "grok",
+                "antigravity",
+                "cursor",
+                "opencode",
+                "deepseek",
+                "cerebras",
+            ):
                 attendee = AgentAttendee(
                     invite_url="https://room.example/join?token=aai1.secret",
                     provider_id=provider_id,
@@ -863,11 +892,14 @@ class ProviderRuntimeControlTests(unittest.TestCase):
             "cursor-guest",
             "opencode-guest",
             "deepseek-guest",
+            "cerebras-guest",
         ])
         self.assertEqual(captured[1][0].transport, "acp_stdio")
         self.assertEqual(captured[4][0].provider_endpoint, "http://127.0.0.1:43210")
         self.assertEqual(captured[5][1], "deepseek-secret")
         self.assertNotIn("deepseek-secret", repr(captured[5][0]))
+        self.assertEqual(captured[6][1], "cerebras-secret")
+        self.assertNotIn("cerebras-secret", repr(captured[6][0]))
 
     def test_attendee_cleanup_continues_after_runtime_stop_failure(self):
         calls: list[str] = []

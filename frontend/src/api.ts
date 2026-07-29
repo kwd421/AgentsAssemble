@@ -542,24 +542,56 @@ export async function fetchProviderUsage(
   return response.json();
 }
 
-export async function fetchDeepSeekCredentialStatus(): Promise<ProviderCredentialStatus> {
+export async function fetchProviderCredentialStatus(
+  providerId: string
+): Promise<ProviderCredentialStatus> {
+  if (providerId !== "cerebras" && providerId !== "deepseek") {
+    throw new Error(`Unsupported API credential provider: ${providerId}`);
+  }
   const headers: Record<string, string> = {};
   const hostToken = loadHostToken();
   if (hostToken) headers["X-Host-Token"] = hostToken;
-  const response = await fetch("/api/provider-credentials/deepseek", { headers });
+  const response = await fetch(
+    providerId === "cerebras"
+      ? "/api/provider-credentials/cerebras"
+      : "/api/provider-credentials/deepseek",
+    { headers }
+  );
   if (!response.ok) throw await responseError(response);
   return response.json();
 }
 
-export async function setDeepSeekCredential(apiKey: string): Promise<ProviderCredentialStatus> {
-  return postJsonHost<ProviderCredentialStatus>("/api/provider-credentials/deepseek", { api_key: apiKey });
+export async function setProviderCredential(
+  providerId: string,
+  apiKey: string
+): Promise<ProviderCredentialStatus> {
+  if (providerId !== "cerebras" && providerId !== "deepseek") {
+    throw new Error(`Unsupported API credential provider: ${providerId}`);
+  }
+  return postJsonHost<ProviderCredentialStatus>(
+    providerId === "cerebras"
+      ? "/api/provider-credentials/cerebras"
+      : "/api/provider-credentials/deepseek",
+    { api_key: apiKey }
+  );
 }
 
-export async function deleteDeepSeekCredential(): Promise<ProviderCredentialStatus> {
+export async function deleteProviderCredential(
+  providerId: string
+): Promise<ProviderCredentialStatus> {
+  if (providerId !== "cerebras" && providerId !== "deepseek") {
+    throw new Error(`Unsupported API credential provider: ${providerId}`);
+  }
   const headers: Record<string, string> = {};
   const hostToken = loadHostToken();
   if (hostToken) headers["X-Host-Token"] = hostToken;
-  const response = await fetch("/api/provider-credentials/deepseek", { method: "DELETE", headers });
+  const requestInit = { method: "DELETE", headers };
+  const response = await fetch(
+    providerId === "cerebras"
+      ? "/api/provider-credentials/cerebras"
+      : "/api/provider-credentials/deepseek",
+    requestInit
+  );
   if (!response.ok) throw await responseError(response);
   return response.json();
 }

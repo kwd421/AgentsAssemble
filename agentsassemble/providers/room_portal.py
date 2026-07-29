@@ -51,6 +51,7 @@ def _room_interfaces(provider_kind: object = "") -> tuple[str, str, str]:
         "cursor_live_session",
         "grok_live_session",
         "opencode_server",
+        "cerebras_api",
         "deepseek_api",
     }:
         read_interface = "the `read_discussion` MCP tool"
@@ -127,6 +128,7 @@ def room_wake_orientation(
         "cursor_live_session",
         "grok_live_session",
         "opencode_server",
+        "cerebras_api",
         "deepseek_api",
     }:
         random_note = """

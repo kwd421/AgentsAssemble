@@ -4,6 +4,7 @@ import os
 from pathlib import Path
 from typing import TYPE_CHECKING
 
+from agentsassemble.providers.cerebras import CerebrasApiRuntime
 from agentsassemble.providers.deepseek import DeepSeekApiRuntime
 from agentsassemble.providers.codex_app_server_live import CodexAppServerLiveRuntime
 from agentsassemble.providers.cursor_room_portal import CursorRoomPortalRuntime
@@ -40,6 +41,7 @@ _TERMINAL_RUNTIME_KINDS = {
 _STRUCTURED_RUNTIME_KINDS = {
     ("grok_live_session", "acp_stdio"): "live_cli",
     ("opencode_server", "http"): "opencode",
+    ("cerebras_api", "https"): "api",
     ("deepseek_api", "https"): "api",
 }
 
@@ -81,6 +83,14 @@ def runtime_from_config(
             model=config.model,
             reasoning_effort=config.reasoning_effort,
             thinking=config.variant != "non_thinking",
+            room_portal=room_portal,
+        )
+    if key == ("cerebras_api", "https"):
+        return CerebrasApiRuntime(
+            config.participant_id,
+            api_key=credential,
+            model=config.model,
+            reasoning_effort=config.reasoning_effort,
             room_portal=room_portal,
         )
     if key == ("opencode_server", "http"):

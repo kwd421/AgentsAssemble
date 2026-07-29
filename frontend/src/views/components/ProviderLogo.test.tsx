@@ -15,6 +15,7 @@ describe("ProviderLogo", () => {
       ["cursor", "cursor_live_session"],
       ["opencode", "opencode_server"],
       ["deepseek", "deepseek_api"],
+      ["cerebras", "cerebras_api"],
     ] as const;
     const { container } = render(
       <div>

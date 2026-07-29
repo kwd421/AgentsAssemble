@@ -2,9 +2,9 @@ import { useEffect, useRef, useState } from "react";
 import { Cloud, Folder, Play, Plus, X } from "lucide-react";
 import {
   chooseLocalWorkspace,
-  deleteDeepSeekCredential,
-  fetchDeepSeekCredentialStatus,
-  setDeepSeekCredential,
+  deleteProviderCredential,
+  fetchProviderCredentialStatus,
+  setProviderCredential,
   type FrontendLiveAgentCreateRequest,
   type ProviderCredentialStatus,
 } from "../../api";
@@ -54,7 +54,7 @@ export default function AgentCreateModal({
   const [startNow, setStartNow] = useState(false);
   const [status, setStatus] = useState("");
   const [busy, setBusy] = useState(false);
-  const [deepSeekKey, setDeepSeekKey] = useState("");
+  const [providerApiKey, setProviderApiKey] = useState("");
   const [credentialStatus, setCredentialStatus] = useState<ProviderCredentialStatus | null>(null);
   const [credentialBusy, setCredentialBusy] = useState(false);
   const wasOpen = useRef(false);
@@ -125,14 +125,16 @@ export default function AgentCreateModal({
   }, [displayNameEdited, existingSessionId, open, selectedProvider, settings]);
 
   useEffect(() => {
-    if (!open || selectedProvider?.id !== "deepseek") {
-      setDeepSeekKey("");
+    if (!open || selectedProvider?.runtime_kind !== "api") {
+      setProviderApiKey("");
+      setCredentialStatus(null);
       return;
     }
-    fetchDeepSeekCredentialStatus()
+    setCredentialStatus(null);
+    fetchProviderCredentialStatus(selectedProvider.id)
       .then(setCredentialStatus)
       .catch((error) => setStatus(error instanceof Error ? error.message : "키 상태 확인 실패"));
-  }, [open, selectedProvider?.id]);
+  }, [open, selectedProvider?.id, selectedProvider?.runtime_kind]);
 
   function applyProvider(provider: NativeCliProviderAvailability) {
     const initialSettings = initializeProviderSettings(provider);
@@ -231,30 +233,40 @@ export default function AgentCreateModal({
     }
   }
 
-  async function saveDeepSeekKey() {
-    if (!deepSeekKey.trim() || credentialBusy) return;
+  async function saveProviderApiKey() {
+    if (!selectedProvider || !providerApiKey.trim() || credentialBusy) return;
     setCredentialBusy(true);
     try {
-      setCredentialStatus(await setDeepSeekCredential(deepSeekKey));
-      setDeepSeekKey("");
-      setStatus("DeepSeek 키가 서버의 보안 저장소에 저장됐습니다");
+      setCredentialStatus(
+        await setProviderCredential(selectedProvider.id, providerApiKey)
+      );
+      setProviderApiKey("");
+      setStatus(`${selectedProvider.display_name} 키가 서버의 보안 저장소에 저장됐습니다`);
     } catch (error) {
-      setStatus(error instanceof Error ? error.message : "DeepSeek 키 저장 실패");
+      setStatus(
+        error instanceof Error
+          ? error.message
+          : `${selectedProvider.display_name} 키 저장 실패`
+      );
     } finally {
       setCredentialBusy(false);
     }
   }
 
-  async function deleteDeepSeekKey() {
-    if (credentialBusy) return;
+  async function deleteProviderApiKey() {
+    if (!selectedProvider || credentialBusy) return;
     setCredentialBusy(true);
     setStatus("");
     try {
-      setCredentialStatus(await deleteDeepSeekCredential());
-      setDeepSeekKey("");
-      setStatus("DeepSeek 저장 키를 삭제했습니다");
+      setCredentialStatus(await deleteProviderCredential(selectedProvider.id));
+      setProviderApiKey("");
+      setStatus(`${selectedProvider.display_name} 저장 키를 삭제했습니다`);
     } catch (error) {
-      setStatus(error instanceof Error ? error.message : "DeepSeek 키 삭제 실패");
+      setStatus(
+        error instanceof Error
+          ? error.message
+          : `${selectedProvider.display_name} 키 삭제 실패`
+      );
     } finally {
       setCredentialBusy(false);
     }
@@ -435,7 +447,7 @@ export default function AgentCreateModal({
             </section>
           )}
 
-          {selectedProvider?.id === "deepseek" && (
+          {selectedProvider?.runtime_kind === "api" && (
             <section className="dc-agent-section">
               <p className="dc-agent-section-title">인증</p>
               <div className="dc-provider-secret-field">
@@ -444,20 +456,28 @@ export default function AgentCreateModal({
                   <input
                     type="password"
                     autoComplete="off"
-                    value={deepSeekKey}
-                    placeholder={credentialStatus?.configured ? "설정됨" : "DeepSeek API key"}
-                    onChange={(event) => setDeepSeekKey(event.currentTarget.value)}
+                    value={providerApiKey}
+                    placeholder={
+                      credentialStatus?.configured
+                        ? "설정됨"
+                        : `${selectedProvider.display_name} API key`
+                    }
+                    onChange={(event) => setProviderApiKey(event.currentTarget.value)}
                   />
                 </label>
                 <div>
-                  <button type="button" disabled={!deepSeekKey.trim() || credentialBusy} onClick={() => void saveDeepSeekKey()}>
+                  <button
+                    type="button"
+                    disabled={!providerApiKey.trim() || credentialBusy}
+                    onClick={() => void saveProviderApiKey()}
+                  >
                     보안 저장
                   </button>
                   {credentialStatus?.source === "keyring" && (
                     <button
                       type="button"
                       disabled={credentialBusy}
-                      onClick={() => void deleteDeepSeekKey()}
+                      onClick={() => void deleteProviderApiKey()}
                     >
                       저장 키 삭제
                     </button>

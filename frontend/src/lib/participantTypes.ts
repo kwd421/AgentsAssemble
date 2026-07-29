@@ -26,7 +26,7 @@ export function participantTypeMeta(type: string): ParticipantTypeMeta {
     return { label: "구독형 AI", detail: "Claude · Codex · Cursor · Antigravity", icon: Bot, tone: "subscription" };
   }
   if (type === "api") {
-    return { label: "API", detail: "Anthropic · Gemini · Grok · DeepSeek API", icon: Cloud, tone: "api" };
+    return { label: "API", detail: "직접 연결 API 프로바이더", icon: Cloud, tone: "api" };
   }
   if (type === "local") {
     return { label: "Local", detail: "LM Studio · Llama · Ollama", icon: Cpu, tone: "local" };

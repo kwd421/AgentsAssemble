@@ -573,11 +573,29 @@ class NativeCliProviderCatalogTests(unittest.TestCase):
 
         self.assertEqual(
             [provider["id"] for provider in payload],
-            ["codex", "antigravity", "grok", "claude", "cursor", "opencode", "deepseek"],
+            [
+                "codex",
+                "antigravity",
+                "grok",
+                "claude",
+                "cursor",
+                "opencode",
+                "deepseek",
+                "cerebras",
+            ],
         )
         self.assertEqual(
             [provider["display_name"] for provider in payload],
-            ["Codex", "Antigravity", "Grok", "Claude", "Cursor", "OpenCode", "DeepSeek"],
+            [
+                "Codex",
+                "Antigravity",
+                "Grok",
+                "Claude",
+                "Cursor",
+                "OpenCode",
+                "DeepSeek",
+                "Cerebras",
+            ],
         )
         self.assertTrue(all(provider["interactive"] for provider in payload))
         self.assertTrue(all("command" not in provider for provider in payload))

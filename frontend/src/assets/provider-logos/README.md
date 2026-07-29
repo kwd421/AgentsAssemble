@@ -1,8 +1,9 @@
 # Provider logo sources
 
-These files are copied without modifying their contents. Official icon
+These files come from official provider downloads. Raster contents and SVG
+paths/colors are preserved; SVG whitespace may be normalized. Official icon
 backgrounds are preserved. Providers whose official marks are transparent use
-the light or dark surface paired with that exact official asset.
+the light or dark surface paired with that official asset.
 
 | File | Official source | Source path | SHA-256 |
 | --- | --- | --- | --- |
@@ -13,6 +14,7 @@ the light or dark surface paired with that exact official asset.
 | `cursor.png` | [Cursor brand assets](https://ptht05hbb1ssoooe.public.blob.vercel-storage.com/assets/brand/cursor-brand-assets.zip) | `Avatars/Circle/PNG/AVATAR_CIRCLE_2D_DARK.png` | `21a37e256498bedd21254f492b843773b9b1b38f2710da9ad762cd420ecd0844` |
 | `opencode.png` | [OpenCode brand site](https://opencode.ai/brand) | `/favicon-96x96-v3.png` | `aa34092540de60c889610edfa3c25316e215f12d88af29cfba530d09aee7265c` |
 | `deepseek.png` | [DeepSeek official CDN](https://cdn.deepseek.com/favicon.png) | `favicon.png` | `67686a1ac38f8d1cf6db6949e566d69a7e975ad74c610c0f10872da5c39f4fdf` |
+| `cerebras.svg` | [Cerebras press kit](https://www.cerebras.ai/company/press-kit) | `Cerebras Logos.zip/Cerebras C logo.svg` | `753cb8c0ae9b5033faa98d69bd888929d836f8a67538a9b98e454ccbb2bf905e` |
 
 OpenAI assets are subject to the
 [OpenAI design guidelines and marks usage terms](https://openai.com/brand/).

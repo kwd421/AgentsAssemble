@@ -34,52 +34,66 @@ class ProviderCredentialTransportSecurityTests(unittest.TestCase):
     def setUp(self) -> None:
         self.public_invite = PublicInviteRuntime(environ={})
 
-    def test_nonloopback_peer_cannot_spoof_forwarded_https_to_read_credential_status(self):
+    def test_nonloopback_peer_cannot_spoof_forwarded_https_to_read_api_credentials(self):
         self.public_invite.set_host_token("host-secret")
         self.public_invite.set_public_url("http://public.example.test")
-        store = _SecretStore()
+        for provider_id in ("cerebras", "deepseek"):
+            with self.subTest(provider_id=provider_id):
+                store = _SecretStore()
+                with tempfile.TemporaryDirectory() as temp_dir:
+                    with patch(
+                        "agentsassemble.web.routes.providers.PROVIDER_SECRETS",
+                        store,
+                    ):
+                        server = _NonLoopbackPeerServer(
+                            ("127.0.0.1", 0),
+                            _make_handler(
+                                Path(temp_dir),
+                                public_invite_runtime_override=self.public_invite,
+                            ),
+                        )
+                        thread = threading.Thread(
+                            target=server.serve_forever,
+                            daemon=True,
+                        )
+                        thread.start()
+                        try:
+                            request = Request(
+                                (
+                                    f"http://127.0.0.1:{server.server_port}"
+                                    f"/api/provider-credentials/{provider_id}"
+                                ),
+                                headers={
+                                    "Host": "public.example.test",
+                                    "X-Host-Token": "host-secret",
+                                    "X-Forwarded-Proto": "https",
+                                },
+                            )
+                            with self.assertRaises(HTTPError) as rejected:
+                                urlopen(request, timeout=4)
+                            payload = json.loads(
+                                rejected.exception.read().decode()
+                            )
+                            rejected.exception.close()
+                        finally:
+                            server.shutdown()
+                            server.server_close()
+                            thread.join(timeout=2)
 
-        with tempfile.TemporaryDirectory() as temp_dir:
-            with patch(
-                "agentsassemble.web.routes.providers.PROVIDER_SECRETS",
-                store,
-            ):
-                server = _NonLoopbackPeerServer(
-                    ("127.0.0.1", 0),
-                    _make_handler(
-                        Path(temp_dir),
-                        public_invite_runtime_override=self.public_invite,
-                    ),
+                self.assertEqual(
+                    rejected.exception.code,
+                    HTTPStatus.FORBIDDEN,
                 )
-                thread = threading.Thread(target=server.serve_forever, daemon=True)
-                thread.start()
-                try:
-                    request = Request(
-                        (
-                            f"http://127.0.0.1:{server.server_port}"
-                            "/api/provider-credentials/deepseek"
-                        ),
-                        headers={
-                            "Host": "public.example.test",
-                            "X-Host-Token": "host-secret",
-                            "X-Forwarded-Proto": "https",
-                        },
-                    )
-                    with self.assertRaises(HTTPError) as rejected:
-                        urlopen(request, timeout=4)
-                    payload = json.loads(rejected.exception.read().decode())
-                    rejected.exception.close()
-                finally:
-                    server.shutdown()
-                    server.server_close()
-                    thread.join(timeout=2)
-
-        self.assertEqual(rejected.exception.code, HTTPStatus.FORBIDDEN)
-        self.assertEqual(
-            payload,
-            {"error": "HTTPS is required for remote credential management"},
-        )
-        self.assertEqual(store.read_count, 0)
+                self.assertEqual(
+                    payload,
+                    {
+                        "error": (
+                            "HTTPS is required for remote credential "
+                            "management"
+                        )
+                    },
+                )
+                self.assertEqual(store.read_count, 0)
 
 
 if __name__ == "__main__":

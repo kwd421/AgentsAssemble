@@ -35,7 +35,7 @@ class FakeHandler:
 
 class FakeSecretStore:
     def __init__(self) -> None:
-        self.calls: list[tuple[str, str]] = []
+        self.calls: list[tuple[str, ...]] = []
         self.failure: RuntimeError | None = None
 
     def status(self, provider_id: str) -> dict[str, object]:
@@ -45,7 +45,7 @@ class FakeSecretStore:
         return {"configured": True, "source": "keyring", "api_key": "secret-value"}
 
     def set(self, provider_id: str, value: str) -> dict[str, object]:
-        self.calls.append(("set", value))
+        self.calls.append(("set", provider_id, value))
         if self.failure:
             raise self.failure
         if not value.strip():
@@ -126,6 +126,7 @@ class ProviderRouteTests(unittest.TestCase):
             {
                 ("GET", "/api/providers"),
                 ("GET", "/api/model-catalog"),
+                ("GET", "/api/provider-credentials/cerebras"),
                 ("GET", "/api/provider-credentials/deepseek"),
                 ("GET", "/api/provider-usage/antigravity"),
                 ("GET", "/api/provider-usage/claude"),
@@ -134,7 +135,9 @@ class ProviderRouteTests(unittest.TestCase):
                 ("GET", "/api/provider-usage/grok"),
                 ("POST", "/api/live-agent-create/login"),
                 ("POST", "/api/local/workspace-picker"),
+                ("POST", "/api/provider-credentials/cerebras"),
                 ("POST", "/api/provider-credentials/deepseek"),
+                ("DELETE", "/api/provider-credentials/cerebras"),
                 ("DELETE", "/api/provider-credentials/deepseek"),
             },
         )
@@ -203,22 +206,33 @@ class ProviderRouteTests(unittest.TestCase):
         self.assertEqual(self.login.invalid_json_count, 1)
         self.assertEqual(self.login.calls, [])
 
-    def test_local_credential_get_post_delete_never_disclose_key(self):
-        get_response = self.dispatch("GET", "/api/provider-credentials/deepseek")
-        post_response = self.dispatch(
-            "POST",
-            "/api/provider-credentials/deepseek",
-            body=json.dumps({"api_key": "secret-value"}).encode(),
-        )
-        delete_response = self.dispatch("DELETE", "/api/provider-credentials/deepseek")
+    def test_local_provider_credentials_reach_the_named_store_without_disclosing_keys(self):
+        for provider_id in ("cerebras", "deepseek"):
+            with self.subTest(provider_id=provider_id):
+                self.store.calls.clear()
+                path = f"/api/provider-credentials/{provider_id}"
+                get_response = self.dispatch("GET", path)
+                post_response = self.dispatch(
+                    "POST",
+                    path,
+                    body=json.dumps({"api_key": "secret-value"}).encode(),
+                )
+                delete_response = self.dispatch("DELETE", path)
 
-        for response in (get_response, post_response, delete_response):
-            self.assertEqual(set(response.sent_json), {"configured", "source"})
-            self.assertNotIn("secret-value", json.dumps(response.sent_json))
-        self.assertEqual(
-            self.store.calls,
-            [("status", "deepseek"), ("set", "secret-value"), ("delete", "deepseek")],
-        )
+                for response in (get_response, post_response, delete_response):
+                    self.assertEqual(
+                        set(response.sent_json),
+                        {"configured", "source"},
+                    )
+                    self.assertNotIn("secret-value", json.dumps(response.sent_json))
+                self.assertEqual(
+                    self.store.calls,
+                    [
+                        ("status", provider_id),
+                        ("set", provider_id, "secret-value"),
+                        ("delete", provider_id),
+                    ],
+                )
 
     def test_denied_policy_does_not_touch_store(self):
         router = Router()

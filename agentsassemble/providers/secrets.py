@@ -94,13 +94,20 @@ def _load_keyring_backend() -> KeyringBackend | None:
 
 def _provider_id(value: object) -> str:
     clean = str(value or "").strip().lower()
-    if clean != "deepseek":
+    if clean not in {"cerebras", "deepseek"}:
         raise ValueError(f"Unsupported provider credential: {clean or 'missing'}")
     return clean
 
 
 def _environment_key(provider_id: str) -> str:
     return f"{provider_id.upper()}_API_KEY"
+
+
+def secret_provider_id_for_kind(provider_kind: object) -> str:
+    return {
+        "cerebras_api": "cerebras",
+        "deepseek_api": "deepseek",
+    }.get(str(provider_kind or "").strip().lower(), "")
 
 
 PROVIDER_SECRETS = ProviderSecretStore()

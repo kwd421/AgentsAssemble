@@ -205,27 +205,30 @@ Agent Sessions answer a requested vote through an ordinary public room message
 rather than claiming a structured ballot.
 
 API-provider compatibility is defined by protocol family and observed room
-behavior, not by an “API” label alone. The current DeepSeek adapter uses the
-official OpenAI-style streaming tool-call protocol, keeps reasoning private,
-executes the same four `RoomPortal` operations, and records usage for every
-HTTP round. Its reusable schema/stream assembler is the starting boundary for
-other OpenAI-compatible services, but a model is not advertised as compatible
+behavior, not by an “API” label alone. DeepSeek and Cerebras use the shared
+OpenAI-style streaming room runtime, keep reasoning private, execute the same
+four `RoomPortal` operations, and record usage for every HTTP round. Provider
+wrappers own model validation and protocol differences such as DeepSeek
+thinking fields, Cerebras request headers, and whether reasoning fields may be
+replayed in a later assistant message. A model is not advertised as compatible
 until its real endpoint completes room read, publication, and required tool
 calls without a text fallback. Anthropic Messages and Gemini `generateContent`
 need their own protocol adapters; a text-completion endpoint alone is not a
 room provider.
 
 The Agent Session creation UI groups every catalog entry whose runtime kind is
-`api` behind one top-level API choice. That second-level provider list currently
-contains DeepSeek; adding another verified API adapter extends the inner list
-without adding another top-level provider choice.
+`api` behind one top-level API choice. That second-level provider list contains
+DeepSeek and Cerebras. Each provider exposes only endpoint-verified models and
+controls; Cerebras currently exposes `gpt-oss-120b` with low, medium, and high
+reasoning effort.
 
-DeepSeek credentials are server-owned and read from the OS keyring (or the
-explicit process environment fallback), then sent to the bridge once over
-inherited stdin. They are not written to the bridge config, room state,
-provider transcript, or public diagnostics. Remote credential-management
-requests require a host token, forwarded HTTPS, and an actual loopback proxy
-peer; a public URL setting or spoofed forwarded header is not transport proof.
+API-provider credentials are server-owned and read from the OS keyring (or the
+provider's explicit process environment fallback), then sent to the bridge
+once over inherited stdin. They are not written to the bridge config, room
+state, provider transcript, or public diagnostics. Remote
+credential-management requests require a host token, forwarded HTTPS, and an
+actual loopback proxy peer; a public URL setting or spoofed forwarded header is
+not transport proof.
 
 The one-time room session orientation tells providers to follow the language of
 the latest human or host message unless that message explicitly requests

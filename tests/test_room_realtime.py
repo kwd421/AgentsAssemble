@@ -3617,7 +3617,16 @@ class RoomRealtimeControllerTests(unittest.TestCase):
         self.assertFalse(guest["agent.control"])
         self.assertEqual(
             [provider["id"] for provider in operator_snapshot["available_providers"]],
-            ["codex", "antigravity", "grok", "claude", "cursor", "opencode", "deepseek"],
+            [
+                "codex",
+                "antigravity",
+                "grok",
+                "claude",
+                "cursor",
+                "opencode",
+                "deepseek",
+                "cerebras",
+            ],
         )
 
     def test_snapshot_is_bounded_and_history_pages_are_read_only(self):

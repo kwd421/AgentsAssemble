@@ -77,6 +77,7 @@ def _public_invite_route_allowed(path: str, method: str) -> bool:
                 "/api/room-members",
                 "/api/room-invite/sessions",
                 "/api/room-invite/invites",
+                "/api/provider-credentials/cerebras",
                 "/api/provider-credentials/deepseek",
                 "/api/provider-usage/claude",
                 "/api/provider-usage/codex",
@@ -110,10 +111,14 @@ def _public_invite_route_allowed(path: str, method: str) -> bool:
             "/api/room-members/kick",
             "/api/room-invite/create",
             "/api/room-invite/revoke",
+            "/api/provider-credentials/cerebras",
             "/api/provider-credentials/deepseek",
         }
     if method == "DELETE":
-        return path == "/api/provider-credentials/deepseek"
+        return path in {
+            "/api/provider-credentials/cerebras",
+            "/api/provider-credentials/deepseek",
+        }
     if method == "OPTIONS":
         return _public_invite_route_allowed(path, "GET") or _public_invite_route_allowed(
             path,

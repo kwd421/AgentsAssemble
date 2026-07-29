@@ -23,7 +23,10 @@ from agentsassemble.providers.launch_specs import (
 from agentsassemble.providers.opencode import OpenCodeServerProcess
 from agentsassemble.providers.process_environment import sanitized_child_environment
 from agentsassemble.providers.runtime_config import CanonicalBridgeLaunchConfig
-from agentsassemble.providers.secrets import PROVIDER_SECRETS
+from agentsassemble.providers.secrets import (
+    PROVIDER_SECRETS,
+    secret_provider_id_for_kind,
+)
 
 
 BridgeExitListener = Callable[[str, str, int, str], None]
@@ -162,8 +165,11 @@ class NativeCliBridgeProcessManager:
         credential = ""
         provider_endpoint = ""
         provider_server_pid: int | None = None
-        if spec.normalized_provider_kind() == "deepseek_api":
-            credential = self._secret_resolver("deepseek")
+        secret_provider_id = secret_provider_id_for_kind(
+            spec.normalized_provider_kind()
+        )
+        if secret_provider_id:
+            credential = self._secret_resolver(secret_provider_id)
             if not credential:
                 raise RuntimeError("credential_missing")
             executable = "server-owned-api"
@@ -205,7 +211,7 @@ class NativeCliBridgeProcessManager:
             "runtime_kind": spec.runtime_kind,
             "command": (
                 [executable, *spec.command[1:]]
-                if spec.normalized_provider_kind() != "deepseek_api"
+                if not secret_provider_id
                 else list(spec.command)
             ),
             "cwd": spec.cwd,

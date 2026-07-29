@@ -149,7 +149,11 @@ def chat_completion(
     if temperature is not None:
         payload["temperature"] = temperature
     body = json.dumps(payload).encode("utf-8")
-    headers = {"Content-Type": "application/json"}
+    headers = {
+        "Content-Type": "application/json",
+        "Accept": "application/json",
+        "User-Agent": "AgentsAssemble/1.0",
+    }
     if resolved_key:
         headers["Authorization"] = f"Bearer {resolved_key}"
 
