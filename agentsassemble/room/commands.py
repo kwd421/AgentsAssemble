@@ -8,6 +8,8 @@ ROOM_COMMAND_ACTIONS = frozenset(
     {
         "room.history",
         "room.vote.summary",
+        "room.random.roll",
+        "room.random.choose",
         "room.delete",
         "room.settings.update",
         "message.send",
@@ -70,6 +72,7 @@ def capabilities_for_identity(identity: dict[str, object]) -> dict[str, bool]:
     return {
         "room.history": not bridge,
         "room.vote.summary": not bridge,
+        "room.random": read_write and not bridge,
         "message.send": read_write and not bridge,
         "room.manage": operator,
         "room.delete": operator,

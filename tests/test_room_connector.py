@@ -112,15 +112,67 @@ class RoomConnectorTests(unittest.TestCase):
             published = connector.say("connector reply")
             self.assertEqual(published["event"]["content"], "connector reply")
             self.assertEqual(published["event"]["actor_id"], "external-agent")
+
+            poll = connector.create_vote(
+                "Which route?",
+                ["north", "south"],
+                duration_seconds=0,
+            )
+            vote_id = str(poll["event"]["id"])
+            cast = connector.cast_vote(vote_id, "north")
+            self.assertEqual(cast["event"]["vote_choice"], "north")
+            summary = connector.vote_summary(vote_id)
+            self.assertEqual(summary["tallies"], {"north": 1, "south": 0})
+            self.assertEqual(summary["voter_ids"]["north"], ["external-agent"])
+
+            rolled = connector.roll_dice("1d6", reason="route check")
+            roll_event = rolled["event"]
+            self.assertEqual(roll_event["actor_id"], "room-system")
+            self.assertEqual(roll_event["message_kind"], "system")
+            self.assertEqual(
+                roll_event["metadata"]["room_result_kind"],
+                "dice_roll",
+            )
+            self.assertGreaterEqual(
+                roll_event["metadata"]["details"]["total"],
+                1,
+            )
+            self.assertLessEqual(
+                roll_event["metadata"]["details"]["total"],
+                6,
+            )
+            chosen = connector.choose_random(
+                ["north", "south"],
+                reason="route check",
+            )
+            choice_event = chosen["event"]
+            self.assertEqual(choice_event["actor_id"], "room-system")
+            self.assertEqual(
+                choice_event["metadata"]["room_result_kind"],
+                "random_choice",
+            )
+            self.assertIn(
+                choice_event["metadata"]["details"]["choice"],
+                {"north", "south"},
+            )
+
             self.assertEqual(
                 [
-                    event["content"]
+                    str(event.get("content") or "")
                     for event in store.read_events(
                         "room-a",
                         event_types=("message_final",),
                     )
                 ],
-                ["before join", "after join", "connector reply"],
+                [
+                    "before join",
+                    "after join",
+                    "connector reply",
+                    "",
+                    "",
+                    roll_event["content"],
+                    choice_event["content"],
+                ],
             )
 
             left = connector.leave()

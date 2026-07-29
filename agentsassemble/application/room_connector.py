@@ -173,14 +173,85 @@ class RoomConnector:
         message = str(content or "").replace("\x00", "").strip()[:12_000]
         if not message:
             raise RoomConnectorError("A room message cannot be empty.")
+        return self._event_command(
+            "message.send",
+            {"content": message},
+        )
+
+    def create_vote(
+        self,
+        question: str,
+        options: list[str],
+        *,
+        duration_seconds: int = 0,
+    ) -> dict[str, object]:
+        return self._event_command(
+            "message.send",
+            {
+                "kind": "vote",
+                "vote_question": question,
+                "vote_options": list(options),
+                "vote_duration_seconds": duration_seconds,
+            },
+        )
+
+    def cast_vote(self, vote_id: str, choice: str) -> dict[str, object]:
+        return self._event_command(
+            "message.send",
+            {
+                "kind": "vote_cast",
+                "vote_id": vote_id,
+                "vote_choice": choice,
+            },
+        )
+
+    def vote_summary(self, vote_id: str) -> dict[str, object]:
+        return self._command_result(
+            "room.vote.summary",
+            {"vote_id": vote_id},
+        )
+
+    def roll_dice(self, notation: str, *, reason: str = "") -> dict[str, object]:
+        return self._event_command(
+            "room.random.roll",
+            {"notation": notation, "reason": reason},
+        )
+
+    def choose_random(
+        self,
+        options: list[str],
+        *,
+        reason: str = "",
+    ) -> dict[str, object]:
+        return self._event_command(
+            "room.random.choose",
+            {"options": list(options), "reason": reason},
+        )
+
+    def _event_command(
+        self,
+        action: str,
+        payload: dict[str, object],
+    ) -> dict[str, object]:
+        result = self._command_result(action, payload)
+        event = result.get("event")
+        if not isinstance(event, dict):
+            raise RoomConnectorError("The room acknowledged the command without an event.")
+        return {"event": dict(event)}
+
+    def _command_result(
+        self,
+        action: str,
+        payload: dict[str, object],
+    ) -> dict[str, object]:
         with self._condition:
             self._require_joined()
             self._raise_if_closed()
             client = self._client
             assert client is not None
             request_id = client.command(
-                "message.send",
-                {"content": message},
+                action,
+                payload,
                 request_id=f"connector-{uuid4().hex}",
             )
             response = self._wait_for_response(request_id)
@@ -192,11 +263,9 @@ class RoomConnector:
                 code=str(details.get("code") or "rejected"),
             )
         result = response.get("result")
-        payload = dict(result) if isinstance(result, dict) else {}
-        event = payload.get("event")
-        if not isinstance(event, dict):
-            raise RoomConnectorError("The room acknowledged the message without an event.")
-        return {"event": dict(event)}
+        if not isinstance(result, dict):
+            raise RoomConnectorError("The room acknowledged the command without a result.")
+        return dict(result)
 
     def leave(self) -> dict[str, object]:
         with self._condition:
@@ -366,8 +435,9 @@ class RoomConnector:
             "participant_id": self._participant_id,
             "display_name": self._display_name,
             "instructions": (
-                "Call room_read for current context, room_say only when you have "
-                "something substantive to add, then room_wait_next to wait for new messages."
+                "You are now this room participant. Immediately call room_read. "
+                "Use room_say only for a substantive contribution and room_wait_next "
+                "to await new messages. Do not launch or delegate to another model."
             ),
         }
 

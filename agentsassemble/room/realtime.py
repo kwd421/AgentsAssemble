@@ -715,6 +715,33 @@ class RoomRealtimeController:
                         compatibility_muted=compatibility_muted,
                     ),
                 )
+        if action in {"room.random.roll", "room.random.choose"}:
+            self._require_capability(identity, "room.random")
+            with self._lock:
+                participant_id = clean_lobby_text(identity.get("agent_id"), limit=128)
+                compatibility_muted = is_room_member_muted(
+                    self.output_root,
+                    room_id,
+                    participant_id,
+                )
+                return self._execute_durable_command(
+                    identity,
+                    room_id,
+                    request_id,
+                    action,
+                    payload,
+                    lambda unit: self._messages.publish_random_result_in_unit(
+                        identity,
+                        payload,
+                        operation=(
+                            "roll_dice"
+                            if action == "room.random.roll"
+                            else "choose_random"
+                        ),
+                        unit=unit,
+                        compatibility_muted=compatibility_muted,
+                    ),
+                )
         if action == "agent.configure" and not AGENT_RUNTIME_PROFILE_KEYS.intersection(payload):
             self._require_capability(identity, "agent.control")
             with self._lock:

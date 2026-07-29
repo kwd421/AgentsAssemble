@@ -1,8 +1,19 @@
 from __future__ import annotations
 
+from uuid import uuid4
+
 from agentsassemble.room.attachments import AttachmentError, FileAttachmentStore
 from agentsassemble.room.command_uow import RoomCommandUnitOfWork
 from agentsassemble.room.errors import RoomCommandRejected
+from agentsassemble.room.random import (
+    RoomRandomError,
+    choose_random,
+    roll_dice,
+)
+from agentsassemble.room.system_results import (
+    RoomSystemResultError,
+    prepare_room_system_result,
+)
 from agentsassemble.room.text import clean_room_text
 from agentsassemble.room.turn_coordinator import room_message_text
 from agentsassemble.room.votes import (
@@ -16,7 +27,7 @@ from agentsassemble.room.votes import (
 
 
 class RoomMessageService:
-    """Validate and append one canonical human room message."""
+    """Validate and append participant messages and official random results."""
 
     def __init__(self, attachments: FileAttachmentStore) -> None:
         self._attachments = attachments
@@ -49,23 +60,11 @@ class RoomMessageService:
                 "Message content or an attachment is required.",
                 code="empty",
             )
-        participant_id = clean_room_text(identity.get("agent_id"), 128)
-        participant = unit.participant(participant_id)
-        if participant.get("status") in {"kicked", "left"}:
-            raise RoomCommandRejected(
-                "This participant is no longer in the room.",
-                code="session_revoked",
-            )
-        canonical_muted = (
-            bool(participant.get("muted"))
-            if "muted" in participant
-            else compatibility_muted
+        participant_id = self._require_active_participant(
+            identity,
+            unit=unit,
+            compatibility_muted=compatibility_muted,
         )
-        if canonical_muted:
-            raise RoomCommandRejected(
-                "You are muted by the room host.",
-                code="muted",
-            )
         vote_duration_seconds: int | None = None
         vote_deadline_at = ""
         vote_id = payload.get("vote_id")
@@ -153,6 +152,91 @@ class RoomMessageService:
             relay_depth=0,
         )
         return {"event": event, "event_seq": event["seq"]}
+
+    def publish_random_result_in_unit(
+        self,
+        identity: dict[str, object],
+        payload: dict[str, object],
+        *,
+        operation: str,
+        unit: RoomCommandUnitOfWork,
+        compatibility_muted: bool,
+    ) -> dict[str, object]:
+        """Generate and append one canonical system randomness result."""
+
+        participant_id = self._require_active_participant(
+            identity,
+            unit=unit,
+            compatibility_muted=compatibility_muted,
+        )
+        reason = clean_room_text(payload.get("reason"), 200)
+        try:
+            if operation == "roll_dice":
+                details = roll_dice(payload.get("notation"))
+            elif operation == "choose_random":
+                options = payload.get("options")
+                if not isinstance(options, list):
+                    raise RoomRandomError("Random choice requires a list of options.")
+                details = choose_random(options)
+            else:
+                raise RoomRandomError("Unsupported room randomness operation.")
+            if reason:
+                details["reason"] = reason
+            prepared = prepare_room_system_result(
+                result_id=f"result-{uuid4().hex}",
+                operation=operation,
+                details=details,
+                participant_id=participant_id,
+                display_name=(
+                    clean_room_text(identity.get("display_name"), 64)
+                    or participant_id
+                ),
+                source_turn_id="",
+            )
+        except (RoomRandomError, RoomSystemResultError) as error:
+            raise RoomCommandRejected(
+                str(error),
+                code="invalid_room_random_request",
+            ) from error
+        event = unit.append_event(
+            "message_final",
+            participant_id="room-system",
+            participant_type="system",
+            actor_id="room-system",
+            actor_type="system",
+            display_name=prepared.display_name,
+            content=prepared.content,
+            message_kind="system",
+            message_source="room_tool_result",
+            metadata=prepared.metadata,
+        )
+        return {"event": event, "event_seq": event["seq"]}
+
+    @staticmethod
+    def _require_active_participant(
+        identity: dict[str, object],
+        *,
+        unit: RoomCommandUnitOfWork,
+        compatibility_muted: bool,
+    ) -> str:
+        participant_id = clean_room_text(identity.get("agent_id"), 128)
+        participant = unit.participant(participant_id)
+        if participant.get("status") in {"kicked", "left"}:
+            raise RoomCommandRejected(
+                "This participant is no longer in the room.",
+                code="session_revoked",
+            )
+        canonical_muted = (
+            bool(participant.get("muted"))
+            if "muted" in participant
+            else compatibility_muted
+        )
+        if canonical_muted:
+            raise RoomCommandRejected(
+                "You are muted by the room host.",
+                code="muted",
+            )
+        return participant_id
 
 
 __all__ = ["RoomMessageService"]

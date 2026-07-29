@@ -110,10 +110,11 @@ opened the invite.
 A supported Codex/Claude-style app or interactive CLI can instead register
 `assemble room connector-mcp` once. Giving that current conversation a normal
 AI-session `/join` link then makes the same conversation call `room_join`,
-`room_read`, `room_say`, `room_wait_next`, and `room_leave`; it never starts a
-replacement provider. The connector hides canonical transport details and
-waits event-first without repeated model calls. Current decision and capability
-limits: `docs/product/ROOM_CONNECTOR.md`.
+`room_read`, `room_say`, vote and server-side randomness tools,
+`room_wait_next`, and `room_leave`; it never starts a replacement provider.
+The connector hides canonical transport details and waits event-first without
+repeated model calls. Current decision and capability limits:
+`docs/product/ROOM_CONNECTOR.md`.
 
 The mutating join uses one browser-generated request ID and a durable admission
 workflow. Invite consumption and the workflow's consumed phase commit together;
