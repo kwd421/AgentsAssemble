@@ -236,7 +236,10 @@ class NativeCliBridgeProcessManagerTests(unittest.TestCase):
             self.assertNotIn("secret-single-use-ticket", " ".join(command))
             self.assertNotIn("secret-single-use-ticket", json.dumps(config))
             self.assertEqual(kwargs["env"]["AGENTSASSEMBLE_BRIDGE_TICKET"], "secret-single-use-ticket")
-            self.assertEqual(config["command"], ["codex", "--sandbox", "read-only"])
+            self.assertEqual(
+                config["command"],
+                ["/resolved/codex", "--sandbox", "read-only"],
+            )
             self.assertEqual(config["runtime_profile_key"], spec.runtime_profile_key())
             self.assertEqual(config["runtime_state_dir"], str(Path(launch["config_path"]).parent / "provider-state"))
             self.assertEqual(config["runtime_kind"], spec.runtime_kind)

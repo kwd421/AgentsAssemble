@@ -2,7 +2,7 @@
 
 Status: current starting point
 
-Updated: 2026-07-28
+Updated: 2026-07-29
 
 Read this file before changing rooms, Agent Sessions, providers, invites,
 moderation, media, or the React room UI. It is intentionally short. Follow its
@@ -18,8 +18,8 @@ The current product surface is:
 
 - multiple rooms, each with a `#general` channel;
 - humans and agents in one participant roster;
-- persistent Codex, Antigravity, Grok, Claude, Cursor, OpenCode, and compatible provider
-  sessions behind provider-specific adapters;
+- persistent Codex, Antigravity, Grok, Claude, Cursor, OpenCode, and compatible
+  provider sessions behind provider-specific adapters;
 - desktop and mobile React clients using the same room protocol;
 - explicit start, pause, resume, interrupt, stop, kick, leave, and delete
   lifecycle actions;
@@ -167,17 +167,19 @@ For compatibility with older servers and persisted sessions, a missing kind is
 normalized to `ambient_observation`; explicit unknown values are rejected, and
 the compatibility path never infers an ordered floor.
 Portal publication may atomically include one `target_agent_id` handoff. Codex
-uses the optional `next_agent_id` argument on `publish_message`, terminal
-providers use `agentsassemble-room speak-to`, and Grok ACP writes to the
-targeted virtual outbox path shown in its room orientation. The bridge carries
-that target into the canonical message event; ordered routing then gives that
+and other MCP-backed providers use the optional `next_agent_id` argument on
+`publish_message`; terminal providers use `agentsassemble-room speak-to`.
+Grok ACP receives the same four room tools through its `session/new` /
+`session/load` MCP configuration and permits only those correlated MCP calls
+during an observation. Its former virtual-file publication and terminal-roll
+paths were removed before external adoption. The bridge carries a publication
+target into the canonical message event; ordered routing then gives that
 provider the next observation without parsing the public prose.
 
-The Codex room portal exposes server-side `roll_dice` and `choose_random` MCP
-tools for facilitator-owned game randomness. For dice, terminal providers and
-Grok ACP use the bounded `agentsassemble-room roll '<NdS±M>'` helper for the
-same audited contract; Grok's ACP permission boundary continues to reject every
-other terminal command. Inputs and results are recorded in the private portal
+MCP-backed and OpenAI-tool-compatible room portals expose server-side
+`roll_dice` and `choose_random` for facilitator-owned game randomness. Terminal
+providers use the bounded `agentsassemble-room roll '<NdS±M>'` helper for the
+same audited contract. Inputs and results are recorded in the private portal
 activity log with a tool-generated result ID. During the active turn, the
 server-owned bridge projects each validated dice or random-choice record through
 the bridge-only `room.result.publish` command. The server accepts that command
@@ -200,6 +202,24 @@ keeps the aggregate tally and ended state on the vote card. Ballot result rows
 do not wake providers. There is no separate vote-close/final-winner event.
 Agent Sessions answer a requested vote through an ordinary public room message
 rather than claiming a structured ballot.
+
+API-provider compatibility is defined by protocol family and observed room
+behavior, not by an “API” label alone. The current DeepSeek adapter uses the
+official OpenAI-style streaming tool-call protocol, keeps reasoning private,
+executes the same four `RoomPortal` operations, and records usage for every
+HTTP round. Its reusable schema/stream assembler is the starting boundary for
+other OpenAI-compatible services, but a model is not advertised as compatible
+until its real endpoint completes room read, publication, and required tool
+calls without a text fallback. Anthropic Messages and Gemini `generateContent`
+need their own protocol adapters; a text-completion endpoint alone is not a
+room provider.
+
+DeepSeek credentials are server-owned and read from the OS keyring (or the
+explicit process environment fallback), then sent to the bridge once over
+inherited stdin. They are not written to the bridge config, room state,
+provider transcript, or public diagnostics. Remote credential-management
+requests require a host token, forwarded HTTPS, and an actual loopback proxy
+peer; a public URL setting or spoofed forwarded header is not transport proof.
 
 The one-time room session orientation tells providers to follow the language of
 the latest human or host message unless that message explicitly requests

@@ -6,6 +6,7 @@ from typing import TYPE_CHECKING
 
 from agentsassemble.providers.deepseek import DeepSeekApiRuntime
 from agentsassemble.providers.codex_app_server_live import CodexAppServerLiveRuntime
+from agentsassemble.providers.cursor_room_portal import CursorRoomPortalRuntime
 from agentsassemble.providers.grok_acp import GrokAcpRuntime
 from agentsassemble.providers.live_cli import LiveCliRuntime
 from agentsassemble.providers.opencode import OpenCodeRuntime
@@ -69,6 +70,8 @@ def runtime_from_config(
             reasoning_effort=config.reasoning_effort,
             permission_mode=config.permission_mode,
             service_tier=config.service_tier,
+            executable=config.command[0],
+            environment=environment,
             room_portal=room_portal,
         )
     if key == ("deepseek_api", "https"):
@@ -78,6 +81,7 @@ def runtime_from_config(
             model=config.model,
             reasoning_effort=config.reasoning_effort,
             thinking=config.variant != "non_thinking",
+            room_portal=room_portal,
         )
     if key == ("opencode_server", "http"):
         return OpenCodeRuntime(
@@ -89,6 +93,7 @@ def runtime_from_config(
             variant=config.variant,
             permission_mode=config.permission_mode,
             server_pid=config.provider_server_pid,
+            room_portal=room_portal,
         )
     if key == ("grok_live_session", "acp_stdio"):
         command = list(config.command)
@@ -107,6 +112,16 @@ def runtime_from_config(
             startup_timeout_seconds=config.startup_timeout_seconds,
         )
     runtime_class = WindowsConPtyRuntime if os.name == "nt" else LiveCliRuntime
+    if key in {
+        ("cursor_live_session", "pty"),
+        ("cursor_live_session", "conpty"),
+    } and room_portal is not None:
+        return CursorRoomPortalRuntime(
+            config,
+            room_portal=room_portal,
+            runtime_factory=runtime_class,
+            environment=environment,
+        )
     antigravity_runtime = key in {
         ("antigravity_live_session", "pty"),
         ("antigravity_live_session", "conpty"),

@@ -23,6 +23,7 @@ class CodexAppServerLiveRuntime:
         reasoning_effort: str,
         permission_mode: str,
         service_tier: str = "",
+        executable: str = "codex",
         environment: dict[str, str] | None = None,
         room_portal: RoomPortal | None = None,
     ) -> None:
@@ -39,8 +40,10 @@ class CodexAppServerLiveRuntime:
         }
         if room_portal is not None:
             self.profile["room_mcp_server"] = room_portal_mcp_settings(room_portal.root)
+        command = codex_app_server_runtime_command(self.profile)
+        command[0] = str(executable or "codex")
         self.runtime = CodexAppServerRuntime(
-            command=codex_app_server_runtime_command(self.profile),
+            command=command,
             profile_settings=self.profile,
             environment=environment,
         )

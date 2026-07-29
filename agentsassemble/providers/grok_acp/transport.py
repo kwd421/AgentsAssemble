@@ -110,7 +110,7 @@ class GrokAcpTransportMixin:
                         in {"fs/read_text_file", "fs/write_text_file"}
                         and "id" in message
                     ):
-                        self._handle_room_portal_request(message)
+                        self._reject_unsupported_client_request(message)
                         continue
                     if (
                         message.get("method") == "session/request_permission"

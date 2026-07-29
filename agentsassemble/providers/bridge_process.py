@@ -29,6 +29,33 @@ from agentsassemble.providers.secrets import PROVIDER_SECRETS
 BridgeExitListener = Callable[[str, str, int, str], None]
 
 
+def _default_provider_executable(executable: str) -> str | None:
+    resolved = shutil.which(executable)
+    if Path(executable).name.casefold() != "codex":
+        return resolved
+    candidates = [
+        Path(resolved) if resolved else None,
+        Path("/Applications/ChatGPT.app/Contents/Resources/codex"),
+    ]
+    for candidate in candidates:
+        if candidate is None or not candidate.is_file():
+            continue
+        try:
+            check = subprocess.run(
+                [str(candidate), "--version"],
+                stdin=subprocess.DEVNULL,
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL,
+                timeout=5.0,
+                check=False,
+            )
+        except (OSError, subprocess.TimeoutExpired):
+            continue
+        if check.returncode == 0:
+            return str(candidate)
+    return None
+
+
 @dataclass
 class _BridgeHandle:
     handle_id: str
@@ -65,7 +92,7 @@ class NativeCliBridgeProcessManager:
         output_root: str | Path,
         *,
         popen_factory: Callable[..., subprocess.Popen[bytes]] = subprocess.Popen,
-        executable_resolver: Callable[[str], str | None] = shutil.which,
+        executable_resolver: Callable[[str], str | None] = _default_provider_executable,
         secret_resolver: Callable[[str], str] = PROVIDER_SECRETS.get,
         on_exit: BridgeExitListener | None = None,
     ) -> None:
@@ -176,7 +203,11 @@ class NativeCliBridgeProcessManager:
             "session_id": session_id,
             "provider_kind": spec.normalized_provider_kind(),
             "runtime_kind": spec.runtime_kind,
-            "command": list(spec.command),
+            "command": (
+                [executable, *spec.command[1:]]
+                if spec.normalized_provider_kind() != "deepseek_api"
+                else list(spec.command)
+            ),
             "cwd": spec.cwd,
             "model": spec.model,
             "reasoning_effort": spec.reasoning_effort,

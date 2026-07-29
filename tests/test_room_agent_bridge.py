@@ -515,6 +515,23 @@ class RoomAgentBridgeTests(unittest.TestCase):
         self.assertIn("[Vote vote-1 ballot] South", view)
 
     def test_codex_wake_does_not_publish_commentary_after_provider_error(self):
+        class FailingAppServer:
+            def start(self, profile):
+                del profile
+
+            def diagnose(self, handle):
+                del handle
+                return {"dynamic_tool_error_count": 0}
+
+            def send_turn(self, handle, packet):
+                del handle, packet
+                return iter(
+                    [
+                        {"type": "message_final", "content": "먼저 확인하겠습니다."},
+                        {"type": "error", "diagnostics": "tool request stalled"},
+                    ]
+                )
+
         with tempfile.TemporaryDirectory() as temp_dir:
             portal = RoomPortal(Path(temp_dir) / "portal", participant_id="codex")
             portal.prepare()
@@ -527,13 +544,8 @@ class RoomAgentBridgeTests(unittest.TestCase):
                 permission_mode="meeting_read_only",
                 room_portal=portal,
             )
+            runtime.runtime = FailingAppServer()
             runtime.send_room_observation("room.wake wake-a")
-            runtime.runtime.send_turn = lambda *_args, **_kwargs: iter(
-                [
-                    {"type": "message_final", "content": "먼저 확인하겠습니다."},
-                    {"type": "error", "diagnostics": "tool request stalled"},
-                ]
-            )
 
             with self.assertRaisesRegex(RuntimeError, "tool request stalled"):
                 runtime.read_output(timeout_seconds=2)

@@ -12,6 +12,8 @@ from urllib.parse import quote, urlencode
 from urllib.request import Request, urlopen
 
 from agentsassemble.providers.process_environment import sanitized_provider_environment
+from agentsassemble.providers.room_portal import RoomPortal
+from agentsassemble.providers.room_portal_mcp import room_portal_mcp_settings
 from agentsassemble.room.text import clean_room_text
 
 
@@ -98,6 +100,7 @@ class OpenCodeRuntime:
         permission_mode: str = "meeting_read_only",
         server_pid: int | None = None,
         opener=urlopen,
+        room_portal: RoomPortal | None = None,
     ) -> None:
         self.agent_id = clean_room_text(agent_id, limit=128)
         self.endpoint = str(endpoint or "").rstrip("/")
@@ -111,6 +114,13 @@ class OpenCodeRuntime:
         self.permission_mode = clean_room_text(permission_mode, limit=64) or "meeting_read_only"
         self.server_pid = server_pid
         self._opener = opener
+        self._room_portal = room_portal
+        self._request_directory = (
+            self.state_dir / "room-workspace"
+            if room_portal is not None
+            else self.workspace
+        )
+        self._room_mcp_status = ""
         self._session_id = ""
         self._running = False
         self._started_at = ""
@@ -125,6 +135,9 @@ class OpenCodeRuntime:
             if self._running and self._session_id:
                 return self.health()
         self.state_dir.mkdir(parents=True, exist_ok=True)
+        self._request_directory.mkdir(parents=True, exist_ok=True)
+        if self._room_portal is not None:
+            self._register_room_portal()
         restored = self._load_session_id()
         if restored and self._session_exists(restored):
             session_id = restored
@@ -359,8 +372,17 @@ class OpenCodeRuntime:
                 pass
 
     def stop(self, *, timeout_seconds: float = 2.0) -> None:
-        del timeout_seconds
         self.interrupt()
+        if self._room_portal is not None:
+            try:
+                self._open(
+                    "POST",
+                    "/mcp/agentsassemble_room/disconnect",
+                    payload={},
+                    timeout_seconds=max(1.0, float(timeout_seconds)),
+                ).close()
+            except Exception:
+                pass
         with self._lock:
             self._running = False
             self._pending = ""
@@ -383,14 +405,26 @@ class OpenCodeRuntime:
                 "model": self.model,
                 "variant": self.variant,
                 "permission_mode": self.permission_mode,
+                "room_mcp_status": self._room_mcp_status,
             }
 
     def _create_session(self) -> str:
         permission_action = "deny" if self.permission_mode == "meeting_read_only" else "ask"
+        permissions = [
+            {"permission": "*", "pattern": "*", "action": permission_action},
+        ]
+        if self._room_portal is not None:
+            permissions.append(
+                {
+                    "permission": "agentsassemble_room_*",
+                    "pattern": "*",
+                    "action": "allow",
+                }
+            )
         payload = {
             "title": f"AgentsAssemble {self.agent_id}",
             "model": {"id": self.model_id, "providerID": self.provider_id, **({"variant": self.variant} if self.variant else {})},
-            "permission": [{"permission": "*", "pattern": "*", "action": permission_action}],
+            "permission": permissions,
         }
         response = self._open("POST", "/session", payload=payload, timeout_seconds=10.0)
         result = json.loads(response.read().decode("utf-8", errors="replace"))
@@ -412,7 +446,6 @@ class OpenCodeRuntime:
             "messageID": message_id,
             "model": {"providerID": self.provider_id, "modelID": self.model_id},
             "parts": [{"type": "text", "text": prompt}],
-            "tools": {},
         }
         if self.variant:
             payload["variant"] = self.variant
@@ -469,7 +502,7 @@ class OpenCodeRuntime:
         timeout_seconds: float,
         stream: bool = False,
     ):
-        query = urlencode({"directory": str(self.workspace)})
+        query = urlencode({"directory": str(self._request_directory)})
         url = f"{self.endpoint}{path}{'&' if '?' in path else '?'}{query}"
         data = json.dumps(payload, ensure_ascii=False).encode("utf-8") if payload is not None else None
         request = Request(
@@ -482,6 +515,41 @@ class OpenCodeRuntime:
             method=method,
         )
         return self._opener(request, timeout=max(1.0, float(timeout_seconds)))
+
+    def _register_room_portal(self) -> None:
+        assert self._room_portal is not None
+        settings = room_portal_mcp_settings(self._room_portal.root)
+        command = [str(settings["command"])]
+        command.extend(str(value) for value in settings.get("args", []))
+        response = self._open(
+            "POST",
+            "/mcp",
+            payload={
+                "name": "agentsassemble_room",
+                "config": {
+                    "type": "local",
+                    "command": command,
+                    "cwd": str(settings["cwd"]),
+                    "enabled": True,
+                    "timeout": 10_000,
+                },
+            },
+            timeout_seconds=15.0,
+        )
+        result = json.loads(response.read().decode("utf-8", errors="replace"))
+        response.close()
+        status = (
+            result.get("agentsassemble_room")
+            if isinstance(result, dict)
+            and isinstance(result.get("agentsassemble_room"), dict)
+            else {}
+        )
+        self._room_mcp_status = clean_room_text(
+            status.get("status") if isinstance(status, dict) else "",
+            limit=64,
+        )
+        if self._room_mcp_status != "connected":
+            raise RuntimeError("OpenCode room MCP server did not connect.")
 
     def _load_session_id(self) -> str:
         path = self.state_dir / "session.json"

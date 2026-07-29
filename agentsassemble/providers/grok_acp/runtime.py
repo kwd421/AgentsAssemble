@@ -20,15 +20,13 @@ from agentsassemble.providers.grok_acp.process import (
 from agentsassemble.providers.grok_acp.room_access import (
     merge_permission_context,
     permission_context_update,
-    permission_is_room_outbox_write,
-    permission_is_room_roll,
+    permission_is_room_mcp_tool,
     permission_tool_call_id,
-    room_outbox_content,
-    room_outbox_path,
 )
 from agentsassemble.providers.grok_acp.session import GrokAcpSessionStore
 from agentsassemble.providers.grok_acp.turns import GrokAcpTurnProjectionMixin
 from agentsassemble.providers.grok_acp.transport import GrokAcpTransportMixin
+from agentsassemble.providers.room_portal_mcp import room_portal_mcp_settings
 from agentsassemble.providers.runtime_contracts import AdapterContractError
 from agentsassemble.room.text import clean_room_text
 
@@ -209,8 +207,8 @@ class GrokAcpRuntime(GrokAcpTransportMixin, GrokAcpTurnProjectionMixin):
                     "protocolVersion": 1,
                     "clientCapabilities": {
                         "fs": {
-                            "readTextFile": self.room_portal is not None,
-                            "writeTextFile": self.room_portal is not None,
+                            "readTextFile": False,
+                            "writeTextFile": False,
                         },
                         "terminal": False,
                     },
@@ -231,7 +229,10 @@ class GrokAcpRuntime(GrokAcpTransportMixin, GrokAcpTurnProjectionMixin):
             if not session_id:
                 created = self._request(
                     "session/new",
-                    {"cwd": str(self.cwd), "mcpServers": []},
+                    {
+                        "cwd": str(self.cwd),
+                        "mcpServers": self._room_mcp_servers(),
+                    },
                     timeout_seconds=self.startup_timeout_seconds,
                 )
                 session_id = clean_room_text(created.get("sessionId"), limit=128)
@@ -454,6 +455,7 @@ class GrokAcpRuntime(GrokAcpTransportMixin, GrokAcpTurnProjectionMixin):
                 "provider_session_resume_failed": self._provider_session_resume_failed,
                 "provider_session_resume_error": self._provider_session_resume_error,
                 "room_portal_supported": self.room_portal is not None,
+                "room_mcp_configured": bool(self._room_mcp_servers()),
                 "model": self._model,
                 "approval_policy": "deny_without_room_approval",
                 "yolo_mode": self._yolo_mode,
@@ -486,7 +488,7 @@ class GrokAcpRuntime(GrokAcpTransportMixin, GrokAcpTurnProjectionMixin):
                 {
                     "sessionId": stored_session_id,
                     "cwd": str(self.cwd),
-                    "mcpServers": [],
+                    "mcpServers": self._room_mcp_servers(),
                 },
                 timeout_seconds=self.startup_timeout_seconds,
             )
@@ -513,15 +515,11 @@ class GrokAcpRuntime(GrokAcpTransportMixin, GrokAcpTurnProjectionMixin):
             return
         params = message.get("params") if isinstance(message.get("params"), dict) else {}
         tool_call = params.get("toolCall") if isinstance(params.get("toolCall"), dict) else {}
-        allow_outbox = self._permission_is_room_outbox_write(params, tool_call)
-        allow_roll = self._permission_is_room_roll(params, tool_call)
+        allow_room_mcp = self._permission_is_room_mcp_tool(params, tool_call)
         allow_option_id = ""
-        if allow_outbox or allow_roll:
+        if allow_room_mcp:
             allow_option_id = _permission_option_id(params, "allow_once")
         allow_request = bool(allow_option_id)
-        if allow_request and allow_outbox:
-            allow_outbox = self._stage_room_outbox_write(params, tool_call)
-            allow_request = allow_outbox or allow_roll
         option_kind = "allow_once" if allow_request else "reject_once"
         option_id = (
             allow_option_id
@@ -548,7 +546,7 @@ class GrokAcpRuntime(GrokAcpTransportMixin, GrokAcpTurnProjectionMixin):
         except RuntimeError as error:
             self._last_error = str(error)
 
-    def _permission_is_room_outbox_write(
+    def _permission_is_room_mcp_tool(
         self,
         params: dict[str, object],
         tool_call: dict[str, object],
@@ -563,7 +561,7 @@ class GrokAcpRuntime(GrokAcpTransportMixin, GrokAcpTurnProjectionMixin):
             cached = dict(
                 self._tool_permission_context.get((session_id, tool_call_id)) or {}
             )
-        return permission_is_room_outbox_write(
+        return permission_is_room_mcp_tool(
             params,
             tool_call,
             session_id=session_id,
@@ -571,53 +569,24 @@ class GrokAcpRuntime(GrokAcpTransportMixin, GrokAcpTurnProjectionMixin):
             cached=cached,
         )
 
-    def _permission_is_room_roll(
-        self,
-        params: dict[str, object],
-        tool_call: dict[str, object],
-    ) -> bool:
-        with self._lock:
-            active_room_observation = self._active_room_observation
-            session_id = self._session_id
-        if self.room_portal is None:
-            return False
-        tool_call_id = permission_tool_call_id(params, tool_call)
-        with self._lock:
-            cached = dict(
-                self._tool_permission_context.get((session_id, tool_call_id)) or {}
-            )
-        return permission_is_room_roll(
-            params,
-            tool_call,
-            session_id=session_id,
-            active_room_observation=active_room_observation,
-            cached=cached,
-        )
-
-    def _stage_room_outbox_write(
-        self,
-        params: dict[str, object],
-        tool_call: dict[str, object],
-    ) -> bool:
+    def _room_mcp_servers(self) -> list[dict[str, object]]:
         portal = self.room_portal
         if portal is None:
-            return False
-        session_id = clean_room_text(params.get("sessionId"), limit=128)
-        tool_call_id = permission_tool_call_id(params, tool_call)
-        with self._lock:
-            cached = dict(
-                self._tool_permission_context.get((session_id, tool_call_id)) or {}
-            )
-        content = room_outbox_content(tool_call, cached=cached)
-        outbox_path = room_outbox_path(tool_call, cached=cached)
-        if not content or not outbox_path:
-            return False
-        try:
-            portal.acp_write_text(outbox_path, content)
-        except Exception as error:
-            self._last_error = clean_room_text(error, limit=1000)
-            return False
-        return True
+            return []
+        settings = room_portal_mcp_settings(portal.root)
+        return [
+            {
+                "name": "agentsassemble_room",
+                "command": str(settings["command"]),
+                "args": [str(value) for value in settings.get("args", [])],
+                "env": [
+                    {
+                        "name": "PYTHONPATH",
+                        "value": str(settings["cwd"]),
+                    }
+                ],
+            }
+        ]
 
     def _remember_tool_permission_context(self, message: dict[str, object]) -> None:
         with self._lock:
@@ -639,46 +608,19 @@ class GrokAcpRuntime(GrokAcpTransportMixin, GrokAcpTurnProjectionMixin):
             )
             while len(self._tool_permission_context) > 256:
                 self._tool_permission_context.pop(next(iter(self._tool_permission_context)))
-    def _handle_room_portal_request(self, message: dict[str, object]) -> None:
+    def _reject_unsupported_client_request(self, message: dict[str, object]) -> None:
         request_id = message.get("id")
         if not isinstance(request_id, (int, str)) or isinstance(request_id, bool):
             return
-        portal = self.room_portal
-        if portal is None:
-            self._send_acp_error(request_id, -32601, "Room portal filesystem is unavailable.")
-            return
         method = str(message.get("method") or "")
-        params = message.get("params") if isinstance(message.get("params"), dict) else {}
-        with self._lock:
-            session_id = self._session_id
-        if str(params.get("sessionId") or "") != session_id:
-            self._send_acp_error(request_id, -32602, "Session id does not match.")
-            return
-        try:
-            if method == "fs/read_text_file":
-                result = {
-                    "content": portal.acp_read_text(
-                        params.get("path"),
-                        line=params.get("line"),
-                        limit=params.get("limit"),
-                    )
-                }
-            else:
-                portal.acp_write_text(params.get("path"), params.get("content"))
-                result = {}
-            self._send_json({"jsonrpc": "2.0", "id": request_id, "result": result})
-        except Exception as error:
-            self._send_acp_error(request_id, -32602, str(error))
-
-    def _send_acp_error(self, request_id: int | str, code: int, message: str) -> None:
         try:
             self._send_json(
                 {
                     "jsonrpc": "2.0",
                     "id": request_id,
                     "error": {
-                        "code": int(code),
-                        "message": clean_room_text(message, limit=1000),
+                        "code": -32601,
+                        "message": f"Unsupported ACP client method: {method}",
                     },
                 }
             )

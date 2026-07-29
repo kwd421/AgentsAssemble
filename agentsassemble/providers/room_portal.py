@@ -12,7 +12,12 @@ from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Iterable
+from uuid import uuid4
 
+from agentsassemble.providers.room_random import (
+    choose_random as choose_random_result,
+)
+from agentsassemble.providers.room_random import roll_dice as roll_dice_result
 from agentsassemble.providers.runtime_contracts import (
     AMBIENT_OBSERVATION,
     ORDERED_FLOOR,
@@ -41,7 +46,13 @@ _MAX_OBSERVATION_RESULT_LINE_BYTES = 48 * 1024
 def _room_interfaces(provider_kind: object = "") -> tuple[str, str, str]:
     kind = clean_room_text(provider_kind, limit=64)
     provider_note = ""
-    if kind == "codex_live_session":
+    if kind in {
+        "codex_live_session",
+        "cursor_live_session",
+        "grok_live_session",
+        "opencode_server",
+        "deepseek_api",
+    }:
         read_interface = "the `read_discussion` MCP tool"
         speak_interface = (
             "the `publish_message` MCP tool with `content` and, when deliberately "
@@ -62,20 +73,6 @@ def _room_interfaces(provider_kind: object = "") -> tuple[str, str, str]:
   pair of ASCII double quotes. Inside the message, use Unicode quotation marks
   such as `「」` and Unicode arrows such as `→`; do not use ASCII `"`, `$`, or
   backticks. This keeps ordinary room prose inside the one approved command."""
-    elif kind == "grok_live_session":
-        read_interface = "ACP read path `/agentsassemble-room/current.md`"
-        speak_interface = (
-            "ACP write path `/agentsassemble-room/outbox.txt` with the message as its "
-            "content, or `/agentsassemble-room/outbox-to/<agent-id>.txt` when deliberately "
-            "handing the floor to one participant"
-        )
-        provider_note = """
-- Read the exact virtual path with the ACP Read/File Read tool. Do not use
-  terminal `cat`, `find`, file listing, or a local-path substitute; only the ACP
-  read confirms that this assigned observation was seen.
-- For that exact virtual outbox path, the room adapter captures the content at
-  the ACP permission boundary. A later local read-only filesystem error does
-  not mean publication failed; do not retry it through a shell or helper."""
     else:
         read_interface = (
             "the provider's private room read interface: Codex `read_discussion` MCP, "
@@ -125,11 +122,17 @@ def room_wake_orientation(
     else:
         raise ValueError("Unsupported room observation kind.")
     random_note = ""
-    if kind == "codex_live_session":
+    if kind in {
+        "codex_live_session",
+        "cursor_live_session",
+        "grok_live_session",
+        "opencode_server",
+        "deepseek_api",
+    }:
         random_note = """
 - For official game randomness, use `roll_dice` with NdS±M notation or
   `choose_random`; do not invent a result yourself."""
-    elif kind in {"claude_code", "antigravity_live_session", "grok_live_session"}:
+    elif kind in {"claude_code", "antigravity_live_session"}:
         random_note = """
 - For official game dice, run exactly one terminal command per roll:
   `agentsassemble-room roll '<NdS±M>'`. If another roll is needed, wait for the
@@ -473,6 +476,11 @@ class RoomPortal:
         count = max(0, _safe_int(limit, len(lines)))
         return "".join(lines[start : start + count])
 
+    def read_discussion(self) -> str:
+        """Read the current bounded room view and record the observation receipt."""
+
+        return self.acp_read_text(VIRTUAL_ROOM_VIEW_PATH)
+
     def acp_write_text(self, path: object, content: object) -> None:
         target_agent_id = direct_outbox_target(path)
         if str(path or "") != VIRTUAL_ROOM_OUTBOX_PATH and not target_agent_id:
@@ -500,6 +508,48 @@ class RoomPortal:
                 },
             )
             self._record_activity("speak", turn_id=turn_id)
+
+    def publish_message(self, content: object, *, next_agent_id: object = "") -> None:
+        """Stage one public room message for the active observation."""
+
+        target_agent_id = clean_room_text(next_agent_id, limit=128)
+        path = (
+            f"{VIRTUAL_ROOM_DIRECT_OUTBOX_PREFIX}{target_agent_id}.txt"
+            if target_agent_id
+            else VIRTUAL_ROOM_OUTBOX_PATH
+        )
+        self.acp_write_text(path, content)
+
+    def roll_dice(self, notation: object, *, reason: object = "") -> dict[str, object]:
+        """Record one validated, server-random dice result for publication."""
+
+        result = roll_dice_result(notation)
+        self._record_activity(
+            "roll_dice",
+            details={
+                **result,
+                "reason": clean_room_text(reason, limit=200),
+            },
+        )
+        return result
+
+    def choose_random(
+        self,
+        options: list[object],
+        *,
+        reason: object = "",
+    ) -> dict[str, object]:
+        """Record one validated, server-random choice result for publication."""
+
+        result = choose_random_result(options)
+        self._record_activity(
+            "choose_random",
+            details={
+                **result,
+                "reason": clean_room_text(reason, limit=200),
+            },
+        )
+        return result
 
     def stage_attachment(
         self,
@@ -758,7 +808,13 @@ class RoomPortal:
         except OSError:
             pass
 
-    def _record_activity(self, operation: str, *, turn_id: str = "") -> None:
+    def _record_activity(
+        self,
+        operation: str,
+        *,
+        turn_id: str = "",
+        details: dict[str, object] | None = None,
+    ) -> None:
         input_up_to_seq = 0
         if not turn_id:
             try:
@@ -780,6 +836,10 @@ class RoomPortal:
             "turn_id": turn_id,
             "observed_through_seq": input_up_to_seq if operation == "read" else 0,
         }
+        if operation in {"roll_dice", "choose_random"}:
+            payload["result_id"] = f"result-{uuid4().hex}"
+        if details:
+            payload["details"] = details
         with self.activity_path.open("a", encoding="utf-8") as stream:
             stream.write(json.dumps(payload, ensure_ascii=False, sort_keys=True) + "\n")
         self._chmod(self.activity_path, 0o600)
