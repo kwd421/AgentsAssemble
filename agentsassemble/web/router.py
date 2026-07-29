@@ -182,6 +182,11 @@ class RequestContext:
         host_name, _ = _split_authority_host_port(str(self.headers.get("Host") or ""))
         return host_name in _LOOPBACK_HOSTNAMES
 
+    def peer_is_loopback(self) -> bool:
+        client_address = getattr(self.handler, "client_address", ())
+        peer_host = client_address[0] if isinstance(client_address, tuple) and client_address else ""
+        return _is_loopback_host(peer_host)
+
     def is_local_operator(self) -> bool:
         return (
             _is_loopback_host(self.handler.server.server_address[0])

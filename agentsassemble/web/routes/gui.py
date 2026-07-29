@@ -3,7 +3,6 @@ from __future__ import annotations
 
 from collections.abc import Callable
 from http import HTTPStatus
-from urllib.parse import urlparse
 
 from agentsassemble.application.gui import GuiApplicationServices
 from agentsassemble.features.mafia.routes import register_mafia_routes
@@ -47,8 +46,7 @@ def register_current_gui_routes(
         if ctx.uses_loopback_host():
             return True
         forwarded = str(ctx.headers.get("X-Forwarded-Proto") or "").lower()
-        public_scheme = urlparse(services.public_invite.public_url()).scheme.lower()
-        if forwarded != "https" and public_scheme != "https":
+        if forwarded != "https" or not ctx.peer_is_loopback():
             ctx.send_error(
                 HTTPStatus.FORBIDDEN,
                 "HTTPS is required for remote credential management",
