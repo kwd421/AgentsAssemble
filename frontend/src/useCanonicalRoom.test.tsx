@@ -361,6 +361,7 @@ describe("useCanonicalRoom", () => {
           participant_id: "codex",
           display_name: "Makima",
           avatar_image_url: "/api/attachments/makima-avatar",
+          role: "director",
         },
       ])
     );
@@ -368,8 +369,10 @@ describe("useCanonicalRoom", () => {
     expect(result.current.timelineEvents[0]).toMatchObject({
       name: "Makima",
       avatar_image_url: "/api/attachments/makima-avatar",
+      role: "director",
     });
     expect(result.current.participants[0].display_name).toBe("Makima");
+    expect(result.current.participants[0].role).toBe("director");
 
     act(() =>
       handlers?.onRoomEvents?.([

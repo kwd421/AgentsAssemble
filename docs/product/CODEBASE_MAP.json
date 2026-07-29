@@ -1,12 +1,12 @@
 {
  "readme": "AgentsAssemble codebase map. Regenerate with `make codebase-map`; verify committed outputs with `make codebase-map-verify`. modules[] columns: name, path, package, domain, classification, migration_status, lines, docstring, imports[], imported_by[] (indexes into modules), classes[[name, [[base, defining_module], ...]]] (best-effort, top-level classes only). frontend[] columns: path, group, lines, doc, imports[], imported_by[] (indexes into frontend). package_edges go importer -> dependency with module-import counts; `points` is the precomputed polyline for that edge and `intra_cycle` marks imports whose endpoints share one cycle group. graph{} holds the layered package drawing: layers[] top-to-bottom (each with members[] package ids, member_count, and the dominant domain), (a package sits below everything importing it), clusters[] are mutually dependent packages (import cycles at package level) drawn as one labelled block, plus width/height of the drawing. health{} ranks findings for a reader who has to act: cycles[] (mutually dependent packages, with the lines they hold), leaning_on_retiring[] (current modules importing legacy/compatibility modules - the reason legacy cannot be deleted), highest_leverage_migrations[] (retiring modules with the most current importers), unreferenced_shims[] (compatibility modules with no importer in agentsassemble/ and no reference in tests/; callers outside this repository are not visible, so verify before deleting), and hotspots[] (largest modules). health.scope states exactly what was measured. class_graph{} is the UML generalization DAG over base classes that resolve inside the repo: edges go base -> subclass, so a subclass always sits below the class it extends. Coordinates in graph and class_graph are laid out with a Sugiyama pipeline (cycle condensation, Coffman-Graham layering, dummy-node edge routing, median/transpose crossing reduction) and are deterministic.",
- "generated_at": "2026-07-29T08:55:46Z",
- "fingerprint": "41d6de869656cfe3",
+ "generated_at": "2026-07-29T11:13:59Z",
+ "fingerprint": "785dc5a1d0a6ac19",
  "stats": {
   "backend_modules": 795,
-  "backend_lines": 131436,
+  "backend_lines": 131451,
   "frontend_files": 152,
-  "frontend_lines": 39995,
+  "frontend_lines": 40203,
   "packages": 30,
   "import_cycles": 0,
   "classifications": {
@@ -63,7 +63,7 @@
    "kind": "backend",
    "doc": "Current room domain contracts and behavior.",
    "files": 50,
-   "lines": 13276,
+   "lines": 13277,
    "domains": {
     "room": 50
    },
@@ -124,7 +124,7 @@
    "kind": "backend",
    "doc": "Provider runtime contracts and implementations.",
    "files": 87,
-   "lines": 21493,
+   "lines": 21507,
    "domains": {
     "providers": 87
    },
@@ -509,7 +509,7 @@
    "kind": "frontend",
    "doc": "Frontend entry files (App, main, API client, styles) living directly under src/.",
    "files": 12,
-   "lines": 11942,
+   "lines": 11987,
    "domains": {},
    "classes": {},
    "x": 102.0,
@@ -525,7 +525,7 @@
    "kind": "frontend",
    "doc": "Room protocol client: HTTP calls, WebSocket wiring, DTO mapping.",
    "files": 7,
-   "lines": 1711,
+   "lines": 1712,
    "domains": {},
    "classes": {},
    "x": 330.0,
@@ -557,7 +557,7 @@
    "kind": "frontend",
    "doc": "Shared utilities and presentation helpers.",
    "files": 45,
-   "lines": 4753,
+   "lines": 4852,
    "domains": {},
    "classes": {},
    "x": 786.0,
@@ -589,7 +589,7 @@
    "kind": "frontend",
    "doc": "Top-level room views rendered by the shell.",
    "files": 65,
-   "lines": 15653,
+   "lines": 15716,
    "domains": {},
    "classes": {},
    "x": 558.0,
@@ -3753,7 +3753,7 @@
      "web"
     ],
     "internal_edges": 81,
-    "lines": 126335,
+    "lines": 126350,
     "heaviest": "legacy"
    },
    {
@@ -3766,7 +3766,7 @@
      "fe:views"
     ],
     "internal_edges": 15,
-    "lines": 39995,
+    "lines": 40203,
     "heaviest": "fe:views"
    }
   ],
@@ -16786,7 +16786,7 @@
    "providers",
    "current",
    "in-target-package",
-   214,
+   218,
    "Persistent room runtime wrapper for Codex app-server.",
    [
     575,
@@ -17565,7 +17565,7 @@
    "providers",
    "current",
    "in-target-package",
-   613,
+   623,
    "",
    [
     605,
@@ -19380,7 +19380,7 @@
    "room",
    "current",
    "in-target-package",
-   248,
+   249,
    "",
    [
     683,
@@ -22671,7 +22671,7 @@
   [
    "frontend/src/api/roomHistory.ts",
    "api",
-   399,
+   400,
    "",
    [
     4,
@@ -23006,7 +23006,7 @@
   [
    "frontend/src/index.css",
    "(src root)",
-   6718,
+   6758,
    "",
    [],
    [
@@ -23412,7 +23412,7 @@
   [
    "frontend/src/lib/roomEventProjection.test.ts",
    "lib",
-   309,
+   352,
    "",
    [
     2,
@@ -23423,7 +23423,7 @@
   [
    "frontend/src/lib/roomEventProjection.ts",
    "lib",
-   200,
+   220,
    "",
    [
     2
@@ -23524,7 +23524,7 @@
   [
    "frontend/src/lib/roomTypingIndicators.test.ts",
    "lib",
-   121,
+   141,
    "",
    [
     2,
@@ -23535,7 +23535,7 @@
   [
    "frontend/src/lib/roomTypingIndicators.ts",
    "lib",
-   127,
+   143,
    "",
    [
     2,
@@ -23676,7 +23676,7 @@
   [
    "frontend/src/useCanonicalRoom.test.tsx",
    "(src root)",
-   709,
+   712,
    "",
    [
     2,
@@ -23689,7 +23689,7 @@
   [
    "frontend/src/useCanonicalRoom.ts",
    "(src root)",
-   585,
+   587,
    "",
    [
     2,
@@ -23784,7 +23784,7 @@
   [
    "frontend/src/views/LobbyView.test.tsx",
    "views",
-   204,
+   240,
    "",
    [
     2,
@@ -23797,7 +23797,7 @@
   [
    "frontend/src/views/LobbyView.tsx",
    "views",
-   298,
+   306,
    "",
    [
     2,
@@ -24617,7 +24617,7 @@
   [
    "frontend/src/views/lobby/LobbyEventRows.tsx",
    "views",
-   285,
+   304,
    "",
    [
     2,
@@ -24724,19 +24724,19 @@
    "name": "agentsassemble",
    "note": "Backend package (Python)",
    "files": 795,
-   "lines": 131436
+   "lines": 131451
   },
   {
    "name": "frontend/src",
    "note": "React room client (TS/TSX)",
    "files": 152,
-   "lines": 39995
+   "lines": 40203
   },
   {
    "name": "tests",
    "note": "Backend test suite",
-   "files": 353,
-   "lines": 143291
+   "files": 354,
+   "lines": 143358
   },
   {
    "name": "scripts",
@@ -24748,7 +24748,7 @@
    "name": "docs",
    "note": "Product and architecture docs",
    "files": 81,
-   "lines": 29850
+   "lines": 29863
   },
   {
    "name": "configs",

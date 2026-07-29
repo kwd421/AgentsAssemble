@@ -143,6 +143,7 @@ function applyParticipantEvents(current: RoomMember[], incoming: RoomEvent[]) {
     return [{
       ...participant,
       display_name: String(update.display_name || participant.display_name),
+      role: String(update.role || participant.role) as RoomMember["role"],
       avatar_image_url:
         "avatar_image_url" in update
           ? String(update.avatar_image_url || "") || undefined
@@ -531,7 +532,7 @@ export function useCanonicalRoom(options: UseCanonicalRoomOptions) {
   const participantProfiles = useMemo(() => {
     const profiles: Record<
       string,
-      { displayName?: string; avatarImageUrl?: string; providerKind?: string }
+      { displayName?: string; avatarImageUrl?: string; providerKind?: string; role?: string }
     > = {};
     (sessionsByRoom[roomId] || []).forEach((session) => {
       if (!session.participant_id) return;
@@ -551,6 +552,7 @@ export function useCanonicalRoom(options: UseCanonicalRoomOptions) {
             ? participant.avatar_image_url
             : previous.avatarImageUrl,
         providerKind: participant.provider_kind || previous.providerKind,
+        role: participant.role,
       };
     });
     return profiles;

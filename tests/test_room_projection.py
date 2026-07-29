@@ -119,6 +119,7 @@ class RoomProjectionTests(unittest.TestCase):
 
     def test_activity_and_latency_projection_preserve_existing_room_contract(self):
         self.assertEqual(public_activity("reasoning", "running"), ("생각 정리 중", "reasoning"))
+        self.assertEqual(public_activity("compaction", "started"), ("압축 중...", "compaction"))
         self.assertEqual(public_activity("command", "completed"), ("명령 실행 완료", "tool"))
         self.assertEqual(
             merged_latency(

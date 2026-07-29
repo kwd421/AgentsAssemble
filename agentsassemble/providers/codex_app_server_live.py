@@ -124,6 +124,10 @@ class CodexAppServerLiveRuntime:
                         on_delta(delta)
             elif chunk_type == "thinking_delta" and on_activity is not None:
                 on_activity(_codex_activity(chunk.get("content")))
+            elif chunk_type == "context_compaction_started" and on_activity is not None:
+                on_activity({"category": "compaction", "status": "started"})
+            elif chunk_type == "context_compaction_finished" and on_activity is not None:
+                on_activity({"category": "compaction", "status": "completed"})
             elif chunk_type == "message_final":
                 final = str(chunk.get("content") or final)
             elif chunk_type == "error":

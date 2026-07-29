@@ -5,6 +5,7 @@ export type AgentSessionProgress = {
   displayName: string;
   message: string;
   turnId: string;
+  activity: "typing" | "compacting";
 };
 
 type ProjectionOptions = {
@@ -15,6 +16,7 @@ type ProjectionOptions = {
       displayName?: string;
       avatarImageUrl?: string;
       providerKind?: string;
+      role?: string;
     }
   >;
 };
@@ -48,6 +50,7 @@ function speakerIdentity(
       currentProfile ? currentProfile.avatarImageUrl || "" : event.avatar_image_url || ""
     ),
     providerKind: String(currentProfile?.providerKind || event.provider_kind || ""),
+    role: String(currentProfile?.role || event.role || ""),
     side: mine ? "mine" : "other",
   };
 }
@@ -68,6 +71,10 @@ export function projectRoomEventsToTimeline(
     const key = timelineKey(event, eventActor.id);
     const speaker = speakerIdentity(event, eventActor.id, viewerParticipantId, participantProfiles);
 
+    if (event.type === "activity_delta" && event.category === "compaction") {
+      return;
+    }
+
     if (["thinking_delta", "activity_delta"].includes(event.type) && String(event.content || "").trim()) {
       const projected: LobbyEvent = {
         id: event.id,
@@ -75,6 +82,7 @@ export function projectRoomEventsToTimeline(
         name: speaker.name,
         avatar_image_url: speaker.avatarImageUrl || undefined,
         provider_kind: speaker.providerKind || undefined,
+        role: speaker.role || undefined,
         side: speaker.side,
         kind: "thinking",
         message: String(event.content || ""),
@@ -124,6 +132,7 @@ export function projectRoomEventsToTimeline(
         name: isVoteResult ? "투표" : speaker.name,
         avatar_image_url: speaker.avatarImageUrl || undefined,
         provider_kind: speaker.providerKind || undefined,
+        role: speaker.role || undefined,
         side: isVoteResult ? "other" : speaker.side,
         kind: messageKind,
         message,
@@ -175,6 +184,16 @@ export function projectRoomEventProgress(
   event: RoomEvent
 ): AgentSessionProgress | null | undefined {
   const phase = String(event.phase || "");
+  if (event.type === "activity_delta" && event.category === "compaction") {
+    if (event.status === "completed") return null;
+    return {
+      participantId: actor(event).id,
+      displayName: actor(event).id || "Agent Session",
+      message: "압축 중...",
+      turnId: String(event.turn_id || ""),
+      activity: "compacting",
+    };
+  }
   if (
     event.type === "turn_started" ||
     event.type === "thinking_delta" ||
@@ -193,6 +212,7 @@ export function projectRoomEventProgress(
             ? "응답 작성 중..."
             : "생각 중...",
       turnId: String(event.turn_id || ""),
+      activity: "typing",
     };
   }
   if (["turn_finished", "message_final", "error"].includes(event.type)) return null;

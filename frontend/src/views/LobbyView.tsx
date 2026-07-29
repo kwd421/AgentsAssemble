@@ -17,6 +17,7 @@ import type { Mentionable } from "../lib/mentionComposerModel";
 import { buildLobbyRows } from "./lobby/lobbyRows";
 import {
   LobbyMessageRow,
+  LobbySystemRow,
   LobbyThinkingGroup,
   LobbyTypingRow,
 } from "./lobby/LobbyEventRows";
@@ -241,6 +242,13 @@ export default function LobbyView({
               );
             }
             const event = row.event;
+            if (
+              event.kind === "system" ||
+              event.kind === "flow_event" ||
+              event.kind === "vote_cast"
+            ) {
+              return <LobbySystemRow key={row.key} event={event} />;
+            }
             return (
               <LobbyMessageRow
                 key={row.key}

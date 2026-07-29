@@ -933,7 +933,7 @@ class RoomAgentBridge:
 
 
 _ACTIVITY_CATEGORIES = frozenset(
-    {"reasoning", "file_read", "search", "command", "web", "tool"}
+    {"reasoning", "compaction", "file_read", "search", "command", "web", "tool"}
 )
 
 

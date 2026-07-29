@@ -23,6 +23,7 @@ const indicator: RoomTypingIndicator = {
   participantId: "agent-a",
   displayName: "Agent A",
   turnId: "turn-a",
+  activity: "typing",
 };
 
 function thought(message: string): LobbyEvent {
@@ -129,6 +130,7 @@ describe("LobbyView active provider turn", () => {
       participantId: "agent-b",
       displayName: "Agent B",
       turnId: "turn-b",
+      activity: "typing",
     };
     const secondThought: LobbyEvent = {
       ...thought("Agent B 작업"),
@@ -184,7 +186,7 @@ describe("LobbyView active provider turn", () => {
 });
 
 describe("LobbyView vote results", () => {
-  it("shows canonical ballots as one grouped sequence of system-styled rows", async () => {
+  it("shows canonical ballots as centered system separators without message controls", async () => {
     const { container } = renderLobby(
       [
         voteResult("ballot-a", "민지", "남쪽"),
@@ -198,7 +200,41 @@ describe("LobbyView vote results", () => {
 
     const firstRow = container.querySelector('[data-room-event-id="ballot-a"]');
     const secondRow = container.querySelector('[data-room-event-id="ballot-b"]');
-    expect(firstRow?.querySelector(".dc-message-avatar.system")).toBeTruthy();
-    expect(secondRow?.querySelector(".dc-message-avatar.system")).toBeNull();
+    expect(firstRow?.classList.contains("dc-system-divider")).toBe(true);
+    expect(secondRow?.classList.contains("dc-system-divider")).toBe(true);
+    expect(firstRow?.querySelector(".dc-message-avatar")).toBeNull();
+    expect(firstRow?.querySelector(".dc-message-actions")).toBeNull();
+  });
+});
+
+describe("LobbyView provider state and role styling", () => {
+  it("shows compaction in the active provider row instead of generic typing", async () => {
+    renderLobby([], [{ ...indicator, activity: "compacting" }]);
+
+    expect(await screen.findByText("압축 중...")).toBeTruthy();
+    expect(screen.queryByText("입력중...")).toBeNull();
+  });
+
+  it("carries the canonical director role onto the main chat message row", async () => {
+    const { container } = renderLobby(
+      [
+        {
+          id: "terra-message",
+          kind: "message",
+          name: "Terra DM",
+          message: "다음 장면입니다.",
+          side: "other",
+          created_at: "2026-07-26T01:00:00Z",
+          actor_id: "terra",
+          role: "director",
+        },
+      ],
+      []
+    );
+
+    expect(await screen.findByText("다음 장면입니다.")).toBeTruthy();
+    expect(
+      container.querySelector('[data-room-event-id="terra-message"]')?.getAttribute("data-role")
+    ).toBe("director");
   });
 });

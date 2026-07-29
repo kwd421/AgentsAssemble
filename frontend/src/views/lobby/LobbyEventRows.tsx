@@ -122,6 +122,7 @@ export function LobbyThinkingGroup({
     <div
       className="dc-thinking-group grid grid-cols-[40px_minmax(0,1fr)] gap-3 px-4 py-0.5"
       data-room-event-id={header?.id}
+      data-role={header?.role || undefined}
     >
       <MessageAvatar
         avatarImage={header?.avatar_image_url}
@@ -131,7 +132,7 @@ export function LobbyThinkingGroup({
       <div className="min-w-0">
         {showHeader && (
           <p className="flex items-baseline gap-2">
-            <span className="truncate text-[15px] font-semibold text-text-primary preserve-words">
+            <span className="dc-message-author truncate text-[15px] font-semibold text-text-primary preserve-words">
               {name}
             </span>
             <span className="shrink-0 text-[11px] text-text-muted">
@@ -154,7 +155,10 @@ export function LobbyTypingRow({
   thinkingEvents: LobbyEvent[];
 }) {
   return (
-    <div className="dc-message grid grid-cols-[40px_minmax(0,1fr)] gap-3 px-4 py-1.5">
+    <div
+      className="dc-message grid grid-cols-[40px_minmax(0,1fr)] gap-3 px-4 py-1.5"
+      data-role={indicator.role || undefined}
+    >
       <span className="dc-message-avatar mt-0.5 agent">
         <ProviderLogo
           providerKind={indicator.providerKind}
@@ -164,7 +168,7 @@ export function LobbyTypingRow({
       </span>
       <div className="min-w-0">
         <p className="flex items-baseline gap-2">
-          <span className="truncate text-[15px] font-semibold text-text-primary preserve-words">
+          <span className="dc-message-author truncate text-[15px] font-semibold text-text-primary preserve-words">
             {indicator.displayName}
           </span>
         </p>
@@ -177,7 +181,7 @@ export function LobbyTypingRow({
             <span></span>
             <span></span>
           </span>
-          <span>입력중...</span>
+          <span>{indicator.activity === "compacting" ? "압축 중..." : "입력중..."}</span>
         </div>
         {thinkingEvents.length > 0 && (
           <div className="mt-1">
@@ -188,6 +192,20 @@ export function LobbyTypingRow({
           </div>
         )}
       </div>
+    </div>
+  );
+}
+
+export function LobbySystemRow({ event }: { event: LobbyEvent }) {
+  return (
+    <div
+      className="dc-system-divider px-4"
+      data-room-event-id={event.id}
+      role="status"
+    >
+      <span>
+        <DiscordText text={event.message || ""} />
+      </span>
     </div>
   );
 }
@@ -216,6 +234,7 @@ export function LobbyMessageRow({
         showHeader ? "py-1.5" : "py-0.5"
       }`}
       data-room-event-id={event.id}
+      data-role={event.role || undefined}
       tabIndex={0}
     >
       <MessageAvatar
@@ -248,7 +267,7 @@ export function LobbyMessageRow({
       <div className="min-w-0">
         {showHeader && (
           <p className="flex items-baseline gap-2">
-            <span className="truncate text-[15px] font-semibold text-text-primary preserve-words">
+            <span className="dc-message-author truncate text-[15px] font-semibold text-text-primary preserve-words">
               {event.name || "Room"}
             </span>
             <span className="shrink-0 text-[11px] text-text-muted">

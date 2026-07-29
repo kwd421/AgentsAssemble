@@ -37,6 +37,7 @@ const progress = {
   displayName: "Agent A",
   message: "",
   turnId: "turn-a",
+  activity: "typing" as const,
 };
 
 describe("roomTypingNames", () => {
@@ -93,6 +94,25 @@ describe("roomTypingNames", () => {
         displayName: "Agent A",
         providerKind: "codex",
         turnId: "turn-a",
+        activity: "typing",
+        role: "agent",
+      },
+    ]);
+  });
+
+  it("replaces the generic typing state while the active provider compacts context", () => {
+    expect(
+      roomTypingIndicators({
+        agents: [agent],
+        members: [{ ...member, role: "director" }],
+        sessions: [{ ...session, runtime_status: "busy", active_turn_id: "turn-a" }],
+        progress: { ...progress, activity: "compacting" },
+      })
+    ).toMatchObject([
+      {
+        participantId: "agent-a",
+        activity: "compacting",
+        role: "director",
       },
     ]);
   });

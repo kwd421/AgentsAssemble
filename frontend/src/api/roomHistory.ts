@@ -40,6 +40,7 @@ export interface LobbyEvent {
   actor_type?: string;
   avatar_image_url?: string;
   provider_kind?: string;
+  role?: string;
   flow_id?: string;
   flow_meeting_id?: string;
   flow_event_type?: string;

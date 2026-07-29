@@ -255,6 +255,49 @@ describe("projectRoomEventsToTimeline", () => {
     expect(projectRoomEventProgress(activity)?.message).toBe("정보 검색 중");
   });
 
+  it("projects compaction as transient progress instead of permanent thought history", () => {
+    const started = event({
+      id: "compact-started",
+      type: "activity_delta",
+      turn_id: "turn-compact",
+      activity_kind: "compaction",
+      category: "compaction",
+      status: "started",
+      content: "압축 중...",
+    });
+    const completed = event({
+      ...started,
+      id: "compact-completed",
+      status: "completed",
+      content: "압축 완료",
+    });
+
+    expect(projectRoomEventsToTimeline([started, completed])).toEqual([]);
+    expect(projectRoomEventProgress(started)).toMatchObject({
+      turnId: "turn-compact",
+      activity: "compacting",
+    });
+    expect(projectRoomEventProgress(completed)).toBeNull();
+  });
+
+  it("uses the canonical room role when projecting a message author", () => {
+    const timeline = projectRoomEventsToTimeline(
+      [
+        event({
+          actor: { participant_id: "terra", participant_type: "agent" },
+          participant_id: "terra",
+          content: "다음 장면입니다.",
+        }),
+      ],
+      { participantProfiles: { terra: { displayName: "Terra DM", role: "director" } } }
+    );
+
+    expect(timeline[0]).toMatchObject({
+      name: "Terra DM",
+      role: "director",
+    });
+  });
+
   it("updates one reasoning step across an OpenCode answer", () => {
     const timeline = projectRoomEventsToTimeline([
       event({

@@ -239,6 +239,10 @@ class OpenCodeRuntime:
                 properties = event.get("properties") if isinstance(event.get("properties"), dict) else {}
                 if str(properties.get("sessionID") or "") != session_id:
                     continue
+                if event_type == "session.compacted":
+                    if on_activity is not None:
+                        on_activity({"category": "compaction", "status": "completed"})
+                    continue
                 if event_type == "message.updated":
                     info = properties.get("info") if isinstance(properties.get("info"), dict) else {}
                     message_id = str(info.get("id") or "")
@@ -278,6 +282,12 @@ class OpenCodeRuntime:
                     message_id = str(part.get("messageID") or properties.get("messageID") or "")
                     part_id = str(part.get("id") or properties.get("partID") or "")
                     part_type = str(part.get("type") or "")
+                    if part_type == "compaction":
+                        marker = (part_id or "compaction", "started")
+                        if marker not in activity_states and on_activity is not None:
+                            activity_states.add(marker)
+                            on_activity({"category": "compaction", "status": "started"})
+                        continue
                     if part_id and part_type:
                         part_types[part_id] = part_type
                         if message_id in assistant_message_ids:

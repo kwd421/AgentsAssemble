@@ -2323,6 +2323,46 @@ body[data-sidebar-resizing="true"] {
   flex-shrink: 0;
 }
 
+.dc-system-divider {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin: 8px 0;
+  color: var(--color-text-muted);
+  font-size: 12px;
+  font-weight: 700;
+  text-align: center;
+}
+
+.dc-system-divider::before,
+.dc-system-divider::after {
+  content: "";
+  height: 1px;
+  flex: 1;
+  background: rgba(255, 255, 255, 0.08);
+}
+
+.dc-system-divider > span {
+  min-width: 0;
+  max-width: min(720px, 80%);
+  flex-shrink: 1;
+}
+
+.dc-message[data-role="director"] .dc-message-author,
+.dc-thinking-group[data-role="director"] .dc-message-author {
+  color: #f0b232;
+}
+
+.dc-message[data-role="implementer"] .dc-message-author,
+.dc-thinking-group[data-role="implementer"] .dc-message-author {
+  color: #23a55a;
+}
+
+.dc-message[data-role="reviewer"] .dc-message-author,
+.dc-thinking-group[data-role="reviewer"] .dc-message-author {
+  color: #9b84ff;
+}
+
 .dc-channel-empty {
   display: grid;
   height: 100%;

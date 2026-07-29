@@ -197,8 +197,9 @@ composer for a question, two to ten named options, and a bounded deadline. The
 server normalizes the poll, computes its deadline, rejects unknown choices and
 late ballots, and stores the matched option text. Vote questions, options,
 deadline, and recorded ballots are rendered in every provider's private room
-mirror. The browser shows each recorded ballot as a system-style result and
-keeps the aggregate tally and ended state on the vote card. Ballot result rows
+mirror. The browser shows each recorded ballot and other system messages as a
+centered separator rather than as a participant message row, and keeps the
+aggregate tally and ended state on the vote card. Ballot result rows
 do not wake providers. There is no separate vote-close/final-winner event.
 Agent Sessions answer a requested vote through an ordinary public room message
 rather than claiming a structured ballot.
@@ -316,11 +317,23 @@ is already active, the chosen observation remains queued until it finishes,
 preserving one room-wide provider turn at a time.
 
 The canonical participant role `director` is shown as `진행` in the room UI.
+Canonical role colors are shared by the member list, active provider row, and
+main-chat author name. A `participant_updated` event reprojects existing
+messages in every connected browser, so role changes do not depend on local
+storage or a reload.
 In ordered mode, a non-director agent message without an explicit handoff
 returns the next observation to an eligible 진행 agent. An explicit handoff
 still takes precedence, and rooms without an eligible 진행 agent keep the
 general ordered selector. Role changes update the canonical participant row and
 affect the next committed message without restarting the provider session.
+
+When a provider exposes structured context-compaction lifecycle events, the
+bridge publishes them as transient `compaction` activity. The active provider
+row then shows `압축 중...` instead of the generic typing label and returns to
+typing or idle when compaction completes. Codex app-server and the current
+OpenCode server protocol expose this lifecycle. Providers without an observed
+structured signal remain on the generic typing state; the UI does not infer
+compaction from elapsed time.
 
 A room explicitly set to `ambient` does not use that selector to choose one
 speaker. Each committed room message wakes all connected, idle, unmuted Agent

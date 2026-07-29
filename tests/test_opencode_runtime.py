@@ -195,6 +195,19 @@ class OpenCodeRuntimeTests(unittest.TestCase):
                 ),
                 _event(
                     "message.part.updated",
+                    {
+                        "sessionID": session_id,
+                        "part": {
+                            "id": "compact-1",
+                            "messageID": "msg_current_request",
+                            "type": "compaction",
+                            "auto": True,
+                        },
+                    },
+                ),
+                _event("session.compacted", {"sessionID": session_id}),
+                _event(
+                    "message.part.updated",
                     {"sessionID": session_id, "part": {"id": "reasoning-1", "messageID": message_id, "type": "reasoning"}},
                 ),
                 _event(
@@ -285,6 +298,8 @@ class OpenCodeRuntimeTests(unittest.TestCase):
         self.assertEqual(
             activities,
             [
+                {"category": "compaction", "status": "started"},
+                {"category": "compaction", "status": "completed"},
                 {"category": "reasoning", "status": "running"},
                 {"category": "file_read", "status": "running"},
                 {"category": "reasoning", "status": "completed"},

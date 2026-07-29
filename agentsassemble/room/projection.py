@@ -8,6 +8,7 @@ from agentsassemble.room.types import RoomEvent
 
 PUBLIC_ACTIVITY_LABELS = {
     "reasoning": {"started": "생각 정리 중", "running": "생각 정리 중", "completed": "생각 정리 완료"},
+    "compaction": {"started": "압축 중...", "running": "압축 중...", "completed": "압축 완료"},
     "file_read": {"started": "파일 읽는 중", "running": "파일 읽는 중", "completed": "파일 확인 완료"},
     "search": {"started": "정보 검색 중", "running": "정보 검색 중", "completed": "정보 검색 완료"},
     "command": {"started": "명령 실행 중", "running": "명령 실행 중", "completed": "명령 실행 완료"},
@@ -185,7 +186,7 @@ def public_activity(
     ) or PUBLIC_ACTIVITY_LABELS[category][status]
     return (
         content,
-        "reasoning" if category == "reasoning" else "tool",
+        "reasoning" if category == "reasoning" else category if category == "compaction" else "tool",
     )
 
 

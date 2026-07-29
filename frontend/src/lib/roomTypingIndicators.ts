@@ -13,6 +13,8 @@ export type RoomTypingIndicator = {
   displayName: string;
   providerKind?: string;
   turnId: string;
+  activity: "typing" | "compacting";
+  role?: string;
 };
 
 export function roomTypingIndicators({
@@ -39,7 +41,9 @@ export function roomTypingIndicators({
     participantId: string,
     displayName: string,
     turnId = "",
-    providerKind = ""
+    providerKind = "",
+    activity: RoomTypingIndicator["activity"] = "typing",
+    role = ""
   ) => {
     const normalizedParticipantId = participantId.trim();
     const normalizedDisplayName = displayName.trim();
@@ -53,6 +57,8 @@ export function roomTypingIndicators({
         displayName: normalizedDisplayName || existing.displayName,
         providerKind: providerKind || existing.providerKind,
         turnId: turnId || existing.turnId,
+        activity,
+        role: role || existing.role,
       };
       return;
     }
@@ -62,6 +68,8 @@ export function roomTypingIndicators({
       displayName: normalizedDisplayName,
       providerKind,
       turnId,
+      activity,
+      role,
     });
   };
 
@@ -71,7 +79,9 @@ export function roomTypingIndicators({
         session.participant_id,
         session.display_name || session.participant_id,
         session.active_turn_id,
-        session.provider_kind
+        session.provider_kind,
+        "typing",
+        members.find((member) => member.participant_id === session.participant_id)?.role || ""
       );
     }
   });
@@ -82,7 +92,9 @@ export function roomTypingIndicators({
         agent.agent_id,
         agent.display_name || agent.agent_id,
         session?.active_turn_id,
-        session?.provider_kind || agent.provider_kind
+        session?.provider_kind || agent.provider_kind,
+        "typing",
+        members.find((member) => member.participant_id === agent.agent_id)?.role || ""
       );
     }
   });
@@ -93,7 +105,9 @@ export function roomTypingIndicators({
         member.participant_id,
         member.display_name || member.participant_id,
         session?.active_turn_id,
-        session?.provider_kind || member.provider_kind
+        session?.provider_kind || member.provider_kind,
+        "typing",
+        member.role
       );
     }
   });
@@ -109,7 +123,9 @@ export function roomTypingIndicators({
       activeProgress.participantId,
       participant?.display_name || session?.display_name || activeProgress.displayName,
       activeProgress.turnId,
-      session?.provider_kind || participant?.provider_kind || ""
+      session?.provider_kind || participant?.provider_kind || "",
+      activeProgress.activity,
+      participant?.role || ""
     );
   }
 
