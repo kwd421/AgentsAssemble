@@ -74,10 +74,12 @@ data and a test with a separate behavioral oracle remain accepted.
 - Reworked the PostgreSQL constructor test to query a fresh real schema instead
   of asserting only that a migration mock was not called.
 
-The PostgreSQL test is not local completion evidence on this machine: the
-required PostgreSQL packages and test DSN are absent, so the module skips
-locally. `python3 -m tests.run_postgres_contracts` treats missing prerequisites
-or any skip as a failure.
+PostgreSQL completion evidence was obtained on 2026-07-29 with an isolated
+PostgreSQL 17.10 cluster and a disposable Python 3.14.6 virtual environment
+installed from `.[postgres]`. The mandatory
+`python -m tests.run_postgres_contracts` runner passed all 108 selected
+contracts in 3.928 seconds with no skips. The temporary server, database, and
+virtual environment were removed after the run.
 
 ## Residual Findings
 
