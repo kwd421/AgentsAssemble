@@ -75,6 +75,9 @@ export interface RoomEvent {
   status?: string;
   activity_kind?: string;
   category?: string;
+  activity_id?: string;
+  activity_title?: string;
+  activity_detail?: string;
   attachments?: PublicRoomAttachment[];
   latency?: Record<string, unknown>;
   metadata?: Record<string, unknown>;

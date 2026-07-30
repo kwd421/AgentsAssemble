@@ -371,7 +371,7 @@ from agentsassemble.legacy_codex_session_compat import (
 )
 from agentsassemble.legacy.meeting.core.runner import run_demo_meeting
 from agentsassemble.diagnostics.provider_health import provider_health_payload, provider_health_report
-from agentsassemble.legacy.live_agent.provider_login import ProviderLoginService
+from agentsassemble.providers.login import ProviderLoginService
 from agentsassemble.application.public_tunnel import PublicTunnelManager
 from agentsassemble.application.public_invite_runtime import PublicInviteRuntime
 from agentsassemble.web.frontend_runtime import (
@@ -1996,9 +1996,17 @@ def _make_handler(
         route_table,
         services=services,
         provider_login_service=ProviderLoginService(
-            output_root=output_root,
             command_launcher=live_agent_login_launcher,
             command_resolver=live_agent_login_command_resolver,
+            operation_recorder=lambda **kwargs: record_live_agent_operation(
+                output_root,
+                **kwargs,
+            ),
+            catalog_refresher=lambda: (
+                services.room_realtime_controller.provider_catalog.snapshot(
+                    refresh=True
+                )
+            ),
         ),
         post_direct_dm=_room_friend_direct_dm,
         read_operation_payload=_read_operation_payload,

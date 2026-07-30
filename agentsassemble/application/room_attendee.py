@@ -13,6 +13,7 @@ from urllib.request import Request, urlopen
 
 from agentsassemble.diagnostics.cleanup import CleanupReport, emit_cleanup_failure
 from agentsassemble.providers.launch_specs import native_cli_provider_definition
+from agentsassemble.providers.local_openai import local_openai_endpoint
 from agentsassemble.providers.codex_app_server_live import CodexAppServerLiveRuntime
 from agentsassemble.providers.opencode import OpenCodeServerProcess
 from agentsassemble.providers.runtime_config import ProviderRuntimeConfig, ProviderRuntimeProfile
@@ -267,6 +268,9 @@ class AgentAttendee:
             config["provider_endpoint"] = health["endpoint"]
             config["provider_server_pid"] = health["pid"]
         else:
+            config["provider_endpoint"] = local_openai_endpoint(
+                spec.normalized_provider_kind()
+            )
             secret_provider_id = secret_provider_id_for_kind(
                 spec.normalized_provider_kind()
             )

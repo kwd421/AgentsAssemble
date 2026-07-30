@@ -46,6 +46,12 @@ export interface LobbyEvent {
   flow_event_type?: string;
   flow_action?: string;
   flow_reason?: string;
+  activity_id?: string;
+  activity_title?: string;
+  activity_detail?: string;
+  activity_kind?: string;
+  activity_category?: string;
+  activity_status?: string;
   target_agent_id?: string;
   channel?: string;
   vote_id?: string;

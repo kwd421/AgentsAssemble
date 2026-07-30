@@ -61,7 +61,7 @@ export function projectRoomEventsToTimeline(
 ): LobbyEvent[] {
   const timeline: LobbyEvent[] = [];
   const turnIndex = new Map<string, number>();
-  const reasoningActivityIndex = new Map<string, number>();
+  const activityIndex = new Map<string, number>();
   const viewerParticipantId = String(options.viewerParticipantId || "");
   const participantProfiles = options.participantProfiles || {};
 
@@ -92,13 +92,24 @@ export function projectRoomEventsToTimeline(
         flow_action: event.type,
         flow_meeting_id: event.room_id,
         flow_id: key,
+        activity_id: String(event.activity_id || "") || undefined,
+        activity_title: String(event.activity_title || "") || undefined,
+        activity_detail: String(event.activity_detail || "") || undefined,
+        activity_kind: String(event.activity_kind || "") || undefined,
+        activity_category: String(event.category || "") || undefined,
+        activity_status: String(event.status || "") || undefined,
         attachments: Array.isArray(event.attachments) ? event.attachments : undefined,
       };
-      if (event.type === "activity_delta" && event.activity_kind === "reasoning" && event.turn_id) {
-        const activityKey = `${key}:reasoning:${event.category || "reasoning"}`;
-        const existingIndex = reasoningActivityIndex.get(activityKey);
+      if (event.type === "activity_delta" && event.turn_id) {
+        const stableActivityId = String(event.activity_id || "");
+        const activityKey = stableActivityId
+          ? `${key}:activity:${stableActivityId}`
+          : event.activity_kind === "reasoning"
+            ? `${key}:reasoning:${event.category || "reasoning"}`
+            : "";
+        const existingIndex = activityKey ? activityIndex.get(activityKey) : undefined;
         if (existingIndex === undefined) {
-          reasoningActivityIndex.set(activityKey, timeline.length);
+          if (activityKey) activityIndex.set(activityKey, timeline.length);
           timeline.push(projected);
         } else {
           const existing = timeline[existingIndex];
@@ -106,6 +117,11 @@ export function projectRoomEventsToTimeline(
             ...projected,
             id: existing.id,
             created_at: existing.created_at,
+            message:
+              projected.activity_detail ||
+              (event.activity_kind === "reasoning" && event.status === "completed"
+                ? existing.message
+                : projected.message),
           };
         }
       } else {

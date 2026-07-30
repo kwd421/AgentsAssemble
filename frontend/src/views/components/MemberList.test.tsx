@@ -52,7 +52,7 @@ describe("MemberList component wiring", () => {
     fireEvent.click(screen.getByText("나's Agent One"));
 
     const dialog = screen.getByRole("dialog", { name: "나's Agent One" });
-    expect(within(dialog).getByRole("region", { name: "Agent One Agent Session" })).toBeTruthy();
+    expect(within(dialog).getByRole("region", { name: "Agent One 실행 및 설정" })).toBeTruthy();
     expect(within(dialog).getByRole("button", { name: "시작" })).toBeTruthy();
     expect(within(dialog).getByText("고급 진단")).toBeTruthy();
   });
@@ -75,6 +75,32 @@ describe("MemberList component wiring", () => {
     const dialog = screen.getByRole("dialog", { name: "나's Agent One" });
     expect(within(dialog).getByRole("button", { name: "추방" })).toBeTruthy();
     expect(within(dialog).queryByRole("button", { name: "세션 삭제" })).toBeNull();
+  });
+
+  it("shows the active model controls in the member row", () => {
+    render(
+      <MemberList
+        agents={[AGENT]}
+        agentSessions={[
+          {
+            ...SESSION,
+            model: "gpt-5.6-sol",
+            reasoning_effort: "ultra",
+            service_tier: "priority",
+          },
+        ]}
+        roomId="room-1"
+        roomName="Room One"
+      />
+    );
+
+    const modelLine = screen.getByLabelText(
+      "gpt-5.6-sol, Fast, 추론 Ultra"
+    );
+    const memberRow = modelLine.closest("[role='button']");
+    expect(modelLine.textContent).toContain("gpt-5.6-sol");
+    expect(modelLine.textContent).toContain("Ultra");
+    expect(memberRow?.getAttribute("data-ultra")).toBe("true");
   });
 
   it("keeps a session-only member open and retryable when moderation fails", async () => {

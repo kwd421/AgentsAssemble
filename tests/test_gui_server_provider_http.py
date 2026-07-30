@@ -91,6 +91,25 @@ class FakeUsageService:
         }
 
 
+class FakeCapabilityCatalog:
+    def __init__(self) -> None:
+        self.refresh_calls: list[bool] = []
+
+    def snapshot(self, *, refresh: bool = False) -> dict[str, object]:
+        self.refresh_calls.append(refresh)
+        return {
+            "status": "ready",
+            "catalog_revision": "cat-refreshed",
+            "providers": [
+                {
+                    "id": "cursor",
+                    "discovery_status": "ready",
+                    "controls": [],
+                }
+            ],
+        }
+
+
 def _context(handler: FakeHandler, path: str) -> RequestContext:
     parsed = urlparse(path)
     return RequestContext(handler, GuiDeps(output_root=Path(".")), parsed, parse_qs(parsed.query))
@@ -100,6 +119,7 @@ class ProviderRouteTests(unittest.TestCase):
     def setUp(self) -> None:
         self.store = FakeSecretStore()
         self.login = FakeLoginService()
+        self.capabilities = FakeCapabilityCatalog()
         self.router = Router()
 
         def credentials_allowed(ctx: RequestContext) -> bool:
@@ -112,6 +132,7 @@ class ProviderRouteTests(unittest.TestCase):
             login_service=self.login,
             secret_store=self.store,
             usage_service=FakeUsageService(),
+            capability_catalog=self.capabilities,
             workspace_picker=lambda: "/tmp/selected-workspace",
         )
 
@@ -135,6 +156,7 @@ class ProviderRouteTests(unittest.TestCase):
                 ("GET", "/api/provider-usage/grok"),
                 ("POST", "/api/live-agent-create/login"),
                 ("POST", "/api/local/workspace-picker"),
+                ("POST", "/api/provider-catalog/refresh"),
                 ("POST", "/api/provider-credentials/cerebras"),
                 ("POST", "/api/provider-credentials/deepseek"),
                 ("DELETE", "/api/provider-credentials/cerebras"),
@@ -157,6 +179,13 @@ class ProviderRouteTests(unittest.TestCase):
         ).sent_json
         self.assertEqual((codex["provider_id"], codex["model"]), ("codex", "gpt-5.6-sol"))
 
+    def test_local_operator_can_recheck_provider_login_through_the_live_catalog(self):
+        response = self.dispatch("POST", "/api/provider-catalog/refresh", body=b"{}")
+
+        self.assertEqual(response.sent_json["catalog_revision"], "cat-refreshed")
+        self.assertEqual(response.sent_json["providers"][0]["discovery_status"], "ready")
+        self.assertEqual(self.capabilities.refresh_calls, [True])
+
     def test_provider_login_is_local_only_and_delegates_to_login_service(self):
         started = self.dispatch(
             "POST",
@@ -168,12 +197,14 @@ class ProviderRouteTests(unittest.TestCase):
         self.assertEqual(self.login.calls, [{"provider_id": "grok"}])
 
         denied_router = Router()
+        denied_capabilities = FakeCapabilityCatalog()
         register_provider_routes(
             denied_router,
             credentials_allowed=lambda ctx: True,
             is_local_operator=lambda ctx: False,
             login_service=self.login,
             secret_store=self.store,
+            capability_catalog=denied_capabilities,
             workspace_picker=lambda: self.fail("denied workspace picker must not run"),
         )
         denied = FakeHandler(
@@ -186,6 +217,19 @@ class ProviderRouteTests(unittest.TestCase):
             (HTTPStatus.FORBIDDEN, "provider login can only be started from the local operator UI"),
         )
         self.assertEqual(self.login.calls, [{"provider_id": "grok"}])
+
+        refresh = FakeHandler("/api/provider-catalog/refresh", body=b"{}")
+        self.assertTrue(
+            denied_router.dispatch("POST", _context(refresh, refresh.path))
+        )
+        self.assertEqual(
+            refresh.sent_error,
+            (
+                HTTPStatus.FORBIDDEN,
+                "provider catalog refresh can only be started from the local operator UI",
+            ),
+        )
+        self.assertEqual(denied_capabilities.refresh_calls, [])
 
         workspace = FakeHandler("/api/local/workspace-picker", body=b"{}")
         self.assertTrue(

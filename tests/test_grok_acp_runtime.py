@@ -129,6 +129,20 @@ class GrokAcpRuntimeTests(unittest.TestCase):
                     "rawInput": {"command": "pwd"},
                     "rawOutput": {"content": "must stay private"},
                 },
+                {
+                    "sessionUpdate": "tool_call_update",
+                    "toolCallId": "tool-command",
+                    "status": "completed",
+                    "title": "Execute command",
+                    "_meta": {
+                        "x.ai/tool": {
+                            "name": "run_terminal_command",
+                            "label": "Run Command",
+                        }
+                    },
+                    "rawInput": {"command": "pwd"},
+                    "rawOutput": {"content": "must stay private"},
+                },
             ):
                 runtime._notifications.put(
                     {
@@ -154,16 +168,33 @@ class GrokAcpRuntimeTests(unittest.TestCase):
                 {
                     "category": "reasoning",
                     "status": "running",
+                    "activity_id": "reasoning",
+                    "activity_title": "생각",
+                    "activity_detail": "Checking",
                     "content": "Checking",
                 },
                 {
                     "category": "reasoning",
                     "status": "running",
+                    "activity_id": "reasoning",
+                    "activity_title": "생각",
+                    "activity_detail": "Checking the room context.",
                     "content": "Checking the room context.",
                 },
                 {
                     "category": "command",
                     "status": "running",
+                    "activity_id": "tool-command",
+                    "activity_title": "Run Command",
+                    "activity_detail": "pwd",
+                    "content": "Run Command: pwd",
+                },
+                {
+                    "category": "command",
+                    "status": "completed",
+                    "activity_id": "tool-command",
+                    "activity_title": "Run Command",
+                    "activity_detail": "pwd",
                     "content": "Run Command: pwd",
                 },
             ],

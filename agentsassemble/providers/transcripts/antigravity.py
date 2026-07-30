@@ -25,10 +25,19 @@ class AntigravityTranscriptMessageSource(_JsonlOffsetMessageSource):
     def __init__(self, *, home: Path | None = None, cwd: str | Path | None = None) -> None:
         super().__init__(home=home, cwd=cwd)
         self._observed_model_id = ""
+        self._turn_activity_sequence = 0
+        self._turn_tool_activities: dict[str, dict[str, str]] = {}
 
     def prepare_start(self) -> None:
         super().prepare_start()
         self._observed_model_id = ""
+        self._turn_activity_sequence = 0
+        self._turn_tool_activities = {}
+
+    def begin_turn(self, expected_input: str = "") -> None:
+        super().begin_turn(expected_input)
+        self._turn_activity_sequence = 0
+        self._turn_tool_activities = {}
 
     def _candidate_paths(self) -> list[Path]:
         root = self.home / ".gemini" / "antigravity-cli" / "brain"
@@ -76,19 +85,43 @@ class AntigravityTranscriptMessageSource(_JsonlOffsetMessageSource):
                     arguments,
                     preferred_keys=("CommandLine", "query", "toolSummary"),
                 )
-                self._pending_activities.append(
-                    {
-                        "category": _activity_category(name),
-                        "status": "running",
-                        "content": f"{name}: {detail}" if detail else name,
-                    }
+                self._turn_activity_sequence += 1
+                activity_id = clean_room_text(
+                    tool_call.get("id")
+                    or tool_call.get("tool_call_id")
+                    or tool_call.get("toolCallId")
+                    or f"antigravity-tool-{self._turn_activity_sequence}",
+                    limit=128,
                 )
+                activity = {
+                    "category": _activity_category(name),
+                    "status": "running",
+                    "activity_id": activity_id,
+                    "activity_title": name,
+                    "activity_detail": detail,
+                    "content": f"{name}: {detail}" if detail else name,
+                }
+                self._pending_activities.append(activity)
+                if activity_id:
+                    self._turn_tool_activities[activity_id] = {
+                        key: value
+                        for key, value in activity.items()
+                        if key != "status"
+                    }
             if pending_tool_calls:
                 continue
             if str(entry.get("status") or "") and str(entry.get("status") or "") != "DONE":
                 continue
             content = _clean_provider_message_text(entry.get("content"), limit=12000)
             if content:
+                self._pending_activities.extend(
+                    {
+                        **activity,
+                        "status": "completed",
+                    }
+                    for activity in self._turn_tool_activities.values()
+                )
+                self._turn_tool_activities = {}
                 latest = content
                 observed_model_id = clean_room_text(
                     entry.get("model") or entry.get("model_id") or entry.get("modelId"),

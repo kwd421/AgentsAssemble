@@ -80,6 +80,7 @@ export interface LiveAgent {
   quota_5h?: string;
   quota_1w?: string;
   quota_state?: "ok" | "low" | "exhausted" | "unknown" | "";
+  quota_status?: "loading" | "ready" | "unavailable" | "unsupported";
   quota_windows?: Array<{
     label: string;
     percent: number;
@@ -155,6 +156,16 @@ export interface FrontendLiveAgentLoginResponse {
   provider_id: string;
   label?: string;
   message?: string;
+}
+
+export interface ProviderCatalogRefreshResponse {
+  status: string;
+  catalog_revision: string;
+  providers: Array<{
+    id: string;
+    discovery_status?: string;
+    discovery_error?: string;
+  }>;
 }
 
 export interface LiveAgentJoinBriefRequest {
@@ -507,9 +518,10 @@ export interface ProviderCredentialStatus {
 
 export interface ProviderUsageSnapshot {
   provider_id: string;
-  status: "ready";
+  status: "ready" | "unavailable";
   source: string;
   observed_at: string;
+  error_code?: string;
   quota_5h?: string;
   quota_1w?: string;
   quota_state?: "ok" | "low" | "exhausted" | "unknown";
@@ -612,6 +624,10 @@ export function startFrontendLiveAgentLogin(providerId: string) {
   return postJson<FrontendLiveAgentLoginResponse>("/api/live-agent-create/login", {
     provider_id: providerId,
   });
+}
+
+export function refreshProviderCatalog() {
+  return postJson<ProviderCatalogRefreshResponse>("/api/provider-catalog/refresh", {});
 }
 
 export function resumeLiveAgentSession({

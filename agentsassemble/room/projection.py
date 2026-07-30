@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import hashlib
 import re
 
 from agentsassemble.room.text import clean_room_text as clean_lobby_text
@@ -55,6 +56,7 @@ _HOME_ACTIVITY_PATH = re.compile(r"""(?x)(?P<prefix>^|[\s'"`=(])~(?:/[^\s'"`|;&<
 _WINDOWS_ACTIVITY_PATH = re.compile(
     r"""(?ix)(?P<prefix>^|[\s'"`=(])(?:[a-z]:[\\/]|\\\\)[^\s'"`|;&<>]*"""
 )
+_SAFE_ACTIVITY_ID = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$")
 
 _PRIVATE_SESSION_FIELDS = frozenset(
     {
@@ -174,6 +176,52 @@ def safe_activity_detail(value: object, *, limit: int = 600) -> str:
     return clean_lobby_text(text, limit=max(1, int(limit)))
 
 
+def safe_activity_display_detail(value: object, *, limit: int = 600) -> str:
+    """Redact local paths while retaining a bounded basename for the activity UI."""
+    text = clean_lobby_text(value, limit=max(1, int(limit)))
+    if not text:
+        return ""
+    text = text.replace(
+        "/agentsassemble-room/current.md",
+        "[room/current.md]",
+    ).replace(
+        "/agentsassemble-room/outbox.txt",
+        "[room/outbox.txt]",
+    )
+    text = _WINDOWS_ACTIVITY_PATH.sub(
+        lambda match: f"{match.group('prefix')}{_safe_local_path_label(match.group(0))}",
+        text,
+    )
+    text = _HOME_ACTIVITY_PATH.sub(
+        lambda match: f"{match.group('prefix')}{_safe_local_path_label(match.group(0))}",
+        text,
+    )
+    text = _UNIX_ACTIVITY_PATH.sub(
+        lambda match: f"{match.group('prefix')}{_safe_local_path_label(match.group('path'))}",
+        text,
+    )
+    return safe_activity_detail(text, limit=limit)
+
+
+def safe_activity_id(value: object) -> str:
+    """Keep opaque provider activity correlation IDs public without leaking payloads."""
+    activity_id = clean_lobby_text(value, limit=512)
+    if not activity_id:
+        return ""
+    if _SAFE_ACTIVITY_ID.fullmatch(activity_id):
+        return activity_id
+    digest = hashlib.sha256(activity_id.encode("utf-8")).hexdigest()[:24]
+    return f"activity-{digest}"
+
+
+def _safe_local_path_label(value: object) -> str:
+    normalized = str(value or "").strip(" \t\r\n'\"`=(").replace("\\", "/").rstrip("/")
+    basename = clean_lobby_text(normalized.rsplit("/", 1)[-1], limit=120)
+    if not basename or basename in {".", "..", "~"} or ":" in basename:
+        return "[local path]"
+    return f"[local path]/{basename}"
+
+
 def public_activity(
     category: str,
     status: str,
@@ -245,5 +293,7 @@ __all__ = [
     "public_runtime_diagnostics",
     "public_session",
     "runtime_diagnostic_fields",
+    "safe_activity_display_detail",
+    "safe_activity_id",
     "safe_activity_detail",
 ]

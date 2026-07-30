@@ -274,7 +274,7 @@ export function characterBadge(agent: LiveAgent): AgentTruthBadge | null {
 }
 
 export function agentTruthBadges(agent: LiveAgent): AgentTruthBadge[] {
-  return [
+  const badges = [
     executionBadge(agent),
     characterBadge(agent),
     contextBadge(agent),
@@ -282,6 +282,13 @@ export function agentTruthBadges(agent: LiveAgent): AgentTruthBadge[] {
     sandboxBadge(agent),
     admissionBadge(agent),
   ].filter(Boolean) as AgentTruthBadge[];
+  const labels = new Set<string>();
+  return badges.filter((badge) => {
+    const label = badge.label.trim().toLocaleLowerCase();
+    if (labels.has(label)) return false;
+    labels.add(label);
+    return true;
+  });
 }
 
 function quotaTone(agent: Pick<LiveAgent, "quota_5h" | "quota_1w" | "quota_state">): Tone {
@@ -368,7 +375,7 @@ export function agentMemberSignals(agent: LiveAgent): AgentTruthBadge[] {
   const oneWeek = String(agent.quota_1w || "").trim();
   const contextKind = contextDurabilityKind(agent.context_durability);
   const contextLabel = CONTEXT_DURABILITY_KIND_LABELS[contextKind] || CONTEXT_DURABILITY_KIND_LABELS.unknown;
-  const contextTone =
+  const contextTone: Tone =
     contextKind === "provider_owned"
       ? "online"
       : contextKind === "process_lifetime"
@@ -398,13 +405,18 @@ export function agentMemberSignals(agent: LiveAgent): AgentTruthBadge[] {
             : null,
         ].filter(Boolean) as AgentTruthBadge[];
 
+  const hasContextEvidence = Boolean(String(agent.context_durability || "").trim());
   return [
     ...quotaFallbackSignals,
-    {
-      label: `맥락 ${contextLabel}`,
-      tone: contextTone,
-      title: contextDurabilityLabel(agent.context_durability) || "Context durability unknown",
-    },
+    ...(hasContextEvidence
+      ? [
+          {
+            label: `맥락 ${contextLabel}`,
+            tone: contextTone,
+            title: contextDurabilityLabel(agent.context_durability),
+          },
+        ]
+      : []),
   ];
 }
 

@@ -110,8 +110,14 @@ class ProviderRuntimeConfig:
         if not command[0].strip():
             raise ProviderRuntimeConfigError("Provider runtime executable is required.")
         provider_endpoint = _required_text(values, "provider_endpoint", limit=1000, allow_empty=True)
-        if profile.provider_kind == "opencode_server" and not provider_endpoint:
-            raise ProviderRuntimeConfigError("OpenCode provider endpoint is required.")
+        if profile.provider_kind in {
+            "opencode_server",
+            "ollama_api",
+            "lmstudio_api",
+        } and not provider_endpoint:
+            raise ProviderRuntimeConfigError(
+                f"{profile.provider_kind} provider endpoint is required."
+            )
         return cls(
             participant_id=_required_text(values, "participant_id", limit=128),
             provider_kind=profile.provider_kind,

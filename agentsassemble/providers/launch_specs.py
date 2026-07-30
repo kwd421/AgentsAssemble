@@ -105,6 +105,10 @@ class NativeCliProviderDefinition:
     startup_accept_contains: str = ""
     startup_accept_keys: str = "\r"
     startup_ready_contains: str = ""
+    login_command: tuple[str, ...] = ()
+    login_flow: str = ""
+    catalog_group: str = "subscription"
+    workspace_required: bool = True
 
     def reasoning_effort_is_required(
         self,
@@ -242,6 +246,15 @@ class NativeCliProviderDefinition:
             "default_model": self.default_model,
             "interactive": True,
             "startable": True,
+            "login_available": bool(self.login_command),
+            "login_label": (
+                f"{self.display_name} 로그인"
+                if self.login_command
+                else ""
+            ),
+            "login_flow": self.login_flow if self.login_command else "",
+            "catalog_group": self.catalog_group,
+            "workspace_required": self.workspace_required,
         }
 
 
@@ -599,6 +612,7 @@ _CURSOR_EFFORT_TOKENS = frozenset(
         "extra",
         "xhigh",
         "max",
+        "ultra",
     }
 )
 
@@ -671,6 +685,26 @@ def _cerebras_command(
     return ("cerebras-api",)
 
 
+def _ollama_command(
+    _model: str,
+    _effort: str,
+    _service_tier: str,
+    _variant: str,
+    _permission_mode: str,
+) -> tuple[str, ...]:
+    return ("ollama-openai",)
+
+
+def _lmstudio_command(
+    _model: str,
+    _effort: str,
+    _service_tier: str,
+    _variant: str,
+    _permission_mode: str,
+) -> tuple[str, ...]:
+    return ("lmstudio-openai",)
+
+
 NATIVE_CLI_PROVIDER_CATALOG: tuple[NativeCliProviderDefinition, ...] = (
     NativeCliProviderDefinition(
         provider_id="codex",
@@ -686,6 +720,8 @@ NATIVE_CLI_PROVIDER_CATALOG: tuple[NativeCliProviderDefinition, ...] = (
         reported_transports=("stdio_jsonl",),
         input_mode="bracketed_paste",
         startup_accept_contains="Do you trust",
+        login_command=("codex", "login"),
+        login_flow="browser_oauth",
     ),
     NativeCliProviderDefinition(
         provider_id="antigravity",
@@ -701,6 +737,8 @@ NATIVE_CLI_PROVIDER_CATALOG: tuple[NativeCliProviderDefinition, ...] = (
         input_mode="bracketed_paste",
         startup_quiet_seconds=5.0,
         startup_accept_contains="Do you trust",
+        login_command=("agy",),
+        login_flow="interactive_terminal",
     ),
     NativeCliProviderDefinition(
         provider_id="grok",
@@ -713,6 +751,8 @@ NATIVE_CLI_PROVIDER_CATALOG: tuple[NativeCliProviderDefinition, ...] = (
         model_observation_policy="required",
         transport="acp_stdio",
         reported_transports=("acp_stdio",),
+        login_command=("grok", "login"),
+        login_flow="browser_oauth",
     ),
     NativeCliProviderDefinition(
         provider_id="claude",
@@ -727,6 +767,8 @@ NATIVE_CLI_PROVIDER_CATALOG: tuple[NativeCliProviderDefinition, ...] = (
         model_observation_policy="required",
         input_mode="bracketed_paste",
         startup_accept_contains="Quick safety check",
+        login_command=("claude", "auth", "login"),
+        login_flow="browser_oauth",
     ),
     NativeCliProviderDefinition(
         provider_id="cursor",
@@ -741,6 +783,8 @@ NATIVE_CLI_PROVIDER_CATALOG: tuple[NativeCliProviderDefinition, ...] = (
         startup_accept_contains="Do you trust",
         startup_accept_keys="a",
         startup_ready_contains="Plan, search, build anything",
+        login_command=("cursor-agent", "login"),
+        login_flow="browser_oauth",
     ),
 )
 
@@ -757,6 +801,8 @@ STRUCTURED_PROVIDER_CATALOG: tuple[NativeCliProviderDefinition, ...] = (
         runtime_kind="opencode",
         transport="http",
         reported_transports=("http_sse",),
+        login_command=("opencode", "auth", "login"),
+        login_flow="interactive_terminal",
     ),
     NativeCliProviderDefinition(
         provider_id="deepseek",
@@ -772,6 +818,7 @@ STRUCTURED_PROVIDER_CATALOG: tuple[NativeCliProviderDefinition, ...] = (
         runtime_kind="api",
         transport="https",
         reported_transports=("https_sse",),
+        catalog_group="api",
     ),
     NativeCliProviderDefinition(
         provider_id="cerebras",
@@ -786,6 +833,37 @@ STRUCTURED_PROVIDER_CATALOG: tuple[NativeCliProviderDefinition, ...] = (
         runtime_kind="api",
         transport="https",
         reported_transports=("https_sse",),
+        catalog_group="api",
+    ),
+    NativeCliProviderDefinition(
+        provider_id="ollama",
+        display_name="Ollama",
+        provider_kind="ollama_api",
+        executable="ollama",
+        command_builder=_ollama_command,
+        aliases=("ollama_api",),
+        default_model="nemotron-3-super:cloud",
+        model_observation_policy="required",
+        runtime_kind="api",
+        transport="http",
+        reported_transports=("http_sse",),
+        catalog_group="subscription",
+        workspace_required=False,
+    ),
+    NativeCliProviderDefinition(
+        provider_id="lmstudio",
+        display_name="LM Studio",
+        provider_kind="lmstudio_api",
+        executable="lms",
+        command_builder=_lmstudio_command,
+        aliases=("lmstudio_api", "lm_studio"),
+        default_model="gemma-4-e4b-it",
+        model_observation_policy="required",
+        runtime_kind="api",
+        transport="http",
+        reported_transports=("http_sse",),
+        catalog_group="local",
+        workspace_required=False,
     ),
 )
 
@@ -825,8 +903,10 @@ def native_cli_provider_spec_from_payload(payload: dict[str, object]) -> NativeC
         payload.get("workspace") or payload.get("workspace_path") or payload.get("cwd"),
         limit=500,
     )
-    if not workspace:
+    if not workspace and definition.workspace_required:
         raise ValueError("Native CLI Agent Session workspace is required.")
+    if not workspace:
+        workspace = str(Path.cwd())
     spec = definition.make_selected_spec(
         agent_id=agent_id,
         display_name=display_name,

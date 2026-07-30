@@ -43,6 +43,7 @@ export interface RoomAgentSession {
   recovery_attempt_count?: number;
   recovery_required?: boolean;
   turn_count?: number;
+  last_error_code?: string;
   last_error?: string;
   latency?: RoomAgentLatency;
   pty?: boolean;

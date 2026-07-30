@@ -31,6 +31,11 @@ export default function MemberDiagnostics({
           <p className="dc-member-detail-note preserve-words">
             사용량은 이 AI를 소유한 참가자에게만 표시됩니다.
           </p>
+        ) : agent.quota_state === "exhausted" ? (
+          <div className="dc-member-quota-status" data-tone="danger">
+            <strong>할당량 소진</strong>
+            <span>Provider가 더 이상 사용할 수 없다고 명시했습니다.</span>
+          </div>
         ) : quotaWindows.length > 0 ? (
           <div className="dc-member-quota-row">
             {quotaWindows.map((window) => (
@@ -49,7 +54,7 @@ export default function MemberDiagnostics({
               </span>
             ))}
           </div>
-        ) : (
+        ) : quotaFallback.length > 0 ? (
           <div className="dc-member-quota-fallback">
             {quotaFallback.map((chip) => (
               <span key={`${chip.label}-${chip.value}`} data-tone={chip.tone} title={chip.title}>
@@ -58,6 +63,18 @@ export default function MemberDiagnostics({
               </span>
             ))}
           </div>
+        ) : agent.quota_status === "loading" ? (
+          <p className="dc-member-detail-note preserve-words">
+            정확한 사용량을 확인하고 있습니다.
+          </p>
+        ) : agent.quota_status === "unavailable" ? (
+          <p className="dc-member-detail-note preserve-words">
+            Provider에서 정확한 사용량을 불러오지 못했습니다.
+          </p>
+        ) : (
+          <p className="dc-member-detail-note preserve-words">
+            이 Provider는 확인 가능한 정확한 잔여량을 제공하지 않습니다.
+          </p>
         )}
       </section>
       <section className="dc-member-detail-section" aria-label={`${entry.displayName} 세션 상태`}>

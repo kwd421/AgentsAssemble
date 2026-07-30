@@ -1,6 +1,6 @@
 .DEFAULT_GOAL := test
 
-.PHONY: help test test-module test-quality-check verify postgres-contracts
+.PHONY: help test test-module test-quality-check architecture-check verify postgres-contracts
 .PHONY: frontend-deps frontend-build frontend-test frontend-e2e
 .PHONY: mutation-canaries diff-check
 .PHONY: codebase-map codebase-map-check codebase-map-commit-check codebase-map-verify
@@ -20,6 +20,7 @@ help:
 		'make verify               Run the complete local release boundary (PostgreSQL is required)' \
 		'make test-module M=...    Refresh generated artifacts, run one Python module, require committed outputs' \
 		'make test-quality-check   Reject shallow Python tests changed since TEST_QUALITY_BASE (default HEAD)' \
+		'make architecture-check   Reject package-boundary and unowned source growth violations' \
 		'make postgres-contracts   Run mandatory PostgreSQL contracts without allowing skips' \
 		'make frontend-deps        Install frontend dependencies' \
 		'make frontend-build       Build the frontend' \
@@ -36,12 +37,12 @@ help:
 # Refresh generated artifacts, run the Python suite, then reject uncommitted
 # generated outputs. This is intentionally not the complete release boundary;
 # use `make verify` for that.
-test: test-quality-check generated-artifacts
+test: test-quality-check architecture-check generated-artifacts
 	$(PYTHON) -m unittest discover -s tests -t .
 	$(MAKE) generated-artifacts-commit-check
 
 # Run one module with the same generated-artifact contract as the Python suite.
-test-module: test-quality-check generated-artifacts
+test-module: test-quality-check architecture-check generated-artifacts
 	$(PYTHON) -m unittest $(M)
 	$(MAKE) generated-artifacts-commit-check
 
@@ -50,6 +51,7 @@ test-module: test-quality-check generated-artifacts
 # DSN, driver packages, or any selected contract is missing or skipped.
 verify:
 	$(MAKE) test-quality-check
+	$(MAKE) architecture-check
 	$(MAKE) generated-artifacts-check
 	$(PYTHON) -m unittest discover -s tests -t .
 	$(MAKE) postgres-contracts
@@ -62,6 +64,10 @@ TEST_QUALITY_BASE ?= HEAD
 
 test-quality-check:
 	$(PYTHON) scripts/check_test_quality.py --base $(TEST_QUALITY_BASE)
+
+architecture-check:
+	$(PYTHON) scripts/check_package_architecture.py
+	$(PYTHON) scripts/check_source_growth.py
 
 frontend-deps:
 	npm --prefix frontend ci

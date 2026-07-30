@@ -98,7 +98,11 @@ function buildMobileMembers({
     return {
       id: agent.agent_id,
       displayName: agent.display_name || agent.agent_id,
-      detail: providerExecutionLabel(agent),
+      detail:
+        agent.model_id ||
+        (providerExecutionLabel(agent) === "Agent Session"
+          ? ""
+          : providerExecutionLabel(agent)),
       active: isActivePresence(agent.status),
       role,
       icon: Bot,
@@ -397,7 +401,7 @@ export default function MobileRoomInfoPanel({
               )}
               onControl={onAgentControl}
               onConfigure={onAgentConfigure}
-              activityVisible={agentActivityVisibility[selectedAgentSession.participant_id] !== false}
+              activityVisible={agentActivityVisibility[selectedAgentSession.participant_id] === true}
               onActivityVisibilityChange={onAgentActivityVisibilityChange}
             />
           </section>

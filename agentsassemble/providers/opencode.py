@@ -14,6 +14,10 @@ from urllib.request import Request, urlopen
 from agentsassemble.providers.process_environment import sanitized_provider_environment
 from agentsassemble.providers.room_portal import RoomPortal
 from agentsassemble.providers.room_portal_mcp import room_portal_mcp_settings
+from agentsassemble.room.projection import (
+    safe_activity_detail,
+    safe_activity_display_detail,
+)
 from agentsassemble.room.text import clean_room_text
 
 
@@ -182,18 +186,62 @@ class OpenCodeRuntime:
         current_final = ""
         observed_model_id = ""
         activity_states: set[tuple[str, str]] = set()
-        reasoning_active = False
+        reasoning_text: dict[str, str] = {}
+        reasoning_last_emitted: dict[str, str] = {}
+        active_reasoning_ids: set[str] = set()
+
+        def emit_reasoning(part_id: str, delta: str = "", *, completed: bool = False) -> None:
+            if on_activity is None:
+                return
+            activity_id = part_id or "reasoning"
+            if delta:
+                reasoning_text[activity_id] = (reasoning_text.get(activity_id, "") + delta)[:2000]
+            thought = safe_activity_detail(reasoning_text.get(activity_id, ""), limit=2000)
+            previous = reasoning_last_emitted.get(activity_id, "")
+            if completed:
+                on_activity(
+                    {
+                        "category": "reasoning",
+                        "status": "completed",
+                        "activity_id": activity_id,
+                        "activity_title": "생각",
+                        "activity_detail": thought,
+                        "content": thought,
+                    }
+                )
+                return
+            should_emit = bool(
+                thought
+                and thought != previous
+                and (
+                    not previous
+                    or len(thought) - len(previous) >= 40
+                    or any(marker in delta for marker in (".", "!", "?", "\n"))
+                )
+            )
+            if should_emit:
+                reasoning_last_emitted[activity_id] = thought
+                on_activity(
+                    {
+                        "category": "reasoning",
+                        "status": "running",
+                        "activity_id": activity_id,
+                        "activity_title": "생각",
+                        "activity_detail": thought,
+                        "content": thought,
+                    }
+                )
 
         def emit_activity(part: dict[str, object]) -> None:
-            nonlocal reasoning_active
             if on_activity is None:
                 return
             part_id = str(part.get("id") or "")
             part_type = str(part.get("type") or "").casefold()
             if part_type == "reasoning":
-                if not reasoning_active:
-                    reasoning_active = True
-                    on_activity({"category": "reasoning", "status": "running"})
+                active_reasoning_ids.add(part_id or "reasoning")
+                initial_text = str(part.get("text") or "")
+                if initial_text:
+                    emit_reasoning(part_id, initial_text)
                 return
             if part_type not in {"tool", "tool_use", "tool-call", "toolcall"}:
                 return
@@ -205,7 +253,21 @@ class OpenCodeRuntime:
                 return
             activity_states.add(marker)
             tool_name = str(part.get("tool") or part.get("name") or "")
-            on_activity({"category": _tool_category(tool_name), "status": status})
+            activity_title = clean_room_text(
+                part.get("title") or state.get("title") or tool_name or "Tool",
+                limit=120,
+            )
+            activity_detail = _opencode_tool_detail(state.get("input") or part.get("input"))
+            on_activity(
+                {
+                    "category": _tool_category(tool_name or activity_title),
+                    "status": status,
+                    "activity_id": part_id,
+                    "activity_title": activity_title,
+                    "activity_detail": activity_detail,
+                    "content": activity_detail or activity_title,
+                }
+            )
 
         def emit_text_part(message_id: str, part_id: str) -> None:
             nonlocal emitted
@@ -307,7 +369,10 @@ class OpenCodeRuntime:
                     delta = str(properties.get("delta") or "")
                     if not delta or not part_id:
                         continue
-                    if message_id in assistant_message_ids and part_types.get(part_id) == "text":
+                    if message_id in assistant_message_ids and part_types.get(part_id) == "reasoning":
+                        active_reasoning_ids.add(part_id)
+                        emit_reasoning(part_id, delta)
+                    elif message_id in assistant_message_ids and part_types.get(part_id) == "text":
                         emitted += delta
                         if on_delta is not None:
                             on_delta(delta)
@@ -322,8 +387,8 @@ class OpenCodeRuntime:
                     )
                     if not assistant_message_ids and not current_final:
                         continue
-                    if reasoning_active and on_activity is not None:
-                        on_activity({"category": "reasoning", "status": "completed"})
+                    for reasoning_id in active_reasoning_ids:
+                        emit_reasoning(reasoning_id, completed=True)
                     break
             final = current_final or self._assistant_text_for_parent(
                 session_id,
@@ -581,6 +646,24 @@ class OpenCodeRuntime:
             path.chmod(0o600)
         except OSError:
             pass
+
+
+def _opencode_tool_detail(value: object) -> str:
+    if not isinstance(value, dict):
+        return ""
+    for key in (
+        "command",
+        "file_path",
+        "path",
+        "pattern",
+        "query",
+        "url",
+        "description",
+    ):
+        candidate = value.get(key)
+        if isinstance(candidate, str) and candidate.strip():
+            return safe_activity_display_detail(candidate, limit=600)
+    return ""
 
 
 def _tool_category(tool_name: str) -> str:

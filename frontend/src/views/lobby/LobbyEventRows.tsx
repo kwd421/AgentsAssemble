@@ -1,10 +1,18 @@
 import { useId, useState, type ReactNode } from "react";
 import {
   Bot,
+  Brain,
   ChevronDown,
   ChevronRight,
+  CircleCheck,
+  FileText,
+  Globe,
+  LoaderCircle,
   MessageCircle,
   MoreHorizontal,
+  Search,
+  Terminal,
+  Wrench,
   Zap,
 } from "lucide-react";
 
@@ -72,6 +80,12 @@ function ThinkingDetails({
 }) {
   const [open, setOpen] = useState(false);
   const contentId = useId();
+  const reasoningEvents = events.filter(
+    (event) =>
+      event.activity_kind === "reasoning" ||
+      (!event.activity_kind && !event.activity_category)
+  );
+  const toolEvents = events.filter((event) => !reasoningEvents.includes(event));
   return (
     <>
       <button
@@ -92,17 +106,98 @@ function ThinkingDetails({
           aria-live="polite"
           aria-relevant="additions text"
         >
-          {events.map((event) => (
+          {reasoningEvents.map((event) => (
             <div
               key={event.id}
-              className="dc-thinking-step py-0.5 text-[13px] leading-relaxed text-text-muted preserve-words"
+              className="dc-thinking-step flex gap-2 py-1 text-[13px] leading-relaxed text-text-muted preserve-words"
+              data-activity-kind="reasoning"
             >
-              <DiscordText text={event.message || ""} />
+              <Brain size={14} className="mt-0.5 shrink-0 opacity-70" aria-hidden="true" />
+              <div className="min-w-0 italic">
+                <DiscordText text={event.activity_detail || event.message || ""} />
+              </div>
             </div>
+          ))}
+          {toolEvents.map((event) => (
+            <ActivityRow key={event.id} event={event} />
           ))}
         </div>
       )}
     </>
+  );
+}
+
+
+const GENERIC_ACTIVITY_TEXT = new Set([
+  "파일 읽는 중",
+  "파일 확인 완료",
+  "정보 검색 중",
+  "정보 검색 완료",
+  "명령 실행 중",
+  "명령 실행 완료",
+  "웹 확인 중",
+  "웹 확인 완료",
+  "도구 사용 중",
+  "도구 사용 완료",
+]);
+
+
+function activityTitle(event: LobbyEvent): string {
+  if (event.activity_title) return event.activity_title;
+  return {
+    file_read: "파일",
+    search: "검색",
+    command: "명령",
+    web: "웹",
+    tool: "도구",
+  }[event.activity_category || ""] || "작업";
+}
+
+
+function ActivityIcon({ category }: { category?: string }) {
+  const props = { size: 14, className: "shrink-0 text-text-muted", "aria-hidden": true } as const;
+  if (category === "file_read") return <FileText {...props} />;
+  if (category === "search") return <Search {...props} />;
+  if (category === "command") return <Terminal {...props} />;
+  if (category === "web") return <Globe {...props} />;
+  return <Wrench {...props} />;
+}
+
+
+function ActivityRow({ event }: { event: LobbyEvent }) {
+  const completed = event.activity_status === "completed";
+  const detail =
+    event.activity_detail ||
+    (!GENERIC_ACTIVITY_TEXT.has(event.message || "") ? event.message : "");
+  return (
+    <div
+      className="dc-thinking-step flex min-w-0 items-start gap-2 py-1 text-[13px] leading-relaxed"
+      data-activity-kind="tool"
+      data-activity-status={event.activity_status || "running"}
+    >
+      <span className="mt-0.5 flex shrink-0 items-center gap-1.5">
+        {completed ? (
+          <CircleCheck size={14} className="text-emerald-400" aria-label="완료" />
+        ) : (
+          <LoaderCircle
+            size={14}
+            className="animate-spin text-text-muted"
+            aria-label="진행 중"
+          />
+        )}
+        <ActivityIcon category={event.activity_category} />
+      </span>
+      <span className="min-w-0">
+        <span className="font-medium text-text-secondary preserve-words">
+          {activityTitle(event)}
+        </span>
+        {detail && (
+          <span className="ml-2 text-text-muted preserve-words">
+            <DiscordText text={detail} />
+          </span>
+        )}
+      </span>
+    </div>
   );
 }
 

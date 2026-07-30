@@ -13,7 +13,10 @@ from typing import Callable, Iterable
 
 from agentsassemble.providers.turn_input import agent_turn_prompt
 from agentsassemble.providers.process_environment import sanitized_provider_environment
-from agentsassemble.room.projection import safe_activity_detail
+from agentsassemble.room.projection import (
+    safe_activity_detail,
+    safe_activity_display_detail,
+)
 from agentsassemble.room.text import clean_room_text
 
 AgentTurnChunk = dict[str, object]
@@ -254,9 +257,12 @@ class CodexAppServerRuntime:
                     yield {"type": "diagnostics", **self._diagnostics_snapshot()}
                     continue
                 if method in {"item/started", "item/completed"}:
-                    progress = _app_server_progress_text(params, completed=method == "item/completed")
-                    if progress:
-                        yield {"type": "thinking_delta", "content": progress}
+                    activity = _app_server_activity(
+                        params,
+                        completed=method == "item/completed",
+                    )
+                    if activity:
+                        yield {"type": "thinking_delta", **activity}
                         continue
                 if method in {"agent_message/delta", "agent-message/delta", "item/agent_message/delta", "item/agentMessage/delta"}:
                     if not first_agent_item:
@@ -1170,28 +1176,73 @@ def _context_error_detected(values: object) -> bool:
 
 
 def _app_server_progress_text(params: dict[str, object], *, completed: bool) -> str:
+    return str(_app_server_activity(params, completed=completed).get("content") or "")
+
+
+def _app_server_activity(
+    params: dict[str, object],
+    *,
+    completed: bool,
+) -> dict[str, str]:
     item = params.get("item") if isinstance(params.get("item"), dict) else {}
     item_type = clean_room_text(item.get("type"), limit=64)
+    status = "completed" if completed else "running"
+    activity_id = clean_room_text(
+        item.get("id") or params.get("itemId") or params.get("item_id"),
+        limit=128,
+    )
     if item_type == "reasoning":
         detail = safe_activity_detail(_app_server_reasoning_detail(item))
-        if detail:
-            return f"Thinking: {detail}"
-        return "Thinking finished." if completed else "Thinking."
+        return {
+            "category": "reasoning",
+            "status": status,
+            "activity_id": activity_id or "reasoning",
+            "activity_title": "생각",
+            "activity_detail": detail,
+            "content": (
+                f"Thinking: {detail}"
+                if detail
+                else ("Thinking finished." if completed else "Thinking.")
+            ),
+        }
     if item_type in {"commandExecution", "command"}:
-        command = safe_activity_detail(
-            _app_server_command_detail(
-                item.get("command") or item.get("cmd") or item.get("name")
-            )
+        raw_command = _app_server_command_detail(
+            item.get("command") or item.get("cmd") or item.get("name")
         )
-        if command:
-            return f"Tool finished: {command}" if completed else f"Using tool: {command}"
-        return "Tool finished." if completed else "Using tool."
+        command = safe_activity_detail(raw_command)
+        display_command = safe_activity_display_detail(raw_command)
+        return {
+            "category": "command",
+            "status": status,
+            "activity_id": activity_id,
+            "activity_title": "명령",
+            "activity_detail": display_command,
+            "content": (
+                f"Tool finished: {command}" if completed else f"Using tool: {command}"
+            )
+            if command
+            else ("Tool finished." if completed else "Using tool."),
+        }
     if item_type in {"mcpToolCall", "toolCall"}:
         name = clean_room_text(item.get("name") or item.get("toolName"), limit=120)
-        if name:
-            return f"Tool finished: {name}" if completed else f"Using tool: {name}"
-        return "Tool finished." if completed else "Using tool."
-    return ""
+        detail = safe_activity_display_detail(
+            item.get("arguments") or item.get("input") or "",
+            limit=600,
+        )
+        return {
+            "category": "tool",
+            "status": status,
+            "activity_id": activity_id,
+            "activity_title": name or "Tool",
+            "activity_detail": detail,
+            "content": detail
+            or (
+                (f"Tool finished: {name}" if completed else f"Using tool: {name}")
+                if name
+                else ("Tool finished." if completed else "Using tool.")
+            ),
+        }
+    return {}
 
 
 def _app_server_reasoning_detail(item: dict[str, object]) -> str:

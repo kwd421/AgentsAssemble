@@ -3626,6 +3626,8 @@ class RoomRealtimeControllerTests(unittest.TestCase):
                 "opencode",
                 "deepseek",
                 "cerebras",
+                "ollama",
+                "lmstudio",
             ],
         )
 
@@ -4412,6 +4414,9 @@ class RoomRealtimeControllerTests(unittest.TestCase):
                 "turn_id": assignment["turn_id"],
                 "category": "command",
                 "status": "running",
+                "activity_id": "command-1",
+                "activity_title": "Bash",
+                "activity_detail": "cat /private/project/.env TOKEN=secret",
                 "content": "cat /private/project/.env TOKEN=secret",
             },
             identity,
@@ -4448,6 +4453,12 @@ class RoomRealtimeControllerTests(unittest.TestCase):
             ["clean", " delta"],
         )
         self.assertEqual(activity["content"], "cat [local path] [redacted]")
+        self.assertEqual(activity["activity_id"], "command-1")
+        self.assertEqual(activity["activity_title"], "Bash")
+        self.assertEqual(
+            activity["activity_detail"],
+            "cat [local path]/.env [redacted]",
+        )
         self.assertNotIn("/private/project", str(activity))
         self.assertNotIn("TOKEN", str(activity))
         self.assertFalse((self.root / "rooms" / "general" / "live_cli_events.jsonl").exists())

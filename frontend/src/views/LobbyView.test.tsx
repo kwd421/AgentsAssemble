@@ -118,6 +118,44 @@ describe("LobbyView active provider turn", () => {
     expect(screen.queryByRole("button", { name: /생각과 작업/ })).toBeNull();
   });
 
+  it("shows provider thought text and one completed tool row with its target", async () => {
+    renderLobby(
+      [
+        {
+          ...thought("두 후보의 근거를 비교하고 있습니다."),
+          id: "reasoning-a",
+          activity_kind: "reasoning",
+          activity_id: "reasoning-1",
+          activity_title: "생각",
+          activity_detail: "두 후보의 근거를 비교하고 있습니다.",
+          activity_category: "reasoning",
+          activity_status: "running",
+        },
+        {
+          ...thought("package.json"),
+          id: "tool-a",
+          activity_kind: "tool",
+          activity_id: "tool-1",
+          activity_title: "Read",
+          activity_detail: "package.json",
+          activity_category: "file_read",
+          activity_status: "completed",
+        },
+      ],
+      [indicator]
+    );
+
+    const details = await screen.findByRole("button", { name: /Agent A의 생각과 작업/ });
+    fireEvent.click(details);
+
+    expect(screen.getByText("두 후보의 근거를 비교하고 있습니다.")).toBeTruthy();
+    expect(screen.getByText("Read")).toBeTruthy();
+    expect(screen.getByText("package.json")).toBeTruthy();
+    expect(screen.getByLabelText("완료")).toBeTruthy();
+    expect(screen.queryByText("파일 읽는 중")).toBeNull();
+    expect(screen.queryByText("도구 사용 완료")).toBeNull();
+  });
+
   it("holds partial answer text until the active turn publishes its final answer", async () => {
     renderLobby([activeDelta("아직 스트리밍 중인 답변")], [indicator]);
 

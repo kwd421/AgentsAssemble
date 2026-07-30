@@ -16,6 +16,8 @@ describe("ProviderLogo", () => {
       ["opencode", "opencode_server"],
       ["deepseek", "deepseek_api"],
       ["cerebras", "cerebras_api"],
+      ["ollama", "ollama_api"],
+      ["lmstudio", "lmstudio_api"],
     ] as const;
     const { container } = render(
       <div>

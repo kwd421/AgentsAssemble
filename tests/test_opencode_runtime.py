@@ -176,7 +176,7 @@ class OpenCodeRuntimeTests(unittest.TestCase):
         self.assertEqual("".join(deltas), "current reply")
         self.assertEqual(activities, [])
 
-    def test_streams_text_parts_but_never_reasoning_parts(self):
+    def test_keeps_reasoning_out_of_reply_stream_but_emits_public_activity(self):
         session_id = "session-1"
         message_id = "message-1"
         stream = _Response(
@@ -300,11 +300,33 @@ class OpenCodeRuntimeTests(unittest.TestCase):
             [
                 {"category": "compaction", "status": "started"},
                 {"category": "compaction", "status": "completed"},
-                {"category": "reasoning", "status": "running"},
-                {"category": "file_read", "status": "running"},
-                {"category": "reasoning", "status": "completed"},
+                {
+                    "category": "reasoning",
+                    "status": "running",
+                    "activity_id": "reasoning-1",
+                    "activity_title": "생각",
+                    "activity_detail": "hidden plan",
+                    "content": "hidden plan",
+                },
+                {
+                    "category": "file_read",
+                    "status": "running",
+                    "activity_id": "tool-1",
+                    "activity_title": "read_file",
+                    "activity_detail": "[local path]/.env",
+                    "content": "[local path]/.env",
+                },
+                {
+                    "category": "reasoning",
+                    "status": "completed",
+                    "activity_id": "reasoning-1",
+                    "activity_title": "생각",
+                    "activity_detail": "hidden plan",
+                    "content": "hidden plan",
+                },
             ],
         )
+        self.assertIn("hidden plan", str(activities))
         self.assertNotIn("/private/project", str(activities))
 
 

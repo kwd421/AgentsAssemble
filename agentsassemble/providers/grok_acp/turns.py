@@ -21,7 +21,7 @@ def tool_category(title: str) -> str:
     return "tool"
 
 
-def grok_tool_activity(update: dict[str, object]) -> tuple[str, str]:
+def grok_tool_activity(update: dict[str, object]) -> tuple[str, str, str]:
     metadata = update.get("_meta") if isinstance(update.get("_meta"), dict) else {}
     tool_metadata = (
         metadata.get("x.ai/tool")
@@ -55,11 +55,13 @@ def grok_tool_activity(update: dict[str, object]) -> tuple[str, str]:
         if isinstance(candidate, str) and candidate.strip():
             detail_value = candidate
             break
-    if detail_value:
-        detail = f"{label or name or 'Tool'}: {detail_value}"
-    else:
-        detail = title or label or name
-    return category_source, clean_room_text(detail, limit=600)
+    activity_title = label or name or title or "Tool"
+    detail = detail_value or title
+    return (
+        category_source,
+        clean_room_text(activity_title, limit=120),
+        clean_room_text(detail, limit=600),
+    )
 
 
 class GrokAcpTurnProjectionMixin:
@@ -141,7 +143,7 @@ class GrokAcpTurnProjectionMixin:
                         }
                         else "running"
                     )
-                    title, detail = grok_tool_activity(update)
+                    category_source, activity_title, detail = grok_tool_activity(update)
                     tool_call_id = clean_room_text(
                         update.get("toolCallId") or update.get("tool_call_id"),
                         limit=128,
@@ -153,9 +155,16 @@ class GrokAcpTurnProjectionMixin:
                     ):
                         on_activity(
                             {
-                                "category": tool_category(title),
+                                "category": tool_category(category_source),
                                 "status": status,
-                                "content": detail,
+                                "activity_id": tool_call_id,
+                                "activity_title": activity_title,
+                                "activity_detail": detail,
+                                "content": (
+                                    f"{activity_title}: {detail}"
+                                    if detail
+                                    else activity_title
+                                ),
                             }
                         )
                 continue
@@ -212,6 +221,9 @@ class GrokAcpTurnProjectionMixin:
                 {
                     "category": "reasoning",
                     "status": "running",
+                    "activity_id": "reasoning",
+                    "activity_title": "생각",
+                    "activity_detail": thought,
                     "content": thought,
                 }
             )
@@ -231,8 +243,6 @@ class GrokAcpTurnProjectionMixin:
             if previous == current:
                 return False
             self._tool_activity_state[tool_call_id] = current
-            if status == "completed" and previous is not None:
-                return False
         return True
 
 

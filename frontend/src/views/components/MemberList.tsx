@@ -159,7 +159,21 @@ export default function MemberList({
         : profile.avatarImage || agent.avatar_image_url;
       const agentPanelDisplayName = `${ownerDisplayName}'s ${agentDisplayName}`;
       const executionDetail = providerExecutionLabel(agent);
-      const detail = [executionDetail, agentSession?.model].filter(Boolean).join(" · ");
+      const modelLabel = String(agentSession?.model || agent.model_id || "").trim();
+      const reasoningEffort = String(
+        agentSession?.reasoning_effort || agent.effort || ""
+      ).trim();
+      const serviceTier = String(
+        agentSession?.service_tier || agent.speed || ""
+      ).trim().toLowerCase();
+      const fastMode =
+        Boolean(agent.fast_mode) || ["fast", "priority"].includes(serviceTier);
+      const detail = [
+        executionDetail === "Agent Session" ? "" : executionDetail,
+        modelLabel,
+      ]
+        .filter(Boolean)
+        .join(" · ");
       const runtimeStatus = agentSession?.runtime_status || agentSession?.status;
       return {
         id: agent.agent_id,
@@ -168,6 +182,12 @@ export default function MemberList({
         member,
         displayName: agentPanelDisplayName,
         detail,
+        modelLabel,
+        reasoningEffort,
+        fastMode,
+        ultraMode: ["ultra", "ultracode"].includes(
+          reasoningEffort.toLowerCase()
+        ),
         fullDetail: [detail, agentSession?.runtime_kind].filter(Boolean).join(" · "),
         statusLabel: agentSession
           ? agentSessionStatusLabel(runtimeStatus)
@@ -223,6 +243,14 @@ export default function MemberList({
           member,
           displayName: member.display_name || member.participant_id,
           detail: [detail, agentSession?.model].filter(Boolean).join(" · "),
+          modelLabel: String(agentSession?.model || "").trim(),
+          reasoningEffort: String(agentSession?.reasoning_effort || "").trim(),
+          fastMode: ["fast", "priority"].includes(
+            String(agentSession?.service_tier || "").trim().toLowerCase()
+          ),
+          ultraMode: ["ultra", "ultracode"].includes(
+            String(agentSession?.reasoning_effort || "").trim().toLowerCase()
+          ),
           fullDetail: [fullDetail, agentSession?.runtime_kind].filter(Boolean).join(" · "),
           statusLabel: agentSession
             ? agentSessionStatusLabel(agentSession.runtime_status || agentSession.status)
@@ -461,8 +489,8 @@ export default function MemberList({
           onAgentConfigure={onAgentConfigure}
           activityVisible={
             detailEntry.agentSession
-              ? agentActivityVisibility[detailEntry.agentSession.participant_id] !== false
-              : true
+              ? agentActivityVisibility[detailEntry.agentSession.participant_id] === true
+              : false
           }
           onActivityVisibilityChange={onAgentActivityVisibilityChange}
         />

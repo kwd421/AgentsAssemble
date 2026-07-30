@@ -23,5 +23,5 @@ export function persistAgentActivityVisibility(value: AgentActivityVisibility) {
 }
 
 export function agentActivityIsVisible(value: AgentActivityVisibility, participantId: string) {
-  return value[participantId] !== false;
+  return value[participantId] === true;
 }

@@ -4,6 +4,8 @@ import cursorLogo from "../../assets/provider-logos/cursor.png";
 import deepSeekLogo from "../../assets/provider-logos/deepseek.png";
 import geminiLogo from "../../assets/provider-logos/gemini.webp";
 import grokLogo from "../../assets/provider-logos/grok.png";
+import lmStudioLogo from "../../assets/provider-logos/lmstudio.png";
+import ollamaLogo from "../../assets/provider-logos/ollama.png";
 import openAILogo from "../../assets/provider-logos/openai.svg";
 import openCodeLogo from "../../assets/provider-logos/opencode.png";
 
@@ -15,7 +17,9 @@ export type ProviderBrandKey =
   | "cursor"
   | "opencode"
   | "deepseek"
-  | "cerebras";
+  | "cerebras"
+  | "ollama"
+  | "lmstudio";
 
 export type ProviderBrand = {
   label: string;
@@ -44,56 +48,76 @@ const PROVIDER_ALIASES: Record<string, ProviderBrandKey> = {
   deepseek_api: "deepseek",
   cerebras: "cerebras",
   cerebras_api: "cerebras",
+  ollama: "ollama",
+  ollama_api: "ollama",
+  lmstudio: "lmstudio",
+  lmstudio_api: "lmstudio",
+  lm_studio: "lmstudio",
 };
 
+// Source assets have very different built-in whitespace. These scales normalize
+// the contrasting brand mark to roughly 70% of the circular badge, not the raw
+// image canvas.
 export const PROVIDER_BRANDS: Record<ProviderBrandKey, ProviderBrand> = {
   codex: {
     label: "OpenAI",
     logo: openAILogo,
     background: "#000000",
-    scale: "100%",
+    scale: "141%",
   },
   antigravity: {
     label: "Google Gemini",
     logo: geminiLogo,
     background: "#ffffff",
-    scale: "72%",
+    scale: "79%",
   },
   grok: {
     label: "Grok",
     logo: grokLogo,
     background: "#000000",
-    scale: "100%",
+    scale: "133%",
   },
   claude: {
     label: "Claude",
     logo: claudeLogo,
     background: "#d97757",
-    scale: "100%",
+    scale: "96%",
   },
   cursor: {
     label: "Cursor",
     logo: cursorLogo,
     background: "#0f0e0b",
-    scale: "100%",
+    scale: "103%",
   },
   opencode: {
     label: "OpenCode",
     logo: openCodeLogo,
     background: "#171515",
-    scale: "100%",
+    scale: "111%",
   },
   deepseek: {
     label: "DeepSeek",
     logo: deepSeekLogo,
     background: "#ffffff",
-    scale: "76%",
+    scale: "70%",
   },
   cerebras: {
     label: "Cerebras",
     logo: cerebrasLogo,
     background: "#ffffff",
-    scale: "74%",
+    scale: "70%",
+  },
+  ollama: {
+    label: "Ollama",
+    logo: ollamaLogo,
+    background: "#ffffff",
+    scale: "87%",
+  },
+  lmstudio: {
+    label: "LM Studio",
+    logo: lmStudioLogo,
+    background: "#5d45dd",
+    scale: "89%",
   },
 };
 

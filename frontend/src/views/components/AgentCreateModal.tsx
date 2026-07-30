@@ -1,10 +1,12 @@
 import { useEffect, useRef, useState } from "react";
-import { Cloud, Folder, Play, Plus, X } from "lucide-react";
+import { Cloud, CreditCard, Folder, HardDrive, Play, Plus, X } from "lucide-react";
 import {
   chooseLocalWorkspace,
   deleteProviderCredential,
   fetchProviderCredentialStatus,
+  refreshProviderCatalog,
   setProviderCredential,
+  startFrontendLiveAgentLogin,
   type FrontendLiveAgentCreateRequest,
   type ProviderCredentialStatus,
 } from "../../api";
@@ -14,11 +16,14 @@ import type {
 } from "../../roomSocketClient";
 import type { RoomAgentSession } from "../../api/agentSessions";
 import {
+  displayProviderControls,
   effectiveProviderControlOptions,
   initializeProviderSettings,
   reconcileProviderSettings,
 } from "../../lib/providerControlSettings";
 import ProviderLogo from "./ProviderLogo";
+import ProviderControlSelect from "./ProviderControlSelect";
+import ProviderControlToggle from "./ProviderControlToggle";
 
 type AgentCreateModalProps = {
   open: boolean;
@@ -43,7 +48,9 @@ export default function AgentCreateModal({
   onCreate,
   onCreated,
 }: AgentCreateModalProps) {
-  const [apiPickerOpen, setApiPickerOpen] = useState(false);
+  const [providerGroup, setProviderGroup] = useState<ProviderCatalogGroup | "">(
+    "subscription"
+  );
   const [providerId, setProviderId] = useState("");
   const [existingSessionId, setExistingSessionId] = useState("");
   const [displayName, setDisplayName] = useState("");
@@ -57,10 +64,11 @@ export default function AgentCreateModal({
   const [providerApiKey, setProviderApiKey] = useState("");
   const [credentialStatus, setCredentialStatus] = useState<ProviderCredentialStatus | null>(null);
   const [credentialBusy, setCredentialBusy] = useState(false);
+  const [loginBusy, setLoginBusy] = useState(false);
   const wasOpen = useRef(false);
-  const directProviders = providers.filter((provider) => provider.runtime_kind !== "api");
-  const apiProviders = providers.filter((provider) => provider.runtime_kind === "api");
-  const selectedProvider = providers.find((provider) => provider.id === providerId);
+  const groupedProviders = projectProvidersByCatalogGroup(providers);
+  const visibleProviders = providerGroup ? groupedProviders[providerGroup] : [];
+  const selectedProvider = visibleProviders.find((provider) => provider.id === providerId);
   const selectedProviderMissing = Boolean(providerId && providers.length && !selectedProvider);
   const reusableSessions = existingSessions.filter(
     (session) =>
@@ -84,7 +92,11 @@ export default function AgentCreateModal({
       (existingSessionId || (catalogRevision && selectedProvider?.startable)) &&
       !invalidControl &&
       displayName.trim() &&
-      (existingSessionId || workspacePath.trim())
+      (
+        existingSessionId ||
+        selectedProvider?.workspace_required === false ||
+        workspacePath.trim()
+      )
   );
   const statusMessage = deriveStatusMessage({
     status,
@@ -93,7 +105,6 @@ export default function AgentCreateModal({
     hasProviders: providers.length > 0,
     invalidControl,
     existingSessionId,
-    apiPickerOpen,
   });
 
   useEffect(() => {
@@ -106,7 +117,7 @@ export default function AgentCreateModal({
       setWorkspaceBusy(false);
     }
     if (!providers.length) return;
-    const current = providers.find((provider) => provider.id === providerId);
+    const current = visibleProviders.find((provider) => provider.id === providerId);
     if (!wasOpen.current) {
       if (current) applyProvider(current);
       setStatus("");
@@ -117,7 +128,7 @@ export default function AgentCreateModal({
       setSettings((previous) => reconcileProviderSettings(current, previous));
     }
     wasOpen.current = true;
-  }, [open, providers, existingSessionId, providerId]);
+  }, [open, providers, existingSessionId, providerGroup, providerId]);
 
   useEffect(() => {
     if (!open || !selectedProvider || existingSessionId || displayNameEdited) return;
@@ -125,7 +136,7 @@ export default function AgentCreateModal({
   }, [displayNameEdited, existingSessionId, open, selectedProvider, settings]);
 
   useEffect(() => {
-    if (!open || selectedProvider?.runtime_kind !== "api") {
+    if (!open || !selectedProvider || providerCatalogGroup(selectedProvider) !== "api") {
       setProviderApiKey("");
       setCredentialStatus(null);
       return;
@@ -134,11 +145,11 @@ export default function AgentCreateModal({
     fetchProviderCredentialStatus(selectedProvider.id)
       .then(setCredentialStatus)
       .catch((error) => setStatus(error instanceof Error ? error.message : "키 상태 확인 실패"));
-  }, [open, selectedProvider?.id, selectedProvider?.runtime_kind]);
+  }, [open, selectedProvider?.id, selectedProvider?.catalog_group, selectedProvider?.runtime_kind]);
 
   function applyProvider(provider: NativeCliProviderAvailability) {
     const initialSettings = initializeProviderSettings(provider);
-    setApiPickerOpen(provider.runtime_kind === "api");
+    setProviderGroup(providerCatalogGroup(provider));
     setProviderId(provider.id);
     setExistingSessionId("");
     setDisplayName(defaultAgentDisplayName(provider, initialSettings));
@@ -147,8 +158,8 @@ export default function AgentCreateModal({
     setStartNow(provider.startable);
   }
 
-  function chooseApiCategory() {
-    setApiPickerOpen(true);
+  function chooseProviderGroup(group: ProviderCatalogGroup) {
+    setProviderGroup(group);
     setProviderId("");
     setExistingSessionId("");
     setDisplayName("");
@@ -292,6 +303,54 @@ export default function AgentCreateModal({
     }
   }
 
+  async function startProviderLogin() {
+    if (!selectedProvider?.login_available || loginBusy) return;
+    setLoginBusy(true);
+    setStatus(
+      selectedProvider.login_flow === "browser_oauth"
+        ? "브라우저에서 로그인 중..."
+        : ""
+    );
+    try {
+      const result = await startFrontendLiveAgentLogin(selectedProvider.id);
+      setStatus(
+        result.message ||
+          `${selectedProvider.display_name} 로그인 창을 열었습니다.`
+      );
+    } catch (error) {
+      setStatus(
+        error instanceof Error
+          ? error.message
+          : `${selectedProvider.display_name} 로그인을 시작하지 못했습니다`
+      );
+    } finally {
+      setLoginBusy(false);
+    }
+  }
+
+  async function recheckProviderLogin() {
+    if (!selectedProvider || loginBusy) return;
+    setLoginBusy(true);
+    setStatus("로그인 상태 확인 중...");
+    try {
+      const catalog = await refreshProviderCatalog();
+      const refreshed = catalog.providers.find(
+        (provider) => provider.id === selectedProvider.id
+      );
+      setStatus(
+        refreshed?.discovery_status === "ready"
+          ? `${selectedProvider.display_name} 로그인 확인 완료`
+          : refreshed?.discovery_error || "로그인 상태를 확인하지 못했습니다"
+      );
+    } catch (error) {
+      setStatus(
+        error instanceof Error ? error.message : "로그인 상태 확인 실패"
+      );
+    } finally {
+      setLoginBusy(false);
+    }
+  }
+
   function renderProviderChoice(provider: NativeCliProviderAvailability) {
     return (
       <button
@@ -303,7 +362,7 @@ export default function AgentCreateModal({
         disabled={!provider.available}
         onClick={() => {
           applyProvider(provider);
-          setStatus(provider.discovery_error || "");
+          setStatus("");
         }}
       >
         <ProviderLogo
@@ -341,27 +400,38 @@ export default function AgentCreateModal({
           <section className="dc-agent-section">
             <p className="dc-agent-section-title">종류</p>
             <div className="dc-agent-provider-grid" role="list" aria-label="에이전트 종류">
-              {directProviders.map(renderProviderChoice)}
-              {apiProviders.length > 0 && (
+              {PROVIDER_GROUPS.map(({ id, label, Icon }) => (
                 <button
+                  key={id}
                   type="button"
                   role="listitem"
-                  aria-label="API"
-                  data-active={apiPickerOpen}
-                  onClick={chooseApiCategory}
+                  aria-label={label}
+                  data-active={providerGroup === id}
+                  disabled={groupedProviders[id].length === 0}
+                  onClick={() => chooseProviderGroup(id)}
                 >
-                  <Cloud size={22} aria-hidden="true" />
-                  <span>API</span>
+                  <Icon size={22} aria-hidden="true" />
+                  <span>{label}</span>
                 </button>
-              )}
+              ))}
             </div>
           </section>
 
-          {apiPickerOpen && (
+          {providerGroup && (
             <section className="dc-agent-section">
-              <p className="dc-agent-section-title">API 프로바이더</p>
-              <div className="dc-agent-provider-grid" role="list" aria-label="API 프로바이더">
-                {apiProviders.map(renderProviderChoice)}
+              <p className="dc-agent-section-title">
+                {providerGroupLabel(providerGroup)} Providers
+              </p>
+              <div
+                className="dc-agent-provider-grid"
+                role="list"
+                aria-label={
+                  providerGroup === "api"
+                    ? "API 프로바이더"
+                    : `${providerGroupLabel(providerGroup)} Providers`
+                }
+              >
+                {visibleProviders.map(renderProviderChoice)}
               </div>
             </section>
           )}
@@ -372,18 +442,18 @@ export default function AgentCreateModal({
               {reusableSessions.length > 0 && (
                 <label className="dc-agent-field">
                   <span>기존 세션</span>
-                  <select
-                    aria-label="기존 세션"
+                  <ProviderControlSelect
+                    label="기존 세션"
+                    options={[
+                      { value: "", label: "새 세션 만들기" },
+                      ...reusableSessions.map((session) => ({
+                        value: session.session_id,
+                        label: `${session.display_name} · ${session.model || session.provider_kind}`,
+                      })),
+                    ]}
                     value={existingSessionId}
-                    onChange={(event) => applyExistingSession(event.currentTarget.value)}
-                  >
-                    <option value="">새 세션 만들기</option>
-                    {reusableSessions.map((session) => (
-                      <option key={session.session_id} value={session.session_id}>
-                        {session.display_name} · {session.model || session.provider_kind}
-                      </option>
-                    ))}
-                  </select>
+                    onChange={applyExistingSession}
+                  />
                 </label>
               )}
               <label className="dc-agent-field">
@@ -398,7 +468,7 @@ export default function AgentCreateModal({
                   }}
                 />
               </label>
-              {!existingSessionId && (
+              {!existingSessionId && selectedProvider?.workspace_required !== false && (
                 <label className="dc-agent-field">
                   <span>작업 폴더</span>
                   <div className="dc-agent-folder-field">
@@ -426,19 +496,28 @@ export default function AgentCreateModal({
             <section className="dc-agent-section">
               <p className="dc-agent-section-title">모델 · 실행 설정</p>
               <div className="dc-agent-field-grid dc-agent-field-grid--dual">
-                {selectedProvider.controls.map((control) => {
-                  const options = effectiveProviderControlOptions(
-                    selectedProvider,
-                    control,
-                    settings
+                {displayProviderControls(selectedProvider).map((control) => {
+                  const providerSupportsControl = selectedProvider.controls.some(
+                    (candidate) => candidate.key === control.key
                   );
+                  const options = providerSupportsControl
+                    ? effectiveProviderControlOptions(
+                        selectedProvider,
+                        control,
+                        settings
+                      )
+                    : control.options;
                   return (
                     <ProviderControlField
                       key={`${selectedProvider.id}:${control.key}`}
                       control={control}
                       options={options}
-                      value={settings[control.key] ?? ""}
-                      disabled={Boolean(existingSessionId)}
+                      value={
+                        providerSupportsControl
+                          ? settings[control.key] ?? control.default_value
+                          : control.default_value
+                      }
+                      disabled={Boolean(existingSessionId) || !providerSupportsControl}
                       onChange={(value) => updateProviderControl(control.key, value)}
                     />
                   );
@@ -447,7 +526,7 @@ export default function AgentCreateModal({
             </section>
           )}
 
-          {selectedProvider?.runtime_kind === "api" && (
+          {selectedProvider && providerCatalogGroup(selectedProvider) === "api" && (
             <section className="dc-agent-section">
               <p className="dc-agent-section-title">인증</p>
               <div className="dc-provider-secret-field">
@@ -487,6 +566,46 @@ export default function AgentCreateModal({
               </div>
             </section>
           )}
+
+          {selectedProvider?.login_available &&
+            selectedProvider.discovery_error_code ===
+              "authentication_required" && (
+              <section className="dc-agent-section">
+                <p className="dc-agent-section-title">인증</p>
+                <div className="dc-provider-secret-field">
+                  <div>
+                    <button
+                      type="button"
+                      disabled={loginBusy}
+                      onClick={() => void startProviderLogin()}
+                    >
+                      {loginBusy
+                        ? selectedProvider.login_flow === "browser_oauth"
+                          ? "로그인 중..."
+                          : "처리 중..."
+                        : selectedProvider.login_label ||
+                          `${selectedProvider.display_name} 로그인`}
+                    </button>
+                    {selectedProvider.login_flow ===
+                      "interactive_terminal" && (
+                      <button
+                        type="button"
+                        disabled={loginBusy}
+                        onClick={() => void recheckProviderLogin()}
+                      >
+                        로그인 완료 후 다시 확인
+                      </button>
+                    )}
+                  </div>
+                  <p>
+                    {selectedProvider.login_flow === "browser_oauth"
+                      ? "브라우저 인증이 끝나면 모델 목록을 자동으로 다시 확인합니다."
+                      : "대화형 로그인이 끝나면 상태를 다시 확인하세요."}{" "}
+                    인증 정보는 AgentsAssemble에 저장하지 않습니다.
+                  </p>
+                </div>
+              </section>
+            )}
 
           {statusMessage && (
             <p className="dc-agent-create-status preserve-words">{statusMessage}</p>
@@ -552,23 +671,23 @@ function ProviderControlField({
   return (
     <label className="dc-agent-field">
       <span>{control.label}</span>
-      <select
-        aria-label={control.label}
-        value={value}
-        disabled={disabled}
-        onChange={(event) => onChange(event.currentTarget.value)}
-      >
-        {!options.some((option) => option.value === value) && (
-          <option value="" disabled>
-            선택 필요
-          </option>
-        )}
-        {options.map((option) => (
-          <option key={`${control.key}:${option.value || "default"}`} value={option.value}>
-            {option.label}
-          </option>
-        ))}
-      </select>
+      {control.key === "service_tier" && options.length <= 2 ? (
+        <ProviderControlToggle
+          label={control.label}
+          options={options}
+          value={value}
+          disabled={disabled}
+          onChange={onChange}
+        />
+      ) : (
+        <ProviderControlSelect
+          label={control.label}
+          options={options}
+          value={value}
+          disabled={disabled}
+          onChange={onChange}
+        />
+      )}
     </label>
   );
 }
@@ -580,7 +699,6 @@ function deriveStatusMessage({
   hasProviders,
   invalidControl,
   existingSessionId,
-  apiPickerOpen,
 }: {
   status: string;
   selectedProvider: NativeCliProviderAvailability | undefined;
@@ -588,7 +706,6 @@ function deriveStatusMessage({
   hasProviders: boolean;
   invalidControl: ProviderControl | undefined;
   existingSessionId: string;
-  apiPickerOpen: boolean;
 }): string {
   if (status) return status;
   if (selectedProvider && !selectedProvider.available) {
@@ -597,6 +714,12 @@ function deriveStatusMessage({
   if (selectedProvider?.discovery_status === "loading") {
     return "모델 목록을 불러오는 중입니다";
   }
+  if (
+    selectedProvider?.catalog_source === "stale_cache" &&
+    selectedProvider.discovery_error
+  ) {
+    return selectedProvider.discovery_error;
+  }
   if (selectedProvider?.discovery_status === "failed" && selectedProvider.available) {
     return selectedProvider.discovery_error || "모델 목록을 불러오지 못했습니다";
   }
@@ -604,15 +727,92 @@ function deriveStatusMessage({
     return "선택한 provider가 현재 catalog에 없습니다.";
   }
   if (!selectedProvider && !selectedProviderMissing && hasProviders) {
-    if (apiPickerOpen) {
-      return "사용할 API 프로바이더를 선택하세요.";
-    }
     return "사용할 provider를 선택하세요.";
   }
   if (!existingSessionId && invalidControl) {
     return `${invalidControl.label}의 유효한 기본값이 없어 직접 선택해야 합니다.`;
   }
   return "";
+}
+
+type ProviderCatalogGroup = "subscription" | "api" | "local";
+
+const PROVIDER_GROUPS = [
+  { id: "subscription", label: "Subscription", Icon: CreditCard },
+  { id: "api", label: "API", Icon: Cloud },
+  { id: "local", label: "Local", Icon: HardDrive },
+] as const;
+
+function providerCatalogGroup(
+  provider: NativeCliProviderAvailability | undefined
+): ProviderCatalogGroup {
+  if (provider?.catalog_group) return provider.catalog_group;
+  return provider?.runtime_kind === "api" ? "api" : "subscription";
+}
+
+function projectProvidersByCatalogGroup(
+  providers: NativeCliProviderAvailability[]
+): Record<ProviderCatalogGroup, NativeCliProviderAvailability[]> {
+  return {
+    subscription: providers.flatMap((provider) => {
+      const projected = projectProviderToCatalogGroup(provider, "subscription");
+      return projected ? [projected] : [];
+    }),
+    api: providers.flatMap((provider) => {
+      const projected = projectProviderToCatalogGroup(provider, "api");
+      return projected ? [projected] : [];
+    }),
+    local: providers.flatMap((provider) => {
+      const projected = projectProviderToCatalogGroup(provider, "local");
+      return projected ? [projected] : [];
+    }),
+  };
+}
+
+function projectProviderToCatalogGroup(
+  provider: NativeCliProviderAvailability,
+  group: ProviderCatalogGroup
+): NativeCliProviderAvailability | null {
+  const modelControl = provider.controls.find((control) => control.key === "model");
+  if (!modelControl) {
+    return providerCatalogGroup(provider) === group ? provider : null;
+  }
+  const providerGroup = providerCatalogGroup(provider);
+  const scopedOptions = modelControl.options.filter((option) => {
+    const optionGroup = option.metadata?.catalog_group;
+    return (
+      (typeof optionGroup === "string" && optionGroup
+        ? optionGroup
+        : providerGroup) === group
+    );
+  });
+  if (scopedOptions.length === 0) return null;
+  if (scopedOptions.length === modelControl.options.length && providerGroup === group) {
+    return provider;
+  }
+  const defaultModel = scopedOptions.some(
+    (option) => option.value === modelControl.default_value
+  )
+    ? modelControl.default_value
+    : scopedOptions[0].value;
+  return {
+    ...provider,
+    catalog_group: group,
+    default_model: defaultModel,
+    controls: provider.controls.map((control) =>
+      control.key === "model"
+        ? {
+            ...control,
+            default_value: defaultModel,
+            options: scopedOptions,
+          }
+        : control
+    ),
+  };
+}
+
+function providerGroupLabel(group: ProviderCatalogGroup): string {
+  return PROVIDER_GROUPS.find((item) => item.id === group)?.label || group;
 }
 
 function defaultAgentDisplayName(

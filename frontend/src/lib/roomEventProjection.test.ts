@@ -236,23 +236,39 @@ describe("projectRoomEventsToTimeline", () => {
     expect(timeline[0].name).toBe("Imported Agent");
   });
 
-  it("renders sanitized tool activity in the same collapsible timeline", () => {
-    const activity = event({
-      id: "activity-1",
+  it("updates one structured tool activity from running to completed", () => {
+    const running = event({
+      id: "activity-running",
       type: "activity_delta",
       turn_id: "turn-1",
       activity_kind: "tool",
+      activity_id: "search-1",
+      activity_title: "WebSearch",
+      activity_detail: "Alabasta strongest character",
       category: "search",
       status: "running",
-      content: "정보 검색 중",
+      content: "Alabasta strongest character",
     });
+    const completed = event({
+      ...running,
+      id: "activity-completed",
+      seq: 2,
+      status: "completed",
+    });
+    const timeline = projectRoomEventsToTimeline([running, completed]);
 
-    expect(projectRoomEventsToTimeline([activity])[0]).toMatchObject({
+    expect(timeline).toHaveLength(1);
+    expect(timeline[0]).toMatchObject({
       kind: "thinking",
-      message: "정보 검색 중",
+      message: "Alabasta strongest character",
       flow_action: "activity_delta",
+      activity_id: "search-1",
+      activity_title: "WebSearch",
+      activity_detail: "Alabasta strongest character",
+      activity_category: "search",
+      activity_status: "completed",
     });
-    expect(projectRoomEventProgress(activity)?.message).toBe("정보 검색 중");
+    expect(projectRoomEventProgress(running)?.message).toBe("Alabasta strongest character");
   });
 
   it("projects compaction as transient progress instead of permanent thought history", () => {
@@ -306,9 +322,11 @@ describe("projectRoomEventsToTimeline", () => {
         type: "activity_delta",
         turn_id: "turn-opencode",
         activity_kind: "reasoning",
+        activity_id: "reasoning-1",
+        activity_detail: "두 후보의 근거를 비교하고 있습니다.",
         category: "reasoning",
         status: "running",
-        content: "생각 정리 중",
+        content: "두 후보의 근거를 비교하고 있습니다.",
       }),
       event({
         id: "answer-delta",
@@ -323,6 +341,7 @@ describe("projectRoomEventsToTimeline", () => {
         type: "activity_delta",
         turn_id: "turn-opencode",
         activity_kind: "reasoning",
+        activity_id: "reasoning-1",
         category: "reasoning",
         status: "completed",
         content: "생각 정리 완료",
@@ -340,8 +359,9 @@ describe("projectRoomEventsToTimeline", () => {
     expect(timeline[0]).toMatchObject({
       id: "reasoning-running",
       kind: "thinking",
-      message: "생각 정리 완료",
+      message: "두 후보의 근거를 비교하고 있습니다.",
       flow_id: "turn-opencode",
+      activity_status: "completed",
     });
     expect(timeline[1]).toMatchObject({
       id: "turn-opencode",

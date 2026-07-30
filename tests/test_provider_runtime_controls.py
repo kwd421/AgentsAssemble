@@ -98,6 +98,25 @@ class ProviderRuntimeControlTests(unittest.TestCase):
         )
         self.assertNotIn("private", json.dumps(usage))
 
+    def test_deepseek_usage_marks_provider_reported_unavailable_balance_as_exhausted(self):
+        service = DeepSeekUsageService(
+            credential_reader=lambda: "private-deepseek-key",
+            fetcher=lambda _key: {
+                "is_available": False,
+                "balance_infos": [
+                    {
+                        "currency": "USD",
+                        "total_balance": "0",
+                    }
+                ],
+            },
+        )
+
+        usage = service.read()
+
+        self.assertFalse(usage["account_available"])
+        self.assertEqual(usage["quota_state"], "exhausted")
+
     def test_claude_usage_returns_only_public_windows_and_reuses_short_cache(self):
         fetch_count = 0
 
@@ -221,7 +240,34 @@ class ProviderRuntimeControlTests(unittest.TestCase):
     def test_capability_probe_returns_native_controls_without_commands(self):
         def runner(command: list[str], _timeout: float):
             if command[1:3] == ["debug", "models"]:
-                return 0, json.dumps({"models": [{"slug": "gpt-5.6-luna", "display_name": "Luna", "supported_reasoning_levels": [{"effort": "low"}], "service_tiers": [{"id": "priority"}]}]}), ""
+                return 0, json.dumps({"models": [{"slug": "gpt-5.6-luna", "display_name": "Luna", "supported_reasoning_levels": [{"effort": "low"}, {"effort": "ultra", "description": "Maximum reasoning with automatic task delegation"}], "service_tiers": [{"id": "priority"}]}]}), ""
+            if command[0].endswith("ollama") and command[1:] == ["list"]:
+                return 0, (
+                    "NAME                       ID              SIZE\n"
+                    "gemma4:12b                 4eb23ef187e2    7.6 GB\n"
+                    "nemotron-3-super:cloud     c6398e09afd4    -\n"
+                ), ""
+            if command[0].endswith("ollama") and command[1:3] == ["show", "gemma4:12b"]:
+                return 0, "Capabilities\n  completion\n  thinking\n  tools\n", ""
+            if command[0].endswith("ollama") and command[1:3] == ["show", "nemotron-3-super:cloud"]:
+                return 0, "Capabilities\n  completion\n  thinking\n  tools\n", ""
+            if command[0].endswith("lms") and command[1:] == ["status"]:
+                return 0, "Server: ON\n", ""
+            if command[0].endswith("lms") and command[1:] == ["ps", "--json"]:
+                return 0, json.dumps(
+                    [
+                        {
+                            "type": "llm",
+                            "identifier": "gemma-4-e4b-it",
+                            "trainedForToolUse": True,
+                        },
+                        {
+                            "type": "llm",
+                            "identifier": "plain-text-model",
+                            "trainedForToolUse": False,
+                        },
+                    ]
+                ), ""
             if command[0].endswith("agy"):
                 return 0, (
                     "gemini-3.6-flash-high\n"
@@ -238,7 +284,38 @@ class ProviderRuntimeControlTests(unittest.TestCase):
                     "gpt-5.5-extra-high - GPT-5.5 Extra High\n"
                 ), ""
             if command[1:] == ["models", "--verbose"]:
-                return 0, "opencode-go/glm-5.2\n", ""
+                return 0, (
+                    "opencode/deepseek-v4-flash-free\n"
+                    + json.dumps(
+                        {
+                            "id": "deepseek-v4-flash-free",
+                            "providerID": "opencode",
+                            "name": "DeepSeek V4 Flash Free",
+                            "family": "deepseek-flash-free",
+                            "cost": {
+                                "input": 0,
+                                "output": 0,
+                                "cache": {"read": 0, "write": 0},
+                            },
+                        }
+                    )
+                    + "\n"
+                    "opencode-go/glm-5.2\n"
+                    + json.dumps(
+                        {
+                            "id": "glm-5.2",
+                            "providerID": "opencode-go",
+                            "name": "GLM 5.2",
+                            "family": "glm",
+                            "cost": {
+                                "input": 0.2,
+                                "output": 0.4,
+                                "cache": {"read": 0, "write": 0},
+                            },
+                        }
+                    )
+                    + "\n"
+                ), ""
             return 0, "", ""
 
         catalog = ProviderCapabilityCatalog(runner=runner, resolver=lambda executable: f"/bin/{executable}")
@@ -248,6 +325,14 @@ class ProviderRuntimeControlTests(unittest.TestCase):
         self.assertEqual(codex["discovery_status"], "ready")
         self.assertEqual(codex["catalog_source"], "discovered")
         self.assertEqual(codex["controls"][0]["default_value"], "gpt-5.6-luna")
+        codex_effort = next(
+            control for control in codex["controls"] if control["key"] == "reasoning_effort"
+        )
+        ultra = next(
+            option for option in codex_effort["options"] if option["value"] == "ultra"
+        )
+        self.assertEqual(ultra["metadata"]["effect"], "ultra")
+        self.assertIn("automatic task delegation", ultra["metadata"]["description"])
         self.assertNotIn("command", codex)
         self.assertNotIn("resolved_executable", codex)
         antigravity = next(item for item in payload if item["id"] == "antigravity")
@@ -302,6 +387,31 @@ class ProviderRuntimeControlTests(unittest.TestCase):
                 {"reasoning_effort": "high", "service_tier": "fast"},
             ],
         )
+        opencode = next(item for item in payload if item["id"] == "opencode")
+        opencode_models = next(
+            control for control in opencode["controls"] if control["key"] == "model"
+        )
+        self.assertEqual(
+            [option["value"] for option in opencode_models["options"]],
+            [
+                "opencode/deepseek-v4-flash-free",
+                "opencode-go/glm-5.2",
+            ],
+        )
+        self.assertEqual(
+            [option["label"] for option in opencode_models["options"]],
+            ["DeepSeek V4 Flash", "GLM 5.2"],
+        )
+        self.assertEqual(
+            [
+                (
+                    option["metadata"]["group"],
+                    option["metadata"].get("pricing"),
+                )
+                for option in opencode_models["options"]
+            ],
+            [("Zen", "free"), ("Go", None)],
+        )
         revision = str(catalog.snapshot()["catalog_revision"])
         catalog.validate_selection(
             catalog_revision=revision,
@@ -328,6 +438,53 @@ class ProviderRuntimeControlTests(unittest.TestCase):
             invalid_variant.exception.code,
             "unsupported_model_runtime_combination",
         )
+        ollama = next(item for item in payload if item["id"] == "ollama")
+        self.assertTrue(ollama["startable"])
+        self.assertEqual(ollama["catalog_group"], "subscription")
+        self.assertFalse(ollama["workspace_required"])
+        self.assertEqual(
+            [
+                (
+                    option["value"],
+                    option["label"],
+                    option["metadata"]["catalog_group"],
+                    option["metadata"]["execution_location"],
+                    option["metadata"].get("pricing"),
+                )
+                for option in ollama["controls"][0]["options"]
+            ],
+            [
+                ("gemma4:12b", "Gemma 4 12B", "local", "local", None),
+                (
+                    "nemotron-3-super:cloud",
+                    "Nemotron 3 Super",
+                    "subscription",
+                    "cloud",
+                    "free_tier",
+                ),
+            ],
+        )
+        lmstudio = next(item for item in payload if item["id"] == "lmstudio")
+        self.assertTrue(lmstudio["startable"])
+        self.assertEqual(lmstudio["catalog_group"], "local")
+        self.assertFalse(lmstudio["workspace_required"])
+        self.assertEqual(
+            [
+                (option["value"], option["label"])
+                for option in lmstudio["controls"][0]["options"]
+            ],
+            [("gemma-4-e4b-it", "Gemma 4 E4b It")],
+        )
+        local_spec = native_cli_provider_spec_from_payload(
+            {
+                "provider_id": "lmstudio",
+                "model": "gemma-4-e4b-it",
+                "permission_mode": "meeting_read_only",
+                "catalog_revision": revision,
+            }
+        )
+        self.assertEqual(local_spec.provider_kind, "lmstudio_api")
+        self.assertTrue(Path(local_spec.cwd).is_absolute())
 
     def test_antigravity_blank_effort_only_matches_exact_models_without_variants(self):
         def runner(command: list[str], _timeout: float):
@@ -459,13 +616,22 @@ class ProviderRuntimeControlTests(unittest.TestCase):
         self.assertEqual(rejected.exception.code, "unsupported_provider_option")
 
     def test_claude_catalog_exposes_only_exact_models(self):
+        def runner(command: list[str], _timeout: float):
+            if "definitely-not-supported" in command:
+                return 0, "", "Warning: Unknown --effort value"
+            return 0, "Claude help", ""
+
         catalog = ProviderCapabilityCatalog(
-            runner=lambda _command, _timeout: (0, "Claude help", ""),
+            runner=runner,
             resolver=lambda executable: f"/bin/{executable}",
             claude_model_discovery=lambda _executable: [
                 "claude-haiku-4-5",
                 "claude-sonnet-5",
                 "claude-sonnet-4-6",
+                "claude-opus-4-8",
+            ],
+            claude_xhigh_model_discovery=lambda _executable: [
+                "claude-sonnet-5",
                 "claude-opus-4-8",
             ],
         )
@@ -481,6 +647,33 @@ class ProviderRuntimeControlTests(unittest.TestCase):
         self.assertNotIn("sonnet", options)
         self.assertNotIn("opus", options)
         self.assertNotIn("haiku", options)
+        effort = next(
+            control
+            for control in claude["controls"]
+            if control["key"] == "reasoning_effort"
+        )
+        ultracode = next(
+            option
+            for option in effort["options"]
+            if option["value"] == "ultracode"
+        )
+        self.assertEqual(ultracode["metadata"]["effect"], "ultra")
+        self.assertIn(
+            "ultracode",
+            next(
+                option
+                for option in model["options"]
+                if option["value"] == "claude-opus-4-8"
+            )["metadata"]["reasoning_efforts"],
+        )
+        self.assertNotIn(
+            "ultracode",
+            next(
+                option
+                for option in model["options"]
+                if option["value"] == "claude-sonnet-4-6"
+            )["metadata"]["reasoning_efforts"],
+        )
 
         revision = str(catalog.snapshot()["catalog_revision"])
         common = {
@@ -495,6 +688,16 @@ class ProviderRuntimeControlTests(unittest.TestCase):
         )
         self.assertEqual(exact.model_selection_kind, "exact")
         self.assertEqual(exact.catalog_revision, revision)
+        ultracode_selection = catalog.validate_selection(
+            catalog_revision=revision,
+            provider_id="claude",
+            values={
+                **common,
+                "model": "claude-opus-4-8",
+                "reasoning_effort": "ultracode",
+            },
+        )
+        self.assertEqual(ultracode_selection.reasoning_effort, "ultracode")
         with self.assertRaises(ProviderCatalogSelectionError):
             catalog.validate_selection(
                 catalog_revision=revision,
@@ -602,7 +805,7 @@ class ProviderRuntimeControlTests(unittest.TestCase):
 
         self.assertEqual(rejected.exception.code, "catalog_invalid")
 
-    def test_expired_catalog_is_visible_but_not_startable_during_refresh(self):
+    def test_expired_catalog_remains_startable_during_background_refresh(self):
         block_refresh = [False]
         refresh_started = threading.Event()
         release = threading.Event()
@@ -612,7 +815,16 @@ class ProviderRuntimeControlTests(unittest.TestCase):
                 refresh_started.set()
                 release.wait(2)
             if command[1:3] == ["debug", "models"]:
-                return 0, json.dumps({"models": [{"slug": "gpt-live"}]}), ""
+                return 0, json.dumps(
+                    {
+                        "models": [
+                            {
+                                "slug": "gpt-live",
+                                "supported_reasoning_levels": [{"effort": "low"}],
+                            }
+                        ]
+                    }
+                ), ""
             if command[1:] == ["models", "--verbose"]:
                 return 0, "opencode/provider-live\n", ""
             if command[0].endswith("claude"):
@@ -630,21 +842,22 @@ class ProviderRuntimeControlTests(unittest.TestCase):
         stale = catalog.snapshot()
         try:
             self.assertTrue(refresh_started.wait(1))
-            self.assertEqual(stale["status"], "loading")
-            self.assertTrue(all(not provider["startable"] for provider in stale["providers"]))
-            self.assertTrue(all(provider["catalog_source"] == "stale_cache" for provider in stale["providers"]))
-            with self.assertRaises(ProviderCatalogSelectionError) as rejected:
-                catalog.validate_selection(
-                    catalog_revision=revision,
-                    provider_id="codex",
-                    values={
-                        "model": "gpt-live",
-                        "reasoning_effort": "",
-                        "service_tier": "default",
-                        "permission_mode": "meeting_read_only",
-                    },
-                )
-            self.assertEqual(rejected.exception.code, "catalog_not_ready")
+            self.assertEqual(stale["status"], "ready")
+            codex = next(provider for provider in stale["providers"] if provider["id"] == "codex")
+            self.assertTrue(codex["startable"])
+            self.assertEqual(codex["discovery_status"], "ready")
+            self.assertEqual(codex["catalog_source"], "discovered")
+            selected = catalog.validate_selection(
+                catalog_revision=revision,
+                provider_id="codex",
+                values={
+                    "model": "gpt-live",
+                    "reasoning_effort": "low",
+                    "service_tier": "default",
+                    "permission_mode": "meeting_read_only",
+                },
+            )
+            self.assertEqual(selected.model, "gpt-live")
         finally:
             release.set()
 
@@ -763,6 +976,45 @@ class ProviderRuntimeControlTests(unittest.TestCase):
         self.assertNotIn("sk-private", json.dumps(runtime.health()))
         self.assertEqual(captured["body"]["reasoning_effort"], "high")
 
+    def test_openai_compatible_runtime_distinguishes_exhausted_quota_from_rate_limit(self):
+        def runtime_for(payload: dict[str, object]) -> DeepSeekApiRuntime:
+            def opener(request, timeout):
+                del timeout
+                raise HTTPError(
+                    request.full_url,
+                    429,
+                    "Too Many Requests",
+                    {},
+                    io.BytesIO(json.dumps(payload).encode()),
+                )
+
+            return DeepSeekApiRuntime(
+                "deepseek",
+                api_key="sk-private",
+                opener=opener,
+            )
+
+        exhausted = runtime_for(
+            {
+                "error": {
+                    "code": "insufficient_quota",
+                    "message": "Insufficient quota for this account.",
+                }
+            }
+        )
+        exhausted.send("hello")
+        with self.assertRaises(RuntimeError) as exhausted_error:
+            exhausted.read_output(timeout_seconds=1)
+        self.assertEqual(exhausted_error.exception.code, "quota_exhausted")
+
+        rate_limited = runtime_for(
+            {"error": {"message": "Too many requests. Try again later."}}
+        )
+        rate_limited.send("hello")
+        with self.assertRaises(RuntimeError) as rate_limit_error:
+            rate_limited.read_output(timeout_seconds=1)
+        self.assertEqual(rate_limit_error.exception.code, "provider_rate_limited")
+
     def test_cleanup_report_redacts_secret_like_error_values(self):
         report = CleanupReport("test")
         report.record_failure(
@@ -816,7 +1068,15 @@ class ProviderRuntimeControlTests(unittest.TestCase):
                 del handle, packet
                 return iter(
                     [
-                        {"type": "thinking_delta", "content": "Using tool: pwd"},
+                        {
+                            "type": "thinking_delta",
+                            "category": "command",
+                            "status": "running",
+                            "activity_id": "command-1",
+                            "activity_title": "명령",
+                            "activity_detail": "pwd",
+                            "content": "Using tool: pwd",
+                        },
                         {"type": "message_final", "content": "hello"},
                     ]
                 )
@@ -843,8 +1103,11 @@ class ProviderRuntimeControlTests(unittest.TestCase):
             activities,
             [
                 {
-                    "category": "tool",
+                    "category": "command",
                     "status": "running",
+                    "activity_id": "command-1",
+                    "activity_title": "명령",
+                    "activity_detail": "pwd",
                     "content": "Using tool: pwd",
                 }
             ],
@@ -933,7 +1196,17 @@ class ProviderRuntimeControlTests(unittest.TestCase):
         )
         attendee._runtime = Runtime()
         attendee._opencode_server = OpenCodeServer()
-        with patch("agentsassemble.application.room_attendee._leave_room", side_effect=lambda *_: calls.append("leave")):
+        leave_response = MagicMock()
+        leave_response.__enter__.return_value = io.BytesIO(b"")
+
+        def leave_request(*_args, **_kwargs):
+            calls.append("leave")
+            return leave_response
+
+        with patch(
+            "agentsassemble.application.room_attendee.urlopen",
+            side_effect=leave_request,
+        ):
             report = attendee._cleanup(session_token="session-secret", temporary=Temporary())
 
         self.assertEqual(calls, ["runtime", "opencode", "leave", "temporary"])
@@ -952,6 +1225,8 @@ class ProviderRuntimeControlTests(unittest.TestCase):
             provider_id="claude",
         )
         attendee._build_runtime = MagicMock(return_value=runtime)
+        leave_response = MagicMock()
+        leave_response.__enter__.return_value = io.BytesIO(b"")
 
         with (
             patch(
@@ -966,7 +1241,10 @@ class ProviderRuntimeControlTests(unittest.TestCase):
             ),
             patch("agentsassemble.application.room_attendee.connect_room_ws", return_value=object()) as connect,
             patch("agentsassemble.application.room_attendee.RoomAgentBridge", return_value=bridge),
-            patch("agentsassemble.application.room_attendee._leave_room"),
+            patch(
+                "agentsassemble.application.room_attendee.urlopen",
+                return_value=leave_response,
+            ),
         ):
             result = attendee.run()
 
@@ -993,7 +1271,6 @@ class ProviderRuntimeControlTests(unittest.TestCase):
                 },
             ),
             patch("agentsassemble.application.room_attendee.connect_room_ws") as connect,
-            patch("agentsassemble.application.room_attendee._leave_room"),
         ):
             with self.assertRaisesRegex(ValueError, "must name the provider"):
                 attendee.run()

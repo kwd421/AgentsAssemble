@@ -18,13 +18,13 @@ describe("agent activity visibility", () => {
     });
   });
 
-  it("defaults to visible and persists an explicit hidden preference", () => {
-    expect(agentActivityIsVisible({}, "codex")).toBe(true);
+  it("defaults to hidden and persists an explicit visible preference", () => {
+    expect(agentActivityIsVisible({}, "codex")).toBe(false);
 
-    persistAgentActivityVisibility({ codex: false });
+    persistAgentActivityVisibility({ codex: true });
     const loaded = loadAgentActivityVisibility();
 
-    expect(loaded).toEqual({ codex: false });
-    expect(agentActivityIsVisible(loaded, "codex")).toBe(false);
+    expect(loaded).toEqual({ codex: true });
+    expect(agentActivityIsVisible(loaded, "codex")).toBe(true);
   });
 });

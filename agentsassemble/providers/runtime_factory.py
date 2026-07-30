@@ -10,6 +10,7 @@ from agentsassemble.providers.codex_app_server_live import CodexAppServerLiveRun
 from agentsassemble.providers.cursor_room_portal import CursorRoomPortalRuntime
 from agentsassemble.providers.grok_acp import GrokAcpRuntime
 from agentsassemble.providers.live_cli import LiveCliRuntime
+from agentsassemble.providers.local_openai import LocalOpenAICompatibleRuntime
 from agentsassemble.providers.opencode import OpenCodeRuntime
 from agentsassemble.providers.runtime_config import ProviderRuntimeConfig
 from agentsassemble.providers.terminal_interactions import AntigravityRoomPortalInteraction
@@ -43,6 +44,8 @@ _STRUCTURED_RUNTIME_KINDS = {
     ("opencode_server", "http"): "opencode",
     ("cerebras_api", "https"): "api",
     ("deepseek_api", "https"): "api",
+    ("ollama_api", "http"): "api",
+    ("lmstudio_api", "http"): "api",
 }
 
 
@@ -91,6 +94,24 @@ def runtime_from_config(
             api_key=credential,
             model=config.model,
             reasoning_effort=config.reasoning_effort,
+            room_portal=room_portal,
+        )
+    if key == ("ollama_api", "http"):
+        return LocalOpenAICompatibleRuntime(
+            config.participant_id,
+            provider_name="Ollama",
+            model=config.model,
+            base_url=config.provider_endpoint,
+            message_source="ollama_sse",
+            room_portal=room_portal,
+        )
+    if key == ("lmstudio_api", "http"):
+        return LocalOpenAICompatibleRuntime(
+            config.participant_id,
+            provider_name="LM Studio",
+            model=config.model,
+            base_url=config.provider_endpoint,
+            message_source="lmstudio_sse",
             room_portal=room_portal,
         )
     if key == ("opencode_server", "http"):

@@ -38,6 +38,9 @@ from agentsassemble.room.projection import (
     public_runtime_diagnostics,
     public_session,
     runtime_diagnostic_fields,
+    safe_activity_display_detail,
+    safe_activity_detail,
+    safe_activity_id,
 )
 from agentsassemble.providers.sync_cursor import (
     ProviderSyncCursorParityError,
@@ -1212,8 +1215,21 @@ class RoomTurnCoordinator:
         content, activity_kind = public_activity(
             category,
             status,
-            detail=payload.get("content"),
+            detail=payload.get("activity_detail") or payload.get("content"),
         )
+        activity_id = safe_activity_id(payload.get("activity_id"))
+        activity_title = safe_activity_detail(payload.get("activity_title"), limit=160)
+        activity_detail = safe_activity_display_detail(
+            payload.get("activity_detail"),
+            limit=600,
+        )
+        activity_fields: dict[str, object] = {}
+        if activity_id:
+            activity_fields["activity_id"] = activity_id
+        if activity_title:
+            activity_fields["activity_title"] = activity_title
+        if activity_detail:
+            activity_fields["activity_detail"] = activity_detail
         event = self.store.append_event(
             room_id,
             "activity_delta",
@@ -1228,6 +1244,7 @@ class RoomTurnCoordinator:
             category=category,
             status=status,
             content=content,
+            **activity_fields,
         )
         return {"event": event, "event_seq": event["seq"]}
 

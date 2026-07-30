@@ -68,6 +68,8 @@ export interface NativeCliProviderAvailability {
   display_name: string;
   provider_kind: string;
   runtime_kind: "live_cli" | "opencode" | "api";
+  catalog_group?: "subscription" | "api" | "local";
+  workspace_required?: boolean;
   connection_kind: "native_cli_bridge";
   executable: string;
   default_model: string;
@@ -76,7 +78,11 @@ export interface NativeCliProviderAvailability {
   available: boolean;
   discovery_status?: "loading" | "ready" | "failed";
   catalog_source?: "discovered" | "static_manifest" | "stale_cache";
+  discovery_error_code?: string;
   discovery_error?: string;
+  login_available?: boolean;
+  login_label?: string;
+  login_flow?: "browser_oauth" | "interactive_terminal";
   controls: ProviderControl[];
 }
 

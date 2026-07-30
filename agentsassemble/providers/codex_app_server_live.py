@@ -123,7 +123,7 @@ class CodexAppServerLiveRuntime:
                     if on_delta is not None:
                         on_delta(delta)
             elif chunk_type == "thinking_delta" and on_activity is not None:
-                on_activity(_codex_activity(chunk.get("content")))
+                on_activity(_codex_activity(chunk))
             elif chunk_type == "context_compaction_started" and on_activity is not None:
                 on_activity({"category": "compaction", "status": "started"})
             elif chunk_type == "context_compaction_finished" and on_activity is not None:
@@ -200,7 +200,28 @@ class CodexAppServerLiveRuntime:
 
 
 def _codex_activity(value: object) -> dict[str, str]:
-    content = clean_room_text(value, limit=600)
+    values = value if isinstance(value, dict) else {}
+    content = clean_room_text(
+        values.get("content") if values else value,
+        limit=2000,
+    )
+    structured_category = clean_room_text(values.get("category"), limit=32)
+    structured_status = clean_room_text(values.get("status"), limit=32)
+    if structured_category and structured_status:
+        activity = {
+            "category": structured_category,
+            "status": structured_status,
+            "content": content,
+        }
+        for field, limit in (
+            ("activity_id", 128),
+            ("activity_title", 160),
+            ("activity_detail", 2000),
+        ):
+            cleaned = clean_room_text(values.get(field), limit=limit)
+            if cleaned:
+                activity[field] = cleaned
+        return activity
     text = content.casefold()
     status = "completed" if "finished" in text or "completed" in text else "running"
     if "thinking" in text or "reason" in text:

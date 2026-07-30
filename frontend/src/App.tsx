@@ -269,7 +269,8 @@ function channelForActiveRoom(
 function agentSessionMemberToLiveAgent(
   member: RoomMember,
   session?: RoomAgentSession,
-  usage?: ProviderUsageSnapshot
+  usage?: ProviderUsageSnapshot,
+  usageSupported = false
 ): LiveAgent {
   return {
     agent_id: member.participant_id,
@@ -285,6 +286,10 @@ function agentSessionMemberToLiveAgent(
     session_id: member.session_id || member.participant_id,
     model_id: session?.model || member.model_id,
     effort: session?.reasoning_effort || member.effort,
+    speed: session?.service_tier,
+    fast_mode: ["fast", "priority"].includes(
+      String(session?.service_tier || "").toLowerCase()
+    ),
     permission_option: member.permission_option,
     sandbox_enforcement: member.sandbox_enforcement || "",
     join_semantics: member.join_semantics || "agent_session",
@@ -294,6 +299,7 @@ function agentSessionMemberToLiveAgent(
     quota_5h: usage?.quota_5h,
     quota_1w: usage?.quota_1w,
     quota_state: usage?.quota_state,
+    quota_status: usage?.status || (usageSupported ? "loading" : "unsupported"),
     quota_windows: usage?.quota_windows,
     account_available: usage?.account_available,
     account_balances: usage?.account_balances,
@@ -644,24 +650,35 @@ export default function App() {
     if (guestLocked) return;
     if (activeProviderUsageTargets.length === 0) return;
     let cancelled = false;
-    for (const target of activeProviderUsageTargets) {
-      fetchProviderUsage(target.providerId, target.model)
-        .then((usage) => {
-          if (!cancelled) {
-            setProviderUsage((previous) => ({ ...previous, [target.key]: usage }));
-          }
-        })
-        .catch(() => {
-          if (!cancelled) {
-            setProviderUsage((previous) => {
-              const next = { ...previous };
-              delete next[target.key];
-              return next;
-            });
-          }
-        });
-    }
+    const refresh = () => {
+      for (const target of activeProviderUsageTargets) {
+        fetchProviderUsage(target.providerId, target.model)
+          .then((usage) => {
+            if (!cancelled) {
+              setProviderUsage((previous) => ({ ...previous, [target.key]: usage }));
+            }
+          })
+          .catch(() => {
+            if (!cancelled) {
+              setProviderUsage((previous) => ({
+                ...previous,
+                [target.key]: {
+                  provider_id: target.providerId,
+                  status: "unavailable",
+                  source: "",
+                  observed_at: "",
+                  error_code: "usage_unavailable",
+                  quota_windows: [],
+                },
+              }));
+            }
+          });
+      }
+    };
+    refresh();
+    const timer = window.setInterval(refresh, 60_000);
     return () => {
+      window.clearInterval(timer);
       cancelled = true;
     };
   }, [activeProviderUsageSignature, guestLocked]);
@@ -680,7 +697,8 @@ export default function App() {
       return agentSessionMemberToLiveAgent(
         member,
         session,
-        usageTarget ? providerUsage[usageTarget.key] : undefined
+        usageTarget ? providerUsage[usageTarget.key] : undefined,
+        Boolean(usageTarget)
       );
     });
   const activeProcessGroups = useMemo(

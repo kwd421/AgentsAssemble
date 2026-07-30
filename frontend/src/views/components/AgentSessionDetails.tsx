@@ -3,9 +3,13 @@ import { Brain, CirclePause, Play, RotateCcw, Save, Square, Zap } from "lucide-r
 import type { RoomAgentSession } from "../../api";
 import type { NativeCliProviderAvailability, ProviderControl } from "../../roomSocketClient";
 import {
+  canonicalProviderModelValue,
+  displayProviderControls,
   effectiveProviderControlOptions,
   reconcileProviderSettings,
 } from "../../lib/providerControlSettings";
+import ProviderControlSelect from "./ProviderControlSelect";
+import ProviderControlToggle from "./ProviderControlToggle";
 
 export type AgentSessionControlAction =
   | "start"
@@ -72,12 +76,25 @@ function actionCompletedLabel(action: AgentSessionControlAction) {
   return "현재 응답 중단 요청 완료";
 }
 
+function sessionErrorMessage(session: RoomAgentSession) {
+  if (session.last_error_code === "quota_exhausted") {
+    return "Provider 할당량 또는 사용 가능 잔액이 소진되었습니다.";
+  }
+  if (session.last_error_code === "provider_rate_limited") {
+    return "Provider 요청 속도 제한에 걸렸습니다. 할당량 소진으로 단정할 수는 없습니다.";
+  }
+  if (session.last_error_code === "profile_migration_required") {
+    return "저장된 실행 프로필이 현재 provider 설정 형식과 달라 재사용할 수 없습니다. 아래 실행 설정을 확인한 뒤 다시 저장하세요.";
+  }
+  return session.last_error || "";
+}
+
 export default function AgentSessionDetails({
   session,
   provider,
   onControl,
   onConfigure,
-  activityVisible = true,
+  activityVisible = false,
   onActivityVisibilityChange,
 }: {
   session: RoomAgentSession;
@@ -122,17 +139,27 @@ export default function AgentSessionDetails({
       (option) => option.value === (settings[control.key] ?? "")
     )
   );
+  const invalidRuntimeValue = invalidRuntimeControl
+    ? settings[invalidRuntimeControl.key] || ""
+    : "";
+  const visibleSessionError = sessionErrorMessage(session);
 
   useEffect(() => {
-    setSettings({
-      model: session.model || controlDefault(provider, "model"),
+    const storedModel = session.model || controlDefault(provider, "model");
+    const storedSettings = {
+      model:
+        provider && storedModel
+          ? canonicalProviderModelValue(provider, storedModel)
+          : storedModel,
       reasoning_effort:
-        session.reasoning_effort || controlDefault(provider, "reasoning_effort"),
-      service_tier: session.service_tier || controlDefault(provider, "service_tier"),
-      variant: session.variant || controlDefault(provider, "variant"),
+        session.reasoning_effort ?? controlDefault(provider, "reasoning_effort"),
+      service_tier:
+        session.service_tier ?? controlDefault(provider, "service_tier"),
+      variant: session.variant ?? controlDefault(provider, "variant"),
       permission_mode:
         session.permission_mode || controlDefault(provider, "permission_mode") || "meeting_read_only",
-    });
+    };
+    setSettings(storedSettings);
   }, [
     provider,
     session.session_id,
@@ -188,8 +215,8 @@ export default function AgentSessionDetails({
   }
 
   return (
-    <section className="dc-member-detail-section" aria-label={`${session.display_name} Agent Session`}>
-      <h3>Agent Session</h3>
+    <section className="dc-member-detail-section" aria-label={`${session.display_name} 실행 및 설정`}>
+      <h3>실행 및 설정</h3>
       <div className="dc-member-session-location">
         <div className="dc-member-session-location-head">
           <span>실행 상태</span>
@@ -212,17 +239,31 @@ export default function AgentSessionDetails({
           </div>
         </dl>
       </div>
+      {status === "error" && visibleSessionError && (
+        <p className="dc-room-play-error preserve-words">
+          오류 원인 · {visibleSessionError}
+        </p>
+      )}
       {provider && onConfigure && (
         <div className="dc-agent-runtime-settings" aria-label={`${session.display_name} 런타임 설정`}>
-          {(provider.controls || []).map((control) => {
-            const options = effectiveProviderControlOptions(provider, control, settings);
+          {displayProviderControls(provider).map((control) => {
+            const providerSupportsControl = provider.controls.some(
+              (candidate) => candidate.key === control.key
+            );
+            const options = providerSupportsControl
+              ? effectiveProviderControlOptions(provider, control, settings)
+              : control.options;
             return (
               <RuntimeSettingField
                 key={`${session.session_id}:${control.key}`}
                 control={control}
                 options={options}
-                value={settings[control.key] || ""}
-                disabled={!canConfigure || settingsBusy}
+                value={
+                  providerSupportsControl
+                    ? settings[control.key] ?? control.default_value
+                    : control.default_value
+                }
+                disabled={!canConfigure || settingsBusy || !providerSupportsControl}
                 onChange={(value) => updateRuntimeSetting(control.key, value)}
               />
             );
@@ -240,26 +281,36 @@ export default function AgentSessionDetails({
             {!canConfigure
               ? "현재 세션이 실행 중이라 시작 프로필을 표시하고 있습니다. 변경하려면 세션을 중지하세요."
               : invalidRuntimeControl
-                ? `${invalidRuntimeControl.label}의 선택값을 확인하세요.`
+                ? invalidRuntimeValue
+                  ? `저장값: “${invalidRuntimeValue}”. 현재 선택 가능한 ${invalidRuntimeControl.label} 목록에 없습니다.`
+                  : `${invalidRuntimeControl.label}을(를) 선택하세요.`
                 : `${runtimeSettingLabels}을 함께 저장합니다. 변경은 다음 세션 시작부터 적용됩니다.`}
           </p>
         </div>
       )}
       <div className="dc-agent-activity-setting">
-        <div>
-          <Brain size={15} aria-hidden />
-          <span>생각과 작업 표시</span>
+        <div className="dc-agent-activity-copy">
+          <div>
+            <Brain size={15} aria-hidden />
+            <span>생각과 작업 표시</span>
+          </div>
+          <p>공개용 생각 요약과 안전하게 정리된 도구 활동만 표시합니다.</p>
         </div>
-        <label className="dc-agent-activity-toggle">
-          <input
-            type="checkbox"
-            checked={activityVisible}
-            disabled={!onActivityVisibilityChange}
-            onChange={(event) => onActivityVisibilityChange?.(session, event.currentTarget.checked)}
-          />
+        <button
+          type="button"
+          className="dc-agent-activity-toggle"
+          role="switch"
+          aria-label="생각과 작업 표시"
+          aria-checked={activityVisible}
+          data-on={activityVisible}
+          disabled={!onActivityVisibilityChange}
+          onClick={() => onActivityVisibilityChange?.(session, !activityVisible)}
+        >
+          <span className="dc-agent-activity-switch" aria-hidden="true">
+            <i />
+          </span>
           <span>{activityVisible ? "켜짐" : "꺼짐"}</span>
-        </label>
-        <p>공개용 생각 요약과 안전하게 정리된 도구 활동만 표시합니다.</p>
+        </button>
       </div>
       {onControl && (
         <div className="dc-member-session-actions" aria-label={`${session.display_name} 세션 제어`}>
@@ -381,21 +432,23 @@ function RuntimeSettingField({
   return (
     <label>
       <span>{control.label}</span>
-      <select
-        aria-label={control.label}
-        value={value}
-        disabled={disabled}
-        onChange={(event) => onChange(event.currentTarget.value)}
-      >
-        {!options.some((option) => option.value === value) && (
-          <option value="" disabled>
-            선택 필요
-          </option>
-        )}
-        {options.map((option) => (
-          <option key={`${control.key}:${option.value || "default"}`} value={option.value}>{option.label}</option>
-        ))}
-      </select>
+      {control.key === "service_tier" && options.length <= 2 ? (
+        <ProviderControlToggle
+          label={control.label}
+          options={options}
+          value={value}
+          disabled={disabled}
+          onChange={onChange}
+        />
+      ) : (
+        <ProviderControlSelect
+          label={control.label}
+          options={options}
+          value={value}
+          disabled={disabled}
+          onChange={onChange}
+        />
+      )}
     </label>
   );
 }

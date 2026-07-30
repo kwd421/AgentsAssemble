@@ -192,4 +192,32 @@ describe("providerControlSettings", () => {
       }).reasoning_effort
     ).toBe("");
   });
+
+  it("reconciles a stored provider display name with its canonical model id", () => {
+    const provider = relatedProvider();
+    provider.controls[0].options = [
+      {
+        value: "claude-opus-4-6-thinking",
+        label: "Claude Opus 4.6 Thinking",
+        metadata: {
+          reasoning_efforts: ["medium"],
+        },
+      },
+    ];
+    provider.controls[1].options = [{ value: "medium", label: "medium" }];
+
+    expect(
+      reconcileProviderSettings(provider, {
+        model: "Claude Opus 4.6 (Thinking)",
+        reasoning_effort: "medium",
+        service_tier: "default",
+        permission_mode: "meeting_read_only",
+      })
+    ).toEqual({
+      model: "claude-opus-4-6-thinking",
+      reasoning_effort: "medium",
+      service_tier: "default",
+      permission_mode: "meeting_read_only",
+    });
+  });
 });

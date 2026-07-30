@@ -100,6 +100,7 @@ surface rather than silently counted as React parity.
 | `/api/events/roster` | GET | sse | `subscribeRoster()` | yes | React member panel rides a push roster stream on the local console; polling stays as a slow fallback. |
 | `/api/lobby/vote` | GET | exact | `fetchLobbyVote()` | yes | Poll standings for the local console: aggregates kind=vote/vote_cast lobby events; latest ballot per voter wins. |
 | `/api/local/workspace-picker` | POST | exact | `chooseLocalWorkspace()` | yes | Local-operator-only native folder chooser for server-owned Agent Session setup; the browser cannot submit an arbitrary path through this control. |
+| `/api/provider-catalog/refresh` | POST | exact | `refreshProviderCatalog()` | yes | Local operator requests a background provider-catalog refresh; the response reports accepted state while completion is pushed over the canonical room WebSocket. |
 | `/api/provider-usage/antigravity` | GET | exact | `fetchProviderUsage()` | yes | Owner-visible sanitized Antigravity account usage for the selected model family. |
 | `/api/provider-usage/claude` | GET | exact | `fetchProviderUsage()` | yes | Owner-visible sanitized Claude usage read from the native CLI usage panel; no credential value is returned. |
 | `/api/provider-usage/codex` | GET | exact | `fetchProviderUsage()` | yes | Owner-visible sanitized Codex account usage. |

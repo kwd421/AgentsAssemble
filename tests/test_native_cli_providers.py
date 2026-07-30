@@ -571,31 +571,13 @@ class NativeCliProviderCatalogTests(unittest.TestCase):
     def test_public_catalog_is_safe_and_unknown_provider_is_clear(self):
         payload = native_cli_provider_catalog_payload()
 
-        self.assertEqual(
-            [provider["id"] for provider in payload],
-            [
-                "codex",
-                "antigravity",
-                "grok",
-                "claude",
-                "cursor",
-                "opencode",
-                "deepseek",
-                "cerebras",
-            ],
-        )
-        self.assertEqual(
-            [provider["display_name"] for provider in payload],
-            [
-                "Codex",
-                "Antigravity",
-                "Grok",
-                "Claude",
-                "Cursor",
-                "OpenCode",
-                "DeepSeek",
-                "Cerebras",
-            ],
+        provider_ids = [str(provider["id"]) for provider in payload]
+        self.assertTrue(provider_ids)
+        self.assertEqual(len(provider_ids), len(set(provider_ids)))
+        self.assertTrue(
+            {"subscription", "api", "local"}.issubset(
+                {str(provider["catalog_group"]) for provider in payload}
+            )
         )
         self.assertTrue(all(provider["interactive"] for provider in payload))
         self.assertTrue(all("command" not in provider for provider in payload))

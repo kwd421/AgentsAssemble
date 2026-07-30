@@ -101,6 +101,25 @@ Keep changes scoped to the requested behavior. Do not reformat, rename, reorder,
 
 Assume uncommitted changes may belong to the user or another tool. Do not revert, overwrite, normalize, or move them unless explicitly asked. If they conflict with the task, explain the conflict and choose the smallest safe path forward.
 
+### Source Growth Gate
+
+Run `make architecture-check` before finishing any change to Python, TypeScript,
+JavaScript, or frontend CSS. The checked source-growth policy records ceilings
+for existing pressure points and rejects a new unowned source file above the
+repository limit.
+
+Treat a ceiling failure as an ownership review, not an instruction to hide code
+behind arbitrary helpers or to split a coherent file mechanically. Identify the
+new responsibility, failure mode, state owner, or side-effect boundary and move
+that unit with its tests to the closest named owner. If no honest boundary
+exists, report that evidence instead of manufacturing one.
+
+Do not raise a ceiling or remove an entry for an existing file in
+`docs/product/SOURCE_GROWTH_LIMITS.toml` unless the user explicitly requests
+that budget exception. Lower the ceiling to the new line count after a real
+extraction, and remove the entry when the file itself is deleted. This
+restriction survives context compaction, handoff, and a new agent taking over.
+
 ## AgentsAssemble Contract Boundaries
 
 Treat these cross-layer boundaries as one contract, not as independent copies:

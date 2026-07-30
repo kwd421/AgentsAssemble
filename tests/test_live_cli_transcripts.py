@@ -208,8 +208,17 @@ class TranscriptMessageSourceTests(unittest.TestCase):
                                     "model": "claude-sonnet-4-6",
                                     "stop_reason": "tool_use",
                                     "content": [
-                                        {"type": "thinking", "thinking": "private reasoning"},
-                                        {"type": "tool_use", "name": "Read", "input": {"path": "/tmp/noise"}},
+                                        {
+                                            "type": "thinking",
+                                            "id": "thinking-1",
+                                            "thinking": "Checking room context.",
+                                        },
+                                        {
+                                            "type": "tool_use",
+                                            "id": "tool-read-1",
+                                            "name": "Read",
+                                            "input": {"path": "/tmp/noise"},
+                                        },
                                         {"type": "text", "text": "I will inspect that first."},
                                     ],
                                 },
@@ -223,6 +232,27 @@ class TranscriptMessageSourceTests(unittest.TestCase):
 
             intermediate = source.poll(b"Claude TUI chrome", quiet=True)
             activities = source.drain_activities()
+            with current.open("a", encoding="utf-8") as handle:
+                handle.write(
+                    json.dumps(
+                        {
+                            "type": "user",
+                            "message": {
+                                "role": "user",
+                                "content": [
+                                    {
+                                        "type": "tool_result",
+                                        "tool_use_id": "tool-read-1",
+                                        "content": "private file contents",
+                                    }
+                                ],
+                            },
+                        }
+                    )
+                    + "\n"
+                )
+            source.poll(b"Claude TUI chrome", quiet=True)
+            completed_activities = source.drain_activities()
             with current.open("a", encoding="utf-8") as handle:
                 handle.write(
                     json.dumps(
@@ -257,13 +287,38 @@ class TranscriptMessageSourceTests(unittest.TestCase):
             activities,
             [
                 {
+                    "category": "reasoning",
+                    "status": "running",
+                    "activity_id": "thinking-1",
+                    "activity_title": "생각",
+                    "activity_detail": "Checking room context.",
+                    "content": "Checking room context.",
+                },
+                {
                     "category": "file_read",
                     "status": "running",
+                    "activity_id": "tool-read-1",
+                    "activity_title": "Read",
+                    "activity_detail": "/tmp/noise",
                     "content": "Read: /tmp/noise",
                 },
             ],
         )
-        self.assertNotIn("private reasoning", str(activities))
+        self.assertIn("Checking room context.", str(activities))
+        self.assertEqual(
+            completed_activities,
+            [
+                {
+                    "category": "file_read",
+                    "status": "completed",
+                    "activity_id": "tool-read-1",
+                    "activity_title": "Read",
+                    "activity_detail": "/tmp/noise",
+                    "content": "Read: /tmp/noise",
+                }
+            ],
+        )
+        self.assertNotIn("private file contents", str(completed_activities))
         self.assertFalse(before_completion.complete)
         self.assertEqual(before_completion.content, MARKDOWN_REPLY)
         self.assertTrue(snapshot.complete)
@@ -401,6 +456,9 @@ class TranscriptMessageSourceTests(unittest.TestCase):
                 {
                     "category": "command",
                     "status": "running",
+                    "activity_id": "assistant-tool-1",
+                    "activity_title": "Bash",
+                    "activity_detail": "fresh-command",
                     "content": "Bash: fresh-command",
                 }
             ],
@@ -481,6 +539,9 @@ class TranscriptMessageSourceTests(unittest.TestCase):
                 {
                     "category": "command",
                     "status": "running",
+                    "activity_id": "assistant-tool-1",
+                    "activity_title": "Bash",
+                    "activity_detail": "fresh-command",
                     "content": "Bash: fresh-command",
                 }
             ],
@@ -1224,11 +1285,17 @@ class TranscriptMessageSourceTests(unittest.TestCase):
                 {
                     "category": "command",
                     "status": "running",
+                    "activity_id": "antigravity-tool-1",
+                    "activity_title": "run_command",
+                    "activity_detail": "pwd",
                     "content": "run_command: pwd",
                 },
                 {
                     "category": "search",
                     "status": "running",
+                    "activity_id": "antigravity-tool-2",
+                    "activity_title": "search_web",
+                    "activity_detail": "Alabasta strongest character",
                     "content": "search_web: Alabasta strongest character",
                 },
             ],
@@ -1311,6 +1378,7 @@ class TranscriptMessageSourceTests(unittest.TestCase):
                 )
 
             after_tool_result = source.poll(b"", quiet=True)
+            completed_activities = source.drain_activities()
 
         self.assertFalse(before_tool_result.complete)
         self.assertEqual(before_tool_result.content, "")
@@ -1320,12 +1388,28 @@ class TranscriptMessageSourceTests(unittest.TestCase):
                 {
                     "category": "command",
                     "status": "running",
+                    "activity_id": "antigravity-tool-1",
+                    "activity_title": "run_command",
+                    "activity_detail": 'agentsassemble-room speak "action"',
                     "content": 'run_command: agentsassemble-room speak "action"',
                 }
             ],
         )
         self.assertTrue(after_tool_result.complete)
         self.assertEqual(after_tool_result.content, "The room action was published.")
+        self.assertEqual(
+            completed_activities,
+            [
+                {
+                    "category": "command",
+                    "status": "completed",
+                    "activity_id": "antigravity-tool-1",
+                    "activity_title": "run_command",
+                    "activity_detail": 'agentsassemble-room speak "action"',
+                    "content": 'run_command: agentsassemble-room speak "action"',
+                }
+            ],
+        )
 
     def test_codex_source_ignores_late_previous_completion_until_next_user_input(self):
         with tempfile.TemporaryDirectory() as temp_dir:

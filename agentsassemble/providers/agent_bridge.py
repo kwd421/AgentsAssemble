@@ -23,7 +23,12 @@ from agentsassemble.room.text import (
     clean_room_text as clean_lobby_text,
     has_room_visible_text,
 )
-from agentsassemble.room.projection import public_activity
+from agentsassemble.room.projection import (
+    public_activity,
+    safe_activity_display_detail,
+    safe_activity_detail,
+    safe_activity_id,
+)
 from agentsassemble.providers.runtime_contracts import (
     AdapterContractError,
     ProviderRuntimeHealth,
@@ -36,6 +41,7 @@ from agentsassemble.providers.room_portal import (
     automatic_turn_orientation,
     room_wake_orientation,
 )
+from agentsassemble.providers.provider_errors import provider_failure_code
 
 
 class BridgeRoomClient(Protocol):
@@ -525,7 +531,7 @@ class RoomAgentBridge:
                         {
                             "turn_id": turn_id,
                             "status": "error",
-                            "error_code": getattr(error, "code", "provider_turn_failed"),
+                            "error_code": provider_failure_code(error),
                             "message": str(error),
                             "diagnostics": self._failure_diagnostics(),
                         },
@@ -698,7 +704,7 @@ class RoomAgentBridge:
                         {
                             "turn_id": turn_id,
                             "status": "error",
-                            "error_code": getattr(error, "code", "provider_turn_failed"),
+                            "error_code": provider_failure_code(error),
                             "message": str(error),
                             "diagnostics": self._failure_diagnostics(),
                         },
@@ -943,17 +949,30 @@ def _safe_activity(activity: object) -> dict[str, str]:
     status = clean_lobby_text(values.get("status"), limit=32)
     if category not in _ACTIVITY_CATEGORIES or status not in {"started", "running", "completed"}:
         return {}
+    activity_id = safe_activity_id(values.get("activity_id"))
+    activity_title = safe_activity_detail(values.get("activity_title"), limit=160)
+    activity_detail = safe_activity_display_detail(
+        values.get("activity_detail"),
+        limit=600,
+    )
     content, activity_kind = public_activity(
         category,
         status,
-        detail=values.get("content"),
+        detail=activity_detail or values.get("content"),
     )
-    return {
+    safe = {
         "activity_kind": activity_kind,
         "category": category,
         "status": status,
         "content": content,
     }
+    if activity_id:
+        safe["activity_id"] = activity_id
+    if activity_title:
+        safe["activity_title"] = activity_title
+    if activity_detail:
+        safe["activity_detail"] = activity_detail
+    return safe
 
 
 def _runtime_still_running(runtime: BridgeRuntime) -> bool:

@@ -105,6 +105,32 @@ class ProviderModelVerificationTests(unittest.TestCase):
             )
         )
 
+    def test_ollama_cloud_route_accepts_the_same_reported_model_without_route_suffix(self) -> None:
+        self.assertTrue(
+            model_observation_matches(
+                requested_model_id="nemotron-3-super:cloud",
+                observed_model_id="nemotron-3-super",
+                selection_kind="exact",
+                provider_kind="ollama_api",
+            )
+        )
+        self.assertFalse(
+            model_observation_matches(
+                requested_model_id="nemotron-3-super:cloud",
+                observed_model_id="nemotron-3-nano",
+                selection_kind="exact",
+                provider_kind="ollama_api",
+            )
+        )
+        self.assertFalse(
+            model_observation_matches(
+                requested_model_id="nemotron-3-super:cloud",
+                observed_model_id="nemotron-3-super",
+                selection_kind="exact",
+                provider_kind="deepseek_api",
+            )
+        )
+
     def test_mismatch_and_missing_ids_do_not_match(self) -> None:
         self.assertFalse(
             model_observation_matches(

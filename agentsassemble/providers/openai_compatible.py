@@ -7,6 +7,7 @@ from collections.abc import Callable
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from typing import IO
+from urllib.error import HTTPError
 from urllib.request import Request, urlopen
 
 from agentsassemble.providers.openai_compatible_room_tools import (
@@ -16,6 +17,7 @@ from agentsassemble.providers.openai_compatible_room_tools import (
     execute_room_tool,
 )
 from agentsassemble.providers.room_portal import RoomPortal
+from agentsassemble.providers.provider_errors import provider_http_error
 from agentsassemble.room.text import clean_room_text
 
 
@@ -41,10 +43,12 @@ class OpenAICompatibleApiRuntime:
         include_reasoning_in_messages: bool = False,
         request_payload: dict[str, object] | None = None,
         request_headers: dict[str, str] | None = None,
+        require_api_key: bool = True,
+        transport: str = "https_sse",
         opener: UrlOpen = urlopen,
         room_portal: RoomPortal | None = None,
     ) -> None:
-        if not str(api_key or "").strip():
+        if require_api_key and not str(api_key or "").strip():
             raise RuntimeError("credential_missing")
         self.provider_name = clean_room_text(provider_name, limit=64)
         if not self.provider_name:
@@ -68,6 +72,7 @@ class OpenAICompatibleApiRuntime:
         self.message_source = clean_room_text(message_source, limit=64)
         self._request_payload = dict(request_payload or {})
         self._request_headers = dict(request_headers or {})
+        self._transport = clean_room_text(transport, limit=64) or "https_sse"
         self._opener = opener
         self._room_portal = room_portal
         self._messages: list[dict[str, object]] = []
@@ -134,6 +139,7 @@ class OpenAICompatibleApiRuntime:
             raise RuntimeError(f"{self.provider_name} runtime has no pending turn.")
         deadline = time.monotonic() + max(1.0, float(timeout_seconds))
         tool_rounds = 0
+        room_publication_completed = False
         observed_model_id = ""
         api_calls: list[dict[str, object]] = []
         try:
@@ -148,7 +154,9 @@ class OpenAICompatibleApiRuntime:
                 api_calls.append(round_result.usage)
                 if not round_result.tool_calls:
                     content = round_result.content.strip()
-                    if not content:
+                    if not content and room_publication_completed:
+                        content = "RoomPortal publication completed."
+                    elif not content:
                         raise RuntimeError(
                             f"{self.provider_name} completed without a final message."
                         )
@@ -194,18 +202,24 @@ class OpenAICompatibleApiRuntime:
                         if isinstance(function, dict)
                         else ""
                     )
+                    activity_id = clean_room_text(tool_call.get("id"), limit=128)
+                    activity_title = _room_tool_title(tool_name)
                     if on_activity is not None:
                         on_activity(
                             {
                                 "category": "tool",
                                 "status": "running",
-                                "content": f"Using room tool: {tool_name}",
+                                "activity_id": activity_id,
+                                "activity_title": activity_title,
+                                "content": activity_title,
                             }
                         )
                     executed_name, tool_result = execute_room_tool(
                         self._room_portal,
                         tool_call,
                     )
+                    if executed_name == "publish_message":
+                        room_publication_completed = True
                     messages.append(
                         {
                             "role": "tool",
@@ -219,7 +233,9 @@ class OpenAICompatibleApiRuntime:
                             {
                                 "category": "tool",
                                 "status": "completed",
-                                "content": f"Used room tool: {executed_name}",
+                                "activity_id": activity_id,
+                                "activity_title": _room_tool_title(executed_name),
+                                "content": _room_tool_title(executed_name),
                             }
                         )
                 if time.monotonic() >= deadline:
@@ -271,22 +287,25 @@ class OpenAICompatibleApiRuntime:
             "messages": messages,
             "stream": True,
             "stream_options": {"include_usage": True},
-            "reasoning_effort": self.reasoning_effort,
             **self._request_payload,
         }
+        if self.reasoning_effort:
+            payload["reasoning_effort"] = self.reasoning_effort
         if room_observation:
             payload["tools"] = list(ROOM_TOOL_SCHEMAS)
             payload["tool_choice"] = "auto"
+        headers = {
+            "Content-Type": "application/json",
+            "Accept": "text/event-stream",
+            "User-Agent": "AgentsAssemble/1.0",
+            **self._request_headers,
+        }
+        if self._api_key:
+            headers["Authorization"] = f"Bearer {self._api_key}"
         request = Request(
             f"{self.base_url}/chat/completions",
             data=json.dumps(payload, ensure_ascii=False).encode("utf-8"),
-            headers={
-                "Authorization": f"Bearer {self._api_key}",
-                "Content-Type": "application/json",
-                "Accept": "text/event-stream",
-                "User-Agent": "AgentsAssemble/1.0",
-                **self._request_headers,
-            },
+            headers=headers,
             method="POST",
         )
         content_parts: list[str] = []
@@ -295,7 +314,10 @@ class OpenAICompatibleApiRuntime:
         observed_model_id = ""
         usage: dict[str, object] = {}
         started_at = _now()
-        response = self._opener(request, timeout=max(1.0, float(timeout_seconds)))
+        try:
+            response = self._opener(request, timeout=max(1.0, float(timeout_seconds)))
+        except HTTPError as error:
+            raise provider_http_error(error, provider_name=self.provider_name) from error
         with self._lock:
             self._response = response
         try:
@@ -384,7 +406,7 @@ class OpenAICompatibleApiRuntime:
                 "agent_id": self.agent_id,
                 "runtime_kind": "api",
                 "running": self._running,
-                "transport": "https_sse",
+                "transport": self._transport,
                 "pty": False,
                 "is_one_shot": False,
                 "provider_session_active": self._running,
@@ -405,6 +427,18 @@ class _StreamRound:
     tool_calls: list[dict[str, object]]
     observed_model_id: str
     usage: dict[str, object]
+
+
+def _room_tool_title(tool_name: object) -> str:
+    value = clean_room_text(tool_name, limit=120)
+    return {
+        "read_discussion": "방 대화 읽기",
+        "publish_message": "메시지 공개",
+        "decline_to_speak": "발언 건너뛰기",
+        "roll_dice": "주사위 굴리기",
+        "create_vote": "투표 만들기",
+        "cast_vote": "투표하기",
+    }.get(value, value or "방 도구")
 
 
 def _bounded_messages(

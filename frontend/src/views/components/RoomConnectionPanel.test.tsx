@@ -1,4 +1,5 @@
 import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { LiveAgent, RoomAgentSession, RoomMember } from "../../api";
 import type { NativeCliProviderAvailability } from "../../roomSocketClient";
@@ -144,6 +145,25 @@ function codexProvider(): NativeCliProviderAvailability {
 
 function openAgentDetails() {
   fireEvent.click(screen.getByText("나's Codex Spark"));
+}
+
+async function chooseProviderControl(label: string, option: string): Promise<void> {
+  const toggle = screen.queryByRole("switch", { name: label });
+  if (toggle) {
+    if (!toggle.textContent?.includes(option)) {
+      await userEvent.click(toggle);
+    }
+    if (!toggle.textContent?.includes(option)) {
+      await userEvent.click(toggle);
+    }
+    return;
+  }
+  await userEvent.click(screen.getByRole("combobox", { name: label }));
+  await userEvent.click(screen.getByRole("option", { name: option }));
+}
+
+function expectProviderControlValue(label: string, option: string): void {
+  expect(screen.getByLabelText(label).textContent).toContain(option);
 }
 
 describe("RoomConnectionPanel", () => {
@@ -343,7 +363,8 @@ describe("RoomConnectionPanel", () => {
     );
 
     openAgentDetails();
-    const toggle = screen.getByRole("checkbox", { name: /켜짐/ });
+    const toggle = screen.getByRole("switch", { name: "생각과 작업 표시" });
+    expect(toggle.getAttribute("aria-checked")).toBe("true");
     fireEvent.click(toggle);
 
     expect(onVisibilityChange).toHaveBeenCalledWith(session, false);
@@ -363,8 +384,11 @@ describe("RoomConnectionPanel", () => {
     openAgentDetails();
 
     expect(
-      (screen.getByRole("checkbox", { name: /켜짐/ }) as HTMLInputElement).disabled
+      (screen.getByRole("switch", { name: "생각과 작업 표시" }) as HTMLButtonElement).disabled
     ).toBe(true);
+    expect(
+      screen.getByRole("switch", { name: "생각과 작업 표시" }).getAttribute("aria-checked")
+    ).toBe("false");
   });
 
   it("keeps canonical runtime controls locked while the session is running without a duplicate options card", async () => {
@@ -390,11 +414,13 @@ describe("RoomConnectionPanel", () => {
     openAgentDetails();
 
     await waitFor(() =>
-      expect((screen.getByLabelText(/모델/) as HTMLSelectElement).value).toBe("gpt-current")
+      expectProviderControlValue("모델", "Current")
     );
-    expect((screen.getByLabelText(/모델/) as HTMLSelectElement).disabled).toBe(true);
-    expect((screen.getByLabelText(/추론 강도/) as HTMLSelectElement).disabled).toBe(true);
-    expect((screen.getByLabelText(/권한/) as HTMLSelectElement).disabled).toBe(true);
+    expect((screen.getByRole("combobox", { name: "모델" }) as HTMLButtonElement).disabled).toBe(true);
+    expect(
+      (screen.getByRole("combobox", { name: "추론 강도" }) as HTMLButtonElement).disabled
+    ).toBe(true);
+    expect((screen.getByRole("combobox", { name: "권한" }) as HTMLButtonElement).disabled).toBe(true);
     expect((screen.getByRole("button", { name: "런타임 설정 저장" }) as HTMLButtonElement).disabled).toBe(
       true
     );
@@ -431,14 +457,14 @@ describe("RoomConnectionPanel", () => {
     openAgentDetails();
 
     await waitFor(() =>
-      expect((screen.getByLabelText(/모델/) as HTMLSelectElement).disabled).toBe(false)
+      expect((screen.getByRole("combobox", { name: "모델" }) as HTMLButtonElement).disabled).toBe(false)
     );
-    fireEvent.change(screen.getByLabelText(/모델/), { target: { value: "gpt-next" } });
-    expect((screen.getByLabelText(/추론 강도/) as HTMLSelectElement).value).toBe("");
+    await chooseProviderControl("모델", "Next");
+    expectProviderControlValue("추론 강도", "선택 필요");
     expect(screen.queryByRole("option", { name: "low" })).toBeNull();
-    fireEvent.change(screen.getByLabelText(/추론 강도/), { target: { value: "high" } });
-    fireEvent.change(screen.getByLabelText(/응답 속도/), { target: { value: "fast" } });
-    fireEvent.change(screen.getByLabelText(/권한/), { target: { value: "workspace_write" } });
+    await chooseProviderControl("추론 강도", "high");
+    await chooseProviderControl("응답 속도", "Fast");
+    await chooseProviderControl("권한", "작업 폴더 쓰기");
     fireEvent.click(screen.getByRole("button", { name: "런타임 설정 저장" }));
 
     await waitFor(() =>
@@ -482,7 +508,7 @@ describe("RoomConnectionPanel", () => {
 
     openAgentDetails();
     await waitFor(() =>
-      expect((screen.getByLabelText(/모델/) as HTMLSelectElement).value).toBe("gpt-current")
+      expectProviderControlValue("모델", "Current")
     );
 
     view.rerender(
@@ -506,11 +532,11 @@ describe("RoomConnectionPanel", () => {
     );
 
     await waitFor(() =>
-      expect((screen.getByLabelText(/모델/) as HTMLSelectElement).value).toBe("gpt-next")
+      expectProviderControlValue("모델", "Next")
     );
-    expect((screen.getByLabelText(/추론 강도/) as HTMLSelectElement).value).toBe("high");
-    expect((screen.getByLabelText(/응답 속도/) as HTMLSelectElement).value).toBe("fast");
-    expect((screen.getByLabelText(/권한/) as HTMLSelectElement).value).toBe("workspace_write");
+    expectProviderControlValue("추론 강도", "high");
+    expectProviderControlValue("응답 속도", "Fast");
+    expectProviderControlValue("권한", "작업 폴더 쓰기");
   });
 
   it("does not save a stopped runtime profile that conflicts with the current catalog", async () => {
@@ -540,7 +566,55 @@ describe("RoomConnectionPanel", () => {
         (screen.getByRole("button", { name: "런타임 설정 저장" }) as HTMLButtonElement).disabled
       ).toBe(true)
     );
-    expect(screen.getByText("추론 강도의 선택값을 확인하세요.")).toBeTruthy();
+    expect(
+      screen.getByText(/현재 선택 가능한 추론 강도 목록에 없습니다/)
+    ).toBeTruthy();
+  });
+
+  it("recognizes a stored model display name as the current canonical model", async () => {
+    const provider = codexProvider();
+    provider.controls[0].options = [
+      {
+        value: "claude-opus-4-6-thinking",
+        label: "Claude Opus 4.6 Thinking",
+        metadata: {
+          reasoning_efforts: [],
+          runtime_variants: [
+            { reasoning_effort: "default", service_tier: "default" },
+          ],
+        },
+      },
+    ];
+    provider.controls[1].options = [{ value: "", label: "기본" }];
+    const session = {
+      ...agentSession("error"),
+      model: "Claude Opus 4.6 (Thinking)",
+      reasoning_effort: "",
+      service_tier: "default",
+      permission_mode: "meeting_read_only",
+    };
+    render(
+      <RoomConnectionPanel
+        room={room}
+        agents={[agent("offline")]}
+        members={[member("stopped")]}
+        agentSessions={[session]}
+        capabilities={agentControlCapability}
+        availableProviders={[provider]}
+        onAgentConfigure={vi.fn()}
+      />
+    );
+
+    openAgentDetails();
+
+    await waitFor(() =>
+      expectProviderControlValue("모델", "Claude Opus 4.6 Thinking")
+    );
+    expect(
+      (screen.getByRole("button", { name: "런타임 설정 저장" }) as HTMLButtonElement)
+        .disabled
+    ).toBe(false);
+    expect(screen.queryByText(/현재 선택 가능한 모델 목록에 없습니다/)).toBeNull();
   });
 
   it("retains the compatibility options editor for a legacy agent without a canonical session", () => {

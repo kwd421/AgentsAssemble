@@ -7,6 +7,7 @@ from typing import Protocol
 
 from agentsassemble.providers.adapters import default_provider_registry
 from agentsassemble.providers import catalog as provider_catalog
+from agentsassemble.providers.capabilities import PROVIDER_CAPABILITIES
 from agentsassemble.providers.provider_usage import (
     ProviderUsageRegistry,
     ProviderUsageUnavailable,
@@ -44,6 +45,10 @@ class ProviderUsage(Protocol):
     ) -> dict[str, object]: ...
 
 
+class ProviderCatalogRefresh(Protocol):
+    def snapshot(self, *, refresh: bool = False) -> dict[str, object]: ...
+
+
 def provider_catalog_payload() -> dict[str, object]:
     return {"providers": default_provider_registry().catalog()}
 
@@ -69,11 +74,13 @@ def register_provider_routes(
     login_service: ProviderLogin,
     secret_store: ProviderSecretStore | None = None,
     usage_service: ProviderUsageRegistry | ProviderUsage | None = None,
+    capability_catalog: ProviderCatalogRefresh | None = None,
     workspace_picker: Callable[[], str] = choose_workspace_folder,
 ) -> None:
     """Register provider discovery, login, and credential-management routes."""
     store = PROVIDER_SECRETS if secret_store is None else secret_store
     usage = default_provider_usage_registry() if usage_service is None else usage_service
+    capabilities = PROVIDER_CAPABILITIES if capability_catalog is None else capability_catalog
 
     def _send_store_status(ctx: RequestContext, operation: Callable[[], Mapping[str, object]]) -> None:
         ctx.send_json(_safe_status_payload(operation()))
@@ -104,6 +111,24 @@ def register_provider_routes(
             ctx.send_error(HTTPStatus.BAD_REQUEST, str(error))
             return
         ctx.send_json(result)
+
+    @router.post("/api/provider-catalog/refresh")
+    def refresh_provider_catalog(ctx: RequestContext) -> None:
+        if not is_local_operator(ctx):
+            ctx.send_error(
+                HTTPStatus.FORBIDDEN,
+                "provider catalog refresh can only be started from the local operator UI",
+            )
+            return
+        try:
+            snapshot = capabilities.snapshot(refresh=True)
+        except Exception:
+            ctx.send_error(
+                HTTPStatus.SERVICE_UNAVAILABLE,
+                "provider catalog refresh failed",
+            )
+            return
+        ctx.send_json(snapshot)
 
     @router.post("/api/local/workspace-picker")
     def local_workspace_picker(ctx: RequestContext) -> None:

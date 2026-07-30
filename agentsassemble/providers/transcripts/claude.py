@@ -26,16 +26,22 @@ class ClaudeSessionMessageSource(_JsonlOffsetMessageSource):
         super().__init__(home=home, cwd=cwd)
         self._pending_messages: list[str] = []
         self._observed_model_id = ""
+        self._turn_tool_activities: dict[str, dict[str, str]] = {}
+        self._turn_activity_sequence = 0
 
     def prepare_start(self) -> None:
         super().prepare_start()
         self._pending_messages = []
         self._observed_model_id = ""
+        self._turn_tool_activities = {}
+        self._turn_activity_sequence = 0
 
     def begin_turn(self, expected_input: str = "") -> None:
         super().begin_turn(expected_input)
         self._pending_messages = []
         self._observed_model_id = ""
+        self._turn_tool_activities = {}
+        self._turn_activity_sequence = 0
 
     def _candidate_paths(self) -> list[Path]:
         root = self.home / ".claude" / "projects"
@@ -54,9 +60,29 @@ class ClaudeSessionMessageSource(_JsonlOffsetMessageSource):
             if str(entry.get("type") or "") == "system":
                 complete = complete or str(entry.get("subtype") or "") == "turn_duration"
                 continue
+            message = entry.get("message") if isinstance(entry.get("message"), dict) else {}
+            content = message.get("content")
+            if str(entry.get("type") or "") == "user" or str(message.get("role") or "") == "user":
+                if isinstance(content, list):
+                    for block in content:
+                        if not isinstance(block, dict) or str(block.get("type") or "") != "tool_result":
+                            continue
+                        activity_id = clean_room_text(
+                            block.get("tool_use_id") or block.get("toolUseId"),
+                            limit=128,
+                        )
+                        previous = self._turn_tool_activities.get(activity_id)
+                        if activity_id and previous:
+                            self._pending_activities.append(
+                                {
+                                    **previous,
+                                    "activity_id": activity_id,
+                                    "status": "completed",
+                                }
+                            )
+                continue
             if str(entry.get("type") or "") != "assistant":
                 continue
-            message = entry.get("message") if isinstance(entry.get("message"), dict) else {}
             if bool(entry.get("isApiErrorMessage")) or entry.get("error") or entry.get("apiErrorStatus"):
                 detail = _claude_message_text(message) or clean_room_text(entry.get("error"), limit=500)
                 raise LiveCliMessageExtractionError(detail or "Claude Code provider authentication failed.")
@@ -66,7 +92,6 @@ class ClaudeSessionMessageSource(_JsonlOffsetMessageSource):
                 message.get("model") or entry.get("model") or entry.get("model_id"),
                 limit=128,
             ) or self._observed_model_id
-            content = message.get("content")
             if isinstance(content, str):
                 if str(message.get("stop_reason") or "") == "tool_use":
                     continue
@@ -76,20 +101,60 @@ class ClaudeSessionMessageSource(_JsonlOffsetMessageSource):
                 continue
             if not isinstance(content, list):
                 continue
+            entry_id = clean_room_text(
+                entry.get("uuid") or entry.get("id") or message.get("id"),
+                limit=128,
+            )
             for block in content:
                 if not isinstance(block, dict):
                     continue
                 block_type = str(block.get("type") or "")
                 if block_type == "tool_use":
+                    self._turn_activity_sequence += 1
                     name = clean_room_text(block.get("name"), limit=120) or "tool"
                     detail = _structured_tool_detail(name, block.get("input"))
-                    self._pending_activities.append(
-                        {
-                            "category": _activity_category(name),
-                            "status": "running",
+                    activity_id = clean_room_text(
+                        block.get("id")
+                        or f"{entry_id or 'assistant'}-tool-{self._turn_activity_sequence}",
+                        limit=128,
+                    )
+                    activity = {
+                        "category": _activity_category(name),
+                        "status": "running",
+                        "activity_id": activity_id,
+                        "activity_title": name,
+                        "activity_detail": detail,
+                        "content": f"{name}: {detail}" if detail else name,
+                    }
+                    self._pending_activities.append(activity)
+                    if activity_id:
+                        self._turn_tool_activities[activity_id] = {
+                            "category": activity["category"],
+                            "activity_title": name,
+                            "activity_detail": detail,
                             "content": f"{name}: {detail}" if detail else name,
                         }
+                elif block_type == "thinking":
+                    self._turn_activity_sequence += 1
+                    thought = _clean_provider_message_text(
+                        block.get("thinking") or block.get("text"),
+                        limit=2000,
                     )
+                    if thought:
+                        self._pending_activities.append(
+                            {
+                                "category": "reasoning",
+                                "status": "running",
+                                "activity_id": clean_room_text(
+                                    block.get("id")
+                                    or f"{entry_id or 'assistant'}-reasoning-{self._turn_activity_sequence}",
+                                    limit=128,
+                                ),
+                                "activity_title": "생각",
+                                "activity_detail": thought,
+                                "content": thought,
+                            }
+                        )
                 elif block_type == "text" and str(message.get("stop_reason") or "") != "tool_use":
                     piece = _clean_provider_message_text(block.get("text"), limit=12000)
                     if piece:

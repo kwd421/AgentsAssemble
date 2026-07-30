@@ -1,4 +1,4 @@
-import { cleanup, render, screen, waitFor } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
@@ -9,7 +9,9 @@ const apiMocks = vi.hoisted(() => ({
   chooseLocalWorkspace: vi.fn(),
   deleteProviderCredential: vi.fn(),
   fetchProviderCredentialStatus: vi.fn(),
+  refreshProviderCatalog: vi.fn(),
   setProviderCredential: vi.fn(),
+  startFrontendLiveAgentLogin: vi.fn(),
 }));
 
 vi.mock("../../api", async (importOriginal) => ({
@@ -17,7 +19,9 @@ vi.mock("../../api", async (importOriginal) => ({
   chooseLocalWorkspace: apiMocks.chooseLocalWorkspace,
   deleteProviderCredential: apiMocks.deleteProviderCredential,
   fetchProviderCredentialStatus: apiMocks.fetchProviderCredentialStatus,
+  refreshProviderCatalog: apiMocks.refreshProviderCatalog,
   setProviderCredential: apiMocks.setProviderCredential,
+  startFrontendLiveAgentLogin: apiMocks.startFrontendLiveAgentLogin,
 }));
 
 afterEach(cleanup);
@@ -34,10 +38,22 @@ beforeEach(() => {
     source: "missing",
   });
   apiMocks.deleteProviderCredential.mockReset();
+  apiMocks.refreshProviderCatalog.mockReset();
+  apiMocks.refreshProviderCatalog.mockResolvedValue({
+    status: "ready",
+    catalog_revision: "cat-authenticated",
+    providers: [],
+  });
   apiMocks.setProviderCredential.mockReset();
   apiMocks.setProviderCredential.mockResolvedValue({
     configured: true,
     source: "keyring",
+  });
+  apiMocks.startFrontendLiveAgentLogin.mockReset();
+  apiMocks.startFrontendLiveAgentLogin.mockResolvedValue({
+    status: "authenticated",
+    provider_id: "cursor",
+    message: "Cursor 로그인이 완료됐습니다.",
   });
 });
 
@@ -51,6 +67,40 @@ function primaryActionButton(): HTMLButtonElement {
 
 async function chooseWorkspace(): Promise<void> {
   await userEvent.click(screen.getByRole("button", { name: "폴더 선택" }));
+}
+
+async function chooseProviderControl(label: string, option: string): Promise<void> {
+  const toggle = screen.queryByRole("switch", { name: label });
+  if (toggle) {
+    if (!toggle.textContent?.includes(option)) {
+      await userEvent.click(toggle);
+    }
+    if (!toggle.textContent?.includes(option)) {
+      await userEvent.click(toggle);
+    }
+    return;
+  }
+  await userEvent.click(screen.getByRole("combobox", { name: label }));
+  const directOption = screen.queryByRole("menuitemradio", { name: option });
+  if (directOption) {
+    await userEvent.click(directOption);
+    return;
+  }
+  const family = modelFamilyFromLabel(option);
+  if (label === "모델" && family) {
+    const familyItem = screen.queryByRole("menuitem", { name: family });
+    if (familyItem) await userEvent.click(familyItem);
+  }
+  await userEvent.click(screen.getByRole("option", { name: option }));
+}
+
+function modelFamilyFromLabel(label: string): string {
+  return ["Haiku", "Sonnet", "Opus", "Fable", "GPT", "Gemini", "Grok", "GLM", "Kimi"]
+    .find((family) => new RegExp(`(^|\\s)${family}(\\s|$)`, "i").test(label)) || "";
+}
+
+function expectProviderControlValue(label: string, option: string): void {
+  expect(screen.getByLabelText(label).textContent).toContain(option);
 }
 
 describe("AgentCreateModal", () => {
@@ -95,10 +145,11 @@ describe("AgentCreateModal", () => {
 
     await userEvent.click(screen.getByRole("listitem", { name: "Codex" }));
     const model = screen.getByRole("combobox", { name: "모델" });
-    expect(model.tagName).toBe("SELECT");
+    await userEvent.click(model);
     expect(screen.getByRole("option", { name: "Luna" })).toBeTruthy();
+    await userEvent.click(model);
 
-    await userEvent.selectOptions(model, "gpt-5.3-codex-spark");
+    await chooseProviderControl("모델", "Spark");
     expect(primaryActionButton().hasAttribute("disabled")).toBe(true);
     await chooseWorkspace();
     await userEvent.click(primaryActionButton());
@@ -158,7 +209,7 @@ describe("AgentCreateModal", () => {
     );
 
     await userEvent.click(screen.getByRole("listitem", { name: "Codex" }));
-    await userEvent.selectOptions(screen.getByRole("combobox", { name: "기존 세션" }), "codex-existing");
+    await chooseProviderControl("기존 세션", "Codex Existing · gpt-5.6-luna");
     await userEvent.click(primaryActionButton());
 
     expect(onCreate).toHaveBeenCalledWith(expect.objectContaining({ sessionId: "codex-existing" }));
@@ -179,10 +230,13 @@ describe("AgentCreateModal", () => {
     );
 
     await userEvent.click(screen.getByRole("listitem", { name: "Claude Code" }));
-    const model = screen.getByRole("combobox", { name: "모델" });
-    expect(screen.getByRole("option", { name: "Claude Sonnet 4.6" })).toBeTruthy();
+    await userEvent.click(screen.getByRole("combobox", { name: "모델" }));
+    expect(
+      screen.getByRole("menuitemradio", { name: "Claude Sonnet 4.6" })
+    ).toBeTruthy();
+    await userEvent.click(screen.getByRole("combobox", { name: "모델" }));
 
-    await userEvent.selectOptions(model, "claude-sonnet-4-6");
+    await chooseProviderControl("모델", "Claude Sonnet 4.6");
     await chooseWorkspace();
     await userEvent.click(primaryActionButton());
 
@@ -209,7 +263,7 @@ describe("AgentCreateModal", () => {
     );
 
     await userEvent.click(screen.getByRole("listitem", { name: "Claude Code" }));
-    await userEvent.selectOptions(screen.getByRole("combobox", { name: "모델" }), "claude-sonnet-4-6");
+    await chooseProviderControl("모델", "Claude Sonnet 4.6");
 
     rerender(
       <AgentCreateModal
@@ -223,10 +277,85 @@ describe("AgentCreateModal", () => {
       />
     );
 
-    expect((screen.getByRole("combobox", { name: "모델" }) as HTMLSelectElement).value).toBe(
-      "claude-sonnet-4-6"
-    );
+    expectProviderControlValue("모델", "Claude Sonnet 4.6");
     expect(screen.getByRole("listitem", { name: "Claude Code" }).getAttribute("data-active")).toBe("true");
+  });
+
+  it("keeps a provider usable while its last verified catalog is shown", async () => {
+    const onCreate = vi.fn().mockResolvedValue(undefined);
+    const warning = "Catalog refresh timed out. Using the last verified model list.";
+    render(
+      <AgentCreateModal
+        open
+        meetingId="room-a"
+        roomLabel="Room A"
+        catalogRevision="cat-stale"
+        providers={[
+          {
+            ...codexProvider(),
+            catalog_source: "stale_cache",
+            discovery_error_code: "model_discovery_timeout",
+            discovery_error: warning,
+          },
+        ]}
+        onClose={() => undefined}
+        onCreate={onCreate}
+      />
+    );
+
+    await userEvent.click(screen.getByRole("listitem", { name: "Codex" }));
+    await chooseWorkspace();
+
+    expect(screen.getByText(warning)).toBeTruthy();
+    expect(primaryActionButton().hasAttribute("disabled")).toBe(false);
+    await userEvent.click(primaryActionButton());
+    expect(onCreate).toHaveBeenCalledWith(
+      expect.objectContaining({
+        providerId: "codex",
+        catalogRevision: "cat-stale",
+        modelId: "gpt-5.6-luna",
+      })
+    );
+  });
+
+  it("waits for browser login and does not ask the operator to recheck it manually", async () => {
+    render(
+      <AgentCreateModal
+        open
+        meetingId="room-a"
+        roomLabel="Room A"
+        catalogRevision="cat-auth-required"
+        providers={[
+          {
+            ...codexProvider(),
+            id: "cursor",
+            display_name: "Cursor",
+            provider_kind: "cursor_live_session",
+            executable: "cursor-agent",
+            startable: false,
+            discovery_status: "failed",
+            discovery_error_code: "authentication_required",
+            discovery_error: "Cursor CLI 로그인이 필요합니다.",
+            login_available: true,
+            login_label: "Cursor 로그인",
+            login_flow: "browser_oauth",
+            controls: [],
+          },
+        ]}
+        onClose={() => undefined}
+        onCreate={vi.fn()}
+      />
+    );
+
+    await userEvent.click(screen.getByRole("listitem", { name: "Cursor" }));
+    await userEvent.click(screen.getByRole("button", { name: "Cursor 로그인" }));
+
+    expect(apiMocks.startFrontendLiveAgentLogin).toHaveBeenCalledWith("cursor");
+    expect(screen.getByText("Cursor 로그인이 완료됐습니다.")).toBeTruthy();
+    expect(
+      screen.queryByRole("button", { name: "로그인 완료 후 다시 확인" })
+    ).toBeNull();
+    expect(apiMocks.refreshProviderCatalog).not.toHaveBeenCalled();
   });
 
   it("does not switch providers when the selected provider disappears during refresh", async () => {
@@ -244,7 +373,7 @@ describe("AgentCreateModal", () => {
     );
 
     await userEvent.click(screen.getByRole("listitem", { name: "Claude Code" }));
-    await userEvent.selectOptions(screen.getByRole("combobox", { name: "모델" }), "claude-sonnet-4-6");
+    await chooseProviderControl("모델", "Claude Sonnet 4.6");
 
     rerender(
       <AgentCreateModal
@@ -278,7 +407,7 @@ describe("AgentCreateModal", () => {
     );
 
     await userEvent.click(screen.getByRole("listitem", { name: "Claude Code" }));
-    await userEvent.selectOptions(screen.getByRole("combobox", { name: "모델" }), "claude-sonnet-4-6");
+    await chooseProviderControl("모델", "Claude Sonnet 4.6");
     const refreshed = claudeProvider();
     refreshed.controls[0].options = refreshed.controls[0].options.filter(
       (option) => option.value !== "claude-sonnet-4-6"
@@ -295,7 +424,7 @@ describe("AgentCreateModal", () => {
       />
     );
 
-    expect((screen.getByRole("combobox", { name: "모델" }) as HTMLSelectElement).value).toBe("");
+    expectProviderControlValue("모델", "선택 필요");
     expect(primaryActionButton().hasAttribute("disabled")).toBe(true);
   });
 
@@ -326,7 +455,7 @@ describe("AgentCreateModal", () => {
     );
 
     await userEvent.click(screen.getByRole("listitem", { name: "Codex" }));
-    expect((screen.getByRole("combobox", { name: "모델" }) as HTMLSelectElement).value).toBe("");
+    expectProviderControlValue("모델", "선택 필요");
     expect(primaryActionButton().hasAttribute("disabled")).toBe(true);
     expect(screen.getByText("모델의 유효한 기본값이 없어 직접 선택해야 합니다.")).toBeTruthy();
   });
@@ -345,18 +474,48 @@ describe("AgentCreateModal", () => {
     );
 
     await userEvent.click(screen.getByRole("listitem", { name: "Codex" }));
-    await userEvent.selectOptions(screen.getByRole("combobox", { name: "모델" }), "model-variable");
+    await chooseProviderControl("모델", "Variable model");
 
+    await userEvent.click(screen.getByRole("combobox", { name: "추론 강도" }));
     expect(screen.getByRole("option", { name: "low" })).toBeTruthy();
     expect(screen.getByRole("option", { name: "high" })).toBeTruthy();
+    await userEvent.click(screen.getByRole("combobox", { name: "추론 강도" }));
     expect(screen.queryByRole("option", { name: "Fast" })).toBeNull();
-    expect(screen.getByRole("option", { name: "기본" })).toBeTruthy();
-    expect((screen.getByRole("combobox", { name: "응답 속도" }) as HTMLSelectElement).value).toBe(
-      "default"
+    expect(
+      (screen.getByRole("switch", { name: "응답 속도" }) as HTMLButtonElement).disabled
+    ).toBe(true);
+    expectProviderControlValue("응답 속도", "기본");
+
+    await chooseProviderControl("추론 강도", "high");
+    expect(
+      (screen.getByRole("switch", { name: "응답 속도" }) as HTMLButtonElement).disabled
+    ).toBe(false);
+    await chooseProviderControl("응답 속도", "Fast");
+  });
+
+  it("keeps a provider option menu open while the user scrolls its options", async () => {
+    render(
+      <AgentCreateModal
+        open
+        meetingId="room-a"
+        roomLabel="Room A"
+        catalogRevision="cat-scroll"
+        providers={[codexProviderWithRelations()]}
+        onClose={() => undefined}
+        onCreate={vi.fn()}
+      />
     );
 
-    await userEvent.selectOptions(screen.getByRole("combobox", { name: "추론 강도" }), "high");
-    expect(screen.getByRole("option", { name: "Fast" })).toBeTruthy();
+    await userEvent.click(screen.getByRole("listitem", { name: "Codex" }));
+    await userEvent.click(screen.getByRole("combobox", { name: "모델" }));
+    const menu = screen.getByRole("listbox", { name: "모델" });
+
+    fireEvent.scroll(menu);
+
+    expect(screen.getByRole("option", { name: "Variable model" })).toBeTruthy();
+    expect(screen.getByRole("combobox", { name: "모델" }).getAttribute("aria-expanded")).toBe(
+      "true"
+    );
   });
 
   it("requires explicit dependent settings after a model or effort change", async () => {
@@ -373,22 +532,17 @@ describe("AgentCreateModal", () => {
     );
 
     await userEvent.click(screen.getByRole("listitem", { name: "Codex" }));
-    await userEvent.selectOptions(screen.getByRole("combobox", { name: "모델" }), "model-high");
-    expect((screen.getByRole("combobox", { name: "추론 강도" }) as HTMLSelectElement).value).toBe(
-      ""
-    );
-    expect((screen.getByRole("combobox", { name: "응답 속도" }) as HTMLSelectElement).value).toBe(
-      "default"
-    );
-    await userEvent.selectOptions(screen.getByRole("combobox", { name: "추론 강도" }), "high");
+    await chooseProviderControl("모델", "High model");
+    expectProviderControlValue("추론 강도", "선택 필요");
+    expectProviderControlValue("응답 속도", "기본");
+    await chooseProviderControl("추론 강도", "high");
 
-    await userEvent.selectOptions(screen.getByRole("combobox", { name: "모델" }), "model-variable");
-    await userEvent.selectOptions(screen.getByRole("combobox", { name: "추론 강도" }), "high");
-    await userEvent.selectOptions(screen.getByRole("combobox", { name: "응답 속도" }), "fast");
-    await userEvent.selectOptions(screen.getByRole("combobox", { name: "추론 강도" }), "low");
-    expect((screen.getByRole("combobox", { name: "응답 속도" }) as HTMLSelectElement).value).toBe(
-      ""
-    );
+    await chooseProviderControl("모델", "Variable model");
+    await chooseProviderControl("추론 강도", "high");
+    await chooseProviderControl("응답 속도", "Fast");
+    await chooseProviderControl("추론 강도", "low");
+    expectProviderControlValue("응답 속도", "선택 필요");
+    await userEvent.click(screen.getByRole("switch", { name: "응답 속도" }));
     expect(screen.queryByRole("option", { name: "Fast" })).toBeNull();
   });
 
@@ -423,7 +577,7 @@ describe("AgentCreateModal", () => {
       />
     );
 
-    expect((screen.getByRole("combobox", { name: "추론 강도" }) as HTMLSelectElement).value).toBe("");
+    expectProviderControlValue("추론 강도", "선택 필요");
     expect(primaryActionButton().hasAttribute("disabled")).toBe(true);
   });
 
@@ -453,6 +607,73 @@ describe("AgentCreateModal", () => {
     expect(screen.getByRole("button", { name: "추가" }).hasAttribute("disabled")).toBe(true);
   });
 
+  it("groups a long model menu by recognizable model family", async () => {
+    const provider = claudeProvider();
+    provider.controls[0].options.splice(1, 0, {
+      value: "claude-sonnet-5",
+      label: "Claude Sonnet 5",
+    });
+    render(
+      <AgentCreateModal
+        open
+        meetingId="room-a"
+        roomLabel="Room A"
+        catalogRevision="cat-families"
+        providers={[provider]}
+        onClose={() => undefined}
+        onCreate={vi.fn()}
+      />
+    );
+
+    await userEvent.click(screen.getByRole("listitem", { name: "Claude Code" }));
+    await userEvent.click(screen.getByRole("combobox", { name: "모델" }));
+
+    expect(
+      screen.getByRole("menuitemradio", { name: "Claude Haiku 4.5" })
+    ).toBeTruthy();
+    expect(screen.queryByRole("menuitem", { name: "Haiku" })).toBeNull();
+    await userEvent.click(screen.getByRole("menuitem", { name: "Sonnet" }));
+    expect(
+      within(screen.getByRole("listbox", { name: "Sonnet 모델" })).getByRole(
+        "option",
+        { name: "Claude Sonnet 4.6" }
+      )
+    ).toBeTruthy();
+  });
+
+  it("uses catalog metadata to group models and expose pricing badges", async () => {
+    render(
+      <AgentCreateModal
+        open
+        meetingId="room-a"
+        roomLabel="Room A"
+        catalogRevision="cat-opencode"
+        providers={[openCodeProvider()]}
+        onClose={() => undefined}
+        onCreate={vi.fn()}
+      />
+    );
+
+    await userEvent.click(screen.getByRole("listitem", { name: "OpenCode" }));
+    await userEvent.click(screen.getByRole("combobox", { name: "모델" }));
+
+    await userEvent.click(screen.getByRole("menuitem", { name: "Zen" }));
+    const zenModels = screen.getByRole("listbox", { name: "Zen 모델" });
+    const freeModel = within(zenModels).getByRole("option", {
+        name: "DeepSeek V4 Flash Free",
+      });
+    expect(freeModel).toBeTruthy();
+    expect(within(freeModel).getByText("Free")).toBeTruthy();
+
+    await userEvent.click(screen.getByRole("menuitem", { name: "Go" }));
+    expect(
+      within(screen.getByRole("listbox", { name: "Go 모델" })).getByRole(
+        "option",
+        { name: "GLM 5.2" }
+      )
+    ).toBeTruthy();
+  });
+
   it("routes API providers through the API choice before creating the selected provider", async () => {
     const onCreate = vi.fn().mockResolvedValue(undefined);
     render(
@@ -480,6 +701,57 @@ describe("AgentCreateModal", () => {
     expect(onCreate).toHaveBeenCalledWith(
       expect.objectContaining({
         providerId: "deepseek",
+      })
+    );
+  });
+
+  it("projects one mixed-location provider into matching Subscription and Local model lists", async () => {
+    const onCreate = vi.fn().mockResolvedValue(undefined);
+    render(
+      <AgentCreateModal
+        open
+        meetingId="room-a"
+        roomLabel="Room A"
+        catalogRevision="cat-local"
+        providers={[ollamaProvider(), lmStudioProvider()]}
+        onClose={() => undefined}
+        onCreate={onCreate}
+      />
+    );
+
+    expect(screen.getByRole("listitem", { name: "Ollama" })).toBeTruthy();
+    expect(screen.queryByRole("listitem", { name: "LM Studio" })).toBeNull();
+    await userEvent.click(screen.getByRole("listitem", { name: "Ollama" }));
+    expectProviderControlValue("모델", "Nemotron 3 Super");
+    expect(screen.getByRole("combobox", { name: "모델" }).textContent).toContain(
+      "Free tier"
+    );
+
+    await userEvent.click(screen.getByRole("listitem", { name: "Local" }));
+    expect(screen.getByRole("listitem", { name: "Ollama" })).toBeTruthy();
+    expect(screen.getByRole("listitem", { name: "LM Studio" })).toBeTruthy();
+    await userEvent.click(screen.getByRole("listitem", { name: "Ollama" }));
+
+    expect(screen.queryByLabelText("API 키")).toBeNull();
+    const model = screen.getByRole("combobox", { name: "모델" }) as HTMLButtonElement;
+    expect(model.disabled).toBe(true);
+    expect(model.textContent).toContain("Gemma 4 12B");
+    expect(
+      (screen.getByRole("combobox", { name: "추론 강도" }) as HTMLButtonElement).disabled
+    ).toBe(true);
+    expect(
+      (screen.getByRole("switch", { name: "응답 속도" }) as HTMLButtonElement).disabled
+    ).toBe(true);
+    expect(
+      (screen.getByRole("combobox", { name: "권한" }) as HTMLButtonElement).disabled
+    ).toBe(true);
+    expect(screen.queryByRole("button", { name: "폴더 선택" })).toBeNull();
+    await userEvent.click(primaryActionButton());
+
+    expect(onCreate).toHaveBeenCalledWith(
+      expect.objectContaining({
+        providerId: "ollama",
+        modelId: "gemma4:12b",
       })
     );
   });
@@ -672,6 +944,109 @@ function cerebrasProvider(): NativeCliProviderAvailability {
     display_name: "Cerebras",
     provider_kind: "cerebras_api",
     default_model: "gpt-oss-120b",
+  };
+}
+
+function ollamaProvider(): NativeCliProviderAvailability {
+  return {
+    ...deepSeekProvider(),
+    id: "ollama",
+    display_name: "Ollama",
+    provider_kind: "ollama_api",
+    catalog_group: "subscription",
+    workspace_required: false,
+    default_model: "nemotron-3-super:cloud",
+    controls: [
+      {
+        key: "model",
+        label: "모델",
+        kind: "combobox",
+        default_value: "nemotron-3-super:cloud",
+        options: [
+          {
+            value: "nemotron-3-super:cloud",
+            label: "Nemotron 3 Super",
+            metadata: {
+              catalog_group: "subscription",
+              execution_location: "cloud",
+              pricing: "free_tier",
+            },
+          },
+          {
+            value: "gemma4:12b",
+            label: "Gemma 4 12B",
+            metadata: {
+              catalog_group: "local",
+              execution_location: "local",
+            },
+          },
+        ],
+      },
+    ],
+  };
+}
+
+function openCodeProvider(): NativeCliProviderAvailability {
+  return {
+    ...deepSeekProvider(),
+    id: "opencode",
+    display_name: "OpenCode",
+    provider_kind: "opencode_server",
+    runtime_kind: "opencode",
+    catalog_group: "subscription",
+    executable: "opencode",
+    default_model: "opencode-go/glm-5.2",
+    controls: [
+      {
+        key: "model",
+        label: "모델",
+        kind: "combobox",
+        default_value: "opencode-go/glm-5.2",
+        options: [
+          {
+            value: "opencode/deepseek-v4-flash-free",
+            label: "DeepSeek V4 Flash",
+            metadata: { group: "Zen", pricing: "free" },
+          },
+          {
+            value: "opencode/big-pickle",
+            label: "Big Pickle",
+            metadata: { group: "Zen", pricing: "free" },
+          },
+          {
+            value: "opencode-go/glm-5.2",
+            label: "GLM 5.2",
+            metadata: { group: "Go" },
+          },
+          {
+            value: "opencode-go/kimi-k3",
+            label: "Kimi K3",
+            metadata: { group: "Go" },
+          },
+        ],
+      },
+    ],
+  };
+}
+
+function lmStudioProvider(): NativeCliProviderAvailability {
+  return {
+    ...deepSeekProvider(),
+    id: "lmstudio",
+    display_name: "LM Studio",
+    provider_kind: "lmstudio_api",
+    catalog_group: "local",
+    workspace_required: false,
+    default_model: "gemma-4-e4b-it",
+    controls: [
+      {
+        key: "model",
+        label: "모델",
+        kind: "combobox",
+        default_value: "gemma-4-e4b-it",
+        options: [{ value: "gemma-4-e4b-it", label: "Gemma 4 E4B IT" }],
+      },
+    ],
   };
 }
 

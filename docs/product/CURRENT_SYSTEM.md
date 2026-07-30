@@ -2,7 +2,7 @@
 
 Status: current starting point
 
-Updated: 2026-07-29
+Updated: 2026-07-30
 
 Read this file before changing rooms, Agent Sessions, providers, invites,
 moderation, media, or the React room UI. It is intentionally short. Follow its
@@ -75,6 +75,13 @@ participation semantics are unsettled. `models.py`, `config.py`,
 `persona_cards.py`, and `character_mode.py` remain explicit cross-domain
 migration residue until their provider and retained-meeting contracts are
 split deliberately.
+
+`make architecture-check` is the mandatory growth boundary. It rejects new
+package-root ownership violations, dependency/cycle regressions, growth beyond
+the recorded ceilings in `docs/product/SOURCE_GROWTH_LIMITS.toml`, and new
+unowned source files over the repository limit. Those ceilings are pressure
+signals, not refactoring targets: split only at a real responsibility,
+ownership, lifetime, validation, or side-effect boundary.
 
 ## Current Browser Identity And Admission
 
@@ -216,11 +223,78 @@ calls without a text fallback. Anthropic Messages and Gemini `generateContent`
 need their own protocol adapters; a text-completion endpoint alone is not a
 room provider.
 
-The Agent Session creation UI groups every catalog entry whose runtime kind is
-`api` behind one top-level API choice. That second-level provider list contains
-DeepSeek and Cerebras. Each provider exposes only endpoint-verified models and
-controls; Cerebras currently exposes `gpt-oss-120b` with low, medium, and high
-reasoning effort.
+The Agent Session creation UI uses three English top-level catalog groups:
+`Subscription`, `API`, and `Local`. Provider definitions own their default
+group instead of the UI inferring product type from transport. A discovered
+model may override that group when one provider exposes models with different
+execution locations. Model grouping and badges consume the same catalog
+metadata (`group`, `pricing`, `catalog_group`, and `execution_location`) for
+every provider; provider adapters emit only facts their discovery source can
+establish. DeepSeek and Cerebras are API providers. Ollama connects only to its
+fixed loopback OpenAI-compatible endpoint; Ollama cloud models are presented
+under Subscription while models stored and executed on the host are presented
+under Local. Cloud options identify Ollama's metered free-tier availability
+separately from zero-price-per-token API models. Its catalog includes only
+listed models whose Ollama metadata advertises tool use. LM Studio is presented
+under Local and connects only to its fixed loopback endpoint; its catalog
+includes loaded LLMs that LM Studio reports as trained for tool use. Neither
+local endpoint asks for an API key or a workspace because these runtimes expose
+room tools, not filesystem tools. Each provider exposes only discovered models
+and controls; Cerebras currently exposes `gpt-oss-120b` with low, medium, and
+high reasoning effort.
+
+Quota and remaining-usage displays require an authoritative account value from
+a provider-documented API or the authenticated provider protocol. Confirmed plan
+or catalog facts such as a free tier may still be shown, but they must not be
+presented as a remaining quota. Locally counted calls, tokens, or cost are local
+usage measurements, not provider quota. Dashboard scraping, copied browser
+session credentials, static plan ratios, model-weight guesses, and rate-limit
+inference must not produce a displayed quota or remaining amount. If the
+provider explicitly reports exhausted quota, insufficient credits, or an
+equivalent terminal usage condition, surface that status immediately without
+inventing a numeric remainder. An ambiguous rate-limit response remains
+`rate limited`, not `quota exhausted`. When no authoritative value or explicit
+terminal status is available, show quota as unavailable (and optionally link to
+the provider's official usage page) instead of estimating it.
+
+The member UI refreshes authoritative usage snapshots while a supported
+provider session is present. It distinguishes loading, unavailable, unsupported,
+and ready states instead of making a missing snapshot look like zero usage.
+DeepSeek's documented `is_available=false` is an explicit exhausted state.
+OpenAI-compatible turn errors are classified as exhausted only when the
+provider supplies an exhaustion code or message; a bare HTTP 429 is shown as a
+rate limit.
+
+Provider control options are derived from each installed provider's discovery
+output. Codex reasoning levels therefore include `ultra` only when Codex
+advertises it, and the browser marks that real option with its Ultra treatment.
+Claude Code's session-scoped `ultracode` preset is discovered separately from
+its public `--effort` list because it combines xhigh effort with standing
+dynamic-workflow orchestration. It is offered only for installed models whose
+Claude registry advertises xhigh support, passed through as
+`--effort ultracode`, and receives the same Ultra visual treatment. Claude
+Code's `ultrareview` command remains a separate cloud review workflow and is
+not presented as a reasoning level. The two currently supported product
+permission profiles remain read-only meeting access and workspace write
+access; their provider-native mappings are shown in the option menu. Additional
+native modes such as bypassing permission checks are not inferred or exposed
+merely because a CLI help screen lists them.
+
+The room member row shows the model as its provider-session identity, with a
+leading lightning mark for a fast service tier and the reasoning level on the
+right. It does not repeat the generic `Agent Session` execution label. A real
+Codex `ultra` or Claude `ultracode` session receives the same Ultra visual
+treatment as its control; the UI does not synthesize Ultra styling for an
+unrelated provider workflow.
+
+Provider permission requests do not currently have a canonical approval
+response path. A provider adapter may observe and record that an approval was
+requested, but a host or facilitator cannot yet resolve it from the room UI.
+Adding facilitator approval requires a private correlated request record,
+host-assigned approval capability, bounded server policy, one-use resolution,
+and a provider-specific response adapter. Public room role or ordinary
+facilitator status alone must never grant permission to approve filesystem,
+command, network, or full-access actions.
 
 API-provider credentials are server-owned and read from the OS keyring (or the
 provider's explicit process environment fallback), then sent to the bridge
@@ -245,6 +319,16 @@ loading state, but cannot create a session until native discovery or an explicit
 static provider manifest produces a revision. Discovery completion is pushed on
 the canonical room WebSocket; `agent.create` must present that revision and the
 server validates every selected control against it.
+
+Native CLI authentication is started from the Agent Session creation UI only
+for the local operator. The server resolves an allowlisted login command owned
+by the selected provider definition; browser input never becomes a shell
+command. Browser-OAuth providers run without a visible CLI window, and the
+server refreshes the live catalog when the provider login process completes.
+Providers whose official login remains terminal-interactive open a visible host
+terminal and retain an explicit recheck action. Remote room clients cannot
+start host login, and AgentsAssemble does not receive or persist the provider
+credential.
 
 Room-global settings are repository-owned. The strict record contains label,
 topic, appearance, conversation mode, bounded relay count, and custom channels.
@@ -337,6 +421,16 @@ typing or idle when compaction completes. Codex app-server and the current
 OpenCode server protocol expose this lifecycle. Providers without an observed
 structured signal remain on the generic typing state; the UI does not infer
 compaction from elapsed time.
+
+Provider-visible thought and tool activity uses structured canonical
+`activity_delta` events. A provider correlation ID keeps one tool row stable as
+it moves from running to completed; the public title and detail carry only
+bounded, redacted information such as the tool name, command summary, search
+query, or local filename without an absolute path. Claude Code transcript
+thinking blocks, Codex app-server reasoning summaries, Grok ACP thought chunks,
+and OpenCode reasoning parts may populate the expandable activity view because
+those provider surfaces already expose them. OpenAI-compatible API reasoning
+fields remain provider-private and are not promoted into room activity.
 
 A room explicitly set to `ambient` does not use that selector to choose one
 speaker. Each committed room message wakes all connected, idle, unmuted Agent

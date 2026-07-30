@@ -81,6 +81,9 @@ def fetch_deepseek_balance(api_key: str) -> dict[str, object]:
 
 
 def _public_deepseek_balance(payload: dict[str, object]) -> dict[str, object]:
+    account_available = payload.get("is_available")
+    if not isinstance(account_available, bool):
+        raise ProviderUsageUnavailable("deepseek_balance_invalid_response")
     source_balances = payload.get("balance_infos")
     if not isinstance(source_balances, list):
         raise ProviderUsageUnavailable("deepseek_balance_invalid_response")
@@ -99,9 +102,9 @@ def _public_deepseek_balance(payload: dict[str, object]) -> dict[str, object]:
         "status": "ready",
         "source": "deepseek_account_balance",
         "observed_at": datetime.now(UTC).isoformat(),
-        "quota_state": "unknown",
+        "quota_state": "ok" if account_available else "exhausted",
         "quota_windows": [],
-        "account_available": bool(payload.get("is_available")),
+        "account_available": account_available,
         "account_balances": balances[:4],
     }
 

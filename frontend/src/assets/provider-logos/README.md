@@ -15,6 +15,8 @@ the light or dark surface paired with that official asset.
 | `opencode.png` | [OpenCode brand site](https://opencode.ai/brand) | `/favicon-96x96-v3.png` | `aa34092540de60c889610edfa3c25316e215f12d88af29cfba530d09aee7265c` |
 | `deepseek.png` | [DeepSeek official CDN](https://cdn.deepseek.com/favicon.png) | `favicon.png` | `67686a1ac38f8d1cf6db6949e566d69a7e975ad74c610c0f10872da5c39f4fdf` |
 | `cerebras.svg` | [Cerebras press kit](https://www.cerebras.ai/company/press-kit) | `Cerebras Logos.zip/Cerebras C logo.svg` | `753cb8c0ae9b5033faa98d69bd888929d836f8a67538a9b98e454ccbb2bf905e` |
+| `ollama.png` | Installed official Ollama app | `Ollama.app/Contents/Resources/icon.icns` | `9c4a1431032ecd3a4e1253c20d963e1a19fb7d9b0c42ba131c8c436fd2f4e186` |
+| `lmstudio.png` | Installed official LM Studio app | `LM Studio.app/Contents/Resources/icon.icns` | `87725a6502b989abb603aecb7634a6668f959684267ba927419c26b37c8c6d62` |
 
 OpenAI assets are subject to the
 [OpenAI design guidelines and marks usage terms](https://openai.com/brand/).

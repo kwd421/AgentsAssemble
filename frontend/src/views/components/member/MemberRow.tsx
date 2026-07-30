@@ -1,6 +1,6 @@
 import { useRef } from "react";
 import type { MouseEvent as ReactMouseEvent, PointerEvent as ReactPointerEvent } from "react";
-import { VolumeX } from "lucide-react";
+import { VolumeX, Zap } from "lucide-react";
 import { agentSessionPresenceStatus } from "../AgentSessionDetails";
 import ProviderLogo from "../ProviderLogo";
 import {
@@ -64,6 +64,7 @@ export default function MemberRow({
       className="dc-member group"
       data-role={entry.role}
       data-active={entry.active}
+      data-ultra={entry.ultraMode}
       role={canOpenDetails ? "button" : undefined}
       tabIndex={canOpenDetails ? 0 : undefined}
       data-muted={entry.muted}
@@ -143,9 +144,31 @@ export default function MemberRow({
           )}
         </div>
         <div className="dc-member-detail-row">
-          <p className="min-w-0 flex-1 truncate preserve-words" title={entry.fullDetail || entry.detail}>
-            {entry.detail}
-          </p>
+          <div
+            className="dc-member-model-line"
+            aria-label={memberModelAccessibleLabel(entry)}
+            title={entry.fullDetail || entry.detail}
+          >
+            {entry.fastMode && (
+              <Zap
+                className="dc-member-fast-icon"
+                size={11}
+                fill="currentColor"
+                aria-hidden
+              />
+            )}
+            <span className="truncate preserve-words">
+              {entry.modelLabel || entry.detail}
+            </span>
+            {entry.reasoningEffort && (
+              <span
+                className="dc-member-effort"
+                data-ultra={entry.ultraMode}
+              >
+                {reasoningEffortLabel(entry.reasoningEffort)}
+              </span>
+            )}
+          </div>
           {entry.statusLabel && (
             <span
               className="dc-member-status-chip preserve-words"
@@ -184,4 +207,27 @@ export default function MemberRow({
       </div>
     </div>
   );
+}
+
+function reasoningEffortLabel(value: string): string {
+  const normalized = value.trim().toLowerCase();
+  const labels: Record<string, string> = {
+    low: "Low",
+    medium: "Medium",
+    high: "High",
+    xhigh: "Extra High",
+    max: "Max",
+    ultra: "Ultra",
+    ultracode: "UltraCode",
+  };
+  return labels[normalized] || value;
+}
+
+function memberModelAccessibleLabel(entry: MemberEntry): string {
+  const parts = [entry.modelLabel || entry.detail];
+  if (entry.fastMode) parts.push("Fast");
+  if (entry.reasoningEffort) {
+    parts.push(`추론 ${reasoningEffortLabel(entry.reasoningEffort)}`);
+  }
+  return parts.filter(Boolean).join(", ");
 }

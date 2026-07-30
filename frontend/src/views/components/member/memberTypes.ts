@@ -12,6 +12,10 @@ export type MemberEntry = {
   displayName: string;
   detail: string;
   fullDetail?: string;
+  modelLabel?: string;
+  reasoningEffort?: string;
+  fastMode?: boolean;
+  ultraMode?: boolean;
   statusLabel?: string;
   role: RoleId;
   owner: boolean;

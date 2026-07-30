@@ -96,6 +96,16 @@ export function memberStatusLabel(member: RoomMember) {
 }
 
 export function inlineQuotaChips(agent: LiveAgent) {
+  if (agent.quota_state === "exhausted") {
+    return [
+      {
+        label: "할당량",
+        value: "소진",
+        tone: signalToneClass("danger"),
+        title: "Provider가 할당량 또는 사용 가능 잔액 소진을 명시했습니다.",
+      },
+    ];
+  }
   const quotaWindows = agentQuotaWindowSignals(agent);
   if (quotaWindows.length > 0) {
     return quotaWindows.slice(0, 2).map((window) => ({
