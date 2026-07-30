@@ -363,7 +363,7 @@ button:disabled,
 }
 
 .dc-invite-modal {
-  width: min(760px, calc(100vw - 32px));
+  width: min(820px, calc(100vw - 32px));
   max-height: min(780px, calc(100vh - 32px));
   overflow-y: auto;
   border: 1px solid rgba(255, 255, 255, 0.08);
@@ -371,6 +371,128 @@ button:disabled,
   background: #313338;
   padding: 28px 28px 22px;
   box-shadow: 0 24px 90px rgba(0, 0, 0, 0.5);
+}
+
+.dc-invite-primary-grid {
+  display: grid;
+  gap: 12px;
+  margin-top: 24px;
+}
+
+.dc-invite-card {
+  display: grid;
+  gap: 14px;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 8px;
+  background: #2b2d31;
+  padding: 18px;
+}
+
+.dc-invite-card h3,
+.dc-invite-section-heading h3 {
+  color: var(--color-text-primary);
+  font-size: 15px;
+  font-weight: 900;
+}
+
+.dc-invite-card p,
+.dc-invite-section-heading p {
+  margin-top: 4px;
+  color: var(--color-text-muted);
+  font-size: 12px;
+  font-weight: 700;
+  line-height: 1.55;
+}
+
+.dc-invite-link-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 72px 82px;
+  gap: 8px;
+}
+
+.dc-invite-setup {
+  border-top: 1px solid rgba(255, 255, 255, 0.08);
+  padding-top: 12px;
+  color: var(--color-text-secondary);
+  font-size: 12px;
+  font-weight: 800;
+}
+
+.dc-invite-setup > summary,
+.dc-invite-advanced > summary {
+  cursor: pointer;
+  color: var(--color-text-secondary);
+  font-weight: 900;
+}
+
+.dc-invite-setup ol {
+  display: grid;
+  gap: 10px;
+  margin: 12px 0 0 20px;
+  list-style: decimal;
+  color: var(--color-text-muted);
+  line-height: 1.55;
+}
+
+.dc-invite-setup li {
+  min-width: 0;
+  padding-left: 3px;
+}
+
+.dc-invite-setup code {
+  display: block;
+  max-width: 100%;
+  overflow-x: auto;
+  margin-top: 6px;
+  border-radius: 4px;
+  background: #1e1f22;
+  padding: 8px 10px;
+  color: var(--color-text-primary);
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", monospace;
+  font-size: 11px;
+  font-weight: 700;
+  white-space: nowrap;
+}
+
+.dc-invite-setup li:last-child code {
+  display: inline;
+  margin: 0 2px;
+  padding: 2px 5px;
+}
+
+.dc-invite-command-label {
+  display: block;
+  margin-top: 8px;
+  color: var(--color-text-secondary);
+}
+
+.dc-invite-friends-section {
+  margin-top: 24px;
+  border-top: 1px solid rgba(255, 255, 255, 0.08);
+  padding-top: 20px;
+}
+
+.dc-invite-advanced {
+  margin-top: 20px;
+  border-top: 1px solid rgba(255, 255, 255, 0.08);
+  padding-top: 18px;
+  color: var(--color-text-primary);
+  font-size: 14px;
+}
+
+.dc-invite-advanced-body {
+  display: grid;
+  gap: 18px;
+  margin-top: 6px;
+}
+
+.dc-invite-advanced-body > .dc-invite-link-label {
+  margin: 0;
+  padding: 18px 0 0;
+}
+
+.dc-invite-advanced-body > .dc-invite-link-label:first-child {
+  border-top: 0;
 }
 
 .dc-agent-create-modal {
@@ -1099,7 +1221,7 @@ button:disabled,
   height: 56px;
   align-items: center;
   gap: 14px;
-  margin-top: 28px;
+  margin-top: 12px;
   border-radius: 8px;
   background: #1e1f22;
   padding: 0 18px;
@@ -1119,8 +1241,8 @@ button:disabled,
 
 .dc-invite-friend-list {
   display: grid;
-  max-height: min(480px, calc(100vh - 360px));
-  min-height: 240px;
+  max-height: min(300px, calc(100vh - 520px));
+  min-height: 120px;
   overflow-y: auto;
   margin: 20px -8px 0;
   padding: 0 8px;
@@ -1290,6 +1412,23 @@ button:disabled,
 .dc-invite-copy-button:focus-visible {
   background: var(--color-accent-hover);
   outline: none;
+}
+
+.dc-invite-copy-button:disabled {
+  cursor: not-allowed;
+  background: #404249;
+  color: var(--color-text-muted);
+  opacity: 0.72;
+}
+
+@media (max-width: 620px) {
+  .dc-invite-link-row {
+    grid-template-columns: minmax(0, 1fr) 64px 74px;
+  }
+
+  .dc-invite-card {
+    padding: 14px;
+  }
 }
 
 .dc-modal-close {

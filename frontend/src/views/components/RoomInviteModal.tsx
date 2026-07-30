@@ -138,12 +138,10 @@ export default function RoomInviteModal({
         <header className="flex items-start justify-between gap-4">
           <div className="min-w-0">
             <h2 id="room-invite-title" className="truncate text-[18px] font-black text-text-primary preserve-words">
-              친구를 {roomLabel}로 초대하기
+              {roomLabel} 초대 및 연결
             </h2>
             <p className="mt-1 text-[13px] text-text-muted preserve-words">
-              {readOnlyInvite
-                ? "보안 초대 링크는 공개 URL이 설정된 뒤 생성됩니다. 로컬/dev 미리보기 링크로 들어온 사람은 인증된 외부 게스트 세션을 받지 않습니다."
-                : "보안 초대 링크는 공개 URL이 설정된 뒤 생성됩니다. 친구에게 보낼 때는 /join?token=... 링크만 외부 초대로 사용합니다."}
+              사람이나 현재 열려 있는 AI 대화를 초대합니다. 서버가 계속 관리할 에이전트는 이 창이 아니라 에이전트 추가에서 만드세요.
             </p>
           </div>
           <button
@@ -156,146 +154,199 @@ export default function RoomInviteModal({
           </button>
         </header>
 
-        <label className="dc-invite-search">
-          <Search size={20} />
-          <input
-            type="search"
-            aria-label="친구 검색"
-            value={query}
-            onChange={(event) => setQuery(event.target.value)}
-            placeholder="친구 찾기"
-          />
-        </label>
-        <label className="dc-invite-link-label">
-          현재 AI 세션 초대
-          <span className="text-[12px] font-bold text-text-muted preserve-words">
-            Room Connector MCP가 등록된 Codex·Claude 앱 또는 대화형 CLI에 링크만 붙여 넣습니다. 현재 대화가 참가하며 별도 provider를 만들지 않습니다.
-          </span>
-          <div className="mt-2 grid gap-2 sm:grid-cols-[minmax(0,1fr)_112px_112px]">
-            <input
-              className="dc-invite-link-input"
-              value={agentInviteUrl}
-              placeholder="1회용 현재 AI 세션 초대 링크"
-              readOnly
-              onFocus={(event) => event.currentTarget.select()}
-            />
-            <button type="button" className="dc-invite-copy-button" onClick={onGenerateAgentInvite}>
-              링크 생성
-            </button>
-            <button type="button" className="dc-invite-copy-button" disabled={!agentInviteUrl} onClick={onCopyAgentInvite}>
-              <Copy size={15} />
-              복사
-            </button>
-          </div>
-          <code className="mt-2 block text-[12px] text-text-muted">assemble room connector-mcp</code>
-        </label>
+        <div className="dc-invite-primary-grid">
+          <section className="dc-invite-card" aria-labelledby="human-invite-heading">
+            <div>
+              <h3 id="human-invite-heading">사람 초대</h3>
+              <p>
+                브라우저에서 여는 1회용 보안 링크입니다.
+                {readOnlyInvite ? " 이 방에서는 읽기 전용으로 참가합니다." : ""}
+              </p>
+            </div>
+            <div className="dc-invite-link-row">
+              <input
+                className="dc-invite-link-input"
+                value={secureInviteReady ? secureInviteUrl : ""}
+                placeholder="공개 주소를 준비하면 링크가 표시됩니다"
+                readOnly
+                aria-label="사람 초대 링크"
+                onFocus={(event) => event.currentTarget.select()}
+              />
+              <button
+                type="button"
+                className="dc-invite-copy-button"
+                onClick={onGenerateSecureInvite}
+              >
+                생성
+              </button>
+              <button
+                type="button"
+                className="dc-invite-copy-button"
+                disabled={!secureInviteReady}
+                onClick={onCopy}
+              >
+                <Copy size={15} />
+                복사
+              </button>
+            </div>
+          </section>
 
-        <div className="dc-invite-friend-list" role="list" aria-label="초대할 친구">
-          {visibleFriends.length ? (
-            visibleFriends.map((friend) => {
-              const meta = participantTypeMeta(friend.participant_type);
-              const Icon = meta.icon;
-              const existingMember = memberForFriend(friend, members);
-              const status = friendStatuses?.[friend.friend_id] || inviteStatusForMember(existingMember);
-              const done = status === "초대됨" || status === "호출됨" || status === "참가 중";
-              const needsRun = status === "실행 필요";
-              const disabled = status === "초대 중" || done || needsRun;
-              const isAiFriend = friend.participant_type !== "human";
-              return (
-                <div
-                  key={friend.friend_id}
-                  className="dc-invite-friend-row"
-                  data-type={meta.tone}
-                  data-member-state={existingMember?.status || undefined}
-                  role="listitem"
-                >
-                  <span className="dc-invite-friend-avatar">
-                    <Icon size={20} />
-                  </span>
-                  <span className="min-w-0 flex-1">
-                    <span className="dc-invite-friend-name preserve-words">{friend.display_name}</span>
-                    <span className="dc-invite-friend-handle preserve-words">
-                      {inviteFriendSubtitle(friend, meta.label)}
-                    </span>
-                  </span>
-                  <button
-                    type="button"
-                    className="dc-invite-friend-button"
-                    data-state={needsRun ? "attention" : done ? "done" : "idle"}
-                    disabled={disabled}
-                    title={needsRun ? "provider/CLI 세션을 먼저 시작하거나 resume해야 합니다." : undefined}
-                    onClick={() => onInviteFriend(friend)}
-                  >
-                    {inviteFriendButtonLabel({ status, isAiFriend, readOnlyInvite })}
-                  </button>
-                </div>
-              );
-            })
-          ) : (
-            <p className="dc-invite-empty">
-              {searchQuery
-                ? "일치하는 친구가 없습니다."
-                : "초대할 친구가 없습니다. 친구 탭에서 먼저 추가하세요."}
-            </p>
-          )}
+          <section className="dc-invite-card" aria-labelledby="ai-invite-heading">
+            <div>
+              <h3 id="ai-invite-heading">현재 AI 대화 참가</h3>
+              <p>
+                Codex·Claude 앱이나 대화형 CLI에 링크를 붙여 넣으면 그 대화가 직접 참가합니다. 새 provider나 관리형 세션은 만들지 않습니다.
+              </p>
+            </div>
+            <div className="dc-invite-link-row">
+              <input
+                className="dc-invite-link-input"
+                value={agentInviteUrl}
+                placeholder="1회용 AI 대화 초대 링크"
+                readOnly
+                aria-label="현재 AI 대화 초대 링크"
+                onFocus={(event) => event.currentTarget.select()}
+              />
+              <button type="button" className="dc-invite-copy-button" onClick={onGenerateAgentInvite}>
+                생성
+              </button>
+              <button
+                type="button"
+                className="dc-invite-copy-button"
+                disabled={!agentInviteUrl}
+                onClick={onCopyAgentInvite}
+              >
+                <Copy size={15} />
+                복사
+              </button>
+            </div>
+            <details className="dc-invite-setup">
+              <summary>처음 한 번: Room Connector 설치 및 등록</summary>
+              <ol>
+                <li>
+                  AgentsAssemble 프로젝트 폴더에서 설치
+                  <code>python3 -m pip install -e .</code>
+                </li>
+                <li>
+                  사용하는 앱에 MCP 등록
+                  <span className="dc-invite-command-label">Codex</span>
+                  <code>codex mcp add agentsassemble-room -- assemble room connector-mcp</code>
+                  <span className="dc-invite-command-label">Claude Code</span>
+                  <code>claude mcp add --scope user agentsassemble-room -- assemble room connector-mcp</code>
+                  <span className="dc-invite-command-label">기타 MCP 클라이언트</span>
+                  <code>{'{"command":"assemble","args":["room","connector-mcp"]}'}</code>
+                </li>
+                <li>
+                  앱에서 <code>room_join</code> 도구가 보이는지 확인한 뒤 위 초대 링크만 대화에 붙여 넣기
+                </li>
+              </ol>
+            </details>
+          </section>
         </div>
 
-        <label className="dc-invite-link-label">
-          친구에게 보낼 보안 초대 링크
-          <div className="grid gap-2 sm:grid-cols-[minmax(0,1fr)_112px_112px]">
-            <input
-              className="dc-invite-link-input"
-              value={secureInviteReady ? secureInviteUrl : ""}
-              placeholder="공개 URL을 먼저 설정하면 /join?token=... 링크가 여기에 표시됩니다"
-              readOnly
-              onFocus={(event) => event.currentTarget.select()}
-            />
-            <button
-              type="button"
-              className="dc-invite-copy-button"
-              aria-label="친구 초대 링크 생성"
-              onClick={onGenerateSecureInvite}
-            >
-              링크 생성
-            </button>
-            <button type="button" className="dc-invite-copy-button" disabled={!secureInviteReady} onClick={onCopy}>
-              <Copy size={15} />
-              복사
-            </button>
+        <section className="dc-invite-friends-section" aria-labelledby="saved-friends-heading">
+          <div className="dc-invite-section-heading">
+            <div>
+              <h3 id="saved-friends-heading">저장된 친구</h3>
+              <p>이미 등록한 사람이나 AI 세션에 초대를 보냅니다.</p>
+            </div>
           </div>
-        </label>
-        <label className="dc-invite-link-label">
-          공개 주소에서 나로 열기
-          <span className="text-[12px] font-bold text-text-muted preserve-words">
-            현재 운영자 본인만 사용하세요. 링크는 2분 뒤 만료되고 한 번 사용하면 즉시 폐기됩니다.
-          </span>
-          <div className="mt-2 grid gap-2 sm:grid-cols-[minmax(0,1fr)_112px_112px]">
+          <label className="dc-invite-search">
+            <Search size={20} />
             <input
-              className="dc-invite-link-input"
-              value={operatorPairingUrl}
-              placeholder="일회용 운영자 기기 연결 링크"
-              readOnly
-              onFocus={(event) => event.currentTarget.select()}
+              type="search"
+              aria-label="친구 검색"
+              value={query}
+              onChange={(event) => setQuery(event.target.value)}
+              placeholder="친구 찾기"
             />
-            <button
-              type="button"
-              className="dc-invite-copy-button"
-              aria-label="운영자 기기 연결 링크 생성"
-              onClick={onGenerateOperatorPairing}
-            >
-              링크 생성
-            </button>
-            <button
-              type="button"
-              className="dc-invite-copy-button"
-              disabled={!operatorPairingUrl}
-              onClick={onCopyOperatorPairing}
-            >
-              <Copy size={15} />
-              복사
-            </button>
+          </label>
+          <div className="dc-invite-friend-list" role="list" aria-label="초대할 친구">
+            {visibleFriends.length ? (
+              visibleFriends.map((friend) => {
+                const meta = participantTypeMeta(friend.participant_type);
+                const Icon = meta.icon;
+                const existingMember = memberForFriend(friend, members);
+                const status = friendStatuses?.[friend.friend_id] || inviteStatusForMember(existingMember);
+                const done = status === "초대됨" || status === "호출됨" || status === "참가 중";
+                const needsRun = status === "실행 필요";
+                const disabled = status === "초대 중" || done || needsRun;
+                const isAiFriend = friend.participant_type !== "human";
+                return (
+                  <div
+                    key={friend.friend_id}
+                    className="dc-invite-friend-row"
+                    data-type={meta.tone}
+                    data-member-state={existingMember?.status || undefined}
+                    role="listitem"
+                  >
+                    <span className="dc-invite-friend-avatar">
+                      <Icon size={20} />
+                    </span>
+                    <span className="min-w-0 flex-1">
+                      <span className="dc-invite-friend-name preserve-words">{friend.display_name}</span>
+                      <span className="dc-invite-friend-handle preserve-words">
+                        {inviteFriendSubtitle(friend, meta.label)}
+                      </span>
+                    </span>
+                    <button
+                      type="button"
+                      className="dc-invite-friend-button"
+                      data-state={needsRun ? "attention" : done ? "done" : "idle"}
+                      disabled={disabled}
+                      title={needsRun ? "provider/CLI 세션을 먼저 시작하거나 resume해야 합니다." : undefined}
+                      onClick={() => onInviteFriend(friend)}
+                    >
+                      {inviteFriendButtonLabel({ status, isAiFriend, readOnlyInvite })}
+                    </button>
+                  </div>
+                );
+              })
+            ) : (
+              <p className="dc-invite-empty">
+                {searchQuery
+                  ? "일치하는 친구가 없습니다."
+                  : "초대할 친구가 없습니다. 친구 탭에서 먼저 추가하세요."}
+              </p>
+            )}
           </div>
-        </label>
+        </section>
+
+        <details className="dc-invite-advanced">
+          <summary>고급 연결 설정</summary>
+          <div className="dc-invite-advanced-body">
+            <label className="dc-invite-link-label">
+              공개 주소에서 나로 열기
+              <span className="text-[12px] font-bold text-text-muted preserve-words">
+                현재 운영자 본인만 사용하세요. 2분 뒤 만료되며 한 번 사용하면 폐기됩니다.
+              </span>
+              <div className="grid gap-2 sm:grid-cols-[minmax(0,1fr)_112px_112px]">
+                <input
+                  className="dc-invite-link-input"
+                  value={operatorPairingUrl}
+                  placeholder="일회용 운영자 기기 연결 링크"
+                  readOnly
+                  onFocus={(event) => event.currentTarget.select()}
+                />
+                <button
+                  type="button"
+                  className="dc-invite-copy-button"
+                  aria-label="운영자 기기 연결 링크 생성"
+                  onClick={onGenerateOperatorPairing}
+                >
+                  링크 생성
+                </button>
+                <button
+                  type="button"
+                  className="dc-invite-copy-button"
+                  disabled={!operatorPairingUrl}
+                  onClick={onCopyOperatorPairing}
+                >
+                  <Copy size={15} />
+                  복사
+                </button>
+              </div>
+            </label>
         <div className="dc-invite-link-label">
           <span>공개 URL</span>
           <div className="grid gap-2 sm:grid-cols-[minmax(0,1fr)_112px]">
@@ -359,10 +410,9 @@ export default function RoomInviteModal({
         </details>
         {remoteClientPacketPreview && (
           <label className="dc-invite-link-label">
-            기존 Agent Session 안내
+            선택한 AI 친구 연결 정보
             <span className="text-[12px] font-bold text-text-muted preserve-words">
-              {remoteClientPacketFriendName || "상대 AI"}에게 전달할 간단한 입장 안내입니다. 새 초대는 위의
-              지속 연결 명령을 사용하세요.
+              {remoteClientPacketFriendName || "상대 AI"}에게 보낸 초대의 연결 정보입니다.
             </span>
             <textarea
               className="dc-invite-packet-textarea"
@@ -381,6 +431,8 @@ export default function RoomInviteModal({
             </button>
           </label>
         )}
+          </div>
+        </details>
         <p className="mt-3 text-[12px] text-text-muted preserve-words">
           {copyStatus ||
             (readOnlyInvite
