@@ -627,8 +627,8 @@ export function startFrontendLiveAgentLogin(providerId: string) {
   });
 }
 
-export function refreshProviderCatalog() {
-  return postJson<ProviderCatalogRefreshResponse>("/api/provider-catalog/refresh", {});
+export function refreshProviderCatalog(force = true) {
+  return postJson<ProviderCatalogRefreshResponse>("/api/provider-catalog/refresh", { force });
 }
 
 export function resumeLiveAgentSession({

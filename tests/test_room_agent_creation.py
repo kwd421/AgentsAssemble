@@ -135,6 +135,7 @@ class RoomAgentCreationServiceTests(unittest.TestCase):
                 "catalog_revision": "revision-1",
                 "start_now": True,
             },
+            operation_id="create-luna",
             server_url="http://127.0.0.1:8765",
             ticket_issuer=None,
         )
@@ -166,6 +167,7 @@ class RoomAgentCreationServiceTests(unittest.TestCase):
                 "permission_mode": self.selection.permission_mode,
                 "catalog_revision": "revision-1",
             },
+            operation_id="create-luna",
             server_url="http://127.0.0.1:8765",
             ticket_issuer=None,
         )
@@ -187,6 +189,7 @@ class RoomAgentCreationServiceTests(unittest.TestCase):
                     "provider_id": "codex",
                     "catalog_revision": "stale",
                 },
+                operation_id="create-stale",
                 server_url="",
                 ticket_issuer=None,
             )

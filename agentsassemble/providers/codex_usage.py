@@ -20,7 +20,7 @@ class CodexUsageService:
         self,
         *,
         fetcher: RateLimitFetcher | None = None,
-        cache_seconds: float = 60.0,
+        cache_seconds: float = 300.0,
     ) -> None:
         self._fetcher = fetcher or fetch_codex_rate_limits
         self._cache_seconds = max(1.0, float(cache_seconds))

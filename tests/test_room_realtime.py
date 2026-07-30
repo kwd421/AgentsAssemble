@@ -3836,10 +3836,12 @@ class RoomRealtimeControllerTests(unittest.TestCase):
                 "start": True,
             },
         )
-        session = RoomStore(self.root).session("general", "claude-claude-review")
+        created_session = created["result"]["agent_session"]
+        agent_id = created_session["session_id"]
+        session = RoomStore(self.root).session("general", agent_id)
 
         self.assertTrue(created["accepted"])
-        self.assertEqual(self.manager.starts[-1], ("general", "claude-claude-review"))
+        self.assertEqual(self.manager.starts[-1], ("general", agent_id))
         self.assertEqual(session["provider_kind"], "claude_code")
         self.assertEqual(session["runtime_kind"], "live_cli")
         self.assertEqual(session["connection_kind"], "native_cli_bridge")
@@ -3852,6 +3854,31 @@ class RoomRealtimeControllerTests(unittest.TestCase):
         self.assertTrue(session["runtime_profile_key"])
         self.assertNotIn("-p", session["command_configured"])
         self.assertNotIn("--print", session["command_configured"])
+
+    def test_agent_create_assigns_stable_unique_identity_independent_of_display_name(self):
+        payload = {
+            "provider_id": "claude",
+            "display_name": "Claude Opus 5",
+            "workspace": str(self.root),
+            "model": "claude-haiku-4-5",
+        }
+
+        first = self._command("req-create-claude-first", "agent.create", payload)
+        repeated = self._command("req-create-claude-first", "agent.create", payload)
+        second = self._command("req-create-claude-second", "agent.create", payload)
+
+        first_session = first["result"]["agent_session"]
+        repeated_session = repeated["result"]["agent_session"]
+        second_session = second["result"]["agent_session"]
+        self.assertEqual(repeated_session["session_id"], first_session["session_id"])
+        self.assertTrue(repeated["deduplicated"])
+        self.assertNotEqual(second_session["session_id"], first_session["session_id"])
+        matching_sessions = [
+            session
+            for session in RoomStore(self.root).sessions("general")
+            if session["display_name"] == "Claude Opus 5"
+        ]
+        self.assertEqual(len(matching_sessions), 2)
 
     def test_agent_create_rejects_stale_catalog_and_unknown_model(self):
         with self.assertRaises(RoomCommandRejected) as stale:
@@ -3973,7 +4000,7 @@ class RoomRealtimeControllerTests(unittest.TestCase):
         first_internal = RoomStore(self.root).session("general", first_session["session_id"])
         second_internal = RoomStore(self.root).session("other-room", second_session["session_id"])
 
-        self.assertEqual(first_session["participant_id"], second_session["participant_id"])
+        self.assertNotEqual(first_session["participant_id"], second_session["participant_id"])
         self.assertNotIn("workspace", first_session)
         self.assertNotEqual(first_internal["workspace"], second_internal["workspace"])
         self.assertNotEqual(first_session["runtime_profile_key"], second_session["runtime_profile_key"])

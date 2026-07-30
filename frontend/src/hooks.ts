@@ -8,12 +8,15 @@ export function usePoll<T>(
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<Error | null>(null);
   const requestOwnerRef = useRef({ generation: 0, request: 0 });
+  const inFlightRef = useRef(0);
 
   const doFetch = useCallback(() => {
     const generation = requestOwnerRef.current.generation;
     const request = requestOwnerRef.current.request + 1;
     requestOwnerRef.current.request = request;
-    fetcher()
+    inFlightRef.current += 1;
+    Promise.resolve()
+      .then(fetcher)
       .then((d) => {
         if (
           requestOwnerRef.current.generation !== generation ||
@@ -30,13 +33,20 @@ export function usePoll<T>(
         ) return;
         setError(e);
         setLoading(false);
+      })
+      .finally(() => {
+        inFlightRef.current = Math.max(0, inFlightRef.current - 1);
       });
   }, [fetcher]);
 
   useEffect(() => {
     requestOwnerRef.current.generation += 1;
     doFetch();
-    const id = setInterval(doFetch, intervalMs);
+    const automaticFetch = () => {
+      if (document.hidden || inFlightRef.current > 0) return;
+      doFetch();
+    };
+    const id = setInterval(automaticFetch, intervalMs);
     return () => {
       requestOwnerRef.current.generation += 1;
       clearInterval(id);

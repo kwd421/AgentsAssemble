@@ -1,7 +1,11 @@
 import { act, renderHook } from "@testing-library/react";
-import { describe, expect, it, vi } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 
 import { usePoll } from "./hooks";
+
+afterEach(() => {
+  vi.useRealTimers();
+});
 
 function deferred<T>() {
   let resolve!: (value: T) => void;
@@ -47,5 +51,30 @@ describe("usePoll request ownership", () => {
 
     await act(async () => first.resolve("older refresh"));
     expect(result.current[0]).toBe("newer refresh");
+  });
+
+  it("does not start another automatic request while the previous poll is running", async () => {
+    vi.useFakeTimers();
+    const first = deferred<string>();
+    const fetcher = vi
+      .fn<() => Promise<string>>()
+      .mockReturnValueOnce(first.promise)
+      .mockResolvedValue("next");
+    renderHook(() => usePoll(fetcher, 1_000));
+
+    await act(async () => Promise.resolve());
+    expect(fetcher).toHaveBeenCalledTimes(1);
+
+    await act(async () => {
+      vi.advanceTimersByTime(3_000);
+    });
+    expect(fetcher).toHaveBeenCalledTimes(1);
+
+    await act(async () => first.resolve("first"));
+    await act(async () => {
+      vi.advanceTimersByTime(1_000);
+      await Promise.resolve();
+    });
+    expect(fetcher).toHaveBeenCalledTimes(2);
   });
 });

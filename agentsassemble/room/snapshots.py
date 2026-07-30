@@ -23,7 +23,7 @@ CapabilityProjection = Callable[[dict[str, object]], dict[str, bool]]
 
 
 class ProviderCatalogReader(Protocol):
-    def snapshot(self, *, refresh: bool = False) -> dict[str, object]: ...
+    def current_snapshot(self) -> dict[str, object]: ...
 
 
 class RoomSnapshotService:
@@ -110,7 +110,7 @@ class RoomSnapshotService:
         ]
         provider_catalog = {"status": "ready", "catalog_revision": "", "providers": []}
         if not bridge:
-            provider_catalog = self.provider_catalog.snapshot()
+            provider_catalog = self.provider_catalog.current_snapshot()
         participants = self.store.participants(room_id)
         if bridge:
             participants = [

@@ -240,6 +240,32 @@ describe("RoomConnectionPanel", () => {
     expect((screen.getByTitle("세션 중지") as HTMLButtonElement).disabled).toBe(true);
   });
 
+  it("loads provider usage only after the owner opens that agent's details", async () => {
+    const session = agentSession("idle");
+    const onAgentUsageRequest = vi.fn().mockResolvedValue(undefined);
+    render(
+      <RoomConnectionPanel
+        room={room}
+        agents={[agent()]}
+        members={[member()]}
+        agentSessions={[session]}
+        quotaViewer={{
+          hostCanViewLocalAgentQuotas: true,
+          localProcessAgentIds: ["codex"],
+        }}
+        onAgentUsageRequest={onAgentUsageRequest}
+      />
+    );
+
+    expect(onAgentUsageRequest).not.toHaveBeenCalled();
+    openAgentDetails();
+
+    await waitFor(() => {
+      expect(onAgentUsageRequest).toHaveBeenCalledTimes(1);
+      expect(onAgentUsageRequest).toHaveBeenCalledWith(session);
+    });
+  });
+
   it("pauses an idle session and resumes a paused session", async () => {
     const onAgentControl = vi.fn().mockResolvedValue(undefined);
     const idle = agentSession("idle");
@@ -331,7 +357,6 @@ describe("RoomConnectionPanel", () => {
 
     openAgentDetails();
 
-    expect(screen.getByText("live_cli · acp_stdio")).toBeTruthy();
     expect(screen.getByText("profile profile-4c21")).toBeTruthy();
     expect(screen.getByText("message grok_acp · strict")).toBeTruthy();
     expect(screen.getByText("input 418 chars · 3 events")).toBeTruthy();

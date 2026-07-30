@@ -55,6 +55,7 @@ export default function MemberList({
   processGroups = [],
   onSessionActionComplete,
   quotaViewer,
+  onAgentUsageRequest,
   searchQuery,
   onSearchQueryChange,
   hideSearch = false,
@@ -80,6 +81,7 @@ export default function MemberList({
   processGroups?: LiveAgentProcessGroup[];
   onSessionActionComplete?: () => void;
   quotaViewer?: AgentQuotaVisibilityViewer;
+  onAgentUsageRequest?: (session: RoomAgentSession) => void | Promise<void>;
   searchQuery?: string;
   onSearchQueryChange?: (query: string) => void;
   hideSearch?: boolean;
@@ -367,6 +369,13 @@ export default function MemberList({
     setCollapsedGroups((previous) => ({ ...previous, [groupId]: !previous[groupId] }));
   }
 
+  function openMemberDetails(entry: MemberEntry) {
+    setDetailEntryId(entry.id);
+    if (entry.canViewQuota && entry.agentSession && onAgentUsageRequest) {
+      void onAgentUsageRequest(entry.agentSession);
+    }
+  }
+
   const visibleGroups = useMemo(
     () => [
       // Invited members carry no LiveAgent record, so split them by role
@@ -457,7 +466,7 @@ export default function MemberList({
                 <MemberRow
                   key={entry.id}
                   entry={entry}
-                  onOpenDetails={(entry) => setDetailEntryId(entry.id)}
+                  onOpenDetails={openMemberDetails}
                   onRoleChange={handleRoleChange}
                   onContextMenu={handleMemberContextMenu}
                   canEditRoles={canEditRoles}

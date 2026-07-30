@@ -99,7 +99,7 @@ class FakeCapabilityCatalog:
         self.refresh_calls.append(refresh)
         return {
             "status": "ready",
-            "catalog_revision": "cat-refreshed",
+            "catalog_revision": "cat-refreshed" if refresh else "cat-cached",
             "providers": [
                 {
                     "id": "cursor",
@@ -191,6 +191,15 @@ class ProviderRouteTests(unittest.TestCase):
         self.assertEqual(response.sent_json["catalog_revision"], "cat-refreshed")
         self.assertEqual(response.sent_json["providers"][0]["discovery_status"], "ready")
         self.assertEqual(self.capabilities.refresh_calls, [True])
+
+    def test_agent_creation_can_reuse_a_fresh_provider_catalog(self):
+        response = self.dispatch(
+            "POST",
+            "/api/provider-catalog/refresh",
+            body=json.dumps({"force": False}).encode(),
+        )
+
+        self.assertEqual(response.sent_json["catalog_revision"], "cat-cached")
 
     def test_provider_login_is_local_only_and_delegates_to_login_service(self):
         started = self.dispatch(

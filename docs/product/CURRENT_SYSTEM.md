@@ -290,9 +290,13 @@ inventing a numeric remainder. An ambiguous rate-limit response remains
 terminal status is available, show quota as unavailable (and optionally link to
 the provider's official usage page) instead of estimating it.
 
-The member UI refreshes authoritative usage snapshots while a supported
-provider session is present. It distinguishes loading, unavailable, unsupported,
-and ready states instead of making a missing snapshot look like zero usage.
+The member UI requests an authoritative usage snapshot only when the owner
+opens that Agent Session's detail panel. Room entry, reconnect, and passive
+member-list updates do not start provider usage probes. Successful provider
+usage reads are cached for five minutes, and another detail-panel request
+within that window reuses the cached value. The UI distinguishes loading,
+unavailable, unsupported, and ready states instead of making a missing
+snapshot look like zero usage.
 DeepSeek's documented `is_available=false` is an explicit exhausted state.
 OpenAI-compatible turn errors are classified as exhausted only when the
 provider supplies an exhaustion code or message; a bare HTTP 429 is shown as a
@@ -352,6 +356,18 @@ loading state, but cannot create a session until native discovery or an explicit
 static provider manifest produces a revision. Discovery completion is pushed on
 the canonical room WebSocket; `agent.create` must present that revision and the
 server validates every selected control against it.
+
+Ordinary room snapshots publish the catalog state already held by the server
+without starting provider discovery. Opening the Agent Session creation UI
+ensures that the catalog is fresh while respecting the server's five-minute
+cache; completing an explicit provider-login recheck forces discovery. This
+keeps room entry, reconnect, and repeatedly reopening the creation UI from
+spawning every installed provider's model probe.
+
+The server assigns each accepted `agent.create` operation an opaque,
+provider-prefixed UUID identity. Display name and model are presentation and
+runtime settings, not identity: identical agents may coexist, while a retry of
+the same idempotent command resolves to the same Agent Session.
 
 Native CLI authentication is started from the Agent Session creation UI only
 for the local operator. The server resolves an allowlisted login command owned

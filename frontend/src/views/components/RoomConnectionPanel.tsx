@@ -35,6 +35,7 @@ type RoomConnectionPanelProps = {
   processGroups?: LiveAgentProcessGroup[];
   onSessionActionComplete?: () => void;
   quotaViewer?: AgentQuotaVisibilityViewer;
+  onAgentUsageRequest?: (session: RoomAgentSession) => void | Promise<void>;
   onStartAddAgent?: () => void;
   memberSearchQuery?: string;
   onMemberSearchQueryChange?: (query: string) => void;
@@ -78,6 +79,7 @@ export default function RoomConnectionPanel({
   processGroups = [],
   onSessionActionComplete,
   quotaViewer,
+  onAgentUsageRequest,
   onStartAddAgent,
   memberSearchQuery,
   onMemberSearchQueryChange,
@@ -161,6 +163,7 @@ export default function RoomConnectionPanel({
         processGroups={processGroups}
         onSessionActionComplete={onSessionActionComplete}
         quotaViewer={quotaViewer}
+        onAgentUsageRequest={onAgentUsageRequest}
         searchQuery={memberSearchQuery}
         onSearchQueryChange={onMemberSearchQueryChange}
         hideSearch={memberSearchQuery !== undefined}

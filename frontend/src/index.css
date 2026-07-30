@@ -3949,6 +3949,39 @@ body[data-sidebar-resizing="true"] {
   text-transform: uppercase;
 }
 
+.dc-member-detail-section-heading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.dc-agent-session-state {
+  flex: 0 0 auto;
+  border-radius: 999px;
+  background: rgba(148, 155, 164, 0.14);
+  padding: 3px 8px;
+  color: var(--color-text-muted);
+  font-size: 11px;
+  font-weight: 900;
+  line-height: 1.2;
+}
+
+.dc-agent-session-state[data-state="online"] {
+  background: rgba(35, 165, 90, 0.14);
+  color: var(--color-online);
+}
+
+.dc-agent-session-state[data-state="working"] {
+  background: rgba(88, 101, 242, 0.18);
+  color: #aeb5ff;
+}
+
+.dc-agent-session-state[data-state="error"] {
+  background: rgba(237, 66, 69, 0.16);
+  color: #ff8a8d;
+}
+
 .dc-member-detail-note {
   color: var(--color-text-muted);
   font-size: 12px;

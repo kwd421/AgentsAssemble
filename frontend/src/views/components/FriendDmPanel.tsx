@@ -64,12 +64,15 @@ export default function FriendDmPanel({
 
   useEffect(() => {
     let cancelled = false;
+    let inFlight = false;
     if (!friendId) {
       setEvents([]);
       setStatus("");
       return;
     }
     function load(showLoading: boolean) {
+      if (inFlight || (!showLoading && document.hidden)) return;
+      inFlight = true;
       if (showLoading) {
         setLoading(true);
         setStatus("");
@@ -85,6 +88,7 @@ export default function FriendDmPanel({
           setStatus(error instanceof Error ? error.message : "DM을 불러오지 못했습니다");
         })
         .finally(() => {
+          inFlight = false;
           if (!cancelled && showLoading) setLoading(false);
         });
     }

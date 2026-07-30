@@ -32,7 +32,7 @@ class ClaudeUsageService:
         self,
         *,
         fetcher: UsageFetcher | None = None,
-        cache_seconds: float = 60.0,
+        cache_seconds: float = 300.0,
     ) -> None:
         self._fetcher = fetcher or fetch_claude_usage
         self._cache_seconds = max(1.0, float(cache_seconds))

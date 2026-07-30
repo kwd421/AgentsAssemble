@@ -4,6 +4,7 @@ import json
 import os
 import re
 import shutil
+import time
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Protocol
@@ -91,6 +92,9 @@ class _JsonlOffsetMessageSource:
         self._bound_path = ""
         self._expected_turn_input = ""
         self._pending_activities: list[dict[str, object]] = []
+        self._candidate_scan_interval_seconds = 0.5
+        self._last_candidate_scan_at = 0.0
+        self._cached_visible_candidate_paths: list[Path] = []
 
     def prepare_start(self) -> None:
         self._offsets = {}
@@ -100,13 +104,15 @@ class _JsonlOffsetMessageSource:
         self._expected_turn_input = ""
         self._pending_activities = []
         self._ignored_existing_paths = {str(path) for path in self._candidate_paths()}
+        self._last_candidate_scan_at = 0.0
+        self._cached_visible_candidate_paths = []
 
     def begin_turn(self, expected_input: str = "") -> None:
         self._offsets = {}
         self._turn_input_seen_paths = set()
         self._expected_turn_input = _normalize_turn_input(expected_input)
         self._pending_activities = []
-        for path in self._visible_candidate_paths():
+        for path in self._visible_candidate_paths(force=True):
             self._offsets[str(path)] = _safe_size(path)
 
     def drain_activities(self) -> list[dict[str, object]]:
@@ -171,16 +177,26 @@ class _JsonlOffsetMessageSource:
     def _candidate_paths(self) -> list[Path]:
         raise NotImplementedError
 
-    def _visible_candidate_paths(self) -> list[Path]:
+    def _visible_candidate_paths(self, *, force: bool = False) -> list[Path]:
         if self._bound_path:
             bound = Path(self._bound_path)
             return [bound] if bound.is_file() else []
+        now = time.monotonic()
+        if (
+            not force
+            and self._last_candidate_scan_at
+            and now - self._last_candidate_scan_at
+            < self._candidate_scan_interval_seconds
+        ):
+            return list(self._cached_visible_candidate_paths)
         paths: list[Path] = []
         for path in self._candidate_paths():
             key = str(path)
             if key in self._ignored_existing_paths and key not in self._active_paths:
                 continue
             paths.append(path)
+        self._last_candidate_scan_at = 0.0 if force and not paths else now
+        self._cached_visible_candidate_paths = list(paths)
         return paths
 
     def _extract_from_text(self, text: str, *, source: str) -> LiveCliMessageSnapshot:

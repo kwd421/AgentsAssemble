@@ -120,8 +120,12 @@ def register_provider_routes(
                 "provider catalog refresh can only be started from the local operator UI",
             )
             return
+        payload = ctx.read_json_body()
+        if payload is None:
+            return
+        force = payload.get("force") is not False
         try:
-            snapshot = capabilities.snapshot(refresh=True)
+            snapshot = capabilities.snapshot(refresh=force)
         except Exception:
             ctx.send_error(
                 HTTPStatus.SERVICE_UNAVAILABLE,

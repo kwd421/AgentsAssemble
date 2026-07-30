@@ -8,7 +8,7 @@ import type { NativeCliProviderAvailability } from "../../../roomSocketClient";
 import ProviderLogo from "../ProviderLogo";
 import AgentIdentitySettings from "./AgentIdentitySettings";
 import AgentSessionControls from "./AgentSessionControls";
-import MemberDiagnostics from "./MemberDiagnostics";
+import MemberUsage from "./MemberUsage";
 import SessionOnlyMemberDetails from "./SessionOnlyMemberDetails";
 import type { MemberEntry } from "./memberTypes";
 
@@ -126,7 +126,15 @@ export default function MemberDetailModal({
             <X size={18} />
           </button>
         </header>
-        <MemberDiagnostics entry={entry} agent={agent} />
+        <AgentIdentitySettings
+          entry={entry}
+          agent={agent}
+          roomSessionToken={roomSessionToken}
+          processGroups={processGroups}
+          onSessionActionComplete={onSessionActionComplete}
+          onAgentProfileSettingsChange={onAgentProfileSettingsChange}
+          onAgentConfigure={onAgentConfigure}
+        />
         {entry.agentSession && (
           <AgentSessionDetails
             session={entry.agentSession}
@@ -139,15 +147,6 @@ export default function MemberDetailModal({
             onActivityVisibilityChange={onActivityVisibilityChange}
           />
         )}
-        <AgentIdentitySettings
-          entry={entry}
-          agent={agent}
-          roomSessionToken={roomSessionToken}
-          processGroups={processGroups}
-          onSessionActionComplete={onSessionActionComplete}
-          onAgentProfileSettingsChange={onAgentProfileSettingsChange}
-          onAgentConfigure={onAgentConfigure}
-        />
         <AgentSessionControls
           entry={entry}
           agent={agent}
@@ -156,6 +155,7 @@ export default function MemberDetailModal({
           onParticipantKick={onParticipantKick}
           onClose={onClose}
         />
+        <MemberUsage entry={entry} agent={agent} />
       </section>
     </div>
   );

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from typing import Callable
+from uuid import NAMESPACE_URL, uuid5
 
 from agentsassemble.providers.capabilities import ProviderCatalogSelectionError
 from agentsassemble.providers.launch_specs import (
@@ -42,6 +43,7 @@ class RoomAgentCreationService:
         room_id: str,
         payload: dict[str, object],
         *,
+        operation_id: str,
         server_url: str,
         ticket_issuer: Callable[[dict[str, object]], object] | None,
     ) -> dict[str, object]:
@@ -82,14 +84,19 @@ class RoomAgentCreationService:
             )
         except ProviderCatalogSelectionError as error:
             raise RoomCommandRejected(str(error), code=error.code) from error
+        explicit_agent_id = clean_room_text(
+            payload.get("agent_id") or payload.get("participant_id"),
+            128,
+        )
+        agent_id = explicit_agent_id or _agent_id_for_creation(
+            provider_id,
+            operation_id,
+        )
         try:
             spec = native_cli_provider_spec_from_payload(
                 {
                     "provider_id": selection.provider_id,
-                    "agent_id": (
-                        payload.get("agent_id")
-                        or payload.get("participant_id")
-                    ),
+                    "agent_id": agent_id,
                     "display_name": payload.get("display_name"),
                     "workspace": (
                         payload.get("workspace")
@@ -130,6 +137,17 @@ class RoomAgentCreationService:
                 ticket_issuer=ticket_issuer,
             )
         return result
+
+
+def _agent_id_for_creation(provider_id: str, operation_id: str) -> str:
+    clean_operation_id = clean_room_text(operation_id, 128)
+    if not clean_operation_id:
+        raise RoomCommandRejected(
+            "Agent Session creation identity is unavailable.",
+            code="agent_identity_unavailable",
+        )
+    provider_prefix = clean_room_text(provider_id, 48).casefold() or "agent"
+    return f"{provider_prefix}-{uuid5(NAMESPACE_URL, f'agentsassemble:{clean_operation_id}')}"
 
 
 __all__ = [

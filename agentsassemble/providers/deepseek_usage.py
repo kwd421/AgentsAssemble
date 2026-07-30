@@ -26,7 +26,7 @@ class DeepSeekUsageService:
         *,
         credential_reader: CredentialReader | None = None,
         fetcher: BalanceFetcher | None = None,
-        cache_seconds: float = 60.0,
+        cache_seconds: float = 300.0,
     ) -> None:
         self._credential_reader = (
             credential_reader

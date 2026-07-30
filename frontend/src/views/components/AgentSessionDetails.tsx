@@ -109,7 +109,7 @@ export default function AgentSessionDetails({
   const [actionStatus, setActionStatus] = useState("");
   const [settings, setSettings] = useState<Record<string, string>>({});
   const [settingsBusy, setSettingsBusy] = useState(false);
-  const status = session.runtime_status || session.status;
+  const status = session.runtime_status;
   const hasRunBefore = Boolean(
     session.started_at ||
       session.turn_count ||
@@ -215,28 +215,11 @@ export default function AgentSessionDetails({
 
   return (
     <section className="dc-member-detail-section" aria-label={`${session.display_name} 실행 및 설정`}>
-      <h3>실행 및 설정</h3>
-      <div className="dc-member-session-location">
-        <div className="dc-member-session-location-head">
-          <span>실행 상태</span>
-          <span>{agentSessionStatusLabel(status)}</span>
-        </div>
-        <dl>
-          <div>
-            <dt>Provider</dt>
-            <dd>{session.provider_kind || "unknown"}</dd>
-          </div>
-          {session.model && (
-            <div>
-              <dt>Model</dt>
-              <dd>{session.model}</dd>
-            </div>
-          )}
-          <div>
-            <dt>Runtime</dt>
-            <dd>{`${session.runtime_kind || "live_cli"} · ${session.transport || "pty"}`}</dd>
-          </div>
-        </dl>
+      <div className="dc-member-detail-section-heading">
+        <h3>실행 및 설정</h3>
+        <span className="dc-agent-session-state" data-state={agentSessionPresenceStatus(status)}>
+          {agentSessionStatusLabel(status)}
+        </span>
       </div>
       {status === "error" && visibleSessionError && (
         <p className="dc-room-play-error preserve-words">

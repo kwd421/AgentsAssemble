@@ -25,6 +25,7 @@ import {
   createCompanionRoomInvite,
   createRoom,
   fetchProviderUsage,
+  refreshProviderCatalog,
   type LiveAgent,
   type LobbyEvent,
   type ChannelNotificationSetting,
@@ -567,58 +568,30 @@ export default function App() {
   const sendAgentConfigure = canonicalRoom.sendAgentConfigure;
   const sendParticipantKick = canonicalRoom.sendParticipantKick;
   const sendParticipantMute = canonicalRoom.sendParticipantMute;
-  const activeProviderUsageTargets = useMemo(() => {
-    const targets = new Map<
-      string,
-      { providerId: ProviderUsageId; model: string; key: string }
-    >();
-    for (const session of activeRoomAgentSessions) {
-      const target = providerUsageTarget(session);
-      if (target) targets.set(target.key, target);
-    }
-    return [...targets.values()];
-  }, [activeRoomAgentSessions]);
-  const activeProviderUsageSignature = activeProviderUsageTargets
-    .map((target) => target.key)
-    .sort()
-    .join("|");
-
-  useEffect(() => {
+  const loadProviderUsage = useCallback(async (session: RoomAgentSession) => {
     if (guestLocked) return;
-    if (activeProviderUsageTargets.length === 0) return;
-    let cancelled = false;
-    const refresh = () => {
-      for (const target of activeProviderUsageTargets) {
-        fetchProviderUsage(target.providerId, target.model)
-          .then((usage) => {
-            if (!cancelled) {
-              setProviderUsage((previous) => ({ ...previous, [target.key]: usage }));
-            }
-          })
-          .catch(() => {
-            if (!cancelled) {
-              setProviderUsage((previous) => ({
-                ...previous,
-                [target.key]: {
-                  provider_id: target.providerId,
-                  status: "unavailable",
-                  source: "",
-                  observed_at: "",
-                  error_code: "usage_unavailable",
-                  quota_windows: [],
-                },
-              }));
-            }
-          });
-      }
-    };
-    refresh();
-    const timer = window.setInterval(refresh, 60_000);
-    return () => {
-      window.clearInterval(timer);
-      cancelled = true;
-    };
-  }, [activeProviderUsageSignature, guestLocked]);
+    const target = providerUsageTarget(session);
+    if (!target) return;
+    try {
+      const usage = await fetchProviderUsage(target.providerId, target.model);
+      setProviderUsage((previous) => ({ ...previous, [target.key]: usage }));
+    } catch {
+      setProviderUsage((previous) => {
+        if (previous[target.key]?.status === "ready") return previous;
+        return {
+          ...previous,
+          [target.key]: {
+            provider_id: target.providerId,
+            status: "unavailable",
+            source: "",
+            observed_at: "",
+            error_code: "usage_unavailable",
+            quota_windows: [],
+          },
+        };
+      });
+    }
+  }, [guestLocked]);
 
   const sessionByParticipantId = new Map(
     activeRoomAgentSessions.map((session) => [session.participant_id, session])
@@ -1007,6 +980,9 @@ export default function App() {
 
   function openAgentCreate() {
     setAgentCreateOpen(true);
+    void refreshProviderCatalog(false).catch(() => {
+      // The modal keeps the last verified catalog and exposes its loading/error state.
+    });
     closeMobileOverlays();
     setRoomMenu(null);
     setChannelMenu(null);
@@ -1948,6 +1924,7 @@ export default function App() {
                 processGroups={activeProcessGroups}
                 onSessionActionComplete={refreshSessionAndMembers}
                 quotaViewer={quotaViewer}
+                onAgentUsageRequest={loadProviderUsage}
                 onStartAddAgent={openAgentCreate}
                 memberSearchQuery={rightPanelSearchQuery}
                 onMemberSearchQueryChange={setRightPanelSearchQuery}

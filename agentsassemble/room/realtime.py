@@ -1106,6 +1106,7 @@ class RoomRealtimeController:
             return self._create_agent(
                 room_id,
                 payload,
+                operation_id=operation_id,
                 server_url=server_url,
                 ticket_issuer=ticket_issuer,
             )
@@ -1179,12 +1180,14 @@ class RoomRealtimeController:
         room_id: str,
         payload: dict[str, object],
         *,
+        operation_id: str,
         server_url: str,
         ticket_issuer: Callable[[dict[str, object]], object] | None,
     ) -> dict[str, object]:
         return self._agent_creation.create(
             room_id,
             payload,
+            operation_id=operation_id,
             server_url=server_url,
             ticket_issuer=ticket_issuer,
         )

@@ -277,12 +277,29 @@ class LiveCliRuntime:
     ) -> dict[str, object]:
         process, fd = self._state_snapshot()
         quiet = self.idle_quiet_seconds
-        deadline = time.monotonic() + max(0.0, float(timeout_seconds))
+        progress_timeout = max(0.0, float(timeout_seconds))
+        deadline = time.monotonic() + progress_timeout
         chunks: list[bytes] = []
         total_bytes = 0
         last_read_at: float | None = None
         last_visible_content = ""
         final_snapshot = LiveCliMessageSnapshot()
+
+        def record_progress() -> None:
+            nonlocal deadline
+            deadline = time.monotonic() + progress_timeout
+
+        def forward_delta(delta: str) -> None:
+            if str(delta or ""):
+                record_progress()
+            if on_delta is not None:
+                on_delta(delta)
+
+        def forward_activity(activity: dict[str, object]) -> None:
+            record_progress()
+            if on_activity is not None:
+                on_activity(activity)
+
         if not self._message_turn_started:
             self._message_source.begin_turn()
             self._message_turn_started = True
@@ -290,7 +307,9 @@ class LiveCliRuntime:
             now = time.monotonic()
             if now >= deadline:
                 self._invalidate_timed_out_turn()
-                raise TimeoutError(f"Live CLI runtime timed out after {timeout_seconds} seconds.")
+                raise TimeoutError(
+                    f"Live CLI runtime made no progress for {timeout_seconds} seconds."
+                )
             wait_until = deadline
             if chunks and last_read_at is not None:
                 wait_until = min(deadline, last_read_at + quiet)
@@ -317,8 +336,8 @@ class LiveCliRuntime:
                     b"".join(chunks),
                     quiet=bool(chunks and last_read_at is not None and time.monotonic() >= last_read_at + quiet),
                     previous=final_snapshot,
-                    on_delta=on_delta,
-                    on_activity=on_activity,
+                    on_delta=forward_delta,
+                    on_activity=forward_activity,
                     last_visible_content_ref=[last_visible_content],
                 )
                 if final_snapshot.complete:
@@ -349,6 +368,7 @@ class LiveCliRuntime:
                 continue
             chunks.append(chunk)
             total_bytes += len(chunk)
+            record_progress()
             self._record_terminal_bytes(chunk)
             self._respond_to_terminal_interaction(fd, b"".join(chunks))
             last_read_at = time.monotonic()
@@ -359,8 +379,8 @@ class LiveCliRuntime:
                 b"".join(chunks),
                 quiet=False,
                 previous=final_snapshot,
-                on_delta=on_delta,
-                on_activity=on_activity,
+                on_delta=forward_delta,
+                on_activity=forward_activity,
                 last_visible_content_ref=[last_visible_content],
             )
             if final_snapshot.content:

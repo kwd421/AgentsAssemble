@@ -13,8 +13,11 @@ from agentsassemble.room.global_settings import public_room_global_settings
 
 
 class _Catalog:
-    def snapshot(self, *, refresh: bool = False) -> dict[str, object]:
-        del refresh
+    def __init__(self) -> None:
+        self.current_snapshot_calls = 0
+
+    def current_snapshot(self) -> dict[str, object]:
+        self.current_snapshot_calls += 1
         return {
             "status": "ready",
             "catalog_revision": "revision-1",
@@ -28,9 +31,10 @@ class RoomSnapshotServiceTests(unittest.TestCase):
         self.root = Path(self.temporary_directory.name)
         self.store = RoomStore(self.root)
         self.store.create_room("general", label="General")
+        self.catalog = _Catalog()
         self.service = RoomSnapshotService(
             store=self.store,
-            provider_catalog=_Catalog(),
+            provider_catalog=self.catalog,
             ensure_room=lambda room_id: self.store.create_room(room_id),
             capabilities=lambda _identity: {"message.send": True},
         )
@@ -71,6 +75,7 @@ class RoomSnapshotServiceTests(unittest.TestCase):
         )
         self.assertEqual(snapshot["provider_catalog"]["catalog_revision"], "revision-1")
         self.assertEqual(snapshot["capabilities"], {"message.send": True})
+        self.assertEqual(self.catalog.current_snapshot_calls, 1)
 
     def test_bridge_snapshot_only_contains_its_own_participant_and_session(self) -> None:
         for participant_id in ("bridge", "other"):

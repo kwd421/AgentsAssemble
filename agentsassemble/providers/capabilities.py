@@ -123,6 +123,11 @@ class ProviderCapabilityCatalog:
             self._mark_refresh_failed()
             raise
 
+    def current_snapshot(self) -> dict[str, object]:
+        """Return the current projection without starting provider discovery."""
+        with self._lock:
+            return self._snapshot_locked()
+
     def payload(self, *, refresh: bool = False) -> list[dict[str, object]]:
         return list(self.snapshot(refresh=refresh).get("providers") or [])
 
