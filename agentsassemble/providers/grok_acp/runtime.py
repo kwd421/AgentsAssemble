@@ -109,6 +109,7 @@ class GrokAcpRuntime(GrokAcpTransportMixin, GrokAcpTurnProjectionMixin):
         self._turn_notification_drop_start = 0
         self._permission_request_count = 0
         self._permission_denied_count = 0
+        self._denied_permission_names: tuple[str, ...] = ()
         self._tool_permission_context: dict[
             tuple[str, str],
             dict[str, object],
@@ -463,6 +464,7 @@ class GrokAcpRuntime(GrokAcpTransportMixin, GrokAcpTurnProjectionMixin):
                 "notification_drop_count": self._notification_drop_count,
                 "permission_request_count": self._permission_request_count,
                 "permission_denied_count": self._permission_denied_count,
+                "denied_permission_names": list(self._denied_permission_names),
                 "stderr_drained": True,
                 "stderr_byte_count": self._stderr_byte_count,
                 "stderr_line_count": self._stderr_line_count,
@@ -530,6 +532,17 @@ class GrokAcpRuntime(GrokAcpTransportMixin, GrokAcpTurnProjectionMixin):
             self._permission_request_count += 1
             if not allow_request:
                 self._permission_denied_count += 1
+                # A denial is why a room turn produces nothing, and until now it
+                # left no trace of what was refused: the counters said 36 denied
+                # and the tool name was nowhere. Keep the last few so the reason
+                # survives into health and the session record.
+                denied_name = clean_room_text(
+                    tool_call.get("name") or params.get("title"), limit=128
+                ) or "unnamed"
+                self._denied_permission_names = (
+                    *self._denied_permission_names[-4:],
+                    denied_name,
+                )
         outcome: dict[str, object]
         if option_id:
             outcome = {"outcome": "selected", "optionId": option_id}
