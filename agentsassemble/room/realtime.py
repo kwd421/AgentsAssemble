@@ -155,11 +155,12 @@ class RoomRealtimeController:
         default_room_id: str = "general",
         max_agent_relay_depth: int = 2,
         recovery_delay_seconds: float = 1.0,
-        external_stop_timeout_seconds: float = 2.0,
+        external_stop_timeout_seconds: float = 8.0,
         recovery_scheduler: RecoveryScheduler | None = None,
         provider_catalog: ProviderCatalog | None = None,
         repository: RoomRepository | None = None,
         attention_shadow_mode: str = "off",
+        reconcile_startup_sessions: bool = True,
     ) -> None:
         self.output_root = Path(output_root)
         self.store = repository or RoomStore(self.output_root)
@@ -451,7 +452,8 @@ class RoomRealtimeController:
                 continue
             self._provider_registry.register(self.default_room_id, spec)
             self._provider_sessions.ensure_provider_session(self.default_room_id, spec)
-        self._reconcile_startup_sessions()
+        if reconcile_startup_sessions:
+            self._reconcile_startup_sessions()
         self._provider_sync_cursor_reconciliation_report = ProviderSyncCursorReconciler(
             self.store
         ).reconcile()
@@ -525,7 +527,7 @@ class RoomRealtimeController:
         message: RoomCommand | dict[str, object],
         *,
         server_url: str = "",
-        ticket_issuer: Callable[[dict[str, object]], str] | None = None,
+        ticket_issuer: Callable[[dict[str, object]], object] | None = None,
     ) -> dict[str, object]:
         room_id = clean_lobby_text(identity.get("meeting_id"), limit=128)
         try:
@@ -1023,7 +1025,7 @@ class RoomRealtimeController:
             )
         return {**dict(prior.get("result") or {}), "deduplicated": True}
 
-    def close(self) -> CleanupReport:
+    def close(self, *, preserve_provider_runtimes: bool = False) -> CleanupReport:
         with self._lock:
             if self._closed:
                 return self.last_cleanup_report
@@ -1046,7 +1048,12 @@ class RoomRealtimeController:
         except Exception as error:
             cleanup.record_failure("provider_catalog_listener.remove", error)
         cleanup.merge(self._turn_coordinator.close())
-        cleanup.merge(self._agent_lifecycle.close(provider_agents))
+        cleanup.merge(
+            self._agent_lifecycle.close(
+                provider_agents,
+                preserve_runtimes=preserve_provider_runtimes,
+            )
+        )
         try:
             self.broker.close()
             cleanup.record_success()
@@ -1092,7 +1099,7 @@ class RoomRealtimeController:
         *,
         operation_id: str,
         server_url: str,
-        ticket_issuer: Callable[[dict[str, object]], str] | None,
+        ticket_issuer: Callable[[dict[str, object]], object] | None,
     ) -> dict[str, object]:
         if action == "agent.create":
             self._require_capability(identity, "agent.control")
@@ -1173,7 +1180,7 @@ class RoomRealtimeController:
         payload: dict[str, object],
         *,
         server_url: str,
-        ticket_issuer: Callable[[dict[str, object]], str] | None,
+        ticket_issuer: Callable[[dict[str, object]], object] | None,
     ) -> dict[str, object]:
         return self._agent_creation.create(
             room_id,
@@ -1188,7 +1195,7 @@ class RoomRealtimeController:
         payload: dict[str, object],
         *,
         server_url: str,
-        ticket_issuer: Callable[[dict[str, object]], str] | None,
+        ticket_issuer: Callable[[dict[str, object]], object] | None,
     ) -> dict[str, object]:
         return self._agent_reactivation.readd(
             room_id,

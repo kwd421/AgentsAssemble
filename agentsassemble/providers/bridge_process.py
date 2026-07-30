@@ -12,7 +12,7 @@ from collections.abc import Iterator
 from contextlib import contextmanager
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Callable
+from typing import Callable, Mapping
 from uuid import uuid4
 
 from agentsassemble.diagnostics.cleanup import CleanupReport
@@ -115,6 +115,62 @@ class NativeCliBridgeProcessManager:
         with self._lock:
             self._on_exit = listener
 
+    def adopt_preserved_shared_runtime(
+        self,
+        room_id: str,
+        session: Mapping[str, object],
+    ) -> bool:
+        """Own a shared provider process kept alive by a rolling handoff."""
+
+        if str(session.get("provider_kind") or "") != "opencode_server":
+            return False
+        if str(session.get("process_ownership") or "") != "server":
+            return False
+        if str(session.get("runtime_status") or "") in {"", "stopped"}:
+            return False
+        session_id = str(session.get("session_id") or session.get("participant_id") or "")
+        runtime_profile_key = str(session.get("runtime_profile_key") or "")
+        if not session_id or not runtime_profile_key:
+            raise RuntimeError("Preserved OpenCode session is missing its runtime profile.")
+        config_path = (
+            self.output_root
+            / "rooms"
+            / room_id
+            / "bridges"
+            / session_id
+            / runtime_profile_key
+            / "config.json"
+        )
+        try:
+            raw = json.loads(config_path.read_text(encoding="utf-8"))
+        except (OSError, json.JSONDecodeError) as error:
+            raise RuntimeError(
+                "Preserved OpenCode session has no valid bridge configuration."
+            ) from error
+        config = CanonicalBridgeLaunchConfig.parse_strict(raw)
+        if config.room_id != room_id or config.session_id != session_id:
+            raise RuntimeError("Preserved OpenCode bridge configuration belongs to another session.")
+        pid = config.runtime.provider_server_pid
+        endpoint = config.runtime.provider_endpoint
+        if pid is None:
+            raise RuntimeError("Preserved OpenCode session did not record its shared server PID.")
+        with self._lock:
+            current = self._opencode_server
+            if current is not None:
+                current_pid = current.process.pid if current.process is not None else None
+                if current_pid != pid or current.endpoint != endpoint:
+                    raise RuntimeError(
+                        "Preserved OpenCode sessions disagree about the shared server."
+                    )
+                return True
+            self._opencode_server = OpenCodeServerProcess.adopt(
+                cwd=self.output_root,
+                executable=config.runtime.command[0],
+                pid=pid,
+                endpoint=endpoint,
+            )
+        return True
+
     def start(
         self,
         room_id: str,
@@ -122,7 +178,7 @@ class NativeCliBridgeProcessManager:
         spec: NativeCliProviderSpec,
         *,
         server_url: str = "",
-        ticket_issuer: Callable[[dict[str, object]], str] | None = None,
+        ticket_issuer: Callable[[dict[str, object]], object] | None = None,
     ) -> dict[str, object]:
         validate_native_cli_provider_spec(spec)
         session_id = str(session.get("session_id") or spec.agent_id)
@@ -146,7 +202,7 @@ class NativeCliBridgeProcessManager:
         spec: NativeCliProviderSpec,
         *,
         server_url: str,
-        ticket_issuer: Callable[[dict[str, object]], str] | None,
+        ticket_issuer: Callable[[dict[str, object]], object] | None,
         session_id: str,
         runtime_profile_key: str,
     ) -> dict[str, object]:
@@ -205,7 +261,13 @@ class NativeCliBridgeProcessManager:
             "runtime_kind": spec.runtime_kind,
             "operator": False,
         }
-        ticket = str(ticket_issuer(identity) or "")
+        issued_connection = ticket_issuer(identity)
+        if isinstance(issued_connection, Mapping):
+            ticket = str(issued_connection.get("ticket") or "")
+            session_token = str(issued_connection.get("session_token") or "")
+        else:
+            ticket = str(issued_connection or "")
+            session_token = ""
         if not ticket:
             raise ValueError("Agent Bridge ticket issuer returned an empty ticket.")
         bridge_dir = self.output_root / "rooms" / room_id / "bridges" / session_id
@@ -276,22 +338,33 @@ class NativeCliBridgeProcessManager:
             "-m",
             "agentsassemble.application.agent_bridge_entrypoint",
         ]
+        secure_launch_required = bool(credential or session_token)
         process = self._popen_factory(
             command,
-            stdin=subprocess.PIPE if credential else subprocess.DEVNULL,
+            stdin=subprocess.PIPE if secure_launch_required else subprocess.DEVNULL,
             stdout=subprocess.DEVNULL,
             stderr=subprocess.PIPE,
             cwd=package_root,
             env=env,
             start_new_session=True,
         )
-        if credential:
+        if secure_launch_required:
             stream = getattr(process, "stdin", None)
             if stream is None:
                 process.terminate()
-                raise RuntimeError("Agent Bridge did not expose credential stdin.")
+                raise RuntimeError("Agent Bridge did not expose secure launch stdin.")
             try:
-                stream.write(credential.encode("utf-8") + b"\n")
+                stream.write(
+                    json.dumps(
+                        {
+                            "credential": credential,
+                            "session_token": session_token,
+                        },
+                        ensure_ascii=True,
+                        separators=(",", ":"),
+                    ).encode("utf-8")
+                    + b"\n"
+                )
                 stream.flush()
             finally:
                 stream.close()

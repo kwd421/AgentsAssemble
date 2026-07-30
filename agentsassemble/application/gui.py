@@ -149,7 +149,12 @@ class GuiApplicationServices:
                 raise
             self._state = "started"
 
-    def shutdown(self, *, transport_close: Callable[[], object] | None = None) -> None:
+    def shutdown(
+        self,
+        *,
+        transport_close: Callable[[], object] | None = None,
+        preserve_provider_runtimes: bool = False,
+    ) -> None:
         """Close every owned resource once, without abandoning later cleanup."""
 
         with self._state_lock:
@@ -169,10 +174,14 @@ class GuiApplicationServices:
             attempt(self.session_run_monitor.stop)
         if self.owns_public_tunnel_manager:
             attempt(self.public_tunnel_manager.stop)
-        if self.owns_process_supervisor:
+        if self.owns_process_supervisor and not preserve_provider_runtimes:
             attempt(self.process_supervisor.close)
         if self.owns_room_realtime_controller:
-            attempt(self.room_realtime_controller.close)
+            attempt(
+                lambda: self.room_realtime_controller.close(
+                    preserve_provider_runtimes=preserve_provider_runtimes,
+                )
+            )
         if transport_close is not None:
             attempt(transport_close)
         if self.identity_registry_cleanup is not None:

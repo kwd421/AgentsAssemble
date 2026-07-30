@@ -49,7 +49,7 @@ class RoomAgentReactivationService:
         payload: dict[str, object],
         *,
         server_url: str,
-        ticket_issuer: Callable[[dict[str, object]], str] | None,
+        ticket_issuer: Callable[[dict[str, object]], object] | None,
     ) -> dict[str, object]:
         current = self.store.session(room_id, agent_id)
         if not current:

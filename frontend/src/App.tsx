@@ -67,6 +67,7 @@ import MobileRoomInfoPanel from "./views/components/MobileRoomInfoPanel";
 import RoomRail from "./views/components/RoomRail";
 import type { RoomMenuState } from "./views/components/RoomRail";
 import RoomSyncNotice from "./views/components/RoomSyncNotice";
+import FrontendUpdateNotice from "./views/components/FrontendUpdateNotice";
 import RoomSettingsModal from "./views/components/RoomSettingsModal";
 import SideChatDock from "./views/components/SideChatDock";
 import UserPanel from "./views/components/UserPanel";
@@ -1369,6 +1370,7 @@ export default function App() {
 
   return (
     <RoomSocketProvider socket={roomSocket}>
+    <FrontendUpdateNotice />
     <div
       className="dc-shell flex h-screen max-h-screen overflow-hidden text-text-primary"
       style={shellStyle}

@@ -11,6 +11,8 @@ from agentsassemble.admission.repository import SessionRepository
 from agentsassemble.admission.session_issuer import RoomSessionIssuer
 from agentsassemble.room.text import clean_room_text
 
+SERVER_BRIDGE_SESSION_TTL_SECONDS = 30 * 24 * 60 * 60
+
 
 class RoomSessionService:
     """Expose session lifecycle operations without leaking repository details."""
@@ -71,6 +73,29 @@ class RoomSessionService:
             joined_at=joined_at or now.isoformat(),
             expires_at=expires_at
             or (now + timedelta(seconds=self._ttl_seconds)).isoformat(),
+        )
+
+    def ensure_server_bridge(
+        self,
+        request_key: str,
+        record: dict[str, object],
+    ) -> tuple[str, dict[str, object]]:
+        """Issue a renewable, room-scoped credential for an owned bridge.
+
+        A WebSocket ticket is deliberately single use and in-memory.  The
+        bridge credential is persisted only as a fingerprint and lets the
+        bridge obtain a fresh ticket after a rolling server replacement.
+        """
+
+        token = self.token_for_request(f"server-bridge:{request_key}")
+        now = self._now()
+        return self._issuer.issue_with_token(
+            token,
+            record,
+            joined_at=now.isoformat(),
+            expires_at=(
+                now + timedelta(seconds=SERVER_BRIDGE_SESSION_TTL_SECONDS)
+            ).isoformat(),
         )
 
     def verify(self, token: str) -> dict[str, object] | None:

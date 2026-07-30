@@ -89,6 +89,7 @@ def build_gui_application_services(
     owns_application_database_override: bool = False,
     public_invite_runtime_override: PublicInviteRuntime | None = None,
     attention_shadow_mode: str = "off",
+    reconcile_startup_sessions: bool = True,
 ) -> GuiApplicationServices:
     """Build the single server-scoped ownership graph used by the GUI."""
 
@@ -254,6 +255,7 @@ def build_gui_application_services(
                     bridge_manager=native_cli_bridge_manager,
                     repository=room_repository,
                     attention_shadow_mode=attention_shadow_mode,
+                    reconcile_startup_sessions=reconcile_startup_sessions,
                 )
                 native_cli_bridge_manager.set_exit_listener(
                     built_controller.bridge_process_exited

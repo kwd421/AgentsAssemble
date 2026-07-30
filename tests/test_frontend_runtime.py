@@ -6,7 +6,9 @@ from pathlib import Path
 
 from agentsassemble.web.frontend_runtime import (
     default_frontend_dist_root,
+    frontend_build_version,
     frontend_dist_status,
+    materialize_frontend_release,
 )
 
 
@@ -58,6 +60,63 @@ class FrontendRuntimeTests(unittest.TestCase):
 
                 self.assertEqual(status.build_status, "incomplete")
                 self.assertFalse(status.static_available)
+
+    def test_build_identity_changes_when_served_entrypoint_changes(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            assets = root / "assets"
+            assets.mkdir()
+            (assets / "first.js").write_text("export const build = 1", encoding="utf-8")
+            (assets / "second.js").write_text("export const build = 2", encoding="utf-8")
+            index = root / "index.html"
+            index.write_text(
+                '<script type="module" src="/assets/first.js"></script>',
+                encoding="utf-8",
+            )
+            first_version = frontend_build_version(root)
+
+            index.write_text(
+                '<script type="module" src="/assets/second.js"></script>',
+                encoding="utf-8",
+            )
+            second_version = frontend_build_version(root)
+
+        self.assertNotEqual(first_version, second_version)
+        self.assertNotEqual(first_version, "unavailable")
+        self.assertNotEqual(second_version, "unavailable")
+
+    def test_running_release_keeps_its_assets_when_source_build_changes(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            source = root / "dist"
+            assets = source / "assets"
+            assets.mkdir(parents=True)
+            (assets / "first.js").write_text("export const build = 1", encoding="utf-8")
+            index = source / "index.html"
+            index.write_text(
+                '<script type="module" src="/assets/first.js"></script>',
+                encoding="utf-8",
+            )
+            releases = root / "releases"
+            first_release = materialize_frontend_release(
+                source,
+                release_root=releases,
+            )
+
+            (assets / "second.js").write_text("export const build = 2", encoding="utf-8")
+            index.write_text(
+                '<script type="module" src="/assets/second.js"></script>',
+                encoding="utf-8",
+            )
+            second_release = materialize_frontend_release(
+                source,
+                release_root=releases,
+            )
+
+            self.assertNotEqual(first_release, second_release)
+            self.assertTrue((first_release / "assets" / "first.js").is_file())
+            self.assertFalse((first_release / "assets" / "second.js").exists())
+            self.assertTrue((second_release / "assets" / "second.js").is_file())
 
 
 if __name__ == "__main__":

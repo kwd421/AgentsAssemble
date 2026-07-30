@@ -3,9 +3,13 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+import hashlib
+import os
 from pathlib import Path
 import re
+import shutil
 import urllib.parse
+from uuid import uuid4
 
 
 REACT_APP_BUILD_COMMAND = "npm --prefix frontend run build"
@@ -46,6 +50,62 @@ def frontend_dist_status(frontend_dist_root: Path | None = None) -> FrontendDist
         assets_dir_present=assets_dir.is_dir(),
         referenced_assets_present=_referenced_assets_present(index_path, assets_dir),
     )
+
+
+def frontend_build_version(frontend_dist_root: Path | None = None) -> str:
+    """Return the immutable browser build identity served by this process."""
+
+    status = frontend_dist_status(frontend_dist_root)
+    if not status.static_available:
+        return "unavailable"
+    try:
+        payload = (status.root / "index.html").read_bytes()
+    except OSError:
+        return "unavailable"
+    return hashlib.sha256(payload).hexdigest()[:16]
+
+
+def materialize_frontend_release(
+    frontend_dist_root: Path | None = None,
+    *,
+    release_root: Path,
+) -> Path:
+    """Copy one complete build into an immutable, generation-safe directory."""
+
+    source = frontend_dist_status(frontend_dist_root)
+    if not source.static_available:
+        return source.root
+    version = frontend_build_version(source.root)
+    if version == "unavailable":
+        return source.root
+    target = Path(release_root) / version
+    if (
+        frontend_dist_status(target).static_available
+        and frontend_build_version(target) == version
+    ):
+        return target
+
+    target.parent.mkdir(parents=True, exist_ok=True)
+    temporary = target.parent / f".{version}.{os.getpid()}.{uuid4().hex}.tmp"
+    try:
+        shutil.copytree(source.root, temporary)
+        if (
+            not frontend_dist_status(temporary).static_available
+            or frontend_build_version(temporary) != version
+        ):
+            raise RuntimeError("Frontend build changed while its release was being prepared.")
+        try:
+            os.replace(temporary, target)
+        except OSError:
+            if not (
+                frontend_dist_status(target).static_available
+                and frontend_build_version(target) == version
+            ):
+                raise
+    finally:
+        if temporary.exists():
+            shutil.rmtree(temporary)
+    return target
 
 
 def _referenced_assets_present(index_path: Path, assets_dir: Path) -> bool:

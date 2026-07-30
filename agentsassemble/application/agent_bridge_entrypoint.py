@@ -6,13 +6,16 @@ import json
 import os
 import signal
 import sys
+import threading
+import time
 from pathlib import Path
 
 from agentsassemble.providers.agent_bridge import RoomAgentBridge
 from agentsassemble.providers.room_portal import RoomPortal, room_session_orientation
 from agentsassemble.providers.runtime_config import CanonicalBridgeLaunchConfig
 from agentsassemble.providers.runtime_factory import runtime_from_config
-from agentsassemble.web.room_client import connect_room_ws_with_ticket
+from agentsassemble.web.room_client import connect_room_ws, connect_room_ws_with_ticket
+from agentsassemble.web.websocket_codec import WebSocketProtocolError
 
 
 def main() -> int:
@@ -26,39 +29,105 @@ def main() -> int:
         raise SystemExit("Agent Bridge config must be a JSON object.")
     config = CanonicalBridgeLaunchConfig.parse_strict(raw_config)
     credential = ""
-    if config.credential_stdin:
-        credential = sys.stdin.buffer.readline(16_384).decode("utf-8", errors="replace").strip()
-        if not credential:
-            raise SystemExit("Agent Bridge credential handoff was empty.")
+    session_token = ""
+    secure_launch_line = (
+        sys.stdin.buffer.readline(32_768).decode("utf-8", errors="replace").strip()
+    )
+    if secure_launch_line:
+        try:
+            secure_launch = json.loads(secure_launch_line)
+        except ValueError:
+            secure_launch = None
+        if isinstance(secure_launch, dict):
+            credential = str(secure_launch.get("credential") or "")
+            session_token = str(secure_launch.get("session_token") or "")
+        elif config.credential_stdin:
+            # Read old launch payloads long enough to let a pre-update server
+            # stop its bridge cleanly. New launches always use the JSON handoff.
+            credential = secure_launch_line
+    if config.credential_stdin and not credential:
+        raise SystemExit("Agent Bridge credential handoff was empty.")
     portal = RoomPortal(
         Path(config.runtime.runtime_state_dir) / "room-portal",
         participant_id=config.runtime.participant_id,
     )
     portal.prepare()
     provider_environment = portal.provider_environment(os.environ.get("PATH", ""))
-    client = connect_room_ws_with_ticket(server_url, ticket, ["room_events"], timeout=10.0)
-    bridge = RoomAgentBridge(
-        client,
-        runtime_from_config(
-            config.runtime,
-            credential=credential,
-            environment=provider_environment,
-            room_portal=portal,
-        ),
-        room_id=config.room_id,
-        participant_id=config.runtime.participant_id,
-        session_id=config.session_id,
-        runtime_profile=config.runtime.profile,
-        initial_orientation=room_session_orientation(config.runtime.provider_kind),
+    runtime = runtime_from_config(
+        config.runtime,
+        credential=credential,
+        environment=provider_environment,
         room_portal=portal,
     )
+    stop_requested = threading.Event()
+    current_bridge: list[RoomAgentBridge | None] = [None]
 
     def stop_bridge(_signum, _frame) -> None:
-        bridge.stop()
+        stop_requested.set()
+        bridge = current_bridge[0]
+        if bridge is not None:
+            bridge.stop()
 
     for signum in (signal.SIGTERM, signal.SIGINT):
         signal.signal(signum, stop_bridge)
-    return bridge.run()
+    first_connection = True
+    exit_code = 0
+    runtime_stopped = False
+    try:
+        while not stop_requested.is_set():
+            try:
+                if first_connection:
+                    client = connect_room_ws_with_ticket(
+                        server_url,
+                        ticket,
+                        ["room_events"],
+                        timeout=10.0,
+                    )
+                    first_connection = False
+                elif session_token:
+                    client = connect_room_ws(
+                        server_url,
+                        session_token,
+                        ["room_events"],
+                        timeout=10.0,
+                    )
+                else:
+                    break
+            except (OSError, TimeoutError, WebSocketProtocolError):
+                if not session_token or stop_requested.wait(1.0):
+                    break
+                first_connection = False
+                continue
+            bridge = RoomAgentBridge(
+                client,
+                runtime,
+                room_id=config.room_id,
+                participant_id=config.runtime.participant_id,
+                session_id=config.session_id,
+                runtime_profile=config.runtime.profile,
+                initial_orientation=room_session_orientation(
+                    config.runtime.provider_kind
+                ),
+                room_portal=portal,
+                stop_runtime_on_exit=False,
+            )
+            current_bridge[0] = bridge
+            exit_code = bridge.run()
+            current_bridge[0] = None
+            if stop_requested.is_set() or bridge.remote_stop_requested:
+                runtime_stopped = bridge.remote_stop_requested
+                break
+            if not session_token:
+                break
+            time.sleep(0.25)
+    finally:
+        current_bridge[0] = None
+        if not runtime_stopped:
+            try:
+                runtime.stop(timeout_seconds=2.0)
+            except Exception:
+                exit_code = 1
+    return exit_code
 
 
 if __name__ == "__main__":

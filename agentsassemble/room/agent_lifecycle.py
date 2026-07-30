@@ -25,7 +25,7 @@ class AgentBridgeManager(Protocol):
         spec: NativeCliProviderSpec,
         *,
         server_url: str = "",
-        ticket_issuer: Callable[[dict[str, object]], str] | None = None,
+        ticket_issuer: Callable[[dict[str, object]], object] | None = None,
     ) -> dict[str, object]: ...
 
     def stop(
@@ -90,7 +90,7 @@ class RoomAgentLifecycle:
         )
         self._launch_contexts: dict[
             tuple[str, str],
-            tuple[str, Callable[[dict[str, object]], str] | None],
+            tuple[str, Callable[[dict[str, object]], object] | None],
         ] = {}
         self._recovery_handles: dict[tuple[str, str], object] = {}
 
@@ -128,7 +128,7 @@ class RoomAgentLifecycle:
         agent_id: str,
         *,
         server_url: str,
-        ticket_issuer: Callable[[dict[str, object]], str] | None,
+        ticket_issuer: Callable[[dict[str, object]], object] | None,
         automatic_recovery: bool = False,
         operation_id: str = "",
     ) -> dict[str, object]:
@@ -254,7 +254,7 @@ class RoomAgentLifecycle:
         agent_id: str,
         *,
         server_url: str,
-        ticket_issuer: Callable[[dict[str, object]], str] | None,
+        ticket_issuer: Callable[[dict[str, object]], object] | None,
     ) -> dict[str, object]:
         session = self.store.session(room_id, agent_id)
         if session and session.get("runtime_status") == "paused":
@@ -446,7 +446,14 @@ class RoomAgentLifecycle:
                 },
                 revoked_sessions=revoked_sessions,
             )
-        if ownership == "external":
+        manager_health = self.process_health(room_id, agent_id)
+        manager_running = manager_health.get("running")
+        remotely_owned_stop = ownership == "external" or (
+            ownership == "server"
+            and manager_running is False
+            and self.broker.has_bridge(room_id, agent_id)
+        )
+        if remotely_owned_stop:
             try:
                 stopped = self._external_stop_confirmations.request(
                     room_id,
@@ -474,12 +481,16 @@ class RoomAgentLifecycle:
                 agent_id,
                 session,
                 disable=disable,
-                process={**stopped, "alive": False, "ownership": "external", "confirmed": True},
+                process={
+                    **stopped,
+                    "alive": False,
+                    "ownership": ownership,
+                    "confirmed": True,
+                    "adopted_after_restart": ownership == "server",
+                },
                 revoked_sessions=revoked_sessions,
             )
 
-        manager_health = self.process_health(room_id, agent_id)
-        manager_running = manager_health.get("running")
         if (
             existing_stop_intent
             and manager_running is False
@@ -544,13 +555,16 @@ class RoomAgentLifecycle:
             agent_id,
             operation_id=current_operation_id,
         )
+        revoked_sessions = (
+            self._revoke_participant_sessions(room_id, agent_id) if disable else 0
+        )
         return self._finalize_stop(
             room_id,
             agent_id,
             self.store.session(room_id, agent_id),
             disable=disable,
             process={**stopped, "ownership": "server", "confirmed": True},
-            revoked_sessions=0,
+            revoked_sessions=revoked_sessions,
         )
 
     def interrupt(self, room_id: str, agent_id: str) -> dict[str, object]:
@@ -628,7 +642,12 @@ class RoomAgentLifecycle:
                     lambda: self._recover_bridge(room_id, session_id),
                 )
 
-    def close(self, provider_agents: Iterable[tuple[str, str]]) -> CleanupReport:
+    def close(
+        self,
+        provider_agents: Iterable[tuple[str, str]],
+        *,
+        preserve_runtimes: bool = False,
+    ) -> CleanupReport:
         self._external_stop_confirmations.cancel_all()
         with self._lock:
             recovery_handles = list(self._recovery_handles.values())
@@ -643,6 +662,8 @@ class RoomAgentLifecycle:
                     cleanup.record_success()
                 except Exception as error:
                     cleanup.record_failure("recovery.cancel", error)
+        if preserve_runtimes:
+            return cleanup
         if self.bridge_manager is None:
             return cleanup
         for room_id, agent_id in provider_agents:

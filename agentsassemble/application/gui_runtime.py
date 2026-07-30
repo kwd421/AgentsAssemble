@@ -7,6 +7,14 @@ from typing import Any, Callable
 
 from agentsassemble.admission.repository import InviteSessionRepository
 from agentsassemble.application.gui import ApplicationDatabase, GuiApplicationServices
+from agentsassemble.application.rolling_restart import (
+    RollingChildBootstrap,
+    RollingRestartCoordinator,
+)
+from agentsassemble.web.frontend_runtime import (
+    frontend_build_version,
+    materialize_frontend_release,
+)
 from agentsassemble.identity.repository import IdentityBackend
 from agentsassemble.room.repository import RoomRepository
 
@@ -48,6 +56,7 @@ def serve_gui_runtime(
     live_agent_stale_restart_after_seconds: float = 0.0,
     frontend_dist_root: Path | None = None,
 ) -> None:
+    rolling_bootstrap = RollingChildBootstrap.from_environment()
     if not dependencies.is_loopback_host(host) and not unsafe_expose_control_plane:
         raise ValueError(
             "Direct non-loopback GUI bind is disabled because it exposes the local control plane. "
@@ -55,6 +64,10 @@ def serve_gui_runtime(
             "only on an isolated trusted network."
         )
     root = output_root or Path(".agentsassemble")
+    served_frontend_root = materialize_frontend_release(
+        frontend_dist_root,
+        release_root=root / "runtime" / "frontend-releases",
+    )
     room_repository_settings = dependencies.room_repository_settings(
         backend=room_repository_backend,
         postgres_dsn_env=room_postgres_dsn_env,
@@ -104,18 +117,33 @@ def serve_gui_runtime(
         assert invite_repository is not None
         assert identity_backend is not None
         repositories_transferred = True
+        service_options = {
+            "room_repository_override": room_repository,
+            "owns_room_repository_override": True,
+            "invite_repository_override": invite_repository,
+            "owns_invite_repository_override": True,
+            "identity_backend_override": identity_backend,
+            "owns_identity_backend_override": owns_identity_backend,
+            "application_database_override": application_database,
+            "owns_application_database_override": application_database is not None,
+            "attention_shadow_mode": attention_shadow_mode,
+        }
+        if rolling_bootstrap is not None:
+            service_options["reconcile_startup_sessions"] = False
         services = dependencies.build_application_services(
             root,
-            room_repository_override=room_repository,
-            owns_room_repository_override=True,
-            invite_repository_override=invite_repository,
-            owns_invite_repository_override=True,
-            identity_backend_override=identity_backend,
-            owns_identity_backend_override=owns_identity_backend,
-            application_database_override=application_database,
-            owns_application_database_override=application_database is not None,
-            attention_shadow_mode=attention_shadow_mode,
+            **service_options,
         )
+        if rolling_bootstrap is not None and services.native_cli_bridge_manager is not None:
+            for room in room_repository.list_rooms(include_archived=True):
+                room_id = str(room.get("room_id") or "")
+                if not room_id:
+                    continue
+                for session in room_repository.sessions(room_id):
+                    services.native_cli_bridge_manager.adopt_preserved_shared_runtime(
+                        room_id,
+                        session,
+                    )
         handler = dependencies.make_handler(
             root,
             application_services=services,
@@ -123,12 +151,19 @@ def serve_gui_runtime(
             session_run_controller=services.session_run_controller,
             session_run_monitor=services.session_run_monitor,
             flow_supervisor=services.flow_supervisor,
-            frontend_dist_root=frontend_dist_root,
+            frontend_dist_root=served_frontend_root,
             public_tunnel_manager=services.public_tunnel_manager,
             room_repository_override=room_repository,
             attention_shadow_mode=attention_shadow_mode,
         )
-        server = dependencies.server_factory((host, port), handler)
+        if rolling_bootstrap is None:
+            server = dependencies.server_factory((host, port), handler)
+        else:
+            server = dependencies.server_factory(
+                (host, port),
+                handler,
+                inherited_fd=rolling_bootstrap.listener_fd,
+            )
     except BaseException as error:
         if services is not None:
             try:
@@ -186,6 +221,13 @@ def serve_gui_runtime(
             print(f"AgentsAssemble host token: {generated_token}")
         assert server is not None
         server_url = dependencies.local_server_url(server.server_address)
+        rolling_restart = RollingRestartCoordinator(
+            server,
+            output_root=root,
+            generation=rolling_bootstrap.generation if rolling_bootstrap else 0,
+            frontend_version=frontend_build_version(served_frontend_root),
+        )
+        server.rolling_restart = rolling_restart
 
         def autostart(server_url: str) -> None:
             if live_agent_config is None:
@@ -207,9 +249,14 @@ def serve_gui_runtime(
             before_session_monitor=autostart,
             start_public_tunnel=start_public_tunnel,
         )
+        if rolling_bootstrap is not None:
+            rolling_bootstrap.report_ready_and_wait()
+            rolling_restart.activate_from_handoff(
+                rolling_bootstrap.operation_id,
+            )
         dependencies.print_startup_banner(
             server_url,
-            frontend_dist_root=frontend_dist_root,
+            frontend_dist_root=served_frontend_root,
             room_repository_backend=room_repository_settings.backend,
         )
         server.serve_forever()
@@ -218,4 +265,16 @@ def serve_gui_runtime(
     finally:
         assert services is not None
         assert server is not None
-        services.shutdown(transport_close=server.server_close)
+        rolling_restart = getattr(server, "rolling_restart", None)
+        if rolling_restart is not None and rolling_restart.handoff_ready():
+            try:
+                services.shutdown(
+                    transport_close=server.server_close,
+                    preserve_provider_runtimes=True,
+                )
+            except BaseException as error:
+                rolling_restart.abandon_replacement(str(error))
+                raise
+            rolling_restart.release_replacement()
+        else:
+            services.shutdown(transport_close=server.server_close)

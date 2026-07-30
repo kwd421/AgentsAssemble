@@ -57,6 +57,31 @@ polling-based live UI, or a second participant registry.
 
 Detailed current implementation: `docs/live-cli-room-current-architecture.md`.
 
+## Current Rolling Restart Contract
+
+The local POSIX GUI server can replace its backend process without changing its
+listening address. The replacement receives the already-bound listener, builds
+the complete service graph, and reports ready before the old process stops
+accepting. An active provider turn blocks the handoff; the server waits for an
+idle boundary instead of cutting a model call in half. If the replacement does
+not become ready, the old process remains authoritative and records the child
+startup error.
+
+Server-owned Agent Bridges receive a renewable, room-scoped reconnect session
+at launch. During handoff the old process closes room transports without
+stopping provider runtimes, and bridges reconnect to the new process with fresh
+one-use WebSocket tickets. Shared OpenCode server ownership is adopted by the
+replacement and remains part of final shutdown; preserving a process must not
+turn it into an orphan.
+
+The browser WebSocket reconnects through its existing resume cursor. Each GUI
+generation serves an immutable frontend build snapshot, so building the next
+`dist` cannot mix old HTML with new chunks for existing clients. A backend
+handoff alone does not replace JavaScript already executing in an open tab.
+`/api/runtime/version` exposes the served frontend build and protocol versions;
+an open client detects a changed build and offers a safe reload. Newly opened or
+reloaded clients receive only the new static build.
+
 ## Package Ownership
 
 Current domain code is owned by `room/`, `admission/`, `identity/`,

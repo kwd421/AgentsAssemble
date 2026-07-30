@@ -1,7 +1,9 @@
 from __future__ import annotations
 
 import json
+import os
 import secrets
+import signal
 import shutil
 import socket
 import subprocess
@@ -36,6 +38,34 @@ class OpenCodeServerProcess:
         self._popen_factory = popen_factory
         self.process = None
         self.endpoint = ""
+
+    @classmethod
+    def adopt(
+        cls,
+        *,
+        cwd: str | Path,
+        executable: str,
+        pid: int,
+        endpoint: str,
+        opener=urlopen,
+    ) -> OpenCodeServerProcess:
+        """Take lifecycle ownership of a server preserved across GUI handoff."""
+
+        handle = cls(cwd=cwd, executable=executable)
+        handle.endpoint = str(endpoint or "").rstrip("/")
+        handle.process = _AdoptedProcess(int(pid))
+        if handle.process.poll() is not None or not handle.endpoint:
+            raise RuntimeError("Preserved OpenCode server is no longer running.")
+        try:
+            with opener(f"{handle.endpoint}/global/health", timeout=1.0) as response:
+                healthy = response.status == 200
+        except Exception as error:
+            raise RuntimeError(
+                "Preserved OpenCode server did not pass its health check."
+            ) from error
+        if not healthy:
+            raise RuntimeError("Preserved OpenCode server did not pass its health check.")
+        return handle
 
     def start(self) -> dict[str, object]:
         if self.process is not None and self.process.poll() is None:
@@ -87,6 +117,44 @@ class OpenCodeServerProcess:
             "pid": process.pid if process is not None else None,
             "endpoint": self.endpoint,
         }
+
+
+class _AdoptedProcess:
+    """Small Popen-compatible owner for a process inherited only by PID."""
+
+    def __init__(self, pid: int) -> None:
+        if pid <= 0:
+            raise ValueError("Adopted process PID must be positive.")
+        self.pid = pid
+
+    def poll(self) -> int | None:
+        try:
+            os.kill(self.pid, 0)
+        except ProcessLookupError:
+            return 0
+        except PermissionError:
+            return None
+        return None
+
+    def terminate(self) -> None:
+        try:
+            os.kill(self.pid, signal.SIGTERM)
+        except ProcessLookupError:
+            return
+
+    def kill(self) -> None:
+        try:
+            os.kill(self.pid, signal.SIGKILL)
+        except ProcessLookupError:
+            return
+
+    def wait(self, timeout: float | None = None) -> int:
+        deadline = None if timeout is None else time.monotonic() + max(0.0, timeout)
+        while self.poll() is None:
+            if deadline is not None and time.monotonic() >= deadline:
+                raise subprocess.TimeoutExpired(["adopted-process", str(self.pid)], timeout)
+            time.sleep(0.05)
+        return 0
 
 
 class OpenCodeRuntime:

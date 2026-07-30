@@ -43,7 +43,7 @@ class RoomAgentCreationService:
         payload: dict[str, object],
         *,
         server_url: str,
-        ticket_issuer: Callable[[dict[str, object]], str] | None,
+        ticket_issuer: Callable[[dict[str, object]], object] | None,
     ) -> dict[str, object]:
         provider_id = clean_room_text(
             payload.get("provider_id")

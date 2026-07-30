@@ -16,6 +16,7 @@ from agentsassemble.web.routes.public_invite import register_public_invite_admin
 from agentsassemble.web.routes.retired import register_retired_legacy_routes
 from agentsassemble.web.routes.room_creation import register_room_creation_routes
 from agentsassemble.web.routes.room_settings import register_room_settings_routes
+from agentsassemble.web.routes.runtime import register_runtime_routes
 from agentsassemble.web.websocket import register_ws_ticket_route
 
 
@@ -37,6 +38,10 @@ def register_current_gui_routes(
     register_retired_legacy_routes(route_table)
     register_room_creation_routes(route_table)
     register_room_settings_routes(route_table)
+    register_runtime_routes(
+        route_table,
+        room_repository=services.room_repository,
+    )
     register_side_chat_routes(route_table)
     register_room_friend_profile_routes(route_table, post_direct_dm=post_direct_dm)
 

@@ -533,6 +533,7 @@ def _build_gui_application_services(
     owns_application_database_override: bool = False,
     public_invite_runtime_override: PublicInviteRuntime | None = None,
     attention_shadow_mode: str = "off",
+    reconcile_startup_sessions: bool = True,
 ) -> GuiApplicationServices:
     """Select concrete GUI runtimes and delegate ownership composition."""
 
@@ -564,6 +565,7 @@ def _build_gui_application_services(
         owns_application_database_override=owns_application_database_override,
         public_invite_runtime_override=public_invite_runtime_override,
         attention_shadow_mode=attention_shadow_mode,
+        reconcile_startup_sessions=reconcile_startup_sessions,
     )
     configure_compatibility_invite_repository(services.invite_repository)
     return services
