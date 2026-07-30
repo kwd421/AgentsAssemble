@@ -192,7 +192,11 @@ for line in sys.stdin:
         allowed = []
         for index, tool_name in enumerate(
             (
+                # Both separators a client may put between the MCP server name
+                # and the tool name; only the double form used to be accepted.
+                "agentsassemble_room_read_discussion",
                 "agentsassemble_room__read_discussion",
+                "agentsassemble_room_publish_message",
                 "agentsassemble_room__publish_message",
             ),
             start=1,

@@ -5,12 +5,20 @@ from __future__ import annotations
 from agentsassemble.room.text import clean_room_text
 
 
+_ROOM_MCP_SERVER_NAME = "agentsassemble_room"
 _ROOM_MCP_TOOL_NAMES = frozenset(
     {"read_discussion", "publish_message", "roll_dice", "choose_random"}
 )
+# Clients qualify an MCP tool with its server name, and they do not agree on the
+# separator: one underscore (agentsassemble_room_read_discussion, what the room
+# MCP server is registered as and what opencode's permission glob matches) or
+# two. Accepting only the double form denied every room tool call, so both
+# spellings are allowed here and the bare tool name stays accepted for clients
+# that do not qualify at all.
 _ROOM_MCP_PERMISSION_NAMES = _ROOM_MCP_TOOL_NAMES | frozenset(
-    f"agentsassemble_room__{name}"
+    f"{_ROOM_MCP_SERVER_NAME}{separator}{name}"
     for name in _ROOM_MCP_TOOL_NAMES
+    for separator in ("_", "__")
 )
 
 

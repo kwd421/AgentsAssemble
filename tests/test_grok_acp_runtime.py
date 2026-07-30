@@ -5,6 +5,7 @@ import time
 import unittest
 from pathlib import Path
 from agentsassemble.providers.grok_acp import GrokAcpRuntime
+from agentsassemble.providers.grok_acp.room_access import permission_is_room_mcp_tool
 from agentsassemble.providers.room_portal import RoomPortal
 
 
@@ -82,8 +83,48 @@ class GrokAcpRuntimeTests(unittest.TestCase):
 
         self.assertEqual(output["content"], "room MCP permissions allowed")
         self.assertTrue(health["room_mcp_configured"])
-        self.assertEqual(health["permission_request_count"], 3)
+        # Four room tool calls (both separator spellings for read and publish)
+        # plus the impostor tool that must still be denied.
+        self.assertEqual(health["permission_request_count"], 5)
         self.assertEqual(health["permission_denied_count"], 1)
+
+    def test_room_tool_permission_accepts_either_server_name_separator(self):
+        # A client may qualify an MCP tool as server_tool or server__tool.
+        # Accepting only the double form denied every room read, which failed
+        # the turn with room_observation_unconfirmed and stopped the bridge.
+        common = {
+            "session_id": "session-1",
+            "active_room_observation": True,
+            "cached": {},
+        }
+        for name in (
+            "read_discussion",
+            "agentsassemble_room_read_discussion",
+            "agentsassemble_room__read_discussion",
+            "agentsassemble_room_publish_message",
+            "agentsassemble_room__publish_message",
+        ):
+            with self.subTest(tool=name):
+                self.assertTrue(
+                    permission_is_room_mcp_tool(
+                        {"sessionId": "session-1", "toolCallId": "call-1"},
+                        {"name": name},
+                        **common,
+                    )
+                )
+        for name in (
+            "evil_agentsassemble_room_publish_message",
+            "agentsassemble_room_delete_everything",
+            "publish_message_elsewhere",
+        ):
+            with self.subTest(rejected=name):
+                self.assertFalse(
+                    permission_is_room_mcp_tool(
+                        {"sessionId": "session-1", "toolCallId": "call-1"},
+                        {"name": name},
+                        **common,
+                    )
+                )
 
     def test_structured_notifications_emit_thought_and_tool_detail_without_output(self):
         with tempfile.TemporaryDirectory() as temp_dir:
