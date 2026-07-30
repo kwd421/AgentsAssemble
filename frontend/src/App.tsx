@@ -7,17 +7,13 @@ import type {
 } from "react";
 import type { LucideIcon } from "lucide-react";
 import {
-  Archive,
   Bell,
   CalendarDays,
   ChevronDown,
-  Gamepad2,
   Hash,
   Home,
-  LayoutDashboard,
   LoaderCircle,
   Plus,
-  Radio,
   Search,
   Settings,
   UserPlus,
@@ -30,7 +26,6 @@ import {
   createRoom,
   fetchProviderUsage,
   type LiveAgent,
-  type MafiaGame,
   type LobbyEvent,
   type ChannelNotificationSetting,
   type ChannelSettings,
@@ -42,9 +37,8 @@ import {
 } from "./api";
 import { useRoomAdmission } from "./app/useRoomAdmission";
 import { useFriendsDirectory } from "./app/useFriendsDirectory";
-import { useLegacyMeetingSurfaces } from "./app/useLegacyMeetingSurfaces";
+import { useLiveAgentProcessGroups } from "./app/useLiveAgentProcessGroups";
 import { useRoomDirectory } from "./app/useRoomDirectory";
-import { useActiveMafiaGame } from "./app/useActiveMafiaGame";
 import { useRoomSideChat } from "./app/useRoomSideChat";
 import { useRoomInviteController } from "./app/useRoomInviteController";
 import { useRoomChannels } from "./app/useRoomChannels";
@@ -85,7 +79,6 @@ import {
   createFreshRoom,
   createStartupRoute,
   localPreviewInviteUrlForRoom,
-  roomFromFlow,
   roomHasAgent,
   type RoomDockItem,
 } from "./lib/roomDockModel";
@@ -107,13 +100,10 @@ import { roomTypingIndicators } from "./lib/roomTypingIndicators";
 // Keep room chat, roster, composer, admission, and Agent Session controls eager.
 // Only infrequently opened, non-core views belong behind this loading boundary.
 const AdminPanel = lazy(() => import("./views/AdminPanel"));
-const BoardView = lazy(() => import("./views/BoardView"));
 const FriendsView = lazy(() => import("./views/FriendsView"));
-const LiveView = lazy(() => import("./views/LiveView"));
 const CustomChannelView = lazy(() => import("./views/CustomChannelView"));
-const RecordsView = lazy(() => import("./views/RecordsView"));
 
-type Channel = "friends" | "lobby" | "live" | "board" | "records";
+type Channel = "friends" | "lobby";
 type MobileRoomInfoInitialMode = "info" | "side-chat" | "thread";
 
 type ChannelConfig = {
@@ -169,17 +159,12 @@ type RightPanelMode = "room-info" | "side-chat" | "thread";
 
 const CHANNELS: ChannelConfig[] = [
   { id: "lobby", label: "general", icon: Hash },
-  { id: "live", label: "stage-log", icon: Radio },
-  { id: "board", label: "work-board", icon: LayoutDashboard },
-  { id: "records", label: "records", icon: Archive },
 ];
 const LOBBY_CHANNEL_LABEL =
   CHANNELS.find((channelConfig) => channelConfig.id === "lobby")?.label || "general";
 
 const CHANNEL_SECTIONS: Array<{ id: string; label: string; channels: Channel[] }> = [
   { id: "conversation", label: "Text Channels", channels: ["lobby"] },
-  { id: "stage", label: "Stage", channels: ["live"] },
-  { id: "work", label: "Workroom", channels: ["board", "records"] },
 ];
 
 const CHANNEL_NOTIFICATION_LABELS: Record<ChannelNotificationSetting, string> = {
@@ -242,30 +227,6 @@ async function copyText(value: string) {
   const copied = document.execCommand("copy");
   textarea.remove();
   return copied;
-}
-
-function statusText(status?: string) {
-  if (status === "running") return "라이브";
-  if (status === "finished") return "종료";
-  if (status === "stopped") return "중지";
-  return "대기";
-}
-
-function statusDotClass(status?: string) {
-  if (status === "running") return "bg-online live-pulse";
-  if (status === "stopped" || status === "finished") return "bg-offline";
-  return "bg-idle";
-}
-
-function channelForActiveRoom(
-  channelConfig: ChannelConfig,
-  room: RoomDockItem,
-  mafiaGame: MafiaGame | null
-): ChannelConfig {
-  if (channelConfig.id === "live" && (room.tone === "mafia" || mafiaGame?.game_id === room.meetingId)) {
-    return { ...channelConfig, label: "mafia-night", icon: Gamepad2 };
-  }
-  return channelConfig;
 }
 
 function agentSessionMemberToLiveAgent(
@@ -349,7 +310,7 @@ export default function App() {
   const [deviceToken] = useState(getOrCreateDeviceToken);
   const guestInvite = startupRoute.guestInvite;
   const guestJoinToken = startupRoute.guestJoinToken;
-  // A fixed Channel ("lobby"/"live"/...) OR a custom channel id (opaque "c…").
+  // A built-in surface ("friends"/"lobby") or an opaque custom channel id.
   const [channel, setChannel] = useState<string>(() => {
     if (
       startupRoute.initialChannel === "friends" &&
@@ -371,7 +332,6 @@ export default function App() {
     rooms,
     replaceRooms,
     prependRoom,
-    mergeFlowRoom,
     markRoomRead: markRoomDirectoryRead,
     removeRoom,
     updateRoom,
@@ -428,8 +388,6 @@ export default function App() {
     guestJoinStatus,
     guestAdmissionBusy,
     guestLocked,
-    guestMeetingId,
-    guestJoinPending,
     operatorPairingPending,
     operatorPairingState,
     guestReadOnly,
@@ -482,24 +440,11 @@ export default function App() {
   );
   const activeRoom = rooms.find((room) => room.id === activeRoomId) ?? rooms[0] ?? EMPTY_ROOM;
   const {
-    flow,
-    flowError,
     processGroups,
-    lifecycle,
-    workroomQueueEvidence: scopedWorkroomQueueEvidence,
-    flowEvents,
-    liveTimelineEvents,
-    meetingStreamError,
-    refresh: refreshSessionSurfaces,
-  } = useLegacyMeetingSurfaces({
+    refresh: refreshLiveAgentProcessGroups,
+  } = useLiveAgentProcessGroups({
     activeMeetingId: activeRoom.meetingId,
-    adminOpen,
-    channel,
-    guestExpired,
-    guestJoinPending,
     guestLocked,
-    guestMeetingId,
-    sessionToken: admittedSessionToken,
   });
   const activeSideChatMeetingId = activeRoom.meetingId || "";
   const {
@@ -519,20 +464,11 @@ export default function App() {
   // server-backed meeting (idempotent) so adding agents / roster / lobby always
   // have a real meeting to bind to instead of failing with "Meeting not found".
   const lobbyStreamRef = useRef<((events: LobbyEvent[]) => void) | null>(null);
-  const flowStreamRef = useRef<((events: LobbyEvent[]) => void) | null>(null);
   const bindLobbyStream = useCallback((receive: (events: LobbyEvent[]) => void) => {
     lobbyStreamRef.current = receive;
     return () => {
       if (lobbyStreamRef.current === receive) {
         lobbyStreamRef.current = null;
-      }
-    };
-  }, []);
-  const bindFlowLobbyStream = useCallback((receive: (events: LobbyEvent[]) => void) => {
-    flowStreamRef.current = receive;
-    return () => {
-      if (flowStreamRef.current === receive) {
-        flowStreamRef.current = null;
       }
     };
   }, []);
@@ -631,9 +567,6 @@ export default function App() {
   const sendAgentConfigure = canonicalRoom.sendAgentConfigure;
   const sendParticipantKick = canonicalRoom.sendParticipantKick;
   const sendParticipantMute = canonicalRoom.sendParticipantMute;
-  const { mafiaGame: scopedMafiaGame, refreshMafia } = useActiveMafiaGame({
-    activeMeetingId: activeRoom.meetingId,
-  });
   const activeProviderUsageTargets = useMemo(() => {
     const targets = new Map<
       string,
@@ -738,12 +671,6 @@ export default function App() {
     [guestLocked, guestOwnedAgentIds, localProcessAgentIds]
   );
   useEffect(() => {
-    if (guestLocked) return;
-    const flowRoom = roomFromFlow(flow);
-    mergeFlowRoom(flowRoom);
-  }, [flow.meeting_id, flow.topic, guestLocked, mergeFlowRoom]);
-
-  useEffect(() => {
     if (!roomMenu && !channelMenu) return;
     function closeMenu() {
       setRoomMenu(null);
@@ -836,32 +763,10 @@ export default function App() {
     }
   }
 
-  const flowRunning = flow.status === "running";
-  const activeRoomFlowVisible = Boolean(flow.meeting_id && flow.meeting_id === activeRoom.meetingId);
-  const scopedFlow = activeRoomFlowVisible
-    ? flow
-    : {
-        status: "idle",
-        meeting_id: activeRoom.meetingId,
-        topic: activeRoom.topic,
-      };
-  const scopedLiveTimelineEvents = visibleRoomTimelineEvents.length
-    ? visibleRoomTimelineEvents
-    : activeRoomFlowVisible
-      ? liveTimelineEvents
-      : [];
-  const scopedTimelineSource = visibleRoomTimelineEvents.length
-    ? "flow"
-    : activeRoomFlowVisible
-    ? flowEvents.length
-      ? "flow"
-      : "official"
-    : "flow";
   const scopedAgents = agents.filter((agent) => roomHasAgent(activeRoom, agent));
   useEffect(() => {
     if (visibleRoomTimelineEvents.length) {
       lobbyStreamRef.current?.(visibleRoomTimelineEvents);
-      flowStreamRef.current?.(visibleRoomTimelineEvents);
     }
   }, [activeRoom.meetingId, visibleRoomTimelineEvents]);
 
@@ -876,9 +781,9 @@ export default function App() {
     []
   );
   const refreshSessionAndMembers = useCallback(() => {
-    refreshSessionSurfaces();
+    refreshLiveAgentProcessGroups();
     refreshMembers();
-  }, [refreshSessionSurfaces, refreshMembers]);
+  }, [refreshLiveAgentProcessGroups, refreshMembers]);
   const refreshSessionAndMembersWithFriends = useCallback(() => {
     refreshSessionAndMembers();
     void refreshFriendsDirectory();
@@ -915,15 +820,10 @@ export default function App() {
   const menuChannel = channelMenu
     ? CHANNELS.find((item) => item.id === channelMenu.channelId)
     : undefined;
-  const menuChannelDisplay = menuChannel
-    ? channelForActiveRoom(menuChannel, activeRoom, scopedMafiaGame)
-    : undefined;
-  const activeChannelDisplay = channelForActiveRoom(
-    CHANNELS.find((item) => item.id === channel) || CHANNELS[0],
-    activeRoom,
-    scopedMafiaGame
-  );
-  const visibleChannels = CHANNELS.filter((item) => item.id === "lobby");
+  const menuChannelDisplay = menuChannel;
+  const activeChannelDisplay =
+    CHANNELS.find((item) => item.id === channel) || CHANNELS[0];
+  const visibleChannels = CHANNELS;
   const channelSearchNeedle = channelSearchQuery.trim().toLowerCase();
 
   function mobileViewportIsActive() {
@@ -1223,7 +1123,7 @@ export default function App() {
   }
 
   const toggleMembers = useCallback(() => setMembersOpen((value) => !value), []);
-  const showMembers = !adminOpen && channel !== "records" && channel !== "friends";
+  const showMembers = !adminOpen && channel !== "friends";
   const inviteModalRoom = inviteModal ? rooms.find((room) => room.id === inviteModal.roomId) : undefined;
   const settingsModalRoom = settingsModal
     ? rooms.find((room) => room.id === settingsModal.roomId)
@@ -1549,7 +1449,7 @@ export default function App() {
             });
           }
         }}
-        onCreated={() => refreshSessionSurfaces()}
+        onCreated={() => refreshLiveAgentProcessGroups()}
       />
 
       {createChannelOpen && !guestLocked && (
@@ -1582,7 +1482,7 @@ export default function App() {
           onFilterChange={changeHomeFilter}
           onlineCount={scopedOnlineCount}
           agentCount={scopedAgents.length || 0}
-          hasBackendError={Boolean(flowError)}
+          hasBackendError={Boolean(canonicalRoom.syncIssue || roomDirectorySyncIssue)}
           friends={homeFriendsPayload.friends}
           selectedFriendId={selectedHomeFriendId}
           activeDmFriendId={activeHomeDmFriendId}
@@ -1629,17 +1529,6 @@ export default function App() {
                   {activeRoom.topic}
                 </p>
               </div>
-              <span
-                className={`dc-sidebar-status ${
-                  activeRoomFlowVisible && flowRunning ? "text-online" : "text-text-muted"
-                }`}
-              >
-                <span
-                  className={`h-2 w-2 rounded-full ${statusDotClass(activeRoomFlowVisible ? flow.status : "idle")}`}
-                  aria-hidden
-                />
-                {activeRoomFlowVisible ? statusText(flow.status) : "대기"}
-              </span>
               {!guestLocked && (
                 <button
                   type="button"
@@ -1695,7 +1584,7 @@ export default function App() {
               .map((id) => visibleChannels.find((item) => item.id === id))
               .filter((item) => {
                 if (!item || !channelSearchNeedle) return Boolean(item);
-                const display = channelForActiveRoom(item, activeRoom, scopedMafiaGame);
+                const display = item;
                 return display.label.toLowerCase().includes(channelSearchNeedle);
               })
               .filter(Boolean) as ChannelConfig[];
@@ -1721,11 +1610,7 @@ export default function App() {
                   {section.label}
                 </button>
                 {visibleSectionChannels.map((channelConfig) => {
-                  const { id, label, icon: Icon } = channelForActiveRoom(
-                    channelConfig,
-                    activeRoom,
-                    scopedMafiaGame
-                  );
+                  const { id, label, icon: Icon } = channelConfig;
                   return (
                     <div key={id}>
                       <button
@@ -1739,9 +1624,6 @@ export default function App() {
                       >
                         <Icon size={18} className="shrink-0 opacity-70" />
                         <span className="truncate">{label}</span>
-                        {id === "live" && activeRoomFlowVisible && flowRunning && (
-                          <span className="dc-channel-live-dot" aria-label="진행 중" />
-                        )}
                       </button>
                     </div>
                   );
@@ -1809,7 +1691,7 @@ export default function App() {
           <UserPanel
             onlineCount={scopedOnlineCount}
             agentCount={scopedAgents.length || 0}
-            hasBackendError={Boolean(flowError)}
+            hasBackendError={Boolean(canonicalRoom.syncIssue || roomDirectorySyncIssue)}
             guestProfile={guestPanelProfile}
             onGuestExit={guestExpired ? exitGuestSurface : undefined}
           />
@@ -1907,36 +1789,6 @@ export default function App() {
               canonicalHasMoreHistory={activeRoomHistory.hasMoreBefore}
               loadCanonicalHistory={loadCanonicalRoomHistory}
             />
-          ) : channel === "live" ? (
-            <LiveView
-              flow={scopedFlow}
-              flowEvents={scopedLiveTimelineEvents}
-              timelineSource={scopedTimelineSource}
-              agents={scopedAgents}
-              mafiaGame={scopedMafiaGame}
-              refreshMafia={refreshMafia}
-              streamError={activeRoomFlowVisible ? meetingStreamError : null}
-              agentSessionProgress={activeAgentSessionProgress}
-              bindFlowLobbyStream={bindFlowLobbyStream}
-              membersOpen={membersOpen}
-              onToggleMembers={toggleMembers}
-              headerActions={channelHeaderActions("live")}
-              onOpenMobileSidebar={openMobileSidebar}
-              onOpenMobileInfo={openMobileRoomInfo}
-            />
-          ) : channel === "board" ? (
-            <BoardView
-              flow={scopedFlow}
-              agents={scopedAgents}
-              events={activeRoomFlowVisible ? flowEvents : []}
-              lifecycle={lifecycle}
-              workroomQueueEvidence={activeRoomFlowVisible ? scopedWorkroomQueueEvidence : null}
-              membersOpen={membersOpen}
-              onToggleMembers={toggleMembers}
-              headerActions={channelHeaderActions("board")}
-              onOpenMobileSidebar={openMobileSidebar}
-              onOpenMobileInfo={openMobileRoomInfo}
-            />
           ) : activeCustomChannel ? (
             <CustomChannelView
               key={activeCustomChannel.id}
@@ -1951,11 +1803,7 @@ export default function App() {
               onOpenMobileInfo={openMobileRoomInfo}
             />
           ) : (
-            <RecordsView
-              headerActions={channelHeaderActions("records")}
-              onOpenMobileSidebar={openMobileSidebar}
-              onOpenMobileInfo={openMobileRoomInfo}
-            />
+            <DeferredViewFallback />
           )}
         </Suspense>
       </main>
