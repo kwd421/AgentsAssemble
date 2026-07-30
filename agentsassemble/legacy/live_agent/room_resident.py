@@ -15,7 +15,11 @@ import socket as socket_module
 from typing import Callable
 
 from agentsassemble.room_engagement import chain_depth as _chain_depth
-from agentsassemble.web.room_client import WsRoomClient, WsRoomSayRejected, connect_room_ws
+from agentsassemble.web.room_client import (
+    WsRoomClient,
+    WsRoomCommandRejected,
+    connect_room_ws,
+)
 
 Brain = Callable[[dict], str]
 ShouldReply = Callable[[dict], bool]
@@ -24,7 +28,7 @@ ShouldReply = Callable[[dict], bool]
 def _say_confirmed(client: WsRoomClient, message: str, **extra: object) -> bool:
     try:
         ack = client.say(message, wait_for_ack=True, **extra)
-    except (OSError, TimeoutError, WsRoomSayRejected):
+    except (OSError, TimeoutError, WsRoomCommandRejected):
         return False
     return isinstance(ack, dict) and str(ack.get("op") or "") == "ack"
 

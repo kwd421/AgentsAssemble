@@ -256,7 +256,7 @@ class WsEndpointTests(unittest.TestCase):
             finally:
                 self._stop_server(server)
 
-    def test_existing_ws_rejects_say_after_session_leave(self):
+    def test_existing_ws_rejects_canonical_message_after_session_leave(self):
         with tempfile.TemporaryDirectory() as tmp:
             server = self._start_server(Path(tmp))
             try:
@@ -269,7 +269,18 @@ class WsEndpointTests(unittest.TestCase):
                     leave = self._leave(base, token)
                     self.assertEqual(leave["status"], "left")
 
-                    sock.sendall(_client_text_frame(json.dumps({"op": "say", "message": "after leave"})))
+                    sock.sendall(
+                        _client_text_frame(
+                            json.dumps(
+                                {
+                                    "op": "command",
+                                    "request_id": "after-leave",
+                                    "action": "message.send",
+                                    "payload": {"content": "after leave"},
+                                }
+                            )
+                        )
+                    )
                     msg = _recv_server_text(sock)
                     self.assertEqual(msg["op"], "error")
                     self.assertEqual(msg["category"], WS_SESSION_REVOKED_CATEGORY)

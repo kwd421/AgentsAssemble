@@ -3,7 +3,6 @@ from agentsassemble.web.room_session import (
     HOST_BROWSER_DISPLAY_DEFAULT,
     HOST_BROWSER_PARTICIPANT_ID,
     WS_DEFAULT_STREAMS,
-    WS_SAY_METADATA_FIELDS,
     WS_SESSION_REVOKED_CATEGORY,
     WS_SESSION_TOKEN_KEY,
     WS_STREAMS,
@@ -11,7 +10,6 @@ from agentsassemble.web.room_session import (
     WsCommandRejected,
     WsRoomDeps,
     WsRoomSession,
-    WsSayRejected,
     WsTicketStore,
     host_browser_ws_session,
 )
@@ -20,7 +18,6 @@ __all__ = [
     "HOST_BROWSER_DISPLAY_DEFAULT",
     "HOST_BROWSER_PARTICIPANT_ID",
     "WS_DEFAULT_STREAMS",
-    "WS_SAY_METADATA_FIELDS",
     "WS_SESSION_REVOKED_CATEGORY",
     "WS_SESSION_TOKEN_KEY",
     "WS_STREAMS",
@@ -28,7 +25,6 @@ __all__ = [
     "WsCommandRejected",
     "WsRoomDeps",
     "WsRoomSession",
-    "WsSayRejected",
     "WsTicketStore",
     "host_browser_ws_session",
 ]

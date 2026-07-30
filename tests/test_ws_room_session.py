@@ -6,10 +6,9 @@ import unittest
 from agentsassemble.web.websocket_codec import OP_CLOSE, OP_PING, OP_PONG, OP_TEXT
 from agentsassemble.web.room_session import (
     WS_SESSION_REVOKED_CATEGORY,
+    WsCommandRejected,
     WsRoomDeps,
     WsRoomSession,
-    WsSayRejected,
-    WsCommandRejected,
     WsTicketStore,
 )
 
@@ -119,9 +118,7 @@ class FakeDeps:
         self.lobby_queue = []          # events to hand out once
         self.lobby_latest = ""
         self.roster = ([], "sig0")
-        self.muted = False
         self.session_active = True
-        self.posted = []
         self.statuses = []             # (identity, status) from set_status
         self.room_snapshot = {
             "room": {"room_id": "room-1"},
@@ -140,8 +137,6 @@ class FakeDeps:
             read_lobby_after=self._read_lobby_after,
             read_roster=lambda meeting_id: self.roster,
             read_side_chat_after=lambda meeting_id, after_id: ([], after_id),
-            post_say=self._post_say,
-            is_muted=lambda meeting_id, agent_id: self.muted,
             set_thinking=lambda identity, on: self.statuses.append((identity, on)),
             is_session_active=lambda session_token: self.session_active,
             room_snapshot=lambda identity, after_seq: {**self.room_snapshot, "after_seq": after_seq},
@@ -153,11 +148,6 @@ class FakeDeps:
         events = self.lobby_queue
         self.lobby_queue = []
         return events, self.lobby_latest
-
-    def _post_say(self, identity, payload):
-        event = {"id": "evt1", "message": payload["message"], "actor_id": identity["agent_id"]}
-        self.posted.append((identity, payload))
-        return event
 
     def _execute_command(self, identity, message):
         self.commands.append((identity, message))
@@ -248,77 +238,41 @@ class SubscribeTests(unittest.TestCase):
         self.assertEqual(len(msgs[0]["members"]), 2)
 
 
-class SayGovernanceTests(unittest.TestCase):
-    def test_say_posts_and_acks(self):
+class RetiredSayProtocolTests(unittest.TestCase):
+    def test_uncorrelated_say_operation_cannot_publish_outside_canonical_commands(self):
         deps = FakeDeps()
         sess = _session(deps)
-        frames = sess.handle_frame(OP_TEXT, json.dumps({"op": "say", "message": "hello"}).encode())
-        msgs = text_messages(frames)
-        self.assertEqual(msgs[0]["op"], "ack")
-        self.assertEqual(msgs[0]["event"]["message"], "hello")
-        self.assertEqual(len(deps.posted), 1)
-        # server injects identity, not the client
-        identity, payload = deps.posted[0]
-        self.assertEqual(identity["agent_id"], "guest-1")
-
-    def test_say_forwards_safe_reply_metadata(self):
-        deps = FakeDeps()
-        sess = _session(deps)
-        frames = sess.handle_frame(OP_TEXT, json.dumps({
-            "op": "say",
-            "message": "reply",
-            "source_event_id": "src1",
-            "auto_chain_depth": 2,
-            "flow_meeting_id": "room-1",
-            "actor_id": "spoofed-agent",
-        }).encode())
-        msgs = text_messages(frames)
-        self.assertEqual(msgs[0]["op"], "ack")
-        _identity, payload = deps.posted[0]
-        self.assertEqual(payload.get("source_event_id"), "src1")
-        self.assertEqual(payload.get("auto_chain_depth"), 2)
-        self.assertEqual(payload.get("flow_meeting_id"), "room-1")
-        self.assertNotIn("actor_id", payload)
-
-    def test_read_only_scope_blocks_say(self):
-        deps = FakeDeps()
-        sess = _session(deps, invite_scope="read_only")
-        msgs = text_messages(sess.handle_frame(OP_TEXT, json.dumps({"op": "say", "message": "x"}).encode()))
-        self.assertEqual(msgs[0]["op"], "error")
-        self.assertEqual(msgs[0]["category"], "read_only")
-        self.assertEqual(deps.posted, [])
-
-    def test_muted_blocks_say(self):
-        deps = FakeDeps()
-        deps.muted = True
-        sess = _session(deps)
-        msgs = text_messages(sess.handle_frame(OP_TEXT, json.dumps({"op": "say", "message": "x"}).encode()))
-        self.assertEqual(msgs[0]["category"], "muted")
-        self.assertEqual(deps.posted, [])
-
-    def test_empty_message_rejected(self):
-        deps = FakeDeps()
-        sess = _session(deps)
-        msgs = text_messages(sess.handle_frame(OP_TEXT, json.dumps({"op": "say", "message": "   "}).encode()))
-        self.assertEqual(msgs[0]["category"], "empty")
-
-    def test_post_say_rejection_becomes_error_frame(self):
-        deps = FakeDeps()
-        deps._post_say = lambda identity, payload: (_ for _ in ()).throw(
-            WsSayRejected("someone spoke", category="turn_conflict")
+        msgs = text_messages(
+            sess.handle_frame(
+                OP_TEXT,
+                json.dumps({"op": "say", "message": "hello"}).encode(),
+            )
         )
-        sess = _session(deps)
-        msgs = text_messages(sess.handle_frame(OP_TEXT, json.dumps({"op": "say", "message": "x"}).encode()))
-        self.assertEqual(msgs[0]["category"], "turn_conflict")
 
-    def test_revoked_backing_session_blocks_say(self):
+        self.assertEqual(msgs[0]["op"], "error")
+        self.assertEqual(msgs[0]["category"], "unknown_op")
+        self.assertEqual(deps.commands, [])
+
+    def test_revoked_backing_session_blocks_canonical_message_command(self):
         deps = FakeDeps()
         deps.session_active = False
         sess = _session(deps, session_token="aas1.dead")
-        msgs = text_messages(sess.handle_frame(OP_TEXT, json.dumps({"op": "say", "message": "x"}).encode()))
+        msgs = text_messages(
+            sess.handle_frame(
+                OP_TEXT,
+                json.dumps(
+                    {
+                        "op": "command",
+                        "request_id": "req-revoked",
+                        "action": "message.send",
+                        "payload": {"content": "x"},
+                    }
+                ).encode(),
+            )
+        )
         self.assertEqual(msgs[0]["op"], "error")
         self.assertEqual(msgs[0]["category"], WS_SESSION_REVOKED_CATEGORY)
-        self.assertEqual(deps.posted, [])
+        self.assertEqual(deps.commands, [])
         self.assertTrue(sess.closed)
 
     def test_revoked_backing_session_stops_polling(self):

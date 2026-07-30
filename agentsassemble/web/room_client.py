@@ -31,12 +31,12 @@ from agentsassemble.web.websocket_codec import (
 )
 
 
-class WsRoomSayRejected(Exception):
-    """Raised when the room rejects a `say` operation over WS."""
+class WsRoomCommandRejected(Exception):
+    """Raised when a correlated room command is rejected over WebSocket."""
 
-    def __init__(self, message: str, *, category: str = "rejected") -> None:
+    def __init__(self, message: str, *, code: str = "rejected") -> None:
         super().__init__(message)
-        self.category = category
+        self.code = code
 
 
 def _parse_response_headers(blob: bytes) -> tuple[bytes, dict[str, str]]:
@@ -102,9 +102,13 @@ class WsRoomClient:
         ack_rounds: int = 5,
         **extra: object,
     ) -> dict | None:
-        self._send({"op": "say", "message": message, **extra})
+        payload = {"content": message, **extra}
+        request_id = self.command("message.send", payload)
         if wait_for_ack:
-            return self._wait_for_say_ack(ack_rounds=ack_rounds)
+            return self._wait_for_command_ack(
+                request_id,
+                ack_rounds=ack_rounds,
+            )
         return None
 
     def thinking(self, on: bool) -> None:
@@ -193,21 +197,26 @@ class WsRoomClient:
             pass
         self.closed = True
 
-    def _wait_for_say_ack(self, *, ack_rounds: int) -> dict:
+    def _wait_for_command_ack(self, request_id: str, *, ack_rounds: int) -> dict:
         for _ in range(max(1, int(ack_rounds))):
             messages = self._receive_from_socket()
             for message in messages:
                 op = str(message.get("op") or "")
-                if op == "ack":
-                    return message
-                if op == "error":
-                    category = str(message.get("category") or "rejected")
-                    detail = str(message.get("message") or category)
-                    raise WsRoomSayRejected(detail, category=category)
+                if (
+                    op in {"ack", "nack"}
+                    and str(message.get("request_id") or "") == request_id
+                ):
+                    if op == "ack":
+                        return message
+                    error = message.get("error")
+                    error_payload = error if isinstance(error, dict) else {}
+                    code = str(error_payload.get("code") or "rejected")
+                    detail = str(error_payload.get("message") or code)
+                    raise WsRoomCommandRejected(detail, code=code)
                 self._pending_messages.append(message)
             if self.closed:
                 break
-        raise TimeoutError("No acknowledgement received for WS say.")
+        raise TimeoutError("No acknowledgement received for room command.")
 
     def _safe_send(self, frame: bytes) -> None:
         try:

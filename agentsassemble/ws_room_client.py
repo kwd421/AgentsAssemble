@@ -1,7 +1,7 @@
 """Compatibility exports for the web-owned canonical room client."""
 from agentsassemble.web.room_client import (
     WsRoomClient,
-    WsRoomSayRejected,
+    WsRoomCommandRejected,
     connect_room_ws,
     connect_room_ws_with_ticket,
     fetch_room_conversation_mode,
@@ -13,7 +13,7 @@ from agentsassemble.web.room_client import (
 
 __all__ = [
     "WsRoomClient",
-    "WsRoomSayRejected",
+    "WsRoomCommandRejected",
     "connect_room_ws",
     "connect_room_ws_with_ticket",
     "fetch_room_conversation_mode",

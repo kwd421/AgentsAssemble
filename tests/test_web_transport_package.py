@@ -117,7 +117,7 @@ class WebTransportPackageTests(unittest.TestCase):
     def test_room_client_root_module_exports_owned_transport(self) -> None:
         for name in (
             "WsRoomClient",
-            "WsRoomSayRejected",
+            "WsRoomCommandRejected",
             "connect_room_ws",
             "connect_room_ws_with_ticket",
             "join_agent_room_session",
@@ -135,7 +135,6 @@ class WebTransportPackageTests(unittest.TestCase):
             "WsRoomSession",
             "WsTicketStore",
             "WsCommandRejected",
-            "WsSayRejected",
             "host_browser_ws_session",
         ):
             with self.subTest(name=name):

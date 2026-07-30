@@ -24,6 +24,7 @@ from agentsassemble.web.websocket_codec import (
 )
 from agentsassemble.web.room_client import (
     WsRoomClient,
+    WsRoomCommandRejected,
     connect_room_ws,
     connect_room_ws_with_ticket,
     join_agent_room_session,
@@ -116,10 +117,14 @@ class SendUnitTests(unittest.TestCase):
         msgs = sock.sent_messages()
         self.assertEqual(msgs[-1], {"op": "subscribe", "streams": ["lobby", "roster"]})
 
-    def test_say_sends_message(self):
+    def test_say_convenience_uses_canonical_correlated_message_command(self):
         client, sock = self._opened()
         client.say("hello", kind="message")
-        self.assertEqual(sock.sent_messages()[-1], {"op": "say", "message": "hello", "kind": "message"})
+        sent = sock.sent_messages()[-1]
+        self.assertEqual(sent["op"], "command")
+        self.assertEqual(sent["action"], "message.send")
+        self.assertEqual(sent["payload"], {"content": "hello", "kind": "message"})
+        self.assertTrue(str(sent["request_id"]).startswith("req-"))
 
     def test_command_sends_correlated_room_command(self):
         client, sock = self._opened()
@@ -138,17 +143,43 @@ class SendUnitTests(unittest.TestCase):
 
     def test_say_can_wait_for_ack(self):
         client, sock = self._opened()
-        sock.queue_recv(encode_text(json.dumps({"op": "ack", "event": {"id": "evt1"}})))
-        ack = client.say("hello", wait_for_ack=True)
+        with patch("agentsassemble.web.room_client.uuid4") as fake_uuid:
+            fake_uuid.return_value.hex = "a" * 32
+            request_id = f"req-{'a' * 16}"
+            sock.queue_recv(
+                encode_text(
+                    json.dumps(
+                        {
+                            "op": "ack",
+                            "request_id": request_id,
+                            "result": {"event": {"id": "evt1"}},
+                        }
+                    )
+                )
+            )
+            ack = client.say("hello", wait_for_ack=True)
         self.assertIsNotNone(ack)
-        self.assertEqual(ack["event"]["id"], "evt1")
-        self.assertEqual(sock.sent_messages()[-1], {"op": "say", "message": "hello"})
+        self.assertEqual(ack["result"]["event"]["id"], "evt1")
+        self.assertEqual(sock.sent_messages()[-1]["action"], "message.send")
 
-    def test_say_wait_for_ack_raises_on_error(self):
+    def test_say_wait_for_ack_raises_on_correlated_nack(self):
         client, sock = self._opened()
-        sock.queue_recv(encode_text(json.dumps({"op": "error", "category": "muted", "message": "muted"})))
-        with self.assertRaisesRegex(Exception, "muted"):
-            client.say("hello", wait_for_ack=True)
+        with patch("agentsassemble.web.room_client.uuid4") as fake_uuid:
+            fake_uuid.return_value.hex = "b" * 32
+            sock.queue_recv(
+                encode_text(
+                    json.dumps(
+                        {
+                            "op": "nack",
+                            "request_id": f"req-{'b' * 16}",
+                            "accepted": False,
+                            "error": {"code": "muted", "message": "muted"},
+                        }
+                    )
+                )
+            )
+            with self.assertRaisesRegex(WsRoomCommandRejected, "muted"):
+                client.say("hello", wait_for_ack=True)
 
 
 class ReceiveUnitTests(unittest.TestCase):
@@ -240,8 +271,8 @@ class LiveRoundTripTests(unittest.TestCase):
                 self._drain(client, "subscribed")
                 client.say("hello from python client")
                 ack = self._drain(client, "ack")
-                self.assertEqual(ack["event"]["message"], "hello from python client")
-                self.assertEqual(ack["event"]["actor_id"], "agent-ws")
+                self.assertEqual(ack["result"]["event"]["content"], "hello from python client")
+                self.assertEqual(ack["result"]["event"]["actor_id"], "agent-ws")
             finally:
                 client.close()
 

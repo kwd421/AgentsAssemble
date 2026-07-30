@@ -3,10 +3,10 @@
 Separated from the pure codec (`web/websocket_codec.py`) so it can be unit-tested
 without a socket: feed decoded messages, assert the outgoing frames.
 
-Governance: identity + client_type are fixed at the handshake, then every
-speech append still goes through the shared server-governed say path. Existing
-connections also re-check their backing invite session so leave/kick revokes
-already-open sockets, not just future HTTP requests.
+Governance: identity + client_type are fixed at the handshake. Public messages
+go through the canonical correlated-command path. Existing connections also
+re-check their backing invite session so leave/kick revokes already-open
+sockets, not just future HTTP requests.
 """
 from __future__ import annotations
 
@@ -34,34 +34,6 @@ from agentsassemble.web.websocket_codec import (
 WS_TICKET_TTL_SECONDS = 30.0
 WS_STREAMS = ("lobby", "roster", "side_chat", "room_events")
 WS_DEFAULT_STREAMS = ("lobby", "roster", "side_chat")
-WS_SAY_METADATA_FIELDS = {
-    "source_event_id",
-    "thread_source_event_id",
-    "target_agent_id",
-    "auto_chain_depth",
-    "flow_id",
-    "flow_meeting_id",
-    "flow_event_type",
-    "flow_status",
-    "flow_topic",
-    "flow_policy",
-    "flow_action",
-    "flow_reason",
-    "flow_runtime_mode",
-    "flow_duration_seconds",
-    "flow_tick_interval",
-    "flow_cooldown",
-    "flow_max_agent_turns",
-    "flow_max_total_turns",
-    "flow_max_silence_seconds",
-    "flow_total_turns",
-    "flow_agent_count",
-    "flow_turn_delivery_ms",
-    "flow_provider_invocation_ms",
-    "flow_reply_post_ms",
-    "flow_started_at",
-    "flow_deadline_at",
-}
 WS_SESSION_TOKEN_KEY = "_ws_session_token"
 WS_SESSION_REVOKED_CATEGORY = "session_revoked"
 HOST_BROWSER_PARTICIPANT_ID = LOCAL_OPERATOR_PARTICIPANT_ID
@@ -139,15 +111,11 @@ class WsRoomDeps:
 
     read_lobby_after(meeting_id, after_id) -> (events, latest_id)
     read_roster(meeting_id) -> (members, signature)
-    post_say(identity, payload) -> event dict          (append already-governed)
-    is_muted(meeting_id, agent_id) -> bool
     """
 
     read_lobby_after: Callable[[str, str], tuple[list, str]]
     read_roster: Callable[[str], tuple[list, str]]
     read_side_chat_after: Callable[[str, str], tuple[list, str]]
-    post_say: Callable[[dict, dict], dict]
-    is_muted: Callable[[str, str], bool]
     set_thinking: Callable[[dict, bool], None]
     is_session_active: Callable[[str], bool] = lambda token: True
     room_snapshot: Callable[[dict, int], dict[str, object]] = lambda identity, after_seq: {}
@@ -200,8 +168,6 @@ class WsRoomSession:
         op = str(msg.get("op") or "")
         if op == "subscribe":
             return self._on_subscribe(msg)
-        if op == "say":
-            return self._on_say(msg)
         if op == "thinking":
             return self._on_thinking(msg)
         if op == "command":
@@ -259,37 +225,6 @@ class WsRoomSession:
         if not isinstance(response, dict):
             return [self._nack(request_id, "command_failed", "Room command returned an invalid response.")]
         return [encode_text(json.dumps(response))]
-
-    def _on_say(self, msg: dict) -> list[bytes]:
-        if str(self.identity.get("invite_scope") or "") == "read_only":
-            return [self._error("read_only", "This session cannot post.")]
-        if self.deps.is_muted(self.meeting_id, str(self.identity.get("agent_id") or "")):
-            return [self._error("muted", "You are muted by the room host.")]
-        kind = str(msg.get("kind") or "message")
-        message = msg.get("message")
-        if not isinstance(message, str):
-            return [self._error("empty", "Message is required.")]
-        if kind not in {"vote", "vote_cast"} and not message.strip():
-            return [self._error("empty", "Message is required.")]
-        payload = {
-            "message": message,
-            "kind": msg.get("kind"),
-            "attachments": msg.get("attachments"),
-            "vote_id": msg.get("vote_id"),
-            "vote_question": msg.get("vote_question"),
-            "vote_options": msg.get("vote_options"),
-            "vote_choice": msg.get("vote_choice"),
-        }
-        for key in WS_SAY_METADATA_FIELDS:
-            if key in msg:
-                payload[key] = msg[key]
-        try:
-            event = self.deps.post_say(self.identity, payload)
-        except WsSayRejected as rejected:
-            return [self._error(rejected.category, str(rejected))]
-        frames = [encode_text(json.dumps({"op": "ack", "event": event}))]
-        frames.extend(self.poll())  # push the just-posted event to this connection too
-        return frames
 
     # -- delivery ---------------------------------------------------------- #
     def poll(self, *, snapshot: bool = False) -> list[bytes]:
@@ -372,14 +307,6 @@ class WsRoomSession:
                 }
             )
         )
-
-
-class WsSayRejected(Exception):
-    """Raised by deps.post_say to reject a message with a category (e.g. turn_conflict)."""
-
-    def __init__(self, message: str, *, category: str = "rejected") -> None:
-        super().__init__(message)
-        self.category = category
 
 
 class WsCommandRejected(Exception):
