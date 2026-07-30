@@ -3,10 +3,15 @@ from __future__ import annotations
 
 from urllib.parse import urlparse
 
+from agentsassemble.providers.remote_openai import remote_openai_credential_ids
 
 _LOOPBACK_HOSTNAMES = {"127.0.0.1", "localhost", "::1"}
 _PUBLIC_INVITE_CORS_METHODS = "GET, POST, DELETE, OPTIONS"
 _PUBLIC_INVITE_CORS_HEADERS = "Authorization, Content-Type, Last-Event-ID, X-Device-Token"
+_PROVIDER_CREDENTIAL_PATHS = {
+    f"/api/provider-credentials/{provider_id}"
+    for provider_id in remote_openai_credential_ids()
+}
 
 
 def _is_loopback_host(host: object) -> bool:
@@ -77,14 +82,13 @@ def _public_invite_route_allowed(path: str, method: str) -> bool:
                 "/api/room-members",
                 "/api/room-invite/sessions",
                 "/api/room-invite/invites",
-                "/api/provider-credentials/cerebras",
-                "/api/provider-credentials/deepseek",
                 "/api/provider-usage/claude",
                 "/api/provider-usage/codex",
                 "/api/provider-usage/antigravity",
                 "/api/provider-usage/grok",
                 "/api/provider-usage/deepseek",
             }
+            or path in _PROVIDER_CREDENTIAL_PATHS
             or path.startswith("/api/attachments/")
             or path.startswith("/app/assets/")
         )
@@ -111,14 +115,9 @@ def _public_invite_route_allowed(path: str, method: str) -> bool:
             "/api/room-members/kick",
             "/api/room-invite/create",
             "/api/room-invite/revoke",
-            "/api/provider-credentials/cerebras",
-            "/api/provider-credentials/deepseek",
-        }
+        } or path in _PROVIDER_CREDENTIAL_PATHS
     if method == "DELETE":
-        return path in {
-            "/api/provider-credentials/cerebras",
-            "/api/provider-credentials/deepseek",
-        }
+        return path in _PROVIDER_CREDENTIAL_PATHS
     if method == "OPTIONS":
         return _public_invite_route_allowed(path, "GET") or _public_invite_route_allowed(
             path,

@@ -16,6 +16,7 @@ from agentsassemble.providers.launch_specs import native_cli_provider_definition
 from agentsassemble.providers.local_openai import local_openai_endpoint
 from agentsassemble.providers.codex_app_server_live import CodexAppServerLiveRuntime
 from agentsassemble.providers.opencode import OpenCodeServerProcess
+from agentsassemble.providers.remote_openai import remote_openai_endpoint
 from agentsassemble.providers.runtime_config import ProviderRuntimeConfig, ProviderRuntimeProfile
 from agentsassemble.providers.runtime_factory import runtime_from_config
 from agentsassemble.providers.room_portal import RoomPortal, room_session_orientation
@@ -42,6 +43,7 @@ class AgentAttendee:
         service_tier: str = "",
         variant: str = "",
         permission_mode: str = "meeting_read_only",
+        max_output_tokens: int = 0,
     ) -> None:
         self.server_url, self.invite_token = parse_agent_invite_url(invite_url)
         definition = native_cli_provider_definition(provider_id)
@@ -55,6 +57,9 @@ class AgentAttendee:
         self.service_tier = service_tier or definition.default_service_tier
         self.variant = variant or definition.default_variant
         self.permission_mode = permission_mode or definition.default_permission_mode
+        self.max_output_tokens = (
+            max_output_tokens or definition.default_max_output_tokens
+        )
         self._stop = threading.Event()
         self._bridge: RoomAgentBridge | None = None
         self._runtime = None
@@ -210,6 +215,7 @@ class AgentAttendee:
             service_tier=self.service_tier,
             variant=self.variant,
             permission_mode=self.permission_mode,
+            max_output_tokens=self.max_output_tokens,
         )
         self._runtime_profile = ProviderRuntimeProfile(
             provider_kind=spec.normalized_provider_kind(),
@@ -219,6 +225,7 @@ class AgentAttendee:
             service_tier=spec.service_tier,
             variant=spec.variant,
             permission_mode=spec.permission_mode,
+            max_output_tokens=spec.max_output_tokens,
             transport=spec.transport,
         )
         if self.definition.provider_id == "codex":
@@ -244,6 +251,7 @@ class AgentAttendee:
             "service_tier": spec.service_tier,
             "variant": spec.variant,
             "permission_mode": spec.permission_mode,
+            "max_output_tokens": spec.max_output_tokens,
             "transport": spec.transport,
             "runtime_state_dir": str(state_dir),
             "quiet_seconds": spec.quiet_seconds,
@@ -270,7 +278,7 @@ class AgentAttendee:
         else:
             config["provider_endpoint"] = local_openai_endpoint(
                 spec.normalized_provider_kind()
-            )
+            ) or remote_openai_endpoint(spec.normalized_provider_kind())
             secret_provider_id = secret_provider_id_for_kind(
                 spec.normalized_provider_kind()
             )

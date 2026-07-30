@@ -12,13 +12,22 @@ type UseRoomDirectoryOptions = {
   hostEnabled: boolean;
 };
 
+type RoomDirectorySyncIssue = {
+  category: "room_directory_unavailable";
+  message: string;
+};
+
 export function useRoomDirectory({
   initialRooms,
   hostEnabled,
 }: UseRoomDirectoryOptions) {
   const roomsRef = useRef<RoomDockItem[]>(initialRooms);
   const [rooms, setRooms] = useState<RoomDockItem[]>(initialRooms);
+  const [syncIssue, setSyncIssue] = useState<RoomDirectorySyncIssue | null>(
+    null
+  );
   const membershipRevisionRef = useRef(0);
+  const metadataRevisionRef = useRef(0);
   const hydrationEpochRef = useRef(0);
 
   const commit = useCallback((update: (current: RoomDockItem[]) => RoomDockItem[]) => {
@@ -87,6 +96,7 @@ export function useRoomDirectory({
 
   const updateRoom = useCallback(
     (roomId: string, updates: Partial<RoomDockItem>) => {
+      metadataRevisionRef.current += 1;
       commit((current) =>
         current.map((room) => (room.id === roomId ? { ...room, ...updates } : room))
       );
@@ -96,6 +106,7 @@ export function useRoomDirectory({
 
   const updateRoomByMeetingId = useCallback(
     (meetingId: string, updates: Partial<RoomDockItem>) => {
+      metadataRevisionRef.current += 1;
       commit((current) =>
         current.map((room) => (room.meetingId === meetingId ? { ...room, ...updates } : room))
       );
@@ -109,7 +120,10 @@ export function useRoomDirectory({
   }, [hostEnabled, rooms]);
 
   useEffect(() => {
-    if (!hostEnabled) return;
+    if (!hostEnabled) {
+      setSyncIssue(null);
+      return;
+    }
     const hydrationEpoch = hydrationEpochRef.current + 1;
     hydrationEpochRef.current = hydrationEpoch;
     let cancelled = false;
@@ -117,29 +131,62 @@ export function useRoomDirectory({
       !cancelled && hydrationEpochRef.current === hydrationEpoch;
     const applyHydration = (
       payload: Awaited<ReturnType<typeof fetchRooms>>,
-      capturedMembershipRevision: number
+      capturedMembershipRevision: number,
+      capturedMetadataRevision: number
     ) => {
       if (!canPublish()) return;
-      if (membershipRevisionRef.current !== capturedMembershipRevision) {
+      if (
+        membershipRevisionRef.current !== capturedMembershipRevision ||
+        metadataRevisionRef.current !== capturedMetadataRevision
+      ) {
         const retryMembershipRevision = membershipRevisionRef.current;
+        const retryMetadataRevision = metadataRevisionRef.current;
         fetchRooms(true)
           .then((retryPayload) => {
             if (!canPublish()) return;
-            if (membershipRevisionRef.current !== retryMembershipRevision) return;
+            if (
+              membershipRevisionRef.current !== retryMembershipRevision ||
+              metadataRevisionRef.current !== retryMetadataRevision
+            ) {
+              return;
+            }
             commit((current) => mergeServerRoomsIntoDock(current, retryPayload.rooms || []));
+            setSyncIssue(null);
           })
-          .catch(() => {
-            // localStorage remains a fast-path cache when the server room registry is unavailable.
+          .catch((errorValue) => {
+            if (!canPublish()) return;
+            setSyncIssue({
+              category: "room_directory_unavailable",
+              message:
+                errorValue instanceof Error
+                  ? errorValue.message
+                  : "Room directory synchronization failed.",
+            });
           });
         return;
       }
       commit((current) => mergeServerRoomsIntoDock(current, payload.rooms || []));
+      setSyncIssue(null);
     };
     const capturedMembershipRevision = membershipRevisionRef.current;
+    const capturedMetadataRevision = metadataRevisionRef.current;
     fetchRooms(true)
-      .then((payload) => applyHydration(payload, capturedMembershipRevision))
-      .catch(() => {
-        // localStorage remains a fast-path cache when the server room registry is unavailable.
+      .then((payload) =>
+        applyHydration(
+          payload,
+          capturedMembershipRevision,
+          capturedMetadataRevision
+        )
+      )
+      .catch((errorValue) => {
+        if (!canPublish()) return;
+        setSyncIssue({
+          category: "room_directory_unavailable",
+          message:
+            errorValue instanceof Error
+              ? errorValue.message
+              : "Room directory synchronization failed.",
+        });
       });
     return () => {
       cancelled = true;
@@ -156,5 +203,6 @@ export function useRoomDirectory({
     removeRoom,
     updateRoom,
     updateRoomByMeetingId,
+    syncIssue,
   };
 }

@@ -8,6 +8,8 @@ import lmStudioLogo from "../../assets/provider-logos/lmstudio.png";
 import ollamaLogo from "../../assets/provider-logos/ollama.png";
 import openAILogo from "../../assets/provider-logos/openai.svg";
 import openCodeLogo from "../../assets/provider-logos/opencode.png";
+import openRouterLogo from "../../assets/provider-logos/openrouter.svg";
+import vercelLogo from "../../assets/provider-logos/vercel.svg";
 
 export type ProviderBrandKey =
   | "codex"
@@ -19,7 +21,9 @@ export type ProviderBrandKey =
   | "deepseek"
   | "cerebras"
   | "ollama"
-  | "lmstudio";
+  | "lmstudio"
+  | "openrouter"
+  | "vercel";
 
 export type ProviderBrand = {
   label: string;
@@ -53,6 +57,10 @@ const PROVIDER_ALIASES: Record<string, ProviderBrandKey> = {
   lmstudio: "lmstudio",
   lmstudio_api: "lmstudio",
   lm_studio: "lmstudio",
+  openrouter: "openrouter",
+  openrouter_api: "openrouter",
+  vercel: "vercel",
+  vercel_ai_gateway: "vercel",
 };
 
 // Source assets have very different built-in whitespace. These scales normalize
@@ -118,6 +126,18 @@ export const PROVIDER_BRANDS: Record<ProviderBrandKey, ProviderBrand> = {
     logo: lmStudioLogo,
     background: "#5d45dd",
     scale: "89%",
+  },
+  openrouter: {
+    label: "OpenRouter",
+    logo: openRouterLogo,
+    background: "#ffffff",
+    scale: "82%",
+  },
+  vercel: {
+    label: "Vercel AI Gateway",
+    logo: vercelLogo,
+    background: "#000000",
+    scale: "74%",
   },
 };
 

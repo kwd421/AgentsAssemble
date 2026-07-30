@@ -1,6 +1,10 @@
 import { act, renderHook, waitFor } from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
-import type { RoomAgentSession, RoomEvent, RoomMember } from "./api";
+import type {
+  RoomAgentSession,
+  RoomEvent,
+  RoomMember,
+} from "./api";
 import type {
   RoomCommandAck,
   RoomSocketHandle,
@@ -44,6 +48,7 @@ function rawRoomSettings(
   conversationMode: "ordered" | "ambient" | "continuous" = "ordered"
 ): RoomSocketSnapshot["room_settings"] {
   return {
+    settings_revision: `settings-${conversationMode}`,
     label: "General",
     topic: "",
     appearance: {
@@ -148,6 +153,7 @@ describe("useCanonicalRoom", () => {
 
     expect(command).toHaveBeenCalledWith("room.settings.update", {
       conversation_mode: "ambient",
+      expected_revision: "settings-ordered",
     });
     expect(result.current.roomSettings?.conversationMode).toBe("ambient");
   });
@@ -709,4 +715,5 @@ describe("useCanonicalRoom", () => {
     act(() => handlers?.onError?.(new ApiError(401, "invalid or expired session")));
     expect(onUnauthorized).toHaveBeenCalledOnce();
   });
+
 });

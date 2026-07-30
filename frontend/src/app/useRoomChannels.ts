@@ -1,60 +1,65 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { createRoomChannel, fetchRoomChannels, type RoomChannel } from "../api";
-import { roomSettingsKey, type RoomDockItem } from "../lib/roomDockModel";
+import { useCallback, useMemo } from "react";
+import type {
+  RoomGlobalSettings,
+  RoomGlobalSettingsUpdate,
+  RoomChannel,
+} from "../api";
+import type { RoomDockItem } from "../lib/roomDockModel";
 
 type UseRoomChannelsOptions = {
   activeRoom: RoomDockItem;
-  sessionToken: string;
+  canonicalSettings: RoomGlobalSettings | null;
+  saveCanonicalSettings: (
+    updates: RoomGlobalSettingsUpdate
+  ) => Promise<RoomGlobalSettings>;
 };
 
-export function useRoomChannels({ activeRoom, sessionToken }: UseRoomChannelsOptions) {
-  const [channelsByRoom, setChannelsByRoom] = useState<Record<string, RoomChannel[]>>({});
-  const requestEpochsRef = useRef<Record<string, number>>({});
-  const activeRoomKey = roomSettingsKey(activeRoom);
-  const activeMeetingId = activeRoom.meetingId;
+function newChannelId() {
+  if (!globalThis.crypto?.getRandomValues) {
+    throw new Error("이 브라우저에서는 안전한 채널 ID를 만들 수 없습니다.");
+  }
+  const bytes = new Uint8Array(6);
+  globalThis.crypto.getRandomValues(bytes);
+  return `c${[...bytes].map((value) => value.toString(16).padStart(2, "0")).join("")}`;
+}
 
-  const refresh = useCallback(() => {
-    if (!activeMeetingId) return;
-    const requestEpoch = (requestEpochsRef.current[activeRoomKey] || 0) + 1;
-    requestEpochsRef.current[activeRoomKey] = requestEpoch;
-    fetchRoomChannels(activeMeetingId, sessionToken)
-      .then((channels) => {
-        if (requestEpochsRef.current[activeRoomKey] !== requestEpoch) return;
-        setChannelsByRoom((previous) => ({ ...previous, [activeRoomKey]: channels }));
-      })
-      .catch(() => {
-        // Keep the previous channel list while a transient refresh is unavailable.
-      });
-  }, [activeMeetingId, activeRoomKey, sessionToken]);
-
-  useEffect(() => {
-    refresh();
-  }, [refresh]);
-
-  const create = useCallback(
-    async (params: { name: string; type: "text" | "voice" }) => {
-      const result = await createRoomChannel({
-        meetingId: activeMeetingId,
-        name: params.name,
-        type: params.type,
-        sessionToken: sessionToken || undefined,
-      });
-      requestEpochsRef.current[activeRoomKey] =
-        (requestEpochsRef.current[activeRoomKey] || 0) + 1;
-      setChannelsByRoom((previous) => ({ ...previous, [activeRoomKey]: result.channels }));
-      return result.channel;
-    },
-    [activeMeetingId, activeRoomKey, sessionToken]
-  );
-
-  const activeChannels = channelsByRoom[activeRoomKey] || [];
+export function useRoomChannels({
+  activeRoom,
+  canonicalSettings,
+  saveCanonicalSettings,
+}: UseRoomChannelsOptions) {
+  const activeSettings =
+    canonicalSettings?.roomId === activeRoom.meetingId
+      ? canonicalSettings
+      : null;
+  const activeChannels = activeSettings?.channels || [];
   const activeChannelIds = useMemo(
     () => new Set(activeChannels.map((channel) => channel.id)),
     [activeChannels]
   );
   const activeChannelFor = useCallback(
-    (channelId: string) => activeChannels.find((channel) => channel.id === channelId) || null,
+    (channelId: string) =>
+      activeChannels.find((channel) => channel.id === channelId) || null,
     [activeChannels]
+  );
+  const create = useCallback(
+    async (params: { name: string; type: "text" | "voice" }) => {
+      if (!activeSettings) {
+        throw new Error("방 설정 동기화가 완료된 뒤 다시 시도해 주세요.");
+      }
+      const channel: RoomChannel = {
+        id: newChannelId(),
+        name: params.name,
+        type: params.type,
+        position: activeSettings.channels.length,
+        createdAt: new Date().toISOString(),
+      };
+      const saved = await saveCanonicalSettings({
+        channels: [...activeSettings.channels, channel],
+      });
+      return saved.channels.find((item) => item.id === channel.id) || null;
+    },
+    [activeSettings, saveCanonicalSettings]
   );
 
   return {
@@ -62,6 +67,5 @@ export function useRoomChannels({ activeRoom, sessionToken }: UseRoomChannelsOpt
     activeChannelFor,
     isActiveCustomChannel: (channelId: string) => activeChannelIds.has(channelId),
     create,
-    refresh,
   };
 }

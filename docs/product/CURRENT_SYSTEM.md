@@ -211,17 +211,25 @@ do not wake providers. There is no separate vote-close/final-winner event.
 Agent Sessions answer a requested vote through an ordinary public room message
 rather than claiming a structured ballot.
 
-API-provider compatibility is defined by protocol family and observed room
-behavior, not by an “API” label alone. DeepSeek and Cerebras use the shared
-OpenAI-style streaming room runtime, keep reasoning private, execute the same
-four `RoomPortal` operations, and record usage for every HTTP round. Provider
-wrappers own model validation and protocol differences such as DeepSeek
-thinking fields, Cerebras request headers, and whether reasoning fields may be
-replayed in a later assistant message. A model is not advertised as compatible
-until its real endpoint completes room read, publication, and required tool
-calls without a text fallback. Anthropic Messages and Gemini `generateContent`
-need their own protocol adapters; a text-completion endpoint alone is not a
-room provider.
+API-provider compatibility is defined by protocol family and room-tool
+capability, not by an “API” label alone. DeepSeek, Cerebras, OpenRouter, and
+Vercel AI Gateway use the shared OpenAI-style streaming room runtime, keep
+reasoning private, execute the same four `RoomPortal` operations, and record
+usage for every HTTP round. Provider profiles own model validation and protocol
+differences such as DeepSeek thinking fields, Cerebras request headers,
+gateway attribution headers, bounded output tokens, and whether reasoning
+fields may be replayed in a later assistant message. The creation dialog and
+stopped Agent Session panel expose the same provider-owned output-token choices
+(1,024 through 16,384, default 4,096); the selected value is persisted in the
+runtime profile and sent as `max_tokens` on every HTTP round. Static provider profiles
+list only models verified through the real room read/publication path. Gateway
+catalogs may additionally list text models whose authoritative model metadata
+advertises tool calling; that is catalog-reported capability, not a claim that
+every routed model has passed the room workflow. OpenRouter's current default
+was chosen from a real room-path verification; Vercel remains catalog-verified
+only. Anthropic Messages and Gemini
+`generateContent` need their own protocol adapters; a text-completion endpoint
+alone is not a room provider.
 
 The Agent Session creation UI uses three English top-level catalog groups:
 `Subscription`, `API`, and `Local`. Provider definitions own their default
@@ -332,6 +340,31 @@ credential.
 
 Room-global settings are repository-owned. The strict record contains label,
 topic, appearance, conversation mode, bounded relay count, and custom channels.
+Every public projection of that record carries a deterministic
+`settings_revision`. A canonical `room.settings.update` command must present
+the revision it read; the room transaction rejects a stale writer with
+`settings_conflict` instead of silently overwriting a newer change. The event,
+updated settings, revision, and ACK commit together.
+The room directory projects that same canonical record for every room visible
+to the caller, so an inactive room does not need a separate settings request
+before its label or icon can render. The browser may persist that projection as
+a startup fast-path only. The active room's WebSocket snapshot and
+`room_settings_updated` events supersede the cache and update the directory
+projection; identity-room labels and browser storage are not room-global
+authorities. A directory response that races with a newer canonical metadata
+event is discarded and fetched once more rather than overwriting the event.
+Room-global and custom-channel mutations are not accepted through the retained
+HTTP settings/channel routes; those routes retain only user-preference writes
+and compatibility reads.
+If the authoritative room-directory refresh itself fails, the browser keeps
+the last local projection but marks it visibly as unconfirmed instead of
+silently presenting cached room metadata as synchronized.
+
+The browser advances its durable room-event cursor only through contiguous
+sequence numbers. An invalid sequence, a gap, or server backpressure closes the
+connection without advancing past the last verified event, then resumes from
+that safe cursor. While a valid replacement snapshot is pending, a visible
+room-sync notice remains on screen. A valid snapshot clears the notice.
 Room notification mode, per-channel notification mode, and read cursors are
 strict user-owned identity rows (`identity.db` locally or PostgreSQL in hosted
 mode); two users in the same room never share them. Runtime settings reads do

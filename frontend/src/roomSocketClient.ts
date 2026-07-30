@@ -50,6 +50,7 @@ export class RoomSocketSayError extends Error {
 
 export interface RoomSocketHandle {
   close: () => void;
+  resync?: () => void;
   ready: () => boolean;
   say: (request: RoomSayRequest) => Promise<LobbyPostResponse>;
   command: (action: string, payload?: Record<string, unknown>) => Promise<RoomCommandAck>;
@@ -285,10 +286,36 @@ export function openRoomSocket(
     }
     if (msg.op === "event" && msg.stream === "room_events" && Array.isArray(msg.events)) {
       const events = msg.events as unknown as RoomEvent[];
-      events.forEach((event) => {
-        lastSeq = Math.max(lastSeq, Number(event.seq || 0));
-      });
-      handlers.onRoomEvents?.(events);
+      const freshEvents: RoomEvent[] = [];
+      let nextSeq = lastSeq;
+      for (const event of events) {
+        const eventSeq = Number(event.seq || 0);
+        if (!Number.isInteger(eventSeq) || eventSeq <= 0) {
+          handlers.onError?.(
+            new RoomSocketSayError(
+              "Room event did not contain a valid durable sequence; reconnecting.",
+              "event_sequence_invalid"
+            )
+          );
+          socket?.close();
+          return;
+        }
+        if (eventSeq <= nextSeq) continue;
+        if (nextSeq > 0 && eventSeq !== nextSeq + 1) {
+          handlers.onError?.(
+            new RoomSocketSayError(
+              `Room event sequence gap detected (expected ${nextSeq + 1}, received ${eventSeq}); reconnecting.`,
+              "event_sequence_gap"
+            )
+          );
+          socket?.close();
+          return;
+        }
+        freshEvents.push(event);
+        nextSeq = eventSeq;
+      }
+      lastSeq = nextSeq;
+      if (freshEvents.length) handlers.onRoomEvents?.(freshEvents);
       return;
     }
     if (msg.op === "event" && msg.stream === "lobby" && Array.isArray(msg.events)) {
@@ -363,6 +390,9 @@ export function openRoomSocket(
       closed = true;
       window.clearTimeout(reconnectTimer);
       rejectAll(new RoomSocketSayError("Room socket closed.", "socket_closed"));
+      socket?.close();
+    },
+    resync: () => {
       socket?.close();
     },
     ready: () => socket?.readyState === WebSocket.OPEN,

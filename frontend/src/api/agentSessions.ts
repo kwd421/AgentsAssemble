@@ -56,6 +56,7 @@ export interface RoomAgentSession {
   service_tier?: string;
   variant?: string;
   permission_mode?: string;
+  max_output_tokens?: number;
   message_source?: string;
   message_source_strict?: boolean;
   provider_visible_chars?: number;
@@ -115,6 +116,7 @@ export interface FrontendLiveAgentCreateRequest {
   serviceTier?: string;
   variant?: string;
   permissionMode?: string;
+  maxOutputTokens?: number;
   sessionId?: string;
   startNow?: boolean;
 }

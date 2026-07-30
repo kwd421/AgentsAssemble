@@ -65,6 +65,7 @@ class RoomAgentCreationServiceTests(unittest.TestCase):
             service_tier=default.service_tier,
             variant=default.variant,
             permission_mode=default.permission_mode,
+            max_output_tokens=8192,
         )
         self.catalog = _Catalog(self.selection)
         self.created_specs: list[tuple[str, NativeCliProviderSpec]] = []
@@ -130,6 +131,7 @@ class RoomAgentCreationServiceTests(unittest.TestCase):
                 "service_tier": self.selection.service_tier,
                 "variant": self.selection.variant,
                 "permission_mode": self.selection.permission_mode,
+                "max_output_tokens": self.selection.max_output_tokens,
                 "catalog_revision": "revision-1",
                 "start_now": True,
             },
@@ -142,6 +144,7 @@ class RoomAgentCreationServiceTests(unittest.TestCase):
         self.assertEqual(spec.agent_id, "luna")
         self.assertEqual(spec.display_name, "Luna")
         self.assertEqual(spec.model, self.selection.model)
+        self.assertEqual(spec.max_output_tokens, 8192)
         self.assertEqual(result["participant"]["display_name"], "Luna")
         self.assertEqual(result["start"]["status"], "starting")
         self.assertEqual(

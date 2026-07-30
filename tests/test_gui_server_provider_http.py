@@ -149,6 +149,8 @@ class ProviderRouteTests(unittest.TestCase):
                 ("GET", "/api/model-catalog"),
                 ("GET", "/api/provider-credentials/cerebras"),
                 ("GET", "/api/provider-credentials/deepseek"),
+                ("GET", "/api/provider-credentials/openrouter"),
+                ("GET", "/api/provider-credentials/vercel"),
                 ("GET", "/api/provider-usage/antigravity"),
                 ("GET", "/api/provider-usage/claude"),
                 ("GET", "/api/provider-usage/codex"),
@@ -159,8 +161,12 @@ class ProviderRouteTests(unittest.TestCase):
                 ("POST", "/api/provider-catalog/refresh"),
                 ("POST", "/api/provider-credentials/cerebras"),
                 ("POST", "/api/provider-credentials/deepseek"),
+                ("POST", "/api/provider-credentials/openrouter"),
+                ("POST", "/api/provider-credentials/vercel"),
                 ("DELETE", "/api/provider-credentials/cerebras"),
                 ("DELETE", "/api/provider-credentials/deepseek"),
+                ("DELETE", "/api/provider-credentials/openrouter"),
+                ("DELETE", "/api/provider-credentials/vercel"),
             },
         )
         self.assertIn("providers", self.dispatch("GET", "/api/providers").sent_json)
@@ -251,7 +257,7 @@ class ProviderRouteTests(unittest.TestCase):
         self.assertEqual(self.login.calls, [])
 
     def test_local_provider_credentials_reach_the_named_store_without_disclosing_keys(self):
-        for provider_id in ("cerebras", "deepseek"):
+        for provider_id in ("cerebras", "deepseek", "openrouter", "vercel"):
             with self.subTest(provider_id=provider_id):
                 self.store.calls.clear()
                 path = f"/api/provider-credentials/{provider_id}"

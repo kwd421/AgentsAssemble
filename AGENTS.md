@@ -135,6 +135,16 @@ Treat these cross-layer boundaries as one contract, not as independent copies:
 - Pending room input owns its input mode per item. Do not convert queued
   transcript input into observation input, or queued observation input into a
   transcript turn, when room settings change.
+- Server-owned room state has one authoritative mutation path. A browser cache,
+  compatibility HTTP route, or independently fetched view state must not write
+  or supersede canonical room settings. Writers must use the observed settings
+  revision, and conflicts must fail closed before persistence or event
+  publication.
+- A client may advance a durable room-event cursor only across contiguous
+  sequence numbers. On a gap, invalid snapshot/ACK, stale settings write, or
+  failed authoritative directory refresh, retain the last verified state,
+  resynchronize from the server, and expose the recovery problem to the user;
+  never silently accept, overwrite, or hide it.
 - Advancing an ambient observation cursor requires evidence that the provider
   read the assigned room state. Tool availability or a successful provider
   completion is not a read receipt.

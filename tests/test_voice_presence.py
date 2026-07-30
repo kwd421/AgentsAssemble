@@ -4,6 +4,7 @@ Unit tests drive the TTL registry directly (injected clock); HTTP tests drive
 the governed join/leave/presence routes against a real server.
 """
 import json
+import secrets
 import tempfile
 import threading
 import unittest
@@ -86,15 +87,26 @@ class VoicePresenceHttpTests(unittest.TestCase):
         self._servers.append(server)
         return f"http://127.0.0.1:{server.server_port}"
 
-    def _create_channel(self, base: str, meeting_id: str, name: str, channel_type: str) -> str:
-        request = Request(
-            f"{base}/api/room-channels",
-            data=json.dumps({"meeting_id": meeting_id, "action": "create", "name": name, "type": channel_type}).encode(),
-            headers={"Content-Type": "application/json", "X-Host-Token": "host-secret"},
-            method="POST",
+    def _create_channel(self, root: Path, meeting_id: str, name: str, channel_type: str) -> str:
+        repository = RoomStore(root)
+        channel_id = f"c{secrets.token_hex(6)}"
+        current = repository.room_settings(meeting_id)
+        repository.update_room_settings(
+            meeting_id,
+            {
+                "channels": [
+                    *current["channels"],
+                    {
+                        "id": channel_id,
+                        "name": name,
+                        "type": channel_type,
+                        "position": len(current["channels"]),
+                        "created_at": "2026-07-30T00:00:00Z",
+                    },
+                ]
+            },
         )
-        with urlopen(request, timeout=4) as response:
-            return json.loads(response.read().decode("utf-8"))["channel"]["id"]
+        return channel_id
 
     def _token(self, base: str, meeting_id: str, agent_id: str) -> str:
         invite = create_room_invite(
@@ -119,7 +131,7 @@ class VoicePresenceHttpTests(unittest.TestCase):
             root = Path(temp_dir) / "room"
             RoomStore(root).create_room("room-1", label="Room 1")
             base = self._start(root)
-            voice_id = self._create_channel(base, "room-1", "음성", "voice")
+            voice_id = self._create_channel(root, "room-1", "음성", "voice")
             alice = self._token(base, "room-1", "alice")
             bob = self._token(base, "room-1", "bob")
 
@@ -147,7 +159,7 @@ class VoicePresenceHttpTests(unittest.TestCase):
             root = Path(temp_dir) / "room"
             RoomStore(root).create_room("room-1", label="Room 1")
             base = self._start(root)
-            text_id = self._create_channel(base, "room-1", "구현방", "text")
+            text_id = self._create_channel(root, "room-1", "구현방", "text")
             token = self._token(base, "room-1", "alice")
             with self.assertRaises(HTTPError) as ctx:
                 self._post(base, "/api/room/voice/join", token, {"channel_id": text_id})

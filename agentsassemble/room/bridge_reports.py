@@ -108,6 +108,7 @@ class RoomBridgeReportService:
                 ("reasoning_effort", definition.default_reasoning_effort),
                 ("service_tier", definition.default_service_tier),
                 ("variant", definition.default_variant),
+                ("max_output_tokens", definition.default_max_output_tokens),
             ):
                 if required_default and not getattr(profile, field):
                     raise RoomCommandRejected(
@@ -131,6 +132,7 @@ class RoomBridgeReportService:
                 "service_tier": profile.service_tier,
                 "variant": profile.variant,
                 "permission_mode": profile.permission_mode,
+                "max_output_tokens": profile.max_output_tokens,
                 "runtime_kind": profile.runtime_kind,
                 "transport": profile.transport,
                 "runtime_profile_key": external_runtime_profile_key(profile),

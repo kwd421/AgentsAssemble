@@ -67,6 +67,7 @@ class RoomAgentRuntimeProfileServiceTests(unittest.TestCase):
             service_tier=default.service_tier,
             variant=default.variant,
             permission_mode=default.permission_mode,
+            max_output_tokens=8192,
         )
         self.catalog = _Catalog(self.selection)
         self.configured_specs: list[tuple[str, NativeCliProviderSpec]] = []
@@ -123,6 +124,7 @@ class RoomAgentRuntimeProfileServiceTests(unittest.TestCase):
         self.assertEqual(room_id, "general")
         self.assertEqual(spec.display_name, "Luna")
         self.assertEqual(spec.model, self.selection.model)
+        self.assertEqual(spec.max_output_tokens, 8192)
         self.assertEqual(
             self.catalog.calls[-1]["values"]["permission_mode"],
             self.selection.permission_mode,

@@ -9,6 +9,7 @@ from agentsassemble.room.snapshots import (
     ROOM_SNAPSHOT_EVENT_LIMIT,
     RoomSnapshotService,
 )
+from agentsassemble.room.global_settings import public_room_global_settings
 
 
 class _Catalog:
@@ -64,7 +65,10 @@ class RoomSnapshotServiceTests(unittest.TestCase):
 
         self.assertEqual(snapshot["snapshot_mode"], "initial")
         self.assertEqual(snapshot["events"][-1]["content"], "hello")
-        self.assertEqual(snapshot["room_settings"], self.store.room_settings("general"))
+        self.assertEqual(
+            snapshot["room_settings"],
+            public_room_global_settings(self.store.room_settings("general")),
+        )
         self.assertEqual(snapshot["provider_catalog"]["catalog_revision"], "revision-1")
         self.assertEqual(snapshot["capabilities"], {"message.send": True})
 
@@ -97,7 +101,10 @@ class RoomSnapshotServiceTests(unittest.TestCase):
         )
 
         self.assertEqual(snapshot["snapshot_mode"], "bridge")
-        self.assertEqual(snapshot["room_settings"], self.store.room_settings("general"))
+        self.assertEqual(
+            snapshot["room_settings"],
+            public_room_global_settings(self.store.room_settings("general")),
+        )
         self.assertEqual(snapshot["events"], [])
         self.assertEqual(
             [participant["participant_id"] for participant in snapshot["participants"]],

@@ -3,6 +3,7 @@ message file, reachable through session-gated say/read routes, isolated from the
 main lobby. Driven end-to-end against a real server.
 """
 import json
+import secrets
 import tempfile
 import threading
 import unittest
@@ -39,15 +40,26 @@ class RoomChannelStreamTests(unittest.TestCase):
         self._servers.append(server)
         return f"http://127.0.0.1:{server.server_port}"
 
-    def _create_channel(self, base: str, meeting_id: str, name: str, channel_type: str) -> str:
-        request = Request(
-            f"{base}/api/room-channels",
-            data=json.dumps({"meeting_id": meeting_id, "action": "create", "name": name, "type": channel_type}).encode(),
-            headers={"Content-Type": "application/json", "X-Host-Token": "host-secret"},
-            method="POST",
+    def _create_channel(self, root: Path, meeting_id: str, name: str, channel_type: str) -> str:
+        repository = RoomStore(root)
+        channel_id = f"c{secrets.token_hex(6)}"
+        current = repository.room_settings(meeting_id)
+        repository.update_room_settings(
+            meeting_id,
+            {
+                "channels": [
+                    *current["channels"],
+                    {
+                        "id": channel_id,
+                        "name": name,
+                        "type": channel_type,
+                        "position": len(current["channels"]),
+                        "created_at": "2026-07-30T00:00:00Z",
+                    },
+                ]
+            },
         )
-        with urlopen(request, timeout=4) as response:
-            return json.loads(response.read().decode("utf-8"))["channel"]["id"]
+        return channel_id
 
     def _token(self, base: str, meeting_id: str) -> str:
         invite = create_room_invite(
@@ -77,8 +89,9 @@ class RoomChannelStreamTests(unittest.TestCase):
     def test_text_channel_say_read_and_after_cursor(self):
         with tempfile.TemporaryDirectory() as temp_dir:
             set_runtime_host_token("host-secret")
-            base = self._start(Path(temp_dir) / "room")
-            channel_id = self._create_channel(base, "room-1", "구현방", "text")
+            root = Path(temp_dir) / "room"
+            base = self._start(root)
+            channel_id = self._create_channel(root, "room-1", "구현방", "text")
             token = self._token(base, "room-1")
 
             first = self._say(base, token, channel_id, "첫 메시지")
@@ -99,8 +112,9 @@ class RoomChannelStreamTests(unittest.TestCase):
     def test_channel_stream_is_isolated_from_main_lobby(self):
         with tempfile.TemporaryDirectory() as temp_dir:
             set_runtime_host_token("host-secret")
-            base = self._start(Path(temp_dir) / "room")
-            channel_id = self._create_channel(base, "room-1", "구현방", "text")
+            root = Path(temp_dir) / "room"
+            base = self._start(root)
+            channel_id = self._create_channel(root, "room-1", "구현방", "text")
             token = self._token(base, "room-1")
             self._say(base, token, channel_id, "채널 전용")
 
@@ -114,8 +128,9 @@ class RoomChannelStreamTests(unittest.TestCase):
     def test_say_rejects_voice_and_unknown_channel(self):
         with tempfile.TemporaryDirectory() as temp_dir:
             set_runtime_host_token("host-secret")
-            base = self._start(Path(temp_dir) / "room")
-            voice_id = self._create_channel(base, "room-1", "음성", "voice")
+            root = Path(temp_dir) / "room"
+            base = self._start(root)
+            voice_id = self._create_channel(root, "room-1", "음성", "voice")
             token = self._token(base, "room-1")
             with self.assertRaises(HTTPError) as ctx:
                 self._say(base, token, voice_id, "안돼")
@@ -132,8 +147,9 @@ class RoomChannelStreamTests(unittest.TestCase):
         # itself; over the public tunnel (non-loopback) a session is still required.
         with tempfile.TemporaryDirectory() as temp_dir:
             set_runtime_host_token("host-secret")
-            base = self._start(Path(temp_dir) / "room")
-            channel_id = self._create_channel(base, "room-1", "구현방", "text")
+            root = Path(temp_dir) / "room"
+            base = self._start(root)
+            channel_id = self._create_channel(root, "room-1", "구현방", "text")
 
             say = Request(
                 f"{base}/api/room/channel-say",

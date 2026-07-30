@@ -1,15 +1,20 @@
+import type { RoomAppearance } from "./roomAppearance";
+
+type PersistedRoomAppearance = Omit<RoomAppearance, "notifications">;
+
 export type PersistedRoomDockItem = {
   id: string;
   label: string;
   meetingId: string;
   topic: string;
   shortLabel: string;
+  appearance?: PersistedRoomAppearance;
   createdAt: string;
   tone: "fresh" | "resident" | "mafia" | "work";
 };
 
 const ROOM_DOCK_STORAGE_KEY = "agentsassemble.discord.rooms.v1";
-const MAX_STORED_ROOMS = 24;
+const MAX_STORED_ROOMS = 128;
 
 function safeText(value: unknown, fallback: string, maxLength: number) {
   const text = String(value || "")
@@ -21,6 +26,32 @@ function safeText(value: unknown, fallback: string, maxLength: number) {
 function safeTone(value: unknown): PersistedRoomDockItem["tone"] {
   if (value === "resident" || value === "mafia" || value === "work") return value;
   return "fresh";
+}
+
+function safeRoomAssetUrl(value: unknown) {
+  const text = String(value || "").trim();
+  return /^\/api\/attachments\/[A-Za-z0-9_-]{8,64}\?(?:view|download)=1$/.test(text)
+    ? text
+    : undefined;
+}
+
+function normalizeAppearance(value: unknown): PersistedRoomAppearance | undefined {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return undefined;
+  const record = value as Record<string, unknown>;
+  const bannerPreset = ["default", "forest", "midnight", "ember", "custom"].includes(
+    String(record.bannerPreset || "")
+  )
+    ? String(record.bannerPreset) as PersistedRoomAppearance["bannerPreset"]
+    : "default";
+  const inviteScope = record.inviteScope === "read_only" ? "read_only" : "room";
+  const iconLabel = safeText(record.iconLabel, "", 2) || undefined;
+  return {
+    bannerPreset,
+    bannerImage: safeRoomAssetUrl(record.bannerImage),
+    iconImage: safeRoomAssetUrl(record.iconImage),
+    iconLabel,
+    inviteScope,
+  };
 }
 
 export function normalizeRoomDockItem(value: unknown): PersistedRoomDockItem | null {
@@ -35,6 +66,7 @@ export function normalizeRoomDockItem(value: unknown): PersistedRoomDockItem | n
     meetingId,
     topic: safeText(record.topic, "빈 채팅방에서 시작", 160),
     shortLabel: safeText(record.shortLabel, label.slice(0, 1).toUpperCase() || "R", 4),
+    appearance: normalizeAppearance(record.appearance),
     createdAt: safeText(record.createdAt, "", 64),
     tone: safeTone(record.tone),
   };

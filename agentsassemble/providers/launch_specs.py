@@ -9,6 +9,7 @@ from dataclasses import dataclass, replace
 from pathlib import Path
 from typing import Callable
 
+from agentsassemble.providers.remote_openai import remote_openai_profiles
 from agentsassemble.room.text import clean_room_text
 
 
@@ -28,6 +29,7 @@ class NativeCliProviderSpec:
     service_tier: str = ""
     variant: str = ""
     permission_mode: str = "meeting_read_only"
+    max_output_tokens: int = 0
     runtime_kind: str = "live_cli"
     transport: str = "pty"
     default_responder: bool = True
@@ -59,6 +61,7 @@ class NativeCliProviderSpec:
                 "service_tier": self.service_tier,
                 "variant": self.variant,
                 "permission_mode": self.permission_mode,
+                "max_output_tokens": self.max_output_tokens,
                 "runtime_kind": self.runtime_kind,
                 "transport": self.transport,
                 "quiet_seconds": self.quiet_seconds,
@@ -95,6 +98,7 @@ class NativeCliProviderDefinition:
     default_service_tier: str = ""
     default_variant: str = ""
     default_permission_mode: str = "meeting_read_only"
+    default_max_output_tokens: int = 0
     catalog_exact_model_allows_empty_reasoning_effort: bool = False
     model_observation_policy: str = "required"
     runtime_kind: str = "live_cli"
@@ -141,6 +145,7 @@ class NativeCliProviderDefinition:
             service_tier=self.default_service_tier,
             variant=self.default_variant,
             permission_mode=self.default_permission_mode,
+            max_output_tokens=self.default_max_output_tokens,
             default_responder=default_responder,
         )
 
@@ -155,6 +160,7 @@ class NativeCliProviderDefinition:
         service_tier: str = "",
         variant: str = "",
         permission_mode: str = "",
+        max_output_tokens: int = 0,
         model_selection_kind: str = "exact",
         catalog_revision: str = "",
         default_responder: bool = True,
@@ -176,6 +182,13 @@ class NativeCliProviderDefinition:
                 selected_service_tier = "fast"
         selected_variant = clean_room_text(variant, limit=64)
         selected_permission = clean_room_text(permission_mode, limit=64)
+        selected_max_output_tokens = int(
+            max_output_tokens or self.default_max_output_tokens
+        )
+        if selected_max_output_tokens < 0:
+            raise ValueError(
+                f"Provider {self.provider_id} maximum output tokens cannot be negative."
+            )
         selected_kind = clean_room_text(model_selection_kind, limit=16)
         selected_catalog_revision = clean_room_text(catalog_revision, limit=128)
         if self.provider_id == "cursor" and selected_model == "auto":
@@ -224,6 +237,7 @@ class NativeCliProviderDefinition:
             service_tier=selected_service_tier,
             variant=selected_variant,
             permission_mode=selected_permission,
+            max_output_tokens=selected_max_output_tokens,
             runtime_kind=self.runtime_kind,
             transport=self.transport,
             default_responder=default_responder,
@@ -339,6 +353,10 @@ def native_cli_provider_spec_from_stored_session_strict(
         service_tier=clean_room_text(session.get("service_tier"), limit=32),
         variant=clean_room_text(session.get("variant"), limit=64),
         permission_mode=required["permission_mode"],
+        max_output_tokens=_nonnegative_int(
+            session.get("max_output_tokens"),
+            field="max_output_tokens",
+        ),
         model_selection_kind=model_selection_kind,
         catalog_revision=catalog_revision,
     )
@@ -665,24 +683,14 @@ def _opencode_command(
     return ("opencode",)
 
 
-def _deepseek_command(
+def _remote_openai_command(
     _model: str,
     _effort: str,
     _service_tier: str,
     _variant: str,
     _permission_mode: str,
 ) -> tuple[str, ...]:
-    return ("deepseek-api",)
-
-
-def _cerebras_command(
-    _model: str,
-    _effort: str,
-    _service_tier: str,
-    _variant: str,
-    _permission_mode: str,
-) -> tuple[str, ...]:
-    return ("cerebras-api",)
+    return ("server-owned-api",)
 
 
 def _ollama_command(
@@ -804,36 +812,26 @@ STRUCTURED_PROVIDER_CATALOG: tuple[NativeCliProviderDefinition, ...] = (
         login_command=("opencode", "auth", "login"),
         login_flow="interactive_terminal",
     ),
-    NativeCliProviderDefinition(
-        provider_id="deepseek",
-        display_name="DeepSeek",
-        provider_kind="deepseek_api",
-        executable="",
-        command_builder=_deepseek_command,
-        aliases=("deepseek_api",),
-        default_model="deepseek-v4-flash",
-        default_reasoning_effort="high",
-        default_variant="thinking",
-        model_observation_policy="required",
-        runtime_kind="api",
-        transport="https",
-        reported_transports=("https_sse",),
-        catalog_group="api",
-    ),
-    NativeCliProviderDefinition(
-        provider_id="cerebras",
-        display_name="Cerebras",
-        provider_kind="cerebras_api",
-        executable="",
-        command_builder=_cerebras_command,
-        aliases=("cerebras_api",),
-        default_model="gpt-oss-120b",
-        default_reasoning_effort="low",
-        model_observation_policy="required",
-        runtime_kind="api",
-        transport="https",
-        reported_transports=("https_sse",),
-        catalog_group="api",
+    *(
+        NativeCliProviderDefinition(
+            provider_id=profile.provider_id,
+            display_name=profile.display_name,
+            provider_kind=profile.provider_kind,
+            executable="",
+            command_builder=_remote_openai_command,
+            aliases=(profile.provider_kind,),
+            default_model=profile.default_model,
+            default_reasoning_effort=profile.default_reasoning_effort,
+            default_variant=profile.default_variant,
+            default_max_output_tokens=profile.max_output_tokens,
+            model_observation_policy="required",
+            runtime_kind="api",
+            transport="https",
+            reported_transports=("https_sse",),
+            catalog_group="api",
+            workspace_required=False,
+        )
+        for profile in remote_openai_profiles()
     ),
     NativeCliProviderDefinition(
         provider_id="ollama",
@@ -920,6 +918,10 @@ def native_cli_provider_spec_from_payload(payload: dict[str, object]) -> NativeC
         permission_mode=clean_room_text(
             payload.get("permission_mode") or payload.get("permission_option"), limit=64
         ),
+        max_output_tokens=_nonnegative_int(
+            payload.get("max_output_tokens"),
+            field="max_output_tokens",
+        ),
         model_selection_kind=clean_room_text(payload.get("model_selection_kind"), limit=16)
         or "exact",
         catalog_revision=clean_room_text(payload.get("catalog_revision"), limit=128),
@@ -987,6 +989,10 @@ def native_cli_provider_spec_from_config(
         service_tier=service_tier,
         variant=variant,
         permission_mode=permission_mode,
+        max_output_tokens=_nonnegative_int(
+            payload.get("max_output_tokens"),
+            field="max_output_tokens",
+        ),
         runtime_kind=clean_room_text(payload.get("runtime_kind"), limit=32)
         or (definition.runtime_kind if definition else "live_cli"),
         transport=clean_room_text(payload.get("transport"), limit=32)
@@ -1059,3 +1065,17 @@ def _int_value(value: object, default: int) -> int:
         return int(value) if value not in (None, "") else default
     except (TypeError, ValueError):
         return default
+
+
+def _nonnegative_int(value: object, *, field: str) -> int:
+    if value in (None, ""):
+        return 0
+    if isinstance(value, bool):
+        raise ValueError(f"{field} must be a non-negative integer.")
+    try:
+        parsed = int(value)
+    except (TypeError, ValueError) as error:
+        raise ValueError(f"{field} must be a non-negative integer.") from error
+    if parsed < 0:
+        raise ValueError(f"{field} must be a non-negative integer.")
+    return parsed

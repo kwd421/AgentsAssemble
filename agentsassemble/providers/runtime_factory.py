@@ -4,14 +4,16 @@ import os
 from pathlib import Path
 from typing import TYPE_CHECKING
 
-from agentsassemble.providers.cerebras import CerebrasApiRuntime
-from agentsassemble.providers.deepseek import DeepSeekApiRuntime
 from agentsassemble.providers.codex_app_server_live import CodexAppServerLiveRuntime
 from agentsassemble.providers.cursor_room_portal import CursorRoomPortalRuntime
 from agentsassemble.providers.grok_acp import GrokAcpRuntime
 from agentsassemble.providers.live_cli import LiveCliRuntime
 from agentsassemble.providers.local_openai import LocalOpenAICompatibleRuntime
 from agentsassemble.providers.opencode import OpenCodeRuntime
+from agentsassemble.providers.remote_openai import (
+    RemoteOpenAICompatibleRuntime,
+    remote_openai_profile,
+)
 from agentsassemble.providers.runtime_config import ProviderRuntimeConfig
 from agentsassemble.providers.terminal_interactions import AntigravityRoomPortalInteraction
 from agentsassemble.providers.windows_conpty import WindowsConPtyRuntime
@@ -44,6 +46,8 @@ _STRUCTURED_RUNTIME_KINDS = {
     ("opencode_server", "http"): "opencode",
     ("cerebras_api", "https"): "api",
     ("deepseek_api", "https"): "api",
+    ("openrouter_api", "https"): "api",
+    ("vercel_ai_gateway", "https"): "api",
     ("ollama_api", "http"): "api",
     ("lmstudio_api", "http"): "api",
 }
@@ -79,21 +83,17 @@ def runtime_from_config(
             environment=environment,
             room_portal=room_portal,
         )
-    if key == ("deepseek_api", "https"):
-        return DeepSeekApiRuntime(
+    remote_profile = remote_openai_profile(config.provider_kind)
+    if remote_profile is not None and config.transport == "https":
+        return RemoteOpenAICompatibleRuntime(
             config.participant_id,
+            profile=remote_profile,
             api_key=credential,
             model=config.model,
             reasoning_effort=config.reasoning_effort,
-            thinking=config.variant != "non_thinking",
-            room_portal=room_portal,
-        )
-    if key == ("cerebras_api", "https"):
-        return CerebrasApiRuntime(
-            config.participant_id,
-            api_key=credential,
-            model=config.model,
-            reasoning_effort=config.reasoning_effort,
+            variant=config.variant,
+            max_output_tokens=config.max_output_tokens,
+            base_url=config.provider_endpoint,
             room_portal=room_portal,
         )
     if key == ("ollama_api", "http"):

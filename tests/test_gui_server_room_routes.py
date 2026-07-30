@@ -283,7 +283,7 @@ class GuiServerRoomRouteTests(unittest.TestCase):
         self.assertEqual(attendee.sent_json["client_type"], "agent_bridge")
         self.assertEqual(attendee.sent_json["participant_type"], "remote")
 
-    def test_legacy_projection_failure_does_not_rollback_agent_join_or_leave(self):
+    def test_legacy_projection_failure_does_not_rollback_agent_join(self):
         def fail_projection(_root: Path, _payload: dict[str, object]) -> object:
             raise RuntimeError("secret path /tmp/private-token must stay hidden")
 
@@ -314,25 +314,12 @@ class GuiServerRoomRouteTests(unittest.TestCase):
                 },
                 deps=deps,
             )
-            session_token = str(joined.sent_json["session_token"])
-            participant_id = str(joined.sent_json["agent_id"])
-            left = _dispatch_room_route(
-                root,
-                path="/api/room-invite/leave",
-                method="POST",
-                payload={},
-                headers={"Authorization": f"Bearer {session_token}"},
-                deps=deps,
-            )
-
         self.assertEqual(joined.sent_json["status"], "admitted")
-        self.assertEqual(left.sent_json, {"status": "left", "agent_id": participant_id})
-        self.assertIsNone(deps.sessions.verify(session_token))
         diagnostics = projection.diagnostics()
-        self.assertEqual(diagnostics["failure_count"], 2)
+        self.assertEqual(diagnostics["failure_count"], 1)
         self.assertEqual(
             [failure["operation"] for failure in diagnostics["recent_failures"]],
-            ["participant_joined", "participant_left"],
+            ["participant_joined"],
         )
         self.assertNotIn("secret", str(diagnostics))
         self.assertNotIn("/tmp", str(diagnostics))

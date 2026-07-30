@@ -27,3 +27,13 @@ export function normalizeRoomChannel(channel: ApiRoomChannel): RoomChannel {
 export function normalizeRoomChannelList(channels: ApiRoomChannel[] | undefined): RoomChannel[] {
   return Array.isArray(channels) ? channels.map(normalizeRoomChannel) : [];
 }
+
+export function roomChannelListToApi(channels: RoomChannel[]): ApiRoomChannel[] {
+  return channels.map((channel) => ({
+    id: channel.id,
+    name: channel.name,
+    type: channel.type,
+    position: channel.position,
+    created_at: channel.createdAt,
+  }));
+}

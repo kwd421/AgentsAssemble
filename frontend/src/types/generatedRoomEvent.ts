@@ -33,6 +33,7 @@ export interface PublicRoomGlobalChannel {
 }
 
 export interface PublicRoomGlobalSettings {
+  settings_revision: string;
   label: string;
   topic: string;
   appearance: PublicRoomGlobalAppearance;

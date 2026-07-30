@@ -6,6 +6,7 @@ from agentsassemble.room.global_settings import (
     ROOM_APPEARANCE_FIELDS,
     ROOM_GLOBAL_SETTING_FIELDS,
     merge_room_global_settings,
+    public_room_global_settings,
 )
 from agentsassemble.room.repository import RoomRepository
 from agentsassemble.room.repository_records import clean_room_id
@@ -149,7 +150,9 @@ def _project_room_settings(
     user_id: str,
     room_id: str,
 ) -> dict[str, object]:
-    global_settings = repository.room_settings(room_id)
+    global_settings = public_room_global_settings(
+        repository.room_settings(room_id)
+    )
     preferences = (
         identities.room_preferences(user_id, room_id)
         if user_id

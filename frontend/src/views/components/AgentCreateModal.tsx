@@ -10,10 +10,7 @@ import {
   type FrontendLiveAgentCreateRequest,
   type ProviderCredentialStatus,
 } from "../../api";
-import type {
-  NativeCliProviderAvailability,
-  ProviderControl,
-} from "../../roomSocketClient";
+import type { NativeCliProviderAvailability, ProviderControl } from "../../roomSocketClient";
 import type { RoomAgentSession } from "../../api/agentSessions";
 import {
   displayProviderControls,
@@ -190,6 +187,7 @@ export default function AgentCreateModal({
       service_tier: session.service_tier || "",
       variant: session.variant || "",
       permission_mode: session.permission_mode || "",
+      max_output_tokens: String(session.max_output_tokens || ""),
     }));
   }
 
@@ -233,6 +231,7 @@ export default function AgentCreateModal({
         serviceTier: settings.service_tier || "",
         variant: settings.variant || "",
         permissionMode: settings.permission_mode || "meeting_read_only",
+        maxOutputTokens: Number(settings.max_output_tokens || 0),
         startNow,
       });
       onCreated?.();

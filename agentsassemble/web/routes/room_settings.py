@@ -58,6 +58,12 @@ def register_room_settings_routes(router: Router) -> None:
             and not ctx.require_moderator()
         ):
             return
+        if has_room_global_updates(payload):
+            ctx.send_error(
+                HTTPStatus.CONFLICT,
+                "Room-global settings must use the canonical room WebSocket command.",
+            )
+            return
         try:
             ctx.send_json(
                 update_room_settings(

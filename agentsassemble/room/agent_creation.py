@@ -75,6 +75,9 @@ class RoomAgentCreationService:
                         or payload.get("permission_option"),
                         64,
                     ),
+                    "max_output_tokens": str(
+                        payload.get("max_output_tokens") or ""
+                    ),
                 },
             )
         except ProviderCatalogSelectionError as error:
@@ -100,6 +103,7 @@ class RoomAgentCreationService:
                     "service_tier": selection.service_tier,
                     "variant": selection.variant,
                     "permission_mode": selection.permission_mode,
+                    "max_output_tokens": selection.max_output_tokens,
                 }
             )
         except UnsupportedNativeCliProvider as error:

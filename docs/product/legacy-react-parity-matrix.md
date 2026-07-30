@@ -227,6 +227,12 @@ surface rather than silently counted as React parity.
 | `/api/provider-credentials/deepseek` | GET | exact | `fetchProviderCredentialStatus()` | yes | Returns only configured/source metadata; never returns the credential value. |
 | `/api/provider-credentials/deepseek` | POST | exact | `setProviderCredential()` | yes | Stores a DeepSeek key in the host secure store; the input is cleared by React after submission. |
 | `/api/provider-credentials/deepseek` | DELETE | exact | `deleteProviderCredential()` | yes | Deletes the DeepSeek key from the host secure store; the response never returns the credential value. |
+| `/api/provider-credentials/openrouter` | GET | exact | `fetchProviderCredentialStatus()` | yes | Returns only configured/source metadata; never returns the credential value. |
+| `/api/provider-credentials/openrouter` | POST | exact | `setProviderCredential()` | yes | Stores an OpenRouter key in the host secure store; the input is cleared by React after submission. |
+| `/api/provider-credentials/openrouter` | DELETE | exact | `deleteProviderCredential()` | yes | Deletes the OpenRouter key from the host secure store; the response never returns the credential value. |
+| `/api/provider-credentials/vercel` | GET | exact | `fetchProviderCredentialStatus()` | yes | Returns only configured/source metadata; never returns the credential value. |
+| `/api/provider-credentials/vercel` | POST | exact | `setProviderCredential()` | yes | Stores a Vercel AI Gateway key in the host secure store; the input is cleared by React after submission. |
+| `/api/provider-credentials/vercel` | DELETE | exact | `deleteProviderCredential()` | yes | Deletes the Vercel AI Gateway key from the host secure store; the response never returns the credential value. |
 | `/api/room-events/stream` | GET | sse | `-` | no | Legacy/read-only SSE compatibility endpoint. React receives canonical RoomStore snapshots and events from `/ws?ticket=...`. |
 | `/api/host/claim` | POST | exact | `claimHostDevice()` | yes | Host-token gated: binds this device's stable identity to the operator account so its sessions moderate from any entrance. |
 | `/api/live-agent-create/options` | GET | exact | `-` | no | Retired with `410 legacy_route_retired`; canonical provider controls arrive in the room WebSocket snapshot. |
@@ -254,7 +260,7 @@ surface rather than silently counted as React parity.
 | `/api/room-invite/invites` | GET | exact | `-` | no | Host views pending invites; current Discord shell does not wrap token sessions. |
 | `/api/room-invite/revoke` | POST | exact | `-` | no | Host revokes pending invite tokens; current Discord shell does not wrap token sessions. |
 | `/api/room-channels` | GET | exact | `fetchRoomChannels()` | yes | React channel sidebar reads a room's custom text/voice channels. |
-| `/api/room-channels` | POST | exact | `createRoomChannel(), renameRoomChannel(), deleteRoomChannel(), reorderRoomChannels()` | yes | Moderation (host token or operator session): create/rename/delete/reorder custom channels from the channel sidebar + create modal. |
+| `/api/room-channels` | POST | exact | `-` | no | Custom-channel writes use canonical `room.settings.update` commands over the room WebSocket. The retained HTTP route rejects mutation so it cannot bypass revision checks or durable room events. |
 | `/api/room/channel-lobby` | GET | exact | `fetchChannelLobby()` | yes | React reads a custom text channel's own message stream with after-cursor polling. |
 | `/api/room/channel-say` | POST | exact | `postChannelSay()` | yes | React composer writes to a custom text channel with the admitted session identity. |
 | `/api/room/voice` | GET | exact | `fetchVoicePresence()` | yes | React reads who is connected to a voice channel. |

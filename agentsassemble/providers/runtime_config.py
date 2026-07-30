@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
+from agentsassemble.providers.remote_openai import remote_openai_profile
 from agentsassemble.room.text import clean_room_text
 
 
@@ -27,6 +28,7 @@ class ProviderRuntimeProfile:
     variant: str
     permission_mode: str
     transport: str
+    max_output_tokens: int = 0
 
     @classmethod
     def parse_strict(cls, values: dict[str, object]) -> ProviderRuntimeProfile:
@@ -44,9 +46,14 @@ class ProviderRuntimeProfile:
             variant=_required_text(values, "variant", limit=64, allow_empty=True),
             permission_mode=_required_text(values, "permission_mode", limit=64),
             transport=_required_text(values, "transport", limit=64),
+            max_output_tokens=(
+                _required_int(values, "max_output_tokens", minimum=0)
+                if "max_output_tokens" in values
+                else 0
+            ),
         )
 
-    def report_fields(self) -> dict[str, str]:
+    def report_fields(self) -> dict[str, object]:
         return {
             "provider_kind": self.provider_kind,
             "runtime_kind": self.runtime_kind,
@@ -55,6 +62,7 @@ class ProviderRuntimeProfile:
             "service_tier": self.service_tier,
             "variant": self.variant,
             "permission_mode": self.permission_mode,
+            "max_output_tokens": self.max_output_tokens,
         }
 
 
@@ -70,6 +78,7 @@ class ProviderRuntimeConfig:
     service_tier: str
     variant: str
     permission_mode: str
+    max_output_tokens: int
     transport: str
     quiet_seconds: float
     input_mode: str
@@ -97,6 +106,7 @@ class ProviderRuntimeConfig:
             service_tier=self.service_tier,
             variant=self.variant,
             permission_mode=self.permission_mode,
+            max_output_tokens=self.max_output_tokens,
             transport=self.transport,
         )
 
@@ -110,11 +120,11 @@ class ProviderRuntimeConfig:
         if not command[0].strip():
             raise ProviderRuntimeConfigError("Provider runtime executable is required.")
         provider_endpoint = _required_text(values, "provider_endpoint", limit=1000, allow_empty=True)
-        if profile.provider_kind in {
-            "opencode_server",
-            "ollama_api",
-            "lmstudio_api",
-        } and not provider_endpoint:
+        if (
+            profile.provider_kind
+            in {"opencode_server", "ollama_api", "lmstudio_api"}
+            or remote_openai_profile(profile.provider_kind) is not None
+        ) and not provider_endpoint:
             raise ProviderRuntimeConfigError(
                 f"{profile.provider_kind} provider endpoint is required."
             )
@@ -129,6 +139,7 @@ class ProviderRuntimeConfig:
             service_tier=profile.service_tier,
             variant=profile.variant,
             permission_mode=profile.permission_mode,
+            max_output_tokens=profile.max_output_tokens,
             transport=profile.transport,
             quiet_seconds=_required_float(values, "quiet_seconds", minimum=0.001),
             input_mode=_required_text(values, "input_mode", limit=64),

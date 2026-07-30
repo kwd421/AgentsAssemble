@@ -46,6 +46,7 @@ export default function LobbyView({
   bindLobbyStream,
   submitMessage,
   canonicalEvents,
+  canonicalHistoryReady = true,
   canonicalOldestSeq = 0,
   canonicalHasMoreHistory = false,
   loadCanonicalHistory,
@@ -72,6 +73,7 @@ export default function LobbyView({
   bindLobbyStream?: (receive: (events: LobbyEvent[]) => void) => () => void;
   submitMessage?: (message: string) => Promise<LobbyEvent[]>;
   canonicalEvents?: LobbyEvent[];
+  canonicalHistoryReady?: boolean;
   canonicalOldestSeq?: number;
   canonicalHasMoreHistory?: boolean;
   loadCanonicalHistory?: (beforeSeq: number) => Promise<{
@@ -96,6 +98,7 @@ export default function LobbyView({
     typingIndicators,
     bindLobbyStream,
     canonicalEvents,
+    canonicalHistoryReady,
     canonicalOldestSeq,
     canonicalHasMoreHistory,
     loadCanonicalHistory,

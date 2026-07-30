@@ -111,18 +111,6 @@ test("leaves server voice presence when the user navigates away from a joined ch
   await page.getByRole("button", { name: "#general", exact: true }).click();
   await expect.poll(voiceParticipants).toHaveLength(0);
 
-  const deleteResponse = await page.request.post("/api/room-channels", {
-    headers: {
-      "Content-Type": "application/json",
-      "X-Host-Token": E2E_HOST_TOKEN,
-    },
-    data: {
-      meeting_id: "general",
-      action: "delete",
-      channel_id: channelId,
-    },
-  });
-  expect(deleteResponse.ok()).toBe(true);
 });
 
 test("keeps the confirmed profile visible and the editor open when saving fails", async ({
@@ -667,7 +655,7 @@ test("streams on desktop and controls the same canonical session on mobile", asy
   const desktopMember = page.getByRole("button").filter({ hasText: "Fake Interactive CLI" }).first();
   await expect(desktopMember).toBeVisible();
   await desktopMember.click();
-  let session = page.getByRole("region", { name: "Fake Interactive CLI Agent Session" });
+  let session = page.getByRole("region", { name: "Fake Interactive CLI 실행 및 설정" });
   await session.getByRole("button", { name: "시작", exact: true }).click();
   await expect(session.getByText("대기", { exact: true })).toBeVisible();
   await page.getByRole("dialog").getByRole("button", { name: "멤버 정보 닫기" }).click();
@@ -739,7 +727,7 @@ test("streams on desktop and controls the same canonical session on mobile", asy
     const mobileMember = page.getByRole("button").filter({ hasText: "Makima" }).first();
     await expect(mobileMember).toBeVisible();
     await mobileMember.click();
-    const mobileSession = page.getByRole("region", { name: "Makima Agent Session" });
+    const mobileSession = page.getByRole("region", { name: "Makima 실행 및 설정" });
     await expect(mobileSession).toBeVisible();
     return mobileSession;
   }
@@ -750,10 +738,10 @@ test("streams on desktop and controls the same canonical session on mobile", asy
   }
 
   session = await openMobileSession();
-  const activityToggle = session.getByRole("checkbox", { name: /켜짐/ });
+  const activityToggle = session.getByRole("switch", { name: "생각과 작업 표시" });
+  await expect(activityToggle).not.toBeChecked();
+  await activityToggle.click();
   await expect(activityToggle).toBeChecked();
-  await activityToggle.uncheck();
-  await expect(session.getByRole("checkbox", { name: /꺼짐/ })).not.toBeChecked();
   await session.getByText("고급 진단", { exact: true }).click();
   await expect(session.getByText("Runtime", { exact: true })).toBeVisible();
   await expect(session.getByText(/input \d+ chars · \d+ events/)).toBeVisible();

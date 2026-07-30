@@ -1,5 +1,9 @@
 import type { LucideIcon } from "lucide-react";
 import { Bot, Gamepad2, LayoutDashboard, Radio, Sparkles, Users } from "lucide-react";
+import {
+  normalizeRoomGlobalSettings,
+  type RoomGlobalAppearance,
+} from "../api/room";
 import type { RoomAppearance } from "./roomAppearance";
 import {
   joinInviteTokenFromUrl,
@@ -17,6 +21,7 @@ export type RoomDockItem = {
   meetingId: string;
   topic: string;
   shortLabel: string;
+  appearance?: RoomGlobalAppearance;
   inviteScope?: RoomAppearance["inviteScope"];
   icon: LucideIcon;
   createdAt: string;
@@ -40,6 +45,7 @@ export type ServerRoomDockSource = {
   last_active_at?: string;
   archived?: boolean;
   status?: string;
+  room_settings?: unknown;
 };
 
 function compactTimestamp(date: Date) {
@@ -76,6 +82,19 @@ function iconForRoomTone(tone: RoomDockItem["tone"]): LucideIcon {
   return Sparkles;
 }
 
+function sameRoomAppearance(
+  left: RoomGlobalAppearance | undefined,
+  right: RoomGlobalAppearance | undefined
+) {
+  return (
+    left?.bannerPreset === right?.bannerPreset &&
+    left?.bannerImage === right?.bannerImage &&
+    left?.iconImage === right?.iconImage &&
+    left?.iconLabel === right?.iconLabel &&
+    left?.inviteScope === right?.inviteScope
+  );
+}
+
 export function persistableRoom(room: RoomDockItem): PersistedRoomDockItem {
   return {
     id: room.id,
@@ -83,6 +102,7 @@ export function persistableRoom(room: RoomDockItem): PersistedRoomDockItem {
     meetingId: room.meetingId,
     topic: room.topic,
     shortLabel: room.shortLabel,
+    appearance: room.appearance,
     createdAt: room.createdAt,
     tone: room.tone,
   };
@@ -120,13 +140,16 @@ export function roomFromServerRoom(room: ServerRoomDockSource): RoomDockItem | n
   const meetingId = String(room.room_id || "").trim();
   const status = String(room.status || "active").toLowerCase();
   if (!meetingId || room.archived || status === "closed" || status === "archived") return null;
-  const label = String(room.label || meetingId).trim() || meetingId;
+  const settings = normalizeRoomGlobalSettings(room.room_settings, meetingId);
+  const label = String(settings?.label || room.label || meetingId).trim() || meetingId;
   return {
     id: `server-${meetingId}`,
     label,
     meetingId,
-    topic: label,
-    shortLabel: label.slice(0, 1).toUpperCase() || "R",
+    topic: settings?.topic || label,
+    shortLabel: settings?.shortLabel || label.slice(0, 1).toUpperCase() || "R",
+    appearance: settings?.appearance,
+    inviteScope: settings?.appearance.inviteScope,
     icon: Radio,
     createdAt: String(room.last_active_at || ""),
     tone: "resident",
@@ -157,6 +180,8 @@ export function mergeServerRoomsIntoDock(
       label: canonicalRoom.label,
       topic: canonicalRoom.topic,
       shortLabel: canonicalRoom.shortLabel,
+      appearance: canonicalRoom.appearance,
+      inviteScope: canonicalRoom.inviteScope,
       icon: canonicalRoom.icon,
       createdAt: canonicalRoom.createdAt,
       tone: canonicalRoom.tone,
@@ -165,6 +190,8 @@ export function mergeServerRoomsIntoDock(
       room.label !== reconciledRoom.label ||
       room.topic !== reconciledRoom.topic ||
       room.shortLabel !== reconciledRoom.shortLabel ||
+      !sameRoomAppearance(room.appearance, reconciledRoom.appearance) ||
+      room.inviteScope !== reconciledRoom.inviteScope ||
       room.icon !== reconciledRoom.icon ||
       room.createdAt !== reconciledRoom.createdAt ||
       room.tone !== reconciledRoom.tone

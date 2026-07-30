@@ -126,13 +126,7 @@ class RoomSettingsHttpTests(unittest.TestCase):
             },
         )
 
-    def test_post_then_get_roundtrip_persists_room_settings(self) -> None:
-        payload = {
-            "room_id": "room-1",
-            "label": "Planning room",
-            "topic": "Ship the next slice",
-            "appearance": {"banner_preset": "forest"},
-        }
+    def test_post_then_get_roundtrip_persists_user_preferences(self) -> None:
         preferences = {
             "room_id": "room-1",
             "appearance": {"notifications": "mute"},
@@ -143,8 +137,7 @@ class RoomSettingsHttpTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as temp_dir:
             root = Path(temp_dir)
             RoomStore(root).create_room("room-1", label="Room 1")
-            saved = self._dispatch(root, "/api/room-settings", "POST", body=json.dumps(payload).encode())
-            self._dispatch(
+            saved = self._dispatch(
                 root,
                 "/api/room-settings",
                 "POST",
@@ -154,16 +147,13 @@ class RoomSettingsHttpTests(unittest.TestCase):
             canonical = RoomStore(root).room_settings("room-1")
 
         settings = loaded.sent_json["settings"]
-        self.assertEqual(saved.sent_json["settings"]["label"], "Planning room")
-        self.assertEqual(settings["label"], "Planning room")
-        self.assertEqual(settings["topic"], "Ship the next slice")
-        self.assertEqual(settings["appearance"]["banner_preset"], "forest")
+        self.assertEqual(saved.sent_json["settings"]["appearance"]["notifications"], "mute")
         self.assertEqual(settings["appearance"]["notifications"], "mute")
         self.assertEqual(settings["channel_settings"]["lobby"]["notifications"], "mentions")
         self.assertNotIn("notifications", canonical["appearance"])
         self.assertNotIn("channel_settings", canonical)
 
-    def test_post_rejects_mixed_global_and_user_preference_writes(self) -> None:
+    def test_post_rejects_any_request_that_could_bypass_canonical_global_events(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:
             root = Path(temp_dir)
             RoomStore(root).create_room("room-1", label="Room 1")
@@ -181,8 +171,8 @@ class RoomSettingsHttpTests(unittest.TestCase):
                 ).encode(),
             )
 
-        self.assertEqual(response.sent_error[0], HTTPStatus.BAD_REQUEST)
-        self.assertIn("separate requests", response.sent_error[1])
+        self.assertEqual(response.sent_error[0], HTTPStatus.CONFLICT)
+        self.assertIn("canonical room WebSocket command", response.sent_error[1])
 
     def test_remote_anonymous_post_cannot_change_room_global_settings(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:
@@ -202,10 +192,11 @@ class RoomSettingsHttpTests(unittest.TestCase):
         self.assertEqual(response.sent_error[0], HTTPStatus.UNAUTHORIZED)
         self.assertEqual(stored_label, "Original")
 
-    def test_remote_host_can_use_the_authorized_global_compatibility_surface(self) -> None:
+    def test_remote_host_cannot_bypass_the_canonical_global_event_surface(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:
             root = Path(temp_dir)
-            RoomStore(root).create_room("room-1", label="Original")
+            repository = RoomStore(root)
+            repository.create_room("room-1", label="Original")
 
             response = self._dispatch(
                 root,
@@ -215,9 +206,10 @@ class RoomSettingsHttpTests(unittest.TestCase):
                 local_operator=False,
                 host_token="host-secret",
             )
+            stored_label = repository.room_settings("room-1")["label"]
 
-        self.assertIsNone(response.sent_error)
-        self.assertEqual(response.sent_json["settings"]["label"], "Authorized")
+        self.assertEqual(response.sent_error[0], HTTPStatus.CONFLICT)
+        self.assertEqual(stored_label, "Original")
 
     def test_notification_and_read_preferences_are_isolated_by_device_user(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:
@@ -340,7 +332,7 @@ class RoomSettingsHttpTests(unittest.TestCase):
         self.assertEqual(response.sent_error[0], HTTPStatus.BAD_REQUEST)
         self.assertIn("stable user identity", response.sent_error[1])
 
-    def test_invalid_global_setting_is_rejected_without_changing_repository(self) -> None:
+    def test_http_global_setting_is_rejected_before_it_can_change_repository(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:
             root = Path(temp_dir)
             repository = RoomStore(root)
@@ -355,8 +347,8 @@ class RoomSettingsHttpTests(unittest.TestCase):
                 ).encode(),
             )
 
-            self.assertEqual(response.sent_error[0], HTTPStatus.BAD_REQUEST)
-            self.assertIn("Unsupported conversation_mode", response.sent_error[1])
+            self.assertEqual(response.sent_error[0], HTTPStatus.CONFLICT)
+            self.assertIn("canonical room WebSocket command", response.sent_error[1])
             self.assertEqual(repository.room_settings("room-1")["conversation_mode"], "ordered")
 
     def test_post_rejects_malformed_and_non_object_json(self) -> None:
@@ -391,8 +383,11 @@ class RoomSettingsHttpTests(unittest.TestCase):
 
 
 class RoomSettingsHandlerDispatchTests(unittest.TestCase):
-    def test_live_http_roundtrip_reaches_registered_routes(self) -> None:
-        payload = {"room_id": "live-room", "label": "Live room", "topic": "Integration"}
+    def test_live_http_preference_roundtrip_reaches_registered_routes(self) -> None:
+        payload = {
+            "room_id": "live-room",
+            "appearance": {"notifications": "mute"},
+        }
         with tempfile.TemporaryDirectory() as temp_dir:
             root = Path(temp_dir)
             RoomStore(root).create_room("live-room", label="Live room")
@@ -420,8 +415,8 @@ class RoomSettingsHandlerDispatchTests(unittest.TestCase):
                 server.server_close()
                 thread.join(timeout=4)
 
-        self.assertEqual(saved["settings"]["label"], "Live room")
-        self.assertEqual(loaded["settings"]["topic"], "Integration")
+        self.assertEqual(saved["settings"]["appearance"]["notifications"], "mute")
+        self.assertEqual(loaded["settings"]["appearance"]["notifications"], "mute")
 
 
 if __name__ == "__main__":

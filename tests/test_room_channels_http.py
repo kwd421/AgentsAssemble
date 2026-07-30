@@ -1,9 +1,4 @@
-"""HTTP CRUD for custom room channels (CH-2), against a real server.
-
-Channel mutations are moderator-gated (host token or operator session), same as
-mute/kick; reads are open to a loopback console. These tests drive the actual
-/api/room-channels route through the governed request path.
-"""
+"""Read-only compatibility projection for canonical custom room channels."""
 import json
 import tempfile
 import threading
@@ -71,36 +66,64 @@ class RoomChannelsHttpTests(unittest.TestCase):
         with urlopen(request, timeout=4) as response:
             return json.loads(response.read().decode("utf-8"))
 
-    def test_create_rename_reorder_delete_round_trip(self):
+    def test_http_mutation_cannot_bypass_the_canonical_room_event_path(self):
         with tempfile.TemporaryDirectory() as temp_dir:
             set_runtime_host_token("host-secret")
             root = Path(temp_dir) / "room"
-            RoomStore(root).create_room("r1", label="Room 1")
+            repository = RoomStore(root)
+            repository.create_room("r1", label="Room 1")
+            base = self._start(root)
+            with self.assertRaises(HTTPError) as rejected:
+                self._post(
+                    base,
+                    {
+                        "meeting_id": "r1",
+                        "action": "create",
+                        "name": "구현방",
+                        "type": "text",
+                    },
+                )
+            stored_channels = repository.room_settings("r1")["channels"]
+
+        self.assertEqual(rejected.exception.code, 409)
+        rejected.exception.close()
+        self.assertEqual(stored_channels, [])
+
+    def test_get_projects_channels_from_the_canonical_room_record(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir) / "room"
+            repository = RoomStore(root)
+            repository.create_room("r1", label="Room 1")
+            repository.update_room_settings(
+                "r1",
+                {
+                    "channels": [
+                        {
+                            "id": "c123456789abc",
+                            "name": "구현방",
+                            "type": "text",
+                            "position": 0,
+                            "created_at": "2026-07-30T00:00:00Z",
+                        }
+                    ]
+                },
+            )
             base = self._start(root)
 
-            created = self._post(base, {"meeting_id": "r1", "action": "create", "name": "구현방", "type": "text"})
-            self.assertEqual(created["channel"]["name"], "구현방")
-            self.assertEqual(created["channel"]["type"], "text")
-            text_id = created["channel"]["id"]
-
-            voice = self._post(base, {"meeting_id": "r1", "action": "create", "name": "음성 라운지", "type": "voice"})
-            voice_id = voice["channel"]["id"]
-            self.assertEqual(voice["channel"]["type"], "voice")
-            self.assertEqual([c["id"] for c in voice["channels"]], [text_id, voice_id])
-
-            renamed = self._post(base, {"meeting_id": "r1", "action": "rename", "channel_id": text_id, "name": "구현-1"})
-            self.assertEqual(renamed["channels"][0]["name"], "구현-1")
-
-            reordered = self._post(base, {"meeting_id": "r1", "action": "reorder", "ordered_ids": [voice_id, text_id]})
-            self.assertEqual([c["id"] for c in reordered["channels"]], [voice_id, text_id])
-
-            # GET reflects the persisted, reordered list (loopback reads freely).
             listed = self._list(base, "r1")
-            self.assertEqual([c["id"] for c in listed["channels"]], [voice_id, text_id])
 
-            deleted = self._post(base, {"meeting_id": "r1", "action": "delete", "channel_id": voice_id})
-            self.assertEqual([c["id"] for c in deleted["channels"]], [text_id])
-            self.assertEqual(deleted["channels"][0]["position"], 0)
+        self.assertEqual(
+            listed["channels"],
+            [
+                {
+                    "id": "c123456789abc",
+                    "name": "구현방",
+                    "type": "text",
+                    "position": 0,
+                    "created_at": "2026-07-30T00:00:00Z",
+                }
+            ],
+        )
 
     def test_mutation_requires_moderator(self):
         with tempfile.TemporaryDirectory() as temp_dir:
@@ -129,26 +152,6 @@ class RoomChannelsHttpTests(unittest.TestCase):
 
             self.assertEqual(ctx.exception.code, 404)
             ctx.exception.close()
-
-    def test_error_categories_map_to_status(self):
-        with tempfile.TemporaryDirectory() as temp_dir:
-            set_runtime_host_token("host-secret")
-            root = Path(temp_dir) / "room"
-            RoomStore(root).create_room("r1", label="Room 1")
-            base = self._start(root)
-            with self.assertRaises(HTTPError) as ctx:
-                self._post(base, {"meeting_id": "r1", "action": "create", "name": "   "})
-            self.assertEqual(ctx.exception.code, 400)  # empty name
-            ctx.exception.close()
-            with self.assertRaises(HTTPError) as ctx:
-                self._post(base, {"meeting_id": "r1", "action": "delete", "channel_id": "ghost"})
-            self.assertEqual(ctx.exception.code, 404)  # unknown channel
-            ctx.exception.close()
-            with self.assertRaises(HTTPError) as ctx:
-                self._post(base, {"meeting_id": "r1", "action": "wat"})
-            self.assertEqual(ctx.exception.code, 400)  # unknown action
-            ctx.exception.close()
-
 
 if __name__ == "__main__":
     unittest.main()

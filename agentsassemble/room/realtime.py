@@ -119,6 +119,7 @@ AGENT_RUNTIME_PROFILE_KEYS = frozenset(
         "service_tier",
         "variant",
         "permission_mode",
+        "max_output_tokens",
         "transport",
     }
 )

@@ -158,6 +158,14 @@ def register_provider_routes(
     def cerebras_credentials_status(ctx: RequestContext) -> None:
         _credential_status(ctx, "cerebras")
 
+    @router.get("/api/provider-credentials/openrouter")
+    def openrouter_credentials_status(ctx: RequestContext) -> None:
+        _credential_status(ctx, "openrouter")
+
+    @router.get("/api/provider-credentials/vercel")
+    def vercel_credentials_status(ctx: RequestContext) -> None:
+        _credential_status(ctx, "vercel")
+
     def _send_provider_usage(ctx: RequestContext, provider_id: str) -> None:
         if not credentials_allowed(ctx):
             return
@@ -216,6 +224,14 @@ def register_provider_routes(
     def cerebras_credentials_set(ctx: RequestContext) -> None:
         _credential_set(ctx, "cerebras")
 
+    @router.post("/api/provider-credentials/openrouter")
+    def openrouter_credentials_set(ctx: RequestContext) -> None:
+        _credential_set(ctx, "openrouter")
+
+    @router.post("/api/provider-credentials/vercel")
+    def vercel_credentials_set(ctx: RequestContext) -> None:
+        _credential_set(ctx, "vercel")
+
     def _credential_delete(ctx: RequestContext, provider_id: str) -> None:
         if not credentials_allowed(ctx):
             return
@@ -228,3 +244,11 @@ def register_provider_routes(
     @router.delete("/api/provider-credentials/cerebras")
     def cerebras_credentials_delete(ctx: RequestContext) -> None:
         _credential_delete(ctx, "cerebras")
+
+    @router.delete("/api/provider-credentials/openrouter")
+    def openrouter_credentials_delete(ctx: RequestContext) -> None:
+        _credential_delete(ctx, "openrouter")
+
+    @router.delete("/api/provider-credentials/vercel")
+    def vercel_credentials_delete(ctx: RequestContext) -> None:
+        _credential_delete(ctx, "vercel")

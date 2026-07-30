@@ -11,12 +11,7 @@ import {
 import ProviderControlSelect from "./ProviderControlSelect";
 import ProviderControlToggle from "./ProviderControlToggle";
 
-export type AgentSessionControlAction =
-  | "start"
-  | "pause"
-  | "stop"
-  | "resume"
-  | "interrupt";
+export type AgentSessionControlAction = "start" | "pause" | "stop" | "resume" | "interrupt";
 
 export function agentSessionStatusLabel(status?: string) {
   if (status === "busy") return "응답 중";
@@ -158,6 +153,9 @@ export default function AgentSessionDetails({
       variant: session.variant ?? controlDefault(provider, "variant"),
       permission_mode:
         session.permission_mode || controlDefault(provider, "permission_mode") || "meeting_read_only",
+      max_output_tokens:
+        String(session.max_output_tokens || "") ||
+        controlDefault(provider, "max_output_tokens"),
     };
     setSettings(storedSettings);
   }, [
@@ -169,6 +167,7 @@ export default function AgentSessionDetails({
     session.service_tier,
     session.variant,
     session.permission_mode,
+    session.max_output_tokens,
   ]);
 
   async function runControl(action: AgentSessionControlAction) {

@@ -9,6 +9,7 @@ from agentsassemble.room.projection import (
     public_session,
 )
 from agentsassemble.room.repository import RoomRepository
+from agentsassemble.room.global_settings import public_room_global_settings
 from agentsassemble.room.text import clean_room_text
 
 
@@ -121,7 +122,9 @@ class RoomSnapshotService:
             "op": "snapshot",
             "stream": ROOM_EVENT_STREAM,
             "room": self.store.room(room_id),
-            "room_settings": self.store.room_settings(room_id),
+            "room_settings": public_room_global_settings(
+                self.store.room_settings(room_id)
+            ),
             "participants": [
                 public_participant(participant)
                 for participant in participants

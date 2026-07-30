@@ -6,6 +6,7 @@ from http import HTTPStatus
 from agentsassemble.application.agent_sessions import room_status_payload
 from agentsassemble.room.votes import legacy_vote_summary
 from agentsassemble.web.router import RequestContext, Router
+from agentsassemble.room.global_settings import public_room_global_settings
 
 
 def register_room_history_routes(router: Router) -> None:
@@ -150,17 +151,24 @@ def register_room_history_routes(router: Router) -> None:
                 session_room_id and room_id != session_room_id
             ):
                 continue
+            room_settings = public_room_global_settings(
+                ctx.deps.rooms.room_settings(room_id)
+            )
             rooms_by_id[room_id] = {
                 **rooms_by_id.get(room_id, {}),
                 **_room_payload(
                     {
                         "room_id": room_id,
-                        "label": room.get("label", ""),
+                        "label": room_settings["label"],
                         "last_active_at": room.get("updated_at", ""),
                         "status": room.get("status", "active"),
                         "origin": "agent_session",
                     }
                 ),
+                "room_settings": {
+                    "room_id": room_id,
+                    **room_settings,
+                },
             }
         ctx.send_json({"rooms": list(rooms_by_id.values())})
 

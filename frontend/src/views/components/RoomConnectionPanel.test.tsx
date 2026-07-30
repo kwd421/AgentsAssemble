@@ -139,6 +139,16 @@ function codexProvider(): NativeCliProviderAvailability {
           { value: "workspace_write", label: "작업 폴더 쓰기" },
         ],
       },
+      {
+        key: "max_output_tokens",
+        label: "최대 응답 길이",
+        kind: "select",
+        default_value: "4096",
+        options: [
+          { value: "4096", label: "4,096 토큰" },
+          { value: "8192", label: "8,192 토큰" },
+        ],
+      },
     ],
   };
 }
@@ -432,7 +442,7 @@ describe("RoomConnectionPanel", () => {
     expect(screen.queryByRole("heading", { name: "권한 / 속도" })).toBeNull();
   });
 
-  it("saves model, reasoning, speed, and permission together for a stopped canonical session", async () => {
+  it("saves all provider runtime controls together for a stopped canonical session", async () => {
     const onAgentConfigure = vi.fn().mockResolvedValue(undefined);
     const session = {
       ...agentSession("stopped"),
@@ -441,6 +451,7 @@ describe("RoomConnectionPanel", () => {
       service_tier: "default",
       variant: "",
       permission_mode: "meeting_read_only",
+      max_output_tokens: 4096,
     };
     render(
       <RoomConnectionPanel
@@ -465,6 +476,7 @@ describe("RoomConnectionPanel", () => {
     await chooseProviderControl("추론 강도", "high");
     await chooseProviderControl("응답 속도", "Fast");
     await chooseProviderControl("권한", "작업 폴더 쓰기");
+    await chooseProviderControl("최대 응답 길이", "8,192 토큰");
     fireEvent.click(screen.getByRole("button", { name: "런타임 설정 저장" }));
 
     await waitFor(() =>
@@ -474,13 +486,9 @@ describe("RoomConnectionPanel", () => {
         service_tier: "fast",
         variant: "",
         permission_mode: "workspace_write",
+        max_output_tokens: "8192",
       })
     );
-    expect(
-      screen.getByText(
-        "모델·추론 강도·응답 속도·권한을 함께 저장합니다. 변경은 다음 세션 시작부터 적용됩니다."
-      )
-    ).toBeTruthy();
     expect(screen.queryByRole("heading", { name: "권한 / 속도" })).toBeNull();
   });
 

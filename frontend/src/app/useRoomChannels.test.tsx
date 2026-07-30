@@ -1,19 +1,9 @@
-import { act, renderHook, waitFor } from "@testing-library/react";
+import { act, renderHook } from "@testing-library/react";
 import { Hash } from "lucide-react";
-import { beforeEach, describe, expect, it, vi } from "vitest";
-import type { RoomChannel } from "../api";
+import { describe, expect, it, vi } from "vitest";
+import type { RoomChannel, RoomGlobalSettings } from "../api";
 import type { RoomDockItem } from "../lib/roomDockModel";
 import { useRoomChannels } from "./useRoomChannels";
-
-const apiMocks = vi.hoisted(() => ({
-  createRoomChannel: vi.fn(),
-  fetchRoomChannels: vi.fn(),
-}));
-
-vi.mock("../api", async () => ({
-  ...(await vi.importActual<typeof import("../api")>("../api")),
-  ...apiMocks,
-}));
 
 const room: RoomDockItem = {
   id: "room-a",
@@ -25,6 +15,7 @@ const room: RoomDockItem = {
   createdAt: "2026-07-12T00:00:00Z",
   tone: "fresh",
 };
+
 const firstChannel: RoomChannel = {
   id: "channel-a",
   name: "notes",
@@ -33,55 +24,93 @@ const firstChannel: RoomChannel = {
   createdAt: "2026-07-12T00:00:00Z",
 };
 
-function deferred<T>() {
-  let resolve!: (value: T) => void;
-  const promise = new Promise<T>((done) => {
-    resolve = done;
-  });
-  return { promise, resolve };
+function settings(channels: RoomChannel[] = [firstChannel]): RoomGlobalSettings {
+  return {
+    roomId: room.meetingId,
+    revision: "settings-meeting-a",
+    label: room.label,
+    topic: room.topic,
+    shortLabel: room.shortLabel,
+    appearance: {
+      bannerPreset: "default",
+      inviteScope: "room",
+    },
+    conversationMode: "ordered",
+    orderedExcludePreviousSpeaker: true,
+    maxRelayTurns: 6,
+    channels,
+  };
 }
 
 describe("useRoomChannels", () => {
-  beforeEach(() => {
-    vi.resetAllMocks();
-  });
-
-  it("loads channels for the active room with the invited session token", async () => {
-    apiMocks.fetchRoomChannels.mockResolvedValue([firstChannel]);
+  it("projects the active room's channels from canonical settings", () => {
+    const saveCanonicalSettings = vi.fn();
     const hook = renderHook(() =>
-      useRoomChannels({ activeRoom: room, sessionToken: "session-token" })
+      useRoomChannels({
+        activeRoom: room,
+        canonicalSettings: settings(),
+        saveCanonicalSettings,
+      })
     );
 
-    await waitFor(() => expect(hook.result.current.activeChannels).toEqual([firstChannel]));
-
-    expect(apiMocks.fetchRoomChannels).toHaveBeenCalledWith(room.meetingId, "session-token");
+    expect(hook.result.current.activeChannels).toEqual([firstChannel]);
     expect(hook.result.current.isActiveCustomChannel(firstChannel.id)).toBe(true);
     expect(hook.result.current.activeChannelFor(firstChannel.id)).toEqual(firstChannel);
   });
 
-  it("keeps a create result when an older refresh completes later", async () => {
-    const pending = deferred<RoomChannel[]>();
-    apiMocks.fetchRoomChannels.mockReturnValue(pending.promise);
-    const createdChannel = { ...firstChannel, id: "channel-created" };
-    apiMocks.createRoomChannel.mockResolvedValue({
-      channels: [createdChannel],
-      channel: createdChannel,
+  it("creates a channel only through the canonical settings writer", async () => {
+    const saveCanonicalSettings = vi.fn(async (updates) => {
+      const channels = updates.channels || [];
+      return settings(channels);
     });
-    const hook = renderHook(() => useRoomChannels({ activeRoom: room, sessionToken: "" }));
+    const hook = renderHook(() =>
+      useRoomChannels({
+        activeRoom: room,
+        canonicalSettings: settings(),
+        saveCanonicalSettings,
+      })
+    );
 
     let created: RoomChannel | null = null;
     await act(async () => {
-      created = await hook.result.current.create({ name: "notes", type: "text" });
+      created = await hook.result.current.create({ name: "voice", type: "voice" });
     });
-    await act(async () => pending.resolve([firstChannel]));
 
-    expect(created).toEqual(createdChannel);
-    expect(hook.result.current.activeChannels).toEqual([createdChannel]);
-    expect(apiMocks.createRoomChannel).toHaveBeenCalledWith({
-      meetingId: room.meetingId,
-      name: "notes",
-      type: "text",
-      sessionToken: undefined,
+    expect(created).toMatchObject({
+      name: "voice",
+      type: "voice",
+      position: 1,
     });
+    expect(saveCanonicalSettings).toHaveBeenCalledWith({
+      channels: [
+        firstChannel,
+        expect.objectContaining({
+          id: expect.stringMatching(/^c[0-9a-f]{12}$/),
+          name: "voice",
+          type: "voice",
+          position: 1,
+        }),
+      ],
+    });
+  });
+
+  it("does not invent local channel state when the canonical write is rejected", async () => {
+    const saveCanonicalSettings = vi.fn().mockRejectedValue(
+      new Error("settings conflict")
+    );
+    const hook = renderHook(() =>
+      useRoomChannels({
+        activeRoom: room,
+        canonicalSettings: settings(),
+        saveCanonicalSettings,
+      })
+    );
+
+    await expect(
+      act(async () => {
+        await hook.result.current.create({ name: "voice", type: "voice" });
+      })
+    ).rejects.toThrow("settings conflict");
+    expect(hook.result.current.activeChannels).toEqual([firstChannel]);
   });
 });

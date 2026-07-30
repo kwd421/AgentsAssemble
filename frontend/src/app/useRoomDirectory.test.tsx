@@ -95,6 +95,47 @@ describe("useRoomDirectory", () => {
     ]);
   });
 
+  it("hydrates an inactive room appearance from the canonical directory", async () => {
+    const localRoom = makeRoom("custom", { meetingId: "custom-room" });
+    apiMocks.fetchRooms.mockResolvedValueOnce({
+      rooms: [{
+        ...serverRoom("custom-room", "Custom Room"),
+        room_settings: {
+          settings_revision: "settings-custom-room",
+          room_id: "custom-room",
+          label: "Custom Room",
+          topic: "Canonical topic",
+          appearance: {
+            banner_preset: "custom",
+            banner_image_url: "/api/attachments/banner01?view=1",
+            icon_image_url: "/api/attachments/icon0001?view=1",
+            icon_label: "C",
+            invite_scope: "room",
+          },
+          conversation_mode: "ordered",
+          ordered_exclude_previous_speaker: true,
+          max_relay_turns: 6,
+          channels: [],
+        },
+      }],
+    });
+
+    const { result } = renderHook(() =>
+      useRoomDirectory({ initialRooms: [localRoom], hostEnabled: true })
+    );
+
+    await waitFor(() =>
+      expect(
+        (result.current.rooms[0] as RoomDockItem & {
+          appearance?: { iconImage?: string; bannerImage?: string };
+        }).appearance
+      ).toMatchObject({
+        iconImage: "/api/attachments/icon0001?view=1",
+        bannerImage: "/api/attachments/banner01?view=1",
+      })
+    );
+  });
+
   it("preserves local rooms when host hydration fails", async () => {
     const localRoom = makeRoom("local");
     apiMocks.fetchRooms.mockRejectedValueOnce(new Error("registry unavailable"));
@@ -105,6 +146,11 @@ describe("useRoomDirectory", () => {
 
     await waitFor(() => expect(apiMocks.fetchRooms).toHaveBeenCalledOnce());
     expect(result.current.rooms).toEqual([localRoom]);
+    await waitFor(() =>
+      expect(result.current.syncIssue?.category).toBe(
+        "room_directory_unavailable"
+      )
+    );
   });
 
   it("does not fetch or persist guests and supports replacing the joined room", () => {
@@ -198,6 +244,37 @@ describe("useRoomDirectory", () => {
       "initial-meeting",
     ]);
     expect(apiMocks.fetchRooms).toHaveBeenCalledTimes(2);
+  });
+
+  it("retries a directory snapshot that raced with canonical room metadata", async () => {
+    const initialRoom = makeRoom("initial", { meetingId: "initial-meeting" });
+    const { firstFetch, retryFetch } = mockHydrationRace();
+    const { result } = renderHook(() =>
+      useRoomDirectory({ initialRooms: [initialRoom], hostEnabled: true })
+    );
+    await waitFor(() => expect(apiMocks.fetchRooms).toHaveBeenCalledOnce());
+
+    act(() => {
+      result.current.updateRoomByMeetingId("initial-meeting", {
+        label: "Canonical WebSocket label",
+      });
+    });
+    await act(async () => {
+      firstFetch.resolve({
+        rooms: [serverRoom("initial-meeting", "Stale directory label")],
+      });
+      await firstFetch.promise;
+    });
+    await waitFor(() => expect(apiMocks.fetchRooms).toHaveBeenCalledTimes(2));
+
+    await act(async () => {
+      retryFetch.resolve({
+        rooms: [serverRoom("initial-meeting", "Canonical WebSocket label")],
+      });
+      await retryFetch.promise;
+    });
+
+    expect(result.current.rooms[0].label).toBe("Canonical WebSocket label");
   });
 
   it("does not start a third fetch when membership changes during the retry", async () => {

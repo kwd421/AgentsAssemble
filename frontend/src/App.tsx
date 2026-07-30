@@ -66,6 +66,7 @@ import RoomInviteModal from "./views/components/RoomInviteModal";
 import MobileRoomInfoPanel from "./views/components/MobileRoomInfoPanel";
 import RoomRail from "./views/components/RoomRail";
 import type { RoomMenuState } from "./views/components/RoomRail";
+import RoomSyncNotice from "./views/components/RoomSyncNotice";
 import RoomSettingsModal from "./views/components/RoomSettingsModal";
 import SideChatDock from "./views/components/SideChatDock";
 import UserPanel from "./views/components/UserPanel";
@@ -374,6 +375,7 @@ export default function App() {
     removeRoom,
     updateRoom,
     updateRoomByMeetingId,
+    syncIssue: roomDirectorySyncIssue,
   } = useRoomDirectory({
     initialRooms: startupRoute.startupRooms,
     hostEnabled: startupHostEnabled,
@@ -498,10 +500,6 @@ export default function App() {
     guestMeetingId,
     sessionToken: admittedSessionToken,
   });
-  const roomChannels = useRoomChannels({
-    activeRoom,
-    sessionToken: admittedSessionToken,
-  });
   const activeSideChatMeetingId = activeRoom.meetingId || "";
   const {
     error: sideChatError,
@@ -552,6 +550,11 @@ export default function App() {
     onError: handleSideChatError,
     onUnauthorized: admittedSessionToken ? expireGuestSession : undefined,
     onRoomDeleted: handleDeletedRoom,
+  });
+  const roomChannels = useRoomChannels({
+    activeRoom,
+    canonicalSettings: canonicalRoom.roomSettings,
+    saveCanonicalSettings: canonicalRoom.sendRoomSettingsUpdate,
   });
   const roomMembers = useRoomMembers({
     activeRoom,
@@ -1376,6 +1379,9 @@ export default function App() {
       onPointerUp={handleMobileShellPointerEnd}
       onPointerCancel={cancelMobileShellPointer}
     >
+      <RoomSyncNotice
+        issue={canonicalRoom.syncIssue || roomDirectorySyncIssue}
+      />
       <RoomRail
         rooms={rooms}
         activeRoom={activeRoom}
@@ -1536,6 +1542,7 @@ export default function App() {
               service_tier: request.serviceTier || "",
               variant: request.variant || "",
               permission_mode: request.permissionMode || "meeting_read_only",
+              max_output_tokens: request.maxOutputTokens || 0,
               start: Boolean(request.startNow),
             });
           }
@@ -1893,6 +1900,7 @@ export default function App() {
               threadSummaries={sideChatThreadSummaries}
               typingIndicators={typingIndicators}
               canonicalEvents={visibleRoomTimelineEvents}
+              canonicalHistoryReady={activeRoomHistory.initialized}
               canonicalOldestSeq={activeRoomHistory.oldestSeq}
               canonicalHasMoreHistory={activeRoomHistory.hasMoreBefore}
               loadCanonicalHistory={loadCanonicalRoomHistory}

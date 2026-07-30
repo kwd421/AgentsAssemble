@@ -80,7 +80,10 @@ export default function RoomRail({
           const Icon = room.icon;
           const active = !adminOpen && !channelIsFriends && activeRoom.id === room.id;
           const roomAppearance = completeRoomAppearance(
-            roomAppearances[roomSettingsKey(room)] || roomAppearances[room.id]
+            {
+              ...room.appearance,
+              ...(roomAppearances[roomSettingsKey(room)] || roomAppearances[room.id]),
+            }
           );
           return (
             <button

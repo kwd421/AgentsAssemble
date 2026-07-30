@@ -695,12 +695,14 @@ describe("AgentCreateModal", () => {
 
     await userEvent.click(screen.getByRole("listitem", { name: "DeepSeek" }));
     expect(screen.getByLabelText("API 키")).toBeTruthy();
+    await chooseProviderControl("최대 응답 길이", "8,192 토큰");
     await chooseWorkspace();
     await userEvent.click(primaryActionButton());
 
     expect(onCreate).toHaveBeenCalledWith(
       expect.objectContaining({
         providerId: "deepseek",
+        maxOutputTokens: 8192,
       })
     );
   });
@@ -933,7 +935,18 @@ function deepSeekProvider(): NativeCliProviderAvailability {
     interactive: true,
     startable: true,
     available: true,
-    controls: [],
+    controls: [
+      {
+        key: "max_output_tokens",
+        label: "최대 응답 길이",
+        kind: "select",
+        default_value: "4096",
+        options: [
+          { value: "4096", label: "4,096 토큰" },
+          { value: "8192", label: "8,192 토큰" },
+        ],
+      },
+    ],
   };
 }
 

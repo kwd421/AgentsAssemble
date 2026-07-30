@@ -2,7 +2,7 @@
 from __future__ import annotations
 
 from http import HTTPStatus
-from uuid import UUID
+from uuid import UUID, uuid4
 
 from agentsassemble.web.router import RequestContext, Router
 from agentsassemble.identity.repository import device_auth_key
@@ -11,6 +11,7 @@ from agentsassemble.admission.lan_invite import NATIVE_REMOTE_ROOM_CLIENT_KIND
 from agentsassemble.identity.pairing import normalize_pairing_origin
 from agentsassemble.admission.coordinator import AdmissionIdempotencyConflict
 from agentsassemble.application.stable_entry import stable_entry_url
+from agentsassemble.room.errors import RoomCommandRejected
 
 
 def register_invite_admission_routes(router: Router) -> None:
@@ -257,8 +258,23 @@ def register_invite_admission_routes(router: Router) -> None:
         session = ctx.require_session()
         if session is None:
             return
-        if str(session.get("participant_type") or "human") != "human":
-            ctx.deps.admission_projection.participant_left(str(session["agent_id"]))
+        try:
+            ctx.deps.handle_room_command(
+                dict(session),
+                {
+                    "request_id": str(uuid4()),
+                    "action": "participant.leave",
+                    "payload": {},
+                },
+            )
+        except RoomCommandRejected as error:
+            status = (
+                HTTPStatus.FORBIDDEN
+                if error.code == "permission_denied"
+                else HTTPStatus.CONFLICT
+            )
+            ctx.send_error(status, str(error), code=error.code)
+            return
         ctx.deps.sessions.revoke(ctx.bearer_token())
         ctx.send_json({"status": "left", "agent_id": session["agent_id"]})
 

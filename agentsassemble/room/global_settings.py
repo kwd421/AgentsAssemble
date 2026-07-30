@@ -7,6 +7,8 @@ until the explicit migration phase.
 """
 from __future__ import annotations
 
+import hashlib
+import json
 from typing import TypedDict
 
 from agentsassemble.room.channels import (
@@ -82,6 +84,29 @@ class RoomGlobalSettingsRecord(TypedDict):
     ordered_exclude_previous_speaker: bool
     max_relay_turns: int
     channels: list[RoomGlobalChannel]
+
+
+def room_settings_revision(value: object) -> str:
+    """Return a stable content revision for one canonical settings record."""
+
+    canonical = validate_room_global_settings(value)
+    encoded = json.dumps(
+        canonical,
+        ensure_ascii=False,
+        sort_keys=True,
+        separators=(",", ":"),
+    ).encode("utf-8")
+    return f"room-settings-v1-{hashlib.sha256(encoded).hexdigest()}"
+
+
+def public_room_global_settings(value: object) -> dict[str, object]:
+    """Project persisted settings with the revision required by clients."""
+
+    canonical = validate_room_global_settings(value)
+    return {
+        **canonical,
+        "settings_revision": room_settings_revision(canonical),
+    }
 
 
 def default_room_global_settings(*, label: str = "") -> RoomGlobalSettingsRecord:

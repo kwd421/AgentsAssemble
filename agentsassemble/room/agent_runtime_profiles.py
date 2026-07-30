@@ -108,6 +108,7 @@ class RoomAgentRuntimeProfileService:
                 "service_tier",
                 "variant",
                 "permission_mode",
+                "max_output_tokens",
             )
         }
         try:
@@ -132,6 +133,9 @@ class RoomAgentRuntimeProfileService:
                         selected_values["permission_mode"],
                         64,
                     ),
+                    "max_output_tokens": str(
+                        selected_values["max_output_tokens"] or ""
+                    ),
                 },
             )
             spec = native_cli_provider_spec_from_payload(
@@ -144,6 +148,7 @@ class RoomAgentRuntimeProfileService:
                     "service_tier": selection.service_tier,
                     "variant": selection.variant,
                     "permission_mode": selection.permission_mode,
+                    "max_output_tokens": selection.max_output_tokens,
                 }
             )
         except ProviderCatalogSelectionError as error:

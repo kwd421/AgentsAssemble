@@ -557,18 +557,18 @@ export async function fetchProviderUsage(
 export async function fetchProviderCredentialStatus(
   providerId: string
 ): Promise<ProviderCredentialStatus> {
-  if (providerId !== "cerebras" && providerId !== "deepseek") {
-    throw new Error(`Unsupported API credential provider: ${providerId}`);
-  }
+  const paths: Record<string, string> = {
+    cerebras: "/api/provider-credentials/cerebras",
+    deepseek: "/api/provider-credentials/deepseek",
+    openrouter: "/api/provider-credentials/openrouter",
+    vercel: "/api/provider-credentials/vercel",
+  };
+  const path = paths[providerId];
+  if (!path) throw new Error(`Unsupported API credential provider: ${providerId}`);
   const headers: Record<string, string> = {};
   const hostToken = loadHostToken();
   if (hostToken) headers["X-Host-Token"] = hostToken;
-  const response = await fetch(
-    providerId === "cerebras"
-      ? "/api/provider-credentials/cerebras"
-      : "/api/provider-credentials/deepseek",
-    { headers }
-  );
+  const response = await fetch(path, { headers });
   if (!response.ok) throw await responseError(response);
   return response.json();
 }
@@ -577,33 +577,34 @@ export async function setProviderCredential(
   providerId: string,
   apiKey: string
 ): Promise<ProviderCredentialStatus> {
-  if (providerId !== "cerebras" && providerId !== "deepseek") {
-    throw new Error(`Unsupported API credential provider: ${providerId}`);
-  }
-  return postJsonHost<ProviderCredentialStatus>(
-    providerId === "cerebras"
-      ? "/api/provider-credentials/cerebras"
-      : "/api/provider-credentials/deepseek",
-    { api_key: apiKey }
-  );
+  const postCredential = (path: string) =>
+    postJsonHost<ProviderCredentialStatus>(path, { api_key: apiKey });
+  const paths: Record<string, string> = {
+    cerebras: "/api/provider-credentials/cerebras",
+    deepseek: "/api/provider-credentials/deepseek",
+    openrouter: "/api/provider-credentials/openrouter",
+    vercel: "/api/provider-credentials/vercel",
+  };
+  const path = paths[providerId];
+  if (!path) throw new Error(`Unsupported API credential provider: ${providerId}`);
+  return postCredential(path);
 }
 
 export async function deleteProviderCredential(
   providerId: string
 ): Promise<ProviderCredentialStatus> {
-  if (providerId !== "cerebras" && providerId !== "deepseek") {
-    throw new Error(`Unsupported API credential provider: ${providerId}`);
-  }
-  const headers: Record<string, string> = {};
+  const requestInit = { method: "DELETE", headers: {} as Record<string, string> };
+  const paths: Record<string, string> = {
+    cerebras: "/api/provider-credentials/cerebras",
+    deepseek: "/api/provider-credentials/deepseek",
+    openrouter: "/api/provider-credentials/openrouter",
+    vercel: "/api/provider-credentials/vercel",
+  };
+  const path = paths[providerId];
+  if (!path) throw new Error(`Unsupported API credential provider: ${providerId}`);
   const hostToken = loadHostToken();
-  if (hostToken) headers["X-Host-Token"] = hostToken;
-  const requestInit = { method: "DELETE", headers };
-  const response = await fetch(
-    providerId === "cerebras"
-      ? "/api/provider-credentials/cerebras"
-      : "/api/provider-credentials/deepseek",
-    requestInit
-  );
+  if (hostToken) requestInit.headers["X-Host-Token"] = hostToken;
+  const response = await fetch(path, requestInit);
   if (!response.ok) throw await responseError(response);
   return response.json();
 }

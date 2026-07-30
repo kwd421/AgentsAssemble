@@ -1854,6 +1854,10 @@ def _make_handler(
         public_invite_runtime=services.public_invite,
         attachment_store=services.media_store,
         legacy_admission_projection=services.legacy_admission_projection,
+        room_command_handler=lambda identity, command: room_realtime_controller.handle_command(
+            identity,
+            command,
+        ),
         process_supervisor=live_agent_process_supervisor,
         read_lobby=read_lobby,
         read_lobby_before=read_lobby_before,

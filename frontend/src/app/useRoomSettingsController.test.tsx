@@ -80,6 +80,7 @@ function globalSettings(
 ): RoomGlobalSettings {
   return {
     roomId: room.meetingId,
+    revision: `settings-${room.meetingId}-${bannerPreset}`,
     label: `${room.label} saved`,
     topic: room.topic,
     shortLabel: room.shortLabel,
@@ -151,7 +152,13 @@ describe("useRoomSettingsController", () => {
     expect(hook.result.current.appearanceFor(roomA).bannerPreset).toBe("forest");
     expect(onRoomMetadataLoaded).toHaveBeenCalledWith(
       roomB.meetingId,
-      expect.objectContaining({ label: "Room B saved" })
+      expect.objectContaining({
+        label: "Room B saved",
+        appearance: {
+          bannerPreset: "ember",
+          inviteScope: "room",
+        },
+      })
     );
     expect(apiMocks.fetchRoomSettings).toHaveBeenCalledWith(roomB.meetingId, {
       sessionToken: "",
@@ -641,11 +648,11 @@ describe("useRoomSettingsController", () => {
     );
 
     await waitFor(() =>
-      expect(onRoomMetadataLoaded).toHaveBeenCalledWith(roomA.meetingId, {
+      expect(onRoomMetadataLoaded).toHaveBeenCalledWith(roomA.meetingId, expect.objectContaining({
         label: "",
         topic: "",
         shortLabel: "",
-      })
+      }))
     );
   });
 });

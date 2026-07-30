@@ -14,13 +14,8 @@ from agentsassemble.legacy.meeting.core.events import (
     read_lobby_events_after,
 )
 from agentsassemble.room.channels import (
-    ChannelError,
-    add_channel,
     channel_stream_filename,
     find_channel,
-    remove_channel,
-    rename_channel,
-    reorder_channels,
 )
 from agentsassemble.room.moderation import (
     is_room_member_muted,
@@ -136,14 +131,6 @@ def register_legacy_moderation_media_routes(
         ctx.send_error(HTTPStatus.NOT_FOUND, f"Room {meeting_id} was not found.")
         return False
 
-    def _channel_error(ctx: RequestContext, error: ChannelError) -> None:
-        status = {
-            "not_found": HTTPStatus.NOT_FOUND,
-            "duplicate": HTTPStatus.CONFLICT,
-            "limit": HTTPStatus.CONFLICT,
-        }.get(error.category, HTTPStatus.BAD_REQUEST)
-        ctx.send_error(status, str(error))
-
     @router.get("/api/room-channels")
     def room_channels_list(ctx: RequestContext) -> None:
         meeting_id = ctx.query_value("meeting_id") or ctx.query_value("room_id")
@@ -157,44 +144,10 @@ def register_legacy_moderation_media_routes(
     def room_channels_mutate(ctx: RequestContext) -> None:
         if not ctx.require_moderator():
             return
-        payload = ctx.read_json_body()
-        if payload is None:
-            return
-        meeting_id = str(payload.get("meeting_id") or payload.get("room_id") or "")
-        if not _require_room(ctx, meeting_id):
-            return
-        action = str(payload.get("action") or "").strip().lower()
-        current = _channels_for(ctx.deps.rooms, meeting_id)
-        created: dict[str, object] | None = None
-        try:
-            if action == "create":
-                current, created = add_channel(
-                    current,
-                    name=payload.get("name"),
-                    channel_type=payload.get("type") or payload.get("channel_type") or "text",
-                )
-            elif action == "rename":
-                current = rename_channel(current, str(payload.get("channel_id") or ""), payload.get("name"))
-            elif action in {"delete", "remove"}:
-                current = remove_channel(current, str(payload.get("channel_id") or ""))
-            elif action == "reorder":
-                ordered = payload.get("ordered_ids") or payload.get("orderedIds") or []
-                current = reorder_channels(current, [str(item) for item in ordered] if isinstance(ordered, list) else [])
-            else:
-                ctx.send_error(HTTPStatus.BAD_REQUEST, "unknown channel action")
-                return
-        except ChannelError as error:
-            _channel_error(ctx, error)
-            return
-        result_settings = ctx.deps.rooms.update_room_settings(meeting_id, {"channels": current})
-        channels = result_settings.get("channels")
-        response: dict[str, object] = {
-            "room_id": meeting_id,
-            "channels": list(channels) if isinstance(channels, list) else [],
-        }
-        if created is not None:
-            response["channel"] = created
-        ctx.send_json(response)
+        ctx.send_error(
+            HTTPStatus.CONFLICT,
+            "Room channels must use the canonical room WebSocket settings command.",
+        )
 
     def _channel_caller(ctx: RequestContext, payload_meeting_id: str = "", *, write: bool = False):
         session = ctx.session()

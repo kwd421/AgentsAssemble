@@ -3,6 +3,11 @@ from __future__ import annotations
 import os
 from typing import Protocol
 
+from agentsassemble.providers.remote_openai import (
+    remote_openai_credential_ids,
+    remote_openai_profile,
+)
+
 
 class KeyringBackend(Protocol):
     def get_password(self, service_name: str, username: str) -> str | None: ...
@@ -94,20 +99,19 @@ def _load_keyring_backend() -> KeyringBackend | None:
 
 def _provider_id(value: object) -> str:
     clean = str(value or "").strip().lower()
-    if clean not in {"cerebras", "deepseek"}:
+    if clean not in remote_openai_credential_ids():
         raise ValueError(f"Unsupported provider credential: {clean or 'missing'}")
     return clean
 
 
 def _environment_key(provider_id: str) -> str:
-    return f"{provider_id.upper()}_API_KEY"
+    profile = remote_openai_profile(provider_id)
+    return profile.credential_env if profile is not None else ""
 
 
 def secret_provider_id_for_kind(provider_kind: object) -> str:
-    return {
-        "cerebras_api": "cerebras",
-        "deepseek_api": "deepseek",
-    }.get(str(provider_kind or "").strip().lower(), "")
+    profile = remote_openai_profile(provider_kind)
+    return profile.provider_id if profile is not None else ""
 
 
 PROVIDER_SECRETS = ProviderSecretStore()

@@ -37,6 +37,7 @@ class PublicRoomGlobalChannel(TypedDict):
 
 
 class PublicRoomGlobalSettings(TypedDict):
+    settings_revision: str
     label: str
     topic: str
     appearance: PublicRoomGlobalAppearance

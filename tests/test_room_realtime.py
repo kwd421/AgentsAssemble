@@ -22,6 +22,7 @@ from agentsassemble.room.realtime import (
 )
 from agentsassemble.room.command_uow import RoomCommandUnitOfWork
 from agentsassemble.room.attachments import store_uploaded_attachment
+from agentsassemble.room.global_settings import room_settings_revision
 from agentsassemble.persistence.local.room.database import open_room_database
 from agentsassemble.room.moderation import is_room_member_muted, set_room_member_muted
 from agentsassemble.room_store import RoomStore
@@ -509,6 +510,14 @@ class RoomRealtimeControllerTests(unittest.TestCase):
             {"op": "command", "request_id": request_id, "action": action, "payload": command_payload},
         )
 
+    def _settings_update(self, room_id="general", **updates):
+        return {
+            "expected_revision": room_settings_revision(
+                self.controller.store.room_settings(room_id)
+            ),
+            **updates,
+        }
+
     def _connect_bridge(self, agent_id="codex"):
         session = self.controller.store.session("general", agent_id)
         if session and not session.get("bridge_handle_id"):
@@ -598,21 +607,19 @@ class RoomRealtimeControllerTests(unittest.TestCase):
         browser.drain()
         bridge.drain()
 
+        update = self._settings_update(
+            conversation_mode="ambient",
+            ordered_exclude_previous_speaker=False,
+        )
         first = self._command(
             "settings-mode",
             "room.settings.update",
-            {
-                "conversation_mode": "ambient",
-                "ordered_exclude_previous_speaker": False,
-            },
+            update,
         )
         duplicate = self._command(
             "settings-mode",
             "room.settings.update",
-            {
-                "conversation_mode": "ambient",
-                "ordered_exclude_previous_speaker": False,
-            },
+            update,
         )
 
         settings = first["result"]["room_settings"]
@@ -650,17 +657,18 @@ class RoomRealtimeControllerTests(unittest.TestCase):
     def test_later_room_settings_commands_preserve_a_custom_room_label(self):
         room_id = "custom-settings-room"
         identity = {**HOST, "meeting_id": room_id}
+        self.controller.store.create_room(room_id, label=room_id)
 
         first = self._command(
             "settings-label",
             "room.settings.update",
-            {"label": "Pinebrook Live D&D"},
+            self._settings_update(room_id, label="Pinebrook Live D&D"),
             identity,
         )
         second = self._command(
             "settings-topic",
             "room.settings.update",
-            {"topic": "Peril in Pinebrook"},
+            self._settings_update(room_id, topic="Peril in Pinebrook"),
             identity,
         )
 
@@ -730,7 +738,7 @@ class RoomRealtimeControllerTests(unittest.TestCase):
                 self._command(
                     "settings-rollback",
                     "room.settings.update",
-                    {"conversation_mode": "ambient"},
+                    self._settings_update(conversation_mode="ambient"),
                 )
 
         self.assertEqual(
@@ -2197,7 +2205,7 @@ class RoomRealtimeControllerTests(unittest.TestCase):
         changed = self._command(
             "ordered-to-ambient-mode",
             "room.settings.update",
-            {"conversation_mode": "ambient"},
+            self._settings_update(conversation_mode="ambient"),
         )
 
         peer_wake = next(
@@ -3626,6 +3634,8 @@ class RoomRealtimeControllerTests(unittest.TestCase):
                 "opencode",
                 "deepseek",
                 "cerebras",
+                "openrouter",
+                "vercel",
                 "ollama",
                 "lmstudio",
             ],

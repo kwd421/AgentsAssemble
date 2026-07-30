@@ -64,6 +64,9 @@ class GuiDeps:
     public_invite_runtime: PublicInviteRuntime | None = None
     attachment_store: FileAttachmentStore | None = None
     legacy_admission_projection: LegacyAdmissionProjection | None = None
+    room_command_handler: Callable[
+        [dict[str, object], dict[str, object]], dict[str, object]
+    ] | None = None
     process_supervisor: Any = None
     read_lobby: Callable[..., list[dict[str, object]]] | None = None
     read_lobby_before: Callable[..., dict[str, object]] | None = None
@@ -146,6 +149,16 @@ class GuiDeps:
         if projection is None:
             raise RuntimeError("GUI legacy admission projection is not configured.")
         return projection
+
+    def handle_room_command(
+        self,
+        identity: dict[str, object],
+        command: dict[str, object],
+    ) -> dict[str, object]:
+        handler = self.room_command_handler
+        if handler is None:
+            raise RuntimeError("GUI room command handler is not configured.")
+        return handler(identity, command)
 
 
 class RequestContext:

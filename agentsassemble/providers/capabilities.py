@@ -24,10 +24,19 @@ from agentsassemble.providers.launch_specs import (
     split_cursor_model,
 )
 from agentsassemble.providers.process_environment import sanitized_provider_environment
+from agentsassemble.providers.remote_openai import (
+    RemoteOpenAIProfile,
+    discover_remote_openai_models,
+    remote_openai_catalog_payload,
+    remote_openai_profiles,
+)
+from agentsassemble.providers.secrets import PROVIDER_SECRETS
 
 
 ProbeRunner = Callable[[list[str], float], tuple[int, str, str]]
 ClaudeModelDiscovery = Callable[[str], list[str]]
+RemoteModelDiscovery = Callable[[RemoteOpenAIProfile, str], list[dict[str, object]]]
+SecretResolver = Callable[[str], str]
 CatalogListener = Callable[[dict[str, object]], None]
 
 
@@ -54,6 +63,7 @@ class ValidatedProviderSelection:
     service_tier: str
     variant: str
     permission_mode: str
+    max_output_tokens: int = 0
 
 
 class ProviderCapabilityCatalog:
@@ -66,12 +76,21 @@ class ProviderCapabilityCatalog:
         resolver: Callable[[str], str | None] = shutil.which,
         claude_model_discovery: ClaudeModelDiscovery = discover_claude_model_ids,
         claude_xhigh_model_discovery: ClaudeModelDiscovery = discover_claude_xhigh_model_ids,
+        remote_model_discovery: RemoteModelDiscovery = (
+            lambda profile, api_key: discover_remote_openai_models(
+                profile,
+                api_key=api_key,
+            )
+        ),
+        secret_resolver: SecretResolver = lambda _provider_id: "",
         ttl_seconds: float = 300.0,
     ) -> None:
         self._runner = runner or _run_probe
         self._resolver = resolver
         self._claude_model_discovery = claude_model_discovery
         self._claude_xhigh_model_discovery = claude_xhigh_model_discovery
+        self._remote_model_discovery = remote_model_discovery
+        self._secret_resolver = secret_resolver
         self._ttl_seconds = max(1.0, float(ttl_seconds))
         self._lock = threading.RLock()
         self._cached_at = 0.0
@@ -163,7 +182,14 @@ class ProviderCapabilityCatalog:
             }
         resolved_values = {
             key: str(values.get(key) or fixed_values.get(key) or "")
-            for key in ("model", "reasoning_effort", "service_tier", "variant", "permission_mode")
+            for key in (
+                "model",
+                "reasoning_effort",
+                "service_tier",
+                "variant",
+                "permission_mode",
+                "max_output_tokens",
+            )
         }
         for key, fixed_value in fixed_values.items():
             requested = str(values.get(key) or "")
@@ -191,6 +217,7 @@ class ProviderCapabilityCatalog:
                     "service_tier": "unsupported_service_tier",
                     "variant": "unsupported_variant",
                     "permission_mode": "unsupported_permission_mode",
+                    "max_output_tokens": "unsupported_max_output_tokens",
                 }.get(key, "unsupported_provider_option")
                 raise ProviderCatalogSelectionError(
                     f"Unsupported {key} value for provider {provider_id}.",
@@ -253,6 +280,7 @@ class ProviderCapabilityCatalog:
             service_tier=selected_tier,
             variant=resolved_values["variant"],
             permission_mode=resolved_values["permission_mode"],
+            max_output_tokens=int(resolved_values["max_output_tokens"] or 0),
         )
 
     @staticmethod
@@ -337,8 +365,10 @@ class ProviderCapabilityCatalog:
             }
         payload = [self._native_payload(definition) for definition in NATIVE_CLI_PROVIDER_CATALOG]
         payload.append(self._opencode_payload())
-        payload.append(_deepseek_payload())
-        payload.append(_cerebras_payload())
+        payload.extend(
+            self._remote_openai_payload(profile)
+            for profile in remote_openai_profiles()
+        )
         payload.append(self._ollama_payload())
         payload.append(self._lmstudio_payload())
         payload = [
@@ -744,6 +774,34 @@ class ProviderCapabilityCatalog:
             ),
         )
 
+    def _remote_openai_payload(
+        self,
+        profile: RemoteOpenAIProfile,
+    ) -> dict[str, object]:
+        if not profile.discovery_path:
+            return remote_openai_catalog_payload(profile)
+        try:
+            models = self._remote_model_discovery(
+                profile,
+                self._secret_resolver(profile.provider_id),
+            )
+        except Exception as error:
+            return remote_openai_catalog_payload(
+                profile,
+                discovery_error=(
+                    f"{profile.display_name} 모델 목록을 불러오지 못했습니다 "
+                    f"({type(error).__name__})."
+                ),
+                discovery_error_code="model_discovery_failed",
+            )
+        if not models:
+            return remote_openai_catalog_payload(
+                profile,
+                discovery_error=f"{profile.display_name}에서 도구 사용 모델을 찾지 못했습니다.",
+                discovery_error_code="no_supported_models",
+            )
+        return remote_openai_catalog_payload(profile, discovered_models=models)
+
     def _snapshot_locked(self) -> dict[str, object]:
         providers = copy.deepcopy(self._cached)
         if providers and self._status != "ready":
@@ -796,8 +854,14 @@ class ProviderCapabilityCatalog:
                 "controls": [],
             }
         )
-        payload.append(_deepseek_payload())
-        payload.append(_cerebras_payload())
+        payload.extend(
+            remote_openai_catalog_payload(
+                profile,
+                discovery_error="provider catalog refresh in progress",
+                discovery_error_code="catalog_loading",
+            )
+            for profile in remote_openai_profiles()
+        )
         for provider_id in ("ollama", "lmstudio"):
             definition = native_cli_provider_definition(provider_id)
             if definition is None:
@@ -1416,77 +1480,6 @@ def _unavailable_structured_payload(
     }
 
 
-def _deepseek_payload() -> dict[str, object]:
-    return {
-        "id": "deepseek",
-        "display_name": "DeepSeek",
-        "provider_kind": "deepseek_api",
-        "runtime_kind": "api",
-        "catalog_group": "api",
-        "connection_kind": "native_cli_bridge",
-        "executable": "",
-        "default_model": "deepseek-v4-flash",
-        "interactive": True,
-        "available": True,
-        "startable": True,
-        "discovery_status": "ready",
-        "catalog_source": "static_manifest",
-        "fixed_values": {"permission_mode": "meeting_read_only"},
-        "controls": [
-            _control(
-                "model",
-                "모델",
-                [
-                    _model_option("deepseek-v4-flash", "DeepSeek V4 Flash", relation_scope="global"),
-                    _model_option("deepseek-v4-pro", "DeepSeek V4 Pro", relation_scope="global"),
-                ],
-                "deepseek-v4-flash",
-            ),
-            _control("reasoning_effort", "추론 강도", [_option("high"), _option("max")], "high"),
-            _control("variant", "Thinking", [_option("thinking", "사용"), _option("non_thinking", "사용 안 함")], "thinking"),
-        ],
-    }
-
-
-def _cerebras_payload() -> dict[str, object]:
-    return {
-        "id": "cerebras",
-        "display_name": "Cerebras",
-        "provider_kind": "cerebras_api",
-        "runtime_kind": "api",
-        "catalog_group": "api",
-        "connection_kind": "native_cli_bridge",
-        "executable": "",
-        "default_model": "gpt-oss-120b",
-        "interactive": True,
-        "available": True,
-        "startable": True,
-        "discovery_status": "ready",
-        "catalog_source": "static_manifest",
-        "fixed_values": {"permission_mode": "meeting_read_only"},
-        "controls": [
-            _control(
-                "model",
-                "모델",
-                [
-                    _model_option(
-                        "gpt-oss-120b",
-                        "GPT OSS 120B",
-                        relation_scope="global",
-                    )
-                ],
-                "gpt-oss-120b",
-            ),
-            _control(
-                "reasoning_effort",
-                "추론 강도",
-                [_option("low"), _option("medium"), _option("high")],
-                "low",
-            ),
-        ],
-    }
-
-
 def _claude_controls(
     models: list[str],
     *,
@@ -1589,7 +1582,9 @@ def _catalog_revision(providers: list[dict[str, object]]) -> str:
     return f"cat-{hashlib.sha256(encoded.encode('utf-8')).hexdigest()[:16]}"
 
 
-PROVIDER_CAPABILITIES = ProviderCapabilityCatalog()
+PROVIDER_CAPABILITIES = ProviderCapabilityCatalog(
+    secret_resolver=PROVIDER_SECRETS.get,
+)
 
 
 def provider_catalog_payload(*, refresh: bool = False) -> list[dict[str, object]]:

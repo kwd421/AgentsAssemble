@@ -62,6 +62,7 @@ class AgentSession(TypedDict):
     stderr_byte_count: NotRequired[int]
     stderr_warning_count: NotRequired[int]
     notification_drop_count: NotRequired[int]
+    max_output_tokens: NotRequired[int]
 
 
 class RoomCommand(TypedDict):

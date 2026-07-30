@@ -12,6 +12,7 @@ import {
 } from "./api";
 import {
   openRoomSocket,
+  RoomSocketSayError,
   type NativeCliProviderAvailability,
   type ProviderCatalogSnapshot,
   type RoomSocketAuth,
@@ -26,6 +27,7 @@ import {
 import { isUnauthorizedApiError } from "./lib/apiErrors";
 
 export type CanonicalRoomHistoryState = {
+  initialized: boolean;
   oldestSeq: number;
   lastSeq: number;
   hasMoreBefore: boolean;
@@ -53,6 +55,7 @@ export type UseCanonicalRoomOptions = CanonicalRoomCallbacks & {
 };
 
 const EMPTY_HISTORY: CanonicalRoomHistoryState = {
+  initialized: false,
   oldestSeq: 0,
   lastSeq: 0,
   hasMoreBefore: false,
@@ -175,6 +178,7 @@ export function useCanonicalRoom(options: UseCanonicalRoomOptions) {
 
   const eventsRef = useRef<Record<string, RoomEvent[]>>({});
   const roomSettingsSeqRef = useRef<Record<string, number>>({});
+  const roomSettingsRef = useRef<Record<string, RoomGlobalSettings>>({});
   const [eventsByRoom, setEventsByRoom] = useState<Record<string, RoomEvent[]>>({});
   const [roomSettingsByRoom, setRoomSettingsByRoom] = useState<
     Record<string, RoomGlobalSettings>
@@ -217,11 +221,16 @@ export function useCanonicalRoom(options: UseCanonicalRoomOptions) {
     setEventsByRoom((previous) => ({ ...previous, [targetRoomId]: next }));
 
     let latestSettingsEvent: RoomEvent | null = null;
+    const currentSettingsSeq = Number(
+      roomSettingsSeqRef.current[targetRoomId] || 0
+    );
     for (const event of incoming) {
+      const eventSeq = Number(event.seq || 0);
       if (
         event.type === "room_settings_updated" &&
         event.room_settings &&
-        Number(event.seq || 0) > Number(roomSettingsSeqRef.current[targetRoomId] || 0)
+        eventSeq > currentSettingsSeq &&
+        eventSeq > Number(latestSettingsEvent?.seq || 0)
       ) {
         latestSettingsEvent = event;
       }
@@ -235,6 +244,10 @@ export function useCanonicalRoom(options: UseCanonicalRoomOptions) {
         roomSettingsSeqRef.current = {
           ...roomSettingsSeqRef.current,
           [targetRoomId]: Number(latestSettingsEvent.seq || 0),
+        };
+        roomSettingsRef.current = {
+          ...roomSettingsRef.current,
+          [targetRoomId]: normalized,
         };
         setRoomSettingsByRoom((previous) => ({
           ...previous,
@@ -311,16 +324,28 @@ export function useCanonicalRoom(options: UseCanonicalRoomOptions) {
           snapshot.room_settings,
           roomId
         );
-        if (snapshotSettings) {
-          roomSettingsSeqRef.current = {
-            ...roomSettingsSeqRef.current,
-            [roomId]: Number(snapshot.last_seq || 0),
-          };
-          setRoomSettingsByRoom((previous) => ({
-            ...previous,
-            [roomId]: snapshotSettings,
-          }));
+        if (!snapshotSettings) {
+          const error = new RoomSocketSayError(
+            "The server returned an invalid room settings snapshot; reconnecting.",
+            "settings_snapshot_invalid"
+          );
+          setLastError(error);
+          callbacksRef.current.onError?.(error);
+          currentSocket.resync?.();
+          return;
         }
+        roomSettingsSeqRef.current = {
+          ...roomSettingsSeqRef.current,
+          [roomId]: Number(snapshot.last_seq || 0),
+        };
+        roomSettingsRef.current = {
+          ...roomSettingsRef.current,
+          [roomId]: snapshotSettings,
+        };
+        setRoomSettingsByRoom((previous) => ({
+          ...previous,
+          [roomId]: snapshotSettings,
+        }));
         setParticipantsByRoom((previous) => ({
           ...previous,
           [roomId]: (snapshot.participants || [])
@@ -349,6 +374,7 @@ export function useCanonicalRoom(options: UseCanonicalRoomOptions) {
           return {
             ...previous,
             [roomId]: {
+              initialized: true,
               oldestSeq: resumed ? current.oldestSeq : Number(snapshot.oldest_seq || 0),
               lastSeq: Number(snapshot.last_seq || current?.lastSeq || 0),
               hasMoreBefore: resumed ? current.hasMoreBefore : Boolean(snapshot.has_more_before),
@@ -362,6 +388,7 @@ export function useCanonicalRoom(options: UseCanonicalRoomOptions) {
           projectSessionState: snapshot.snapshot_mode === "resume",
         });
         setMembershipRevision((previous) => previous + 1);
+        setLastError(null);
       },
       onRoomEvents: (events) => {
         if (connectionIsCurrent()) applyEvents(roomId, events);
@@ -385,7 +412,6 @@ export function useCanonicalRoom(options: UseCanonicalRoomOptions) {
       onOpen: () => {
         if (!connectionIsCurrent()) return;
         setConnectionState("connected");
-        setLastError(null);
       },
       onClose: () => {
         if (connectionIsCurrent()) setConnectionState("connecting");
@@ -432,6 +458,7 @@ export function useCanonicalRoom(options: UseCanonicalRoomOptions) {
       setHistoryByRoom((previous) => ({
         ...previous,
         [roomId]: {
+          initialized: true,
           oldestSeq: Number(oldestSeq || previous[roomId]?.oldestSeq || 0),
           lastSeq: Number(previous[roomId]?.lastSeq || 0),
           hasMoreBefore,
@@ -507,23 +534,69 @@ export function useCanonicalRoom(options: UseCanonicalRoomOptions) {
   const sendRoomSettingsUpdate = useCallback(
     async (updates: RoomGlobalSettingsUpdate): Promise<RoomGlobalSettings> => {
       if (!socket) throw new Error("방 연결이 준비되지 않았습니다.");
-      const ack = await socket.command(
-        "room.settings.update",
-        roomGlobalSettingsUpdateToApi(updates)
-      );
+      const currentSettings = roomSettingsRef.current[roomId];
+      if (!currentSettings?.revision) {
+        throw new RoomSocketSayError(
+          "방 설정 동기화가 완료된 뒤 다시 시도해 주세요.",
+          "settings_not_ready"
+        );
+      }
+      let ack;
+      try {
+        ack = await socket.command(
+          "room.settings.update",
+          {
+            ...roomGlobalSettingsUpdateToApi(updates),
+            expected_revision: currentSettings.revision,
+          }
+        );
+      } catch (errorValue) {
+        const error = errorValue instanceof Error
+          ? errorValue
+          : new Error("Room settings save failed.");
+        if (
+          error instanceof RoomSocketSayError &&
+          error.category === "settings_conflict"
+        ) {
+          setLastError(error);
+          callbacksRef.current.onError?.(error);
+          socket.resync?.();
+        }
+        throw error;
+      }
       const result = ack.result || {};
       const event = result.event as RoomEvent | undefined;
-      if (event?.id && event.type === "room_settings_updated") {
-        applyEvents(roomId, [event]);
+      if (!event?.id || event.type !== "room_settings_updated") {
+        const error = new RoomSocketSayError(
+          "Room settings ACK did not include its canonical event; reconnecting.",
+          "settings_ack_invalid"
+        );
+        setLastError(error);
+        callbacksRef.current.onError?.(error);
+        socket.resync?.();
+        throw error;
       }
       const settings = normalizeRoomGlobalSettings(result.room_settings, roomId);
-      if (!settings) {
-        throw new Error("서버가 올바른 방 설정을 반환하지 않았습니다.");
+      const eventSettings = normalizeRoomGlobalSettings(
+        event.room_settings,
+        roomId
+      );
+      if (
+        !settings ||
+        !eventSettings ||
+        settings.revision !== eventSettings.revision
+      ) {
+        const error = new RoomSocketSayError(
+          "서버의 방 설정 ACK와 canonical event가 일치하지 않습니다.",
+          "settings_ack_invalid"
+        );
+        setLastError(error);
+        callbacksRef.current.onError?.(error);
+        socket.resync?.();
+        throw error;
       }
-      if (!event?.id) {
-        setRoomSettingsByRoom((previous) => ({ ...previous, [roomId]: settings }));
-      }
-      return settings;
+      applyEvents(roomId, [event]);
+      return roomSettingsRef.current[roomId] || settings;
     },
     [applyEvents, roomId, socket]
   );
@@ -566,6 +639,21 @@ export function useCanonicalRoom(options: UseCanonicalRoomOptions) {
     socket,
     connectionState,
     lastError,
+    syncIssue:
+      lastError instanceof RoomSocketSayError &&
+      [
+        "event_sequence_gap",
+        "event_sequence_invalid",
+        "resync_required",
+        "settings_ack_invalid",
+        "settings_conflict",
+        "settings_snapshot_invalid",
+      ].includes(lastError.category)
+        ? {
+            category: lastError.category,
+            message: lastError.message,
+          }
+        : null,
     membershipRevision,
     events,
     timelineEvents,

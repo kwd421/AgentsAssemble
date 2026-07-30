@@ -102,8 +102,19 @@ def register_public_invite_admin_routes(
         payload = ctx.read_json_body()
         if payload is None:
             return
+        requested_public_url = str(payload.get("public_url") or "").strip()
+        if not requested_public_url:
+            runtime.clear_public_url()
+            ctx.send_json(
+                {
+                    "status": "cleared",
+                    "public_url": "",
+                    "public_invite": status_payload(ctx),
+                }
+            )
+            return
         try:
-            public_url = runtime.set_public_url(str(payload.get("public_url") or ""))
+            public_url = runtime.set_public_url(requested_public_url)
         except ValueError as error:
             ctx.send_error(HTTPStatus.BAD_REQUEST, str(error))
             return

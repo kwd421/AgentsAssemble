@@ -17,6 +17,8 @@ the light or dark surface paired with that official asset.
 | `cerebras.svg` | [Cerebras press kit](https://www.cerebras.ai/company/press-kit) | `Cerebras Logos.zip/Cerebras C logo.svg` | `753cb8c0ae9b5033faa98d69bd888929d836f8a67538a9b98e454ccbb2bf905e` |
 | `ollama.png` | Installed official Ollama app | `Ollama.app/Contents/Resources/icon.icns` | `9c4a1431032ecd3a4e1253c20d963e1a19fb7d9b0c42ba131c8c436fd2f4e186` |
 | `lmstudio.png` | Installed official LM Studio app | `LM Studio.app/Contents/Resources/icon.icns` | `87725a6502b989abb603aecb7634a6668f959684267ba927419c26b37c8c6d62` |
+| `openrouter.svg` | [OpenRouter brand assets](https://openrouter.ai/brand/v2/openrouter-light.svg) | Official 2026 glyph path | `81b6db95fea21fd95defeba8cdda57c1f7400ad056fd3767f3930037a751127f` |
+| `vercel.svg` | [Vercel Geist brand assets](https://vercel.com/geist/brands) | `logo-vercel-light` symbol | `e238cc1d30c2fb14f397ee7ff8c571d1dd3055c530da23e1371fac9a79223c44` |
 
 OpenAI assets are subject to the
 [OpenAI design guidelines and marks usage terms](https://openai.com/brand/).

@@ -1,4 +1,4 @@
-import { cleanup, fireEvent, render, screen } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { Hash } from "lucide-react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { LobbyEvent } from "../api";
@@ -274,5 +274,162 @@ describe("LobbyView provider state and role styling", () => {
     expect(
       container.querySelector('[data-room-event-id="terra-message"]')?.getAttribute("data-role")
     ).toBe("director");
+  });
+});
+
+describe("LobbyView history loading", () => {
+  it("does not paint a partial snapshot before the initial history backfill", async () => {
+    const loadCanonicalHistory = vi.fn().mockReturnValue(
+      new Promise(() => undefined)
+    );
+    const messages: LobbyEvent[] = Array.from({ length: 30 }, (_, index) => ({
+      id: `initial-message-${index}`,
+      kind: "message",
+      name: "Agent A",
+      message: `initial message ${index}`,
+      side: "other",
+      created_at: `2026-07-26T01:00:${String(index).padStart(2, "0")}Z`,
+      actor_id: "agent-a",
+      flow_meeting_id: "room-a",
+      flow_action: "message_final",
+    }));
+    const view = render(
+      <LobbyView
+        activeRoom={room}
+        agents={[]}
+        canonicalEvents={[]}
+        canonicalHistoryReady={false}
+        canonicalOldestSeq={0}
+        canonicalHasMoreHistory={false}
+        loadCanonicalHistory={loadCanonicalHistory}
+      />
+    );
+
+    expect(screen.getByText("불러오는 중...")).toBeTruthy();
+    expect(screen.queryByText("아직 채팅 메시지가 없습니다. 첫 메시지를 남겨 보세요.")).toBeNull();
+
+    view.rerender(
+      <LobbyView
+        activeRoom={room}
+        agents={[]}
+        canonicalEvents={messages.slice(18)}
+        canonicalHistoryReady
+        canonicalOldestSeq={19}
+        canonicalHasMoreHistory
+        loadCanonicalHistory={loadCanonicalHistory}
+      />
+    );
+    await waitFor(() => expect(loadCanonicalHistory).toHaveBeenCalledWith(19));
+    expect(screen.getByText("불러오는 중...")).toBeTruthy();
+    expect(screen.queryByText("initial message 18")).toBeNull();
+
+    view.rerender(
+      <LobbyView
+        activeRoom={room}
+        agents={[]}
+        canonicalEvents={messages}
+        canonicalHistoryReady
+        canonicalOldestSeq={1}
+        canonicalHasMoreHistory={false}
+        loadCanonicalHistory={loadCanonicalHistory}
+      />
+    );
+    expect(await screen.findByText("initial message 0")).toBeTruthy();
+  });
+
+  it("loads older messages when the feed is already at the top", async () => {
+    const loadCanonicalHistory = vi.fn().mockResolvedValue({
+      loadedCount: 10,
+      oldestSeq: 1,
+      hasMoreBefore: false,
+    });
+    const messages: LobbyEvent[] = Array.from({ length: 30 }, (_, index) => ({
+      id: `message-${index}`,
+      kind: "message",
+      name: "Agent A",
+      message: `message ${index}`,
+      side: "other",
+      created_at: `2026-07-26T01:00:${String(index).padStart(2, "0")}Z`,
+      actor_id: "agent-a",
+      flow_meeting_id: "room-a",
+      flow_action: "message_final",
+    }));
+    const { container } = render(
+      <LobbyView
+        activeRoom={room}
+        agents={[]}
+        canonicalEvents={messages}
+        canonicalOldestSeq={31}
+        canonicalHasMoreHistory
+        loadCanonicalHistory={loadCanonicalHistory}
+      />
+    );
+    const feed = container.querySelector<HTMLDivElement>(".chat-scroll");
+    expect(feed).toBeTruthy();
+    Object.defineProperties(feed!, {
+      clientHeight: { configurable: true, value: 600 },
+      scrollHeight: { configurable: true, value: 2_000 },
+      scrollTop: { configurable: true, writable: true, value: 0 },
+    });
+
+    await waitFor(() => expect(loadCanonicalHistory).toHaveBeenCalledWith(31));
+  });
+
+  it("starts the new room backfill while the previous room request is still pending", async () => {
+    const pendingFirstRoom = new Promise<never>(() => undefined);
+    const loadCanonicalHistory = vi.fn()
+      .mockReturnValueOnce(pendingFirstRoom)
+      .mockResolvedValueOnce({
+        loadedCount: 10,
+        oldestSeq: 1,
+        hasMoreBefore: false,
+      });
+    const partialMessages: LobbyEvent[] = Array.from({ length: 12 }, (_, index) => ({
+      id: `room-a-message-${index}`,
+      kind: "message",
+      name: "Agent A",
+      message: `room A message ${index}`,
+      side: "other",
+      created_at: `2026-07-26T01:00:${String(index).padStart(2, "0")}Z`,
+      actor_id: "agent-a",
+      flow_meeting_id: "room-a",
+      flow_action: "message_final",
+    }));
+    const roomB = {
+      ...room,
+      id: "room-b",
+      meetingId: "room-b",
+      label: "Room B",
+    };
+    const view = render(
+      <LobbyView
+        activeRoom={room}
+        agents={[]}
+        canonicalEvents={partialMessages}
+        canonicalHistoryReady
+        canonicalOldestSeq={13}
+        canonicalHasMoreHistory
+        loadCanonicalHistory={loadCanonicalHistory}
+      />
+    );
+    await waitFor(() => expect(loadCanonicalHistory).toHaveBeenCalledWith(13));
+
+    view.rerender(
+      <LobbyView
+        activeRoom={roomB}
+        agents={[]}
+        canonicalEvents={partialMessages.map((event, index) => ({
+          ...event,
+          id: `room-b-message-${index}`,
+          flow_meeting_id: "room-b",
+        }))}
+        canonicalHistoryReady
+        canonicalOldestSeq={21}
+        canonicalHasMoreHistory
+        loadCanonicalHistory={loadCanonicalHistory}
+      />
+    );
+
+    await waitFor(() => expect(loadCanonicalHistory).toHaveBeenCalledWith(21));
   });
 });

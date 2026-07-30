@@ -40,6 +40,7 @@ export function useLobbyHistory({
   typingIndicators,
   bindLobbyStream,
   canonicalEvents,
+  canonicalHistoryReady,
   canonicalOldestSeq,
   canonicalHasMoreHistory,
   loadCanonicalHistory,
@@ -48,6 +49,7 @@ export function useLobbyHistory({
   typingIndicators: RoomTypingIndicator[];
   bindLobbyStream?: (receive: (events: LobbyEvent[]) => void) => () => void;
   canonicalEvents?: LobbyEvent[];
+  canonicalHistoryReady: boolean;
   canonicalOldestSeq: number;
   canonicalHasMoreHistory: boolean;
   loadCanonicalHistory?: (beforeSeq: number) => Promise<CanonicalHistoryPage>;
@@ -56,23 +58,28 @@ export function useLobbyHistory({
   const pinnedToLatestRef = useRef(true);
   const historyReadyRef = useRef(false);
   const historyRoomRef = useRef(activeRoom.id);
-  if (historyRoomRef.current !== activeRoom.id) {
-    historyRoomRef.current = activeRoom.id;
-    historyReadyRef.current = false;
-  }
-  const loadingOlderRef = useRef(false);
+  const initialBackfillFailedRoomRef = useRef("");
+  const loadingOlderRoomRef = useRef("");
   const prependAnchorRef = useRef<{
+    roomId: string;
     eventId: string;
     viewportTop: number;
     scrollHeight: number;
     scrollTop: number;
   } | null>(null);
   const [events, setEvents] = useState<LobbyEvent[]>([]);
-  const [loaded, setLoaded] = useState(false);
+  const [loadedRoomId, setLoadedRoomId] = useState("");
   const [pinnedToLatest, setPinnedToLatest] = useState(true);
   const [hasMoreHistory, setHasMoreHistory] = useState(true);
   const [loadingOlder, setLoadingOlder] = useState(false);
   const usesCanonicalHistory = Boolean(loadCanonicalHistory);
+  const loaded = loadedRoomId === activeRoom.id;
+  if (historyRoomRef.current !== activeRoom.id) {
+    historyRoomRef.current = activeRoom.id;
+    historyReadyRef.current = false;
+    initialBackfillFailedRoomRef.current = "";
+    prependAnchorRef.current = null;
+  }
 
   const visibleEvents = useMemo(() => {
     const roomEvents = events
@@ -125,7 +132,7 @@ export function useLobbyHistory({
   const loadOlderHistory = useCallback((triggerScrollTop?: number) => {
     if (
       !historyReadyRef.current ||
-      loadingOlderRef.current ||
+      loadingOlderRoomRef.current === activeRoom.id ||
       !hasMoreHistory ||
       !loaded
     ) {
@@ -134,13 +141,15 @@ export function useLobbyHistory({
     const element = scrollRef.current;
     const oldest = events[0];
     if (!element || (!usesCanonicalHistory && !oldest?.id)) return;
-    loadingOlderRef.current = true;
+    const requestedRoomId = activeRoom.id;
+    loadingOlderRoomRef.current = requestedRoomId;
     setLoadingOlder(true);
     const anchorEventId = visibleEvents[0]?.id || "";
     const anchorElement = Array.from(
       element.querySelectorAll<HTMLElement>("[data-room-event-id]")
     ).find((candidate) => candidate.dataset.roomEventId === anchorEventId);
     prependAnchorRef.current = {
+      roomId: requestedRoomId,
       eventId: anchorEventId,
       viewportTop: anchorElement
         ? element.getBoundingClientRect().top +
@@ -153,18 +162,26 @@ export function useLobbyHistory({
     if (usesCanonicalHistory && loadCanonicalHistory) {
       loadCanonicalHistory(canonicalOldestSeq)
         .then((page) => {
+          if (historyRoomRef.current !== requestedRoomId) return;
           setHasMoreHistory(page.hasMoreBefore);
           if (!page.loadedCount) {
             prependAnchorRef.current = null;
-            loadingOlderRef.current = false;
+            if (loadingOlderRoomRef.current === requestedRoomId) {
+              loadingOlderRoomRef.current = "";
+            }
           }
         })
         .catch(() => {
+          if (historyRoomRef.current !== requestedRoomId) return;
           prependAnchorRef.current = null;
-          loadingOlderRef.current = false;
+          if (loadingOlderRoomRef.current === requestedRoomId) {
+            loadingOlderRoomRef.current = "";
+          }
         })
         .finally(() => {
-          setLoadingOlder(false);
+          if (historyRoomRef.current === requestedRoomId) {
+            setLoadingOlder(false);
+          }
         });
       return;
     }
@@ -174,23 +191,32 @@ export function useLobbyHistory({
     });
     request
       .then((page) => {
+        if (historyRoomRef.current !== requestedRoomId) return;
         const older = Array.isArray(page.events) ? page.events : [];
         setHasMoreHistory(Boolean(page.has_more));
         if (older.length) {
           setEvents((previous) => mergeLobbyEvents(older, previous));
         } else {
           prependAnchorRef.current = null;
-          loadingOlderRef.current = false;
+          if (loadingOlderRoomRef.current === requestedRoomId) {
+            loadingOlderRoomRef.current = "";
+          }
         }
       })
       .catch(() => {
+        if (historyRoomRef.current !== requestedRoomId) return;
         prependAnchorRef.current = null;
-        loadingOlderRef.current = false;
+        if (loadingOlderRoomRef.current === requestedRoomId) {
+          loadingOlderRoomRef.current = "";
+        }
       })
       .finally(() => {
-        setLoadingOlder(false);
+        if (historyRoomRef.current === requestedRoomId) {
+          setLoadingOlder(false);
+        }
       });
   }, [
+    activeRoom.id,
     activeRoom.meetingId,
     canonicalOldestSeq,
     events,
@@ -213,11 +239,13 @@ export function useLobbyHistory({
 
   useLayoutEffect(() => {
     const element = scrollRef.current;
-    if (!element) return;
+    if (!element || !loaded) return;
     const anchor = prependAnchorRef.current;
-    if (anchor) {
+    if (anchor?.roomId === activeRoom.id) {
       prependAnchorRef.current = null;
-      loadingOlderRef.current = false;
+      if (loadingOlderRoomRef.current === activeRoom.id) {
+        loadingOlderRoomRef.current = "";
+      }
       const restoreAnchor = () => {
         const anchorElement = Array.from(
           element.querySelectorAll<HTMLElement>("[data-room-event-id]")
@@ -237,7 +265,7 @@ export function useLobbyHistory({
     if (pinnedToLatestRef.current) {
       element.scrollTop = element.scrollHeight;
     }
-  }, [activeRoom.id, typingIndicators, visibleEvents]);
+  }, [activeRoom.id, loaded, typingIndicators, visibleEvents]);
 
   useEffect(() => {
     if (!loaded || !hasMoreHistory || loadingOlder) return;
@@ -250,6 +278,7 @@ export function useLobbyHistory({
       const renderedMessageCount =
         element.querySelectorAll("[data-room-event-id]").length;
       if (
+        element.scrollTop <= HISTORY_TOP_THRESHOLD ||
         renderedMessageCount < INITIAL_HISTORY_MESSAGE_TARGET ||
         element.scrollHeight <= element.clientHeight + HISTORY_TOP_THRESHOLD
       ) {
@@ -273,13 +302,58 @@ export function useLobbyHistory({
   useEffect(() => {
     if (usesCanonicalHistory) {
       setEvents(canonicalEvents || []);
-      setLoaded(true);
       setHasMoreHistory(canonicalHasMoreHistory);
+      if (!canonicalHistoryReady) {
+        historyReadyRef.current = false;
+        if (loadingOlderRoomRef.current !== activeRoom.id) {
+          setLoadingOlder(false);
+        }
+        setLoadedRoomId((current) => (current === activeRoom.id ? "" : current));
+        return;
+      }
+      const needsInitialBackfill =
+        canonicalHasMoreHistory &&
+        (canonicalEvents || []).length < INITIAL_HISTORY_MESSAGE_TARGET &&
+        initialBackfillFailedRoomRef.current !== activeRoom.id;
+      if (needsInitialBackfill && loadCanonicalHistory) {
+        historyReadyRef.current = false;
+        setLoadedRoomId((current) => (current === activeRoom.id ? "" : current));
+        if (loadingOlderRoomRef.current !== activeRoom.id) {
+          const requestedRoomId = activeRoom.id;
+          loadingOlderRoomRef.current = requestedRoomId;
+          setLoadingOlder(true);
+          void loadCanonicalHistory(canonicalOldestSeq)
+            .then((page) => {
+              if (historyRoomRef.current !== requestedRoomId) return;
+              setHasMoreHistory(page.hasMoreBefore);
+            })
+            .catch(() => {
+              if (historyRoomRef.current !== requestedRoomId) return;
+              initialBackfillFailedRoomRef.current = requestedRoomId;
+              historyReadyRef.current = true;
+              setLoadedRoomId(requestedRoomId);
+            })
+            .finally(() => {
+              if (loadingOlderRoomRef.current === requestedRoomId) {
+                loadingOlderRoomRef.current = "";
+              }
+              if (historyRoomRef.current === requestedRoomId) {
+                setLoadingOlder(false);
+              }
+            });
+        }
+        return;
+      }
+      historyReadyRef.current = true;
+      if (loadingOlderRoomRef.current !== activeRoom.id) {
+        setLoadingOlder(false);
+      }
+      setLoadedRoomId(activeRoom.id);
       return;
     }
     let cancelled = false;
     setEvents([]);
-    setLoaded(false);
+    setLoadedRoomId((current) => (current === activeRoom.id ? "" : current));
     setHasMoreHistory(true);
     const lobbyRequest = fetchLobby(activeRoom.meetingId);
     lobbyRequest
@@ -287,19 +361,25 @@ export function useLobbyHistory({
         if (cancelled) return;
         const nextEvents = Array.isArray(data.events) ? data.events : [];
         setEvents((previous) => mergeLobbyEvents(previous, nextEvents));
-        setLoaded(true);
+        historyReadyRef.current = true;
+        setLoadedRoomId(activeRoom.id);
       })
       .catch(() => {
         if (cancelled) return;
-        setLoaded(true);
+        historyReadyRef.current = true;
+        setLoadedRoomId(activeRoom.id);
       });
     return () => {
       cancelled = true;
     };
   }, [
     activeRoom.meetingId,
+    activeRoom.id,
     canonicalEvents,
     canonicalHasMoreHistory,
+    canonicalHistoryReady,
+    canonicalOldestSeq,
+    loadCanonicalHistory,
     usesCanonicalHistory,
   ]);
 

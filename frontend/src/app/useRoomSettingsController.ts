@@ -100,7 +100,10 @@ export function useRoomSettingsController({
 
   const appearanceFor = useCallback(
     (room: RoomDockItem) =>
-      completeRoomAppearance(appearances[roomSettingsKey(room)] || appearances[room.id]),
+      completeRoomAppearance({
+        ...room.appearance,
+        ...(appearances[roomSettingsKey(room)] || appearances[room.id]),
+      }),
     [appearances]
   );
   const channelSettingsFor = useCallback(
@@ -156,6 +159,8 @@ export function useRoomSettingsController({
         label: settings.label,
         topic: settings.topic,
         shortLabel: settings.shortLabel,
+        appearance: settings.appearance,
+        inviteScope: settings.appearance.inviteScope,
       });
       setAppearances((previous) => ({
         ...previous,

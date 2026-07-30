@@ -12,6 +12,7 @@ import {
 } from "./http";
 import {
   normalizeRoomChannelList,
+  roomChannelListToApi,
   type ApiRoomChannel,
   type RoomChannel,
 } from "./roomChannelCodec";
@@ -24,6 +25,7 @@ export type RoomGlobalAppearance = Omit<RoomAppearance, "notifications">;
 
 export interface RoomGlobalSettings {
   roomId: string;
+  revision: string;
   label: string;
   topic: string;
   shortLabel: string;
@@ -42,6 +44,7 @@ export type RoomGlobalSettingsUpdate = {
   conversationMode?: ConversationMode;
   orderedExcludePreviousSpeaker?: boolean;
   maxRelayTurns?: number;
+  channels?: RoomChannel[];
 };
 
 export type ChannelNotificationSetting = "default" | "all" | "mentions" | "mute";
@@ -71,6 +74,7 @@ export interface ServerRoom {
   archived: boolean;
   status?: "active" | "closed" | "archived" | string;
   origin: string;
+  room_settings?: unknown;
 }
 
 export interface ServerRoomsResponse {
@@ -196,6 +200,7 @@ type ApiRoomAppearance = {
 
 type ApiRoomSettings = {
   room_id?: string;
+  settings_revision?: string;
   label?: string;
   topic?: string;
   short_label?: string;
@@ -261,6 +266,8 @@ export function normalizeRoomGlobalSettings(
   const payload = value as ApiRoomSettings;
   const appearance = payload.appearance;
   if (
+    typeof payload.settings_revision !== "string" ||
+    !payload.settings_revision ||
     typeof payload.label !== "string" ||
     typeof payload.topic !== "string" ||
     !appearance ||
@@ -279,6 +286,7 @@ export function normalizeRoomGlobalSettings(
   }
   return {
     roomId: String(payload.room_id || fallbackRoomId || ""),
+    revision: payload.settings_revision,
     label: payload.label,
     topic: payload.topic,
     shortLabel: appearance.icon_label,
@@ -311,6 +319,9 @@ export function roomGlobalSettingsUpdateToApi(
   }
   if (updates.maxRelayTurns !== undefined) {
     payload.max_relay_turns = updates.maxRelayTurns;
+  }
+  if (updates.channels !== undefined) {
+    payload.channels = roomChannelListToApi(updates.channels);
   }
   const appearance: Record<string, unknown> = {};
   if (updates.appearance?.bannerPreset !== undefined) {

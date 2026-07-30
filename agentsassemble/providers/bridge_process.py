@@ -23,6 +23,7 @@ from agentsassemble.providers.launch_specs import (
 from agentsassemble.providers.local_openai import local_openai_endpoint
 from agentsassemble.providers.opencode import OpenCodeServerProcess
 from agentsassemble.providers.process_environment import sanitized_child_environment
+from agentsassemble.providers.remote_openai import remote_openai_endpoint
 from agentsassemble.providers.runtime_config import CanonicalBridgeLaunchConfig
 from agentsassemble.providers.secrets import (
     PROVIDER_SECRETS,
@@ -171,11 +172,15 @@ class NativeCliBridgeProcessManager:
         local_provider_endpoint = local_openai_endpoint(
             spec.normalized_provider_kind()
         )
+        remote_provider_endpoint = remote_openai_endpoint(
+            spec.normalized_provider_kind()
+        )
         if secret_provider_id:
             credential = self._secret_resolver(secret_provider_id)
             if not credential:
                 raise RuntimeError("credential_missing")
             executable = "server-owned-api"
+            provider_endpoint = remote_provider_endpoint
         elif local_provider_endpoint:
             executable = spec.command[0]
             provider_endpoint = local_provider_endpoint
@@ -226,6 +231,7 @@ class NativeCliBridgeProcessManager:
             "service_tier": spec.service_tier,
             "variant": spec.variant,
             "permission_mode": spec.permission_mode,
+            "max_output_tokens": spec.max_output_tokens,
             "transport": spec.transport,
             "quiet_seconds": spec.quiet_seconds,
             "input_mode": spec.input_mode,

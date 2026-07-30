@@ -53,6 +53,8 @@ def _room_interfaces(provider_kind: object = "") -> tuple[str, str, str]:
         "opencode_server",
         "cerebras_api",
         "deepseek_api",
+        "openrouter_api",
+        "vercel_ai_gateway",
     }:
         read_interface = "the `read_discussion` MCP tool"
         speak_interface = (
@@ -130,6 +132,8 @@ def room_wake_orientation(
         "opencode_server",
         "cerebras_api",
         "deepseek_api",
+        "openrouter_api",
+        "vercel_ai_gateway",
     }:
         random_note = """
 - For official game randomness, use `roll_dice` with NdS±M notation or
