@@ -39,4 +39,15 @@ describe("DiscordText", () => {
     expect(container.querySelector("strong")?.textContent).toBe("확인");
     expect(container.querySelector("script")).toBeNull();
   });
+
+  it("keeps numeric ranges with single tildes while rendering explicit strikethrough", () => {
+    const { container } = render(
+      <DiscordText text={"game.py:385~393, routes.py:63~67·84~88, ~~removed~~"} />
+    );
+
+    expect(container.textContent).toContain("game.py:385~393");
+    expect(container.textContent).toContain("routes.py:63~67·84~88");
+    expect(container.querySelectorAll("del")).toHaveLength(1);
+    expect(container.querySelector("del")?.textContent).toBe("removed");
+  });
 });

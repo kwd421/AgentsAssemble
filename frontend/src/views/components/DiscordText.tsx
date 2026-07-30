@@ -96,7 +96,7 @@ export default function DiscordText({ text }: { text: string }) {
     <>
       <div className="dc-markdown">
         <ReactMarkdown
-          remarkPlugins={[remarkGfm]}
+          remarkPlugins={[[remarkGfm, { singleTilde: false }]]}
           rehypePlugins={[rehypeRoomReferences]}
           skipHtml
           components={{
