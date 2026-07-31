@@ -158,7 +158,11 @@ class OpenAICompatibleApiRuntime:
                         content = "RoomPortal publication completed."
                     elif not content:
                         raise RuntimeError(
-                            f"{self.provider_name} completed without a final message."
+                            _empty_round_message(
+                                self.provider_name,
+                                round_result,
+                                max_output_tokens=self._request_payload.get("max_tokens"),
+                            )
                         )
                     messages.append(
                         {
@@ -313,6 +317,7 @@ class OpenAICompatibleApiRuntime:
         tool_calls = {}
         observed_model_id = ""
         usage: dict[str, object] = {}
+        finish_reason = ""
         started_at = _now()
         try:
             response = self._opener(request, timeout=max(1.0, float(timeout_seconds)))
@@ -339,6 +344,15 @@ class OpenAICompatibleApiRuntime:
                     if isinstance(chunk.get("usage"), dict):
                         usage = _normalized_usage(chunk["usage"])
                 choices = chunk.get("choices") if isinstance(chunk, dict) else None
+                if isinstance(choices, list) and choices and isinstance(choices[0], dict):
+                    # Why the round ended. Without it a response cut off at the
+                    # token ceiling is indistinguishable from a genuinely empty
+                    # one, and both surfaced as the same unhelpful
+                    # "completed without a final message".
+                    finish_reason = (
+                        clean_room_text(choices[0].get("finish_reason"), limit=64)
+                        or finish_reason
+                    )
                 delta = (
                     choices[0].get("delta")
                     if isinstance(choices, list)
@@ -372,6 +386,7 @@ class OpenAICompatibleApiRuntime:
         return _StreamRound(
             content="".join(content_parts),
             reasoning_content="".join(reasoning_parts),
+            finish_reason=finish_reason,
             tool_calls=complete_tool_calls(tool_calls),
             observed_model_id=observed_model_id,
             usage={
@@ -427,6 +442,48 @@ class _StreamRound:
     tool_calls: list[dict[str, object]]
     observed_model_id: str
     usage: dict[str, object]
+    finish_reason: str = ""
+
+
+def _empty_round_message(
+    provider_name: str,
+    round_result: "_StreamRound",
+    *,
+    max_output_tokens: object = None,
+) -> str:
+    """Say why the round produced no text, not merely that it did not.
+
+    A reasoning model can spend the whole output budget thinking and stop at the
+    ceiling before writing an answer; that arrives as finish_reason "length"
+    with reasoning present and content empty. Reporting it identically to a
+    genuinely empty response left the operator with nothing to act on.
+    """
+    if round_result.finish_reason == "length":
+        budget = ""
+        try:
+            limit = int(max_output_tokens or 0)
+        except (TypeError, ValueError):
+            limit = 0
+        if limit:
+            budget = f" (최대 응답 길이 {limit:,} 토큰)"
+        thought = (
+            "추론에만 쓰고 답변을 시작하지 못했습니다"
+            if round_result.reasoning_content
+            else "답변을 끝내지 못했습니다"
+        )
+        return (
+            f"{provider_name}이(가) 최대 응답 길이에 걸려 {thought}{budget}. "
+            "최대 응답 길이를 늘리거나 추론 강도를 낮추세요."
+        )
+    if round_result.reasoning_content:
+        return (
+            f"{provider_name}이(가) 추론만 남기고 답변 본문을 반환하지 않았습니다"
+            f" (종료 사유: {round_result.finish_reason or '없음'})."
+        )
+    return (
+        f"{provider_name} completed without a final message"
+        f" (finish_reason: {round_result.finish_reason or 'none'})."
+    )
 
 
 def _room_tool_title(tool_name: object) -> str:

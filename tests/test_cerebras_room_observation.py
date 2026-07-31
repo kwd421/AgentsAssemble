@@ -145,3 +145,50 @@ class CerebrasRoomObservationTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class CerebrasEmptyRoundDiagnosticsTests(unittest.TestCase):
+    """An empty round must say why, so the operator knows what to change."""
+
+    def _run_and_capture_error(self, chunk: dict[str, object]) -> str:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            portal = RoomPortal(Path(temp_dir) / "portal", participant_id="cerebras")
+            portal.prepare()
+            portal.begin_observation("cerebras-turn", input_up_to_seq=1)
+            runtime = CerebrasApiRuntime(
+                "cerebras",
+                api_key="csk-private",
+                opener=lambda *args, **kwargs: _stream(chunk),
+                room_portal=portal,
+            )
+            runtime.send_room_observation("room.wake cerebras-turn")
+            with self.assertRaises(RuntimeError) as caught:
+                runtime.read_output(timeout_seconds=2)
+            return str(caught.exception)
+
+    def test_budget_exhausted_by_reasoning_is_reported_as_such(self) -> None:
+        message = self._run_and_capture_error(
+            {
+                "model": "gpt-oss-120b",
+                "choices": [
+                    {
+                        "delta": {"reasoning_content": "생각만 하다 예산 소진"},
+                        "finish_reason": "length",
+                    }
+                ],
+            }
+        )
+
+        self.assertIn("최대 응답 길이", message)
+        self.assertIn("추론에만", message)
+        self.assertNotIn("completed without a final message", message)
+
+    def test_a_genuinely_empty_round_still_names_the_finish_reason(self) -> None:
+        message = self._run_and_capture_error(
+            {
+                "model": "gpt-oss-120b",
+                "choices": [{"delta": {}, "finish_reason": "stop"}],
+            }
+        )
+
+        self.assertIn("finish_reason: stop", message)
