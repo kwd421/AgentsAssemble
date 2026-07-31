@@ -922,6 +922,12 @@ class RoomAgentBridge:
             "yolo_mode": details.get("yolo_mode"),
             "permission_request_count": int(details.get("permission_request_count") or 0),
             "permission_denied_count": int(details.get("permission_denied_count") or 0),
+            # Counting denials without naming them made a permission bug
+            # impossible to diagnose from the session record.
+            "denied_permission_names": [
+                str(name)[:128]
+                for name in list(details.get("denied_permission_names") or [])[-5:]
+            ],
             "notification_drop_count": int(details.get("notification_drop_count") or 0),
             "adapter_activity_invalid_count": activity_invalid_count,
             "message_source": str(details.get("message_source") or ""),

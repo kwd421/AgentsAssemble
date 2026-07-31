@@ -269,6 +269,10 @@ def runtime_diagnostic_fields(diagnostics: object) -> dict[str, object]:
         "yolo_mode": values.get("yolo_mode") if isinstance(values.get("yolo_mode"), bool) else None,
         "permission_request_count": int(values.get("permission_request_count") or 0),
         "permission_denied_count": int(values.get("permission_denied_count") or 0),
+        "denied_permission_names": [
+            clean_lobby_text(name, limit=128)
+            for name in list(values.get("denied_permission_names") or [])[-5:]
+        ],
         "notification_drop_count": int(values.get("notification_drop_count") or 0),
         "adapter_activity_invalid_count": int(values.get("adapter_activity_invalid_count") or 0),
         "message_source": clean_lobby_text(values.get("message_source"), limit=128),
