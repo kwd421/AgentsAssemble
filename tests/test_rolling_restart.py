@@ -1,14 +1,19 @@
 from __future__ import annotations
 
+import argparse
+import contextlib
+import io
 import os
 import tempfile
 import threading
 import time
 import unittest
+from unittest import mock
 from http.server import BaseHTTPRequestHandler
 from pathlib import Path
 from urllib.request import urlopen
 
+from agentsassemble.application.cli import core_commands
 from agentsassemble.application.rolling_restart import RollingRestartCoordinator
 from agentsassemble.web.http_server import AgentsAssembleHTTPServer
 
@@ -101,3 +106,97 @@ class RollingRestartTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class RollingRestartCliTests(unittest.TestCase):
+    """The operator-facing command, exercised without a live server."""
+
+    def _args(self, **overrides: object) -> argparse.Namespace:
+        values: dict[str, object] = {
+            "server": "http://127.0.0.1:8765",
+            "status": False,
+            "wait": 0.0,
+            "as_json": False,
+        }
+        values.update(overrides)
+        return argparse.Namespace(**values)
+
+    def test_status_reports_blockers_without_requesting_a_restart(self) -> None:
+        calls: list[str] = []
+
+        def fake_call(url: str, *, method: str) -> tuple[dict[str, object], str]:
+            calls.append(method)
+            return (
+                {
+                    "supported": True,
+                    "state": "running",
+                    "pid": 4242,
+                    "generation": 0,
+                    "frontend_version": "abc123",
+                    "started_at": "2026-08-01T00:00:00+00:00",
+                    "blockers": [
+                        {
+                            "room_id": "room-1",
+                            "session_id": "grok-elon-musk",
+                            "runtime_status": "busy",
+                        }
+                    ],
+                },
+                "",
+            )
+
+        with mock.patch.object(core_commands, "_rolling_restart_call", fake_call):
+            with contextlib.redirect_stdout(io.StringIO()) as out:
+                code = core_commands.run_rolling_restart_command(
+                    self._args(status=True)
+                )
+
+        self.assertEqual(code, 0)
+        self.assertEqual(calls, ["GET"], "status must never POST")
+        self.assertIn("grok-elon-musk", out.getvalue())
+
+    def test_blocked_restart_reports_the_blocking_turn_and_fails(self) -> None:
+        def fake_call(url: str, *, method: str) -> tuple[dict[str, object], str]:
+            return (
+                {
+                    "accepted": False,
+                    "error": "Provider turns must reach an idle boundary before rolling restart.",
+                    "blockers": [
+                        {
+                            "room_id": "room-1",
+                            "session_id": "grok-elon-musk",
+                            "runtime_status": "busy",
+                        }
+                    ],
+                },
+                "",
+            )
+
+        with mock.patch.object(core_commands, "_rolling_restart_call", fake_call):
+            with contextlib.redirect_stderr(io.StringIO()) as err:
+                code = core_commands.run_rolling_restart_command(self._args())
+
+        self.assertEqual(code, 1)
+        self.assertIn("grok-elon-musk", err.getvalue())
+
+    def test_accepted_restart_reports_the_operation_id(self) -> None:
+        def fake_call(url: str, *, method: str) -> tuple[dict[str, object], str]:
+            return ({"accepted": True, "operation_id": "roll-abc", "generation": 1}, "")
+
+        with mock.patch.object(core_commands, "_rolling_restart_call", fake_call):
+            with contextlib.redirect_stdout(io.StringIO()) as out:
+                code = core_commands.run_rolling_restart_command(self._args())
+
+        self.assertEqual(code, 0)
+        self.assertIn("roll-abc", out.getvalue())
+
+    def test_transport_failure_is_reported_separately_from_a_refusal(self) -> None:
+        def fake_call(url: str, *, method: str) -> tuple[dict[str, object], str]:
+            return ({}, "Could not reach http://127.0.0.1:8765: refused")
+
+        with mock.patch.object(core_commands, "_rolling_restart_call", fake_call):
+            with contextlib.redirect_stderr(io.StringIO()) as err:
+                code = core_commands.run_rolling_restart_command(self._args())
+
+        self.assertEqual(code, 2, "unreachable server is not the same as a blocked roll")
+        self.assertIn("Could not reach", err.getvalue())

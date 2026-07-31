@@ -122,6 +122,34 @@ def register_core_parsers(subparsers: argparse._SubParsersAction) -> None:
     lobby_promote.add_argument("--reason", default="", help="Optional short operator reason.")
     lobby_promote.add_argument("--json", action="store_true", dest="as_json")
 
+    rolling_restart = subparsers.add_parser(
+        "rolling-restart",
+        help="Hand the running GUI server over to a new build without dropping connections.",
+    )
+    rolling_restart.add_argument(
+        "--server",
+        default="http://127.0.0.1:8765",
+        help="Base URL of the running GUI server.",
+    )
+    rolling_restart.add_argument(
+        "--status",
+        action="store_true",
+        help="Report state, version, and blockers without starting a handover.",
+    )
+    rolling_restart.add_argument(
+        "--wait",
+        type=parse_nonnegative_float,
+        default=0.0,
+        help="Seconds to keep retrying while provider turns finish. 0 fails fast.",
+    )
+    rolling_restart.add_argument(
+        "--json",
+        "--as-json",
+        action="store_true",
+        dest="as_json",
+        help="Print JSON output.",
+    )
+
     release_health = subparsers.add_parser(
         "release-health",
         help="List or run the local v0.1 release-health verification queue.",

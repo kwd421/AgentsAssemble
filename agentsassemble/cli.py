@@ -33,6 +33,7 @@ from agentsassemble.application.cli.core_commands import (
     run_frontend_info_command,
     run_gui_command,
     run_release_health_command,
+    run_rolling_restart_command,
 )
 from agentsassemble.application.cli.persona_commands import (
     parse_persona_slot_values as _parse_persona_slot_values,
@@ -264,6 +265,8 @@ def main(argv: list[str] | None = None) -> int:
         return run_lobby_command(args)
     if args.command == "release-health":
         return run_release_health_command(args)
+    if args.command == "rolling-restart":
+        return run_rolling_restart_command(args)
     if args.command == "claude-bridge":
         print(CLAUDE_PRINT_MODE_DISABLED_MESSAGE, file=sys.stderr)
         return 2

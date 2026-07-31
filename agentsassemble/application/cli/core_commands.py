@@ -4,7 +4,11 @@ from __future__ import annotations
 import argparse
 import json
 import sys
+import time
+import urllib.error
 import urllib.parse
+import urllib.request
+from http import HTTPStatus
 from pathlib import Path
 from typing import Callable
 
@@ -164,6 +168,125 @@ def run_frontend_info_command(args: argparse.Namespace) -> int:
         print(f"  {command}")
     print("- Note: React/Vite is the default room client at / once built.")
     return 0
+
+
+ROLLING_RESTART_PATH = "/api/runtime/rolling-restart"
+
+
+def run_rolling_restart_command(args: argparse.Namespace) -> int:
+    """Drive the running server's rolling handover from the operator's shell.
+
+    The endpoint already refuses to start while a provider turn is mid-flight,
+    so --wait just keeps asking until those turns reach an idle boundary
+    instead of making the operator poll by hand.
+    """
+
+    base = str(getattr(args, "server", "") or "http://127.0.0.1:8765").rstrip("/")
+    url = f"{base}{ROLLING_RESTART_PATH}"
+    as_json = bool(getattr(args, "as_json", False))
+
+    if getattr(args, "status", False):
+        payload, error = _rolling_restart_call(url, method="GET")
+        if error:
+            print(error, file=sys.stderr)
+            return 2
+        print(
+            json.dumps(payload, ensure_ascii=False, indent=2)
+            if as_json
+            else _format_rolling_restart_status(payload)
+        )
+        return 0
+
+    deadline = time.monotonic() + max(0.0, float(getattr(args, "wait", 0.0) or 0.0))
+    while True:
+        payload, error = _rolling_restart_call(url, method="POST")
+        if error:
+            print(error, file=sys.stderr)
+            return 2
+        blockers = payload.get("blockers") or []
+        blocked = payload.get("accepted") is not True
+        if not blocked or time.monotonic() >= deadline:
+            break
+        print(
+            f"Waiting for {len(blockers)} provider turn(s) to finish...",
+            file=sys.stderr,
+            flush=True,
+        )
+        time.sleep(2.0)
+
+    if as_json:
+        print(json.dumps(payload, ensure_ascii=False, indent=2))
+    elif payload.get("accepted") is True:
+        print(f"Rolling restart started: {payload.get('operation_id') or 'unknown'}")
+        print(f"- generation: {payload.get('generation')}")
+        print("- The listening socket is handed to the replacement; no connection is dropped.")
+    else:
+        print(str(payload.get("error") or "Rolling restart was refused."), file=sys.stderr)
+        for blocker in payload.get("blockers") or []:
+            print(
+                f"  blocked by {blocker.get('session_id')} in {blocker.get('room_id')}"
+                f" ({blocker.get('runtime_status')})",
+                file=sys.stderr,
+            )
+    return 0 if payload.get("accepted") is True else 1
+
+
+def _rolling_restart_call(
+    url: str,
+    *,
+    method: str,
+) -> tuple[dict[str, object], str]:
+    request = urllib.request.Request(
+        url,
+        method=method,
+        data=b"{}" if method == "POST" else None,
+        headers={"Content-Type": "application/json"},
+    )
+    try:
+        with urllib.request.urlopen(request, timeout=30.0) as response:
+            return json.loads(response.read().decode("utf-8")), ""
+    except urllib.error.HTTPError as error:
+        body = error.read().decode("utf-8", "replace")
+        try:
+            parsed = json.loads(body)
+        except json.JSONDecodeError:
+            return {}, f"Server refused the request: HTTP {error.code} {body[:200]}"
+        # A blocked restart is a normal answer, not a transport failure.
+        if error.code == HTTPStatus.CONFLICT:
+            details = parsed.get("details") if isinstance(parsed.get("details"), dict) else {}
+            return {
+                "accepted": False,
+                "error": parsed.get("error") or parsed.get("message") or "Rolling restart blocked.",
+                "blockers": details.get("blockers") or [],
+                "state": details.get("state") or "",
+            }, ""
+        return {}, f"Server refused the request: HTTP {error.code} {body[:200]}"
+    except OSError as error:
+        return {}, f"Could not reach {url}: {error}"
+
+
+def _format_rolling_restart_status(payload: dict[str, object]) -> str:
+    if payload.get("supported") is not True:
+        return f"Rolling restart unavailable: {payload.get('error') or 'not supported'}"
+    lines = [
+        f"state: {payload.get('state')}",
+        f"pid: {payload.get('pid')}  generation: {payload.get('generation')}",
+        f"frontend_version: {payload.get('frontend_version')}",
+        f"started_at: {payload.get('started_at')}",
+    ]
+    blockers = payload.get("blockers") or []
+    if not blockers:
+        lines.append("blockers: none -- safe to roll now")
+    else:
+        lines.append(f"blockers: {len(blockers)} provider turn(s) still active")
+        for blocker in blockers:
+            lines.append(
+                f"  - {blocker.get('session_id')} in {blocker.get('room_id')}"
+                f" ({blocker.get('runtime_status')})"
+            )
+    if payload.get("error"):
+        lines.append(f"last error: {payload.get('error')}")
+    return "\n".join(lines)
 
 
 def run_release_health_command(args: argparse.Namespace) -> int:
