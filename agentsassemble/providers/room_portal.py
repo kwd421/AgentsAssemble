@@ -773,19 +773,26 @@ class RoomPortal:
         if not visible_messages:
             lines.append("(No finalized messages.)")
         boundary = self._new_since_seq
-        already_seen = [
-            message
+        already_seen = sum(
+            1
             for message in visible_messages
             if boundary and int(message.get("seq") or 0) <= boundary
+        )
+        fresh = [
+            message
+            for message in visible_messages
+            if not boundary or int(message.get("seq") or 0) > boundary
         ]
-        fresh = [message for message in visible_messages if message not in already_seen]
         if already_seen:
-            # Condensed: the agent's own session already carries these turns.
-            # Re-quoting them in full is what makes it answer settled points
-            # again, and it is the bulk of the payload.
-            lines.append(f"Earlier, already seen ({len(already_seen)}), condensed:")
-            for message in already_seen:
-                lines.append(f"- {self._speaker_label(message)}: {_condensed(message)}")
+            # No recap: the agent's own session already carries those turns
+            # verbatim from the reads that first showed them. Re-presenting
+            # settled conversation as current room state -- even condensed --
+            # is what makes an agent answer settled points again. State the
+            # fact and let its memory do the rest.
+            lines.append(
+                f"({already_seen} earlier message(s) already shown to you"
+                " are not repeated here.)"
+            )
             lines.append("")
             lines.append(
                 "New since your last read"
@@ -943,19 +950,6 @@ def _project_message(event: dict[str, object]) -> dict[str, object]:
             if isinstance(item, dict) and _ATTACHMENT_ID.fullmatch(clean_room_text(item.get("id"), limit=64))
         ],
     }
-
-
-_CONDENSED_MESSAGE_CHARS = 140
-
-
-def _condensed(message: dict[str, object]) -> str:
-    """One-line recall of an already-seen message."""
-    text = " ".join(_visible_message_content(message).split())
-    if not text:
-        return "(media or structured message)"
-    if len(text) <= _CONDENSED_MESSAGE_CHARS:
-        return text
-    return text[:_CONDENSED_MESSAGE_CHARS].rstrip() + "…"
 
 
 def _visible_message_content(message: dict[str, object]) -> str:

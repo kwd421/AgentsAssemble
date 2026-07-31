@@ -228,11 +228,14 @@ class RoomPortalDeltaViewTests(unittest.TestCase):
 
             view = portal.read_discussion()
 
-            self.assertNotIn("Earlier, already seen", view)
+            self.assertNotIn("already shown to you", view)
             self.assertIn("치킨 뭐 시킬까", view)
             self.assertIn("양념", view)
 
-    def test_second_turn_condenses_seen_messages_and_marks_the_new_one(self) -> None:
+    def test_second_turn_omits_seen_messages_and_marks_the_new_one(self) -> None:
+        # No recap of seen messages, even condensed: the agent's session
+        # already holds them verbatim, and re-presenting settled talk as
+        # current state is what caused repeated answers.
         with tempfile.TemporaryDirectory() as temp_dir:
             portal = self._portal(temp_dir)
             self._say(portal, 1, "호스트", "치킨 뭐 시킬까")
@@ -245,13 +248,13 @@ class RoomPortalDeltaViewTests(unittest.TestCase):
             portal.begin_observation("turn-2", input_up_to_seq=3)
             view = portal.read_discussion()
 
-            self.assertIn("Earlier, already seen (2), condensed:", view)
+            self.assertIn("(2 earlier message(s) already shown to you", view)
             self.assertIn("New since your last read (1):", view)
             # the new line keeps its own heading and full body
             self.assertIn("## 호스트\nㅋㅋㅋㅋㅋ", view)
-            # the long seen message is recalled, not re-quoted whole
-            self.assertIn("…", view)
-            self.assertNotIn("가" * 200, view)
+            # seen bodies are gone entirely, not merely shortened
+            self.assertNotIn("치킨 뭐 시킬까", view)
+            self.assertNotIn("가가가", view)
 
     def test_repeat_read_in_the_same_turn_keeps_the_same_boundary(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:
