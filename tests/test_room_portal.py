@@ -1,11 +1,13 @@
 from __future__ import annotations
 
 import json
+import subprocess
+import sys
 import tempfile
 import unittest
 from pathlib import Path
 
-from agentsassemble.providers.room_portal import RoomPortal
+from agentsassemble.providers.room_portal import RoomPortal, helper_interpreter
 
 
 class RoomPortalResultTests(unittest.TestCase):
@@ -189,9 +191,6 @@ class RoomPortalResultTests(unittest.TestCase):
                 stream.write(json.dumps(payload, ensure_ascii=False) + "\n")
 
 
-if __name__ == "__main__":
-    unittest.main()
-
 
 class RoomPortalDeltaViewTests(unittest.TestCase):
     """The mirror must distinguish what arrived from what was already shown."""
@@ -299,3 +298,48 @@ class RoomPortalDeltaViewTests(unittest.TestCase):
             delta = portal.read_discussion()
 
             self.assertLess(len(delta), len(full) // 2, "the re-read must get much smaller")
+
+
+class RoomPortalHelperInterpreterTests(unittest.TestCase):
+    """The helper must not depend on whatever python3 the child's PATH finds."""
+
+    def test_helper_shebang_is_an_absolute_interpreter(self) -> None:
+        # `#!/usr/bin/env python3` resolved to a relocatable build inside agy's
+        # sandbox, which then could not open its own libpython and died before
+        # reading the room.
+        with tempfile.TemporaryDirectory() as temp_dir:
+            portal = RoomPortal(Path(temp_dir) / "portal", participant_id="grok")
+            portal.prepare()
+
+            shebang = portal.helper_path.read_text(encoding="utf-8").splitlines()[0]
+
+            self.assertTrue(shebang.startswith("#!/"), shebang)
+            self.assertNotIn("/usr/bin/env", shebang)
+
+    def test_the_written_helper_actually_executes(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            portal = RoomPortal(Path(temp_dir) / "portal", participant_id="grok")
+            portal.prepare()
+
+            completed = subprocess.run(
+                [str(portal.helper_path)],
+                capture_output=True,
+                text=True,
+                timeout=30,
+            )
+
+            self.assertEqual(completed.returncode, 0, completed.stderr)
+
+    def test_the_interpreter_carries_no_private_libpython(self) -> None:
+        # The failure mode was a dylib outside the sandbox, so the chosen
+        # interpreter must be one that does not need to load one.
+        interpreter = helper_interpreter()
+        if sys.platform != "darwin" or not Path(interpreter).is_absolute():
+            self.skipTest("otool inspection is macOS-only")
+        completed = subprocess.run(
+            ["otool", "-L", interpreter], capture_output=True, text=True, timeout=30
+        )
+        self.assertNotIn("libpython", completed.stdout)
+
+if __name__ == "__main__":
+    unittest.main()

@@ -3,9 +3,12 @@
 from __future__ import annotations
 
 import base64
+import functools
 import json
 import os
 import re
+import shutil
+import subprocess
 import sys
 import threading
 from dataclasses import dataclass
@@ -240,7 +243,7 @@ class RoomPortal:
             if os.name == "nt":
                 self._write_atomic(
                     self.helper_python_path,
-                    _HELPER_SCRIPT,
+                    _helper_script(),
                     mode=0o600,
                 )
                 self._write_atomic(
@@ -249,7 +252,7 @@ class RoomPortal:
                     mode=0o600,
                 )
             else:
-                self._write_atomic(self.helper_path, _HELPER_SCRIPT, mode=0o700)
+                self._write_atomic(self.helper_path, _helper_script(), mode=0o700)
             self._write_media_index()
             self._write_view()
 
@@ -1052,6 +1055,42 @@ def _safe_int(value: object, default: int) -> int:
 # This file is copied into provider-private state and must run without importing
 # the AgentsAssemble package. The bridge and room authority independently
 # revalidate its activity records through validate_room_system_result.
+@functools.lru_cache(maxsize=1)
+def helper_interpreter() -> str:
+    """Absolute interpreter the portal helper should run under.
+
+    `#!/usr/bin/env python3` resolves against the *child's* PATH, so under a
+    provider sandbox it can land on a relocatable build whose libpython lives
+    outside the sandbox's allowed paths. agy's sandbox blocked exactly that:
+    `agentsassemble-room read` died with a dyld error before it could reach the
+    room, so the agent had nothing to say and the turn timed out. Interpreters
+    in standard system locations do not carry a private libpython and stay
+    inside a sandbox's default allow-list, so prefer those and pin the path.
+    """
+    candidates = ("/usr/bin/python3", sys.executable, shutil.which("python3") or "")
+    for candidate in candidates:
+        if not candidate or not os.path.isabs(candidate):
+            continue
+        try:
+            completed = subprocess.run(
+                [candidate, "-c", "import json, os, pathlib, re, secrets, sys"],
+                capture_output=True,
+                timeout=10.0,
+                check=False,
+            )
+        except (OSError, subprocess.SubprocessError):
+            continue
+        if completed.returncode == 0:
+            return candidate
+    return "/usr/bin/env python3"
+
+
+def _helper_script() -> str:
+    """The helper with its shebang pinned to a resolved interpreter."""
+    _, _, body = _HELPER_SCRIPT.partition("\n")
+    return f"#!{helper_interpreter()}\n{body}"
+
+
 _HELPER_SCRIPT = r"""#!/usr/bin/env python3
 import json
 import os
