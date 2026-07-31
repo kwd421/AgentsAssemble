@@ -191,3 +191,108 @@ class RoomPortalResultTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class RoomPortalDeltaViewTests(unittest.TestCase):
+    """The mirror must distinguish what arrived from what was already shown."""
+
+    def _portal(self, temp_dir: str) -> RoomPortal:
+        portal = RoomPortal(Path(temp_dir) / "portal", participant_id="grok")
+        portal.prepare()
+        return portal
+
+    @staticmethod
+    def _say(portal: RoomPortal, seq: int, name: str, text: str) -> None:
+        portal.ingest_frame(
+            {
+                "stream": "room_events",
+                "events": [
+                    {
+                        "type": "message_final",
+                        "id": f"event-{seq}",
+                        "seq": seq,
+                        "participant_id": f"p-{name}",
+                        "display_name": name,
+                        "content": text,
+                    }
+                ],
+            }
+        )
+
+    def test_first_turn_shows_every_message_in_full(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            portal = self._portal(temp_dir)
+            self._say(portal, 1, "호스트", "치킨 뭐 시킬까")
+            self._say(portal, 2, "고죠", "양념")
+            portal.begin_observation("turn-1", input_up_to_seq=2)
+
+            view = portal.read_discussion()
+
+            self.assertNotIn("Earlier, already seen", view)
+            self.assertIn("치킨 뭐 시킬까", view)
+            self.assertIn("양념", view)
+
+    def test_second_turn_condenses_seen_messages_and_marks_the_new_one(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            portal = self._portal(temp_dir)
+            self._say(portal, 1, "호스트", "치킨 뭐 시킬까")
+            self._say(portal, 2, "고죠", "양념 " + "가" * 400)
+            portal.begin_observation("turn-1", input_up_to_seq=2)
+            portal.read_discussion()
+            portal.end_observation("turn-1")
+
+            self._say(portal, 3, "호스트", "ㅋㅋㅋㅋㅋ")
+            portal.begin_observation("turn-2", input_up_to_seq=3)
+            view = portal.read_discussion()
+
+            self.assertIn("Earlier, already seen (2), condensed:", view)
+            self.assertIn("New since your last read (1):", view)
+            # the new line keeps its own heading and full body
+            self.assertIn("## 호스트\nㅋㅋㅋㅋㅋ", view)
+            # the long seen message is recalled, not re-quoted whole
+            self.assertIn("…", view)
+            self.assertNotIn("가" * 200, view)
+
+    def test_repeat_read_in_the_same_turn_keeps_the_same_boundary(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            portal = self._portal(temp_dir)
+            self._say(portal, 1, "호스트", "안녕")
+            portal.begin_observation("turn-1", input_up_to_seq=1)
+            portal.read_discussion()
+            portal.end_observation("turn-1")
+
+            self._say(portal, 2, "고죠", "왔냐")
+            portal.begin_observation("turn-2", input_up_to_seq=2)
+            first = portal.read_discussion()
+            second = portal.read_discussion()
+
+            self.assertEqual(first, second, "a re-read must not empty the new set")
+            self.assertIn("New since your last read (1):", second)
+
+    def test_a_turn_with_nothing_new_says_so(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            portal = self._portal(temp_dir)
+            self._say(portal, 1, "호스트", "안녕")
+            portal.begin_observation("turn-1", input_up_to_seq=1)
+            portal.read_discussion()
+            portal.end_observation("turn-1")
+
+            portal.begin_observation("turn-2", input_up_to_seq=1)
+            view = portal.read_discussion()
+
+            self.assertIn("New since your last read: (nothing new)", view)
+
+    def test_the_view_shrinks_once_history_is_condensed(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            portal = self._portal(temp_dir)
+            for seq in range(1, 31):
+                self._say(portal, seq, "고죠", f"{seq}번 메시지 " + "가" * 300)
+            portal.begin_observation("turn-1", input_up_to_seq=30)
+            full = portal.read_discussion()
+            portal.end_observation("turn-1")
+
+            self._say(portal, 31, "호스트", "ㅇㅇ")
+            portal.begin_observation("turn-2", input_up_to_seq=31)
+            delta = portal.read_discussion()
+
+            self.assertLess(len(delta), len(full) // 2, "the re-read must get much smaller")

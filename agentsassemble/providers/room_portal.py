@@ -223,6 +223,12 @@ class RoomPortal:
         self._media: dict[str, dict[str, object]] = {}
         self._active_media_ids: tuple[str, ...] = ()
         self._active_messages: tuple[dict[str, object], ...] | None = None
+        # Boundary between what this participant was already shown and what
+        # arrived since. Without it every read re-presents the whole window as
+        # current room state, and an agent that already answered restates
+        # itself because nothing marks which line is new.
+        self._seen_through_seq = 0
+        self._new_since_seq = 0
 
     def prepare(self) -> None:
         with self._lock:
@@ -303,6 +309,10 @@ class RoomPortal:
                 assigned_seq = max(0, int(input_up_to_seq))
             self.outbox_path.unlink(missing_ok=True)
             self._active_media_ids = active_media_ids
+            # Freeze the boundary for this turn before advancing it, so a
+            # second read inside the same turn still sees the same "new" set.
+            self._new_since_seq = self._seen_through_seq
+            self._seen_through_seq = max(self._seen_through_seq, assigned_seq)
             self._active_messages = tuple(
                 message
                 for message in self._messages
@@ -762,10 +772,27 @@ class RoomPortal:
         lines.append("## Finalized messages")
         if not visible_messages:
             lines.append("(No finalized messages.)")
-        for message in visible_messages:
-            name = str(message.get("display_name") or message.get("participant_id") or "participant")
-            if clean_room_text(message.get("participant_id"), limit=128) == self.participant_id:
-                name = f"{name} (you)"
+        boundary = self._new_since_seq
+        already_seen = [
+            message
+            for message in visible_messages
+            if boundary and int(message.get("seq") or 0) <= boundary
+        ]
+        fresh = [message for message in visible_messages if message not in already_seen]
+        if already_seen:
+            # Condensed: the agent's own session already carries these turns.
+            # Re-quoting them in full is what makes it answer settled points
+            # again, and it is the bulk of the payload.
+            lines.append(f"Earlier, already seen ({len(already_seen)}), condensed:")
+            for message in already_seen:
+                lines.append(f"- {self._speaker_label(message)}: {_condensed(message)}")
+            lines.append("")
+            lines.append(
+                "New since your last read"
+                + (f" ({len(fresh)}):" if fresh else ": (nothing new)")
+            )
+        for message in fresh:
+            name = self._speaker_label(message)
             content = _visible_message_content(message)
             lines.extend([f"## {name}", content or "(media or structured message)"])
             for attachment in message.get("attachments", []):
@@ -785,6 +812,16 @@ class RoomPortal:
                 )
             lines.append("")
         return "\n".join(lines).strip() + "\n"
+
+    def _speaker_label(self, message: dict[str, object]) -> str:
+        name = str(
+            message.get("display_name")
+            or message.get("participant_id")
+            or "participant"
+        )
+        if clean_room_text(message.get("participant_id"), limit=128) == self.participant_id:
+            return f"{name} (you)"
+        return name
 
     def _write_media_index(self) -> None:
         self._write_json_atomic(self.media_index_path, {"media": self._media})
@@ -906,6 +943,19 @@ def _project_message(event: dict[str, object]) -> dict[str, object]:
             if isinstance(item, dict) and _ATTACHMENT_ID.fullmatch(clean_room_text(item.get("id"), limit=64))
         ],
     }
+
+
+_CONDENSED_MESSAGE_CHARS = 140
+
+
+def _condensed(message: dict[str, object]) -> str:
+    """One-line recall of an already-seen message."""
+    text = " ".join(_visible_message_content(message).split())
+    if not text:
+        return "(media or structured message)"
+    if len(text) <= _CONDENSED_MESSAGE_CHARS:
+        return text
+    return text[:_CONDENSED_MESSAGE_CHARS].rstrip() + "…"
 
 
 def _visible_message_content(message: dict[str, object]) -> str:
