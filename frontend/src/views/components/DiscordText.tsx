@@ -1,6 +1,7 @@
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import { tokenizeDiscordText } from "../../lib/discordTextTokens";
+import { repairMarkdownTables } from "../../lib/repairMarkdownTables";
 
 type HastNode = {
   type: string;
@@ -120,7 +121,7 @@ export default function DiscordText({ text }: { text: string }) {
             ),
           }}
         >
-          {text}
+          {repairMarkdownTables(text)}
         </ReactMarkdown>
       </div>
       {previews.length > 0 && (
