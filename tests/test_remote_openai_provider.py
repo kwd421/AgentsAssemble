@@ -7,11 +7,13 @@ import unittest
 from pathlib import Path
 from urllib.request import Request
 
+from agentsassemble.providers.capabilities import ProviderCapabilityCatalog
 from agentsassemble.providers.remote_openai import (
     RemoteOpenAICompatibleRuntime,
     discover_remote_openai_models,
     remote_openai_catalog_payload,
     remote_openai_profile,
+    remote_openai_profiles,
 )
 from agentsassemble.providers.room_portal import RoomPortal
 
@@ -61,6 +63,49 @@ class RemoteOpenAIProviderTests(unittest.TestCase):
         self.assertEqual([option["value"] for option in options], ["vendor/tool-model:free"])
         self.assertEqual(options[0]["metadata"]["pricing"], "free")
         self.assertEqual(options[0]["metadata"]["family"], "Vendor")
+
+    def test_static_model_profiles_declare_the_effort_relation_scope(self):
+        # A profile that offers a reasoning-effort control must say how that
+        # effort relates to its models, or ProviderCapabilityCatalog rejects
+        # every selection as catalog_invalid -- including the profile's own
+        # default effort, which leaves the provider impossible to create.
+        checked = []
+        for profile in remote_openai_profiles():
+            if profile.discovery_path or not profile.reasoning_efforts:
+                continue
+            payload = remote_openai_catalog_payload(profile)
+            controls = {control["key"]: control for control in payload["controls"]}
+            self.assertIn("reasoning_effort", controls, profile.provider_id)
+            for option in controls["model"]["options"]:
+                metadata = dict(option.get("metadata") or {})
+                scope = metadata.get("relation_scope")
+                self.assertIn(
+                    scope,
+                    {"global", "per_model"},
+                    f"{profile.provider_id} model {option['value']} has no relation scope",
+                )
+                if scope == "per_model":
+                    self.assertIn("reasoning_efforts", metadata, option["value"])
+            checked.append(profile.provider_id)
+        self.assertTrue(checked, "expected at least one static effort profile")
+
+    def test_static_model_profiles_accept_their_default_effort(self):
+        # The end of the same contract, through the real validator: creating an
+        # agent with the values the modal defaults to must succeed.
+        for profile in remote_openai_profiles():
+            if profile.discovery_path or not profile.reasoning_efforts:
+                continue
+            payload = remote_openai_catalog_payload(profile)
+            controls = {control["key"]: control for control in payload["controls"]}
+            metadata = dict(controls["model"]["options"][0].get("metadata") or {})
+            with self.subTest(provider=profile.provider_id):
+                ProviderCapabilityCatalog._validate_model_relation(
+                    provider_id=profile.provider_id,
+                    metadata=metadata,
+                    metadata_key="reasoning_efforts",
+                    selected_value=profile.default_reasoning_effort,
+                    error_code="unsupported_model_effort_combination",
+                )
 
     def test_openrouter_runtime_reads_and_publishes_through_room_tools(self):
         profile = remote_openai_profile("openrouter")

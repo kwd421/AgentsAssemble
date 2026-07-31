@@ -159,7 +159,12 @@ def remote_openai_catalog_payload(
         list(discovered_models or [])
         if profile.discovery_path
         else [
-            _model_option(model_id, label)
+            # A profile declares one reasoning-effort list for every model it
+            # serves, so the relation is global. Without the scope the catalog
+            # validator rejects any effort the user picks -- including the
+            # profile's own default -- and the provider cannot be created at
+            # all. The discovery path already sets this in _gateway_model_option.
+            _model_option(model_id, label, relation_scope="global")
             for model_id, label in profile.static_models
         ]
     )
