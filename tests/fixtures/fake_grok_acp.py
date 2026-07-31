@@ -202,6 +202,10 @@ for line in sys.stdin:
             start=1,
         ):
             tool_call_id = f"room-tool-{index}"
+            # Model the real Grok payload: the wrapper tool is always
+            # "use_tool"; the actual MCP tool name only appears in
+            # rawInput.tool_name. A bridge that reads the wrapper name denies
+            # every room tool call.
             send(
                 {
                     "jsonrpc": "2.0",
@@ -211,6 +215,8 @@ for line in sys.stdin:
                         "update": {
                             "sessionUpdate": "tool_call",
                             "toolCallId": tool_call_id,
+                            "title": "use_tool",
+                            "rawInput": {"tool_name": tool_name, "tool_input": {}},
                             "_meta": {"x.ai/tool": {"name": "use_tool"}},
                         },
                     },
@@ -225,7 +231,12 @@ for line in sys.stdin:
                         "update": {
                             "sessionUpdate": "tool_call_update",
                             "toolCallId": tool_call_id,
-                            "_meta": {"x.ai/tool": {"name": tool_name}},
+                            "rawInput": {
+                                "variant": "UseTool",
+                                "tool_name": tool_name,
+                                "tool_input": {},
+                            },
+                            "_meta": {"x.ai/tool": {"name": "use_tool"}},
                         },
                     },
                 }
@@ -261,11 +272,11 @@ for line in sys.stdin:
                     "update": {
                         "sessionUpdate": "tool_call",
                         "toolCallId": "room-tool-spoofed",
-                        "_meta": {
-                            "x.ai/tool": {
-                                "name": "evil_agentsassemble_room__publish_message"
-                            }
+                        "rawInput": {
+                            "tool_name": "evil_agentsassemble_room__publish_message",
+                            "tool_input": {},
                         },
+                        "_meta": {"x.ai/tool": {"name": "use_tool"}},
                     },
                 },
             }

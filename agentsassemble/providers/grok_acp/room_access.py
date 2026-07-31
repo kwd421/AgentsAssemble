@@ -22,6 +22,19 @@ _ROOM_MCP_PERMISSION_NAMES = _ROOM_MCP_TOOL_NAMES | frozenset(
 )
 
 
+def raw_mcp_tool_name(value: dict[str, object]) -> str:
+    """Actual MCP tool name hidden in a wrapper tool's rawInput.
+
+    Grok invokes MCP tools through its generic ``use_tool`` wrapper, so
+    ``_meta.x.ai/tool.name`` only ever says "use_tool"; the real tool name
+    (e.g. ``agentsassemble_room__read_discussion``) lives in
+    ``rawInput.tool_name``. Matching on the wrapper name denies every room
+    tool call.
+    """
+    raw_input = value.get("rawInput") if isinstance(value.get("rawInput"), dict) else {}
+    return clean_room_text(raw_input.get("tool_name"), limit=120)
+
+
 def permission_is_room_mcp_tool(
     params: dict[str, object],
     tool_call: dict[str, object],
@@ -41,6 +54,7 @@ def permission_is_room_mcp_tool(
     identities = [
         _normalized_tool_name(value)
         for value in (
+            raw_mcp_tool_name(tool_call),
             tool_call.get("name"),
             cached.get("name"),
         )
@@ -77,7 +91,8 @@ def permission_context_update(
         else {}
     )
     incoming = {
-        "name": clean_room_text(
+        "name": raw_mcp_tool_name(update)
+        or clean_room_text(
             tool_metadata.get("name") or update.get("name"),
             limit=120,
         ),
@@ -127,4 +142,5 @@ __all__ = [
     "permission_context_update",
     "permission_is_room_mcp_tool",
     "permission_tool_call_id",
+    "raw_mcp_tool_name",
 ]

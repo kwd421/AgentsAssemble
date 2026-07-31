@@ -22,6 +22,7 @@ from agentsassemble.providers.grok_acp.room_access import (
     permission_context_update,
     permission_is_room_mcp_tool,
     permission_tool_call_id,
+    raw_mcp_tool_name,
 )
 from agentsassemble.providers.grok_acp.session import GrokAcpSessionStore
 from agentsassemble.providers.grok_acp.turns import GrokAcpTurnProjectionMixin
@@ -537,7 +538,10 @@ class GrokAcpRuntime(GrokAcpTransportMixin, GrokAcpTurnProjectionMixin):
                 # and the tool name was nowhere. Keep the last few so the reason
                 # survives into health and the session record.
                 denied_name = clean_room_text(
-                    tool_call.get("name") or params.get("title"), limit=128
+                    raw_mcp_tool_name(tool_call)
+                    or tool_call.get("name")
+                    or params.get("title"),
+                    limit=128,
                 ) or "unnamed"
                 self._denied_permission_names = (
                     *self._denied_permission_names[-4:],
