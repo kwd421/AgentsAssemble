@@ -97,6 +97,7 @@ export default function AgentCreateModal({
   );
   const statusMessage = deriveStatusMessage({
     status,
+    workspacePath,
     selectedProvider,
     selectedProviderMissing,
     hasProviders: providers.length > 0,
@@ -693,6 +694,7 @@ function ProviderControlField({
 
 function deriveStatusMessage({
   status,
+  workspacePath,
   selectedProvider,
   selectedProviderMissing,
   hasProviders,
@@ -700,6 +702,7 @@ function deriveStatusMessage({
   existingSessionId,
 }: {
   status: string;
+  workspacePath: string;
   selectedProvider: NativeCliProviderAvailability | undefined;
   selectedProviderMissing: boolean;
   hasProviders: boolean;
@@ -730,6 +733,16 @@ function deriveStatusMessage({
   }
   if (!existingSessionId && invalidControl) {
     return `${invalidControl.label}의 유효한 기본값이 없어 직접 선택해야 합니다.`;
+  }
+  // The confirm button is disabled until a workspace is picked, and without
+  // this the button just sits dead with nothing explaining why.
+  if (
+    !existingSessionId &&
+    selectedProvider &&
+    selectedProvider.workspace_required !== false &&
+    !workspacePath.trim()
+  ) {
+    return "작업 폴더를 선택하세요. 이 폴더에서 세션이 실행됩니다.";
   }
   return "";
 }
