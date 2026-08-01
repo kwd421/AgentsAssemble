@@ -19,7 +19,10 @@ from agentsassemble.providers.workspace_picker import (
 )
 from agentsassemble.web.router import RequestContext, Router
 from agentsassemble.providers.secrets import PROVIDER_SECRETS
-from agentsassemble.providers.sessions import list_provider_sessions
+from agentsassemble.providers.sessions import (
+    ProviderSessionListing,
+    inspect_provider_sessions,
+)
 
 
 class ProviderSecretStore(Protocol):
@@ -77,6 +80,7 @@ def register_provider_routes(
     usage_service: ProviderUsageRegistry | ProviderUsage | None = None,
     capability_catalog: ProviderCatalogRefresh | None = None,
     workspace_picker: Callable[[], str] = choose_workspace_folder,
+    session_inspector: Callable[..., ProviderSessionListing] = inspect_provider_sessions,
 ) -> None:
     """Register provider discovery, login, and credential-management routes."""
     store = PROVIDER_SECRETS if secret_store is None else secret_store
@@ -117,14 +121,12 @@ def register_provider_routes(
             # Without a folder the answer would be every project's history.
             ctx.send_error(HTTPStatus.BAD_REQUEST, "workspace is required")
             return
+        listing = session_inspector(provider_kind, workspace=workspace)
         ctx.send_json(
             {
                 "provider_kind": provider_kind,
                 "workspace": workspace,
-                "sessions": list_provider_sessions(
-                    provider_kind,
-                    workspace=workspace,
-                ),
+                **listing.payload(),
             }
         )
 

@@ -147,6 +147,7 @@ class ProviderRouteTests(unittest.TestCase):
             {
                 ("GET", "/api/providers"),
                 ("GET", "/api/model-catalog"),
+                ("GET", "/api/provider-sessions/local"),
                 ("GET", "/api/provider-credentials/cerebras"),
                 ("GET", "/api/provider-credentials/deepseek"),
                 ("GET", "/api/provider-credentials/openrouter"),

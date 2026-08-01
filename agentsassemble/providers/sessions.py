@@ -15,6 +15,7 @@ from __future__ import annotations
 import json
 import re
 import sqlite3
+from dataclasses import dataclass
 from datetime import UTC, datetime
 from pathlib import Path
 from urllib.parse import unquote
@@ -25,6 +26,25 @@ _CWD_RE = re.compile(r'"cwd"\s*:\s*"((?:[^"\\]|\\.)*)"')
 _DEFAULT_LIMIT = 15
 
 
+@dataclass(frozen=True)
+class ProviderSessionListing:
+    status: str
+    sessions: list[dict[str, str]]
+    error_code: str = ""
+    error: str = ""
+
+    def payload(self) -> dict[str, object]:
+        payload: dict[str, object] = {
+            "status": self.status,
+            "sessions": self.sessions,
+        }
+        if self.error_code:
+            payload["error_code"] = self.error_code
+        if self.error:
+            payload["error"] = self.error
+        return payload
+
+
 def list_provider_sessions(
     provider_kind: str,
     *,
@@ -32,31 +52,53 @@ def list_provider_sessions(
     home: Path | None = None,
     limit: int = _DEFAULT_LIMIT,
 ) -> list[dict[str, str]]:
+    return inspect_provider_sessions(
+        provider_kind,
+        workspace=workspace,
+        home=home,
+        limit=limit,
+    ).sessions
+
+
+def inspect_provider_sessions(
+    provider_kind: str,
+    *,
+    workspace: str = "",
+    home: Path | None = None,
+    limit: int = _DEFAULT_LIMIT,
+) -> ProviderSessionListing:
     base = home or Path.home()
     kind = str(provider_kind or "")
     try:
         if kind == "codex_live_session":
-            return _list_jsonl_sessions(
+            sessions = _list_jsonl_sessions(
                 base / ".codex" / "sessions",
                 limit,
                 id_from_name=True,
                 workspace=workspace,
             )
-        if kind == "claude_code":
-            return _list_claude_sessions(base, workspace, limit)
-        if kind == "antigravity_live_session":
-            return _list_antigravity_sessions(base, workspace, limit)
-        if kind == "grok_live_session":
-            return _list_grok_sessions(base, workspace, limit)
-        if kind == "cursor_live_session":
-            return _list_cursor_sessions(base, workspace, limit)
-        if kind == "opencode_server":
-            return _list_opencode_sessions(base, workspace, limit)
+        elif kind == "claude_code":
+            sessions = _list_claude_sessions(base, workspace, limit)
+        elif kind == "antigravity_live_session":
+            sessions = _list_antigravity_sessions(base, workspace, limit)
+        elif kind == "grok_live_session":
+            sessions = _list_grok_sessions(base, workspace, limit)
+        elif kind == "cursor_live_session":
+            sessions = _list_cursor_sessions(base, workspace, limit)
+        elif kind == "opencode_server":
+            sessions = _list_opencode_sessions(base, workspace, limit)
         # ollama serves models over an API and keeps no conversation store of
         # its own, so there is nothing local to resume.
+        else:
+            sessions = []
     except Exception:
-        return []
-    return []
+        return ProviderSessionListing(
+            status="error",
+            sessions=[],
+            error_code="provider_session_discovery_failed",
+            error="Provider session store could not be read.",
+        )
+    return ProviderSessionListing(status="ready", sessions=sessions)
 
 
 def _iso(mtime: float) -> str:
@@ -358,8 +400,8 @@ def _list_opencode_sessions(home: Path, workspace: str, limit: int) -> list[dict
             "SELECT id, directory, title, time_updated FROM session "
             "WHERE time_archived IS NULL ORDER BY time_updated DESC LIMIT 500"
         ).fetchall()
-    except sqlite3.Error:
-        return []
+    except sqlite3.Error as error:
+        raise RuntimeError("OpenCode session store could not be read.") from error
     finally:
         if connection is not None:
             connection.close()
