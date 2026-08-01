@@ -3,7 +3,10 @@ from __future__ import annotations
 import subprocess
 import unittest
 
-from agentsassemble.providers.capabilities import ProviderCapabilityCatalog
+from agentsassemble.providers.capabilities import (
+    DEFAULT_CATALOG_TTL_SECONDS,
+    ProviderCapabilityCatalog,
+)
 
 
 class ProviderCatalogRefreshTests(unittest.TestCase):
@@ -70,3 +73,46 @@ class ProviderCatalogRefreshTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class ProviderCatalogTtlTests(unittest.TestCase):
+    """Discovery is expensive; it must not run on a short timer."""
+
+    def _catalog(self, probes: list[int], **kwargs) -> ProviderCapabilityCatalog:
+        def runner(command: list[str], timeout: float):
+            del timeout
+            probes.append(1)
+            return 0, "gemini-3.6-flash-low\n", ""
+
+        return ProviderCapabilityCatalog(
+            runner=runner,
+            resolver=lambda executable: "/bin/agy" if executable == "agy" else None,
+            **kwargs,
+        )
+
+    def test_default_expiry_is_daily_not_minutes(self) -> None:
+        # A pass spawns every provider CLI and fetches two remote model lists
+        # (~8s measured). Model catalogs do not move on that timescale.
+        self.assertGreaterEqual(DEFAULT_CATALOG_TTL_SECONDS, 24 * 60 * 60)
+
+    def test_repeat_reads_inside_the_window_do_not_rediscover(self) -> None:
+        probes: list[int] = []
+        catalog = self._catalog(probes)
+        catalog.snapshot(refresh=True)
+        discovered = len(probes)
+
+        for _ in range(5):
+            catalog.snapshot()
+
+        self.assertEqual(len(probes), discovered, "cached reads must not probe again")
+
+    def test_an_explicit_refresh_still_rediscovers(self) -> None:
+        # The manual button and the post-login hook rely on this staying true.
+        probes: list[int] = []
+        catalog = self._catalog(probes)
+        catalog.snapshot(refresh=True)
+        discovered = len(probes)
+
+        catalog.snapshot(refresh=True)
+
+        self.assertGreater(len(probes), discovered)

@@ -66,6 +66,15 @@ class ValidatedProviderSelection:
     max_output_tokens: int = 0
 
 
+# One discovery pass runs every provider CLI as a subprocess and fetches two
+# remote model lists -- measured at 8.3s. Model catalogs change on the order of
+# weeks, so a short expiry paid that cost to learn nothing. The states that do
+# move (a login completing, a CLI appearing) already force a refresh of their
+# own, and a stale login surfaces when the agent actually starts, so a daily
+# floor is enough for the rest.
+DEFAULT_CATALOG_TTL_SECONDS = 24 * 60 * 60.0
+
+
 class ProviderCapabilityCatalog:
     """Fail-closed native option discovery with a bounded refresh cache."""
 
@@ -83,7 +92,7 @@ class ProviderCapabilityCatalog:
             )
         ),
         secret_resolver: SecretResolver = lambda _provider_id: "",
-        ttl_seconds: float = 300.0,
+        ttl_seconds: float = DEFAULT_CATALOG_TTL_SECONDS,
     ) -> None:
         self._runner = runner or _run_probe
         self._resolver = resolver
