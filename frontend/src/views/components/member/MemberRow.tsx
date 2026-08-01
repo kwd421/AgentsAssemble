@@ -135,6 +135,11 @@ export default function MemberRow({
           )}
           {quotaChips.length > 0 && (
             <span className="dc-member-inline-quota" aria-label={`${entry.displayName} 사용량`}>
+              {entry.agent?.quota_status === "stale" && (
+                <span data-tone="muted" title="새로 확인하지 못한 이전 사용량입니다.">
+                  이전 값
+                </span>
+              )}
               {quotaChips.map((chip) => (
                 <span key={`${chip.label}-${chip.value}`} data-tone={chip.tone} title={chip.title}>
                   <b>{chip.label}</b> {chip.value}

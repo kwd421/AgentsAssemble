@@ -97,6 +97,7 @@ import { roomPostingState } from "./lib/roomGuestPosting";
 import type { AgentQuotaVisibilityViewer } from "./lib/agentQuotaVisibility";
 import { isActivePresence } from "./lib/presenceStatus";
 import { roomTypingIndicators } from "./lib/roomTypingIndicators";
+import { providerUsageAfterFailure } from "./lib/providerUsageState";
 
 // Keep room chat, roster, composer, admission, and Agent Session controls eager.
 // Only infrequently opened, non-core views belong behind this loading boundary.
@@ -576,20 +577,13 @@ export default function App() {
       const usage = await fetchProviderUsage(target.providerId, target.model);
       setProviderUsage((previous) => ({ ...previous, [target.key]: usage }));
     } catch {
-      setProviderUsage((previous) => {
-        if (previous[target.key]?.status === "ready") return previous;
-        return {
-          ...previous,
-          [target.key]: {
-            provider_id: target.providerId,
-            status: "unavailable",
-            source: "",
-            observed_at: "",
-            error_code: "usage_unavailable",
-            quota_windows: [],
-          },
-        };
-      });
+      setProviderUsage((previous) => ({
+        ...previous,
+        [target.key]: providerUsageAfterFailure(
+          previous[target.key],
+          target.providerId
+        ),
+      }));
     }
   }, [guestLocked]);
 

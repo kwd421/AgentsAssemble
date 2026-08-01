@@ -18,6 +18,11 @@ export default function MemberUsage({
   return (
     <section className="dc-member-detail-section" aria-label={`${entry.displayName} 사용량`}>
       <h3>사용량</h3>
+      {entry.canViewQuota && agent.quota_status === "stale" && (
+        <p className="dc-member-detail-note preserve-words" data-tone="warning">
+          새로 확인하지 못해 마지막으로 확인된 값을 표시합니다.
+        </p>
+      )}
       {!entry.canViewQuota ? (
         <p className="dc-member-detail-note preserve-words">
           사용량은 이 AI를 소유한 참가자에게만 표시됩니다.

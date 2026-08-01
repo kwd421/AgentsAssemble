@@ -80,7 +80,7 @@ export interface LiveAgent {
   quota_5h?: string;
   quota_1w?: string;
   quota_state?: "ok" | "low" | "exhausted" | "unknown" | "";
-  quota_status?: "loading" | "ready" | "unavailable" | "unsupported";
+  quota_status?: "loading" | "ready" | "stale" | "unavailable" | "unsupported";
   quota_windows?: Array<{
     label: string;
     percent: number;
@@ -518,7 +518,7 @@ export interface ProviderCredentialStatus {
 
 export interface ProviderUsageSnapshot {
   provider_id: string;
-  status: "ready" | "unavailable";
+  status: "ready" | "stale" | "unavailable";
   source: string;
   observed_at: string;
   error_code?: string;
