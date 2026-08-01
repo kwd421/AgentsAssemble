@@ -536,6 +536,43 @@ class NativeCliProviderCatalogTests(unittest.TestCase):
 
         self.assertEqual(restored.transport, "http")
 
+    def test_fixed_remote_api_session_survives_the_custom_endpoint_profile_upgrade(self):
+        definition = native_cli_provider_definition("cerebras")
+        self.assertIsNotNone(definition)
+        spec = definition.make_selected_spec(
+            agent_id="cerebras-fixed",
+            display_name="Cerebras",
+            cwd="/tmp/workspace",
+            model="gpt-oss-120b",
+            reasoning_effort="high",
+            permission_mode="meeting_read_only",
+            max_output_tokens=4096,
+        )
+
+        restored = native_cli_provider_spec_from_stored_session_strict(
+            {
+                "participant_id": spec.agent_id,
+                "display_name": spec.display_name,
+                "provider_kind": spec.provider_kind,
+                "workspace": spec.cwd,
+                "model": spec.model,
+                "reasoning_effort": spec.reasoning_effort,
+                "service_tier": spec.service_tier,
+                "variant": spec.variant,
+                "permission_mode": spec.permission_mode,
+                "max_output_tokens": spec.max_output_tokens,
+                "runtime_kind": spec.runtime_kind,
+                "transport": spec.transport,
+                "command_configured": list(spec.command),
+                # Recorded by the production profile format before Custom API
+                # introduced its optional endpoint field.
+                "runtime_profile_key": "f690a0f2544cddcf8f42",
+            }
+        )
+
+        self.assertEqual(restored.provider_kind, "cerebras_api")
+        self.assertEqual(restored.reasoning_effort, "high")
+
     def test_unknown_runtime_reported_transport_is_not_migrated(self):
         definition = native_cli_provider_definition("opencode")
         self.assertIsNotNone(definition)
