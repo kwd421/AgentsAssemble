@@ -23,6 +23,15 @@ function fenceMarker(line: string): string {
   return line.match(/^\s{0,3}(`{3,}|~{3,})/)?.[1] || "";
 }
 
+function closesFence(line: string, activeFence: string): boolean {
+  const marker = line.match(/^\s{0,3}(`{3,}|~{3,})\s*$/)?.[1] || "";
+  return (
+    Boolean(marker) &&
+    marker[0] === activeFence[0] &&
+    marker.length >= activeFence.length
+  );
+}
+
 function isDelimiterRow(line: string): boolean {
   return /^\s*\|(?:\s*:?-{2,}:?\s*\|)+\s*$/.test(line);
 }
@@ -50,10 +59,7 @@ export function repairMarkdownTables(text: string): string {
     const marker = fenceMarker(line);
     if (activeFence) {
       output.push(line);
-      if (
-        marker.startsWith(activeFence[0]) &&
-        marker.length >= activeFence.length
-      ) {
+      if (closesFence(line, activeFence)) {
         activeFence = "";
       }
       index += 1;

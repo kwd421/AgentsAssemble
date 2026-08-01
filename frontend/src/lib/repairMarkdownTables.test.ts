@@ -67,4 +67,16 @@ describe("repairMarkdownTables", () => {
 
     expect(repairMarkdownTables(source)).toBe(source);
   });
+
+  it("does not close a fence when the marker has trailing content", () => {
+    const source = [
+      "```text",
+      "```not-a-closing-fence",
+      "| header | value |",
+      "| first | second |",
+      "```",
+    ].join("\n");
+
+    expect(repairMarkdownTables(source)).toBe(source);
+  });
 });
