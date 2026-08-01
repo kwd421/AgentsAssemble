@@ -159,16 +159,23 @@ class NativeCliBridgeProcessManager:
             if current is not None:
                 current_pid = current.process.pid if current.process is not None else None
                 if current_pid != pid or current.endpoint != endpoint:
-                    raise RuntimeError(
-                        "Preserved OpenCode sessions disagree about the shared server."
-                    )
+                    # A record left behind by an older server, not a conflict to
+                    # resolve. Refusing the whole adoption here aborted the
+                    # rolling replacement's boot, so one dead bridge could veto
+                    # every future roll; that session recovers normally instead.
+                    return False
                 return True
-            self._opencode_server = OpenCodeServerProcess.adopt(
-                cwd=self.output_root,
-                executable=config.runtime.command[0],
-                pid=pid,
-                endpoint=endpoint,
-            )
+            try:
+                self._opencode_server = OpenCodeServerProcess.adopt(
+                    cwd=self.output_root,
+                    executable=config.runtime.command[0],
+                    pid=pid,
+                    endpoint=endpoint,
+                )
+            except RuntimeError:
+                # The recorded process is gone or unhealthy. Leave the slot open
+                # for a session whose server is still up.
+                return False
         return True
 
     def start(

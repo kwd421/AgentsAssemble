@@ -438,3 +438,109 @@ class NativeCliBridgeProcessManagerTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class PreservedOpenCodeAdoptionTests(unittest.TestCase):
+    """A stale bridge record must not veto the rolling replacement's boot."""
+
+    def _manager(self, root: Path) -> NativeCliBridgeProcessManager:
+        return NativeCliBridgeProcessManager(output_root=root)
+
+    def _write_config(self, root: Path, *, session_id: str, pid: int, endpoint: str) -> dict:
+        profile = "profile-1"
+        path = root / "rooms" / "room-a" / "bridges" / session_id / profile / "config.json"
+        path.parent.mkdir(parents=True, exist_ok=True)
+        payload = {
+            "room_id": "room-a",
+            "session_id": session_id,
+            "participant_id": session_id,
+            "provider_kind": "opencode_server",
+            "runtime_kind": "opencode",
+            "transport": "http",
+            "command": ["opencode"],
+            "cwd": str(root),
+            "model": "opencode/glm-5.2",
+            "reasoning_effort": "",
+            "service_tier": "",
+            "variant": "",
+            "permission_mode": "meeting_read_only",
+            "max_output_tokens": 0,
+            "runtime_profile_key": profile,
+            "runtime_state_dir": str(path.parent / "provider-state"),
+            "provider_server_pid": pid,
+            "provider_endpoint": endpoint,
+            "credential_stdin": False,
+            "input_mode": "room_observation",
+            "quiet_seconds": 4.0,
+            "startup_accept_contains": "",
+            "startup_accept_keys": "",
+            "startup_input": "",
+            "startup_quiet_seconds": 5.0,
+            "startup_ready_contains": "",
+            "startup_timeout_seconds": 20.0,
+            "submit_delay_seconds": 0.1,
+            "submit_newline": "\r",
+            "terminal_columns": 120,
+            "terminal_rows": 40,
+            "turn_timeout_seconds": 180.0,
+        }
+        path.write_text(json.dumps(payload), encoding="utf-8")
+        return {
+            "session_id": session_id,
+            "participant_id": session_id,
+            "provider_kind": "opencode_server",
+            "process_ownership": "server",
+            "runtime_status": "idle",
+            "runtime_profile_key": profile,
+        }
+
+    def test_a_dead_recorded_server_is_skipped_not_fatal(self) -> None:
+        # The rolling child died here: the recorded process was gone, so the
+        # whole boot aborted and no roll could ever land.
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            session = self._write_config(
+                root, session_id="opencode-dead", pid=999999, endpoint="http://127.0.0.1:1"
+            )
+
+            adopted = self._manager(root).adopt_preserved_shared_runtime("room-a", session)
+
+            self.assertFalse(adopted)
+
+    def test_a_second_record_naming_another_server_is_skipped(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            manager = self._manager(root)
+
+            class _Live:
+                endpoint = "http://127.0.0.1:5000"
+
+                class process:
+                    pid = 4242
+
+            manager._opencode_server = _Live()
+            session = self._write_config(
+                root, session_id="opencode-other", pid=777, endpoint="http://127.0.0.1:6000"
+            )
+
+            adopted = manager.adopt_preserved_shared_runtime("room-a", session)
+
+            self.assertFalse(adopted, "a disagreeing record must not raise")
+
+    def test_the_matching_record_still_adopts(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            manager = self._manager(root)
+
+            class _Live:
+                endpoint = "http://127.0.0.1:5000"
+
+                class process:
+                    pid = 4242
+
+            manager._opencode_server = _Live()
+            session = self._write_config(
+                root, session_id="opencode-same", pid=4242, endpoint="http://127.0.0.1:5000"
+            )
+
+            self.assertTrue(manager.adopt_preserved_shared_runtime("room-a", session))

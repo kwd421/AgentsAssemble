@@ -140,10 +140,23 @@ def serve_gui_runtime(
                 if not room_id:
                     continue
                 for session in room_repository.sessions(room_id):
-                    services.native_cli_bridge_manager.adopt_preserved_shared_runtime(
-                        room_id,
-                        session,
-                    )
+                    try:
+                        services.native_cli_bridge_manager.adopt_preserved_shared_runtime(
+                            room_id,
+                            session,
+                        )
+                    except Exception as error:
+                        # One unusable session record must not abort the
+                        # replacement's boot: that turned a stale bridge into a
+                        # permanent veto on every rolling restart. The session
+                        # goes through normal recovery instead, and the reason
+                        # is reported rather than swallowed.
+                        print(
+                            "AgentsAssemble rolling handoff: skipped preserved session "
+                            f"{session.get('session_id') or session.get('participant_id')} "
+                            f"in {room_id}: {error}",
+                            flush=True,
+                        )
         handler = dependencies.make_handler(
             root,
             application_services=services,
