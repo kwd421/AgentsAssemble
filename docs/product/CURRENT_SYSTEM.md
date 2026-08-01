@@ -271,11 +271,12 @@ gateway attribution headers, bounded output tokens, and whether reasoning
 fields may be replayed in a later assistant message. The creation dialog and
 stopped Agent Session panel expose the same provider-owned output-token choices
 (1,024 through 16,384, default 4,096); the selected value is persisted in the
-runtime profile and sent as `max_tokens` on every HTTP round. Static provider profiles
-list only models verified through the real room read/publication path. Gateway
-catalogs may additionally list text models whose authoritative model metadata
-advertises tool calling; that is catalog-reported capability, not a claim that
-every routed model has passed the room workflow. OpenRouter's current default
+runtime profile and sent as `max_tokens` on every HTTP round. Static provider
+profiles list only models verified through the real room read/publication path.
+Cerebras and gateway catalogs may additionally list text models whose
+authoritative model metadata advertises tool calling; that is catalog-reported
+capability, not a claim that every listed model has passed the room workflow.
+OpenRouter's current default
 was chosen from a real room-path verification; Vercel remains catalog-verified
 only. Anthropic Messages and Gemini
 `generateContent` need their own protocol adapters; a text-completion endpoint
@@ -298,8 +299,9 @@ under Local and connects only to its fixed loopback endpoint; its catalog
 includes loaded LLMs that LM Studio reports as trained for tool use. Neither
 local endpoint asks for an API key or a workspace because these runtimes expose
 room tools, not filesystem tools. Each provider exposes only discovered models
-and controls; Cerebras currently exposes `gpt-oss-120b` with low, medium, and
-high reasoning effort.
+and controls. Cerebras discovers its current tool-capable text models from the
+provider's unauthenticated public model catalog and offers low, medium, and high
+reasoning effort; `gpt-oss-120b` remains the default.
 
 `Custom API` uses the same server-owned OpenAI-compatible runtime for an
 operator-supplied model ID and direct HTTPS endpoint. It accepts either a base

@@ -32,6 +32,7 @@ class RemoteOpenAIProfile:
     variants: tuple[tuple[str, str], ...] = ()
     default_variant: str = ""
     discovery_path: str = ""
+    discovery_base_url: str = ""
     request_headers: tuple[tuple[str, str], ...] = ()
     max_output_tokens: int = 0
     custom_endpoint: bool = False
@@ -65,6 +66,8 @@ REMOTE_OPENAI_PROFILES = (
         static_models=(("gpt-oss-120b", "GPT OSS 120B"),),
         reasoning_efforts=("low", "medium", "high"),
         default_reasoning_effort="low",
+        discovery_path="/public/v1/models?format=openrouter",
+        discovery_base_url="https://api.cerebras.ai",
         request_headers=(("X-Cerebras-Version-Patch", "2"),),
         max_output_tokens=4096,
     ),
@@ -174,7 +177,7 @@ def discover_remote_openai_models(
     if api_key:
         headers["Authorization"] = f"Bearer {api_key}"
     request = Request(
-        f"{profile.base_url}{profile.discovery_path}",
+        f"{(profile.discovery_base_url or profile.base_url).rstrip('/')}{profile.discovery_path}",
         headers=headers,
         method="GET",
     )
@@ -330,14 +333,16 @@ def _gateway_model_option(entry: dict[str, object]) -> dict[str, object] | None:
     model_id = clean_room_text(entry.get("id"), limit=128)
     supported = {
         str(value).strip()
-        for value in list(entry.get("supported_parameters") or [])
+        for value in [
+            *list(entry.get("supported_parameters") or []),
+            *list(entry.get("supported_features") or []),
+        ]
     }
     architecture = entry.get("architecture")
-    input_modalities = (
-        set(architecture.get("input_modalities") or [])
-        if isinstance(architecture, dict)
-        else {"text"}
-    )
+    declared_modalities = entry.get("input_modalities")
+    if not isinstance(declared_modalities, list) and isinstance(architecture, dict):
+        declared_modalities = architecture.get("input_modalities")
+    input_modalities = set(declared_modalities or ["text"])
     if not model_id or "tools" not in supported or "text" not in input_modalities:
         return None
     pricing = entry.get("pricing")
