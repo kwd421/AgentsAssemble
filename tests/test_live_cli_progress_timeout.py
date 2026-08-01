@@ -61,11 +61,11 @@ class LiveCliProgressTimeoutTests(unittest.TestCase):
                 "for line in sys.stdin:",
                 "    if not line.strip():",
                 "        continue",
-                "    time.sleep(0.12)",
+                "    time.sleep(0.3)",
                 "    print('working:one', flush=True)",
-                "    time.sleep(0.12)",
+                "    time.sleep(0.3)",
                 "    print('working:two', flush=True)",
-                "    time.sleep(0.12)",
+                "    time.sleep(0.3)",
                 "    print('answer:done', flush=True)",
             ]
         )
@@ -77,7 +77,7 @@ class LiveCliProgressTimeoutTests(unittest.TestCase):
         )
         try:
             runtime.send("work")
-            output = runtime.read_output(timeout_seconds=0.2)
+            output = runtime.read_output(timeout_seconds=0.5)
         finally:
             runtime.stop()
 
