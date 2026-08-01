@@ -16,7 +16,7 @@ class PostgresRoomSchemaTests(unittest.TestCase):
     def test_current_revision_requires_authority_activation(self) -> None:
         self.assertEqual(
             POSTGRES_ROOM_SCHEMA_REVISION,
-            "0011_ordered_previous_speaker",
+            "0012_user_profiles",
         )
 
     def test_sqlalchemy_url_explicitly_selects_psycopg3(self) -> None:

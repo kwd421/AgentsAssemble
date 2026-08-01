@@ -26,6 +26,41 @@ class IdentityRepositoryContractMixin:
         self.assertEqual(second["display_name"], "Alpha")
         self.assertEqual(second["avatar_image_url"], "https://example.invalid/a.png")
 
+    def test_user_profiles_are_isolated_and_update_the_public_identity(self) -> None:
+        first = self.repository.resolve_credential_user(
+            "device:profile-alpha",
+            user_id="profile-user-alpha",
+            participant_id="profile-participant-alpha",
+            display_name="Alpha",
+        )
+        second = self.repository.resolve_credential_user(
+            "device:profile-bravo",
+            user_id="profile-user-bravo",
+            participant_id="profile-participant-bravo",
+            display_name="Bravo",
+        )
+
+        saved = self.repository.update_user_profile(
+            str(first["user_id"]),
+            {
+                "display_name": "Alpha Updated",
+                "avatar_image_url": "/api/attachments/alpha_123?view=1",
+                "custom_status": "ready",
+            },
+        )
+
+        self.assertEqual(
+            self.repository.user_profile(str(first["user_id"])),
+            saved,
+        )
+        self.assertIsNone(self.repository.user_profile(str(second["user_id"])))
+        refreshed = self.repository.get_user(str(first["user_id"]))
+        self.assertEqual(refreshed["display_name"], "Alpha Updated")
+        self.assertEqual(
+            refreshed["avatar_image_url"],
+            "/api/attachments/alpha_123?view=1",
+        )
+
     def test_operator_claim_pairing_and_consumption_share_one_identity(self) -> None:
         claimed = self.repository.claim_local_operator_credential(
             "device:operator-alpha",

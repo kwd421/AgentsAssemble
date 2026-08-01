@@ -35,6 +35,10 @@ from agentsassemble.persistence.postgres.identity.usage import (
     record_usage,
     usage_summary,
 )
+from agentsassemble.persistence.postgres.identity.user_profiles import (
+    read_user_profile,
+    update_user_profile,
+)
 from agentsassemble.persistence.postgres.identity.users import (
     claim_local_operator_credential,
     consume_operator_pairing,
@@ -109,6 +113,18 @@ class PostgresIdentityRepository:
     def user_for_participant(self, participant_id: str) -> dict[str, object] | None:
         with self._connections.connection() as connection:
             return user_for_participant(connection, participant_id)
+
+    def user_profile(self, user_id: str) -> dict[str, object] | None:
+        with self._connections.connection() as connection:
+            return read_user_profile(connection, user_id)
+
+    def update_user_profile(
+        self,
+        user_id: str,
+        profile: dict[str, object],
+    ) -> dict[str, object]:
+        with self._connections.connection() as connection, connection.transaction():
+            return update_user_profile(connection, user_id, profile, now=_now())
 
     def resolve_credential_user(
         self,
@@ -370,6 +386,7 @@ class PostgresIdentityRepository:
             connection.execute(
                 """TRUNCATE TABLE
                        identity_usage_events,
+                       identity_user_profiles,
                        identity_room_user_preferences,
                        identity_room_registry,
                        identity_memberships,

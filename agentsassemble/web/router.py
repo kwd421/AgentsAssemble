@@ -31,7 +31,11 @@ from agentsassemble.admission.projection import LegacyAdmissionProjection
 from agentsassemble.admission.session_service import RoomSessionService
 from agentsassemble.room.attachments import FileAttachmentStore
 from agentsassemble.identity.pairing import OperatorPairingService
-from agentsassemble.identity.repository import IdentityBackend, device_auth_key
+from agentsassemble.identity.repository import (
+    IdentityBackend,
+    LOCAL_OPERATOR_USER_ID,
+    device_auth_key,
+)
 from agentsassemble.application.public_invite_runtime import PublicInviteRuntime
 from agentsassemble.room.repository import RoomRepository
 from agentsassemble.web.security import (
@@ -377,6 +381,31 @@ class RequestContext:
             participant_type="human",
         )
         return str((user or {}).get("user_id") or "")
+
+    def authenticated_user(self) -> dict[str, object] | None:
+        """Resolve the server user behind a room session or local operator device."""
+
+        session = self.session()
+        if session is not None:
+            return self.deps.identities.user_for_participant(
+                str(session.get("agent_id") or "")
+            )
+
+        device_token = str(self.headers.get("X-Device-Token") or "").strip()
+        auth_key = device_auth_key(device_token)
+        if self.is_local_operator():
+            if auth_key:
+                claimed = self.deps.identities.claim_local_operator_credential(
+                    auth_key,
+                    provider="device",
+                )
+                if claimed is not None:
+                    return claimed
+            return self.deps.identities.get_user(LOCAL_OPERATOR_USER_ID)
+
+        if not auth_key:
+            return None
+        return self.deps.identities.user_for_credential(auth_key)
 
     def require_session(self) -> dict[str, object] | None:
         """Gate a guest endpoint; sends 401 when no valid session token."""

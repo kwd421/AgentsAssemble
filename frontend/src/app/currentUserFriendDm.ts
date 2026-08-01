@@ -1,4 +1,5 @@
 import { fetchUserProfile, postRoomFriendDm } from "../api";
+import { getOrCreateDeviceToken } from "../lib/deviceIdentity";
 
 export async function postCurrentUserFriendDm({
   friendId,
@@ -9,7 +10,7 @@ export async function postCurrentUserFriendDm({
   message: string;
   resumeIfNeeded?: boolean;
 }) {
-  const profile = await fetchUserProfile();
+  const profile = await fetchUserProfile({ deviceToken: getOrCreateDeviceToken() });
   return postRoomFriendDm({
     friendId,
     message,

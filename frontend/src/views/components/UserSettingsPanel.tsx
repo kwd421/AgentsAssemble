@@ -57,7 +57,7 @@ export default function UserSettingsPanel({
                 <UserCircle size={18} />
                 <div>
                   <h3>계정</h3>
-                  <p>이 방에서 보이는 로컬 사용자 정보를 저장합니다.</p>
+                  <p>서버와 방에서 함께 사용하는 내 사용자 정보를 저장합니다.</p>
                 </div>
               </header>
               <div className="dc-user-settings-grid">

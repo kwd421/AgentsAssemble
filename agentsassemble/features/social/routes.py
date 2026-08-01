@@ -48,7 +48,23 @@ def register_room_friend_profile_routes(
 
     @router.get("/api/user-profile")
     def user_profile(ctx: RequestContext) -> None:
-        ctx.send_json(read_user_profile(ctx.deps.output_root))
+        user = ctx.authenticated_user()
+        if user is None:
+            ctx.send_error(
+                HTTPStatus.UNAUTHORIZED,
+                "authenticated user profile required",
+            )
+            return
+        try:
+            ctx.send_json(
+                read_user_profile(
+                    ctx.deps.output_root,
+                    identities=ctx.deps.identities,
+                    user_id=str(user.get("user_id") or ""),
+                )
+            )
+        except ValueError as error:
+            ctx.send_error(HTTPStatus.BAD_REQUEST, str(error))
 
     @router.post("/api/room-friends/dm")
     def post_room_friend_dm(ctx: RequestContext) -> None:
@@ -81,7 +97,25 @@ def register_room_friend_profile_routes(
         payload = ctx.read_json_body()
         if payload is None:
             return
-        ctx.send_json(update_user_profile(ctx.deps.output_root, payload))
+        user = ctx.authenticated_user()
+        if user is None:
+            ctx.send_error(
+                HTTPStatus.UNAUTHORIZED,
+                "authenticated user profile required",
+            )
+            return
+        try:
+            ctx.send_json(
+                update_user_profile(
+                    ctx.deps.output_root,
+                    payload,
+                    identities=ctx.deps.identities,
+                    rooms=ctx.deps.rooms,
+                    user_id=str(user.get("user_id") or ""),
+                )
+            )
+        except ValueError as error:
+            ctx.send_error(HTTPStatus.BAD_REQUEST, str(error))
 
     @router.delete("/api/room-friends")
     def delete_room_friend_route(ctx: RequestContext) -> None:

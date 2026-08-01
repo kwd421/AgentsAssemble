@@ -48,6 +48,15 @@ def register_ws_ticket_route(
                 ctx.send_error(HTTPStatus.BAD_REQUEST, str(error))
                 return
             session_token = ""
+        participant_id = str(session.get("agent_id") or "")
+        user = ctx.deps.identities.user_for_participant(participant_id)
+        if user is not None:
+            session = {
+                **session,
+                "display_name": str(
+                    user.get("display_name") or session.get("display_name") or ""
+                ),
+            }
         ticket = ws_ticket_store.issue(session, session_token=session_token)
         ctx.send_json({"ticket": ticket, "ttl_seconds": WS_TICKET_TTL_SECONDS})
 

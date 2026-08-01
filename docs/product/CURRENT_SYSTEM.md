@@ -116,6 +116,13 @@ that browser credential to the canonical user instead of creating another
 operator participant. Ordinary guest admission cannot reach that privileged
 claim path.
 
+User profile settings are owned by that authenticated server identity, not by
+browser-local UI state. The operator and every admitted browser guest have
+separate profiles keyed by server user ID. A display-name or avatar update also
+updates that user's canonical room memberships and participant records, emits a
+`participant_updated` event, and is reused when a new WebSocket ticket is
+issued, so reconnect cannot restore an older invite-time name.
+
 Opening `/join?token=...` first performs a side-effect-free admission check. A
 valid existing room session is preserved, a known same-origin device reuses its
 server profile, and an unknown device sees the explicit guest profile form.

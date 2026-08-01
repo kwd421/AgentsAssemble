@@ -11,7 +11,13 @@ import {
   X,
 } from "lucide-react";
 
-import { fetchUserProfile, saveUserProfile, uploadLobbyAttachment, type UserProfile } from "../../api";
+import {
+  fetchUserProfile,
+  saveUserProfile,
+  uploadLobbyAttachment,
+  type UserProfile,
+  type UserProfileIdentity,
+} from "../../api";
 import {
   DEFAULT_USER_PROFILE,
   PROFILE_STATUS_OPTIONS,
@@ -28,6 +34,7 @@ export default function UserPanel({
   agentCount,
   hasBackendError,
   guestProfile,
+  profileIdentity = {},
   onGuestExit,
 }: {
   onlineCount: number;
@@ -40,10 +47,25 @@ export default function UserPanel({
     statusLabel: string;
     expired?: boolean;
   };
+  profileIdentity?: UserProfileIdentity;
   onGuestExit?: () => void;
 }) {
-  const [profile, setProfile] = useState<UserProfile>(DEFAULT_USER_PROFILE);
-  const [draft, setDraft] = useState<UserProfile>(DEFAULT_USER_PROFILE);
+  const initialGuestName = String(guestProfile?.displayName || "").trim();
+  const initialProfile = guestProfile
+    ? {
+        ...DEFAULT_USER_PROFILE,
+        displayName: initialGuestName || "게스트",
+        avatarLabel: String(
+          guestProfile.avatarLabel || initialGuestName.slice(0, 2) || "G"
+        )
+          .trim()
+          .slice(0, 2)
+          .toUpperCase(),
+        avatarImage: guestProfile.avatarImage,
+      }
+    : DEFAULT_USER_PROFILE;
+  const [profile, setProfile] = useState<UserProfile>(initialProfile);
+  const [draft, setDraft] = useState<UserProfile>(initialProfile);
   const [profileOpen, setProfileOpen] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [settingsSection, setSettingsSection] = useState<UserSettingsSection>("account");
@@ -64,9 +86,9 @@ export default function UserPanel({
   const guestHasAvatarImage = Boolean(guestProfile?.avatarImage);
 
   useEffect(() => {
-    if (guestProfile) return;
+    if (guestProfile?.expired) return;
     let ignore = false;
-    fetchUserProfile()
+    fetchUserProfile(profileIdentity)
       .then((loadedProfile) => {
         if (ignore) return;
         setProfile(loadedProfile);
@@ -80,7 +102,7 @@ export default function UserPanel({
     return () => {
       ignore = true;
     };
-  }, [guestProfile]);
+  }, [guestProfile?.expired, profileIdentity.deviceToken, profileIdentity.sessionToken]);
 
   useEffect(() => {
     if (!profileOpen && !settingsOpen && !avatarEditorOpen) return;
@@ -126,7 +148,7 @@ export default function UserPanel({
     setSaving(true);
     setProfileError("");
     try {
-      const savedProfile = await saveUserProfile(nextProfile);
+      const savedProfile = await saveUserProfile(nextProfile, profileIdentity);
       setProfile(savedProfile);
       setDraft(savedProfile);
       saveDisplayNameForComposers(savedProfile);
@@ -159,6 +181,7 @@ export default function UserPanel({
     try {
       const attachment = await uploadLobbyAttachment(file, {
         purpose: "profile_avatar",
+        sessionToken: profileIdentity.sessionToken,
       });
       const error = await persistProfile({ ...profile, avatarImage: attachment.url });
       if (error) {
@@ -173,7 +196,7 @@ export default function UserPanel({
     }
   }
 
-  if (guestProfile) {
+  if (guestProfile?.expired) {
     return (
       <div className="dc-user-panel" ref={rootRef}>
         <div className="dc-current-user">

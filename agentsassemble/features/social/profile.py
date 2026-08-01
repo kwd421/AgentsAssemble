@@ -1,10 +1,13 @@
-"""Optional local user-profile persistence and public normalization."""
+"""Authenticated user-profile normalization and room synchronization."""
 from __future__ import annotations
 
 import json
 import re
 from datetime import UTC, datetime
 from pathlib import Path
+
+from agentsassemble.identity.repository import IdentityBackend, LOCAL_OPERATOR_USER_ID
+from agentsassemble.room.repository import RoomRepository
 
 PROFILE_TEXT_LIMIT = 120
 CUSTOM_STATUS_LIMIT = 160
@@ -26,13 +29,49 @@ DEFAULT_PROFILE = {
 }
 
 
-def read_user_profile(output_root: Path) -> dict[str, object]:
-    return {"profile": public_user_profile(_read_state(output_root).get("profile"))}
+def read_user_profile(
+    output_root: Path,
+    *,
+    identities: IdentityBackend,
+    user_id: str,
+) -> dict[str, object]:
+    user = identities.get_user(user_id)
+    if user is None:
+        raise ValueError(f"User {user_id!r} was not found.")
+    stored = identities.user_profile(user_id)
+    source = stored
+    if source is None and user_id == LOCAL_OPERATOR_USER_ID:
+        source = _read_legacy_state(output_root).get("profile")
+    profile = public_user_profile(source)
+    display_name = clean_profile_text(user.get("display_name"), limit=64)
+    if display_name:
+        profile["display_name"] = display_name
+    if stored is not None:
+        profile["avatar_image_url"] = clean_avatar_image_url(user.get("avatar_image_url"))
+    else:
+        avatar_image_url = clean_avatar_image_url(user.get("avatar_image_url"))
+        if avatar_image_url:
+            profile["avatar_image_url"] = avatar_image_url
+        if user_id != LOCAL_OPERATOR_USER_ID:
+            profile["avatar_label"] = clean_avatar_label(display_name[:2])
+            profile["handle"] = display_name
+            profile["custom_status"] = ""
+    return {"profile": profile}
 
 
-def update_user_profile(output_root: Path, payload: dict[str, object]) -> dict[str, object]:
-    state = _read_state(output_root)
-    current = state.get("profile") if isinstance(state.get("profile"), dict) else {}
+def update_user_profile(
+    output_root: Path,
+    payload: dict[str, object],
+    *,
+    identities: IdentityBackend,
+    rooms: RoomRepository,
+    user_id: str,
+) -> dict[str, object]:
+    current = read_user_profile(
+        output_root,
+        identities=identities,
+        user_id=user_id,
+    )["profile"]
     profile = {
         **public_user_profile(current),
         **_clean_profile_update(payload),
@@ -40,9 +79,17 @@ def update_user_profile(output_root: Path, payload: dict[str, object]) -> dict[s
     }
     if not profile.get("created_at"):
         profile["created_at"] = profile["updated_at"]
-    state["profile"] = public_user_profile(profile)
-    _write_state(output_root, state)
-    return {"profile": state["profile"]}
+    saved = identities.update_user_profile(user_id, public_user_profile(profile))
+    public = public_user_profile(saved)
+    user = identities.get_user(user_id) or {}
+    _synchronize_room_participant_profile(
+        identities=identities,
+        rooms=rooms,
+        participant_id=str(user.get("participant_id") or ""),
+        display_name=str(public.get("display_name") or ""),
+        avatar_image_url=str(public.get("avatar_image_url") or ""),
+    )
+    return {"profile": public}
 
 
 def public_user_profile(value: object) -> dict[str, object]:
@@ -132,12 +179,12 @@ def clean_accent_color(value: object) -> str:
     return str(DEFAULT_PROFILE["accent_color"])
 
 
-def _state_path(output_root: Path) -> Path:
+def _legacy_state_path(output_root: Path) -> Path:
     return output_root / "user_profile.json"
 
 
-def _read_state(output_root: Path) -> dict[str, object]:
-    path = _state_path(output_root)
+def _read_legacy_state(output_root: Path) -> dict[str, object]:
+    path = _legacy_state_path(output_root)
     try:
         state = json.loads(path.read_text(encoding="utf-8"))
     except (OSError, json.JSONDecodeError):
@@ -145,9 +192,43 @@ def _read_state(output_root: Path) -> dict[str, object]:
     return state if isinstance(state, dict) else {"profile": DEFAULT_PROFILE}
 
 
-def _write_state(output_root: Path, state: dict[str, object]) -> None:
-    output_root.mkdir(parents=True, exist_ok=True)
-    _state_path(output_root).write_text(
-        json.dumps(state, ensure_ascii=False, indent=2, sort_keys=True),
-        encoding="utf-8",
-    )
+def _synchronize_room_participant_profile(
+    *,
+    identities: IdentityBackend,
+    rooms: RoomRepository,
+    participant_id: str,
+    display_name: str,
+    avatar_image_url: str,
+) -> None:
+    if not participant_id:
+        return
+    room_ids: set[str] = set()
+    for membership in identities.list_memberships():
+        if str(membership.get("participant_id") or "") != participant_id:
+            continue
+        room_id = str(membership.get("meeting_id") or "")
+        if not room_id:
+            continue
+        room_ids.add(room_id)
+        identities.upsert_membership(
+            {
+                **membership,
+                "display_name": display_name,
+            }
+        )
+    for room_id in room_ids:
+        if not rooms.participant(room_id, participant_id):
+            continue
+        with rooms.transaction(room_id) as transaction:
+            transaction.update_participant_fields(
+                participant_id,
+                display_name=display_name,
+                avatar_image_url=avatar_image_url,
+            )
+            transaction.append_event(
+                "participant_updated",
+                participant_id=participant_id,
+                participant_type="human",
+                display_name=display_name,
+                avatar_image_url=avatar_image_url,
+            )

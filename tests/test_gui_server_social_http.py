@@ -77,7 +77,7 @@ class SocialHttpRegistrarTests(unittest.TestCase):
             },
         )
 
-    def test_friends_and_profile_routes_use_the_output_root(self) -> None:
+    def test_friend_routes_use_the_output_root(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:
             root = Path(temp_dir)
             saved = self._dispatch(
@@ -86,19 +86,10 @@ class SocialHttpRegistrarTests(unittest.TestCase):
                 "POST",
                 body=json.dumps({"friend_id": "friend:sei", "display_name": "SeiNel"}).encode(),
             )
-            profile = self._dispatch(
-                root,
-                "/api/user-profile",
-                "POST",
-                body=json.dumps({"display_name": "Room Owner"}).encode(),
-            )
             loaded_friends = self._dispatch(root, "/api/room-friends", "GET")
-            loaded_profile = self._dispatch(root, "/api/user-profile", "GET")
 
         self.assertEqual(saved.sent_json["friend"]["friend_id"], "friend:sei")
-        self.assertEqual(profile.sent_json["profile"]["display_name"], "Room Owner")
         self.assertEqual(loaded_friends.sent_json["friends"][0]["display_name"], "SeiNel")
-        self.assertEqual(loaded_profile.sent_json["profile"]["display_name"], "Room Owner")
 
     def test_all_post_routes_reject_malformed_and_non_object_json(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:
@@ -201,7 +192,7 @@ class SocialHttpHandlerTests(unittest.TestCase):
         self.assertEqual(payload, {"patched": True})
         self.assertEqual(calls, [(root, supervisor, {"friend_id": "friend:sei", "message": "hello"}, base)])
 
-    def test_public_host_cannot_dispatch_friends_or_profile_routes(self) -> None:
+    def test_public_host_rejects_friends_and_requires_profile_authentication(self) -> None:
         set_runtime_public_url("https://public.example.test")
         with tempfile.TemporaryDirectory() as temp_dir:
             root = Path(temp_dir)
@@ -216,8 +207,6 @@ class SocialHttpHandlerTests(unittest.TestCase):
                     ("DELETE", "/api/room-friends?friend_id=friend:sei", None),
                     ("GET", "/api/room-friends/dm?friend_id=friend:sei", None),
                     ("POST", "/api/room-friends/dm", {}),
-                    ("GET", "/api/user-profile", None),
-                    ("POST", "/api/user-profile", {}),
                 ):
                     with self.subTest(method=method, path=path):
                         status, _response = self._request(
@@ -227,6 +216,15 @@ class SocialHttpHandlerTests(unittest.TestCase):
                             headers={"Host": "public.example.test"},
                         )
                         self.assertEqual(status, HTTPStatus.FORBIDDEN)
+                for method, payload in (("GET", None), ("POST", {})):
+                    with self.subTest(method=method, path="/api/user-profile"):
+                        status, _response = self._request(
+                            f"{base}/api/user-profile",
+                            method=method,
+                            payload=payload,
+                            headers={"Host": "public.example.test"},
+                        )
+                        self.assertEqual(status, HTTPStatus.UNAUTHORIZED)
             finally:
                 server.shutdown()
                 server.server_close()

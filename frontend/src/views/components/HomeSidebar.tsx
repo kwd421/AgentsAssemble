@@ -1,6 +1,6 @@
 import { useMemo, useState } from "react";
 import { Bot, Cloud, Compass, Cpu, Plus, Search, User, Users, Wifi } from "lucide-react";
-import type { RoomFriend } from "../../api";
+import type { RoomFriend, UserProfileIdentity } from "../../api";
 import type { HomeFilter } from "../../app/friendsDirectoryTypes";
 import { roomFriendMatchesSearch } from "../../lib/friendSearch";
 import UserPanel from "./UserPanel";
@@ -20,6 +20,7 @@ export default function HomeSidebar({
   onlineCount,
   agentCount,
   hasBackendError,
+  profileIdentity,
   friends = [],
   selectedFriendId,
   activeDmFriendId,
@@ -32,6 +33,7 @@ export default function HomeSidebar({
   onlineCount: number;
   agentCount: number;
   hasBackendError: boolean;
+  profileIdentity?: UserProfileIdentity;
   friends?: RoomFriend[];
   selectedFriendId?: string;
   activeDmFriendId?: string;
@@ -135,6 +137,7 @@ export default function HomeSidebar({
           onlineCount={onlineCount}
           agentCount={agentCount}
           hasBackendError={hasBackendError}
+          profileIdentity={profileIdentity}
         />
       </footer>
     </aside>

@@ -4,7 +4,7 @@ from __future__ import annotations
 from pathlib import Path
 
 
-POSTGRES_ROOM_SCHEMA_REVISION = "0011_ordered_previous_speaker"
+POSTGRES_ROOM_SCHEMA_REVISION = "0012_user_profiles"
 POSTGRES_ROOM_AUTHORITY_ID = "canonical-room-repository"
 POSTGRES_ROOM_REQUIRED_TABLES = (
     "rooms",
@@ -30,6 +30,7 @@ POSTGRES_ROOM_REQUIRED_TABLES = (
     "identity_memberships",
     "identity_room_registry",
     "identity_room_user_preferences",
+    "identity_user_profiles",
     "identity_usage_events",
 )
 

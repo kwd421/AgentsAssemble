@@ -155,3 +155,64 @@ class PublicInviteLifecycleHttpTests(unittest.TestCase):
         self.assertEqual(participant["status"], "left")
         self.assertEqual(len(leave_events), 1)
         self.assertEqual(ticket_error.exception.code, 401)
+
+    def test_invited_guest_profile_updates_the_canonical_room_identity(self) -> None:
+        with urlopen(
+            _json_request(
+                f"{self.base}/api/room-invite/create",
+                {"meeting_id": "friend-room", "display_name": "Friend"},
+                {"X-Host-Token": "host-secret"},
+            ),
+            timeout=4,
+        ) as response:
+            invite = json.loads(response.read().decode("utf-8"))
+        with urlopen(
+            _json_request(
+                f"{self.base}/api/room-invite/join",
+                {
+                    "invite_token": invite["invite_token"],
+                    "request_id": str(uuid4()),
+                    "display_name": "Guest Before",
+                    "device_token": "guest-profile-device-token",
+                },
+                self.public_headers,
+            ),
+            timeout=4,
+        ) as response:
+            session = json.loads(response.read().decode("utf-8"))
+
+        guest_headers = {
+            **self.public_headers,
+            "Authorization": f"Bearer {session['session_token']}",
+        }
+        with urlopen(
+            _json_request(
+                f"{self.base}/api/user-profile",
+                {
+                    "display_name": "Guest After",
+                    "avatar_label": "GA",
+                    "custom_status": "초대 게스트 프로필",
+                },
+                guest_headers,
+            ),
+            timeout=4,
+        ) as response:
+            saved = json.loads(response.read().decode("utf-8"))
+        with urlopen(
+            Request(f"{self.base}/api/user-profile", headers=guest_headers),
+            timeout=4,
+        ) as response:
+            loaded = json.loads(response.read().decode("utf-8"))
+
+        participant = self.store.participant("friend-room", str(session["agent_id"]))
+        profile_events = [
+            event
+            for event in self.store.read_events("friend-room")
+            if event["type"] == "participant_updated"
+            and event.get("participant_id") == session["agent_id"]
+        ]
+
+        self.assertEqual(saved["profile"]["display_name"], "Guest After")
+        self.assertEqual(loaded["profile"]["custom_status"], "초대 게스트 프로필")
+        self.assertEqual(participant["display_name"], "Guest After")
+        self.assertEqual(profile_events[-1]["display_name"], "Guest After")

@@ -1455,6 +1455,7 @@ export default function App() {
           onlineCount={scopedOnlineCount}
           agentCount={scopedAgents.length || 0}
           hasBackendError={Boolean(canonicalRoom.syncIssue || roomDirectorySyncIssue)}
+          profileIdentity={{ deviceToken }}
           friends={homeFriendsPayload.friends}
           selectedFriendId={selectedHomeFriendId}
           activeDmFriendId={activeHomeDmFriendId}
@@ -1665,6 +1666,10 @@ export default function App() {
             agentCount={scopedAgents.length || 0}
             hasBackendError={Boolean(canonicalRoom.syncIssue || roomDirectorySyncIssue)}
             guestProfile={guestPanelProfile}
+            profileIdentity={{
+              sessionToken: admittedSessionToken,
+              deviceToken,
+            }}
             onGuestExit={guestExpired ? exitGuestSurface : undefined}
           />
         </footer>

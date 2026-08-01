@@ -524,14 +524,26 @@ export function fetchRoomMembers(meetingId: string, sessionToken = "") {
   return sessionToken ? fetchJsonWithToken<RoomMembersResponse>(url, sessionToken) : fetchJson<RoomMembersResponse>(url);
 }
 
-export function fetchUserProfile(): Promise<UserProfile> {
-  return fetchJson<{ profile: ApiUserProfile }>("/api/user-profile").then((payload) =>
+export type UserProfileIdentity = {
+  sessionToken?: string;
+  deviceToken?: string;
+};
+
+export function fetchUserProfile(identity: UserProfileIdentity = {}): Promise<UserProfile> {
+  return fetchJsonWithIdentity<{ profile: ApiUserProfile }>("/api/user-profile", identity).then((payload) =>
     normalizeUserProfile(payload.profile)
   );
 }
 
-export function saveUserProfile(profile: UserProfile): Promise<UserProfile> {
-  return postJson<{ profile: ApiUserProfile }>("/api/user-profile", userProfileToApi(profile)).then(
+export function saveUserProfile(
+  profile: UserProfile,
+  identity: UserProfileIdentity = {}
+): Promise<UserProfile> {
+  return postJsonWithIdentity<{ profile: ApiUserProfile }>(
+    "/api/user-profile",
+    userProfileToApi(profile),
+    identity
+  ).then(
     (payload) => normalizeUserProfile(payload.profile)
   );
 }

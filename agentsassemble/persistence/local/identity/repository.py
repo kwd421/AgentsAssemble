@@ -37,6 +37,11 @@ from agentsassemble.persistence.local.identity.preferences import (
     read_room_preferences,
     update_room_preferences,
 )
+from agentsassemble.persistence.local.identity.user_profiles import (
+    ensure_user_profiles_schema,
+    read_user_profile,
+    update_user_profile,
+)
 from agentsassemble.room.text import clean_room_text as clean_lobby_text
 from agentsassemble.room.user_preferences import (
     RoomUserPreferencesRecord,
@@ -228,6 +233,7 @@ class IdentityStore:
             connection.execute("PRAGMA journal_mode=WAL")
             connection.executescript(_SCHEMA)
             ensure_room_preferences_schema(connection)
+            ensure_user_profiles_schema(connection)
             # Additive column migrations (CREATE TABLE IF NOT EXISTS won't add
             # columns to a pre-existing table). Idempotent: skip if present.
             self._ensure_column(connection, "usage_events", "estimated", "INTEGER NOT NULL DEFAULT 0")
@@ -332,6 +338,23 @@ class IdentityStore:
                 (str(participant_id or ""),),
             ).fetchone()
         return self._user_dict(row) if row else None
+
+    def user_profile(self, user_id: str) -> dict[str, object] | None:
+        with closing(self._connect()) as connection:
+            return read_user_profile(connection, user_id)
+
+    def update_user_profile(
+        self,
+        user_id: str,
+        profile: dict[str, object],
+    ) -> dict[str, object]:
+        with self._write_lock, closing(self._connect()) as connection, connection:
+            return update_user_profile(
+                connection,
+                user_id,
+                profile,
+                now=_now(),
+            )
 
     def resolve_credential_user(
         self,
