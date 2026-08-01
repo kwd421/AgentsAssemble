@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import copy
-import hashlib
 import json
 import re
 import shutil
@@ -18,6 +17,7 @@ from agentsassemble.providers.claude_catalog import (
     discover_claude_model_ids,
     discover_claude_xhigh_model_ids,
 )
+from agentsassemble.providers.catalog_revision import catalog_revision
 from agentsassemble.providers.launch_specs import (
     NATIVE_CLI_PROVIDER_CATALOG,
     native_cli_provider_definition,
@@ -392,7 +392,7 @@ class ProviderCapabilityCatalog:
             )
             for provider in payload
         ]
-        revision = _catalog_revision(payload)
+        revision = catalog_revision(payload)
         discovered_at = datetime.now(UTC).isoformat()
         with self._lock:
             self._cached = payload
@@ -1576,24 +1576,6 @@ def _claude_controls(
 
 def _unique(values: list[str]) -> list[str]:
     return list(dict.fromkeys(value for value in values if value))
-
-
-def _catalog_revision(providers: list[dict[str, object]]) -> str:
-    public_contract = [
-        {
-            "id": provider.get("id"),
-            "source": provider.get("catalog_source"),
-            "status": provider.get("discovery_status"),
-            "catalog_group": provider.get("catalog_group"),
-            "login_available": provider.get("login_available"),
-            "login_flow": provider.get("login_flow"),
-            "controls": provider.get("controls"),
-            "fixed_values": provider.get("fixed_values"),
-        }
-        for provider in providers
-    ]
-    encoded = json.dumps(public_contract, ensure_ascii=True, sort_keys=True, separators=(",", ":"))
-    return f"cat-{hashlib.sha256(encoded.encode('utf-8')).hexdigest()[:16]}"
 
 
 PROVIDER_CAPABILITIES = ProviderCapabilityCatalog(

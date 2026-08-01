@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import { Cloud, CreditCard, Folder, HardDrive, Play, Plus, X } from "lucide-react";
+import { Folder, Play, Plus, X } from "lucide-react";
 import {
   chooseLocalWorkspace,
   deleteProviderCredential,
@@ -18,6 +18,13 @@ import {
   initializeProviderSettings,
   reconcileProviderSettings,
 } from "../../lib/providerControlSettings";
+import {
+  PROVIDER_GROUPS,
+  projectProvidersByCatalogGroup,
+  providerCatalogGroup,
+  providerGroupLabel,
+  type ProviderCatalogGroup,
+} from "../../lib/providerCatalogGroups";
 import ProviderLogo from "./ProviderLogo";
 import ProviderControlSelect from "./ProviderControlSelect";
 import ProviderControlToggle from "./ProviderControlToggle";
@@ -745,86 +752,6 @@ function deriveStatusMessage({
     return "작업 폴더를 선택하세요. 이 폴더에서 세션이 실행됩니다.";
   }
   return "";
-}
-
-type ProviderCatalogGroup = "subscription" | "api" | "local";
-
-const PROVIDER_GROUPS = [
-  { id: "subscription", label: "Subscription", Icon: CreditCard },
-  { id: "api", label: "API", Icon: Cloud },
-  { id: "local", label: "Local", Icon: HardDrive },
-] as const;
-
-function providerCatalogGroup(
-  provider: NativeCliProviderAvailability | undefined
-): ProviderCatalogGroup {
-  if (provider?.catalog_group) return provider.catalog_group;
-  return provider?.runtime_kind === "api" ? "api" : "subscription";
-}
-
-function projectProvidersByCatalogGroup(
-  providers: NativeCliProviderAvailability[]
-): Record<ProviderCatalogGroup, NativeCliProviderAvailability[]> {
-  return {
-    subscription: providers.flatMap((provider) => {
-      const projected = projectProviderToCatalogGroup(provider, "subscription");
-      return projected ? [projected] : [];
-    }),
-    api: providers.flatMap((provider) => {
-      const projected = projectProviderToCatalogGroup(provider, "api");
-      return projected ? [projected] : [];
-    }),
-    local: providers.flatMap((provider) => {
-      const projected = projectProviderToCatalogGroup(provider, "local");
-      return projected ? [projected] : [];
-    }),
-  };
-}
-
-function projectProviderToCatalogGroup(
-  provider: NativeCliProviderAvailability,
-  group: ProviderCatalogGroup
-): NativeCliProviderAvailability | null {
-  const modelControl = provider.controls.find((control) => control.key === "model");
-  if (!modelControl) {
-    return providerCatalogGroup(provider) === group ? provider : null;
-  }
-  const providerGroup = providerCatalogGroup(provider);
-  const scopedOptions = modelControl.options.filter((option) => {
-    const optionGroup = option.metadata?.catalog_group;
-    return (
-      (typeof optionGroup === "string" && optionGroup
-        ? optionGroup
-        : providerGroup) === group
-    );
-  });
-  if (scopedOptions.length === 0) return null;
-  if (scopedOptions.length === modelControl.options.length && providerGroup === group) {
-    return provider;
-  }
-  const defaultModel = scopedOptions.some(
-    (option) => option.value === modelControl.default_value
-  )
-    ? modelControl.default_value
-    : scopedOptions[0].value;
-  return {
-    ...provider,
-    catalog_group: group,
-    default_model: defaultModel,
-    controls: provider.controls.map((control) =>
-      control.key === "model"
-        ? {
-            ...control,
-            default_value: defaultModel,
-            options: scopedOptions,
-          }
-        : control
-    ),
-  };
-}
-
-function providerGroupLabel(group: ProviderCatalogGroup): string {
-  return PROVIDER_GROUPS.find((item) => item.id === group)?.label || group;
 }
 
 function defaultAgentDisplayName(
