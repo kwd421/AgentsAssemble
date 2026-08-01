@@ -194,13 +194,6 @@ class RoomRealtimeController:
             ensure_room=self.ensure_room,
             publish_session_state=self._publish_session_state,
         )
-        self._connections = RoomConnectionService(
-            store=self.store,
-            broker=self.broker,
-            ensure_room=self.ensure_room,
-            ensure_external_bridge_session=self._provider_sessions.ensure_external_bridge_session,
-            publish_session_state=self._publish_session_state,
-        )
         self._snapshots = RoomSnapshotService(
             store=self.store,
             provider_catalog=self.provider_catalog,
@@ -232,6 +225,14 @@ class RoomRealtimeController:
                 **kwargs,
             ),
             attention_owner_id=self._attention_owner_id,
+        )
+        self._connections = RoomConnectionService(
+            store=self.store,
+            broker=self.broker,
+            ensure_room=self.ensure_room,
+            ensure_external_bridge_session=self._provider_sessions.ensure_external_bridge_session,
+            reconcile_session_attention=self._turn_coordinator.reconcile_session_attention,
+            publish_session_state=self._publish_session_state,
         )
         self._bridge_reports = RoomBridgeReportService(
             store=self.store,

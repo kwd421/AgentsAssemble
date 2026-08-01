@@ -7,6 +7,7 @@ from pathlib import Path
 from agentsassemble.persistence.local.room.repository import RoomStore
 from agentsassemble.room.connections import RoomConnectionService
 from agentsassemble.room.event_broker import RoomEventBroker
+from agentsassemble.web.routes.runtime import rolling_restart_blockers
 
 
 class RoomConnectionServiceTests(unittest.TestCase):
@@ -24,6 +25,9 @@ class RoomConnectionServiceTests(unittest.TestCase):
             ensure_external_bridge_session=lambda room_id, identity: self.external_bridges.append(
                 (room_id, dict(identity))
             ),
+            reconcile_session_attention=lambda _room_id, _session, *, pending_event_ids: {
+                "pending_event_ids": list(pending_event_ids)
+            },
             publish_session_state=lambda room_id, session: self.published_sessions.append(
                 (room_id, dict(session))
             ),
@@ -97,7 +101,15 @@ class RoomConnectionServiceTests(unittest.TestCase):
                 "participant_id": "bridge",
                 "display_name": "Bridge",
                 "enabled": True,
-                "runtime_status": "idle",
+                "runtime_status": "busy",
+                "provider_session_active": True,
+                "active_turn_id": "turn-active",
+                "active_source_event_id": "event-active",
+                "turn_phase": "thinking",
+                "input_up_to_event_id": "event-active",
+                "input_up_to_seq": 4,
+                "inflight_event_ids": ["event-active"],
+                "pending_event_ids": ["event-pending"],
             },
         )
         identity = {
@@ -114,6 +126,18 @@ class RoomConnectionServiceTests(unittest.TestCase):
 
         session = self.store.session("general", "bridge")
         self.assertEqual(session["runtime_status"], "disconnected")
+        self.assertFalse(session["provider_session_active"])
+        self.assertEqual(session["active_turn_id"], "")
+        self.assertEqual(session["active_source_event_id"], "")
+        self.assertEqual(session["turn_phase"], "")
+        self.assertEqual(session["input_up_to_event_id"], "")
+        self.assertEqual(session["input_up_to_seq"], 0)
+        self.assertEqual(session["inflight_event_ids"], [])
+        self.assertEqual(
+            session["pending_event_ids"],
+            ["event-active", "event-pending"],
+        )
+        self.assertEqual(rolling_restart_blockers(self.store), [])
         self.assertEqual(
             self.store.participant("general", "bridge")["status"],
             "detached",
