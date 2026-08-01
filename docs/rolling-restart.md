@@ -1,15 +1,16 @@
-# Rolling restart (무중단 패치)
+# Rolling restart (listener handoff)
 
-How to move the running GUI server onto a new build without dropping a single
-connection. The mechanism has been in the tree since 2026-07-30; this is the
-operator manual for it.
+How to move the running GUI server's listener onto a new build without an
+acceptance gap. Existing HTTP and WebSocket transports disconnect when the old
+process exits; clients reconnect and resynchronize with the replacement.
 
 ## What actually happens
 
 The listening socket is never closed. The current process forks a replacement,
 hands it the *same* listener file descriptor, waits for the replacement to say
-it is serving, and only then stops accepting itself. Browsers, room
-WebSockets, and provider bridges keep their existing connections.
+it is serving, and only then stops accepting itself. The listener remains
+available for new connections throughout the handoff. Connections accepted by
+the old process still belong to that process and close when it exits.
 
 ```
 parent (gen N)                          child (gen N+1)
@@ -19,7 +20,8 @@ parent (gen N)                          child (gen N+1)
   |                                        |-- writes "ready" ------> |
   |<-- waits for ready ---------------------                          |
   |-- stops accepting, writes "go" ------------------------------->   |
-  |-- drains, exits                        |-- serves on the same socket
+  |-- closes its connections, exits        |-- serves on the same socket
+  |                                        |<-- clients reconnect + resync
 ```
 
 Source: [`agentsassemble/application/rolling_restart.py`](../agentsassemble/application/rolling_restart.py),
@@ -73,6 +75,17 @@ A non-default server:
 assemble rolling-restart --server http://127.0.0.1:9000
 ```
 
+For a remote server, keep the host token out of the process arguments. Put it
+in an environment variable (the default name is
+`AGENTSASSEMBLE_HOST_TOKEN`):
+
+```bash
+AGENTSASSEMBLE_HOST_TOKEN='...' assemble rolling-restart --server https://room.example
+```
+
+Use `--host-token-env NAME` when an operator environment uses another variable
+name.
+
 ### Exit codes
 
 | Code | Meaning |
@@ -117,6 +130,9 @@ remote caller needs `X-Host-Token` or an operator session.
 - **POSIX only.** Descriptor handoff is not implemented for Windows; the
   request is refused there with a clear message.
 - **One at a time.** A second request while a roll is in progress is refused.
+- **Clients reconnect.** Listener handoff avoids a new-connection refusal gap;
+  it does not migrate transports already accepted by the old process. Clients
+  must reconnect and resume from their last verified event cursor.
 - **Not a config reloader.** Anything read only at startup (listen address,
   port, repository backend) still needs a full restart.
 

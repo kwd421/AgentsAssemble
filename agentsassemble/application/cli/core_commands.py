@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 import sys
 import time
 import urllib.error
@@ -184,9 +185,18 @@ def run_rolling_restart_command(args: argparse.Namespace) -> int:
     base = str(getattr(args, "server", "") or "http://127.0.0.1:8765").rstrip("/")
     url = f"{base}{ROLLING_RESTART_PATH}"
     as_json = bool(getattr(args, "as_json", False))
+    host_token_env = str(
+        getattr(args, "host_token_env", "AGENTSASSEMBLE_HOST_TOKEN")
+        or "AGENTSASSEMBLE_HOST_TOKEN"
+    )
+    host_token = os.environ.get(host_token_env, "")
 
     if getattr(args, "status", False):
-        payload, error = _rolling_restart_call(url, method="GET")
+        payload, error = _rolling_restart_call(
+            url,
+            method="GET",
+            host_token=host_token,
+        )
         if error:
             print(error, file=sys.stderr)
             return 2
@@ -195,17 +205,21 @@ def run_rolling_restart_command(args: argparse.Namespace) -> int:
             if as_json
             else _format_rolling_restart_status(payload)
         )
-        return 0
+        return 0 if payload.get("supported") is True else 2
 
     deadline = time.monotonic() + max(0.0, float(getattr(args, "wait", 0.0) or 0.0))
     while True:
-        payload, error = _rolling_restart_call(url, method="POST")
+        payload, error = _rolling_restart_call(
+            url,
+            method="POST",
+            host_token=host_token,
+        )
         if error:
             print(error, file=sys.stderr)
             return 2
         blockers = payload.get("blockers") or []
         blocked = payload.get("accepted") is not True
-        if not blocked or time.monotonic() >= deadline:
+        if not blocked or not blockers or time.monotonic() >= deadline:
             break
         print(
             f"Waiting for {len(blockers)} provider turn(s) to finish...",
@@ -219,7 +233,7 @@ def run_rolling_restart_command(args: argparse.Namespace) -> int:
     elif payload.get("accepted") is True:
         print(f"Rolling restart started: {payload.get('operation_id') or 'unknown'}")
         print(f"- generation: {payload.get('generation')}")
-        print("- The listening socket is handed to the replacement; no connection is dropped.")
+        print("- The listener stays available; connected clients reconnect and resync.")
     else:
         print(str(payload.get("error") or "Rolling restart was refused."), file=sys.stderr)
         for blocker in payload.get("blockers") or []:
@@ -235,12 +249,16 @@ def _rolling_restart_call(
     url: str,
     *,
     method: str,
+    host_token: str = "",
 ) -> tuple[dict[str, object], str]:
+    headers = {"Content-Type": "application/json"}
+    if host_token:
+        headers["X-Host-Token"] = host_token
     request = urllib.request.Request(
         url,
         method=method,
         data=b"{}" if method == "POST" else None,
-        headers={"Content-Type": "application/json"},
+        headers=headers,
     )
     try:
         with urllib.request.urlopen(request, timeout=30.0) as response:

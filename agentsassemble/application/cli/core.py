@@ -124,7 +124,7 @@ def register_core_parsers(subparsers: argparse._SubParsersAction) -> None:
 
     rolling_restart = subparsers.add_parser(
         "rolling-restart",
-        help="Hand the running GUI server over to a new build without dropping connections.",
+        help="Hand the GUI listener to a new build; connected clients reconnect and resync.",
     )
     rolling_restart.add_argument(
         "--server",
@@ -141,6 +141,14 @@ def register_core_parsers(subparsers: argparse._SubParsersAction) -> None:
         type=parse_nonnegative_float,
         default=0.0,
         help="Seconds to keep retrying while provider turns finish. 0 fails fast.",
+    )
+    rolling_restart.add_argument(
+        "--host-token-env",
+        default="AGENTSASSEMBLE_HOST_TOKEN",
+        help=(
+            "Environment variable containing the host token for a remote server. "
+            "Defaults to AGENTSASSEMBLE_HOST_TOKEN."
+        ),
     )
     rolling_restart.add_argument(
         "--json",
