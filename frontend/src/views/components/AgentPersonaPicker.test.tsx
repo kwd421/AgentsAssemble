@@ -61,8 +61,12 @@ describe("AgentPersonaPicker", () => {
       />
     );
 
+    expect(personaApi.fetchPersonaAssets).not.toHaveBeenCalled();
+    expect(screen.getByRole("button", { name: /Night Guide/ })).toBeTruthy();
+    await userEvent.click(screen.getByRole("button", { name: /Night Guide/ }));
     await waitFor(() => expect(screen.getByText("Weather Module")).toBeTruthy());
     expect(screen.getByRole("radio", { name: /Night Guide/ }).getAttribute("aria-checked")).toBe("true");
+    expect(screen.getByRole("radio", { name: /적용 안 함/ }).getAttribute("aria-checked")).toBe("false");
     expect(screen.getByText("적용됨")).toBeTruthy();
     expect(screen.getByText(/Risu 모듈 · 로어 4/)).toBeTruthy();
 
@@ -83,12 +87,36 @@ describe("AgentPersonaPicker", () => {
     });
     render(<AgentPersonaPicker value="" onChange={onChange} />);
 
-    await waitFor(() => expect(screen.getByText("Night Guide")).toBeTruthy());
     const input = screen.getByLabelText("파일 가져오기").querySelector("input") ||
       screen.getByLabelText("파일 가져오기");
     await userEvent.upload(input as HTMLInputElement, new File(["module"], "module.risum"));
 
     await waitFor(() => expect(onChange).toHaveBeenCalledWith("new-module"));
-    expect(screen.getByText("New Module")).toBeTruthy();
+    expect(screen.getByText(/New Module 가져오기 완료/)).toBeTruthy();
+  });
+
+  it("bounds a large library and finds a card through search", async () => {
+    const onChange = vi.fn();
+    personaApi.fetchPersonaAssets.mockResolvedValue(
+      Array.from({ length: 100 }, (_, index) => ({
+        id: `persona-${index}`,
+        display_name: `Persona ${index}`,
+        asset_kind: "card",
+        lorebook_count: 0,
+        asset_count: 0,
+        ignored_feature_count: 0,
+        tag_count: 0,
+      }))
+    );
+    render(<AgentPersonaPicker value="" onChange={onChange} />);
+
+    await userEvent.click(screen.getByRole("button", { name: /적용 안 함/ }));
+    await waitFor(() => expect(screen.getByText("Persona 0")).toBeTruthy());
+    expect(screen.getAllByRole("radio")).toHaveLength(9);
+    expect(screen.queryByText("Persona 99")).toBeNull();
+
+    await userEvent.type(screen.getByPlaceholderText("봇카드 또는 모듈 검색"), "Persona 99");
+    await userEvent.click(screen.getByRole("radio", { name: /Persona 99/ }));
+    expect(onChange).toHaveBeenCalledWith("persona-99");
   });
 });
