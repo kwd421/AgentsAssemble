@@ -14,8 +14,13 @@ const MIN_TABLE_COLUMNS = 2;
 const MIN_TABLE_ROWS = 2;
 
 function isPipeRow(line: string): boolean {
+  if (/^(?: {4}|\t)/.test(line)) return false;
   const trimmed = line.trim();
   return trimmed.startsWith("|") && trimmed.endsWith("|") && trimmed.length > 2;
+}
+
+function fenceMarker(line: string): string {
+  return line.match(/^\s{0,3}(`{3,}|~{3,})/)?.[1] || "";
 }
 
 function isDelimiterRow(line: string): boolean {
@@ -38,9 +43,28 @@ export function repairMarkdownTables(text: string): string {
   const lines = source.split("\n");
   const output: string[] = [];
   let index = 0;
+  let activeFence = "";
 
   while (index < lines.length) {
     const line = lines[index];
+    const marker = fenceMarker(line);
+    if (activeFence) {
+      output.push(line);
+      if (
+        marker.startsWith(activeFence[0]) &&
+        marker.length >= activeFence.length
+      ) {
+        activeFence = "";
+      }
+      index += 1;
+      continue;
+    }
+    if (marker) {
+      activeFence = marker;
+      output.push(line);
+      index += 1;
+      continue;
+    }
     if (!isPipeRow(line)) {
       output.push(line);
       index += 1;

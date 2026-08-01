@@ -73,6 +73,7 @@ export interface RoomAgentSession {
   yolo_mode?: boolean | null;
   permission_request_count?: number;
   permission_denied_count?: number;
+  denied_permission_names?: string[];
   empty_turn_recovery_count?: number;
   notification_drop_count?: number;
   adapter_activity_invalid_count?: number;

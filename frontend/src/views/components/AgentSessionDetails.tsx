@@ -384,6 +384,11 @@ export default function AgentSessionDetails({
             permissions denied {session.permission_denied_count || 0}/{session.permission_request_count}
           </p>
         )}
+        {Boolean(session.denied_permission_names?.length) && (
+          <p className="dc-room-play-error">
+            denied: {session.denied_permission_names?.join(", ")}
+          </p>
+        )}
         {session.context_error_detected && <p className="dc-room-play-error">context error detected</p>}
         {session.provider_session_resume_error && (
           <p className="dc-room-play-error">{session.provider_session_resume_error}</p>

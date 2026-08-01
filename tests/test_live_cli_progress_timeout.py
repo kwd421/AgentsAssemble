@@ -1,4 +1,5 @@
 import sys
+import time
 import unittest
 
 from agentsassemble.providers.live_cli import LiveCliRuntime, live_cli_supported
@@ -7,6 +8,10 @@ from agentsassemble.providers.live_cli_transcripts import LiveCliMessageSnapshot
 
 class CompletedAnswerMessageSource:
     strict = True
+
+    def __init__(self) -> None:
+        self._reported: set[str] = set()
+        self._activities: list[dict[str, object]] = []
 
     def prepare_start(self) -> None:
         return
@@ -22,6 +27,10 @@ class CompletedAnswerMessageSource:
     ) -> LiveCliMessageSnapshot:
         del quiet
         text = terminal_output.decode("utf-8", errors="replace").replace("\r", "")
+        for marker in ("working:one", "working:two"):
+            if marker in text and marker not in self._reported:
+                self._reported.add(marker)
+                self._activities.append({"kind": "progress", "summary": marker})
         if "answer:done" not in text:
             return LiveCliMessageSnapshot()
         return LiveCliMessageSnapshot(
@@ -30,6 +39,11 @@ class CompletedAnswerMessageSource:
             source="fake-transcript",
             source_kind="fake_strict",
         )
+
+    def drain_activities(self) -> list[dict[str, object]]:
+        activities = self._activities
+        self._activities = []
+        return activities
 
     def describe(self) -> dict[str, object]:
         return {
@@ -68,6 +82,35 @@ class LiveCliProgressTimeoutTests(unittest.TestCase):
             runtime.stop()
 
         self.assertEqual(output["content"], "answer:done")
+
+    @unittest.skipUnless(live_cli_supported(), "requires POSIX PTY support")
+    def test_terminal_spinner_bytes_do_not_extend_the_progress_timeout(self):
+        script = "\n".join(
+            [
+                "import sys, time",
+                "for line in sys.stdin:",
+                "    if not line.strip():",
+                "        continue",
+                "    for frame in range(20):",
+                "        print('spinner', frame, flush=True)",
+                "        time.sleep(0.05)",
+            ]
+        )
+        runtime = LiveCliRuntime(
+            "spinner-only",
+            [sys.executable, "-u", "-c", script],
+            idle_quiet_seconds=0.02,
+            message_source=CompletedAnswerMessageSource(),
+        )
+        started_at = time.monotonic()
+        try:
+            runtime.send("work")
+            with self.assertRaises(TimeoutError):
+                runtime.read_output(timeout_seconds=0.15)
+        finally:
+            runtime.stop()
+
+        self.assertLess(time.monotonic() - started_at, 0.4)
 
 
 if __name__ == "__main__":

@@ -368,7 +368,6 @@ class LiveCliRuntime:
                 continue
             chunks.append(chunk)
             total_bytes += len(chunk)
-            record_progress()
             self._record_terminal_bytes(chunk)
             self._respond_to_terminal_interaction(fd, b"".join(chunks))
             last_read_at = time.monotonic()

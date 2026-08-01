@@ -359,7 +359,7 @@ server validates every selected control against it.
 
 Ordinary room snapshots publish the catalog state already held by the server
 without starting provider discovery. Opening the Agent Session creation UI
-ensures that the catalog is fresh while respecting the server's five-minute
+ensures that the catalog is fresh while respecting the server's 24-hour
 cache; completing an explicit provider-login recheck forces discovery. This
 keeps room entry, reconnect, and repeatedly reopening the creation UI from
 spawning every installed provider's model probe.

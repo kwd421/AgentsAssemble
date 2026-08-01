@@ -53,4 +53,18 @@ describe("repairMarkdownTables", () => {
   it("passes text with no pipes straight through", () => {
     expect(repairMarkdownTables("표 없는 평범한 문장")).toBe("표 없는 평범한 문장");
   });
+
+  it("does not rewrite pipe-shaped examples inside fenced or indented code", () => {
+    const source = [
+      "```text",
+      "| header | value |",
+      "| first | second |",
+      "```",
+      "",
+      "    | indented | example |",
+      "    | first | second |",
+    ].join("\n");
+
+    expect(repairMarkdownTables(source)).toBe(source);
+  });
 });
