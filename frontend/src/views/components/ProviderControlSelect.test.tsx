@@ -7,6 +7,33 @@ import ProviderControlSelect from "./ProviderControlSelect";
 afterEach(cleanup);
 
 describe("ProviderControlSelect", () => {
+  it("drills into model families inside the same bounded menu", async () => {
+    render(
+      <ProviderControlSelect
+        label="모델"
+        options={[
+          { value: "gemini/flash", label: "Gemini Flash", metadata: { family: "Gemini" } },
+          { value: "gemini/pro", label: "Gemini Pro", metadata: { family: "Gemini" } },
+          { value: "claude/sonnet", label: "Claude Sonnet", metadata: { family: "Claude" } },
+          { value: "claude/opus", label: "Claude Opus", metadata: { family: "Claude" } },
+        ]}
+        value="gemini/flash"
+        onChange={vi.fn()}
+      />
+    );
+
+    await userEvent.click(screen.getByRole("combobox", { name: "모델" }));
+    await userEvent.click(screen.getByRole("menuitem", { name: "Gemini" }));
+
+    expect(screen.queryByRole("menu", { name: "모델 분류" })).toBeNull();
+    expect(screen.getAllByRole("listbox")).toHaveLength(1);
+    expect(screen.getByRole("option", { name: "Gemini Flash" })).toBeTruthy();
+    expect(screen.queryByRole("option", { name: "Claude Sonnet" })).toBeNull();
+
+    await userEvent.click(screen.getByRole("button", { name: "모델 분류로 돌아가기" }));
+    expect(screen.getByRole("menu", { name: "모델 분류" })).toBeTruthy();
+  });
+
   it("searches a large model catalog without traversing family menus", async () => {
     const onChange = vi.fn();
     const options = Array.from({ length: 100 }, (_, index) => ({

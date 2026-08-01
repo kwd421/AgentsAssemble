@@ -1,12 +1,12 @@
 {
  "readme": "AgentsAssemble codebase map. Regenerate with `make codebase-map`; verify committed outputs with `make codebase-map-verify`. modules[] columns: name, path, package, domain, classification, migration_status, lines, docstring, imports[], imported_by[] (indexes into modules), classes[[name, [[base, defining_module], ...]]] (best-effort, top-level classes only). frontend[] columns: path, group, lines, doc, imports[], imported_by[] (indexes into frontend). package_edges go importer -> dependency with module-import counts; `points` is the precomputed polyline for that edge and `intra_cycle` marks imports whose endpoints share one cycle group. graph{} holds the layered package drawing: layers[] top-to-bottom (each with members[] package ids, member_count, and the dominant domain), (a package sits below everything importing it), clusters[] are mutually dependent packages (import cycles at package level) drawn as one labelled block, plus width/height of the drawing. health{} ranks findings for a reader who has to act: cycles[] (mutually dependent packages, with the lines they hold), leaning_on_retiring[] (current modules importing legacy/compatibility modules - the reason legacy cannot be deleted), highest_leverage_migrations[] (retiring modules with the most current importers), unreferenced_shims[] (compatibility modules with no importer in agentsassemble/ and no reference in tests/; callers outside this repository are not visible, so verify before deleting), and hotspots[] (largest modules). health.scope states exactly what was measured. class_graph{} is the UML generalization DAG over base classes that resolve inside the repo: edges go base -> subclass, so a subclass always sits below the class it extends. Coordinates in graph and class_graph are laid out with a Sugiyama pipeline (cycle condensation, Coffman-Graham layering, dummy-node edge routing, median/transpose crossing reduction) and are deterministic.",
- "generated_at": "2026-08-01T12:38:39Z",
+ "generated_at": "2026-08-01T16:12:53Z",
  "fingerprint": "27b9493e72d6aeee",
  "stats": {
   "backend_modules": 810,
   "backend_lines": 136224,
-  "frontend_files": 172,
-  "frontend_lines": 43671,
+  "frontend_files": 173,
+  "frontend_lines": 43757,
   "packages": 30,
   "import_cycles": 0,
   "classifications": {
@@ -509,7 +509,7 @@
    "kind": "frontend",
    "doc": "Frontend entry files (App, main, API client, styles) living directly under src/.",
    "files": 13,
-   "lines": 12985,
+   "lines": 12745,
    "domains": {},
    "classes": {},
    "x": 102.0,
@@ -588,8 +588,8 @@
    "id": "fe:views",
    "kind": "frontend",
    "doc": "Top-level room views rendered by the shell.",
-   "files": 78,
-   "lines": 17758,
+   "files": 79,
+   "lines": 18084,
    "domains": {},
    "classes": {},
    "x": 558.0,
@@ -4019,7 +4019,7 @@
      "fe:views"
     ],
     "internal_edges": 16,
-    "lines": 43671,
+    "lines": 43757,
     "heaviest": "fe:views"
    }
   ],
@@ -23315,9 +23315,9 @@
     163,
     164,
     165,
-    168,
     169,
-    170
+    170,
+    171
    ]
   ],
   [
@@ -23745,7 +23745,7 @@
   [
    "frontend/src/index.css",
    "(src root)",
-   7404,
+   7164,
    "",
    [],
    [
@@ -24189,7 +24189,7 @@
     97,
     142,
     144,
-    170
+    171
    ]
   ],
   [
@@ -24355,8 +24355,8 @@
     79,
     96,
     97,
-    168,
-    170
+    169,
+    171
    ]
   ],
   [
@@ -24371,7 +24371,7 @@
     31,
     97,
     148,
-    168
+    169
    ]
   ],
   [
@@ -24475,7 +24475,7 @@
     152,
     159,
     163,
-    167
+    168
    ]
   ],
   [
@@ -24610,9 +24610,9 @@
     110,
     127,
     153,
-    168,
     169,
-    170
+    170,
+    171
    ],
    [
     0,
@@ -24646,7 +24646,7 @@
   [
    "frontend/src/views/components/AgentCreateModal.test.tsx",
    "views",
-   1125,
+   1126,
    "",
    [
     2,
@@ -24658,7 +24658,7 @@
   [
    "frontend/src/views/components/AgentCreateModal.tsx",
    "views",
-   836,
+   838,
    "",
    [
     2,
@@ -24681,8 +24681,8 @@
   [
    "frontend/src/views/components/AgentPersonaPicker.css",
    "views",
-   263,
-   "",
+   286,
+   "A sibling of the modal's other sections, not a panel inside one. The card",
    [],
    [
     104
@@ -24691,7 +24691,7 @@
   [
    "frontend/src/views/components/AgentPersonaPicker.test.tsx",
    "views",
-   122,
+   124,
    "",
    [
     104
@@ -24701,7 +24701,7 @@
   [
    "frontend/src/views/components/AgentPersonaPicker.tsx",
    "views",
-   228,
+   252,
    "",
    [
     7,
@@ -24830,7 +24830,7 @@
     112,
     115,
     148,
-    168
+    169
    ]
   ],
   [
@@ -24985,7 +24985,7 @@
     2
    ],
    [
-    168
+    169
    ]
   ],
   [
@@ -25094,7 +25094,7 @@
   [
    "frontend/src/views/components/ProviderControlSelect.css",
    "views",
-   94,
+   235,
    "",
    [],
    [
@@ -25104,7 +25104,7 @@
   [
    "frontend/src/views/components/ProviderControlSelect.test.tsx",
    "views",
-   60,
+   162,
    "",
    [
     134
@@ -25114,12 +25114,13 @@
   [
    "frontend/src/views/components/ProviderControlSelect.tsx",
    "views",
-   410,
+   395,
    "",
    [
     88,
     132,
-    167
+    167,
+    168
    ],
    [
     101,
@@ -25164,7 +25165,7 @@
     136,
     159,
     160,
-    168
+    169
    ]
   ],
   [
@@ -25580,6 +25581,16 @@
    ]
   ],
   [
+   "frontend/src/views/components/providerControlMenuLayout.ts",
+   "views",
+   46,
+   "",
+   [],
+   [
+    134
+   ]
+  ],
+  [
    "frontend/src/views/components/providerModelOptions.ts",
    "views",
    87,
@@ -25706,8 +25717,8 @@
   {
    "name": "frontend/src",
    "note": "React room client (TS/TSX)",
-   "files": 172,
-   "lines": 43671
+   "files": 173,
+   "lines": 43757
   },
   {
    "name": "tests",

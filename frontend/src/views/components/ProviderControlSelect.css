@@ -3,6 +3,7 @@
   z-index: 220;
   display: grid;
   min-width: min(280px, calc(100vw - 16px));
+  max-height: calc(100vh - 16px);
   overflow: hidden;
   border: 1px solid var(--color-panel-separator);
   border-radius: 8px;
@@ -10,15 +11,155 @@
   box-shadow: 0 16px 44px rgba(0, 0, 0, 0.48);
 }
 
+.dc-agent-select-menu {
+  --dc-select-row: 34px;
+  --dc-select-gap: 2px;
+  --dc-select-rows: 7;
+  position: fixed;
+  z-index: 220;
+  display: grid;
+  max-height: min(
+    calc(
+      var(--dc-select-rows) * var(--dc-select-row) +
+        (var(--dc-select-rows) - 1) * var(--dc-select-gap) + 10px
+    ),
+    calc(100vh - 16px)
+  );
+  gap: var(--dc-select-gap);
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  border: 1px solid var(--color-panel-separator);
+  border-radius: 8px;
+  background: #1b1c20;
+  padding: 4px;
+  box-shadow: 0 16px 44px rgba(0, 0, 0, 0.48);
+}
+
+.dc-agent-select-menu button {
+  display: flex;
+  width: 100%;
+  min-height: 34px;
+  min-width: 0;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  border-radius: 5px;
+  padding: 7px 9px;
+  color: var(--color-text-secondary);
+  font-size: 13px;
+  text-align: left;
+}
+
+.dc-agent-select-menu button:hover,
+.dc-agent-select-menu button:focus-visible {
+  background: var(--color-sidebar-hover);
+  color: var(--color-text-primary);
+  outline: none;
+}
+
+.dc-agent-select-menu button[data-selected="true"] {
+  background: rgba(88, 101, 242, 0.18);
+  color: #fff;
+}
+
+.dc-agent-select-menu button > svg {
+  flex: 0 0 auto;
+  color: var(--color-accent);
+}
+
+.dc-agent-select-option-content {
+  display: flex;
+  min-width: 0;
+  flex: 1 1 auto;
+  align-items: center;
+  gap: 7px;
+}
+
+.dc-agent-select-option-copy {
+  display: grid;
+  min-width: 0;
+  flex: 1 1 auto;
+  gap: 2px;
+}
+
+.dc-agent-select-option-copy > small {
+  color: var(--color-text-muted);
+  font-size: 10px;
+  font-weight: 500;
+}
+
+.dc-agent-select-option-trailing,
+.dc-agent-select-badges {
+  display: inline-flex;
+  flex: 0 0 auto;
+  align-items: center;
+  gap: 4px;
+}
+
+.dc-agent-select-ultra-badge,
+.dc-agent-select-badges small {
+  border-radius: 999px;
+  padding: 1px 6px;
+  font-size: 9px;
+  font-weight: 900;
+  line-height: 16px;
+}
+
+.dc-agent-select-ultra-badge {
+  background: linear-gradient(115deg, #f2b84b, #9a67ff);
+  color: #fff;
+  text-transform: uppercase;
+}
+
+.dc-agent-select-badges small {
+  background: rgba(255, 255, 255, 0.09);
+  color: var(--color-text-secondary);
+  letter-spacing: 0.02em;
+}
+
+.dc-agent-select-menu button[data-selected="true"] .dc-agent-select-badges small {
+  background: rgba(88, 101, 242, 0.28);
+  color: #dfe3ff;
+}
+
+.dc-agent-select-menu button[data-effect="ultra"] {
+  box-shadow: inset 2px 0 0 rgba(206, 142, 255, 0.82);
+}
+
 .dc-agent-select-popover > .dc-agent-select-menu {
   position: static;
   z-index: auto;
   width: auto;
-  max-height: min(300px, calc(100vh - 74px));
+  min-height: 0;
   border: 0;
   border-radius: 0;
   background: transparent;
   box-shadow: none;
+}
+
+.dc-agent-select-drilldown-header {
+  padding: 4px 4px 0;
+}
+
+.dc-agent-select-drilldown-header button {
+  display: flex;
+  width: 100%;
+  min-height: 34px;
+  min-width: 0;
+  align-items: center;
+  gap: 7px;
+  border-radius: 5px;
+  padding: 7px 8px;
+  color: var(--color-text-primary);
+  font-size: 13px;
+  font-weight: 800;
+  text-align: left;
+}
+
+.dc-agent-select-drilldown-header button:hover,
+.dc-agent-select-drilldown-header button:focus-visible {
+  background: var(--color-sidebar-hover);
+  outline: none;
 }
 
 .dc-agent-model-tools {

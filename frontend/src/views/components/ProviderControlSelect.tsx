@@ -1,73 +1,19 @@
-import { useCallback, useEffect, useId, useRef, useState } from "react";
+import { useEffect, useId, useLayoutEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
-import { Check, ChevronDown, ChevronRight, Search } from "lucide-react";
+import { Check, ChevronDown, ChevronLeft, ChevronRight, Search } from "lucide-react";
 
 import type { ProviderControlOption } from "../../roomSocketClient";
 import {
   filterProviderControlOptions,
   groupProviderControlOptions,
   isFreeProviderOption,
-  type ProviderOptionGroup,
 } from "./providerModelOptions";
+import {
+  menuHeightCap,
+  type MenuPosition,
+  useWholeRowMenu,
+} from "./providerControlMenuLayout";
 import "./ProviderControlSelect.css";
-
-// Must track .dc-agent-select-menu: --dc-select-rows rows, --dc-select-gap
-// between them, plus 4px padding and a 1px border on each edge. Placement
-// used a flat 240 while the cap grew to whole rows, which pushed the menu
-// past the bottom of the viewport.
-const MENU_VISIBLE_ROWS = 7;
-const MENU_ROW_GAP = 2;
-const MENU_CHROME = 10;
-
-function menuHeightCap(rowHeight: number): number {
-  return (
-    MENU_VISIBLE_ROWS * rowHeight +
-    (MENU_VISIBLE_ROWS - 1) * MENU_ROW_GAP +
-    MENU_CHROME
-  );
-}
-
-type MenuPosition = {
-  left: number;
-  top: number;
-  width: number;
-};
-
-/** Size an open menu in whole rows so the last one is never sliced in half.
- *
- * Row height is not a constant: options carrying a description are taller, and
- * the visible set changes as the search text and the free-only filter change.
- * Measuring once when the element mounts left the wrong row height behind
- * whenever any of that moved, so the observer re-measures the first row on
- * every layout change, including window resizes.
- */
-function useWholeRowMenu() {
-  const observerRef = useRef<ResizeObserver | null>(null);
-
-  useEffect(() => () => observerRef.current?.disconnect(), []);
-
-  return useCallback((node: HTMLElement | null) => {
-    observerRef.current?.disconnect();
-    if (!node) {
-      observerRef.current = null;
-      return;
-    }
-    const measure = () => {
-      const row = node.querySelector("button");
-      const height = row?.getBoundingClientRect().height ?? 0;
-      if (height > 0) node.style.setProperty("--dc-select-row", `${height}px`);
-    };
-    measure();
-    if (typeof ResizeObserver === "undefined") return;
-    const observer = new ResizeObserver(measure);
-    // The menu itself catches list changes; the first row catches a row growing
-    // taller when descriptions appear.
-    observer.observe(node);
-    const row = node.querySelector("button");
-    if (row) observer.observe(row);
-    observerRef.current = observer;
-  }, []);
-}
 
 export default function ProviderControlSelect({
   label,
@@ -83,18 +29,15 @@ export default function ProviderControlSelect({
   onChange: (value: string) => void;
 }) {
   const snapMenu = useWholeRowMenu();
-  const snapSubMenu = useWholeRowMenu();
   const [open, setOpen] = useState(false);
   const [menuPosition, setMenuPosition] = useState<MenuPosition | null>(null);
   const [activeGroup, setActiveGroup] = useState("");
-  const [subMenuPosition, setSubMenuPosition] = useState<MenuPosition | null>(null);
   const [query, setQuery] = useState("");
   const [freeOnly, setFreeOnly] = useState(false);
   const listboxId = useId();
   const controlRef = useRef<HTMLDivElement>(null);
   const buttonRef = useRef<HTMLButtonElement>(null);
   const menuRef = useRef<HTMLDivElement>(null);
-  const subMenuRef = useRef<HTMLDivElement>(null);
   const selectedOption = options.find((option) => option.value === value);
   const hasOnlyResolvedOption = options.length === 1 && Boolean(selectedOption);
   const controlDisabled = disabled || options.length === 0 || hasOnlyResolvedOption;
@@ -104,6 +47,9 @@ export default function ProviderControlSelect({
   const filteredOptions = filterProviderControlOptions(label, options, query, freeOnly);
   const optionGroups = groupProviderControlOptions(label, filteredOptions);
   const showGroupLabels = !query.trim() && optionGroups.length > 1;
+  const activeOptionGroup = showGroupLabels
+    ? optionGroups.find((group) => group.label === activeGroup)
+    : undefined;
 
   useEffect(() => {
     if (!open) return;
@@ -112,8 +58,7 @@ export default function ProviderControlSelect({
       if (
         target instanceof Node &&
         !controlRef.current?.contains(target) &&
-        !menuRef.current?.contains(target) &&
-        !subMenuRef.current?.contains(target)
+        !menuRef.current?.contains(target)
       ) {
         setOpen(false);
         setActiveGroup("");
@@ -123,7 +68,6 @@ export default function ProviderControlSelect({
       if (event.key === "Escape") {
         if (activeGroup) {
           setActiveGroup("");
-          setSubMenuPosition(null);
           return;
         }
         setOpen(false);
@@ -134,13 +78,12 @@ export default function ProviderControlSelect({
       const target = event.target;
       if (
         target instanceof Node &&
-        (menuRef.current?.contains(target) || subMenuRef.current?.contains(target))
+        menuRef.current?.contains(target)
       ) {
         return;
       }
       setOpen(false);
       setActiveGroup("");
-      setSubMenuPosition(null);
     };
     document.addEventListener("pointerdown", close);
     document.addEventListener("keydown", closeOnEscape);
@@ -163,8 +106,24 @@ export default function ProviderControlSelect({
 
   useEffect(() => {
     setActiveGroup("");
-    setSubMenuPosition(null);
   }, [freeOnly, query]);
+
+  useLayoutEffect(() => {
+    if (!open || !menuPosition || !menuRef.current) return;
+    const margin = 8;
+    const rect = menuRef.current.getBoundingClientRect();
+    const left = Math.min(
+      Math.max(margin, menuPosition.left),
+      Math.max(margin, window.innerWidth - rect.width - margin)
+    );
+    const top = Math.min(
+      Math.max(margin, menuPosition.top),
+      Math.max(margin, window.innerHeight - rect.height - margin)
+    );
+    if (left !== menuPosition.left || top !== menuPosition.top) {
+      setMenuPosition((current) => current && { ...current, left, top });
+    }
+  }, [activeGroup, filteredOptions.length, freeOnly, menuPosition, open, query]);
 
   function toggleMenu() {
     if (controlDisabled || !buttonRef.current) return;
@@ -193,35 +152,10 @@ export default function ProviderControlSelect({
     setOpen(true);
   }
 
-  function openSubMenu(group: ProviderOptionGroup, target: HTMLButtonElement) {
-    const rect = target.getBoundingClientRect();
-    const width = menuPosition?.width || rect.width;
-    const rightLeft = rect.right + 6;
-    const left =
-      rightLeft + width <= window.innerWidth - 8
-        ? rightLeft
-        : Math.max(8, rect.left - width - 6);
-    const optionHeight = group.options.some(hasOptionDescription) ? 50 : 36;
-    const estimatedHeight = Math.min(
-      menuHeightCap(optionHeight),
-      group.options.length * optionHeight + MENU_CHROME
-    );
-    setActiveGroup(group.label);
-    setSubMenuPosition({
-      left,
-      top: Math.min(
-        Math.max(8, rect.top - 4),
-        Math.max(8, window.innerHeight - estimatedHeight - 8)
-      ),
-      width,
-    });
-  }
-
   function selectOption(option: ProviderControlOption) {
     onChange(option.value);
     setOpen(false);
     setActiveGroup("");
-    setSubMenuPosition(null);
     setQuery("");
     buttonRef.current?.focus();
   }
@@ -251,12 +185,11 @@ export default function ProviderControlSelect({
       {open &&
         menuPosition &&
         createPortal(
-          <>
-            <div
-              ref={menuRef}
-              className="dc-agent-select-popover"
-              style={menuPosition}
-            >
+          <div
+            ref={menuRef}
+            className="dc-agent-select-popover"
+            style={menuPosition}
+          >
               {showModelTools && (
                 <div className="dc-agent-model-tools">
                   <label className="dc-agent-model-search">
@@ -283,16 +216,53 @@ export default function ProviderControlSelect({
                   )}
                 </div>
               )}
+              {activeOptionGroup && (
+                <div className="dc-agent-select-drilldown-header">
+                  <button
+                    type="button"
+                    aria-label="모델 분류로 돌아가기"
+                    onClick={() => setActiveGroup("")}
+                  >
+                    <ChevronLeft size={15} aria-hidden="true" />
+                    <span className="truncate preserve-words">{activeOptionGroup.label}</span>
+                  </button>
+                </div>
+              )}
               <div
                 id={listboxId}
                 ref={snapMenu}
                 className="dc-agent-select-menu"
-                role={showGroupLabels ? "menu" : "listbox"}
-                aria-label={showGroupLabels ? `${label} 분류` : label}
+                role={showGroupLabels && !activeOptionGroup ? "menu" : "listbox"}
+                aria-label={
+                  activeOptionGroup
+                    ? `${activeOptionGroup.label} 모델`
+                    : showGroupLabels
+                      ? `${label} 분류`
+                      : label
+                }
               >
               {filteredOptions.length === 0 ? (
                 <p className="dc-agent-model-empty" role="status">조건에 맞는 모델이 없습니다.</p>
-              ) : showGroupLabels
+              ) : activeOptionGroup
+                ? activeOptionGroup.options.map((option) => {
+                    const selected = option.value === value;
+                    return (
+                      <button
+                        key={option.value || "default"}
+                        type="button"
+                        role="option"
+                        aria-label={optionAccessibleName(option)}
+                        aria-selected={selected}
+                        data-selected={selected}
+                        data-effect={optionEffect(option)}
+                        onClick={() => selectOption(option)}
+                      >
+                        <OptionContent option={option} showDescription />
+                        {selected && <Check size={15} aria-hidden="true" />}
+                      </button>
+                    );
+                  })
+                : showGroupLabels
                 ? optionGroups.map((group) => {
                     if (group.options.length === 1) {
                       const option = group.options[0];
@@ -306,10 +276,6 @@ export default function ProviderControlSelect({
                           aria-checked={selected}
                           data-selected={selected}
                           data-effect={optionEffect(option)}
-                          onMouseEnter={() => {
-                            setActiveGroup("");
-                            setSubMenuPosition(null);
-                          }}
                           onClick={() => selectOption(option)}
                         >
                           <OptionContent option={option} showDescription />
@@ -329,8 +295,7 @@ export default function ProviderControlSelect({
                         aria-haspopup="listbox"
                         aria-expanded={activeGroup === group.label}
                         data-selected={containsSelected}
-                        onClick={(event) => openSubMenu(group, event.currentTarget)}
-                        onMouseEnter={(event) => openSubMenu(group, event.currentTarget)}
+                        onClick={() => setActiveGroup(group.label)}
                       >
                         <span className="truncate preserve-words">{group.label}</span>
                         <ChevronRight className="dc-agent-select-group-arrow" size={15} aria-hidden="true" />
@@ -356,48 +321,7 @@ export default function ProviderControlSelect({
                   );
                 })}
               </div>
-            </div>
-            {showGroupLabels &&
-              activeGroup &&
-              subMenuPosition &&
-              (() => {
-                const group = optionGroups.find(
-                  (candidate) => candidate.label === activeGroup
-                );
-                if (!group) return null;
-                return (
-                  <div
-                    ref={(node) => {
-                      subMenuRef.current = node;
-                      snapSubMenu(node);
-                    }}
-                    className="dc-agent-select-menu dc-agent-select-submenu"
-                    role="listbox"
-                    aria-label={`${group.label} 모델`}
-                    style={subMenuPosition}
-                  >
-                    {group.options.map((option) => {
-                      const selected = option.value === value;
-                      return (
-                        <button
-                          key={option.value || "default"}
-                          type="button"
-                          role="option"
-                          aria-label={optionAccessibleName(option)}
-                          aria-selected={selected}
-                          data-selected={selected}
-                          data-effect={optionEffect(option)}
-                          onClick={() => selectOption(option)}
-                        >
-                          <OptionContent option={option} showDescription />
-                          {selected && <Check size={15} aria-hidden="true" />}
-                        </button>
-                      );
-                    })}
-                  </div>
-                );
-              })()}
-          </>,
+          </div>,
           document.body
         )}
     </div>

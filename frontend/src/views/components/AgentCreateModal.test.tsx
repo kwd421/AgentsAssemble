@@ -665,6 +665,7 @@ describe("AgentCreateModal", () => {
     expect(freeModel).toBeTruthy();
     expect(within(freeModel).getByText("Free")).toBeTruthy();
 
+    await userEvent.click(screen.getByRole("button", { name: "모델 분류로 돌아가기" }));
     await userEvent.click(screen.getByRole("menuitem", { name: "Go" }));
     expect(
       within(screen.getByRole("listbox", { name: "Go 모델" })).getByRole(
