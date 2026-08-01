@@ -1,0 +1,15 @@
+[package]
+name = "agentsassemble-desktop"
+version = "0.1.0"
+description = "Native desktop client for AgentsAssemble rooms"
+edition = "2021"
+
+[build-dependencies]
+tauri-build = { version = "2", features = [] }
+
+[dependencies]
+tauri = { version = "2", features = [] }
+url = "2"
+
+[target.'cfg(unix)'.dependencies]
+libc = "0.2"

@@ -1,0 +1,64 @@
+<!doctype html>
+<html lang="ko">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>AgentsAssemble</title>
+    <link rel="stylesheet" href="/shell.css" />
+    <script type="module" src="/shell.js"></script>
+  </head>
+  <body>
+    <main class="launcher">
+      <header>
+        <div class="mark" aria-hidden="true">
+          <span></span><span></span><span></span><span></span><i></i>
+        </div>
+        <div>
+          <p class="eyebrow">AGENTSASSEMBLE DESKTOP</p>
+          <h1>어디서 시작할까요?</h1>
+          <p class="lead">앱은 항상 먼저 열립니다. 방의 실행 위치만 선택하세요.</p>
+        </div>
+      </header>
+
+      <section class="choices" aria-label="실행 위치">
+        <button class="choice choice-primary" data-local-mode="private" type="button">
+          <span class="choice-icon" aria-hidden="true">⌂</span>
+          <span>
+            <strong>내 컴퓨터에서 시작</strong>
+            <small>초대 없이 이 컴퓨터 안에서 사용합니다.</small>
+          </span>
+        </button>
+        <button class="choice" data-local-mode="host" type="button">
+          <span class="choice-icon" aria-hidden="true">◎</span>
+          <span>
+            <strong>이 컴퓨터로 방 열기</strong>
+            <small>로컬 방을 연 뒤 초대 공개 범위를 설정합니다.</small>
+          </span>
+        </button>
+      </section>
+
+      <section class="cloud">
+        <div>
+          <h2>클라우드 서버에 연결</h2>
+          <p>이미 운영 중인 AgentsAssemble 서버가 있을 때 사용합니다.</p>
+        </div>
+        <form id="cloud-form">
+          <label for="server-address">서버 주소</label>
+          <div class="address-row">
+            <input
+              id="server-address"
+              name="server"
+              type="url"
+              inputmode="url"
+              autocomplete="url"
+              placeholder="https://room.example.com"
+            />
+            <button type="submit">연결</button>
+          </div>
+        </form>
+      </section>
+
+      <p id="launcher-status" role="status" aria-live="polite"></p>
+    </main>
+  </body>
+</html>

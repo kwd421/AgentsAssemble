@@ -20,7 +20,7 @@ The current product surface is:
 - humans and agents in one participant roster;
 - persistent Codex, Antigravity, Grok, Claude, Cursor, OpenCode, and compatible
   provider sessions behind provider-specific adapters;
-- desktop and mobile React clients using the same room protocol;
+- browser, mobile-layout, and Tauri desktop clients using the same room protocol;
 - explicit start, pause, resume, interrupt, stop, kick, leave, and delete
   lifecycle actions;
 - sequenced room history, reconnect replay, bounded provider context, and
@@ -56,6 +56,30 @@ Do not add a provider-specific browser socket, parallel room event store,
 polling-based live UI, or a second participant registry.
 
 Detailed current implementation: `docs/live-cli-room-current-architecture.md`.
+
+## Current Desktop Client
+
+`desktop/` owns the cross-platform Tauri 2 client. Its bundled connection screen
+always opens before a room server is selected or started. From there the user
+can start a private local runtime, start the same local runtime and later
+publish room invitations, or connect to an existing cloud server. The desktop
+build packages the Python server and React application as a platform-native
+sidecar; users do not start a separate server before opening the client.
+
+Local and host modes bind the canonical server only to loopback. Hosting is an
+explicit authenticated public-invite action inside the room UI, not a direct
+non-loopback control-plane bind. A desktop-owned local runtime stores its data
+under the operating system application-data directory and exits with its owner
+application. A valid server already listening on the default local address is
+reused but not adopted or stopped.
+
+The bundled connection screen can only start the owned local runtime and open a
+validated HTTP(S) origin. Once server content is active, it cannot invoke those
+native commands or navigate the top-level webview away from the selected
+origin. The webview keeps its own persistent browser storage, separate from
+Safari or Chrome. A first-class public `client_id` and account login remain
+separate identity work; the private device credential must not be repurposed as
+a displayable client identifier.
 
 ## Current Rolling Restart Contract
 

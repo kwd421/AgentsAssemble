@@ -1,0 +1,20 @@
+{
+  "name": "agentsassemble-desktop",
+  "private": true,
+  "type": "module",
+  "version": "0.1.0",
+  "scripts": {
+    "dev": "npm run backend:build && tauri dev",
+    "build": "npm run backend:build && tauri build",
+    "backend:build": "npm --prefix ../frontend run build && uv run --with pyinstaller==6.21.0 python scripts/build_backend.py",
+    "shell:build": "vite build --config shell/vite.config.mjs",
+    "check": "npm run shell:build && cargo test --manifest-path src-tauri/Cargo.toml"
+  },
+  "dependencies": {
+    "@tauri-apps/api": "2.11.1"
+  },
+  "devDependencies": {
+    "@tauri-apps/cli": "2.11.4",
+    "vite": "8.2.0"
+  }
+}

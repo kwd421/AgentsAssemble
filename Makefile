@@ -2,6 +2,7 @@
 
 .PHONY: help test test-module test-quality-check architecture-check verify postgres-contracts
 .PHONY: frontend-deps frontend-build frontend-test frontend-e2e
+.PHONY: desktop-deps desktop-check desktop-dev desktop-build
 .PHONY: mutation-canaries diff-check
 .PHONY: codebase-map codebase-map-check codebase-map-commit-check codebase-map-verify
 .PHONY: room-event-types room-event-types-check room-event-types-commit-check room-event-types-verify
@@ -26,6 +27,10 @@ help:
 		'make frontend-build       Build the frontend' \
 		'make frontend-test        Run frontend unit tests' \
 		'make frontend-e2e         Build and run canonical browser workflows' \
+		'make desktop-deps         Install desktop client dependencies' \
+		'make desktop-check        Compile and test the desktop shell' \
+		'make desktop-dev          Build the local runtime and open the desktop client' \
+		'make desktop-build        Build the self-contained native desktop installer' \
 		'make mutation-canaries    Run critical authorization, rollback, room-scope, and response-order canaries' \
 		'make codebase-map         Regenerate all three checked-in architecture maps' \
 		'make codebase-map-check   Check maps without changing the working tree' \
@@ -80,6 +85,18 @@ frontend-test:
 
 frontend-e2e:
 	npm --prefix frontend run test:e2e
+
+desktop-deps:
+	npm --prefix desktop ci
+
+desktop-check:
+	npm --prefix desktop run check
+
+desktop-dev:
+	npm --prefix desktop run dev
+
+desktop-build:
+	npm --prefix desktop run build
 
 postgres-contracts:
 	$(PYTHON) -m tests.run_postgres_contracts

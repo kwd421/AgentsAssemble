@@ -1,0 +1,23 @@
+{
+  "$schema": "https://schema.tauri.app/config/2",
+  "productName": "AgentsAssemble",
+  "version": "0.1.0",
+  "identifier": "app.agentsassemble.desktop",
+  "build": {
+    "beforeDevCommand": "npm run shell:build",
+    "beforeBuildCommand": "npm run shell:build",
+    "frontendDist": "../dist"
+  },
+  "app": {
+    "withGlobalTauri": false,
+    "windows": [],
+    "security": {
+      "csp": "default-src 'self'; script-src 'self'; style-src 'self'; connect-src ipc: http: https:"
+    }
+  },
+  "bundle": {
+    "active": true,
+    "targets": "all",
+    "externalBin": ["binaries/agentsassemble-server"]
+  }
+}
