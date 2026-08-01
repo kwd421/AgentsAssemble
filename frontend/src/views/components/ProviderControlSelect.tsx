@@ -1,4 +1,4 @@
-import { useEffect, useId, useRef, useState } from "react";
+import { useCallback, useEffect, useId, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { Check, ChevronDown, ChevronRight, Search } from "lucide-react";
 
@@ -17,6 +17,42 @@ type MenuPosition = {
   width: number;
 };
 
+/** Size an open menu in whole rows so the last one is never sliced in half.
+ *
+ * Row height is not a constant: options carrying a description are taller, and
+ * the visible set changes as the search text and the free-only filter change.
+ * Measuring once when the element mounts left the wrong row height behind
+ * whenever any of that moved, so the observer re-measures the first row on
+ * every layout change, including window resizes.
+ */
+function useWholeRowMenu() {
+  const observerRef = useRef<ResizeObserver | null>(null);
+
+  useEffect(() => () => observerRef.current?.disconnect(), []);
+
+  return useCallback((node: HTMLElement | null) => {
+    observerRef.current?.disconnect();
+    if (!node) {
+      observerRef.current = null;
+      return;
+    }
+    const measure = () => {
+      const row = node.querySelector("button");
+      const height = row?.getBoundingClientRect().height ?? 0;
+      if (height > 0) node.style.setProperty("--dc-select-row", `${height}px`);
+    };
+    measure();
+    if (typeof ResizeObserver === "undefined") return;
+    const observer = new ResizeObserver(measure);
+    // The menu itself catches list changes; the first row catches a row growing
+    // taller when descriptions appear.
+    observer.observe(node);
+    const row = node.querySelector("button");
+    if (row) observer.observe(row);
+    observerRef.current = observer;
+  }, []);
+}
+
 export default function ProviderControlSelect({
   label,
   options,
@@ -30,6 +66,8 @@ export default function ProviderControlSelect({
   disabled?: boolean;
   onChange: (value: string) => void;
 }) {
+  const snapMenu = useWholeRowMenu();
+  const snapSubMenu = useWholeRowMenu();
   const [open, setOpen] = useState(false);
   const [menuPosition, setMenuPosition] = useState<MenuPosition | null>(null);
   const [activeGroup, setActiveGroup] = useState("");
@@ -228,6 +266,7 @@ export default function ProviderControlSelect({
               )}
               <div
                 id={listboxId}
+                ref={snapMenu}
                 className="dc-agent-select-menu"
                 role={showGroupLabels ? "menu" : "listbox"}
                 aria-label={showGroupLabels ? `${label} 분류` : label}
@@ -309,7 +348,10 @@ export default function ProviderControlSelect({
                 if (!group) return null;
                 return (
                   <div
-                    ref={subMenuRef}
+                    ref={(node) => {
+                      subMenuRef.current = node;
+                      snapSubMenu(node);
+                    }}
                     className="dc-agent-select-menu dc-agent-select-submenu"
                     role="listbox"
                     aria-label={`${group.label} 모델`}

@@ -58,3 +58,78 @@ describe("ProviderControlSelect", () => {
     expect(within(results).queryByRole("option", { name: "Paid Model" })).toBeNull();
   });
 });
+
+describe("whole-row menu sizing", () => {
+  function renderWithRowHeight(height: number, count = 30) {
+    const original = HTMLElement.prototype.getBoundingClientRect;
+    HTMLElement.prototype.getBoundingClientRect = function () {
+      const rect = original.call(this) as DOMRect;
+      if (this.tagName === "BUTTON" && this.closest(".dc-agent-select-menu")) {
+        return { ...rect, height } as DOMRect;
+      }
+      return rect;
+    };
+    const cleanupRect = () => {
+      HTMLElement.prototype.getBoundingClientRect = original;
+    };
+    const options = Array.from({ length: count }, (_, index) => ({
+      value: `m-${index}`,
+      label: `Model ${index}`,
+    }));
+    render(
+      <ProviderControlSelect label="모델" options={options} value="" onChange={vi.fn()} />
+    );
+    return cleanupRect;
+  }
+
+  it("sets the row height from a real row so the last one is not sliced", async () => {
+    // A flat pixel cap left 6.44 rows visible and the 7th half-drawn, which read
+    // as clipped rather than scrollable.
+    const cleanupRect = renderWithRowHeight(34);
+    try {
+      await userEvent.click(screen.getByRole("combobox", { name: "모델" }));
+      const menu = document.querySelector(".dc-agent-select-menu") as HTMLElement;
+      expect(menu.style.getPropertyValue("--dc-select-row")).toBe("34px");
+    } finally {
+      cleanupRect();
+    }
+  });
+
+  it("uses the taller measurement when rows carry descriptions", async () => {
+    const cleanupRect = renderWithRowHeight(50);
+    try {
+      await userEvent.click(screen.getByRole("combobox", { name: "모델" }));
+      const menu = document.querySelector(".dc-agent-select-menu") as HTMLElement;
+      expect(menu.style.getPropertyValue("--dc-select-row")).toBe("50px");
+    } finally {
+      cleanupRect();
+    }
+  });
+
+  it("re-measures when the observed menu changes size", async () => {
+    // jsdom has no ResizeObserver, so stand one in and fire it the way a real
+    // browser would when the filter shortens the list.
+    const callbacks: Array<() => void> = [];
+    (globalThis as unknown as { ResizeObserver: unknown }).ResizeObserver = class {
+      constructor(callback: () => void) {
+        callbacks.push(callback);
+      }
+      observe() {}
+      disconnect() {}
+    };
+    const cleanupRect = renderWithRowHeight(34);
+    try {
+      await userEvent.click(screen.getByRole("combobox", { name: "모델" }));
+      const menu = document.querySelector(".dc-agent-select-menu") as HTMLElement;
+      expect(menu.style.getPropertyValue("--dc-select-row")).toBe("34px");
+
+      menu.style.setProperty("--dc-select-row", "999px");
+      callbacks.forEach((callback) => callback());
+
+      expect(menu.style.getPropertyValue("--dc-select-row")).toBe("34px");
+    } finally {
+      cleanupRect();
+      delete (globalThis as unknown as { ResizeObserver?: unknown }).ResizeObserver;
+    }
+  });
+});
