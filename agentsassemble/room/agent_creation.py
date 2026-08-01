@@ -84,11 +84,7 @@ class RoomAgentCreationService:
             )
         except ProviderCatalogSelectionError as error:
             raise RoomCommandRejected(str(error), code=error.code) from error
-        explicit_agent_id = clean_room_text(
-            payload.get("agent_id") or payload.get("participant_id"),
-            128,
-        )
-        agent_id = explicit_agent_id or _agent_id_for_creation(
+        agent_id = _agent_id_for_creation(
             provider_id,
             operation_id,
         )

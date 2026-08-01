@@ -123,7 +123,7 @@ class RoomAgentCreationServiceTests(unittest.TestCase):
             "general",
             {
                 "provider_id": "codex",
-                "agent_id": "luna",
+                "agent_id": "client-chosen-id",
                 "display_name": "Luna",
                 "workspace": str(self.root),
                 "model": self.selection.model,
@@ -142,7 +142,8 @@ class RoomAgentCreationServiceTests(unittest.TestCase):
 
         room_id, spec = self.created_specs[-1]
         self.assertEqual(room_id, "general")
-        self.assertEqual(spec.agent_id, "luna")
+        self.assertTrue(spec.agent_id.startswith("codex-"))
+        self.assertNotEqual(spec.agent_id, "client-chosen-id")
         self.assertEqual(spec.display_name, "Luna")
         self.assertEqual(spec.model, self.selection.model)
         self.assertEqual(spec.max_output_tokens, 8192)
@@ -150,7 +151,7 @@ class RoomAgentCreationServiceTests(unittest.TestCase):
         self.assertEqual(result["start"]["status"], "starting")
         self.assertEqual(
             self.start_calls,
-            [("general", "luna", "http://127.0.0.1:8765")],
+            [("general", spec.agent_id, "http://127.0.0.1:8765")],
         )
 
     def test_create_without_start_does_not_launch_the_runtime(self) -> None:

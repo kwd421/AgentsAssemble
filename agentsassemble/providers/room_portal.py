@@ -312,10 +312,9 @@ class RoomPortal:
                 assigned_seq = max(0, int(input_up_to_seq))
             self.outbox_path.unlink(missing_ok=True)
             self._active_media_ids = active_media_ids
-            # Freeze the boundary for this turn before advancing it, so a
-            # second read inside the same turn still sees the same "new" set.
+            # Freeze this turn's boundary. The seen cursor advances only after
+            # observation_receipt verifies that the provider read this view.
             self._new_since_seq = self._seen_through_seq
-            self._seen_through_seq = max(self._seen_through_seq, assigned_seq)
             self._active_messages = tuple(
                 message
                 for message in self._messages
@@ -366,6 +365,11 @@ class RoomPortal:
                 and clean_room_text(record.get("turn_id"), limit=128)
                 == clean_turn_id
             ):
+                with self._lock:
+                    self._seen_through_seq = max(
+                        self._seen_through_seq,
+                        assigned_seq,
+                    )
                 return assigned_seq
         return None
 

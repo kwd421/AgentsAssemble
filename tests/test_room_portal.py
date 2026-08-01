@@ -241,6 +241,7 @@ class RoomPortalDeltaViewTests(unittest.TestCase):
             self._say(portal, 2, "고죠", "양념 " + "가" * 400)
             portal.begin_observation("turn-1", input_up_to_seq=2)
             portal.read_discussion()
+            self.assertEqual(portal.observation_receipt("turn-1"), 2)
             portal.end_observation("turn-1")
 
             self._say(portal, 3, "호스트", "ㅋㅋㅋㅋㅋ")
@@ -255,12 +256,27 @@ class RoomPortalDeltaViewTests(unittest.TestCase):
             self.assertNotIn("치킨 뭐 시킬까", view)
             self.assertNotIn("가가가", view)
 
+    def test_unread_observation_is_shown_again_after_the_turn_ends(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            portal = self._portal(temp_dir)
+            self._say(portal, 1, "호스트", "아직 읽지 않은 메시지")
+            portal.begin_observation("turn-1", input_up_to_seq=1)
+
+            self.assertIsNone(portal.observation_receipt("turn-1"))
+            portal.end_observation("turn-1")
+            portal.begin_observation("turn-2", input_up_to_seq=1)
+            view = portal.read_discussion()
+
+            self.assertIn("## 호스트\n아직 읽지 않은 메시지", view)
+            self.assertNotIn("already shown to you", view)
+
     def test_repeat_read_in_the_same_turn_keeps_the_same_boundary(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:
             portal = self._portal(temp_dir)
             self._say(portal, 1, "호스트", "안녕")
             portal.begin_observation("turn-1", input_up_to_seq=1)
             portal.read_discussion()
+            self.assertEqual(portal.observation_receipt("turn-1"), 1)
             portal.end_observation("turn-1")
 
             self._say(portal, 2, "고죠", "왔냐")
@@ -277,6 +293,7 @@ class RoomPortalDeltaViewTests(unittest.TestCase):
             self._say(portal, 1, "호스트", "안녕")
             portal.begin_observation("turn-1", input_up_to_seq=1)
             portal.read_discussion()
+            self.assertEqual(portal.observation_receipt("turn-1"), 1)
             portal.end_observation("turn-1")
 
             portal.begin_observation("turn-2", input_up_to_seq=1)
@@ -291,6 +308,7 @@ class RoomPortalDeltaViewTests(unittest.TestCase):
                 self._say(portal, seq, "고죠", f"{seq}번 메시지 " + "가" * 300)
             portal.begin_observation("turn-1", input_up_to_seq=30)
             full = portal.read_discussion()
+            self.assertEqual(portal.observation_receipt("turn-1"), 30)
             portal.end_observation("turn-1")
 
             self._say(portal, 31, "호스트", "ㅇㅇ")

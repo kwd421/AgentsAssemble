@@ -3909,7 +3909,7 @@ class RoomRealtimeControllerTests(unittest.TestCase):
         self.assertEqual(unknown.exception.code, "unsupported_model")
         self.assertFalse(RoomStore(self.root).session("general", "codex-codex-unknown"))
 
-    def test_agent_create_never_upserts_an_existing_stopped_session(self):
+    def test_agent_create_ignores_a_client_identity_that_matches_an_existing_session(self):
         self.controller.create_provider_session(
             "general",
             _spec("existing"),
@@ -3917,20 +3917,19 @@ class RoomRealtimeControllerTests(unittest.TestCase):
         store = RoomStore(self.root)
         before = store.session("general", "existing")
 
-        with self.assertRaises(RoomCommandRejected) as raised:
-            self._command(
-                "req-create-existing",
-                "agent.create",
-                {
-                    "provider_id": "codex",
-                    "agent_id": "existing",
-                    "display_name": "Existing",
-                    "workspace": str(self.root / "changed"),
-                    "model": "gpt-5.3-codex",
-                },
-            )
+        created = self._command(
+            "req-create-existing",
+            "agent.create",
+            {
+                "provider_id": "codex",
+                "agent_id": "existing",
+                "display_name": "Existing",
+                "workspace": str(self.root / "changed"),
+                "model": "gpt-5.3-codex",
+            },
+        )["result"]["agent_session"]
 
-        self.assertEqual(raised.exception.code, "session_exists")
+        self.assertNotEqual(created["session_id"], "existing")
         self.assertEqual(store.session("general", "existing"), before)
 
     def test_restart_restores_dynamic_server_owned_provider_for_ui_resume(self):
@@ -4005,27 +4004,26 @@ class RoomRealtimeControllerTests(unittest.TestCase):
         self.assertNotEqual(first_internal["workspace"], second_internal["workspace"])
         self.assertNotEqual(first_session["runtime_profile_key"], second_session["runtime_profile_key"])
 
-    def test_running_agent_rejects_profile_change_without_mutating_its_session(self):
+    def test_running_agent_profile_cannot_be_changed_through_a_new_create(self):
         self._command("req-start-profile", "agent.start", {"agent_id": "codex"})
         self._connect_bridge()
         before = RoomStore(self.root).session("general", "codex")
 
-        with self.assertRaisesRegex(RoomCommandRejected, "already exists") as raised:
-            self._command(
-                "req-change-profile",
-                "agent.create",
-                {
-                    "provider_id": "codex",
-                    "agent_id": "codex",
-                    "display_name": "Codex",
-                    "workspace": str(self.root / "different"),
-                    "model": "gpt-5.3-codex",
-                    "start": True,
-                },
-            )
+        created = self._command(
+            "req-change-profile",
+            "agent.create",
+            {
+                "provider_id": "codex",
+                "agent_id": "codex",
+                "display_name": "Codex",
+                "workspace": str(self.root / "different"),
+                "model": "gpt-5.3-codex",
+                "start": True,
+            },
+        )["result"]["agent_session"]
         after = RoomStore(self.root).session("general", "codex")
 
-        self.assertEqual(raised.exception.code, "session_exists")
+        self.assertNotEqual(created["session_id"], "codex")
         self.assertEqual(after["runtime_profile_key"], before["runtime_profile_key"])
         self.assertEqual(after["command_configured"], before["command_configured"])
         self.assertEqual(after["runtime_status"], "idle")
@@ -4043,10 +4041,11 @@ class RoomRealtimeControllerTests(unittest.TestCase):
             },
         )["result"]["agent_session"]
         self.assertEqual(created["variant"], "high")
-        self.assertEqual(RoomStore(self.root).participant("general", "opencode-high")["status"], "detached")
+        agent_id = created["session_id"]
+        self.assertEqual(RoomStore(self.root).participant("general", agent_id)["status"], "detached")
         RoomStore(self.root).update_session_fields(
             "general",
-            "opencode-high",
+            agent_id,
             turn_count=4,
             last_seen_event_id="evt-existing-cursor",
             last_seen_seq=17,
@@ -4057,7 +4056,7 @@ class RoomRealtimeControllerTests(unittest.TestCase):
             "req-configure-opencode-default",
             "agent.configure",
             {
-                "agent_id": "opencode-high",
+                "agent_id": agent_id,
                 "catalog_revision": self.catalog_revision,
                 "variant": "",
             },
