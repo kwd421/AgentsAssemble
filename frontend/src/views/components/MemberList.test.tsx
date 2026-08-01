@@ -272,9 +272,9 @@ describe("MemberList component wiring", () => {
 
     fireEvent.click(screen.getByText("나's Agent One"));
     const dialog = screen.getByRole("dialog", { name: "나's Agent One" });
-    expect((within(dialog).getByRole("textbox", { name: "이름" }) as HTMLInputElement).value)
+    expect((within(dialog).getByRole("textbox", { name: "표시 이름" }) as HTMLInputElement).value)
       .toBe("Makima");
-    fireEvent.click(within(dialog).getByRole("button", { name: "저장" }));
+    fireEvent.click(within(dialog).getByRole("button", { name: "프로필 저장" }));
 
     await waitFor(() =>
       expect(onAgentConfigure).toHaveBeenCalledWith(SESSION, {

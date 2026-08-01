@@ -1,12 +1,12 @@
 {
  "readme": "AgentsAssemble codebase map. Regenerate with `make codebase-map`; verify committed outputs with `make codebase-map-verify`. modules[] columns: name, path, package, domain, classification, migration_status, lines, docstring, imports[], imported_by[] (indexes into modules), classes[[name, [[base, defining_module], ...]]] (best-effort, top-level classes only). frontend[] columns: path, group, lines, doc, imports[], imported_by[] (indexes into frontend). package_edges go importer -> dependency with module-import counts; `points` is the precomputed polyline for that edge and `intra_cycle` marks imports whose endpoints share one cycle group. graph{} holds the layered package drawing: layers[] top-to-bottom (each with members[] package ids, member_count, and the dominant domain), (a package sits below everything importing it), clusters[] are mutually dependent packages (import cycles at package level) drawn as one labelled block, plus width/height of the drawing. health{} ranks findings for a reader who has to act: cycles[] (mutually dependent packages, with the lines they hold), leaning_on_retiring[] (current modules importing legacy/compatibility modules - the reason legacy cannot be deleted), highest_leverage_migrations[] (retiring modules with the most current importers), unreferenced_shims[] (compatibility modules with no importer in agentsassemble/ and no reference in tests/; callers outside this repository are not visible, so verify before deleting), and hotspots[] (largest modules). health.scope states exactly what was measured. class_graph{} is the UML generalization DAG over base classes that resolve inside the repo: edges go base -> subclass, so a subclass always sits below the class it extends. Coordinates in graph and class_graph are laid out with a Sugiyama pipeline (cycle condensation, Coffman-Graham layering, dummy-node edge routing, median/transpose crossing reduction) and are deterministic.",
- "generated_at": "2026-08-01T17:24:18Z",
+ "generated_at": "2026-08-01T17:41:56Z",
  "fingerprint": "3e4c9ecd7df87650",
  "stats": {
   "backend_modules": 813,
   "backend_lines": 136615,
-  "frontend_files": 174,
-  "frontend_lines": 43875,
+  "frontend_files": 175,
+  "frontend_lines": 43935,
   "packages": 30,
   "import_cycles": 0,
   "classifications": {
@@ -588,8 +588,8 @@
    "id": "fe:views",
    "kind": "frontend",
    "doc": "Top-level room views rendered by the shell.",
-   "files": 80,
-   "lines": 18184,
+   "files": 81,
+   "lines": 18244,
    "domains": {},
    "classes": {},
    "x": 558.0,
@@ -1137,7 +1137,7 @@
   {
    "from": "fe:views",
    "to": "fe:(src root)",
-   "count": 75,
+   "count": 76,
    "points": [
     [
      558.0,
@@ -1185,7 +1185,7 @@
   {
    "from": "fe:views",
    "to": "fe:lib",
-   "count": 76,
+   "count": 78,
    "points": [
     [
      755.8823529411765,
@@ -4035,7 +4035,7 @@
      "fe:views"
     ],
     "internal_edges": 16,
-    "lines": 43875,
+    "lines": 43935,
     "heaviest": "fe:views"
    }
   ],
@@ -23388,9 +23388,10 @@
     164,
     165,
     166,
-    170,
+    167,
     171,
-    172
+    172,
+    173
    ]
   ],
   [
@@ -23857,11 +23858,11 @@
    ],
    [
     47,
-    129,
     131,
     138,
     163,
-    165
+    165,
+    167
    ]
   ],
   [
@@ -23874,7 +23875,8 @@
     129,
     158,
     160,
-    166
+    166,
+    167
    ]
   ],
   [
@@ -23888,7 +23890,8 @@
    [
     0,
     129,
-    140
+    140,
+    167
    ]
   ],
   [
@@ -24070,9 +24073,9 @@
     115,
     116,
     117,
-    129,
     131,
-    141
+    141,
+    167
    ]
   ],
   [
@@ -24264,7 +24267,7 @@
     97,
     142,
     144,
-    172
+    173
    ]
   ],
   [
@@ -24430,8 +24433,8 @@
     79,
     96,
     97,
-    170,
-    172
+    171,
+    173
    ]
   ],
   [
@@ -24446,7 +24449,7 @@
     31,
     97,
     148,
-    170
+    171
    ]
   ],
   [
@@ -24551,7 +24554,7 @@
     153,
     160,
     164,
-    169
+    170
    ]
   ],
   [
@@ -24686,9 +24689,9 @@
     110,
     127,
     154,
-    170,
     171,
-    172
+    172,
+    173
    ],
    [
     0,
@@ -24820,7 +24823,8 @@
     131,
     160,
     161,
-    164
+    164,
+    167
    ]
   ],
   [
@@ -24906,7 +24910,7 @@
     112,
     115,
     148,
-    170
+    171
    ]
   ],
   [
@@ -25061,7 +25065,7 @@
     2
    ],
    [
-    170
+    171
    ]
   ],
   [
@@ -25113,21 +25117,19 @@
   [
    "frontend/src/views/components/MemberList.tsx",
    "views",
-   550,
+   379,
    "",
    [
     2,
-    37,
     38,
     39,
-    54,
     88,
     106,
     138,
     160,
     161,
-    165,
-    166
+    166,
+    167
    ],
    [
     128,
@@ -25195,8 +25197,8 @@
    [
     88,
     132,
-    168,
-    169
+    169,
+    170
    ],
    [
     101,
@@ -25233,7 +25235,7 @@
    51,
    "",
    [
-    167
+    168
    ],
    [
     101,
@@ -25241,7 +25243,7 @@
     136,
     160,
     161,
-    170
+    171
    ]
   ],
   [
@@ -25629,12 +25631,12 @@
     166
    ],
    [
-    129,
     131,
     158,
     159,
     161,
-    163
+    163,
+    167
    ]
   ],
   [
@@ -25656,7 +25658,27 @@
     162,
     163,
     164,
-    165
+    165,
+    167
+   ]
+  ],
+  [
+   "frontend/src/views/components/member/useMemberEntries.ts",
+   "views",
+   231,
+   "",
+   [
+    2,
+    37,
+    38,
+    39,
+    54,
+    106,
+    165,
+    166
+   ],
+   [
+    129
    ]
   ],
   [
@@ -25806,8 +25828,8 @@
   {
    "name": "frontend/src",
    "note": "React room client (TS/TSX)",
-   "files": 174,
-   "lines": 43875
+   "files": 175,
+   "lines": 43935
   },
   {
    "name": "tests",

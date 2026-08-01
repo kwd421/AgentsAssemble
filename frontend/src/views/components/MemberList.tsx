@@ -1,38 +1,27 @@
 import { useEffect, useMemo, useState } from "react";
 import type { MouseEvent as ReactMouseEvent } from "react";
-import { Bot, Search, User, UserCheck, UserMinus, Volume2, VolumeX } from "lucide-react";
-import {
-  type LiveAgent,
-  type LiveAgentProcessGroup,
-  type RoomAgentSession,
-  type RoomMember,
+import { Bot, Search, User, UserMinus, Volume2, VolumeX } from "lucide-react";
+import type {
+  LiveAgent,
+  LiveAgentProcessGroup,
+  RoomAgentSession,
+  RoomMember,
 } from "../../api";
 import {
   loadAgentProfileSettings,
   type AgentProfileSettings,
 } from "../../lib/agentProfileSettings";
-import { providerExecutionLabel, roomContextSummaryBadges } from "../../lib/agentLabels";
-import {
-  canViewAgentQuota,
-  type AgentQuotaVisibilityViewer,
+
+import type {
+  AgentQuotaVisibilityViewer,
 } from "../../lib/agentQuotaVisibility";
-import { participantTypeMeta } from "../../lib/participantTypes";
 import ProviderTruthChips from "./ProviderTruthChips";
-import {
-  agentSessionIsPresent,
-  agentSessionStatusLabel,
-  type AgentSessionControlAction,
+import type {
+  AgentSessionControlAction,
 } from "./AgentSessionDetails";
 import MemberDetailModal from "./member/MemberDetailModal";
 import MemberRow from "./member/MemberRow";
-import {
-  inferAgentRole,
-  isActive,
-  memberActive,
-  memberRole,
-  memberStatusLabel,
-  ROLE_OPTIONS,
-} from "./member/memberHelpers";
+import { useMemberEntries } from "./member/useMemberEntries";
 import type { MemberEntry, RoleId } from "./member/memberTypes";
 import type { NativeCliProviderAvailability } from "../../roomSocketClient";
 
@@ -111,177 +100,17 @@ export default function MemberList({
     () => loadAgentProfileSettings()
   );
   const query = searchQuery ?? localQuery;
-  const contextBadges = roomContextSummaryBadges(agents);
-  const effectiveRoleOverrides = (roleOverrides || localRoleOverrides) as Record<string, RoleId>;
-  const entries = useMemo<MemberEntry[]>(() => {
-    const memberById = new Map(members.map((member) => [member.participant_id, member]));
-    const sessionByParticipantId = new Map(
-      agentSessions.map((session) => [session.participant_id, session])
-    );
-    const mutedById = new Map(members.map((member) => [member.participant_id, Boolean(member.muted)]));
-    const viewerMember = memberById.get(viewerParticipantId);
-    const viewerEntryId = viewerMember?.participant_id || "human:self";
-    const human: MemberEntry = {
-      id: viewerEntryId,
-      member: viewerMember,
-      displayName: "나",
-      detail: "사람",
-      statusLabel: viewerMember ? memberStatusLabel(viewerMember) : undefined,
-      role: viewerMember
-        ? memberRole(viewerMember, effectiveRoleOverrides[viewerEntryId])
-        : "human",
-      owner: true,
-      active: viewerMember ? memberActive(viewerMember) : true,
-      muted: Boolean(viewerMember?.muted),
-      meetingId: String(viewerMember?.meeting_id || ""),
-      canViewQuota: false,
-      ownedByViewer: true,
-      icon: UserCheck,
-    };
-    const agentEntries = agents.map((agent) => {
-      const member = memberById.get(agent.agent_id);
-      const agentSession = sessionByParticipantId.get(agent.agent_id);
-      const inferredRole = inferAgentRole(agent);
-      const role = effectiveRoleOverrides[agent.agent_id] || inferredRole;
-      const profile = agentProfileSettings[agent.agent_id] || {};
-      const canViewQuotaForAgent = canViewAgentQuota(agent, quotaViewer);
-      const ownerId = String(member?.owner_id || agent.owner_id || "").trim();
-      const ownedByViewer = ownerId
-        ? ownerId === viewerParticipantId
-        : canViewQuotaForAgent || canEditRoles;
-      const ownerDisplayName = String(agent.owner_display_name || (ownedByViewer ? "나" : "다른 사람")).trim();
-      const canonicalIdentity = member || agentSession;
-      const agentDisplayName = String(
-        canonicalIdentity
-          ? canonicalIdentity.display_name || agent.agent_id
-          : profile.displayName || agent.display_name || agent.agent_id
-      ).trim();
-      const avatarImage = canonicalIdentity
-        ? canonicalIdentity.avatar_image_url
-        : profile.avatarImage || agent.avatar_image_url;
-      const agentPanelDisplayName = `${ownerDisplayName}'s ${agentDisplayName}`;
-      const executionDetail = providerExecutionLabel(agent);
-      const modelLabel = String(agentSession?.model || agent.model_id || "").trim();
-      const reasoningEffort = String(
-        agentSession?.reasoning_effort || agent.effort || ""
-      ).trim();
-      const serviceTier = String(
-        agentSession?.service_tier || agent.speed || ""
-      ).trim().toLowerCase();
-      const fastMode =
-        Boolean(agent.fast_mode) || ["fast", "priority"].includes(serviceTier);
-      const detail = [
-        executionDetail === "Agent Session" ? "" : executionDetail,
-        modelLabel,
-      ]
-        .filter(Boolean)
-        .join(" · ");
-      const runtimeStatus = agentSession?.runtime_status || agentSession?.status;
-      return {
-        id: agent.agent_id,
-        agent,
-        agentSession,
-        member,
-        displayName: agentPanelDisplayName,
-        detail,
-        modelLabel,
-        reasoningEffort,
-        fastMode,
-        ultraMode: ["ultra", "ultracode"].includes(
-          reasoningEffort.toLowerCase()
-        ),
-        fullDetail: [detail, agentSession?.runtime_kind].filter(Boolean).join(" · "),
-        statusLabel: agentSession
-          ? agentSessionStatusLabel(runtimeStatus)
-          : member
-            ? memberStatusLabel(member)
-            : undefined,
-        role,
-        owner: false,
-        active: agentSession ? agentSessionIsPresent(runtimeStatus) : isActive(agent),
-        muted: mutedById.get(agent.agent_id) ?? false,
-        meetingId: String(agent.meeting_id || ""),
-        canViewQuota: canViewQuotaForAgent,
-        ownedByViewer,
-        ownerDisplayName,
-        agentDisplayName,
-        agentProfile: profile,
-        avatarImage,
-        providerKind: String(
-          canonicalIdentity?.provider_kind || agent.provider_kind || ""
-        ),
-        icon: ROLE_OPTIONS.find((option) => option.id === role)?.icon || Bot,
-      } satisfies MemberEntry;
-    });
-    const agentIds = new Set(agentEntries.map((entry) => entry.id));
-    const invitedEntries = members
-      .filter(
-        (member) =>
-          member.participant_id &&
-          member.participant_id !== viewerParticipantId &&
-          !agentIds.has(member.participant_id)
-      )
-      .map((member) => {
-        const agentSession = sessionByParticipantId.get(member.participant_id);
-        const role = memberRole(member, effectiveRoleOverrides[member.participant_id]);
-        const typeMeta = participantTypeMeta(member.participant_type);
-        const fullDetail = [
-          typeMeta.label,
-          member.provider_kind,
-          member.connection_kind,
-          member.source === "friend_invite" ? "친구 초대" : "",
-        ]
-          .filter(Boolean)
-          .join(" · ");
-        const detail = [
-          typeMeta.label,
-          member.source === "friend_invite" ? "친구 초대" : "",
-        ]
-          .filter(Boolean)
-          .join(" · ");
-        return {
-          id: member.participant_id,
-          agentSession,
-          member,
-          displayName: member.display_name || member.participant_id,
-          detail: [detail, agentSession?.model].filter(Boolean).join(" · "),
-          modelLabel: String(agentSession?.model || "").trim(),
-          reasoningEffort: String(agentSession?.reasoning_effort || "").trim(),
-          fastMode: ["fast", "priority"].includes(
-            String(agentSession?.service_tier || "").trim().toLowerCase()
-          ),
-          ultraMode: ["ultra", "ultracode"].includes(
-            String(agentSession?.reasoning_effort || "").trim().toLowerCase()
-          ),
-          fullDetail: [fullDetail, agentSession?.runtime_kind].filter(Boolean).join(" · "),
-          statusLabel: agentSession
-            ? agentSessionStatusLabel(agentSession.runtime_status || agentSession.status)
-            : memberStatusLabel(member),
-          role,
-          owner: false,
-          active: agentSession
-            ? agentSessionIsPresent(agentSession.runtime_status || agentSession.status)
-            : memberActive(member),
-          muted: Boolean(member.muted),
-          meetingId: String(member.meeting_id || ""),
-          canViewQuota: false,
-          ownedByViewer: Boolean(agentSession && !agentSession.external_owned),
-          avatarImage: member.avatar_image_url,
-          providerKind: String(agentSession?.provider_kind || member.provider_kind || ""),
-          icon: ROLE_OPTIONS.find((option) => option.id === role)?.icon || typeMeta.icon,
-        } satisfies MemberEntry;
-      });
-    return [human, ...agentEntries, ...invitedEntries];
-  }, [
-    agentProfileSettings,
-    agentSessions,
+  const { entries, contextBadges } = useMemberEntries({
     agents,
-    canEditRoles,
-    effectiveRoleOverrides,
     members,
-    quotaViewer,
     viewerParticipantId,
-  ]);
+    roleOverrides,
+    localRoleOverrides,
+    agentSessions,
+    quotaViewer,
+    canEditRoles,
+    agentProfileSettings,
+  });
   const detailEntry = useMemo(
     () => entries.find((entry) => entry.id === detailEntryId) || null,
     [detailEntryId, entries]
