@@ -2,7 +2,7 @@
 
 Status: current starting point
 
-Updated: 2026-07-30
+Updated: 2026-08-01
 
 Read this file before changing rooms, Agent Sessions, providers, invites,
 moderation, media, or the React room UI. It is intentionally short. Follow its
@@ -195,6 +195,31 @@ and either publishes through the portal or publishes nothing; a provider with
 the ordered floor may still decline. Only portal output becomes
 `message_final`; no output becomes a structured decline. Ordinary assistant or
 terminal output is private and is never used as an implicit fallback.
+
+### Pending decision: API-provider final-answer publication
+
+The current no-fallback rule remains authoritative. A 2026-08-01 Cerebras
+`gpt-oss-120b` observation showed why the rule may need a provider-protocol
+follow-up: the model successfully called `read_discussion`, then returned a
+non-empty ordinary assistant answer without calling `publish_message`. The
+bridge correctly treated the turn as a structured decline because the ordinary
+answer was private. This was not a timeout, an empty model response, or a
+browser rendering loss.
+
+Do not silently change this behavior. The product decision is still pending
+between:
+
+1. require an explicit `publish_message` or `decline_to_speak` tool result after
+   an API provider reads the room, and surface noncompliance as a protocol error;
+2. allow a narrowly recorded API-provider fallback that publishes a non-empty
+   ordinary final only after a successful room read, no explicit decline, and no
+   portal publication.
+
+Any fallback must be explicit in the canonical event metadata and diagnostics,
+must never publish reasoning content, and must not be generalized to terminal
+or coding-agent output. Until this decision is made and verified through a real
+provider room turn, ordinary output remains private.
+
 For compatibility with older servers and persisted sessions, a missing kind is
 normalized to `ambient_observation`; explicit unknown values are rejected, and
 the compatibility path never infers an ordered floor.
