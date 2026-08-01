@@ -11,6 +11,22 @@ import {
 } from "./providerModelOptions";
 import "./ProviderControlSelect.css";
 
+// Must track .dc-agent-select-menu: --dc-select-rows rows, --dc-select-gap
+// between them, plus 4px padding and a 1px border on each edge. Placement
+// used a flat 240 while the cap grew to whole rows, which pushed the menu
+// past the bottom of the viewport.
+const MENU_VISIBLE_ROWS = 7;
+const MENU_ROW_GAP = 2;
+const MENU_CHROME = 10;
+
+function menuHeightCap(rowHeight: number): number {
+  return (
+    MENU_VISIBLE_ROWS * rowHeight +
+    (MENU_VISIBLE_ROWS - 1) * MENU_ROW_GAP +
+    MENU_CHROME
+  );
+}
+
 type MenuPosition = {
   left: number;
   top: number;
@@ -160,7 +176,7 @@ export default function ProviderControlSelect({
     const rect = buttonRef.current.getBoundingClientRect();
     const optionHeight = options.some(hasOptionDescription) ? 50 : 36;
     const estimatedHeight = Math.min(
-      240,
+      menuHeightCap(optionHeight) + (showModelTools ? 50 : 0),
       (showGroupLabels ? optionGroups.length * 36 : filteredOptions.length * optionHeight) +
         (showModelTools ? 50 : 8)
     );
@@ -186,7 +202,10 @@ export default function ProviderControlSelect({
         ? rightLeft
         : Math.max(8, rect.left - width - 6);
     const optionHeight = group.options.some(hasOptionDescription) ? 50 : 36;
-    const estimatedHeight = Math.min(240, group.options.length * optionHeight + 8);
+    const estimatedHeight = Math.min(
+      menuHeightCap(optionHeight),
+      group.options.length * optionHeight + MENU_CHROME
+    );
     setActiveGroup(group.label);
     setSubMenuPosition({
       left,

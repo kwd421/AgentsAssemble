@@ -846,10 +846,12 @@ button:disabled,
   position: fixed;
   z-index: 220;
   display: grid;
+  /* border-box, so the cap has to carry the 4px padding and 1px border on both
+     edges as well as the rows themselves. */
   max-height: min(
     calc(
       var(--dc-select-rows) * var(--dc-select-row) +
-        (var(--dc-select-rows) - 1) * var(--dc-select-gap) + 8px
+        (var(--dc-select-rows) - 1) * var(--dc-select-gap) + 10px
     ),
     calc(100vh - 16px)
   );
