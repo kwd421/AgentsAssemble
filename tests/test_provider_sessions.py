@@ -1,4 +1,5 @@
 import json
+import sqlite3
 import tempfile
 import unittest
 from pathlib import Path
@@ -218,6 +219,69 @@ class SessionLabelTests(unittest.TestCase):
             )
 
             self.assertEqual(sessions[0]["label"], "실제로 친 말")
+
+
+class OpenCodeAndOllamaSessionTests(unittest.TestCase):
+    def _opencode_db(self, home: Path, rows: list[tuple]) -> None:
+        database = home / ".local" / "share" / "opencode" / "opencode.db"
+        database.parent.mkdir(parents=True, exist_ok=True)
+        connection = sqlite3.connect(database)
+        connection.execute(
+            "CREATE TABLE session (id TEXT, directory TEXT, title TEXT,"
+            " time_updated INTEGER, time_archived INTEGER)"
+        )
+        connection.executemany("INSERT INTO session VALUES (?,?,?,?,?)", rows)
+        connection.commit()
+        connection.close()
+
+    def test_opencode_lists_sessions_for_the_folder(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            home = Path(temp_dir)
+            self._opencode_db(
+                home,
+                [
+                    ("ses_here", "/w/wanted", "여기 대화", 1785509373685, None),
+                    ("ses_there", "/w/other", "다른 폴더", 1785509373000, None),
+                    # A trailing slash is the same folder.
+                    ("ses_slash", "/w/wanted/", "슬래시", 1785509372000, None),
+                ],
+            )
+
+            scoped = list_provider_sessions(
+                "opencode_server", home=home, workspace="/w/wanted"
+            )
+
+            self.assertEqual(
+                [item["session_id"] for item in scoped], ["ses_here", "ses_slash"]
+            )
+            self.assertEqual(scoped[0]["label"], "여기 대화")
+
+    def test_opencode_hides_archived_sessions(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            home = Path(temp_dir)
+            self._opencode_db(
+                home,
+                [
+                    ("ses_live", "/w/wanted", "살아있음", 1785509373685, None),
+                    ("ses_gone", "/w/wanted", "보관됨", 1785509373000, 1785509999999),
+                ],
+            )
+
+            scoped = list_provider_sessions(
+                "opencode_server", home=home, workspace="/w/wanted"
+            )
+
+            self.assertEqual([item["session_id"] for item in scoped], ["ses_live"])
+
+    def test_ollama_has_no_local_conversation_store(self) -> None:
+        # ollama serves models over an API; there is no session to resume.
+        with tempfile.TemporaryDirectory() as temp_dir:
+            self.assertEqual(
+                list_provider_sessions(
+                    "ollama_api", home=Path(temp_dir), workspace="/w/wanted"
+                ),
+                [],
+            )
 
 
 if __name__ == "__main__":

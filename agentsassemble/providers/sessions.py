@@ -14,6 +14,7 @@ from __future__ import annotations
 
 import json
 import re
+import sqlite3
 from datetime import UTC, datetime
 from pathlib import Path
 from urllib.parse import unquote
@@ -49,6 +50,10 @@ def list_provider_sessions(
             return _list_grok_sessions(base, workspace, limit)
         if kind == "cursor_live_session":
             return _list_cursor_sessions(base, workspace, limit)
+        if kind == "opencode_server":
+            return _list_opencode_sessions(base, workspace, limit)
+        # ollama serves models over an API and keeps no conversation store of
+        # its own, so there is nothing local to resume.
     except Exception:
         return []
     return []
@@ -335,6 +340,43 @@ def _list_cursor_sessions(home: Path, workspace: str, limit: int) -> list[dict[s
                     "updated_at": updated,
                 }
             )
+    return _sorted_limited(items, limit)
+
+
+def _list_opencode_sessions(home: Path, workspace: str, limit: int) -> list[dict[str, str]]:
+    """OpenCode keeps sessions in one sqlite store with the directory on each row."""
+    database = home / ".local" / "share" / "opencode" / "opencode.db"
+    if not database.exists():
+        return []
+    wanted = _normalized_workspace(workspace)
+    items: list[dict[str, str]] = []
+    connection = None
+    try:
+        # Read-only so a running opencode is never disturbed.
+        connection = sqlite3.connect(f"file:{database}?mode=ro", uri=True, timeout=2.0)
+        rows = connection.execute(
+            "SELECT id, directory, title, time_updated FROM session "
+            "WHERE time_archived IS NULL ORDER BY time_updated DESC LIMIT 500"
+        ).fetchall()
+    except sqlite3.Error:
+        return []
+    finally:
+        if connection is not None:
+            connection.close()
+    for session_id, directory, title, updated_ms in rows:
+        if wanted and _normalized_workspace(str(directory or "")) != wanted:
+            continue
+        try:
+            updated = _iso(float(updated_ms or 0) / 1000.0)
+        except (TypeError, ValueError):
+            continue
+        items.append(
+            {
+                "session_id": str(session_id),
+                "label": " ".join(str(title or session_id).split())[:80],
+                "updated_at": updated,
+            }
+        )
     return _sorted_limited(items, limit)
 
 
