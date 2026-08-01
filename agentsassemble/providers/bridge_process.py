@@ -243,7 +243,7 @@ class NativeCliBridgeProcessManager:
             if not credential:
                 raise RuntimeError("credential_missing")
             executable = "server-owned-api"
-            provider_endpoint = remote_provider_endpoint
+            provider_endpoint = spec.provider_endpoint or remote_provider_endpoint
         elif local_provider_endpoint:
             executable = spec.command[0]
             provider_endpoint = local_provider_endpoint

@@ -66,6 +66,8 @@ export default function AgentCreateModal({
   const [status, setStatus] = useState("");
   const [busy, setBusy] = useState(false);
   const [providerApiKey, setProviderApiKey] = useState("");
+  const [customEndpoint, setCustomEndpoint] = useState("");
+  const [customModel, setCustomModel] = useState("");
   const [credentialStatus, setCredentialStatus] = useState<ProviderCredentialStatus | null>(null);
   const [credentialBusy, setCredentialBusy] = useState(false);
   const [loginBusy, setLoginBusy] = useState(false);
@@ -96,6 +98,8 @@ export default function AgentCreateModal({
       (existingSessionId || (catalogRevision && selectedProvider?.startable)) &&
       !invalidControl &&
       displayName.trim() &&
+      (!selectedProvider.custom_endpoint || customEndpoint.trim()) &&
+      (!selectedProvider.custom_model || customModel.trim()) &&
       (
         existingSessionId ||
         selectedProvider?.workspace_required === false ||
@@ -115,6 +119,8 @@ export default function AgentCreateModal({
   useEffect(() => {
     if (!open) {
       wasOpen.current = false;
+      setCustomEndpoint("");
+      setCustomModel("");
       return;
     }
     if (!wasOpen.current) {
@@ -160,6 +166,8 @@ export default function AgentCreateModal({
     setDisplayName(defaultAgentDisplayName(provider, initialSettings));
     setDisplayNameEdited(false);
     setSettings(initialSettings);
+    setCustomEndpoint("");
+    setCustomModel("");
     setStartNow(provider.startable);
   }
 
@@ -170,6 +178,8 @@ export default function AgentCreateModal({
     setDisplayName("");
     setDisplayNameEdited(false);
     setSettings({});
+    setCustomEndpoint("");
+    setCustomModel("");
     setStartNow(false);
     setStatus("");
   }
@@ -234,7 +244,10 @@ export default function AgentCreateModal({
         sessionId: existingSessionId || undefined,
         displayName,
         workspacePath,
-        modelId: settings.model || "",
+        modelId: selectedProvider.custom_model ? customModel.trim() : settings.model || "",
+        providerEndpoint: selectedProvider.custom_endpoint
+          ? customEndpoint.trim()
+          : "",
         reasoningEffort: settings.reasoning_effort || "",
         serviceTier: settings.service_tier || "",
         variant: settings.variant || "",
@@ -498,6 +511,40 @@ export default function AgentCreateModal({
               )}
             </div>
           </section>
+
+          {selectedProvider?.custom_endpoint && !existingSessionId && (
+            <section className="dc-agent-section">
+              <p className="dc-agent-section-title">API 연결</p>
+              <div className="dc-agent-field-grid dc-agent-field-grid--dual">
+                <label className="dc-agent-field">
+                  <span>API 주소</span>
+                  <input
+                    type="url"
+                    value={customEndpoint}
+                    placeholder="https://example.com/v1 또는 …/chat/completions"
+                    onChange={(event) => setCustomEndpoint(event.currentTarget.value)}
+                  />
+                </label>
+                <label className="dc-agent-field">
+                  <span>모델 ID</span>
+                  <input
+                    value={customModel}
+                    placeholder="provider가 요구하는 정확한 모델 ID"
+                    onChange={(event) => {
+                      const value = event.currentTarget.value;
+                      setCustomModel(value);
+                      if (!displayNameEdited) {
+                        setDisplayName(value.trim() ? `Custom ${value.trim()}` : "Custom API");
+                      }
+                    }}
+                  />
+                </label>
+              </div>
+              <p className="preserve-words">
+                Base URL과 /chat/completions 전체 주소를 모두 받을 수 있습니다.
+              </p>
+            </section>
+          )}
 
           {selectedProvider && selectedProvider.controls.length > 0 && (
             <section className="dc-agent-section">

@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import tempfile
 import unittest
+from dataclasses import replace
 from pathlib import Path
 
 from agentsassemble.persistence.local.room.repository import RoomStore
@@ -176,6 +177,37 @@ class RoomAgentCreationServiceTests(unittest.TestCase):
         self.assertEqual(result["status"], "created")
         self.assertNotIn("start", result)
         self.assertEqual(self.start_calls, [])
+
+    def test_custom_api_endpoint_is_part_of_the_server_owned_runtime_profile(self) -> None:
+        self.catalog.selection = replace(
+            self.selection,
+            provider_id="custom_api",
+            provider_kind="custom_openai_api",
+            model="vendor-model",
+            reasoning_effort="",
+            provider_endpoint="https://api.example.com/v1",
+        )
+
+        self.service.create(
+            "general",
+            {
+                "provider_id": "custom_api",
+                "display_name": "Custom vendor-model",
+                "model": "vendor-model",
+                "provider_endpoint": "https://api.example.com/v1/chat/completions",
+                "permission_mode": "meeting_read_only",
+                "max_output_tokens": 4096,
+                "catalog_revision": "revision-1",
+            },
+            operation_id="create-custom-69",
+            server_url="http://127.0.0.1:8765",
+            ticket_issuer=None,
+        )
+
+        _room_id, spec = self.created_specs[-1]
+        self.assertEqual(spec.provider_kind, "custom_openai_api")
+        self.assertEqual(spec.model, "vendor-model")
+        self.assertEqual(spec.provider_endpoint, "https://api.example.com/v1")
 
     def test_catalog_error_preserves_its_command_rejection_code(self) -> None:
         self.catalog.error = ProviderCatalogSelectionError(

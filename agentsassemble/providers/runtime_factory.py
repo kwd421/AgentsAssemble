@@ -48,6 +48,7 @@ _STRUCTURED_RUNTIME_KINDS = {
     ("deepseek_api", "https"): "api",
     ("openrouter_api", "https"): "api",
     ("vercel_ai_gateway", "https"): "api",
+    ("custom_openai_api", "https"): "api",
     ("ollama_api", "http"): "api",
     ("lmstudio_api", "http"): "api",
 }

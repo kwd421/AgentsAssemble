@@ -104,6 +104,7 @@ class RoomAgentRuntimeProfileService:
             key: payload[key] if key in payload else current.get(key)
             for key in (
                 "model",
+                "provider_endpoint",
                 "reasoning_effort",
                 "service_tier",
                 "variant",
@@ -120,6 +121,10 @@ class RoomAgentRuntimeProfileService:
                 provider_id=definition.provider_id,
                 values={
                     "model": clean_room_text(selected_values["model"], 128),
+                    "provider_endpoint": clean_room_text(
+                        selected_values["provider_endpoint"],
+                        1000,
+                    ),
                     "reasoning_effort": clean_room_text(
                         selected_values["reasoning_effort"],
                         32,
@@ -149,6 +154,7 @@ class RoomAgentRuntimeProfileService:
                     "variant": selection.variant,
                     "permission_mode": selection.permission_mode,
                     "max_output_tokens": selection.max_output_tokens,
+                    "provider_endpoint": selection.provider_endpoint,
                 }
             )
         except ProviderCatalogSelectionError as error:

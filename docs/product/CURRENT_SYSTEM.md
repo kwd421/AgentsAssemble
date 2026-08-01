@@ -276,6 +276,15 @@ room tools, not filesystem tools. Each provider exposes only discovered models
 and controls; Cerebras currently exposes `gpt-oss-120b` with low, medium, and
 high reasoning effort.
 
+`Custom API` uses the same server-owned OpenAI-compatible runtime for an
+operator-supplied model ID and direct HTTPS endpoint. It accepts either a base
+URL or a full `/chat/completions` URL and stores only the normalized base URL in
+the private Agent Session record. Redirect/link-wrapper URLs, embedded
+credentials, query strings, fragments, loopback addresses, and private literal
+addresses are rejected. Compatibility still requires streaming Chat
+Completions plus the tool-call protocol used by the room runtime; accepting the
+address is not a claim that an arbitrary service implements that contract.
+
 Quota and remaining-usage displays require an authoritative account value from
 a provider-documented API or the authenticated provider protocol. Confirmed plan
 or catalog facts such as a free tier may still be shown, but they must not be

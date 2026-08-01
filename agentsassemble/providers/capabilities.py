@@ -10,7 +10,6 @@ import subprocess
 import threading
 import time
 from collections.abc import Callable
-from dataclasses import dataclass
 from datetime import UTC, datetime
 
 from agentsassemble.providers.claude_catalog import (
@@ -27,10 +26,15 @@ from agentsassemble.providers.process_environment import sanitized_provider_envi
 from agentsassemble.providers.remote_openai import (
     RemoteOpenAIProfile,
     discover_remote_openai_models,
+    normalize_custom_openai_endpoint,
     remote_openai_catalog_payload,
     remote_openai_profiles,
 )
 from agentsassemble.providers.secrets import PROVIDER_SECRETS
+from agentsassemble.providers.selection import (
+    ProviderCatalogSelectionError,
+    ValidatedProviderSelection,
+)
 
 
 ProbeRunner = Callable[[list[str], float], tuple[int, str, str]]
@@ -40,30 +44,10 @@ SecretResolver = Callable[[str], str]
 CatalogListener = Callable[[dict[str, object]], None]
 
 
-class ProviderCatalogSelectionError(ValueError):
-    def __init__(self, message: str, *, code: str) -> None:
-        super().__init__(message)
-        self.code = code
-
-
 class _ProviderDiscoveryError(RuntimeError):
     def __init__(self, message: str, *, code: str) -> None:
         super().__init__(message)
         self.code = code
-
-
-@dataclass(frozen=True)
-class ValidatedProviderSelection:
-    catalog_revision: str
-    provider_id: str
-    provider_kind: str
-    model: str
-    model_selection_kind: str
-    reasoning_effort: str
-    service_tier: str
-    variant: str
-    permission_mode: str
-    max_output_tokens: int = 0
 
 
 # One discovery pass runs every provider CLI as a subprocess and fetches two
@@ -198,6 +182,7 @@ class ProviderCapabilityCatalog:
             key: str(values.get(key) or fixed_values.get(key) or "")
             for key in (
                 "model",
+                "provider_endpoint",
                 "reasoning_effort",
                 "service_tier",
                 "variant",
@@ -237,6 +222,22 @@ class ProviderCapabilityCatalog:
                     f"Unsupported {key} value for provider {provider_id}.",
                     code=code,
                 )
+        custom_model = bool(provider.get("custom_model"))
+        if custom_model:
+            if not resolved_values["model"]:
+                raise ProviderCatalogSelectionError(
+                    "Custom API model ID is required.", code="unsupported_model"
+                )
+            try:
+                provider_endpoint = normalize_custom_openai_endpoint(
+                    resolved_values["provider_endpoint"]
+                )
+            except ValueError as error:
+                raise ProviderCatalogSelectionError(
+                    str(error), code="invalid_provider_endpoint"
+                ) from error
+        else:
+            provider_endpoint = ""
         model_control = next(
             (control for control in controls if isinstance(control, dict) and control.get("key") == "model"),
             None,
@@ -278,7 +279,7 @@ class ProviderCapabilityCatalog:
             reasoning_effort=resolved_values["reasoning_effort"],
             service_tier=selected_tier,
         )
-        selection_kind = str(metadata.get("selection_kind") or "")
+        selection_kind = "exact" if custom_model else str(metadata.get("selection_kind") or "")
         if selection_kind not in {"exact", "alias"}:
             raise ProviderCatalogSelectionError(
                 f"Provider {provider_id} model catalog entry is missing its selection kind.",
@@ -295,6 +296,7 @@ class ProviderCapabilityCatalog:
             variant=resolved_values["variant"],
             permission_mode=resolved_values["permission_mode"],
             max_output_tokens=int(resolved_values["max_output_tokens"] or 0),
+            provider_endpoint=provider_endpoint,
         )
 
     @staticmethod

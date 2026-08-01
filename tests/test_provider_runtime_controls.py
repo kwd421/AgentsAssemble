@@ -237,6 +237,43 @@ class ProviderRuntimeControlTests(unittest.TestCase):
                 self.assertNotIn(secret, json.dumps(status))
                 self.assertEqual(store.get(provider_id), secret)
 
+    def test_custom_api_accepts_a_full_completion_endpoint_and_rejects_link_wrappers(self):
+        catalog = ProviderCapabilityCatalog(
+            runner=lambda _command, _timeout: (1, "", "not installed"),
+            resolver=lambda _executable: None,
+            remote_model_discovery=lambda _profile, _api_key: [],
+        )
+        snapshot = catalog.snapshot(refresh=True)
+        revision = str(snapshot["catalog_revision"])
+
+        selected = catalog.validate_selection(
+            catalog_revision=revision,
+            provider_id="custom_api",
+            values={
+                "provider_endpoint": "https://api.example.com/v1/chat/completions",
+                "model": "vendor-model",
+                "permission_mode": "meeting_read_only",
+                "max_output_tokens": "4096",
+            },
+        )
+
+        self.assertEqual(selected.provider_endpoint, "https://api.example.com/v1")
+        self.assertEqual(selected.model, "vendor-model")
+        with self.assertRaises(ProviderCatalogSelectionError) as rejected:
+            catalog.validate_selection(
+                catalog_revision=revision,
+                provider_id="custom_api",
+                values={
+                    "provider_endpoint": (
+                        "https://unsafelink.example/https://api.example.com/v1/chat/completions"
+                    ),
+                    "model": "vendor-model",
+                    "permission_mode": "meeting_read_only",
+                    "max_output_tokens": "4096",
+                },
+            )
+        self.assertEqual(rejected.exception.code, "invalid_provider_endpoint")
+
     def test_capability_probe_returns_native_controls_without_commands(self):
         def runner(command: list[str], _timeout: float):
             if command[1:3] == ["debug", "models"]:

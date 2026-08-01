@@ -3636,6 +3636,7 @@ class RoomRealtimeControllerTests(unittest.TestCase):
                 "cerebras",
                 "openrouter",
                 "vercel",
+                "custom_api",
                 "ollama",
                 "lmstudio",
             ],

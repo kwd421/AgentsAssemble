@@ -2,9 +2,12 @@
 
 from __future__ import annotations
 
+import ipaddress
 import json
+import re
 from dataclasses import dataclass
 from decimal import Decimal, InvalidOperation
+from urllib.parse import urlsplit, urlunsplit
 from urllib.request import Request, urlopen
 
 from agentsassemble.providers.openai_compatible import (
@@ -31,6 +34,7 @@ class RemoteOpenAIProfile:
     discovery_path: str = ""
     request_headers: tuple[tuple[str, str], ...] = ()
     max_output_tokens: int = 0
+    custom_endpoint: bool = False
 
 
 REMOTE_OPENAI_PROFILES = (
@@ -88,6 +92,16 @@ REMOTE_OPENAI_PROFILES = (
         discovery_path="/models",
         max_output_tokens=4096,
     ),
+    RemoteOpenAIProfile(
+        provider_id="custom_api",
+        display_name="Custom API",
+        provider_kind="custom_openai_api",
+        base_url="",
+        default_model="",
+        credential_env="CUSTOM_OPENAI_API_KEY",
+        max_output_tokens=4096,
+        custom_endpoint=True,
+    ),
 )
 
 _BY_ID = {profile.provider_id: profile for profile in REMOTE_OPENAI_PROFILES}
@@ -111,6 +125,35 @@ def remote_openai_endpoint(provider_kind: object) -> str:
 
 def remote_openai_credential_ids() -> tuple[str, ...]:
     return tuple(profile.provider_id for profile in REMOTE_OPENAI_PROFILES)
+
+
+def normalize_custom_openai_endpoint(value: object) -> str:
+    """Return an HTTPS OpenAI base URL from either a base or completion URL."""
+
+    raw = str(value or "").strip()
+    if not raw:
+        raise ValueError("Custom API address is required.")
+    parsed = urlsplit(raw)
+    if parsed.scheme.casefold() != "https" or not parsed.hostname:
+        raise ValueError("Custom API address must be a direct HTTPS URL.")
+    if parsed.username or parsed.password or parsed.query or parsed.fragment:
+        raise ValueError("Custom API address cannot contain credentials, a query, or a fragment.")
+    host = parsed.hostname.casefold()
+    if host == "localhost" or host.endswith((".localhost", ".local")):
+        raise ValueError("Use a Local provider for loopback or local-network endpoints.")
+    try:
+        address = ipaddress.ip_address(host)
+    except ValueError:
+        address = None
+    if address is not None and not address.is_global:
+        raise ValueError("Use a Local provider for private-network endpoints.")
+    path = parsed.path.rstrip("/")
+    if re.search(r"https?://", path, flags=re.IGNORECASE):
+        raise ValueError("Enter the direct API address instead of a redirect or link wrapper.")
+    completion_suffix = "/chat/completions"
+    if path.casefold().endswith(completion_suffix):
+        path = path[: -len(completion_suffix)].rstrip("/")
+    return urlunsplit(("https", parsed.netloc, path, "", ""))
 
 
 def discover_remote_openai_models(
@@ -196,19 +239,19 @@ def remote_openai_catalog_payload(
                     profile.default_variant,
                 )
             )
-        if profile.max_output_tokens:
-            controls.append(
-                _control(
-                    "max_output_tokens",
-                    "최대 응답 길이",
-                    [
-                        _option(str(value), f"{value:,} 토큰")
-                        for value in REMOTE_OUTPUT_TOKEN_OPTIONS
-                    ],
-                    str(profile.max_output_tokens),
-                )
+    if profile.max_output_tokens and (options or profile.custom_endpoint):
+        controls.append(
+            _control(
+                "max_output_tokens",
+                "최대 응답 길이",
+                [
+                    _option(str(value), f"{value:,} 토큰")
+                    for value in REMOTE_OUTPUT_TOKEN_OPTIONS
+                ],
+                str(profile.max_output_tokens),
             )
-    ready = bool(options)
+        )
+    ready = profile.custom_endpoint or bool(options)
     return {
         "id": profile.provider_id,
         "display_name": profile.display_name,
@@ -228,6 +271,8 @@ def remote_openai_catalog_payload(
         "fixed_values": {"permission_mode": "meeting_read_only"},
         "controls": controls,
         "workspace_required": False,
+        "custom_endpoint": profile.custom_endpoint,
+        "custom_model": profile.custom_endpoint,
     }
 
 

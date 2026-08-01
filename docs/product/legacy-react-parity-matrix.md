@@ -224,6 +224,9 @@ surface rather than silently counted as React parity.
 | `/api/provider-credentials/cerebras` | GET | exact | `fetchProviderCredentialStatus()` | yes | Returns only configured/source metadata; never returns the credential value. |
 | `/api/provider-credentials/cerebras` | POST | exact | `setProviderCredential()` | yes | Stores a Cerebras key in the host secure store; the input is cleared by React after submission. |
 | `/api/provider-credentials/cerebras` | DELETE | exact | `deleteProviderCredential()` | yes | Deletes the Cerebras key from the host secure store; the response never returns the credential value. |
+| `/api/provider-credentials/custom_api` | GET | exact | `fetchProviderCredentialStatus()` | yes | Returns only configured/source metadata for the Custom API key; never returns the credential value. |
+| `/api/provider-credentials/custom_api` | POST | exact | `setProviderCredential()` | yes | Stores a Custom API key in the host secure store; the input is cleared by React after submission. |
+| `/api/provider-credentials/custom_api` | DELETE | exact | `deleteProviderCredential()` | yes | Deletes the Custom API key from the host secure store; the response never returns the credential value. |
 | `/api/provider-credentials/deepseek` | GET | exact | `fetchProviderCredentialStatus()` | yes | Returns only configured/source metadata; never returns the credential value. |
 | `/api/provider-credentials/deepseek` | POST | exact | `setProviderCredential()` | yes | Stores a DeepSeek key in the host secure store; the input is cleared by React after submission. |
 | `/api/provider-credentials/deepseek` | DELETE | exact | `deleteProviderCredential()` | yes | Deletes the DeepSeek key from the host secure store; the response never returns the credential value. |

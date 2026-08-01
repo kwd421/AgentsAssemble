@@ -113,6 +113,7 @@ export interface FrontendLiveAgentCreateRequest {
   workspacePath: string;
   engagementMode?: string;
   modelId?: string;
+  providerEndpoint?: string;
   reasoningEffort?: string;
   serviceTier?: string;
   variant?: string;

@@ -63,6 +63,10 @@ class RoomAgentCreationService:
                         payload.get("model") or payload.get("model_id"),
                         128,
                     ),
+                    "provider_endpoint": clean_room_text(
+                        payload.get("provider_endpoint"),
+                        1000,
+                    ),
                     "reasoning_effort": clean_room_text(
                         payload.get("reasoning_effort") or payload.get("effort"),
                         32,
@@ -107,6 +111,7 @@ class RoomAgentCreationService:
                     "variant": selection.variant,
                     "permission_mode": selection.permission_mode,
                     "max_output_tokens": selection.max_output_tokens,
+                    "provider_endpoint": selection.provider_endpoint,
                 }
             )
         except UnsupportedNativeCliProvider as error:

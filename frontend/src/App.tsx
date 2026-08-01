@@ -1410,6 +1410,7 @@ export default function App() {
               display_name: request.displayName,
               workspace: request.workspacePath,
               model: request.modelId || "",
+              provider_endpoint: request.providerEndpoint || "",
               reasoning_effort: request.reasoningEffort || "",
               service_tier: request.serviceTier || "",
               variant: request.variant || "",

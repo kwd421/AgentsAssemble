@@ -559,6 +559,7 @@ export async function fetchProviderCredentialStatus(
 ): Promise<ProviderCredentialStatus> {
   const paths: Record<string, string> = {
     cerebras: "/api/provider-credentials/cerebras",
+    custom_api: "/api/provider-credentials/custom_api",
     deepseek: "/api/provider-credentials/deepseek",
     openrouter: "/api/provider-credentials/openrouter",
     vercel: "/api/provider-credentials/vercel",
@@ -581,6 +582,7 @@ export async function setProviderCredential(
     postJsonHost<ProviderCredentialStatus>(path, { api_key: apiKey });
   const paths: Record<string, string> = {
     cerebras: "/api/provider-credentials/cerebras",
+    custom_api: "/api/provider-credentials/custom_api",
     deepseek: "/api/provider-credentials/deepseek",
     openrouter: "/api/provider-credentials/openrouter",
     vercel: "/api/provider-credentials/vercel",
@@ -596,6 +598,7 @@ export async function deleteProviderCredential(
   const requestInit = { method: "DELETE", headers: {} as Record<string, string> };
   const paths: Record<string, string> = {
     cerebras: "/api/provider-credentials/cerebras",
+    custom_api: "/api/provider-credentials/custom_api",
     deepseek: "/api/provider-credentials/deepseek",
     openrouter: "/api/provider-credentials/openrouter",
     vercel: "/api/provider-credentials/vercel",

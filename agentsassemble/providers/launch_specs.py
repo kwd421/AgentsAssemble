@@ -30,6 +30,7 @@ class NativeCliProviderSpec:
     variant: str = ""
     permission_mode: str = "meeting_read_only"
     max_output_tokens: int = 0
+    provider_endpoint: str = ""
     runtime_kind: str = "live_cli"
     transport: str = "pty"
     default_responder: bool = True
@@ -62,6 +63,7 @@ class NativeCliProviderSpec:
                 "variant": self.variant,
                 "permission_mode": self.permission_mode,
                 "max_output_tokens": self.max_output_tokens,
+                "provider_endpoint": self.provider_endpoint,
                 "runtime_kind": self.runtime_kind,
                 "transport": self.transport,
                 "quiet_seconds": self.quiet_seconds,
@@ -161,6 +163,7 @@ class NativeCliProviderDefinition:
         variant: str = "",
         permission_mode: str = "",
         max_output_tokens: int = 0,
+        provider_endpoint: str = "",
         model_selection_kind: str = "exact",
         catalog_revision: str = "",
         default_responder: bool = True,
@@ -238,6 +241,7 @@ class NativeCliProviderDefinition:
             variant=selected_variant,
             permission_mode=selected_permission,
             max_output_tokens=selected_max_output_tokens,
+            provider_endpoint=clean_room_text(provider_endpoint, limit=1000),
             runtime_kind=self.runtime_kind,
             transport=self.transport,
             default_responder=default_responder,
@@ -356,6 +360,10 @@ def native_cli_provider_spec_from_stored_session_strict(
         max_output_tokens=_nonnegative_int(
             session.get("max_output_tokens"),
             field="max_output_tokens",
+        ),
+        provider_endpoint=clean_room_text(
+            session.get("provider_endpoint"),
+            limit=1000,
         ),
         model_selection_kind=model_selection_kind,
         catalog_revision=catalog_revision,
@@ -928,6 +936,10 @@ def native_cli_provider_spec_from_payload(payload: dict[str, object]) -> NativeC
             payload.get("max_output_tokens"),
             field="max_output_tokens",
         ),
+        provider_endpoint=clean_room_text(
+            payload.get("provider_endpoint"),
+            limit=1000,
+        ),
         model_selection_kind=clean_room_text(payload.get("model_selection_kind"), limit=16)
         or "exact",
         catalog_revision=clean_room_text(payload.get("catalog_revision"), limit=128),
@@ -998,6 +1010,10 @@ def native_cli_provider_spec_from_config(
         max_output_tokens=_nonnegative_int(
             payload.get("max_output_tokens"),
             field="max_output_tokens",
+        ),
+        provider_endpoint=clean_room_text(
+            payload.get("provider_endpoint"),
+            limit=1000,
         ),
         runtime_kind=clean_room_text(payload.get("runtime_kind"), limit=32)
         or (definition.runtime_kind if definition else "live_cli"),
