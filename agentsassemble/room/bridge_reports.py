@@ -4,7 +4,10 @@ import hashlib
 import json
 from typing import Callable
 
-from agentsassemble.providers.launch_specs import native_cli_provider_definition
+from agentsassemble.providers.launch_specs import (
+    EXTERNAL_AGENT_PROVIDER_KIND,
+    native_cli_provider_definition,
+)
 from agentsassemble.providers.model_verification import model_verification_status
 from agentsassemble.providers.runtime_config import (
     ProviderRuntimeConfigError,
@@ -75,7 +78,16 @@ class RoomBridgeReportService:
                 code="bridge_disconnected",
             )
         external_profile: dict[str, object] = {}
-        if session.get("process_ownership") == "external":
+        external_kind = clean_room_text(session.get("provider_kind"), 64)
+        if (
+            session.get("process_ownership") == "external"
+            and external_kind != EXTERNAL_AGENT_PROVIDER_KIND
+        ):
+            # A provider this server knows, being run by the joiner instead of
+            # by us: its report must match the definition we hold. An
+            # external_agent has no such definition -- it is whatever the
+            # participant is running -- so there is nothing to match it against
+            # and the room simply records what it reports.
             definition = native_cli_provider_definition(session.get("provider_kind"))
             if definition is None:
                 raise RoomCommandRejected(

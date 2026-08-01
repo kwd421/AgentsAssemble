@@ -619,6 +619,12 @@ def _cursor_command(
 # model / reasoning / fast trio in the UI and recombine here so the CLI still
 # receives the exact slug Cursor advertised.
 _CURSOR_PLAIN_EFFORT = "default"
+# An agent already running on the joiner's own machine, connected over the
+# room WebSocket. It has no launch spec here because this server never
+# starts it: the participant owns the process and the provider account.
+EXTERNAL_AGENT_PROVIDER_KIND = "external_agent"
+
+
 _CURSOR_EFFORT_TOKENS = frozenset(
     {
         "thinking",

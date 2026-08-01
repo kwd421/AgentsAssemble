@@ -5,6 +5,7 @@ import threading
 from typing import Callable
 
 from agentsassemble.providers.launch_specs import (
+    EXTERNAL_AGENT_PROVIDER_KIND,
     NativeCliProviderSpec,
     StoredProviderProfileError,
     native_cli_provider_definition,
@@ -221,7 +222,9 @@ class RoomProviderSessionService:
         if existing_session.get("process_ownership") == "server":
             return
         display_name = clean_room_text(identity.get("display_name"), 64) or participant_id
-        provider_kind = clean_room_text(identity.get("provider_kind"), 64) or "external_agent"
+        provider_kind = (
+            clean_room_text(identity.get("provider_kind"), 64) or EXTERNAL_AGENT_PROVIDER_KIND
+        )
         definition = native_cli_provider_definition(provider_kind)
         if definition is not None:
             provider_kind = definition.provider_kind

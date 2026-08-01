@@ -17,7 +17,10 @@ from agentsassemble.admission.lan_invite import (
     create_lan_invite_packet,
     verify_lan_invite_token,
 )
-from agentsassemble.providers.launch_specs import native_cli_provider_definition
+from agentsassemble.providers.launch_specs import (
+    EXTERNAL_AGENT_PROVIDER_KIND,
+    native_cli_provider_definition,
+)
 from agentsassemble.admission.remote_room_client_packet import build_remote_room_client_packet
 from agentsassemble.room.text import clean_room_text as clean_lobby_text
 
@@ -249,10 +252,18 @@ def create_invite_record(
     clean_provider_kind = clean_lobby_text(provider_kind, limit=64) or "manual"
     if clean_client_type == "agent_bridge":
         clean_participant_type = "remote"
-        definition = native_cli_provider_definition(clean_provider_kind)
-        if definition is None:
-            raise ValueError("Agent Session invites require a supported provider.")
-        clean_provider_kind = definition.provider_kind
+        if clean_provider_kind == EXTERNAL_AGENT_PROVIDER_KIND:
+            # An agent already running on the joiner's machine. This server
+            # launches nothing for it, so there is no local CLI definition to
+            # look up; the room already models such a session as external-owned
+            # and leaves its process alone. The invite's own scope and
+            # permission mode still bound what it may do.
+            pass
+        else:
+            definition = native_cli_provider_definition(clean_provider_kind)
+            if definition is None:
+                raise ValueError("Agent Session invites require a supported provider.")
+            clean_provider_kind = definition.provider_kind
     clean_max_uses = max(0, int(max_uses)) if isinstance(max_uses, (int, float)) else 0
     resolved_permission_mode = (
         permission_mode.strip()
