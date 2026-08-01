@@ -57,6 +57,7 @@ describe("AgentCreateModal persona selection", () => {
 
     await userEvent.click(screen.getByRole("listitem", { name: "API" }));
     await userEvent.click(screen.getByRole("listitem", { name: "DeepSeek" }));
+    await userEvent.click(screen.getByRole("button", { name: /적용 안 함/ }));
     await waitFor(() => expect(screen.getByRole("radio", { name: /Night Guide/ })).toBeTruthy());
     await userEvent.click(screen.getByRole("radio", { name: /Night Guide/ }));
     await userEvent.click(screen.getByRole("button", { name: "폴더 선택" }));

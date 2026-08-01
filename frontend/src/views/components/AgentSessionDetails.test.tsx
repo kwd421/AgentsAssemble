@@ -105,6 +105,7 @@ describe("AgentSessionDetails diagnostics", () => {
     );
 
     expect(screen.getByText("현재 적용 · Old Guide")).toBeTruthy();
+    await userEvent.click(screen.getByRole("button", { name: /Old Guide/ }));
     await waitFor(() => expect(screen.getByRole("radio", { name: /New Guide/ })).toBeTruthy());
     await userEvent.click(screen.getByRole("radio", { name: /New Guide/ }));
     await userEvent.click(screen.getByRole("button", { name: "적용 교체" }));

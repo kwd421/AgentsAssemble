@@ -1,35 +1,21 @@
 import { useEffect, useId, useRef, useState } from "react";
 import { createPortal } from "react-dom";
-import { Check, ChevronDown, ChevronRight } from "lucide-react";
+import { Check, ChevronDown, ChevronRight, Search } from "lucide-react";
 
 import type { ProviderControlOption } from "../../roomSocketClient";
+import {
+  filterProviderControlOptions,
+  groupProviderControlOptions,
+  isFreeProviderOption,
+  type ProviderOptionGroup,
+} from "./providerModelOptions";
+import "./ProviderControlSelect.css";
 
 type MenuPosition = {
   left: number;
   top: number;
   width: number;
 };
-
-type OptionGroup = {
-  label: string;
-  options: ProviderControlOption[];
-};
-
-const MODEL_FAMILY_LABELS = [
-  ["haiku", "Haiku"],
-  ["sonnet", "Sonnet"],
-  ["opus", "Opus"],
-  ["fable", "Fable"],
-  ["gpt", "GPT"],
-  ["gemini", "Gemini"],
-  ["grok", "Grok"],
-  ["deepseek", "DeepSeek"],
-  ["qwen", "Qwen"],
-  ["glm", "GLM"],
-  ["kimi", "Kimi"],
-  ["nemotron", "Nemotron"],
-  ["llama", "Llama"],
-] as const;
 
 export default function ProviderControlSelect({
   label,
@@ -48,6 +34,8 @@ export default function ProviderControlSelect({
   const [menuPosition, setMenuPosition] = useState<MenuPosition | null>(null);
   const [activeGroup, setActiveGroup] = useState("");
   const [subMenuPosition, setSubMenuPosition] = useState<MenuPosition | null>(null);
+  const [query, setQuery] = useState("");
+  const [freeOnly, setFreeOnly] = useState(false);
   const listboxId = useId();
   const controlRef = useRef<HTMLDivElement>(null);
   const buttonRef = useRef<HTMLButtonElement>(null);
@@ -56,8 +44,12 @@ export default function ProviderControlSelect({
   const selectedOption = options.find((option) => option.value === value);
   const hasOnlyResolvedOption = options.length === 1 && Boolean(selectedOption);
   const controlDisabled = disabled || options.length === 0 || hasOnlyResolvedOption;
-  const optionGroups = groupOptions(label, options);
-  const showGroupLabels = optionGroups.length > 1;
+  const isModelControl = label === "모델";
+  const showModelTools = isModelControl && options.length > 1;
+  const hasFreeOptions = options.some(isFreeProviderOption);
+  const filteredOptions = filterProviderControlOptions(label, options, query, freeOnly);
+  const optionGroups = groupProviderControlOptions(label, filteredOptions);
+  const showGroupLabels = !query.trim() && optionGroups.length > 1;
 
   useEffect(() => {
     if (!open) return;
@@ -115,6 +107,11 @@ export default function ProviderControlSelect({
     }
   }, [controlDisabled]);
 
+  useEffect(() => {
+    setActiveGroup("");
+    setSubMenuPosition(null);
+  }, [freeOnly, query]);
+
   function toggleMenu() {
     if (controlDisabled || !buttonRef.current) return;
     if (open) {
@@ -126,7 +123,8 @@ export default function ProviderControlSelect({
     const optionHeight = options.some(hasOptionDescription) ? 50 : 36;
     const estimatedHeight = Math.min(
       240,
-      (showGroupLabels ? optionGroups.length * 36 : options.length * optionHeight) + 8
+      (showGroupLabels ? optionGroups.length * 36 : filteredOptions.length * optionHeight) +
+        (showModelTools ? 50 : 8)
     );
     const spaceBelow = window.innerHeight - rect.bottom - 8;
     const spaceAbove = rect.top - 8;
@@ -141,7 +139,7 @@ export default function ProviderControlSelect({
     setOpen(true);
   }
 
-  function openSubMenu(group: OptionGroup, target: HTMLButtonElement) {
+  function openSubMenu(group: ProviderOptionGroup, target: HTMLButtonElement) {
     const rect = target.getBoundingClientRect();
     const width = menuPosition?.width || rect.width;
     const rightLeft = rect.right + 6;
@@ -167,6 +165,7 @@ export default function ProviderControlSelect({
     setOpen(false);
     setActiveGroup("");
     setSubMenuPosition(null);
+    setQuery("");
     buttonRef.current?.focus();
   }
 
@@ -198,13 +197,44 @@ export default function ProviderControlSelect({
           <>
             <div
               ref={menuRef}
-              id={listboxId}
-              className="dc-agent-select-menu"
-              role={showGroupLabels ? "menu" : "listbox"}
-              aria-label={showGroupLabels ? `${label} 분류` : label}
+              className="dc-agent-select-popover"
               style={menuPosition}
             >
-              {showGroupLabels
+              {showModelTools && (
+                <div className="dc-agent-model-tools">
+                  <label className="dc-agent-model-search">
+                    <Search size={15} aria-hidden="true" />
+                    <input
+                      type="search"
+                      aria-label="모델 검색"
+                      value={query}
+                      placeholder={`${options.length.toLocaleString()}개 모델 검색`}
+                      onChange={(event) => setQuery(event.currentTarget.value)}
+                    />
+                  </label>
+                  {hasFreeOptions && (
+                    <button
+                      type="button"
+                      className="dc-agent-model-free-filter"
+                      aria-label="무료 모델만 보기"
+                      aria-pressed={freeOnly}
+                      data-active={freeOnly}
+                      onClick={() => setFreeOnly((current) => !current)}
+                    >
+                      무료
+                    </button>
+                  )}
+                </div>
+              )}
+              <div
+                id={listboxId}
+                className="dc-agent-select-menu"
+                role={showGroupLabels ? "menu" : "listbox"}
+                aria-label={showGroupLabels ? `${label} 분류` : label}
+              >
+              {filteredOptions.length === 0 ? (
+                <p className="dc-agent-model-empty" role="status">조건에 맞는 모델이 없습니다.</p>
+              ) : showGroupLabels
                 ? optionGroups.map((group) => {
                     if (group.options.length === 1) {
                       const option = group.options[0];
@@ -237,6 +267,7 @@ export default function ProviderControlSelect({
                         key={group.label}
                         type="button"
                         role="menuitem"
+                        className="dc-agent-select-group"
                         aria-haspopup="listbox"
                         aria-expanded={activeGroup === group.label}
                         data-selected={containsSelected}
@@ -244,11 +275,11 @@ export default function ProviderControlSelect({
                         onMouseEnter={(event) => openSubMenu(group, event.currentTarget)}
                       >
                         <span className="truncate preserve-words">{group.label}</span>
-                        <ChevronRight size={15} aria-hidden="true" />
+                        <ChevronRight className="dc-agent-select-group-arrow" size={15} aria-hidden="true" />
                       </button>
                     );
                   })
-                : options.map((option) => {
+                : filteredOptions.map((option) => {
                   const selected = option.value === value;
                   return (
                     <button
@@ -266,6 +297,7 @@ export default function ProviderControlSelect({
                     </button>
                   );
                 })}
+              </div>
             </div>
             {showGroupLabels &&
               activeGroup &&
@@ -309,41 +341,6 @@ export default function ProviderControlSelect({
         )}
     </div>
   );
-}
-
-function groupOptions(
-  controlLabel: string,
-  options: ProviderControlOption[]
-): OptionGroup[] {
-  if (controlLabel !== "모델") return [{ label: "", options }];
-  const groups = new Map<string, ProviderControlOption[]>();
-  for (const option of options) {
-    const family = modelFamily(option) || "기타";
-    groups.set(family, [...(groups.get(family) || []), option]);
-  }
-  if (groups.size <= 1) return [{ label: "", options }];
-  return [...groups].map(([label, groupOptions]) => ({
-    label,
-    options: groupOptions,
-  }));
-}
-
-function modelFamily(option: ProviderControlOption): string {
-  const explicitGroup = option.metadata?.group;
-  if (typeof explicitGroup === "string" && explicitGroup.trim()) {
-    return explicitGroup.trim();
-  }
-  const explicitFamily = option.metadata?.family;
-  if (typeof explicitFamily === "string" && explicitFamily.trim()) {
-    return explicitFamily.trim();
-  }
-  const normalized = `${option.value} ${option.label}`.toLowerCase();
-  for (const [token, label] of MODEL_FAMILY_LABELS) {
-    if (new RegExp(`(^|[^a-z0-9])${token}([^a-z0-9]|$)`).test(normalized)) {
-      return label;
-    }
-  }
-  return "";
 }
 
 function OptionContent({

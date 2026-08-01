@@ -1,17 +1,17 @@
 {
  "readme": "AgentsAssemble codebase map. Regenerate with `make codebase-map`; verify committed outputs with `make codebase-map-verify`. modules[] columns: name, path, package, domain, classification, migration_status, lines, docstring, imports[], imported_by[] (indexes into modules), classes[[name, [[base, defining_module], ...]]] (best-effort, top-level classes only). frontend[] columns: path, group, lines, doc, imports[], imported_by[] (indexes into frontend). package_edges go importer -> dependency with module-import counts; `points` is the precomputed polyline for that edge and `intra_cycle` marks imports whose endpoints share one cycle group. graph{} holds the layered package drawing: layers[] top-to-bottom (each with members[] package ids, member_count, and the dominant domain), (a package sits below everything importing it), clusters[] are mutually dependent packages (import cycles at package level) drawn as one labelled block, plus width/height of the drawing. health{} ranks findings for a reader who has to act: cycles[] (mutually dependent packages, with the lines they hold), leaning_on_retiring[] (current modules importing legacy/compatibility modules - the reason legacy cannot be deleted), highest_leverage_migrations[] (retiring modules with the most current importers), unreferenced_shims[] (compatibility modules with no importer in agentsassemble/ and no reference in tests/; callers outside this repository are not visible, so verify before deleting), and hotspots[] (largest modules). health.scope states exactly what was measured. class_graph{} is the UML generalization DAG over base classes that resolve inside the repo: edges go base -> subclass, so a subclass always sits below the class it extends. Coordinates in graph and class_graph are laid out with a Sugiyama pipeline (cycle condensation, Coffman-Graham layering, dummy-node edge routing, median/transpose crossing reduction) and are deterministic.",
- "generated_at": "2026-08-01T07:39:11Z",
- "fingerprint": "ce8076db7540c631",
+ "generated_at": "2026-08-01T12:38:39Z",
+ "fingerprint": "27b9493e72d6aeee",
  "stats": {
-  "backend_modules": 806,
-  "backend_lines": 135672,
-  "frontend_files": 162,
-  "frontend_lines": 42479,
+  "backend_modules": 810,
+  "backend_lines": 136224,
+  "frontend_files": 172,
+  "frontend_lines": 43671,
   "packages": 30,
   "import_cycles": 0,
   "classifications": {
    "compatibility": 299,
-   "current": 310,
+   "current": 314,
    "legacy": 185,
    "optional": 12
   }
@@ -21,17 +21,17 @@
    "id": "web",
    "kind": "backend",
    "doc": "HTTP and WebSocket transport boundaries for the current GUI.",
-   "files": 30,
-   "lines": 5101,
+   "files": 31,
+   "lines": 5186,
    "domains": {
-    "web": 30
+    "web": 31
    },
    "classes": {
-    "current": 30
+    "current": 31
    },
-   "x": 1246.0,
+   "x": 1360.0,
    "y": 400.0,
-   "cx": 1350.0,
+   "cx": 1464.0,
    "cy": 442.0,
    "w": 208,
    "h": 84,
@@ -63,16 +63,16 @@
    "kind": "backend",
    "doc": "Current room domain contracts and behavior.",
    "files": 50,
-   "lines": 13502,
+   "lines": 13685,
    "domains": {
     "room": 50
    },
    "classes": {
     "current": 50
    },
-   "x": 1246.0,
+   "x": 1474.0,
    "y": 298.0,
-   "cx": 1350.0,
+   "cx": 1578.0,
    "cy": 340.0,
    "w": 208,
    "h": 84,
@@ -123,18 +123,18 @@
    "id": "providers",
    "kind": "backend",
    "doc": "Provider runtime contracts and implementations.",
-   "files": 96,
-   "lines": 24470,
+   "files": 97,
+   "lines": 24497,
    "domains": {
-    "providers": 96
+    "providers": 97
    },
    "classes": {
     "compatibility": 2,
-    "current": 94
+    "current": 95
    },
-   "x": 1018.0,
+   "x": 1246.0,
    "y": 298.0,
-   "cx": 1122.0,
+   "cx": 1350.0,
    "cy": 340.0,
    "w": 208,
    "h": 84,
@@ -253,9 +253,9 @@
     "current": 14
    },
    "x": 1078.0,
-   "y": 666.0,
+   "y": 580.0,
    "cx": 1182.0,
-   "cy": 708.0,
+   "cy": 622.0,
    "w": 208,
    "h": 84,
    "layer": 0
@@ -285,21 +285,21 @@
    "id": "persona_cards",
    "kind": "backend",
    "doc": "Stable public API for persona card import, storage, and prompt rendering.",
-   "files": 8,
-   "lines": 1883,
+   "files": 10,
+   "lines": 2140,
    "domains": {
-    "application": 8
+    "application": 10
    },
    "classes": {
-    "current": 8
+    "current": 10
    },
    "x": 1018.0,
-   "y": 498.0,
+   "y": 298.0,
    "cx": 1122.0,
-   "cy": 540.0,
+   "cy": 340.0,
    "w": 208,
    "h": 84,
-   "layer": 3
+   "layer": 2
   },
   {
    "id": "root:admission",
@@ -334,10 +334,10 @@
     "compatibility": 81,
     "current": 6
    },
-   "x": 1474.0,
-   "y": 298.0,
-   "cx": 1578.0,
-   "cy": 340.0,
+   "x": 676.0,
+   "y": 400.0,
+   "cx": 780.0,
+   "cy": 442.0,
    "w": 208,
    "h": 84,
    "layer": 2
@@ -415,9 +415,9 @@
     "compatibility": 40,
     "legacy": 5
    },
-   "x": 790.0,
+   "x": 904.0,
    "y": 400.0,
-   "cx": 894.0,
+   "cx": 1008.0,
    "cy": 442.0,
    "w": 208,
    "h": 84,
@@ -476,9 +476,9 @@
     "compatibility": 31,
     "current": 9
    },
-   "x": 1018.0,
+   "x": 1132.0,
    "y": 400.0,
-   "cx": 1122.0,
+   "cx": 1236.0,
    "cy": 442.0,
    "w": 208,
    "h": 84,
@@ -509,13 +509,13 @@
    "kind": "frontend",
    "doc": "Frontend entry files (App, main, API client, styles) living directly under src/.",
    "files": 13,
-   "lines": 12983,
+   "lines": 12985,
    "domains": {},
    "classes": {},
    "x": 102.0,
-   "y": 690.0,
+   "y": 604.0,
    "cx": 206.0,
-   "cy": 732.0,
+   "cy": 646.0,
    "w": 208,
    "h": 84,
    "layer": 0
@@ -524,14 +524,14 @@
    "id": "fe:api",
    "kind": "frontend",
    "doc": "Room protocol client: HTTP calls, WebSocket wiring, DTO mapping.",
-   "files": 7,
-   "lines": 1686,
+   "files": 8,
+   "lines": 1717,
    "domains": {},
    "classes": {},
    "x": 330.0,
-   "y": 690.0,
+   "y": 604.0,
    "cx": 434.0,
-   "cy": 732.0,
+   "cy": 646.0,
    "w": 208,
    "h": 84,
    "layer": 0
@@ -545,9 +545,9 @@
    "domains": {},
    "classes": {},
    "x": 558.0,
-   "y": 690.0,
+   "y": 604.0,
    "cx": 662.0,
-   "cy": 732.0,
+   "cy": 646.0,
    "w": 208,
    "h": 84,
    "layer": 0
@@ -561,9 +561,9 @@
    "domains": {},
    "classes": {},
    "x": 786.0,
-   "y": 690.0,
+   "y": 604.0,
    "cx": 890.0,
-   "cy": 732.0,
+   "cy": 646.0,
    "w": 208,
    "h": 84,
    "layer": 0
@@ -577,9 +577,9 @@
    "domains": {},
    "classes": {},
    "x": 330.0,
-   "y": 792.0,
+   "y": 706.0,
    "cx": 434.0,
-   "cy": 834.0,
+   "cy": 748.0,
    "w": 208,
    "h": 84,
    "layer": 0
@@ -588,14 +588,14 @@
    "id": "fe:views",
    "kind": "frontend",
    "doc": "Top-level room views rendered by the shell.",
-   "files": 69,
-   "lines": 16599,
+   "files": 78,
+   "lines": 17758,
    "domains": {},
    "classes": {},
    "x": 558.0,
-   "y": 792.0,
+   "y": 706.0,
    "cx": 662.0,
-   "cy": 834.0,
+   "cy": 748.0,
    "w": 208,
    "h": 84,
    "layer": 0
@@ -677,11 +677,11 @@
    "points": [
     [
      770.0,
-     261.2631578947368
+     253.50877192982455
     ],
     [
-     1018.0,
-     316.7368421052632
+     1246.0,
+     324.49122807017545
     ]
    ],
    "intra_cycle": true
@@ -693,11 +693,11 @@
    "points": [
     [
      770.0,
-     253.50877192982455
+     249.6315789473684
     ],
     [
-     1246.0,
-     324.49122807017545
+     1474.0,
+     328.36842105263156
     ]
    ],
    "intra_cycle": true
@@ -772,22 +772,6 @@
    "count": 1,
    "points": [
     [
-     1122.0,
-     496.0
-    ],
-    [
-     1122.0,
-     498.0
-    ]
-   ],
-   "intra_cycle": false
-  },
-  {
-   "from": "application",
-   "to": "providers",
-   "count": 31,
-   "points": [
-    [
      987.8823529411765,
      280.0
     ],
@@ -800,8 +784,8 @@
   },
   {
    "from": "application",
-   "to": "room",
-   "count": 28,
+   "to": "providers",
+   "count": 31,
    "points": [
     [
      998.0,
@@ -816,8 +800,8 @@
   },
   {
    "from": "application",
-   "to": "root:application",
-   "count": 1,
+   "to": "room",
+   "count": 28,
    "points": [
     [
      998.0,
@@ -832,16 +816,32 @@
   },
   {
    "from": "application",
+   "to": "root:application",
+   "count": 1,
+   "points": [
+    [
+     870.5294117647059,
+     280.0
+    ],
+    [
+     803.4705882352941,
+     400.0
+    ]
+   ],
+   "intra_cycle": true
+  },
+  {
+   "from": "application",
    "to": "web",
    "count": 10,
    "points": [
     [
-     987.8823529411765,
-     280.0
+     998.0,
+     275.22105263157897
     ],
     [
-     1256.1176470588234,
-     400.0
+     1360.0,
+     404.77894736842103
     ]
    ],
    "intra_cycle": true
@@ -900,22 +900,6 @@
    "count": 4,
    "points": [
     [
-     1122.0,
-     280.0
-    ],
-    [
-     1122.0,
-     298.0
-    ]
-   ],
-   "intra_cycle": true
-  },
-  {
-   "from": "diagnostics",
-   "to": "room",
-   "count": 4,
-   "points": [
-    [
      1215.8823529411766,
      280.0
     ],
@@ -928,8 +912,8 @@
   },
   {
    "from": "diagnostics",
-   "to": "root:application",
-   "count": 2,
+   "to": "room",
+   "count": 4,
    "points": [
     [
      1226.0,
@@ -943,17 +927,33 @@
    "intra_cycle": true
   },
   {
+   "from": "diagnostics",
+   "to": "root:application",
+   "count": 2,
+   "points": [
+    [
+     1051.5882352941176,
+     280.0
+    ],
+    [
+     850.4117647058823,
+     400.0
+    ]
+   ],
+   "intra_cycle": true
+  },
+  {
    "from": "fe:(src root)",
    "to": "fe:api",
-   "count": 6,
+   "count": 7,
    "points": [
     [
      310.0,
-     732.0
+     646.0
     ],
     [
      330.0,
-     732.0
+     646.0
     ]
    ],
    "intra_cycle": true
@@ -965,11 +965,11 @@
    "points": [
     [
      310.0,
-     732.0
+     646.0
     ],
     [
      558.0,
-     732.0
+     646.0
     ]
    ],
    "intra_cycle": true
@@ -981,11 +981,11 @@
    "points": [
     [
      310.0,
-     732.0
+     646.0
     ],
     [
      786.0,
-     732.0
+     646.0
     ]
    ],
    "intra_cycle": true
@@ -997,11 +997,11 @@
    "points": [
     [
      299.88235294117646,
-     774.0
+     688.0
     ],
     [
      340.11764705882354,
-     792.0
+     706.0
     ]
    ],
    "intra_cycle": true
@@ -1013,11 +1013,11 @@
    "points": [
     [
      310.0,
-     755.2631578947369
+     669.2631578947369
     ],
     [
      558.0,
-     810.7368421052631
+     724.7368421052631
     ]
    ],
    "intra_cycle": true
@@ -1029,11 +1029,11 @@
    "points": [
     [
      538.0,
-     732.0
+     646.0
     ],
     [
      786.0,
-     732.0
+     646.0
     ]
    ],
    "intra_cycle": true
@@ -1045,11 +1045,11 @@
    "points": [
     [
      434.0,
-     774.0
+     688.0
     ],
     [
      434.0,
-     792.0
+     706.0
     ]
    ],
    "intra_cycle": true
@@ -1061,11 +1061,11 @@
    "points": [
     [
      558.0,
-     732.0
+     646.0
     ],
     [
      310.0,
-     732.0
+     646.0
     ]
    ],
    "intra_cycle": true
@@ -1077,11 +1077,11 @@
    "points": [
     [
      766.0,
-     732.0
+     646.0
     ],
     [
      786.0,
-     732.0
+     646.0
     ]
    ],
    "intra_cycle": true
@@ -1093,11 +1093,11 @@
    "points": [
     [
      786.0,
-     732.0
+     646.0
     ],
     [
      310.0,
-     732.0
+     646.0
     ]
    ],
    "intra_cycle": true
@@ -1109,11 +1109,11 @@
    "points": [
     [
      786.0,
-     732.0
+     646.0
     ],
     [
      538.0,
-     732.0
+     646.0
     ]
    ],
    "intra_cycle": true
@@ -1125,11 +1125,11 @@
    "points": [
     [
      434.0,
-     792.0
+     706.0
     ],
     [
      434.0,
-     774.0
+     688.0
     ]
    ],
    "intra_cycle": true
@@ -1137,15 +1137,15 @@
   {
    "from": "fe:views",
    "to": "fe:(src root)",
-   "count": 68,
+   "count": 74,
    "points": [
     [
      558.0,
-     810.7368421052631
+     724.7368421052631
     ],
     [
      310.0,
-     755.2631578947369
+     669.2631578947369
     ]
    ],
    "intra_cycle": true
@@ -1153,15 +1153,15 @@
   {
    "from": "fe:views",
    "to": "fe:api",
-   "count": 1,
+   "count": 2,
    "points": [
     [
      568.1176470588235,
-     792.0
+     706.0
     ],
     [
      527.8823529411765,
-     774.0
+     688.0
     ]
    ],
    "intra_cycle": true
@@ -1173,11 +1173,11 @@
    "points": [
     [
      662.0,
-     792.0
+     706.0
     ],
     [
      662.0,
-     774.0
+     688.0
     ]
    ],
    "intra_cycle": true
@@ -1185,15 +1185,15 @@
   {
    "from": "fe:views",
    "to": "fe:lib",
-   "count": 74,
+   "count": 75,
    "points": [
     [
      755.8823529411765,
-     792.0
+     706.0
     ],
     [
      796.1176470588235,
-     774.0
+     688.0
     ]
    ],
    "intra_cycle": true
@@ -1220,11 +1220,11 @@
    "count": 1,
    "points": [
     [
-     1350.0,
+     1443.8823529411766,
      280.0
     ],
     [
-     1350.0,
+     1484.1176470588234,
      298.0
     ]
    ],
@@ -1236,11 +1236,11 @@
    "count": 3,
    "points": [
     [
-     1350.0,
+     1373.4705882352941,
      280.0
     ],
     [
-     1350.0,
+     1440.5294117647059,
      400.0
     ]
    ],
@@ -1300,11 +1300,11 @@
    "count": 5,
    "points": [
     [
-     1484.1176470588234,
+     1578.0,
      280.0
     ],
     [
-     1443.8823529411766,
+     1578.0,
      298.0
     ]
    ],
@@ -1412,15 +1412,15 @@
    "count": 4,
    "points": [
     [
-     1122.0,
-     496.0
+     770.0,
+     340.0
     ],
     [
-     1122.0,
-     498.0
+     1018.0,
+     340.0
     ]
    ],
-   "intra_cycle": false
+   "intra_cycle": true
   },
   {
    "from": "legacy",
@@ -1432,7 +1432,7 @@
      340.0
     ],
     [
-     1018.0,
+     1246.0,
      340.0
     ]
    ],
@@ -1448,7 +1448,7 @@
      340.0
     ],
     [
-     1246.0,
+     1474.0,
      340.0
     ]
    ],
@@ -1460,12 +1460,12 @@
    "count": 30,
    "points": [
     [
-     770.0,
-     340.0
+     712.9411764705883,
+     382.0
     ],
     [
-     1474.0,
-     340.0
+     733.0588235294117,
+     400.0
     ]
    ],
    "intra_cycle": true
@@ -1476,12 +1476,12 @@
    "count": 31,
    "points": [
     [
-     759.8823529411765,
-     382.0
+     770.0,
+     371.0175438596491
     ],
     [
-     800.1176470588235,
-     400.0
+     904.0,
+     410.9824561403509
     ]
    ],
    "intra_cycle": true
@@ -1493,11 +1493,11 @@
    "points": [
     [
      770.0,
-     363.2631578947368
+     358.61052631578946
     ],
     [
-     1018.0,
-     418.7368421052632
+     1132.0,
+     423.38947368421054
     ]
    ],
    "intra_cycle": true
@@ -1509,11 +1509,11 @@
    "points": [
     [
      770.0,
-     355.50877192982455
+     353.29323308270676
     ],
     [
-     1246.0,
-     426.49122807017545
+     1360.0,
+     428.70676691729324
     ]
    ],
    "intra_cycle": true
@@ -1560,7 +1560,7 @@
      340.0
     ],
     [
-     1246.0,
+     1474.0,
      340.0
     ]
    ],
@@ -1572,52 +1572,20 @@
    "count": 4,
    "points": [
     [
-     987.8823529411765,
-     382.0
+     998.0,
+     371.0175438596491
     ],
     [
-     1028.1176470588234,
-     400.0
+     1132.0,
+     410.9824561403509
     ]
    ],
    "intra_cycle": true
   },
   {
-   "from": "providers",
-   "to": "application",
+   "from": "persona_cards",
+   "to": "providers",
    "count": 1,
-   "points": [
-    [
-     1028.1176470588234,
-     298.0
-    ],
-    [
-     987.8823529411765,
-     280.0
-    ]
-   ],
-   "intra_cycle": true
-  },
-  {
-   "from": "providers",
-   "to": "diagnostics",
-   "count": 2,
-   "points": [
-    [
-     1122.0,
-     298.0
-    ],
-    [
-     1122.0,
-     280.0
-    ]
-   ],
-   "intra_cycle": true
-  },
-  {
-   "from": "providers",
-   "to": "room",
-   "count": 32,
    "points": [
     [
      1226.0,
@@ -1631,9 +1599,9 @@
    "intra_cycle": true
   },
   {
-   "from": "providers",
-   "to": "root:application",
-   "count": 9,
+   "from": "persona_cards",
+   "to": "room",
+   "count": 1,
    "points": [
     [
      1226.0,
@@ -1647,39 +1615,23 @@
    "intra_cycle": true
   },
   {
+   "from": "persona_cards",
+   "to": "root:application",
+   "count": 1,
+   "points": [
+    [
+     1018.0,
+     371.0175438596491
+    ],
+    [
+     884.0,
+     410.9824561403509
+    ]
+   ],
+   "intra_cycle": true
+  },
+  {
    "from": "providers",
-   "to": "root:room",
-   "count": 2,
-   "points": [
-    [
-     1122.0,
-     382.0
-    ],
-    [
-     1122.0,
-     400.0
-    ]
-   ],
-   "intra_cycle": true
-  },
-  {
-   "from": "room",
-   "to": "admission",
-   "count": 2,
-   "points": [
-    [
-     1246.0,
-     324.49122807017545
-    ],
-    [
-     770.0,
-     253.50877192982455
-    ]
-   ],
-   "intra_cycle": true
-  },
-  {
-   "from": "room",
    "to": "application",
    "count": 1,
    "points": [
@@ -1695,9 +1647,9 @@
    "intra_cycle": true
   },
   {
-   "from": "room",
+   "from": "providers",
    "to": "diagnostics",
-   "count": 3,
+   "count": 2,
    "points": [
     [
      1256.1176470588234,
@@ -1711,57 +1663,9 @@
    "intra_cycle": true
   },
   {
-   "from": "room",
-   "to": "features",
+   "from": "providers",
+   "to": "persona_cards",
    "count": 2,
-   "points": [
-    [
-     1350.0,
-     298.0
-    ],
-    [
-     1350.0,
-     280.0
-    ]
-   ],
-   "intra_cycle": true
-  },
-  {
-   "from": "room",
-   "to": "identity",
-   "count": 1,
-   "points": [
-    [
-     1443.8823529411766,
-     298.0
-    ],
-    [
-     1484.1176470588234,
-     280.0
-    ]
-   ],
-   "intra_cycle": true
-  },
-  {
-   "from": "room",
-   "to": "persistence",
-   "count": 5,
-   "points": [
-    [
-     1246.0,
-     340.0
-    ],
-    [
-     998.0,
-     340.0
-    ]
-   ],
-   "intra_cycle": true
-  },
-  {
-   "from": "room",
-   "to": "providers",
-   "count": 24,
    "points": [
     [
      1246.0,
@@ -1775,17 +1679,193 @@
    "intra_cycle": true
   },
   {
+   "from": "providers",
+   "to": "room",
+   "count": 33,
+   "points": [
+    [
+     1454.0,
+     340.0
+    ],
+    [
+     1474.0,
+     340.0
+    ]
+   ],
+   "intra_cycle": true
+  },
+  {
+   "from": "providers",
+   "to": "root:application",
+   "count": 9,
+   "points": [
+    [
+     1246.0,
+     358.61052631578946
+    ],
+    [
+     884.0,
+     423.38947368421054
+    ]
+   ],
+   "intra_cycle": true
+  },
+  {
+   "from": "providers",
+   "to": "root:room",
+   "count": 2,
+   "points": [
+    [
+     1303.0588235294117,
+     382.0
+    ],
+    [
+     1282.9411764705883,
+     400.0
+    ]
+   ],
+   "intra_cycle": true
+  },
+  {
+   "from": "room",
+   "to": "admission",
+   "count": 2,
+   "points": [
+    [
+     1474.0,
+     328.36842105263156
+    ],
+    [
+     770.0,
+     249.6315789473684
+    ]
+   ],
+   "intra_cycle": true
+  },
+  {
+   "from": "room",
+   "to": "application",
+   "count": 1,
+   "points": [
+    [
+     1474.0,
+     324.49122807017545
+    ],
+    [
+     998.0,
+     253.50877192982455
+    ]
+   ],
+   "intra_cycle": true
+  },
+  {
+   "from": "room",
+   "to": "diagnostics",
+   "count": 3,
+   "points": [
+    [
+     1474.0,
+     316.7368421052632
+    ],
+    [
+     1226.0,
+     261.2631578947368
+    ]
+   ],
+   "intra_cycle": true
+  },
+  {
+   "from": "room",
+   "to": "features",
+   "count": 2,
+   "points": [
+    [
+     1484.1176470588234,
+     298.0
+    ],
+    [
+     1443.8823529411766,
+     280.0
+    ]
+   ],
+   "intra_cycle": true
+  },
+  {
+   "from": "room",
+   "to": "identity",
+   "count": 1,
+   "points": [
+    [
+     1578.0,
+     298.0
+    ],
+    [
+     1578.0,
+     280.0
+    ]
+   ],
+   "intra_cycle": true
+  },
+  {
+   "from": "room",
+   "to": "persistence",
+   "count": 5,
+   "points": [
+    [
+     1474.0,
+     340.0
+    ],
+    [
+     998.0,
+     340.0
+    ]
+   ],
+   "intra_cycle": true
+  },
+  {
+   "from": "room",
+   "to": "persona_cards",
+   "count": 5,
+   "points": [
+    [
+     1474.0,
+     340.0
+    ],
+    [
+     1226.0,
+     340.0
+    ]
+   ],
+   "intra_cycle": true
+  },
+  {
+   "from": "room",
+   "to": "providers",
+   "count": 25,
+   "points": [
+    [
+     1474.0,
+     340.0
+    ],
+    [
+     1454.0,
+     340.0
+    ]
+   ],
+   "intra_cycle": true
+  },
+  {
    "from": "room",
    "to": "root:room",
    "count": 9,
    "points": [
     [
-     1256.1176470588234,
-     382.0
+     1474.0,
+     371.0175438596491
     ],
     [
-     1215.8823529411766,
-     400.0
+     1340.0,
+     410.9824561403509
     ]
    ],
    "intra_cycle": true
@@ -1876,12 +1956,12 @@
    "count": 6,
    "points": [
     [
-     1474.0,
-     328.36842105263156
+     756.5294117647059,
+     400.0
     ],
     [
-     770.0,
-     249.6315789473684
+     689.4705882352941,
+     280.0
     ]
    ],
    "intra_cycle": true
@@ -1892,12 +1972,12 @@
    "count": 30,
    "points": [
     [
-     1474.0,
-     324.49122807017545
+     803.4705882352941,
+     400.0
     ],
     [
-     998.0,
-     253.50877192982455
+     870.5294117647059,
+     280.0
     ]
    ],
    "intra_cycle": true
@@ -1908,12 +1988,12 @@
    "count": 5,
    "points": [
     [
-     1474.0,
-     316.7368421052632
+     850.4117647058823,
+     400.0
     ],
     [
-     1226.0,
-     261.2631578947368
+     1051.5882352941176,
+     280.0
     ]
    ],
    "intra_cycle": true
@@ -1924,12 +2004,12 @@
    "count": 6,
    "points": [
     [
-     1484.1176470588234,
-     298.0
+     884.0,
+     404.77894736842103
     ],
     [
-     1443.8823529411766,
-     280.0
+     1246.0,
+     275.22105263157897
     ]
    ],
    "intra_cycle": true
@@ -1940,12 +2020,12 @@
    "count": 2,
    "points": [
     [
-     1578.0,
-     298.0
+     884.0,
+     415.4135338345865
     ],
     [
-     1578.0,
-     280.0
+     1474.0,
+     264.5864661654135
     ]
    ],
    "intra_cycle": true
@@ -1956,12 +2036,12 @@
    "count": 145,
    "points": [
     [
-     1474.0,
-     340.0
+     733.0588235294117,
+     400.0
     ],
     [
-     770.0,
-     340.0
+     712.9411764705883,
+     382.0
     ]
    ],
    "intra_cycle": true
@@ -1972,12 +2052,12 @@
    "count": 2,
    "points": [
     [
-     1474.0,
-     340.0
+     826.9411764705883,
+     400.0
     ],
     [
-     998.0,
-     340.0
+     847.0588235294117,
+     382.0
     ]
    ],
    "intra_cycle": true
@@ -1988,15 +2068,15 @@
    "count": 1,
    "points": [
     [
-     1122.0,
-     496.0
+     884.0,
+     410.9824561403509
     ],
     [
-     1122.0,
-     498.0
+     1018.0,
+     371.0175438596491
     ]
    ],
-   "intra_cycle": false
+   "intra_cycle": true
   },
   {
    "from": "root:application",
@@ -2004,12 +2084,12 @@
    "count": 13,
    "points": [
     [
-     1474.0,
-     340.0
+     884.0,
+     423.38947368421054
     ],
     [
-     1226.0,
-     340.0
+     1246.0,
+     358.61052631578946
     ]
    ],
    "intra_cycle": true
@@ -2020,12 +2100,12 @@
    "count": 7,
    "points": [
     [
-     1474.0,
-     340.0
+     884.0,
+     428.70676691729324
     ],
     [
-     1454.0,
-     340.0
+     1474.0,
+     353.29323308270676
     ]
    ],
    "intra_cycle": true
@@ -2036,12 +2116,12 @@
    "count": 2,
    "points": [
     [
-     1474.0,
-     355.50877192982455
+     884.0,
+     442.0
     ],
     [
-     998.0,
-     426.49122807017545
+     904.0,
+     442.0
     ]
    ],
    "intra_cycle": true
@@ -2052,12 +2132,12 @@
    "count": 18,
    "points": [
     [
-     1484.1176470588234,
-     382.0
+     884.0,
+     442.0
     ],
     [
-     1443.8823529411766,
-     400.0
+     1360.0,
+     442.0
     ]
    ],
    "intra_cycle": true
@@ -2164,12 +2244,12 @@
    "count": 51,
    "points": [
     [
-     800.1176470588235,
-     400.0
+     904.0,
+     410.9824561403509
     ],
     [
-     759.8823529411765,
-     382.0
+     770.0,
+     371.0175438596491
     ]
    ],
    "intra_cycle": true
@@ -2180,15 +2260,15 @@
    "count": 1,
    "points": [
     [
-     1122.0,
-     496.0
+     1054.9411764705883,
+     400.0
     ],
     [
-     1122.0,
-     498.0
+     1075.0588235294117,
+     382.0
     ]
    ],
-   "intra_cycle": false
+   "intra_cycle": true
   },
   {
    "from": "root:legacy",
@@ -2196,12 +2276,12 @@
    "count": 9,
    "points": [
     [
-     987.8823529411765,
-     400.0
+     1112.0,
+     410.9824561403509
     ],
     [
-     1028.1176470588234,
-     382.0
+     1246.0,
+     371.0175438596491
     ]
    ],
    "intra_cycle": true
@@ -2212,12 +2292,12 @@
    "count": 3,
    "points": [
     [
-     998.0,
-     426.49122807017545
+     904.0,
+     442.0
     ],
     [
-     1474.0,
-     355.50877192982455
+     884.0,
+     442.0
     ]
    ],
    "intra_cycle": true
@@ -2228,11 +2308,11 @@
    "count": 1,
    "points": [
     [
-     998.0,
+     1112.0,
      442.0
     ],
     [
-     1018.0,
+     1132.0,
      442.0
     ]
    ],
@@ -2324,11 +2404,11 @@
    "count": 3,
    "points": [
     [
-     1075.0588235294117,
+     1165.5882352941176,
      400.0
     ],
     [
-     940.9411764705883,
+     964.4117647058823,
      280.0
     ]
    ],
@@ -2340,12 +2420,12 @@
    "count": 9,
    "points": [
     [
-     1018.0,
-     418.7368421052632
+     1132.0,
+     423.38947368421054
     ],
     [
      770.0,
-     363.2631578947368
+     358.61052631578946
     ]
    ],
    "intra_cycle": true
@@ -2356,12 +2436,12 @@
    "count": 2,
    "points": [
     [
-     1028.1176470588234,
-     400.0
+     1132.0,
+     410.9824561403509
     ],
     [
-     987.8823529411765,
-     382.0
+     998.0,
+     371.0175438596491
     ]
    ],
    "intra_cycle": true
@@ -2372,11 +2452,11 @@
    "count": 3,
    "points": [
     [
-     1122.0,
+     1282.9411764705883,
      400.0
     ],
     [
-     1122.0,
+     1303.0588235294117,
      382.0
     ]
    ],
@@ -2388,12 +2468,12 @@
    "count": 25,
    "points": [
     [
-     1215.8823529411766,
-     400.0
+     1340.0,
+     410.9824561403509
     ],
     [
-     1256.1176470588234,
-     382.0
+     1474.0,
+     371.0175438596491
     ]
    ],
    "intra_cycle": true
@@ -2452,12 +2532,12 @@
    "count": 9,
    "points": [
     [
-     1246.0,
-     410.9824561403509
+     1360.0,
+     415.4135338345865
     ],
     [
      770.0,
-     269.0175438596491
+     264.5864661654135
     ]
    ],
    "intra_cycle": true
@@ -2468,12 +2548,12 @@
    "count": 8,
    "points": [
     [
-     1256.1176470588234,
-     400.0
+     1360.0,
+     404.77894736842103
     ],
     [
-     987.8823529411765,
-     280.0
+     998.0,
+     275.22105263157897
     ]
    ],
    "intra_cycle": true
@@ -2484,11 +2564,11 @@
    "count": 2,
    "points": [
     [
-     1303.0588235294117,
+     1393.5882352941176,
      400.0
     ],
     [
-     1168.9411764705883,
+     1192.4117647058824,
      280.0
     ]
    ],
@@ -2500,11 +2580,11 @@
    "count": 3,
    "points": [
     [
-     1350.0,
+     1440.5294117647059,
      400.0
     ],
     [
-     1350.0,
+     1373.4705882352941,
      280.0
     ]
    ],
@@ -2516,12 +2596,28 @@
    "count": 5,
    "points": [
     [
-     1396.9411764705883,
+     1487.4705882352941,
      400.0
     ],
     [
-     1531.0588235294117,
+     1554.5294117647059,
      280.0
+    ]
+   ],
+   "intra_cycle": true
+  },
+  {
+   "from": "web",
+   "to": "persona_cards",
+   "count": 1,
+   "points": [
+    [
+     1360.0,
+     410.9824561403509
+    ],
+    [
+     1226.0,
+     371.0175438596491
     ]
    ],
    "intra_cycle": true
@@ -2532,11 +2628,11 @@
    "count": 9,
    "points": [
     [
-     1256.1176470588234,
+     1417.0588235294117,
      400.0
     ],
     [
-     1215.8823529411766,
+     1396.9411764705883,
      382.0
     ]
    ],
@@ -2548,11 +2644,11 @@
    "count": 19,
    "points": [
     [
-     1350.0,
+     1510.9411764705883,
      400.0
     ],
     [
-     1350.0,
+     1531.0588235294117,
      382.0
     ]
    ],
@@ -2598,6 +2694,7 @@
      "identity",
      "legacy",
      "persistence",
+     "persona_cards",
      "providers",
      "room",
      "root:application",
@@ -2605,20 +2702,11 @@
      "root:room",
      "web"
     ],
-    "member_count": 13
+    "member_count": 14
    },
    {
     "index": 3,
-    "y": 498.0,
-    "dominant": "application",
-    "members": [
-     "persona_cards"
-    ],
-    "member_count": 1
-   },
-   {
-    "index": 4,
-    "y": 666.0,
+    "y": 580.0,
     "dominant": "frontend, persistence",
     "members": [
      "fe:(src root)",
@@ -2642,6 +2730,7 @@
      "identity",
      "legacy",
      "persistence",
+     "persona_cards",
      "providers",
      "room",
      "root:application",
@@ -2649,7 +2738,7 @@
      "root:room",
      "web"
     ],
-    "internal_edges": 81,
+    "internal_edges": 91,
     "x": 550.0,
     "y": 172.0,
     "w": 1144,
@@ -2667,14 +2756,14 @@
     ],
     "internal_edges": 16,
     "x": 90.0,
-    "y": 666.0,
+    "y": 580.0,
     "w": 916,
     "h": 222,
-    "label_y": 682.0
+    "label_y": 596.0
    }
   ],
   "width": 2144.0,
-  "height": 908.0
+  "height": 822.0
  },
  "class_graph": {
   "nodes": [
@@ -2921,6 +3010,28 @@
     "layer": 0
    },
    {
+    "id": "agentsassemble.persona_cards.library::PersonaLibraryError",
+    "name": "PersonaLibraryError",
+    "module": "agentsassemble.persona_cards.library",
+    "cls": "current",
+    "x": 580.0,
+    "y": 1468.0,
+    "w": 210,
+    "h": 46,
+    "layer": 0
+   },
+   {
+    "id": "agentsassemble.persona_cards.library::PersonaSelectionError",
+    "name": "PersonaSelectionError",
+    "module": "agentsassemble.persona_cards.library",
+    "cls": "current",
+    "x": 580.0,
+    "y": 1554.0,
+    "w": 210,
+    "h": 46,
+    "layer": 1
+   },
+   {
     "id": "agentsassemble.providers.adapters.base::ProviderAdapter",
     "name": "ProviderAdapter",
     "module": "agentsassemble.providers.adapters.base",
@@ -3079,7 +3190,7 @@
     "name": "ClaudeUsageUnavailable",
     "module": "agentsassemble.providers.claude_usage",
     "cls": "current",
-    "x": 580.0,
+    "x": 862.0,
     "y": 1554.0,
     "w": 210,
     "h": 46,
@@ -3134,7 +3245,7 @@
     "name": "InvokeLiveSessionAdapter",
     "module": "agentsassemble.providers.live_session_adapter",
     "cls": "current",
-    "x": 862.0,
+    "x": 1144.0,
     "y": 1468.0,
     "w": 210,
     "h": 46,
@@ -3145,7 +3256,7 @@
     "name": "RuntimeManagedRoomTurnAdapter",
     "module": "agentsassemble.providers.live_session_adapter",
     "cls": "current",
-    "x": 862.0,
+    "x": 1144.0,
     "y": 1554.0,
     "w": 210,
     "h": 46,
@@ -3255,7 +3366,7 @@
     "name": "ProviderUsageUnavailable",
     "module": "agentsassemble.providers.usage_contract",
     "cls": "current",
-    "x": 580.0,
+    "x": 862.0,
     "y": 1468.0,
     "w": 210,
     "h": 46,
@@ -3455,6 +3566,20 @@
      ],
      [
       403.0,
+      1554.0
+     ]
+    ]
+   },
+   {
+    "from": "agentsassemble.persona_cards.library::PersonaLibraryError",
+    "to": "agentsassemble.persona_cards.library::PersonaSelectionError",
+    "points": [
+     [
+      685.0,
+      1514.0
+     ],
+     [
+      685.0,
       1554.0
      ]
     ]
@@ -3700,11 +3825,11 @@
     "to": "agentsassemble.providers.live_session_adapter::RuntimeManagedRoomTurnAdapter",
     "points": [
      [
-      967.0,
+      1249.0,
       1514.0
      ],
      [
-      967.0,
+      1249.0,
       1554.0
      ]
     ]
@@ -3840,11 +3965,11 @@
     "to": "agentsassemble.providers.claude_usage::ClaudeUsageUnavailable",
     "points": [
      [
-      685.0,
+      967.0,
       1514.0
      ],
      [
-      685.0,
+      967.0,
       1554.0
      ]
     ]
@@ -3872,6 +3997,7 @@
      "identity",
      "legacy",
      "persistence",
+     "persona_cards",
      "providers",
      "room",
      "root:application",
@@ -3879,8 +4005,8 @@
      "root:room",
      "web"
     ],
-    "internal_edges": 81,
-    "lines": 130575,
+    "internal_edges": 91,
+    "lines": 133010,
     "heaviest": "legacy"
    },
    {
@@ -3893,7 +4019,7 @@
      "fe:views"
     ],
     "internal_edges": 16,
-    "lines": 42479,
+    "lines": 43671,
     "heaviest": "fe:views"
    }
   ],
@@ -4010,7 +4136,7 @@
    },
    {
     "module": "agentsassemble.providers.remote_openai",
-    "lines": 409,
+    "lines": 414,
     "count": 1,
     "targets": [
      "agentsassemble.providers.openai_compatible"
@@ -4265,7 +4391,7 @@
    },
    {
     "module": "agentsassemble.room.realtime",
-    "lines": 1827,
+    "lines": 1840,
     "cls": "current",
     "imported_by": 7
    },
@@ -4325,12 +4451,12 @@
    19,
    "Compatibility exports for provider adapters now owned by providers.",
    [
-    552,
-    553,
     554,
-    557,
-    558,
-    560
+    555,
+    556,
+    559,
+    560,
+    562
    ],
    [],
    []
@@ -4345,7 +4471,7 @@
    5,
    "Compatibility export for the provider adapter contract.",
    [
-    552
+    554
    ],
    [],
    []
@@ -4360,7 +4486,7 @@
    5,
    "Compatibility export for the Codex meeting adapter.",
    [
-    553
+    555
    ],
    [],
    []
@@ -4375,7 +4501,7 @@
    5,
    "Compatibility export for the Codex live-session adapter.",
    [
-    554
+    556
    ],
    [],
    []
@@ -4390,7 +4516,7 @@
    35,
    "Compatibility exports for HTTP LLM adapters.",
    [
-    555
+    557
    ],
    [],
    []
@@ -4405,7 +4531,7 @@
    5,
    "Compatibility exports for the one-shot legacy CLI adapter.",
    [
-    556
+    558
    ],
    [],
    []
@@ -4420,7 +4546,7 @@
    5,
    "Compatibility export for the deterministic mock adapter.",
    [
-    557
+    559
    ],
    [],
    []
@@ -4435,7 +4561,7 @@
    25,
    "Compatibility exports for the provider adapter registry.",
    [
-    558
+    560
    ],
    [],
    []
@@ -4450,7 +4576,7 @@
    8,
    "Compatibility exports for the remote HTTP bridge adapter.",
    [
-    559
+    561
    ],
    [],
    []
@@ -4465,7 +4591,7 @@
    5,
    "Compatibility export for unsupported provider diagnostics.",
    [
-    560
+    562
    ],
    [],
    []
@@ -4525,16 +4651,16 @@
     26,
     64,
     187,
-    599,
-    683,
-    693
+    602,
+    686,
+    696
    ],
    [
     51,
     52,
-    702,
-    781,
-    792
+    705,
+    784,
+    796
    ],
    [
     [
@@ -4572,14 +4698,14 @@
     61,
     187,
     487,
-    693
+    696
    ],
    [
     135,
     286,
     298,
     333,
-    728
+    731
    ],
    []
   ],
@@ -4597,8 +4723,8 @@
     17,
     21,
     22,
-    599,
-    693
+    602,
+    696
    ],
    [
     12,
@@ -4608,9 +4734,9 @@
     51,
     52,
     59,
-    682,
-    729,
-    781
+    685,
+    732,
+    784
    ],
    [
     [
@@ -4633,7 +4759,7 @@
    340,
    "",
    [
-    693
+    696
    ],
    [
     13,
@@ -4644,7 +4770,7 @@
     298,
     333,
     480,
-    792
+    796
    ],
    []
   ],
@@ -4664,7 +4790,7 @@
     22,
     487,
     499,
-    704
+    707
    ],
    [
     [
@@ -4693,7 +4819,7 @@
    ],
    [
     50,
-    705
+    708
    ],
    []
   ],
@@ -4708,14 +4834,14 @@
    "Side-effect-free browser identity decisions for room invite startup.",
    [
     187,
-    683,
-    693
+    686,
+    696
    ],
    [
     51,
     52,
-    701,
-    781
+    704,
+    784
    ],
    [
     [
@@ -4738,9 +4864,9 @@
     51,
     52,
     193,
-    781,
-    786,
-    792
+    784,
+    789,
+    796
    ],
    [
     [
@@ -4768,11 +4894,11 @@
    69,
    "",
    [
-    693
+    696
    ],
    [
     15,
-    650
+    653
    ],
    []
   ],
@@ -4801,7 +4927,7 @@
     53,
     135,
     487,
-    730
+    733
    ],
    [
     [
@@ -4909,7 +5035,7 @@
     18,
     52,
     135,
-    731
+    734
    ],
    []
   ],
@@ -4926,11 +5052,11 @@
     15,
     26,
     187,
-    693
+    696
    ],
    [
     13,
-    703
+    706
    ],
    [
     [
@@ -4964,7 +5090,7 @@
     14,
     26,
     185,
-    743
+    746
    ],
    [
     [
@@ -4985,7 +5111,7 @@
    [
     22,
     25,
-    693
+    696
    ],
    [
     13,
@@ -4994,9 +5120,9 @@
     52,
     59,
     185,
-    682,
-    744,
-    781
+    685,
+    747,
+    784
    ],
    [
     [
@@ -5015,12 +5141,12 @@
    89,
    "Bounded durable record validation for room admission workflows.",
    [
-    693
+    696
    ],
    [
     487,
     499,
-    730
+    733
    ],
    []
   ],
@@ -5061,7 +5187,7 @@
    40,
    "Compatibility exports for the resident Antigravity CLI adapter.",
    [
-    562
+    564
    ],
    [],
    []
@@ -5091,15 +5217,15 @@
    134,
    "Executable composition for a server-owned provider Agent Bridge.",
    [
-    561,
-    619,
-    623,
-    625,
-    778,
-    801
+    563,
+    622,
+    626,
+    628,
+    781,
+    805
    ],
    [
-    706
+    709
    ],
    []
   ],
@@ -5121,13 +5247,13 @@
     38,
     39,
     110,
-    578,
-    611,
-    631,
-    664,
-    683,
-    693,
-    694
+    580,
+    614,
+    634,
+    667,
+    686,
+    696,
+    697
    ],
    [
     28,
@@ -5136,10 +5262,10 @@
     80,
     135,
     333,
-    671,
-    783,
-    791,
-    793
+    674,
+    786,
+    795,
+    797
    ],
    [
     [
@@ -5158,8 +5284,8 @@
    85,
    "Bounded per-room worker queues for automatic Agent Session turns.",
    [
-    683,
-    693
+    686,
+    696
    ],
    [
     32
@@ -5176,8 +5302,8 @@
    206,
    "Canonical room command and projection adapters used by Agent Sessions.",
    [
-    683,
-    693
+    686,
+    696
    ],
    [
     32
@@ -5252,9 +5378,9 @@
    141,
    "Provider process launch planning for canonical Agent Sessions.",
    [
-    578,
-    683,
-    693
+    580,
+    686,
+    696
    ],
    [
     32,
@@ -5273,9 +5399,9 @@
    "Canonical create and resume flows for Agent Sessions.",
    [
     35,
-    578,
-    683,
-    693
+    580,
+    686,
+    696
    ],
    [
     32
@@ -5303,9 +5429,9 @@
    "One-shot command and JSONL adapters for Agent Session turns.",
    [
     36,
-    578,
-    693,
-    694
+    580,
+    696,
+    697
    ],
    [
     32,
@@ -5325,11 +5451,11 @@
    [
     35,
     38,
-    578,
-    631,
-    683,
-    693,
-    694
+    580,
+    634,
+    686,
+    696,
+    697
    ],
    [
     32
@@ -5360,9 +5486,9 @@
    "Execution for the explicit one-shot API provider CLI lane.",
    [
     491,
-    550,
-    563,
-    571
+    552,
+    565,
+    573
    ],
    [
     80
@@ -5424,7 +5550,7 @@
    [
     60,
     114,
-    774
+    777
    ],
    [
     80
@@ -5441,7 +5567,7 @@
    91,
    "Shared HTTP and timeout behavior for CLI entrypoints.",
    [
-    773
+    776
    ],
    [
     80
@@ -5534,7 +5660,7 @@
     57,
     60,
     107,
-    618
+    621
    ],
    [
     80
@@ -5567,11 +5693,11 @@
     64,
     185,
     187,
-    565,
-    657,
-    682,
-    683,
-    779
+    567,
+    660,
+    685,
+    686,
+    782
    ],
    [
     52,
@@ -5579,9 +5705,9 @@
     135,
     136,
     198,
-    775,
-    780,
-    785
+    778,
+    783,
+    788
    ],
    [
     [
@@ -5656,12 +5782,12 @@
     487,
     491,
     496,
-    565,
-    614,
-    657,
-    682,
-    683,
-    779
+    567,
+    617,
+    660,
+    685,
+    686,
+    782
    ],
    [
     135
@@ -5687,8 +5813,8 @@
     51,
     56,
     187,
-    683,
-    774
+    686,
+    777
    ],
    [
     135
@@ -5718,8 +5844,8 @@
     55,
     59,
     135,
-    646,
-    781
+    649,
+    784
    ],
    [
     [
@@ -5745,7 +5871,7 @@
     51,
     52,
     135,
-    647
+    650
    ],
    [
     [
@@ -5798,21 +5924,21 @@
    "",
    [
     108,
-    561,
-    579,
-    599,
-    605,
-    610,
-    616,
+    563,
+    581,
+    602,
+    608,
+    613,
     619,
-    623,
-    625,
-    627,
-    778
+    622,
+    626,
+    628,
+    630,
+    781
    ],
    [
     50,
-    709
+    712
    ],
    [
     [
@@ -5831,11 +5957,11 @@
    517,
    "Current-session room connector over the canonical room WebSocket.",
    [
-    693,
-    778
+    696,
+    781
    ],
    [
-    618
+    621
    ],
    [
     [
@@ -5879,15 +6005,15 @@
     111,
     135,
     487,
-    565,
-    599,
-    682,
-    693,
-    778
+    567,
+    602,
+    685,
+    696,
+    781
    ],
    [
     80,
-    733
+    736
    ],
    []
   ],
@@ -5903,7 +6029,7 @@
    [
     496,
     514,
-    683
+    686
    ],
    [
     18,
@@ -5916,7 +6042,7 @@
     135,
     184,
     365,
-    739
+    742
    ],
    [
     [
@@ -5963,7 +6089,7 @@
     52,
     286,
     333,
-    757
+    760
    ],
    []
   ],
@@ -5983,7 +6109,7 @@
     245,
     277,
     308,
-    761
+    764
    ],
    [
     [
@@ -6005,8 +6131,8 @@
    [
     55,
     333,
-    766,
-    792
+    769,
+    796
    ],
    []
   ],
@@ -6108,7 +6234,7 @@
    43,
    "Compatibility exports for agentsassemble.room.attachments.",
    [
-    657
+    660
    ],
    [],
    []
@@ -6123,7 +6249,7 @@
    18,
    "Compatibility exports for Agent Bridge protocol contracts.",
    [
-    566
+    568
    ],
    [],
    []
@@ -6138,7 +6264,7 @@
    6,
    "Compatibility export for correlated Agent Bridge report tracking.",
    [
-    567
+    569
    ],
    [],
    []
@@ -6153,7 +6279,7 @@
    12,
    "Compatibility exports for external bridge stop confirmation.",
    [
-    659
+    662
    ],
    [],
    []
@@ -6181,7 +6307,7 @@
    21,
    "Compatibility exports for the disabled Claude print-mode bridge.",
    [
-    569
+    571
    ],
    [],
    []
@@ -6224,7 +6350,8 @@
     302,
     313,
     323,
-    434
+    434,
+    519
    ],
    []
   ],
@@ -6238,7 +6365,7 @@
    26,
    "Compatibility exports for Claude resident TUI handling.",
    [
-    575
+    577
    ],
    [],
    []
@@ -6253,7 +6380,7 @@
    18,
    "Compatibility exports for Claude transcript parsing and tailing.",
    [
-    576
+    578
    ],
    [],
    []
@@ -6335,7 +6462,7 @@
     365,
     434,
     479,
-    569
+    571
    ],
    [],
    [
@@ -6384,7 +6511,7 @@
    9,
    "Compatibility exports for agentsassemble.web.cli_errors.",
    [
-    773
+    776
    ],
    [],
    []
@@ -6548,7 +6675,7 @@
    9,
    "Compatibility exports for the Codex app-server room runtime.",
    [
-    579
+    581
    ],
    [],
    []
@@ -6563,7 +6690,7 @@
    64,
    "Compatibility exports for the Codex app-server runtime.",
    [
-    578
+    580
    ],
    [],
    []
@@ -6578,7 +6705,7 @@
    26,
    "Compatibility exports for the resident Codex CLI adapter.",
    [
-    581
+    583
    ],
    [],
    []
@@ -6593,7 +6720,7 @@
    16,
    "Compatibility exports for Codex session identifier parsing.",
    [
-    582
+    584
    ],
    [],
    []
@@ -6623,7 +6750,7 @@
    9,
    "Compatibility exports for Codex JSONL stream parsing.",
    [
-    583
+    585
    ],
    [],
    []
@@ -6664,7 +6791,7 @@
    52,
    "Compatibility exports for the resident Cursor CLI adapter.",
    [
-    585
+    587
    ],
    [],
    []
@@ -6709,7 +6836,7 @@
    6,
    "Compatibility export for the DeepSeek streaming runtime.",
    [
-    587
+    589
    ],
    [],
    []
@@ -6769,7 +6896,7 @@
    [
     495,
     496,
-    664
+    667
    ],
    [
     50,
@@ -6792,16 +6919,16 @@
    114,
    "",
    [
-    693
+    696
    ],
    [
     57,
     79,
-    561,
-    565,
-    653,
-    682,
-    695
+    563,
+    567,
+    656,
+    685,
+    698
    ],
    [
     [
@@ -6847,8 +6974,8 @@
    "Opt-in real-provider diagnostics for Codex app-server Agent Sessions.",
    [
     60,
-    578,
-    693
+    580,
+    696
    ],
    [
     32
@@ -6865,8 +6992,8 @@
    326,
    "",
    [
-    600,
-    693
+    603,
+    696
    ],
    [
     49,
@@ -6888,7 +7015,7 @@
    [],
    [
     453,
-    786
+    789
    ],
    [
     [
@@ -6909,14 +7036,14 @@
    [
     99,
     479,
-    558,
-    615
+    560,
+    618
    ],
    [
     80,
     135,
     196,
-    542
+    544
    ],
    [
     [
@@ -6954,8 +7081,8 @@
    [
     43,
     44,
-    648,
-    786
+    651,
+    789
    ],
    [
     [
@@ -7089,7 +7216,7 @@
    511,
    "",
    [
-    693
+    696
    ],
    [
     123,
@@ -7108,12 +7235,12 @@
    "Mafia game HTTP routes for the GUI server.",
    [
     122,
-    781
+    784
    ],
    [
     135,
     164,
-    785
+    788
    ],
    []
   ],
@@ -7141,12 +7268,12 @@
    "Side-chat HTTP and event-stream routes.",
    [
     126,
-    781
+    784
    ],
    [
     135,
     178,
-    785
+    788
    ],
    []
   ],
@@ -7167,8 +7294,8 @@
     135,
     212,
     276,
-    665,
-    762
+    668,
+    765
    ],
    []
   ],
@@ -7203,7 +7330,7 @@
     135,
     276,
     312,
-    725
+    728
    ],
    []
   ],
@@ -7222,8 +7349,8 @@
    [
     128,
     131,
-    671,
-    726
+    674,
+    729
    ],
    []
   ],
@@ -7239,7 +7366,7 @@
    [],
    [
     131,
-    770
+    773
    ],
    []
   ],
@@ -7257,12 +7384,12 @@
     129,
     130,
     313,
-    781
+    784
    ],
    [
     135,
     179,
-    785
+    788
    ],
    []
   ],
@@ -7276,7 +7403,7 @@
    18,
    "Compatibility exports for React frontend build inspection.",
    [
-    774
+    777
    ],
    [],
    []
@@ -7291,7 +7418,7 @@
    6,
    "Compatibility export for the structured Grok ACP runtime.",
    [
-    589
+    591
    ],
    [],
    []
@@ -7306,7 +7433,7 @@
    44,
    "Compatibility exports for the resident Grok CLI adapter.",
    [
-    596
+    598
    ],
    [],
    []
@@ -7399,28 +7526,28 @@
     355,
     373,
     491,
-    606,
-    671,
-    673,
-    682,
-    683,
-    774,
-    775,
-    776,
+    609,
+    674,
+    676,
+    685,
+    686,
     777,
+    778,
+    779,
     780,
-    781,
+    783,
     784,
-    785,
-    786,
     787,
     788,
     789,
-    795,
-    797,
-    798,
+    791,
+    792,
+    793,
     799,
-    800
+    801,
+    802,
+    803,
+    804
    ],
    [
     59,
@@ -7473,7 +7600,7 @@
    4,
    "Compatibility export for canonical attachment routes.",
    [
-    784
+    787
    ],
    [],
    []
@@ -7893,7 +8020,7 @@
    12,
    "Compatibility export for read-only observability HTTP routes.",
    [
-    786
+    789
    ],
    [],
    []
@@ -7908,7 +8035,7 @@
    14,
    "Compatibility exports for provider HTTP routes.",
    [
-    787
+    791
    ],
    [],
    []
@@ -7923,7 +8050,7 @@
    10,
    "Compatibility exports for public invite administration routes.",
    [
-    788
+    792
    ],
    [],
    []
@@ -7938,7 +8065,7 @@
    28,
    "Compatibility exports for GUI request security policy.",
    [
-    797
+    801
    ],
    [],
    []
@@ -7953,7 +8080,7 @@
    14,
    "Compatibility exports for GUI HTTP response writers.",
    [
-    777
+    780
    ],
    [],
    []
@@ -7968,7 +8095,7 @@
    6,
    "Compatibility export for retired HTTP route tombstones.",
    [
-    789
+    793
    ],
    [],
    []
@@ -7983,7 +8110,7 @@
    4,
    "Compatibility export for Agent Session HTTP routes.",
    [
-    783
+    786
    ],
    [],
    []
@@ -8013,7 +8140,7 @@
    4,
    "Compatibility export for room invite and admission routes.",
    [
-    792
+    796
    ],
    [],
    []
@@ -8058,7 +8185,7 @@
    4,
    "Compatibility export for room settings routes.",
    [
-    795
+    799
    ],
    [],
    []
@@ -8073,7 +8200,7 @@
    22,
    "Compatibility exports for GUI HTTP routing and request context.",
    [
-    781
+    784
    ],
    [],
    []
@@ -8118,7 +8245,7 @@
    16,
    "Compatibility exports for React static delivery.",
    [
-    799
+    803
    ],
    [],
    []
@@ -8133,7 +8260,7 @@
    10,
    "Compatibility exports for GUI WebSocket HTTP transport.",
    [
-    800
+    804
    ],
    [],
    []
@@ -8148,7 +8275,7 @@
    32,
    "Compatibility exports for the resident Hermes CLI adapter.",
    [
-    597
+    599
    ],
    [],
    []
@@ -8201,15 +8328,15 @@
     26,
     64,
     187,
-    683,
-    693
+    686,
+    696
    ],
    [
     51,
     52,
     483,
-    781,
-    792
+    784,
+    796
    ],
    [
     [
@@ -8228,7 +8355,7 @@
    12,
    "Shared identity rules for room preference ownership.",
    [
-    693
+    696
    ],
    [
     189,
@@ -8247,8 +8374,8 @@
    179,
    "Storage-independent identity contracts and normalization helpers.",
    [
-    693,
-    697
+    696,
+    700
    ],
    [
     13,
@@ -8269,10 +8396,10 @@
     491,
     492,
     507,
-    688,
-    779,
-    781,
-    792
+    691,
+    782,
+    784,
+    796
    ],
    [
     [
@@ -8345,7 +8472,7 @@
    20,
    "Compatibility exports for the resident Kiro CLI adapter.",
    [
-    598
+    600
    ],
    [],
    []
@@ -8424,7 +8551,7 @@
    [
     113,
     115,
-    781
+    784
    ],
    [
     161,
@@ -8445,11 +8572,11 @@
     117,
     319,
     417,
-    798
+    802
    ],
    [
     223,
-    722
+    725
    ],
    [
     [
@@ -8521,7 +8648,7 @@
     341,
     343,
     373,
-    781
+    784
    ],
    [
     135,
@@ -8613,7 +8740,7 @@
     198,
     250,
     333,
-    781
+    784
    ],
    [
     135
@@ -8632,7 +8759,7 @@
    [
     187,
     319,
-    657
+    660
    ],
    [
     135,
@@ -8859,8 +8986,8 @@
     319,
     341,
     342,
-    671,
-    683
+    674,
+    686
    ],
    [
     135
@@ -9255,13 +9382,13 @@
     232,
     233,
     434,
-    562,
-    575,
-    581,
-    585,
-    596,
-    597,
-    598
+    564,
+    577,
+    583,
+    587,
+    598,
+    599,
+    600
    ],
    [
     80
@@ -9280,11 +9407,11 @@
    [
     434,
     491,
-    550,
-    563,
-    571,
-    575,
-    585
+    552,
+    565,
+    573,
+    577,
+    587
    ],
    [
     80,
@@ -9307,9 +9434,9 @@
    150,
    "Persistent JSONL and terminal session runners for legacy residents.",
    [
-    576,
-    604,
-    751
+    578,
+    607,
+    754
    ],
    [
     80,
@@ -9356,8 +9483,8 @@
    [
     279,
     434,
-    720,
-    778
+    723,
+    781
    ],
    [
     80
@@ -9400,7 +9527,7 @@
    "",
    [
     42,
-    773
+    776
    ],
    [
     80,
@@ -9655,7 +9782,7 @@
    "HTTP routes for retained Codex meeting-session compatibility.",
    [
     373,
-    781
+    784
    ],
    [
     139,
@@ -9679,7 +9806,7 @@
    "HTTP route for retained local resident discovery.",
    [
     242,
-    781
+    784
    ],
    [
     140,
@@ -9703,7 +9830,7 @@
    "HTTP route for retained resident engagement-mode updates.",
    [
     243,
-    781
+    784
    ],
    [
     141,
@@ -9723,7 +9850,7 @@
    [
     296,
     319,
-    781
+    784
    ],
    [
     135,
@@ -9753,7 +9880,7 @@
    "HTTP route for the retained external-resident join brief.",
    [
     287,
-    781
+    784
    ],
    [
     142,
@@ -9772,7 +9899,7 @@
    "HTTP route for retained resident official/review replies.",
    [
     267,
-    781
+    784
    ],
    [
     143,
@@ -9797,7 +9924,7 @@
    [
     115,
     268,
-    781
+    784
    ],
    [
     144,
@@ -9821,7 +9948,7 @@
    "HTTP routes for retained resident registration, heartbeat, and leave.",
    [
     269,
-    781
+    784
    ],
    [
     145,
@@ -9840,7 +9967,7 @@
    "HTTP route for retained resident reply probes.",
    [
     271,
-    781
+    784
    ],
    [
     146,
@@ -9864,7 +9991,7 @@
    "",
    [
     274,
-    781
+    784
    ],
    [
     147,
@@ -9892,7 +10019,7 @@
     276,
     280,
     302,
-    781
+    784
    ],
    [
     148,
@@ -9917,7 +10044,7 @@
    [
     277,
     278,
-    781
+    784
    ],
    [
     149,
@@ -9942,7 +10069,7 @@
    [
     298,
     319,
-    781
+    784
    ],
    [
     150,
@@ -9962,7 +10089,7 @@
    [
     300,
     319,
-    781
+    784
    ],
    [
     151,
@@ -9981,7 +10108,7 @@
    "HTTP registration for retained legacy resident Agent Session mutations.",
    [
     310,
-    781
+    784
    ],
    [
     152,
@@ -10005,7 +10132,7 @@
    "",
    [
     309,
-    781
+    784
    ],
    [
     153,
@@ -10030,7 +10157,7 @@
    [
     304,
     311,
-    781
+    784
    ],
    [
     154,
@@ -10054,7 +10181,7 @@
    "HTTP routes for retained resident lobby and direct-message speech.",
    [
     312,
-    781
+    784
    ],
    [
     155,
@@ -10075,7 +10202,7 @@
     305,
     319,
     434,
-    720
+    723
    ],
    [
     222,
@@ -10133,7 +10260,7 @@
     342,
     352,
     441,
-    690
+    693
    ],
    [
     135,
@@ -10342,10 +10469,10 @@
    [
     286,
     290,
-    693
+    696
    ],
    [
-    543
+    545
    ],
    [
     [
@@ -10455,12 +10582,12 @@
    "WS resident loop (WS-resident, task #39).",
    [
     434,
-    720,
-    778
+    723,
+    781
    ],
    [
     235,
-    803
+    807
    ],
    []
   ],
@@ -10520,8 +10647,8 @@
    "",
    [
     319,
-    603,
-    626
+    606,
+    629
    ],
    [
     135,
@@ -10546,12 +10673,12 @@
    [
     319,
     434,
-    562,
-    581,
-    585,
-    596,
-    597,
-    598
+    564,
+    583,
+    587,
+    598,
+    599,
+    600
    ],
    [
     220,
@@ -10570,7 +10697,7 @@
    "",
    [
     305,
-    604
+    607
    ],
    [
     220,
@@ -10734,7 +10861,7 @@
    "",
    [
     282,
-    626
+    629
    ],
    [
     204,
@@ -10809,16 +10936,16 @@
    [
     305,
     434,
-    562,
-    575,
-    581,
-    585,
-    596,
-    597,
+    564,
+    577,
+    583,
+    587,
     598,
-    604,
-    615,
-    626
+    599,
+    600,
+    607,
+    618,
+    629
    ],
    [
     80,
@@ -11154,7 +11281,7 @@
    "",
    [
     319,
-    604
+    607
    ],
    [
     80,
@@ -11394,7 +11521,7 @@
     319,
     355,
     417,
-    690
+    693
    ],
    [
     135,
@@ -11428,7 +11555,7 @@
     296,
     319,
     479,
-    615
+    618
    ],
    [
     131,
@@ -11552,7 +11679,7 @@
    687,
    "",
    [
-    693
+    696
    ],
    [
     76,
@@ -11639,12 +11766,12 @@
     434,
     441,
     458,
-    710,
-    711,
-    712,
     713,
-    742,
-    752
+    714,
+    715,
+    716,
+    745,
+    755
    ],
    [
     [
@@ -11777,8 +11904,8 @@
     99,
     363,
     479,
-    551,
-    558
+    553,
+    560
    ],
    [
     289,
@@ -11834,7 +11961,7 @@
    "HTTP routes for retained legacy meeting start/finalize commands.",
    [
     336,
-    781
+    784
    ],
    [
     158,
@@ -11854,8 +11981,8 @@
    [
     319,
     337,
-    657,
-    781
+    660,
+    784
    ],
    [
     156,
@@ -11874,7 +12001,7 @@
    "HTTP routes for retained meeting, lifecycle, workroom, and SSE reads.",
    [
     341,
-    781
+    784
    ],
    [
     157,
@@ -11893,7 +12020,7 @@
    "HTTP routes for retained official round, remaining-round, and preset commands.",
    [
     338,
-    781
+    784
    ],
    [
     159,
@@ -11912,7 +12039,7 @@
    "HTTP routes for retained official-turn request, call, and sequence.",
    [
     339,
-    781
+    784
    ],
    [
     160,
@@ -11931,7 +12058,7 @@
    "HTTP route for retained resident review checkpoints.",
    [
     343,
-    781
+    784
    ],
    [
     162,
@@ -11960,18 +12087,18 @@
     334,
     335,
     496,
-    578,
-    660,
-    671,
-    690,
-    699,
-    700,
-    781,
-    783,
-    791,
-    792,
-    793,
-    794
+    580,
+    663,
+    674,
+    693,
+    702,
+    703,
+    784,
+    786,
+    795,
+    796,
+    797,
+    798
    ],
    [
     135,
@@ -11996,10 +12123,10 @@
    "Legacy room ensure route plus compatibility room route exports.",
    [
     286,
-    693,
-    781,
-    791,
-    793
+    696,
+    784,
+    795,
+    797
    ],
    [
     174,
@@ -12020,13 +12147,13 @@
     298,
     313,
     319,
-    660,
-    673,
-    690,
+    663,
+    676,
     693,
-    699,
-    781,
-    794
+    696,
+    702,
+    784,
+    798
    ],
    [
     175,
@@ -12081,8 +12208,8 @@
     342,
     354,
     479,
-    559,
-    690
+    561,
+    693
    ],
    [
     135,
@@ -12595,7 +12722,7 @@
    [
     345,
     348,
-    767
+    770
    ],
    []
   ],
@@ -12611,7 +12738,7 @@
    [],
    [
     347,
-    768
+    771
    ],
    []
   ],
@@ -12631,7 +12758,7 @@
     99,
     321,
     323,
-    769
+    772
    ],
    []
   ],
@@ -12748,11 +12875,11 @@
     490,
     492,
     495,
-    697
+    700
    ],
    [
     365,
-    734
+    737
    ],
    [
     [
@@ -12781,8 +12908,8 @@
    "Strictly inspect user preference fields in legacy room_settings.json.",
    [
     370,
-    684,
-    697
+    687,
+    700
    ],
    [
     367,
@@ -12810,7 +12937,7 @@
    ],
    [
     365,
-    740
+    743
    ],
    [
     [
@@ -12872,11 +12999,11 @@
    [
     372,
     495,
-    669
+    672
    ],
    [
     365,
-    747
+    750
    ],
    [
     [
@@ -12905,9 +13032,9 @@
    "Strictly inspect legacy room_settings.json room-global fields.",
    [
     370,
-    669,
-    684,
-    685
+    672,
+    687,
+    688
    ],
    [
     371,
@@ -13900,16 +14027,16 @@
     441,
     479,
     516,
-    559,
-    562,
-    581,
-    585,
-    596,
-    597,
+    561,
+    564,
+    583,
+    587,
     598,
-    603,
-    615,
-    720
+    599,
+    600,
+    606,
+    618,
+    723
    ],
    [
     80,
@@ -14085,7 +14212,7 @@
    22,
    "Compatibility exports for the persistent POSIX live CLI runtime.",
    [
-    600
+    603
    ],
    [],
    []
@@ -14100,7 +14227,7 @@
    16,
    "Compatibility exports for live CLI terminal output extraction.",
    [
-    601
+    604
    ],
    [],
    []
@@ -14130,7 +14257,7 @@
    26,
    "Compatibility exports for live CLI structured transcript adapters.",
    [
-    602
+    605
    ],
    [],
    []
@@ -14160,7 +14287,7 @@
    27,
    "Compatibility exports for agentsassemble.providers.live_session_adapter.",
    [
-    603
+    606
    ],
    [],
    []
@@ -14175,7 +14302,7 @@
    13,
    "Compatibility exports for agentsassemble.providers.live_session_transport.",
    [
-    604
+    607
    ],
    [],
    []
@@ -14617,15 +14744,15 @@
     361,
     363,
     434,
-    552,
-    553,
     554,
     555,
     556,
     557,
     558,
     559,
-    560
+    560,
+    561,
+    562
    ],
    [
     [
@@ -14703,7 +14830,7 @@
    36,
    "Compatibility exports for provider launch specifications.",
    [
-    599
+    602
    ],
    [],
    []
@@ -14718,7 +14845,7 @@
    9,
    "Compatibility exports for OpenCode provider runtimes.",
    [
-    610
+    613
    ],
    [],
    []
@@ -14792,7 +14919,7 @@
     17,
     22,
     27,
-    693
+    696
    ],
    [
     12,
@@ -14801,7 +14928,7 @@
     52,
     59,
     486,
-    730
+    733
    ],
    [
     [
@@ -14862,8 +14989,8 @@
    "SQLite persistence for identity-owned room preferences.",
    [
     186,
-    684,
-    697
+    687,
+    700
    ],
    [
     189,
@@ -14895,9 +15022,9 @@
     190,
     232,
     366,
-    671,
-    673,
-    682
+    674,
+    676,
+    685
    ],
    []
   ],
@@ -14913,8 +15040,8 @@
    [
     187,
     490,
-    693,
-    697
+    696,
+    700
    ],
    [
     61,
@@ -14952,12 +15079,12 @@
    471,
    "",
    [
-    693,
-    710
+    696,
+    713
    ],
    [
     496,
-    764
+    767
    ],
    []
   ],
@@ -14971,9 +15098,9 @@
    946,
    "",
    [
-    669,
-    693,
-    698
+    672,
+    696,
+    701
    ],
    [
     107,
@@ -14981,7 +15108,7 @@
     369,
     371,
     496,
-    719
+    722
    ],
    [
     [
@@ -15007,11 +15134,11 @@
    [
     494,
     495,
-    669,
-    683,
-    684,
-    693,
-    710
+    672,
+    686,
+    687,
+    696,
+    713
    ],
    [
     28,
@@ -15020,9 +15147,9 @@
     107,
     333,
     366,
-    682,
-    694,
-    750
+    685,
+    697,
+    753
    ],
    [
     [
@@ -15075,10 +15202,10 @@
     27,
     500,
     501,
-    693
+    696
    ],
    [
-    532
+    534
    ],
    [
     [
@@ -15104,7 +15231,7 @@
     499,
     504,
     512,
-    524
+    526
    ],
    [
     [
@@ -15137,7 +15264,7 @@
     500,
     504,
     512,
-    526
+    528
    ],
    [
     [
@@ -15201,12 +15328,12 @@
    "PostgreSQL identity persistence for room preferences.",
    [
     186,
-    684,
-    697
+    687,
+    700
    ],
    [
     504,
-    527
+    529
    ],
    []
   ],
@@ -15226,10 +15353,10 @@
     505,
     506,
     507,
-    697
+    700
    ],
    [
-    528
+    530
    ],
    [
     [
@@ -15248,11 +15375,11 @@
    360,
    "PostgreSQL operations for identity-owned memberships and room registry.",
    [
-    693
+    696
    ],
    [
     504,
-    529
+    531
    ],
    []
   ],
@@ -15266,11 +15393,11 @@
    89,
    "PostgreSQL operations for identity-owned provider usage accounting.",
    [
-    693
+    696
    ],
    [
     504,
-    530
+    532
    ],
    []
   ],
@@ -15285,11 +15412,11 @@
    "PostgreSQL operations for users, credentials, and operator pairing.",
    [
     187,
-    693
+    696
    ],
    [
     504,
-    531
+    533
    ],
    []
   ],
@@ -15316,13 +15443,13 @@
    489,
    "PostgreSQL persistence for durable room attention state.",
    [
-    684,
-    693,
-    710
+    687,
+    696,
+    713
    ],
    [
     512,
-    525
+    527
    ],
    []
   ],
@@ -15337,13 +15464,13 @@
    "",
    [
     513,
-    669,
-    684,
-    693
+    672,
+    687,
+    696
    ],
    [
     512,
-    533
+    535
    ],
    []
   ],
@@ -15358,14 +15485,14 @@
    "",
    [
     513,
-    669,
-    684,
-    693,
-    698
+    672,
+    687,
+    696,
+    701
    ],
    [
     512,
-    534
+    536
    ],
    []
   ],
@@ -15385,14 +15512,14 @@
     510,
     511,
     514,
-    669,
-    683,
-    684,
-    693,
-    710
+    672,
+    686,
+    687,
+    696,
+    713
    ],
    [
-    535
+    537
    ],
    [
     [
@@ -15418,7 +15545,7 @@
    [
     510,
     511,
-    536
+    538
    ],
    []
   ],
@@ -15437,7 +15564,7 @@
     369,
     500,
     512,
-    537
+    539
    ],
    [
     [
@@ -15486,9 +15613,9 @@
    "Stable public API for persona card import, storage, and prompt rendering.",
    [
     518,
-    519,
     520,
-    522
+    521,
+    524
    ],
    [
     47,
@@ -15497,7 +15624,8 @@
     291,
     302,
     358,
-    434
+    434,
+    697
    ],
    []
   ],
@@ -15511,9 +15639,9 @@
    221,
    "Bounded asset extraction and persistence for persona imports.",
    [
-    519,
-    522,
-    523
+    520,
+    524,
+    525
    ],
    [
     518
@@ -15531,16 +15659,61 @@
    "Risu, CCv3, and CharX persona import and asset handling.",
    [
     517,
-    519,
     520,
     521,
     522,
-    523
+    524,
+    525
    ],
    [
-    516
+    516,
+    519
    ],
    []
+  ],
+  [
+   "agentsassemble.persona_cards.library",
+   "agentsassemble/persona_cards/library.py",
+   "persona_cards",
+   "application",
+   "current",
+   "planned-move",
+   218,
+   "Operator-facing library and provider-selection boundary for persona assets.",
+   [
+    76,
+    518,
+    520,
+    524,
+    602
+   ],
+   [
+    655,
+    659,
+    685,
+    697,
+    790
+   ],
+   [
+    [
+     "PersonaLibraryError",
+     [
+      [
+       "ValueError",
+       ""
+      ]
+     ]
+    ],
+    [
+     "PersonaSelectionError",
+     [
+      [
+       "PersonaLibraryError",
+       "agentsassemble.persona_cards.library"
+      ]
+     ]
+    ]
+   ]
   ],
   [
    "agentsassemble.persona_cards.models",
@@ -15552,15 +15725,16 @@
    320,
    "Persona card domain models and safe summaries.",
    [
-    523
+    525
    ],
    [
     516,
     517,
     518,
-    520,
+    519,
     521,
-    522
+    522,
+    524
    ],
    [
     [
@@ -15603,8 +15777,8 @@
    488,
    "Lore selection and provider prompt rendering for persona cards.",
    [
-    519,
-    523
+    520,
+    525
    ],
    [
     516,
@@ -15622,11 +15796,29 @@
    199,
    "Risu module decoding and normalized persona conversion.",
    [
-    519,
-    523
+    520,
+    525
    ],
    [
     518
+   ],
+   []
+  ],
+  [
+   "agentsassemble.persona_cards.selection",
+   "agentsassemble/persona_cards/selection.py",
+   "persona_cards",
+   "application",
+   "current",
+   "planned-move",
+   39,
+   "Persona-selection serialization shared by provider launch profiles.",
+   [
+    696
+   ],
+   [
+    601,
+    602
    ],
    []
   ],
@@ -15640,12 +15832,13 @@
    23,
    "Persistence for normalized persona cards.",
    [
-    519
+    520
    ],
    [
     516,
     517,
-    518
+    518,
+    519
    ],
    []
   ],
@@ -15662,9 +15855,9 @@
    [
     517,
     518,
-    519,
     520,
-    521
+    521,
+    522
    ],
    []
   ],
@@ -15888,7 +16081,7 @@
    14,
    "Compatibility exports for provider child-process environment sanitation.",
    [
-    611
+    614
    ],
    [],
    []
@@ -15903,7 +16096,7 @@
    9,
    "Compatibility exports for provider authentication guidance.",
    [
-    564
+    566
    ],
    [],
    []
@@ -15918,7 +16111,7 @@
    24,
    "Compatibility exports for provider capability discovery.",
    [
-    570
+    572
    ],
    [],
    []
@@ -15933,7 +16126,7 @@
    32,
    "Compatibility exports for the optional API-provider model catalog.",
    [
-    571
+    573
    ],
    [],
    []
@@ -15978,7 +16171,7 @@
    9,
    "Compatibility exports for provider model identity verification.",
    [
-    607
+    610
    ],
    [],
    []
@@ -15993,7 +16186,7 @@
    18,
    "Compatibility exports for provider runtime launch configuration.",
    [
-    623
+    626
    ],
    [],
    []
@@ -16008,7 +16201,7 @@
    16,
    "Compatibility exports for provider runtime result contracts.",
    [
-    624
+    627
    ],
    [],
    []
@@ -16023,7 +16216,7 @@
    12,
    "Compatibility exports for provider runtime construction.",
    [
-    625
+    628
    ],
    [],
    []
@@ -16038,7 +16231,7 @@
    14,
    "Compatibility exports for secure provider credential storage.",
    [
-    627
+    630
    ],
    [],
    []
@@ -16053,7 +16246,7 @@
    6,
    "Compatibility export for locally stored provider session discovery.",
    [
-    629
+    632
    ],
    [],
    []
@@ -16071,8 +16264,8 @@
    [
     41,
     232,
-    563,
-    787
+    565,
+    791
    ],
    []
   ],
@@ -16086,16 +16279,16 @@
    23,
    "Provider adapter implementations.",
    [
-    552,
-    553,
     554,
-    557,
-    558,
-    560
+    555,
+    556,
+    559,
+    560,
+    562
    ],
    [
     324,
-    787
+    791
    ],
    []
   ],
@@ -16114,14 +16307,14 @@
    [
     1,
     2,
-    551,
     553,
     555,
-    556,
     557,
     558,
     559,
-    560
+    560,
+    561,
+    562
    ],
    [
     [
@@ -16146,18 +16339,18 @@
    "",
    [
     479,
-    552,
-    580,
-    581,
+    554,
     582,
-    630
+    583,
+    584,
+    633
    ],
    [
     1,
     3,
-    551,
-    554,
-    558
+    553,
+    556,
+    560
    ],
    [
     [
@@ -16182,15 +16375,15 @@
    "",
    [
     479,
-    553,
-    580,
-    581
+    555,
+    582,
+    583
    ],
    [
     1,
     4,
-    551,
-    558
+    553,
+    560
    ],
    [
     [
@@ -16215,14 +16408,14 @@
    "",
    [
     479,
-    552,
-    630
+    554,
+    633
    ],
    [
     5,
-    556,
     558,
-    559
+    560,
+    561
    ],
    [
     [
@@ -16292,13 +16485,13 @@
    "",
    [
     479,
-    552,
-    555,
-    630
+    554,
+    557,
+    633
    ],
    [
     6,
-    558
+    560
    ],
    [
     [
@@ -16332,13 +16525,13 @@
    "",
    [
     479,
-    552
+    554
    ],
    [
     1,
     7,
-    551,
-    558
+    553,
+    560
    ],
    [
     [
@@ -16363,21 +16556,21 @@
    "",
    [
     479,
-    552,
-    553,
     554,
     555,
     556,
     557,
+    558,
     559,
-    560
+    561,
+    562
    ],
    [
     1,
     8,
     113,
     324,
-    551
+    553
    ],
    [
     [
@@ -16401,16 +16594,16 @@
    "",
    [
     479,
-    552,
-    555,
-    615,
-    630
+    554,
+    557,
+    618,
+    633
    ],
    [
     9,
     337,
     434,
-    558
+    560
    ],
    [
     [
@@ -16435,13 +16628,13 @@
    "",
    [
     479,
-    552
+    554
    ],
    [
     1,
     10,
-    551,
-    558
+    553,
+    560
    ],
    [
     [
@@ -16466,19 +16659,19 @@
    "Persistent provider runtime bridge for the canonical room protocol.",
    [
     108,
-    566,
-    567,
-    613,
-    619,
-    623,
-    624,
-    676,
-    693
+    568,
+    569,
+    616,
+    622,
+    626,
+    627,
+    679,
+    696
    ],
    [
     31,
     57,
-    706
+    709
    ],
    [
     [
@@ -16515,8 +16708,8 @@
    423,
    "Resident Antigravity CLI command adapter.",
    [
-    564,
-    617
+    566,
+    620
    ],
    [
     29,
@@ -16560,13 +16753,13 @@
    262,
    "OpenAI-compatible chat adapter for the API-provider lane (master plan 1단계 B).",
    [
-    550,
-    571
+    552,
+    573
    ],
    [
     41,
     232,
-    708
+    711
    ],
    [
     [
@@ -16599,11 +16792,11 @@
    "Provider authentication error classification and login guidance.",
    [],
    [
-    539,
-    562,
-    581,
-    585,
-    596
+    541,
+    564,
+    583,
+    587,
+    598
    ],
    []
   ],
@@ -16618,19 +16811,19 @@
    "Server-owned provider Agent Bridge process lifecycle.",
    [
     108,
-    599,
-    605,
-    610,
-    611,
-    616,
-    623,
-    627
+    602,
+    608,
+    613,
+    614,
+    619,
+    626,
+    630
    ],
    [
     51,
     52,
     59,
-    714
+    717
    ],
    [
     [
@@ -16657,13 +16850,13 @@
    281,
    "",
    [
-    624,
-    693
+    627,
+    696
    ],
    [
     70,
-    561,
-    567
+    563,
+    569
    ],
    [
     [
@@ -16717,11 +16910,11 @@
    109,
    "",
    [
-    566
+    568
    ],
    [
     71,
-    561
+    563
    ],
    [
     [
@@ -16773,20 +16966,20 @@
    1593,
    "Provider option discovery, catalog caching, and selection validation.",
    [
-    572,
     574,
-    599,
-    611,
-    616,
-    627,
-    628
+    576,
+    602,
+    614,
+    619,
+    630,
+    631
    ],
    [
-    540,
-    652,
-    656,
-    682,
-    787
+    542,
+    655,
+    659,
+    685,
+    791
    ],
    [
     [
@@ -16817,9 +17010,9 @@
    [
     41,
     232,
-    541,
-    563,
-    787
+    543,
+    565,
+    791
    ],
    []
   ],
@@ -16834,7 +17027,7 @@
    "Stable revisions for the public provider-selection contract.",
    [],
    [
-    570
+    572
    ],
    []
   ],
@@ -16848,8 +17041,8 @@
    39,
    "",
    [
-    608,
-    619
+    611,
+    622
    ],
    [],
    [
@@ -16875,7 +17068,7 @@
    "Read exact model identifiers from the installed Claude Code registry.",
    [],
    [
-    570
+    572
    ],
    []
   ],
@@ -16894,9 +17087,9 @@
     231,
     232,
     293,
-    601,
-    632,
-    633
+    604,
+    635,
+    636
    ],
    []
   ],
@@ -16931,11 +17124,11 @@
    141,
    "Sanitized Claude subscription usage from the native Claude CLI.",
    [
-    633,
-    643
+    636,
+    646
    ],
    [
-    614
+    617
    ],
    [
     [
@@ -16963,10 +17156,10 @@
    1374,
    "Codex app-server process, JSON-RPC, and runtime profile ownership.",
    [
-    611,
-    642,
-    676,
-    693
+    614,
+    645,
+    679,
+    696
    ],
    [
     32,
@@ -16977,8 +17170,8 @@
     94,
     110,
     333,
-    579,
-    584
+    581,
+    586
    ],
    [
     [
@@ -17001,15 +17194,15 @@
    239,
    "Persistent room runtime wrapper for Codex app-server.",
    [
-    578,
-    619,
-    621,
-    693
+    580,
+    622,
+    624,
+    696
    ],
    [
     57,
     93,
-    625
+    628
    ],
    [
     [
@@ -17029,9 +17222,9 @@
    "",
    [],
    [
-    553,
-    554,
-    581
+    555,
+    556,
+    583
    ],
    []
   ],
@@ -17045,13 +17238,13 @@
    371,
    "Resident Codex CLI command adapter.",
    [
-    564,
-    580,
+    566,
     582,
-    583,
-    612,
-    617,
-    626
+    584,
+    585,
+    615,
+    620,
+    629
    ],
    [
     95,
@@ -17059,8 +17252,8 @@
     283,
     293,
     434,
-    553,
-    554
+    555,
+    556
    ],
    [
     [
@@ -17081,8 +17274,8 @@
    [],
    [
     96,
-    553,
-    581
+    555,
+    583
    ],
    []
   ],
@@ -17098,7 +17291,7 @@
    [],
    [
     98,
-    581
+    583
    ],
    []
   ],
@@ -17112,11 +17305,11 @@
    171,
    "Sanitized Codex account rate-limit snapshots from app-server JSON-RPC.",
    [
-    578,
-    643
+    580,
+    646
    ],
    [
-    614
+    617
    ],
    [
     [
@@ -17135,8 +17328,8 @@
    346,
    "Resident Cursor CLI command adapter.",
    [
-    564,
-    617
+    566,
+    620
    ],
    [
     100,
@@ -17181,13 +17374,13 @@
    198,
    "Cursor CLI room MCP lifecycle for one managed Agent Session.",
    [
-    611,
-    619,
-    621,
-    623
+    614,
+    622,
+    624,
+    626
    ],
    [
-    625
+    628
    ],
    [
     [
@@ -17206,8 +17399,8 @@
    44,
    "",
    [
-    608,
-    619
+    611,
+    622
    ],
    [
     103
@@ -17234,11 +17427,11 @@
    130,
    "Sanitized DeepSeek account balance from the provider's public API.",
    [
-    627,
-    643
+    630,
+    646
    ],
    [
-    614
+    617
    ],
    [
     [
@@ -17257,11 +17450,11 @@
    5,
    "Structured Grok ACP runtime.",
    [
-    592
+    594
    ],
    [
     133,
-    625
+    628
    ],
    []
   ],
@@ -17276,7 +17469,7 @@
    "Process helpers for the Grok ACP transport.",
    [],
    [
-    592
+    594
    ],
    []
   ],
@@ -17290,10 +17483,10 @@
    146,
    "Room portal permission policy for Grok ACP tool requests.",
    [
-    693
+    696
    ],
    [
-    592
+    594
    ],
    []
   ],
@@ -17307,19 +17500,19 @@
    707,
    "",
    [
-    590,
-    591,
+    592,
     593,
-    594,
     595,
-    611,
-    619,
-    621,
+    596,
+    597,
+    614,
+    622,
     624,
-    693
+    627,
+    696
    ],
    [
-    589
+    591
    ],
    [
     [
@@ -17347,10 +17540,10 @@
    51,
    "Durable Grok ACP provider-session state.",
    [
-    693
+    696
    ],
    [
-    592
+    594
    ],
    [
     [
@@ -17370,7 +17563,7 @@
    "ACP stdio transport and JSON-RPC correlation.",
    [],
    [
-    592
+    594
    ],
    [
     [
@@ -17389,10 +17582,10 @@
    253,
    "Turn notification projection helpers for Grok ACP.",
    [
-    693
+    696
    ],
    [
-    592
+    594
    ],
    [
     [
@@ -17411,10 +17604,10 @@
    418,
    "Resident Grok CLI command adapter.",
    [
-    564,
-    612,
-    617,
-    751
+    566,
+    615,
+    620,
+    754
    ],
    [
     134,
@@ -17458,7 +17651,7 @@
    231,
    "Resident Hermes CLI command adapter.",
    [
-    617
+    620
    ],
    [
     182,
@@ -17502,7 +17695,7 @@
    229,
    "Resident Kiro CLI command adapter.",
    [
-    617
+    620
    ],
    [
     191,
@@ -17519,17 +17712,42 @@
    ]
   ],
   [
+   "agentsassemble.providers.launch_profile",
+   "agentsassemble/providers/launch_profile.py",
+   "providers",
+   "providers",
+   "current",
+   "in-target-package",
+   88,
+   "Immutable provider launch profile and its stable runtime identity.",
+   [
+    523,
+    696
+   ],
+   [
+    602
+   ],
+   [
+    [
+     "NativeCliProviderSpec",
+     []
+    ]
+   ]
+  ],
+  [
    "agentsassemble.providers.launch_specs",
    "agentsassemble/providers/launch_specs.py",
    "providers",
    "providers",
    "current",
    "in-target-package",
-   1103,
+   1037,
    "Provider launch specifications, command construction, and profile validation.",
    [
-    616,
-    693
+    523,
+    601,
+    619,
+    696
    ],
    [
     13,
@@ -17537,26 +17755,24 @@
     57,
     59,
     481,
-    565,
-    570,
-    606,
-    652,
-    653,
+    519,
+    567,
+    572,
+    609,
     655,
     656,
     658,
-    677,
-    678,
-    682,
-    695,
-    742,
-    752
+    659,
+    661,
+    680,
+    681,
+    685,
+    697,
+    698,
+    745,
+    755
    ],
    [
-    [
-     "NativeCliProviderSpec",
-     []
-    ],
     [
      "NativeCliProviderDefinition",
      []
@@ -17591,17 +17807,17 @@
    997,
    "",
    [
-    601,
-    602,
-    611,
-    632,
-    693
+    604,
+    605,
+    614,
+    635,
+    696
    ],
    [
     111,
     443,
-    625,
-    633
+    628,
+    636
    ],
    [
     [
@@ -17633,15 +17849,15 @@
    190,
    "",
    [
-    575
+    577
    ],
    [
     444,
-    600,
-    632,
-    633,
-    638,
-    644
+    603,
+    635,
+    636,
+    641,
+    647
    ],
    []
   ],
@@ -17655,12 +17871,12 @@
    29,
    "Compatibility facade for provider-owned structured transcript parsers.",
    [
-    634
+    637
    ],
    [
     446,
-    600,
-    644
+    603,
+    647
    ],
    []
   ],
@@ -17741,13 +17957,13 @@
    52,
    "",
    [
-    608,
-    619
+    611,
+    622
    ],
    [
     57,
-    565,
-    625
+    567,
+    628
    ],
    [
     [
@@ -17771,8 +17987,8 @@
    223,
    "Allowlisted provider CLI login launched from the local operator UI.",
    [
-    599,
-    693
+    602,
+    696
    ],
    [
     135
@@ -17804,10 +18020,10 @@
    "Provider-reported model identity verification policy.",
    [],
    [
-    544,
-    658,
-    678,
-    695
+    546,
+    661,
+    681,
+    698
    ],
    []
   ],
@@ -17821,16 +18037,16 @@
    551,
    "",
    [
-    609,
-    613,
-    619,
-    693
+    612,
+    616,
+    622,
+    696
    ],
    [
-    573,
-    587,
-    605,
-    616
+    575,
+    589,
+    608,
+    619
    ],
    [
     [
@@ -17853,10 +18069,10 @@
    175,
    "Room tool schemas and execution for OpenAI-compatible chat APIs.",
    [
-    619
+    622
    ],
    [
-    608
+    611
    ],
    [
     [
@@ -17875,17 +18091,17 @@
    774,
    "",
    [
-    611,
-    619,
-    621,
-    676,
-    693
+    614,
+    622,
+    624,
+    679,
+    696
    ],
    [
     57,
     482,
-    565,
-    625
+    567,
+    628
    ],
    [
     [
@@ -17914,16 +18130,16 @@
    [],
    [
     32,
-    538,
-    565,
-    570,
-    578,
-    586,
-    592,
-    600,
-    610,
-    633,
-    644
+    540,
+    567,
+    572,
+    580,
+    588,
+    594,
+    603,
+    613,
+    636,
+    647
    ],
    []
   ],
@@ -17938,8 +18154,8 @@
    "",
    [],
    [
-    581,
-    596
+    583,
+    598
    ],
    [
     [
@@ -17958,11 +18174,11 @@
    123,
    "Public provider-failure categories derived only from explicit provider errors.",
    [
-    693
+    696
    ],
    [
-    561,
-    608
+    563,
+    611
    ],
    [
     [
@@ -17986,15 +18202,15 @@
    90,
    "Owner-only provider usage registry and public error contract.",
    [
-    577,
-    584,
-    588,
-    633,
-    643
+    579,
+    586,
+    590,
+    636,
+    646
    ],
    [
     52,
-    787
+    791
    ],
    [
     [
@@ -18018,8 +18234,8 @@
     293,
     313,
     434,
-    559,
-    649
+    561,
+    652
    ],
    []
   ],
@@ -18030,22 +18246,22 @@
    "providers",
    "current",
    "in-target-package",
-   409,
+   414,
    "Declarative remote OpenAI-compatible providers and their room runtime.",
    [
-    608,
-    619,
-    693
+    611,
+    622,
+    696
    ],
    [
     57,
-    565,
-    570,
-    599,
-    623,
-    625,
-    627,
-    797
+    567,
+    572,
+    602,
+    626,
+    628,
+    630,
+    801
    ],
    [
     [
@@ -18074,12 +18290,12 @@
    "Configuration view shared by legacy resident provider command adapters.",
    [],
    [
-    562,
-    581,
-    585,
-    596,
-    597,
-    598
+    564,
+    583,
+    587,
+    598,
+    599,
+    600
    ],
    [
     [
@@ -18120,28 +18336,28 @@
    1074,
    "Private room-view boundary used by autonomous provider sessions.",
    [
-    620,
-    622,
-    624,
-    692,
-    693
+    623,
+    625,
+    627,
+    695,
+    696
    ],
    [
     31,
     57,
-    561,
-    573,
-    579,
-    586,
-    587,
-    592,
-    605,
+    563,
+    575,
+    581,
+    588,
+    589,
+    594,
     608,
-    609,
-    610,
-    616,
-    621,
-    625
+    611,
+    612,
+    613,
+    619,
+    624,
+    628
    ],
    [
     [
@@ -18178,7 +18394,7 @@
    "Standalone terminal helper installed into provider-private room state.",
    [],
    [
-    619
+    622
    ],
    []
   ],
@@ -18192,13 +18408,13 @@
    70,
    "Stdio MCP boundary for one provider session's private room portal.",
    [
-    619
+    622
    ],
    [
-    579,
-    586,
-    592,
-    610
+    581,
+    588,
+    594,
+    613
    ],
    []
   ],
@@ -18212,10 +18428,10 @@
    16,
    "Provider compatibility imports for canonical room randomness.",
    [
-    680
+    683
    ],
    [
-    619
+    622
    ],
    []
   ],
@@ -18229,18 +18445,18 @@
    296,
    "",
    [
-    616,
-    693
+    619,
+    696
    ],
    [
     31,
     57,
-    545,
-    561,
-    565,
-    586,
-    625,
-    658
+    547,
+    563,
+    567,
+    588,
+    628,
+    661
    ],
    [
     [
@@ -18286,15 +18502,15 @@
    "",
    [],
    [
-    546,
-    561,
-    566,
-    592,
-    619,
-    632,
-    658,
-    682,
-    695
+    548,
+    563,
+    568,
+    594,
+    622,
+    635,
+    661,
+    685,
+    698
    ],
    [
     [
@@ -18326,22 +18542,22 @@
    197,
    "",
    [
-    579,
-    586,
-    589,
-    600,
-    605,
-    610,
-    616,
+    581,
+    588,
+    591,
+    603,
+    608,
+    613,
     619,
-    623,
-    632,
-    644
+    622,
+    626,
+    635,
+    647
    ],
    [
     31,
     57,
-    547
+    549
    ],
    [
     [
@@ -18365,14 +18581,14 @@
    92,
    "",
    [
-    693
+    696
    ],
    [
     282,
     290,
     293,
-    581,
-    760
+    583,
+    763
    ],
    [
     [
@@ -18412,15 +18628,15 @@
    117,
    "",
    [
-    616
+    619
    ],
    [
     57,
-    548,
-    565,
-    570,
-    588,
-    787
+    550,
+    567,
+    572,
+    590,
+    791
    ],
    [
     [
@@ -18449,7 +18665,7 @@
    "Provider catalog selection contracts shared with room services.",
    [],
    [
-    570
+    572
    ],
    [
     [
@@ -18478,8 +18694,8 @@
    "List a provider CLI's locally-stored sessions so the agent-create flow can",
    [],
    [
-    549,
-    787
+    551,
+    791
    ],
    [
     [
@@ -18499,11 +18715,11 @@
    "",
    [],
    [
-    553,
     555,
-    556,
-    559,
-    763
+    557,
+    558,
+    561,
+    766
    ],
    []
   ],
@@ -18517,18 +18733,18 @@
    333,
    "",
    [
-    683,
-    693,
-    710
+    686,
+    696,
+    713
    ],
    [
     32,
     39,
-    678,
-    682,
-    694,
-    695,
-    736
+    681,
+    685,
+    697,
+    698,
+    739
    ],
    [
     [
@@ -18560,14 +18776,14 @@
    192,
    "",
    [
-    575,
-    601,
-    624
+    577,
+    604,
+    627
    ],
    [
-    600,
-    625,
-    644
+    603,
+    628,
+    647
    ],
    [
     [
@@ -18595,15 +18811,15 @@
    411,
    "Sanitized account usage from provider-native terminal panels.",
    [
-    575,
-    600,
-    601,
-    611,
-    643
+    577,
+    603,
+    604,
+    614,
+    646
    ],
    [
-    577,
-    614
+    579,
+    617
    ],
    [
     [
@@ -18622,16 +18838,16 @@
    29,
    "Provider-owned structured transcript parsers.",
    [
-    635,
-    636,
-    637,
     638,
     639,
     640,
-    641
+    641,
+    642,
+    643,
+    644
    ],
    [
-    602
+    605
    ],
    []
   ],
@@ -18645,12 +18861,12 @@
    163,
    "",
    [
-    638,
-    693
+    641,
+    696
    ],
    [
-    634,
-    640
+    637,
+    643
    ],
    [
     [
@@ -18674,12 +18890,12 @@
    189,
    "",
    [
-    638,
-    693
+    641,
+    696
    ],
    [
-    634,
-    640
+    637,
+    643
    ],
    [
     [
@@ -18703,12 +18919,12 @@
    130,
    "",
    [
-    638,
-    693
+    641,
+    696
    ],
    [
-    634,
-    640
+    637,
+    643
    ],
    [
     [
@@ -18732,17 +18948,17 @@
    464,
    "",
    [
-    601,
-    693
+    604,
+    696
    ],
    [
-    634,
-    635,
-    636,
     637,
+    638,
     639,
     640,
-    641
+    642,
+    643,
+    644
    ],
    [
     [
@@ -18787,11 +19003,11 @@
    95,
    "",
    [
-    638
+    641
    ],
    [
-    634,
-    640
+    637,
+    643
    ],
    [
     [
@@ -18815,16 +19031,16 @@
    53,
    "",
    [
-    635,
-    636,
-    637,
     638,
     639,
+    640,
     641,
-    693
+    642,
+    644,
+    696
    ],
    [
-    634
+    637
    ],
    []
   ],
@@ -18838,12 +19054,12 @@
    65,
    "",
    [
-    638,
-    693
+    641,
+    696
    ],
    [
-    634,
-    640
+    637,
+    643
    ],
    [
     [
@@ -18868,8 +19084,8 @@
    "Render the provider-visible text for an already-built room turn packet.",
    [],
    [
-    578,
-    694
+    580,
+    697
    ],
    []
   ],
@@ -18884,11 +19100,11 @@
    "Provider usage interfaces shared without importing the usage registry.",
    [],
    [
-    577,
-    584,
-    588,
-    614,
-    633
+    579,
+    586,
+    590,
+    617,
+    636
    ],
    [
     [
@@ -18921,15 +19137,15 @@
    365,
    "",
    [
-    601,
-    602,
-    611,
-    632,
-    693
+    604,
+    605,
+    614,
+    635,
+    696
    ],
    [
-    625,
-    802
+    628,
+    806
    ],
    [
     [
@@ -18949,7 +19165,7 @@
    "Local desktop folder selection for server-owned Agent Sessions.",
    [],
    [
-    787
+    791
    ],
    [
     [
@@ -19018,7 +19234,7 @@
    13,
    "Compatibility exports for agentsassemble.providers.remote_bridge_config.",
    [
-    615
+    618
    ],
    [],
    []
@@ -19058,18 +19274,19 @@
    "room",
    "current",
    "in-target-package",
-   158,
+   187,
    "",
    [
-    570,
-    599,
-    656,
-    667,
-    683,
-    693
+    519,
+    572,
+    602,
+    659,
+    670,
+    686,
+    696
    ],
    [
-    682
+    685
    ],
    [
     [
@@ -19089,17 +19306,17 @@
    "",
    [
     108,
-    599,
-    659,
-    667,
-    668,
-    676,
-    683,
-    693
+    602,
+    662,
+    670,
+    671,
+    679,
+    686,
+    696
    ],
    [
-    682,
-    707
+    685,
+    710
    ],
    [
     [
@@ -19127,15 +19344,15 @@
    110,
    "",
    [
-    661,
-    667,
-    676,
-    677,
-    683,
-    693
+    664,
+    670,
+    679,
+    680,
+    686,
+    696
    ],
    [
-    682
+    685
    ],
    [
     [
@@ -19154,15 +19371,15 @@
    141,
    "",
    [
-    599,
-    667,
-    668,
-    676,
-    677,
-    683
+    602,
+    670,
+    671,
+    679,
+    680,
+    686
    ],
    [
-    682
+    685
    ],
    [
     [
@@ -19178,18 +19395,19 @@
    "room",
    "current",
    "in-target-package",
-   175,
+   209,
    "",
    [
-    570,
-    599,
-    667,
-    683,
-    693
+    519,
+    572,
+    602,
+    670,
+    686,
+    696
    ],
    [
-    652,
-    682
+    655,
+    685
    ],
    [
     [
@@ -19217,7 +19435,7 @@
    260,
    "",
    [
-    693
+    696
    ],
    [
     51,
@@ -19225,12 +19443,12 @@
     69,
     202,
     328,
-    665,
-    672,
-    682,
-    777,
-    781,
-    784
+    668,
+    675,
+    685,
+    780,
+    784,
+    787
    ],
    [
     [
@@ -19258,18 +19476,18 @@
    251,
    "",
    [
-    599,
-    607,
-    623,
-    624,
-    667,
-    668,
-    676,
-    683,
-    693
+    602,
+    610,
+    626,
+    627,
+    670,
+    671,
+    679,
+    686,
+    696
    ],
    [
-    682
+    685
    ],
    [
     [
@@ -19288,11 +19506,11 @@
    153,
    "",
    [
-    693
+    696
    ],
    [
     72,
-    653
+    656
    ],
    [
     [
@@ -19327,10 +19545,10 @@
    [
     333,
     335,
-    669,
-    686,
-    697,
-    715
+    672,
+    689,
+    700,
+    718
    ],
    [
     [
@@ -19354,20 +19572,20 @@
    216,
    "",
    [
-    669,
-    683,
-    710
+    672,
+    686,
+    713
    ],
    [
-    654,
-    670,
-    672,
-    674,
+    657,
+    673,
     675,
-    682,
-    687,
-    695,
-    716
+    677,
+    678,
+    685,
+    690,
+    698,
+    719
    ],
    [
     [
@@ -19404,11 +19622,11 @@
    93,
    "",
    [
-    693
+    696
    ],
    [
-    682,
-    717
+    685,
+    720
    ],
    [
     [
@@ -19433,17 +19651,26 @@
    "room",
    "current",
    "in-target-package",
-   117,
+   152,
    "",
    [
-    668,
-    683,
-    693
+    671,
+    686,
+    696
    ],
    [
-    682
+    685
    ],
    [
+    [
+     "AttentionReset",
+     [
+      [
+       "Protocol",
+       ""
+      ]
+     ]
+    ],
     [
      "RoomConnectionService",
      []
@@ -19460,14 +19687,14 @@
    139,
    "",
    [
-    683,
-    693
+    686,
+    696
    ],
    [
     32,
     107,
-    694,
-    718
+    697,
+    721
    ],
    [
     [
@@ -19487,13 +19714,13 @@
    "",
    [
     126,
-    657,
-    668,
-    677,
-    683
+    660,
+    671,
+    680,
+    686
    ],
    [
-    682
+    685
    ],
    [
     [
@@ -19512,12 +19739,12 @@
    234,
    "",
    [
-    667,
-    683,
-    693
+    670,
+    686,
+    696
    ],
    [
-    682
+    685
    ],
    [
     [
@@ -19537,24 +19764,24 @@
    "Room command and policy errors.",
    [],
    [
-    652,
-    653,
-    654,
     655,
     656,
+    657,
     658,
-    666,
-    670,
-    672,
-    674,
+    659,
+    661,
+    669,
+    673,
     675,
     677,
     678,
-    682,
-    687,
-    695,
-    721,
-    792
+    680,
+    681,
+    685,
+    690,
+    698,
+    724,
+    796
    ],
    [
     [
@@ -19578,20 +19805,20 @@
    266,
    "",
    [
-    693
+    696
    ],
    [
-    653,
-    655,
+    656,
     658,
-    663,
-    665,
-    670,
-    678,
-    682,
-    689,
-    695,
-    723
+    661,
+    666,
+    668,
+    673,
+    681,
+    685,
+    692,
+    698,
+    726
    ],
    [
     [
@@ -19614,8 +19841,8 @@
    322,
    "Canonical room-global settings shared by every repository backend.",
    [
-    660,
-    685
+    663,
+    688
    ],
    [
     371,
@@ -19625,13 +19852,13 @@
     510,
     511,
     512,
-    661,
-    683,
-    687,
-    688,
-    689,
-    727,
-    791
+    664,
+    686,
+    690,
+    691,
+    692,
+    730,
+    795
    ],
    [
     [
@@ -19673,13 +19900,13 @@
    95,
    "",
    [
-    661,
-    667,
-    668,
-    683
+    664,
+    670,
+    671,
+    686
    ],
    [
-    682
+    685
    ],
    [
     [
@@ -19701,16 +19928,16 @@
     32,
     129,
     491,
-    673,
-    683,
-    693
+    676,
+    686,
+    696
    ],
    [
     135,
     212,
     333,
-    732,
-    794
+    735,
+    798
    ],
    []
   ],
@@ -19724,17 +19951,17 @@
    242,
    "",
    [
-    657,
-    661,
-    667,
-    680,
-    692,
-    693,
+    660,
+    664,
+    670,
+    683,
     695,
-    700
+    696,
+    698,
+    703
    ],
    [
-    682
+    685
    ],
    [
     [
@@ -19758,9 +19985,9 @@
    [
     135,
     335,
-    671,
-    682,
-    794
+    674,
+    685,
+    798
    ],
    []
   ],
@@ -19774,14 +20001,14 @@
    244,
    "",
    [
-    661,
-    667,
-    676,
-    683,
-    693
+    664,
+    670,
+    679,
+    686,
+    696
    ],
    [
-    682
+    685
    ],
    [
     [
@@ -19800,13 +20027,13 @@
    207,
    "",
    [
-    661,
-    667,
-    683,
-    693
+    664,
+    670,
+    686,
+    696
    ],
    [
-    682
+    685
    ],
    [
     [
@@ -19825,23 +20052,23 @@
    303,
    "",
    [
-    693,
-    696
+    696,
+    699
    ],
    [
-    561,
-    578,
-    610,
-    653,
-    654,
-    655,
+    563,
+    580,
+    613,
+    656,
+    657,
     658,
-    674,
-    678,
-    682,
-    689,
-    695,
-    735
+    661,
+    677,
+    681,
+    685,
+    692,
+    698,
+    738
    ],
    []
   ],
@@ -19855,16 +20082,16 @@
    115,
    "",
    [
-    599,
-    667,
-    693
+    602,
+    670,
+    696
    ],
    [
-    654,
-    655,
-    665,
-    678,
-    682
+    657,
+    658,
+    668,
+    681,
+    685
    ],
    [
     [
@@ -19880,21 +20107,21 @@
    "room",
    "current",
    "in-target-package",
-   524,
+   528,
    "",
    [
-    599,
-    607,
-    631,
-    667,
-    668,
-    676,
-    677,
-    683,
-    693
+    602,
+    610,
+    634,
+    670,
+    671,
+    679,
+    680,
+    686,
+    696
    ],
    [
-    682
+    685
    ],
    [
     [
@@ -19914,7 +20141,7 @@
    "Authoritative public room event contract shared with the frontend.",
    [],
    [
-    696
+    699
    ],
    [
     [
@@ -19983,11 +20210,11 @@
    63,
    "Validated server-side randomness for canonical room tools.",
    [
-    681
+    684
    ],
    [
-    622,
-    672
+    625,
+    675
    ],
    [
     [
@@ -20011,11 +20238,11 @@
    90,
    "Pure bounds and normalization for official room randomness.",
    [
-    693
+    696
    ],
    [
-    680,
-    692
+    683,
+    695
    ],
    [
     [
@@ -20040,7 +20267,7 @@
    "room",
    "current",
    "in-target-package",
-   1827,
+   1840,
    "",
    [
     15,
@@ -20048,56 +20275,57 @@
     108,
     491,
     496,
-    570,
-    599,
-    624,
-    631,
-    652,
-    653,
-    654,
+    519,
+    572,
+    602,
+    627,
+    634,
     655,
     656,
     657,
     658,
+    659,
+    660,
     661,
-    662,
-    663,
+    664,
     665,
     666,
-    667,
     668,
+    669,
     670,
-    672,
+    671,
     673,
-    674,
     675,
     676,
     677,
     678,
-    683,
-    687,
-    689,
-    691,
-    693,
+    679,
+    680,
+    681,
+    686,
+    690,
+    692,
     694,
-    695,
     696,
+    697,
+    698,
     699,
-    700,
-    711,
-    712,
-    713,
-    724,
-    742
+    702,
+    703,
+    714,
+    715,
+    716,
+    727,
+    745
    ],
    [
     51,
     52,
     59,
     135,
-    737,
-    775,
-    780
+    740,
+    778,
+    783
    ],
    [
     [
@@ -20125,8 +20353,8 @@
    341,
    "",
    [
-    669,
-    710
+    672,
+    713
    ],
    [
     13,
@@ -20146,37 +20374,37 @@
     212,
     496,
     512,
-    631,
-    652,
-    653,
-    654,
+    634,
     655,
     656,
+    657,
     658,
+    659,
     661,
-    663,
     664,
-    665,
     666,
-    670,
-    671,
+    667,
+    668,
+    669,
+    673,
     674,
-    675,
+    677,
     678,
-    682,
-    688,
-    689,
+    681,
+    685,
     691,
+    692,
     694,
-    695,
-    711,
-    713,
-    738,
-    752,
-    775,
-    780,
-    781,
-    796
+    697,
+    698,
+    714,
+    716,
+    741,
+    755,
+    778,
+    783,
+    784,
+    800
    ],
    [
     [
@@ -20209,8 +20437,8 @@
    239,
    "",
    [
-    693,
-    698
+    696,
+    701
    ],
    [
     368,
@@ -20222,8 +20450,8 @@
     510,
     511,
     512,
-    688,
-    741
+    691,
+    744
    ],
    []
   ],
@@ -20239,10 +20467,10 @@
    [],
    [
     372,
-    669,
-    686,
-    688,
-    745
+    672,
+    689,
+    691,
+    748
    ],
    []
   ],
@@ -20256,11 +20484,11 @@
    209,
    "Legacy file-backed room preferences retained during repository migration.",
    [
-    660,
-    685
+    663,
+    688
    ],
    [
-    746
+    749
    ],
    []
   ],
@@ -20274,13 +20502,13 @@
    77,
    "Canonical room-global settings mutation through the room command boundary.",
    [
-    661,
-    667,
-    669,
-    693
+    664,
+    670,
+    672,
+    696
    ],
    [
-    682
+    685
    ],
    [
     [
@@ -20300,15 +20528,15 @@
    "Compose repository-owned room settings with identity-owned preferences.",
    [
     187,
-    669,
-    683,
-    684,
-    685,
-    697
+    672,
+    686,
+    687,
+    688,
+    700
    ],
    [
-    748,
-    795
+    751,
+    799
    ],
    []
   ],
@@ -20322,14 +20550,14 @@
    214,
    "",
    [
-    668,
-    669,
-    676,
-    683,
-    693
+    671,
+    672,
+    679,
+    686,
+    696
    ],
    [
-    682
+    685
    ],
    [
     [
@@ -20363,7 +20591,7 @@
     333,
     335,
     337,
-    749
+    752
    ],
    [
     [
@@ -20391,12 +20619,12 @@
    86,
    "",
    [
-    683,
-    693,
-    695
+    686,
+    696,
+    698
    ],
    [
-    682
+    685
    ],
    [
     [
@@ -20415,13 +20643,13 @@
    238,
    "Validate provider-reported room tool results for canonical system messages.",
    [
-    681,
-    693
+    684,
+    696
    ],
    [
-    619,
-    672,
-    695
+    622,
+    675,
+    698
    ],
    [
     [
@@ -20496,65 +20724,67 @@
     510,
     511,
     512,
-    561,
-    566,
-    578,
-    579,
-    591,
-    592,
+    523,
+    563,
+    568,
+    580,
+    581,
     593,
+    594,
     595,
-    599,
-    600,
-    606,
-    608,
-    610,
+    597,
+    601,
+    602,
+    603,
+    609,
+    611,
     613,
     616,
     619,
-    623,
+    622,
     626,
-    631,
-    635,
-    636,
-    637,
+    629,
+    634,
     638,
+    639,
     640,
     641,
+    643,
     644,
-    652,
-    653,
-    654,
+    647,
+    655,
     656,
     657,
-    658,
     659,
+    660,
+    661,
     662,
-    663,
-    664,
+    665,
     666,
-    668,
+    667,
+    669,
     671,
-    672,
     674,
     675,
-    676,
     677,
     678,
+    679,
+    680,
     681,
-    682,
     684,
+    685,
     687,
-    689,
-    691,
+    690,
     692,
     694,
     695,
-    700,
-    784,
-    790,
-    793,
-    796
+    697,
+    698,
+    703,
+    787,
+    794,
+    797,
+    800
    ],
    []
   ],
@@ -20565,22 +20795,25 @@
    "room",
    "current",
    "in-target-package",
-   589,
+   655,
    "",
    [
     496,
-    631,
-    642,
-    664,
-    683,
-    693
+    516,
+    519,
+    602,
+    634,
+    645,
+    667,
+    686,
+    696
    ],
    [
     32,
     38,
     39,
-    682,
-    753
+    685,
+    756
    ],
    [
     [
@@ -20600,26 +20833,26 @@
    "",
    [
     108,
-    599,
-    607,
-    624,
-    631,
-    661,
-    667,
-    668,
-    676,
-    683,
-    692,
-    693,
+    602,
+    610,
+    627,
+    634,
+    664,
+    670,
+    671,
+    679,
+    686,
+    695,
     696,
-    710,
-    752
+    699,
+    713,
+    755
    ],
    [
-    672,
-    682,
-    691,
-    754
+    675,
+    685,
+    694,
+    757
    ],
    [
     [
@@ -20643,16 +20876,16 @@
    "room",
    "current",
    "in-target-package",
-   89,
+   91,
    "Shared room event, participant, session, command, and turn shapes.",
    [
-    679
+    682
    ],
    [
-    676,
-    682,
-    695,
-    755
+    679,
+    685,
+    698,
+    758
    ],
    [
     [
@@ -20703,7 +20936,7 @@
    127,
    "Strict user-owned notification and read preferences for one room.",
    [
-    660
+    663
    ],
    [
     187,
@@ -20713,8 +20946,8 @@
     492,
     503,
     504,
-    688,
-    756
+    691,
+    759
    ],
    [
     [
@@ -20750,7 +20983,7 @@
    [
     495,
     511,
-    684
+    687
    ],
    []
   ],
@@ -20767,8 +21000,8 @@
    [
     333,
     335,
-    682,
-    771
+    685,
+    774
    ],
    []
   ],
@@ -20782,14 +21015,14 @@
    251,
    "Canonical room vote validation and tallying.",
    [
-    693
+    696
    ],
    [
     333,
-    672,
-    682,
-    758,
-    791
+    675,
+    685,
+    761,
+    795
    ],
    []
   ],
@@ -20879,7 +21112,7 @@
    "Compatibility exports for the provider Agent Bridge.",
    [
     31,
-    561
+    563
    ],
    [],
    []
@@ -20894,7 +21127,7 @@
    28,
    "Compatibility exports for Agent Session process lifecycle orchestration.",
    [
-    653
+    656
    ],
    [],
    []
@@ -20909,7 +21142,7 @@
    24,
    "Compatibility exports for the OpenAI-compatible API provider adapter.",
    [
-    563
+    565
    ],
    [],
    []
@@ -20946,13 +21179,13 @@
     496,
     509,
     512,
-    631,
-    661,
-    683,
-    695,
-    712,
-    713,
-    752
+    634,
+    664,
+    686,
+    698,
+    715,
+    716,
+    755
    ],
    [
     [
@@ -20994,11 +21227,11 @@
    "",
    [
     319,
-    683,
-    712
+    686,
+    715
    ],
    [
-    682
+    685
    ],
    [
     [
@@ -21018,12 +21251,12 @@
    "",
    [
     319,
-    710,
-    720
+    713,
+    723
    ],
    [
-    682,
-    711
+    685,
+    714
    ],
    []
   ],
@@ -21038,11 +21271,11 @@
    "",
    [
     319,
-    683,
-    710
+    686,
+    713
    ],
    [
-    682
+    685
    ],
    [
     [
@@ -21069,7 +21302,7 @@
    14,
    "Compatibility exports for server-owned Agent Bridge processes.",
    [
-    565
+    567
    ],
    [],
    []
@@ -21084,7 +21317,7 @@
    38,
    "Compatibility exports for custom room channel rules.",
    [
-    660
+    663
    ],
    [],
    []
@@ -21099,7 +21332,7 @@
    16,
    "Compatibility exports for the durable room command unit of work.",
    [
-    661
+    664
    ],
    [],
    []
@@ -21114,7 +21347,7 @@
    18,
    "Compatibility exports for room command validation and capability policy.",
    [
-    662
+    665
    ],
    [],
    []
@@ -21129,7 +21362,7 @@
    18,
    "Compatibility exports for bounded room context projection.",
    [
-    664
+    667
    ],
    [],
    []
@@ -21164,9 +21397,9 @@
     265,
     279,
     434,
-    712,
-    724,
-    742
+    715,
+    727,
+    745
    ],
    []
   ],
@@ -21180,7 +21413,7 @@
    6,
    "Compatibility exports for room errors.",
    [
-    667
+    670
    ],
    [],
    []
@@ -21210,7 +21443,7 @@
    14,
    "Compatibility exports for canonical room event fanout.",
    [
-    668
+    671
    ],
    [],
    []
@@ -21225,10 +21458,10 @@
    111,
    "",
    [
-    720
+    723
    ],
    [
-    682
+    685
    ],
    [
     [
@@ -21277,7 +21510,7 @@
    36,
    "Compatibility exports for canonical room-global settings.",
    [
-    669
+    672
    ],
    [],
    []
@@ -21354,7 +21587,7 @@
    25,
    "Compatibility exports for agentsassemble.room.members.",
    [
-    671
+    674
    ],
    [],
    []
@@ -21399,7 +21632,7 @@
    24,
    "Compatibility exports for public room-state projection.",
    [
-    676
+    679
    ],
    [],
    []
@@ -21414,7 +21647,7 @@
    22,
    "Compatibility exports for provider room-sync cursors.",
    [
-    631
+    634
    ],
    [],
    []
@@ -21429,7 +21662,7 @@
    26,
    "Compatibility exports for canonical room realtime orchestration.",
    [
-    682
+    685
    ],
    [],
    []
@@ -21444,7 +21677,7 @@
    24,
    "Compatibility exports for the canonical room repository contract.",
    [
-    683
+    686
    ],
    [],
    []
@@ -21489,7 +21722,7 @@
    48,
    "Compatibility exports for canonical room repository record normalization.",
    [
-    684
+    687
    ],
    [],
    []
@@ -21505,11 +21738,11 @@
    "",
    [
     319,
-    599,
-    720
+    602,
+    723
    ],
    [
-    682
+    685
    ],
    [
     [
@@ -21558,7 +21791,7 @@
    24,
    "Compatibility exports for shared room setting value rules.",
    [
-    685
+    688
    ],
    [],
    []
@@ -21573,7 +21806,7 @@
    39,
    "Compatibility exports for agentsassemble.room.settings.",
    [
-    686
+    689
    ],
    [],
    []
@@ -21603,7 +21836,7 @@
    12,
    "Compatibility exports for canonical room settings composition.",
    [
-    688
+    691
    ],
    [],
    []
@@ -21618,7 +21851,7 @@
    38,
    "Compatibility exports for server-governed room speech policy.",
    [
-    690
+    693
    ],
    [],
    []
@@ -21650,7 +21883,7 @@
    [],
    [
     233,
-    596
+    598
    ],
    [
     [
@@ -21670,12 +21903,12 @@
    "",
    [
     319,
-    599,
-    683,
-    710
+    602,
+    686,
+    713
    ],
    [
-    695
+    698
    ],
    [
     [
@@ -21703,7 +21936,7 @@
    36,
    "Compatibility exports for provider turn-context assembly.",
    [
-    694
+    697
    ],
    [],
    []
@@ -21718,7 +21951,7 @@
    42,
    "Compatibility exports for canonical room turn coordination.",
    [
-    695
+    698
    ],
    [],
    []
@@ -21733,7 +21966,7 @@
    20,
    "Compatibility exports for shared room shapes.",
    [
-    696
+    699
    ],
    [],
    []
@@ -21748,7 +21981,7 @@
    28,
    "Compatibility exports for room user notification and read preferences.",
    [
-    697
+    700
    ],
    [],
    []
@@ -21778,7 +22011,7 @@
    9,
    "Compatibility exports for agentsassemble.room.votes.",
    [
-    700
+    703
    ],
    [],
    []
@@ -21793,7 +22026,7 @@
    74,
    "Compatibility exports for the web-owned WebSocket protocol codec.",
    [
-    801
+    805
    ],
    [],
    []
@@ -21808,7 +22041,7 @@
    29,
    "Compatibility exports for agentsassemble.providers.sandbox_launcher.",
    [
-    626
+    629
    ],
    [],
    []
@@ -21853,7 +22086,7 @@
    11,
    "Compatibility exports for agentsassemble.providers.speech_policy.",
    [
-    630
+    633
    ],
    [],
    []
@@ -21883,7 +22116,7 @@
    12,
    "Compatibility exports for shared SSE and WebSocket transport cadence.",
    [
-    798
+    802
    ],
    [],
    []
@@ -21973,7 +22206,7 @@
    19,
    "Compatibility exports for agentsassemble.room.voice_presence.",
    [
-    699
+    702
    ],
    [],
    []
@@ -22033,7 +22266,7 @@
     53,
     132,
     135,
-    777
+    780
    ],
    [
     [
@@ -22053,14 +22286,14 @@
    "HTTP handler transport for the local GUI server.",
    [
     51,
-    682,
-    683,
-    777,
-    781,
-    797,
-    798,
-    799,
-    800
+    685,
+    686,
+    780,
+    784,
+    801,
+    802,
+    803,
+    804
    ],
    [
     135
@@ -22102,13 +22335,13 @@
    173,
    "HTTP response writers shared by the GUI request handler.",
    [
-    657,
-    774
+    660,
+    777
    ],
    [
     135,
     169,
-    775
+    778
    ],
    [
     [
@@ -22127,7 +22360,7 @@
    410,
    "Canonical Python room client over HTTP admission and WebSocket transport.",
    [
-    801
+    805
    ],
    [
     31,
@@ -22136,7 +22369,7 @@
     59,
     235,
     279,
-    804
+    808
    ],
    [
     [
@@ -22165,14 +22398,14 @@
    "WebSocket room ticket and per-connection protocol core.",
    [
     187,
-    801
+    805
    ],
    [
     51,
     52,
-    780,
-    800,
-    805
+    783,
+    804,
+    809
    ],
    [
     [
@@ -22209,9 +22442,9 @@
    "Compose canonical room WebSocket dependencies from GUI services.",
    [
     51,
-    682,
-    683,
-    779
+    685,
+    686,
+    782
    ],
    [
     135
@@ -22241,9 +22474,9 @@
     54,
     185,
     187,
-    657,
-    683,
-    797
+    660,
+    686,
+    801
    ],
    [
     123,
@@ -22281,10 +22514,7 @@
     333,
     334,
     335,
-    775,
-    783,
-    784,
-    785,
+    778,
     786,
     787,
     788,
@@ -22296,8 +22526,12 @@
     794,
     795,
     796,
+    797,
+    798,
     799,
-    800
+    800,
+    803,
+    804
    ],
    [
     [
@@ -22338,7 +22572,7 @@
    "Agent Session and provider-turn HTTP routes for canonical rooms.",
    [
     32,
-    781
+    784
    ],
    [
     171,
@@ -22356,14 +22590,14 @@
    218,
    "Canonical room attachment upload and download routes.",
    [
-    657,
-    693,
-    781
+    660,
+    696,
+    784
    ],
    [
     135,
     137,
-    785
+    788
    ],
    [
     [
@@ -22379,23 +22613,24 @@
    "web",
    "current",
    "in-target-package",
-   80,
+   85,
    "Route registration for the composed GUI application.",
    [
     51,
     123,
     125,
     131,
-    781,
     784,
-    786,
     787,
-    788,
     789,
     790,
-    795,
-    796,
-    800
+    791,
+    792,
+    793,
+    794,
+    799,
+    800,
+    804
    ],
    [
     135
@@ -22415,12 +22650,12 @@
     20,
     112,
     114,
-    781
+    784
    ],
    [
     135,
     165,
-    785
+    788
    ],
    [
     [
@@ -22435,6 +22670,24 @@
    ]
   ],
   [
+   "agentsassemble.web.routes.personas",
+   "agentsassemble/web/routes/personas.py",
+   "web",
+   "web",
+   "current",
+   "in-target-package",
+   80,
+   "Local-operator routes for the imported bot-card and Risu-module library.",
+   [
+    519,
+    784
+   ],
+   [
+    788
+   ],
+   []
+  ],
+  [
    "agentsassemble.web.routes.providers",
    "agentsassemble/web/routes/providers.py",
    "web",
@@ -22444,20 +22697,20 @@
    307,
    "Provider catalog, local login, and credential HTTP routes.",
    [
-    550,
-    551,
-    570,
-    571,
-    614,
-    627,
-    629,
-    645,
-    781
+    552,
+    553,
+    572,
+    573,
+    617,
+    630,
+    632,
+    648,
+    784
    ],
    [
     135,
     166,
-    785
+    788
    ],
    [
     [
@@ -22508,12 +22761,12 @@
    161,
    "Public invite host-token, URL, and tunnel administration routes.",
    [
-    781
+    784
    ],
    [
     135,
     167,
-    785
+    788
    ],
    [
     [
@@ -22537,12 +22790,12 @@
    71,
    "Explicit tombstones for legacy HTTP operations replaced by room commands.",
    [
-    781
+    784
    ],
    [
     135,
     170,
-    785
+    788
    ],
    []
   ],
@@ -22556,11 +22809,11 @@
    86,
    "Explicit canonical room creation for the browser room directory.",
    [
-    693,
-    781
+    696,
+    784
    ],
    [
-    785
+    788
    ],
    []
   ],
@@ -22575,9 +22828,9 @@
    "Canonical room history, registry, message, and vote HTTP routes.",
    [
     32,
-    669,
-    700,
-    781
+    672,
+    703,
+    784
    ],
    [
     333,
@@ -22601,8 +22854,8 @@
     63,
     185,
     187,
-    667,
-    781
+    670,
+    784
    ],
    [
     173,
@@ -22621,8 +22874,8 @@
    "Canonical participant and room lifecycle HTTP routes.",
    [
     32,
-    693,
-    781
+    696,
+    784
    ],
    [
     333,
@@ -22640,9 +22893,9 @@
    125,
    "Canonical room roster and member HTTP routes.",
    [
-    671,
-    673,
-    781
+    674,
+    676,
+    784
    ],
    [
     333,
@@ -22660,13 +22913,13 @@
    77,
    "Room settings HTTP routes for the GUI server.",
    [
-    688,
-    781
+    691,
+    784
    ],
    [
     135,
     176,
-    785
+    788
    ],
    []
   ],
@@ -22680,12 +22933,12 @@
    145,
    "Host-only runtime lifecycle routes.",
    [
-    683,
-    693,
-    781
+    686,
+    696,
+    784
    ],
    [
-    785
+    788
    ],
    [
     [
@@ -22709,13 +22962,13 @@
    157,
    "Host, origin, and public-route trust policy for the GUI server.",
    [
-    616
+    619
    ],
    [
     135,
     168,
-    775,
-    781
+    778,
+    784
    ],
    []
   ],
@@ -22732,9 +22985,9 @@
    [
     135,
     197,
-    765,
-    775,
-    800
+    768,
+    778,
+    804
    ],
    []
   ],
@@ -22748,12 +23001,12 @@
    136,
    "React application and bootstrap-document delivery for the GUI server.",
    [
-    781
+    784
    ],
    [
     135,
     180,
-    775
+    778
    ],
    [
     [
@@ -22772,16 +23025,16 @@
    146,
    "WebSocket HTTP upgrade and connection lifecycle for the GUI server.",
    [
-    779,
-    781,
-    798,
-    801
+    782,
+    784,
+    802,
+    805
    ],
    [
     135,
     181,
-    775,
-    785
+    778,
+    788
    ],
    []
   ],
@@ -22797,10 +23050,10 @@
    [],
    [
     31,
-    759,
-    778,
-    779,
-    800
+    762,
+    781,
+    782,
+    804
    ],
    [
     [
@@ -22832,7 +23085,7 @@
    6,
    "Compatibility export for the Windows ConPTY provider runtime.",
    [
-    644
+    647
    ],
    [],
    []
@@ -22862,7 +23115,7 @@
    24,
    "Compatibility exports for the web-owned canonical room client.",
    [
-    778
+    781
    ],
    [],
    []
@@ -22877,7 +23130,7 @@
    30,
    "Compatibility exports for the web-owned room WebSocket session protocol.",
    [
-    779
+    782
    ],
    [],
    []
@@ -22887,60 +23140,60 @@
   [
    "frontend/src/App.tsx",
    "(src root)",
-   1983,
+   1984,
    "",
    [
     1,
     2,
-    11,
-    15,
+    12,
     16,
-    18,
-    20,
-    22,
-    24,
-    26,
-    28,
-    30,
-    35,
-    38,
-    40,
-    42,
-    54,
-    59,
-    64,
-    66,
-    71,
-    73,
+    17,
+    19,
+    21,
+    23,
+    25,
+    27,
+    29,
+    31,
+    36,
+    39,
+    41,
+    43,
+    55,
+    60,
+    65,
+    67,
+    72,
     74,
-    76,
+    75,
     77,
-    79,
-    81,
-    90,
-    92,
+    78,
+    80,
+    82,
+    91,
     93,
     94,
-    96,
-    99,
-    102,
-    104,
-    105,
-    112,
-    114,
-    115,
+    95,
+    97,
+    101,
+    108,
+    110,
+    111,
     118,
-    125,
-    132,
-    133,
-    134,
-    136,
-    138,
+    120,
+    121,
+    124,
+    131,
     140,
-    141
+    141,
+    142,
+    144,
+    146,
+    148,
+    149
    ],
    [
-    85
+    86
    ]
   ],
   [
@@ -22949,20 +23202,20 @@
    18,
    "",
    [
-    87
+    88
    ],
    [
     0,
-    120,
-    121,
-    144,
-    145
+    126,
+    127,
+    152,
+    153
    ]
   ],
   [
    "frontend/src/api.ts",
    "(src root)",
-   1091,
+   1092,
    "Compatibility barrel for the frontend API client.",
    [
     3,
@@ -22970,12 +23223,12 @@
     5,
     6,
     7,
-    9
+    8,
+    10
    ],
    [
     0,
-    10,
-    12,
+    11,
     13,
     14,
     15,
@@ -22994,25 +23247,25 @@
     28,
     29,
     30,
-    36,
-    38,
-    41,
-    45,
+    31,
+    37,
+    39,
+    42,
     46,
-    48,
+    47,
     49,
-    53,
-    59,
-    61,
-    69,
+    50,
+    54,
+    60,
+    62,
     70,
-    78,
+    71,
     79,
     80,
-    82,
-    84,
-    87,
-    89,
+    81,
+    83,
+    85,
+    88,
     90,
     91,
     92,
@@ -23025,59 +23278,63 @@
     99,
     100,
     101,
-    102,
+    105,
+    106,
+    107,
     108,
-    109,
-    110,
-    111,
-    113,
     114,
     115,
+    116,
+    117,
     119,
     120,
     121,
-    122,
-    123,
     125,
+    126,
+    127,
+    128,
+    129,
     131,
-    132,
-    133,
-    135,
-    136,
     139,
     140,
     141,
-    142,
+    143,
     144,
-    145,
-    146,
     147,
     148,
     149,
     150,
     152,
+    153,
     154,
-    155,
     156,
+    157,
     158,
     159,
-    160
+    161,
+    163,
+    164,
+    165,
+    168,
+    169,
+    170
    ]
   ],
   [
    "frontend/src/api/agentSessions.ts",
    "api",
-   202,
+   206,
    "",
    [
     4,
     7,
-    9
+    8,
+    10
    ],
    [
     2,
-    88,
-    99
+    89,
+    101
    ]
   ],
   [
@@ -23086,7 +23343,7 @@
    175,
    "",
    [
-    40
+    41
    ],
    [
     2,
@@ -23094,7 +23351,8 @@
     5,
     6,
     7,
-    9
+    8,
+    10
    ]
   ],
   [
@@ -23104,7 +23362,7 @@
    "",
    [
     4,
-    64
+    65
    ],
    [
     2
@@ -23117,10 +23375,24 @@
    "",
    [
     4,
-    7
+    8
    ],
    [
     2
+   ]
+  ],
+  [
+   "frontend/src/api/personas.ts",
+   "api",
+   27,
+   "",
+   [
+    4
+   ],
+   [
+    2,
+    3,
+    104
    ]
   ],
   [
@@ -23130,15 +23402,15 @@
    "",
    [
     4,
-    8,
-    64
+    9,
+    65
    ],
    [
     2,
     3,
     6,
-    9,
-    66
+    10,
+    67
    ]
   ],
   [
@@ -23148,7 +23420,7 @@
    "",
    [],
    [
-    7
+    8
    ]
   ],
   [
@@ -23158,8 +23430,8 @@
    "",
    [
     4,
-    7,
-    88
+    8,
+    89
    ],
    [
     2,
@@ -23175,8 +23447,8 @@
     2
    ],
    [
-    24,
-    109
+    25,
+    115
    ]
   ],
   [
@@ -23187,9 +23459,9 @@
    [],
    [
     0,
-    15,
-    94,
-    115
+    16,
+    95,
+    121
    ]
   ],
   [
@@ -23199,7 +23471,7 @@
    "",
    [
     2,
-    13
+    14
    ],
    []
   ],
@@ -23210,10 +23482,10 @@
    "",
    [
     2,
-    32
+    33
    ],
    [
-    12
+    13
    ]
   ],
   [
@@ -23223,7 +23495,7 @@
    "",
    [
     2,
-    15
+    16
    ],
    []
   ],
@@ -23234,11 +23506,11 @@
    "",
    [
     2,
-    11
+    12
    ],
    [
     0,
-    14
+    15
    ]
   ],
   [
@@ -23260,9 +23532,9 @@
    "",
    [
     2,
-    18,
-    40,
-    73
+    19,
+    41,
+    74
    ],
    []
   ],
@@ -23273,15 +23545,15 @@
    "",
    [
     2,
-    40,
-    42,
-    66,
-    73
+    41,
+    43,
+    67,
+    74
    ],
    [
     0,
-    17,
-    114
+    18,
+    120
    ]
   ],
   [
@@ -23291,8 +23563,8 @@
    "",
    [
     2,
-    20,
-    66
+    21,
+    67
    ],
    []
   ],
@@ -23303,11 +23575,11 @@
    "",
    [
     2,
-    66
+    67
    ],
    [
     0,
-    19
+    20
    ]
   ],
   [
@@ -23317,9 +23589,9 @@
    "",
    [
     2,
-    22,
-    66,
-    68
+    23,
+    67,
+    69
    ],
    []
   ],
@@ -23330,12 +23602,12 @@
    "",
    [
     2,
-    66,
-    68
+    67,
+    69
    ],
    [
     0,
-    21
+    22
    ]
   ],
   [
@@ -23345,8 +23617,8 @@
    "",
    [
     2,
-    24,
-    66
+    25,
+    67
    ],
    []
   ],
@@ -23357,16 +23629,16 @@
    "",
    [
     2,
-    10,
-    42,
-    54,
-    64,
-    66,
-    74
+    11,
+    43,
+    55,
+    65,
+    67,
+    75
    ],
    [
     0,
-    23
+    24
    ]
   ],
   [
@@ -23376,8 +23648,8 @@
    "",
    [
     2,
-    26,
-    66
+    27,
+    67
    ],
    []
   ],
@@ -23388,11 +23660,11 @@
    "",
    [
     2,
-    66
+    67
    ],
    [
     0,
-    25
+    26
    ]
   ],
   [
@@ -23402,8 +23674,8 @@
    "",
    [
     2,
-    28,
-    66
+    29,
+    67
    ],
    []
   ],
@@ -23414,12 +23686,12 @@
    "",
    [
     2,
-    64,
-    66
+    65,
+    67
    ],
    [
     0,
-    27
+    28
    ]
   ],
   [
@@ -23429,7 +23701,7 @@
    "",
    [
     2,
-    30
+    31
    ],
    []
   ],
@@ -23440,11 +23712,11 @@
    "",
    [
     2,
-    80
+    81
    ],
    [
     0,
-    29
+    30
    ]
   ],
   [
@@ -23453,7 +23725,7 @@
    80,
    "",
    [
-    32
+    33
    ],
    []
   ],
@@ -23464,10 +23736,10 @@
    "",
    [],
    [
-    13,
-    31,
-    92,
-    93
+    14,
+    32,
+    93,
+    94
    ]
   ],
   [
@@ -23477,7 +23749,7 @@
    "",
    [],
    [
-    85
+    86
    ]
   ],
   [
@@ -23486,7 +23758,7 @@
    30,
    "",
    [
-    35
+    36
    ],
    []
   ],
@@ -23498,7 +23770,7 @@
    [],
    [
     0,
-    34
+    35
    ]
   ],
   [
@@ -23510,12 +23782,12 @@
     2
    ],
    [
-    46,
-    123,
-    125,
-    130,
-    153,
-    155
+    47,
+    129,
+    131,
+    138,
+    162,
+    164
    ]
   ],
   [
@@ -23525,10 +23797,10 @@
    "",
    [],
    [
-    123,
-    148,
-    150,
-    156
+    129,
+    157,
+    159,
+    165
    ]
   ],
   [
@@ -23541,8 +23813,8 @@
    ],
    [
     0,
-    123,
-    132
+    129,
+    140
    ]
   ],
   [
@@ -23552,8 +23824,8 @@
    "",
    [],
    [
-    110,
-    155
+    116,
+    164
    ]
   ],
   [
@@ -23565,11 +23837,11 @@
    [
     0,
     4,
-    17,
     18,
-    89,
+    19,
     90,
-    121
+    91,
+    127
    ]
   ],
   [
@@ -23590,8 +23862,8 @@
    [],
    [
     0,
-    18,
-    24
+    19,
+    25
    ]
   ],
   [
@@ -23601,7 +23873,7 @@
    "",
    [],
    [
-    107
+    113
    ]
   ],
   [
@@ -23611,7 +23883,7 @@
    "",
    [],
    [
-    109
+    115
    ]
   ],
   [
@@ -23621,12 +23893,12 @@
    "",
    [
     2,
-    53
+    54
    ],
    [
-    94,
-    115,
-    133
+    95,
+    121,
+    141
    ]
   ],
   [
@@ -23636,7 +23908,7 @@
    "",
    [
     2,
-    36
+    37
    ],
    []
   ],
@@ -23647,7 +23919,7 @@
    "Per-provider permission/sandbox options + fast support, mirrored from the",
    [],
    [
-    148
+    157
    ]
   ],
   [
@@ -23659,9 +23931,9 @@
     2
    ],
    [
-    110,
-    149,
-    155
+    116,
+    158,
+    164
    ]
   ],
   [
@@ -23681,7 +23953,7 @@
    "",
    [],
    [
-    121
+    127
    ]
   ],
   [
@@ -23691,7 +23963,7 @@
    "",
    [],
    [
-    92
+    93
    ]
   ],
   [
@@ -23701,12 +23973,12 @@
    "",
    [],
    [
-    75,
     76,
-    96,
-    121,
-    124,
-    140
+    77,
+    97,
+    127,
+    130,
+    148
    ]
   ],
   [
@@ -23718,14 +23990,14 @@
     2
    ],
    [
-    45,
-    94,
-    109,
-    110,
-    111,
-    123,
-    125,
-    133
+    46,
+    95,
+    115,
+    116,
+    117,
+    129,
+    131,
+    141
    ]
   ],
   [
@@ -23736,15 +24008,15 @@
    [],
    [
     0,
-    24,
-    94,
-    109,
-    110,
-    111,
-    125,
-    133,
-    149,
-    155
+    25,
+    95,
+    115,
+    116,
+    117,
+    131,
+    141,
+    158,
+    164
    ]
   ],
   [
@@ -23753,10 +24025,11 @@
    81,
    "",
    [
-    87
+    88
    ],
    [
-    99
+    101,
+    107
    ]
   ],
   [
@@ -23765,8 +24038,8 @@
    223,
    "",
    [
-    57,
-    87
+    58,
+    88
    ],
    []
   ],
@@ -23776,12 +24049,12 @@
    200,
    "",
    [
-    87
+    88
    ],
    [
-    56,
-    99,
-    101
+    57,
+    101,
+    106
    ]
   ],
   [
@@ -23790,7 +24063,7 @@
    21,
    "",
    [
-    59
+    60
    ],
    []
   ],
@@ -23804,7 +24077,7 @@
    ],
    [
     0,
-    58
+    59
    ]
   ],
   [
@@ -23813,7 +24086,7 @@
    114,
    "",
    [
-    61
+    62
    ],
    []
   ],
@@ -23826,8 +24099,8 @@
     2
    ],
    [
-    60,
-    92
+    61,
+    93
    ]
   ],
   [
@@ -23836,7 +24109,7 @@
    82,
    "",
    [
-    63
+    64
    ],
    []
   ],
@@ -23847,8 +24120,8 @@
    "",
    [],
    [
-    62,
-    107
+    63,
+    113
    ]
   ],
   [
@@ -23860,18 +24133,18 @@
    [
     0,
     5,
-    7,
-    24,
-    28,
-    66,
-    68,
-    73,
-    96,
-    125,
-    133,
-    134,
-    135,
-    136
+    8,
+    25,
+    29,
+    67,
+    69,
+    74,
+    97,
+    131,
+    141,
+    142,
+    143,
+    144
    ]
   ],
   [
@@ -23880,8 +24153,8 @@
    47,
    "",
    [
-    66,
-    73
+    67,
+    74
    ],
    []
   ],
@@ -23891,14 +24164,13 @@
    404,
    "",
    [
-    7,
-    64,
-    68,
-    73
+    8,
+    65,
+    69,
+    74
    ],
    [
     0,
-    18,
     19,
     20,
     21,
@@ -23909,14 +24181,15 @@
     26,
     27,
     28,
-    65,
-    67,
-    72,
-    95,
+    29,
+    66,
+    68,
+    73,
     96,
-    134,
-    136,
-    160
+    97,
+    142,
+    144,
+    170
    ]
   ],
   [
@@ -23925,8 +24198,8 @@
    47,
    "",
    [
-    66,
-    68
+    67,
+    69
    ],
    []
   ],
@@ -23936,13 +24209,13 @@
    99,
    "",
    [
-    64
+    65
    ],
    [
-    21,
     22,
-    66,
-    67
+    23,
+    67,
+    68
    ]
   ],
   [
@@ -23952,7 +24225,7 @@
    "",
    [
     2,
-    70
+    71
    ],
    []
   ],
@@ -23965,9 +24238,9 @@
     2
    ],
    [
-    69,
-    79,
-    90
+    70,
+    80,
+    91
    ]
   ],
   [
@@ -23978,8 +24251,8 @@
    [],
    [
     0,
-    96,
-    121
+    97,
+    127
    ]
   ],
   [
@@ -23988,8 +24261,8 @@
    62,
    "",
    [
-    66,
-    73
+    67,
+    74
    ],
    []
   ],
@@ -23999,15 +24272,15 @@
    145,
    "",
    [
-    64
+    65
    ],
    [
     0,
-    17,
     18,
-    65,
+    19,
     66,
-    72
+    67,
+    73
    ]
   ],
   [
@@ -24018,8 +24291,8 @@
    [],
    [
     0,
-    24,
-    133
+    25,
+    141
    ]
   ],
   [
@@ -24028,8 +24301,8 @@
    90,
    "",
    [
-    52,
-    76
+    53,
+    77
    ],
    []
   ],
@@ -24039,11 +24312,11 @@
    91,
    "",
    [
-    52
+    53
    ],
    [
     0,
-    75
+    76
    ]
   ],
   [
@@ -24054,7 +24327,7 @@
    [],
    [
     0,
-    134
+    142
    ]
   ],
   [
@@ -24064,7 +24337,7 @@
    "",
    [
     2,
-    79
+    80
    ],
    []
   ],
@@ -24075,15 +24348,15 @@
    "",
    [
     2,
-    70
+    71
    ],
    [
     0,
-    78,
-    95,
+    79,
     96,
-    158,
-    160
+    97,
+    168,
+    170
    ]
   ],
   [
@@ -24095,10 +24368,10 @@
     2
    ],
    [
-    30,
-    96,
-    140,
-    158
+    31,
+    97,
+    148,
+    168
    ]
   ],
   [
@@ -24120,7 +24393,7 @@
     2
    ],
    [
-    141
+    149
    ]
   ],
   [
@@ -24130,7 +24403,7 @@
    "",
    [],
    [
-    121
+    127
    ]
   ],
   [
@@ -24142,7 +24415,7 @@
     2
    ],
    [
-    146
+    154
    ]
   ],
   [
@@ -24152,7 +24425,7 @@
    "",
    [
     0,
-    33
+    34
    ],
    []
   ],
@@ -24162,7 +24435,7 @@
    303,
    "",
    [
-    87
+    88
    ],
    []
   ],
@@ -24173,32 +24446,36 @@
    "",
    [
     2,
-    88
+    89
    ],
    [
     1,
-    55,
     56,
     57,
-    86,
-    89,
+    58,
+    87,
     90,
     91,
-    97,
+    92,
     98,
     99,
+    100,
     101,
-    120,
-    121,
-    123,
-    125,
+    105,
+    106,
+    107,
     126,
     127,
+    129,
     131,
-    132,
-    144,
-    150,
-    154
+    134,
+    135,
+    139,
+    140,
+    152,
+    159,
+    163,
+    167
    ]
   ],
   [
@@ -24210,8 +24487,8 @@
     3
    ],
    [
-    9,
-    87
+    10,
+    88
    ]
   ],
   [
@@ -24221,9 +24498,9 @@
    "",
    [
     2,
-    40,
-    87,
-    90
+    41,
+    88,
+    91
    ],
    []
   ],
@@ -24234,14 +24511,14 @@
    "",
    [
     2,
-    40,
-    70,
-    87
+    41,
+    71,
+    88
    ],
    [
     0,
-    89,
-    91
+    90,
+    92
    ]
   ],
   [
@@ -24251,8 +24528,8 @@
    "",
    [
     2,
-    87,
-    90
+    88,
+    91
    ],
    []
   ],
@@ -24263,9 +24540,9 @@
    "",
    [
     2,
-    32,
-    51,
-    61
+    33,
+    52,
+    62
    ],
    [
     0
@@ -24278,8 +24555,8 @@
    "",
    [
     2,
-    32,
-    104
+    33,
+    110
    ],
    [
     0
@@ -24292,13 +24569,13 @@
    "",
    [
     2,
-    11,
-    45,
-    53,
+    12,
+    46,
     54,
-    109,
-    110,
-    111
+    55,
+    115,
+    116,
+    117
    ],
    [
     0
@@ -24311,9 +24588,9 @@
    "",
    [
     2,
-    66,
-    79,
-    96
+    67,
+    80,
+    97
    ],
    []
   ],
@@ -24324,22 +24601,22 @@
    "",
    [
     2,
-    52,
-    64,
-    66,
-    71,
-    79,
+    53,
+    65,
+    67,
+    72,
     80,
-    104,
-    121,
-    145,
-    158,
-    159,
-    160
+    81,
+    110,
+    127,
+    153,
+    168,
+    169,
+    170
    ],
    [
     0,
-    95
+    96
    ]
   ],
   [
@@ -24349,8 +24626,20 @@
    "",
    [
     2,
-    87,
-    99
+    88,
+    101
+   ],
+   []
+  ],
+  [
+   "frontend/src/views/components/AgentCreateModal.persona.test.tsx",
+   "views",
+   89,
+   "",
+   [
+    2,
+    88,
+    101
    ],
    []
   ],
@@ -24361,62 +24650,116 @@
    "",
    [
     2,
-    87,
-    99
+    88,
+    101
    ],
    []
   ],
   [
    "frontend/src/views/components/AgentCreateModal.tsx",
    "views",
-   824,
+   836,
    "",
    [
     2,
     3,
-    55,
-    57,
-    87,
-    126,
-    127,
-    129
+    56,
+    58,
+    88,
+    104,
+    134,
+    135,
+    137
    ],
    [
     0,
-    97,
-    98
+    98,
+    99,
+    100
+   ]
+  ],
+  [
+   "frontend/src/views/components/AgentPersonaPicker.css",
+   "views",
+   263,
+   "",
+   [],
+   [
+    104
+   ]
+  ],
+  [
+   "frontend/src/views/components/AgentPersonaPicker.test.tsx",
+   "views",
+   122,
+   "",
+   [
+    104
+   ],
+   []
+  ],
+  [
+   "frontend/src/views/components/AgentPersonaPicker.tsx",
+   "views",
+   228,
+   "",
+   [
+    7,
+    102
+   ],
+   [
+    101,
+    103,
+    107
    ]
   ],
   [
    "frontend/src/views/components/AgentSessionDetails.test.tsx",
    "views",
-   32,
+   117,
    "",
    [
     2,
-    101
+    88,
+    106
    ],
    []
   ],
   [
    "frontend/src/views/components/AgentSessionDetails.tsx",
    "views",
-   441,
+   451,
    "",
    [
     2,
-    57,
-    87,
-    126,
-    127
+    58,
+    88,
+    107,
+    134,
+    135
    ],
    [
-    100,
-    123,
-    125,
-    150,
-    151,
-    154
+    105,
+    129,
+    131,
+    159,
+    160,
+    163
+   ]
+  ],
+  [
+   "frontend/src/views/components/AgentSessionPersonaSettings.tsx",
+   "views",
+   81,
+   "",
+   [
+    2,
+    56,
+    88,
+    104
+   ],
+   [
+    106
    ]
   ],
   [
@@ -24437,7 +24780,7 @@
    48,
    "",
    [
-    104
+    110
    ],
    []
   ],
@@ -24449,9 +24792,9 @@
    [],
    [
     0,
-    93,
-    96,
-    103
+    94,
+    97,
+    109
    ]
   ],
   [
@@ -24470,7 +24813,7 @@
    53,
    "",
    [
-    107
+    113
    ],
    []
   ],
@@ -24480,14 +24823,14 @@
    146,
    "",
    [
-    43,
-    63
+    44,
+    64
    ],
    [
-    106,
-    109,
-    140,
-    158
+    112,
+    115,
+    148,
+    168
    ]
   ],
   [
@@ -24497,7 +24840,7 @@
    "",
    [
     2,
-    109
+    115
    ],
    []
   ],
@@ -24508,15 +24851,15 @@
    "",
    [
     2,
-    10,
-    44,
-    53,
+    11,
+    45,
     54,
-    107
+    55,
+    113
    ],
    [
-    94,
-    108
+    95,
+    114
    ]
   ],
   [
@@ -24526,13 +24869,13 @@
    "",
    [
     2,
-    39,
-    48,
-    53,
-    54
+    40,
+    49,
+    54,
+    55
    ],
    [
-    94
+    95
    ]
   ],
   [
@@ -24542,11 +24885,11 @@
    "",
    [
     2,
-    53,
-    54
+    54,
+    55
    ],
    [
-    94
+    95
    ]
   ],
   [
@@ -24566,7 +24909,7 @@
    "",
    [
     2,
-    114
+    120
    ],
    []
   ],
@@ -24577,12 +24920,12 @@
    "",
    [
     2,
-    18,
-    116
+    19,
+    122
    ],
    [
     0,
-    113
+    119
    ]
   ],
   [
@@ -24592,9 +24935,9 @@
    "",
    [
     2,
-    11,
-    45,
-    141
+    12,
+    46,
+    149
    ],
    [
     0
@@ -24607,9 +24950,9 @@
    "",
    [],
    [
-    114,
-    141,
-    148
+    120,
+    149,
+    157
    ]
   ],
   [
@@ -24618,7 +24961,7 @@
    46,
    "",
    [
-    118
+    124
    ],
    []
   ],
@@ -24630,7 +24973,7 @@
    [],
    [
     0,
-    117
+    123
    ]
   ],
   [
@@ -24642,7 +24985,7 @@
     2
    ],
    [
-    158
+    168
    ]
   ],
   [
@@ -24653,8 +24996,8 @@
    [
     1,
     2,
-    87,
-    121
+    88,
+    127
    ],
    []
   ],
@@ -24666,18 +25009,18 @@
    [
     1,
     2,
-    40,
-    50,
-    52,
-    71,
-    83,
-    87,
-    124,
-    143
+    41,
+    51,
+    53,
+    72,
+    84,
+    88,
+    130,
+    151
    ],
    [
-    96,
-    120
+    97,
+    126
    ]
   ],
   [
@@ -24687,7 +25030,7 @@
    "",
    [
     2,
-    123
+    129
    ],
    []
   ],
@@ -24698,21 +25041,21 @@
    "",
    [
     2,
-    36,
     37,
     38,
-    53,
-    87,
-    101,
-    130,
-    150,
-    151,
-    155,
-    156
+    39,
+    54,
+    88,
+    106,
+    138,
+    159,
+    160,
+    164,
+    165
    ],
    [
-    122,
-    132
+    128,
+    140
    ]
   ],
   [
@@ -24721,11 +25064,11 @@
    187,
    "",
    [
-    52
+    53
    ],
    [
-    121,
-    140
+    127,
+    148
    ]
   ],
   [
@@ -24735,30 +25078,53 @@
    "",
    [
     2,
-    36,
-    53,
+    37,
     54,
-    64,
-    87,
-    101,
-    129,
-    155
+    55,
+    65,
+    88,
+    106,
+    137,
+    164
    ],
    [
     0
    ]
   ],
   [
-   "frontend/src/views/components/ProviderControlSelect.tsx",
+   "frontend/src/views/components/ProviderControlSelect.css",
    "views",
-   413,
+   94,
+   "",
+   [],
+   [
+    134
+   ]
+  ],
+  [
+   "frontend/src/views/components/ProviderControlSelect.test.tsx",
+   "views",
+   60,
    "",
    [
-    87
+    134
+   ],
+   []
+  ],
+  [
+   "frontend/src/views/components/ProviderControlSelect.tsx",
+   "views",
+   410,
+   "",
+   [
+    88,
+    132,
+    167
    ],
    [
-    99,
-    101
+    101,
+    106,
+    133
    ]
   ],
   [
@@ -24767,11 +25133,11 @@
    48,
    "",
    [
-    87
+    88
    ],
    [
-    99,
-    101
+    101,
+    106
    ]
   ],
   [
@@ -24780,7 +25146,7 @@
    39,
    "",
    [
-    129
+    137
    ],
    []
   ],
@@ -24790,16 +25156,15 @@
    51,
    "",
    [
-    157
+    166
    ],
    [
-    99,
-    125,
-    128,
-    148,
-    150,
-    151,
-    158
+    101,
+    131,
+    136,
+    159,
+    160,
+    168
    ]
   ],
   [
@@ -24808,10 +25173,10 @@
    38,
    "",
    [
-    36
+    37
    ],
    [
-    123
+    129
    ]
   ],
   [
@@ -24821,8 +25186,8 @@
    "",
    [
     2,
-    87,
-    132
+    88,
+    140
    ],
    []
   ],
@@ -24833,13 +25198,13 @@
    "",
    [
     2,
-    38,
-    87,
-    123
+    39,
+    88,
+    129
    ],
    [
     0,
-    131
+    139
    ]
   ],
   [
@@ -24849,11 +25214,11 @@
    "",
    [
     2,
-    45,
-    53,
+    46,
     54,
-    64,
-    74
+    55,
+    65,
+    75
    ],
    [
     0
@@ -24865,9 +25230,9 @@
    164,
    "",
    [
-    64,
-    66,
-    77
+    65,
+    67,
+    78
    ],
    [
     0
@@ -24880,8 +25245,8 @@
    "",
    [
     2,
-    64,
-    136
+    65,
+    144
    ],
    []
   ],
@@ -24892,12 +25257,12 @@
    "",
    [
     2,
-    64,
-    66
+    65,
+    67
    ],
    [
     0,
-    135
+    143
    ]
   ],
   [
@@ -24906,7 +25271,7 @@
    28,
    "",
    [
-    138
+    146
    ],
    []
   ],
@@ -24918,7 +25283,7 @@
    [],
    [
     0,
-    137
+    145
    ]
   ],
   [
@@ -24928,7 +25293,7 @@
    "",
    [
     2,
-    140
+    148
    ],
    []
   ],
@@ -24939,14 +25304,14 @@
    "",
    [
     2,
-    52,
-    80,
-    107,
-    124
+    53,
+    81,
+    113,
+    130
    ],
    [
     0,
-    139
+    147
    ]
   ],
   [
@@ -24956,13 +25321,13 @@
    "",
    [
     2,
-    82,
-    116,
-    142
+    83,
+    122,
+    150
    ],
    [
     0,
-    115
+    121
    ]
   ],
   [
@@ -24974,7 +25339,7 @@
     2
    ],
    [
-    141
+    149
    ]
   ],
   [
@@ -24984,7 +25349,7 @@
    "",
    [],
    [
-    121
+    127
    ]
   ],
   [
@@ -24995,8 +25360,8 @@
    [
     1,
     2,
-    87,
-    145
+    88,
+    153
    ],
    []
   ],
@@ -25010,8 +25375,8 @@
     2
    ],
    [
-    96,
-    144
+    97,
+    152
    ]
   ],
   [
@@ -25021,9 +25386,19 @@
    "",
    [
     2,
-    84
+    85
    ],
    []
+  ],
+  [
+   "frontend/src/views/components/member/AgentIdentitySettings.css",
+   "views",
+   43,
+   "",
+   [],
+   [
+    157
+   ]
   ],
   [
    "frontend/src/views/components/member/AgentIdentitySettings.test.tsx",
@@ -25032,28 +25407,28 @@
    "",
    [
     2,
-    148,
-    156
+    157,
+    165
    ],
    []
   ],
   [
    "frontend/src/views/components/member/AgentIdentitySettings.tsx",
    "views",
-   255,
+   243,
    "",
    [
     2,
-    37,
-    47,
-    116,
-    129,
+    38,
+    48,
+    122,
     155,
-    156
+    164,
+    165
    ],
    [
-    147,
-    150
+    156,
+    159
    ]
   ],
   [
@@ -25063,13 +25438,13 @@
    "",
    [
     2,
-    48,
-    54,
-    155,
-    156
+    49,
+    55,
+    164,
+    165
    ],
    [
-    150
+    159
    ]
   ],
   [
@@ -25079,18 +25454,18 @@
    "",
    [
     2,
-    37,
-    87,
-    101,
-    129,
-    148,
-    149,
-    153,
-    154,
-    156
+    38,
+    88,
+    106,
+    137,
+    157,
+    158,
+    162,
+    163,
+    165
    ],
    [
-    123
+    129
    ]
   ],
   [
@@ -25099,13 +25474,13 @@
    238,
    "",
    [
-    101,
-    129,
-    155,
-    156
+    106,
+    137,
+    164,
+    165
    ],
    [
-    123
+    129
    ]
   ],
   [
@@ -25115,8 +25490,8 @@
    "",
    [
     2,
-    153,
-    156
+    162,
+    165
    ],
    []
   ],
@@ -25126,13 +25501,13 @@
    77,
    "",
    [
-    36,
-    155,
-    156
+    37,
+    164,
+    165
    ],
    [
-    150,
-    152
+    159,
+    161
    ]
   ],
   [
@@ -25142,12 +25517,12 @@
    "",
    [
     2,
-    87,
-    101,
-    156
+    88,
+    106,
+    165
    ],
    [
-    150
+    159
    ]
   ],
   [
@@ -25157,19 +25532,19 @@
    "",
    [
     2,
-    36,
-    39,
-    48,
-    54,
-    156
+    37,
+    40,
+    49,
+    55,
+    165
    ],
    [
-    123,
-    125,
-    148,
-    149,
-    151,
-    153
+    129,
+    131,
+    157,
+    158,
+    160,
+    162
    ]
   ],
   [
@@ -25179,19 +25554,19 @@
    "",
    [
     2,
-    37
+    38
    ],
    [
-    123,
-    147,
-    148,
-    149,
-    150,
-    151,
-    152,
-    153,
-    154,
-    155
+    129,
+    156,
+    157,
+    158,
+    159,
+    160,
+    161,
+    162,
+    163,
+    164
    ]
   ],
   [
@@ -25201,7 +25576,19 @@
    "",
    [],
    [
-    129
+    137
+   ]
+  ],
+  [
+   "frontend/src/views/components/providerModelOptions.ts",
+   "views",
+   87,
+   "",
+   [
+    88
+   ],
+   [
+    134
    ]
   ],
   [
@@ -25211,14 +25598,14 @@
    "",
    [
     2,
-    79,
     80,
-    107,
-    119,
-    129
+    81,
+    113,
+    125,
+    137
    ],
    [
-    96
+    97
    ]
   ],
   [
@@ -25230,7 +25617,7 @@
     2
    ],
    [
-    96
+    97
    ]
   ],
   [
@@ -25240,11 +25627,11 @@
    "",
    [
     2,
-    66,
-    79
+    67,
+    80
    ],
    [
-    96
+    97
    ]
   ],
   [
@@ -25260,7 +25647,7 @@
  "hubs": [
   {
    "name": "agentsassemble.room.text",
-   "imported_by": 101,
+   "imported_by": 103,
    "doc": "Bounded text normalization shared by current room code."
   },
   {
@@ -25270,7 +25657,7 @@
   },
   {
    "name": "agentsassemble.web.router",
-   "imported_by": 52,
+   "imported_by": 53,
    "doc": "Route-table dispatcher + unified request identity for the GUI HTTP server."
   },
   {
@@ -25299,34 +25686,34 @@
    "doc": ""
   },
   {
+   "name": "agentsassemble.providers.launch_specs",
+   "imported_by": 21,
+   "doc": "Provider launch specifications, command construction, and profile validation."
+  },
+  {
    "name": "agentsassemble.live_agent_runner",
    "imported_by": 20,
    "doc": ""
-  },
-  {
-   "name": "agentsassemble.providers.launch_specs",
-   "imported_by": 19,
-   "doc": "Provider launch specifications, command construction, and profile validation."
   }
  ],
  "repo": [
   {
    "name": "agentsassemble",
    "note": "Backend package (Python)",
-   "files": 806,
-   "lines": 135672
+   "files": 810,
+   "lines": 136224
   },
   {
    "name": "frontend/src",
    "note": "React room client (TS/TSX)",
-   "files": 162,
-   "lines": 42479
+   "files": 172,
+   "lines": 43671
   },
   {
    "name": "tests",
    "note": "Backend test suite",
-   "files": 368,
-   "lines": 146349
+   "files": 372,
+   "lines": 146835
   },
   {
    "name": "scripts",
@@ -25338,7 +25725,7 @@
    "name": "docs",
    "note": "Product and architecture docs",
    "files": 85,
-   "lines": 30745
+   "lines": 30780
   },
   {
    "name": "configs",

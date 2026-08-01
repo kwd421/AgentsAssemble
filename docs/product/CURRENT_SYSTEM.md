@@ -289,7 +289,11 @@ model may override that group when one provider exposes models with different
 execution locations. Model grouping and badges consume the same catalog
 metadata (`group`, `pricing`, `catalog_group`, and `execution_location`) for
 every provider; provider adapters emit only facts their discovery source can
-establish. DeepSeek and Cerebras are API providers. Ollama connects only to its
+establish. Model controls with more than one option provide text search across
+the provider model ID, label, family, and description. The `Free` filter is
+offered only when the authoritative catalog marks at least one option as
+zero-price or free-tier; the UI does not infer free status from a model name.
+DeepSeek and Cerebras are API providers. Ollama connects only to its
 fixed loopback OpenAI-compatible endpoint; Ollama cloud models are presented
 under Subscription while models stored and executed on the host are presented
 under Local. Cloud options identify Ollama's metered free-tier availability
