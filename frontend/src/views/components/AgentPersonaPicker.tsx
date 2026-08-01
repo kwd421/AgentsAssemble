@@ -36,7 +36,9 @@ export default function AgentPersonaPicker({
         if (!active) return;
         setItems(nextItems);
         setLoaded(true);
-        setStatus(nextItems.length ? "" : "가져온 봇카드나 모듈이 없습니다.");
+        // An empty library is explained inside the list itself, so leaving a
+        // status line here as well said the same thing twice.
+        setStatus("");
       })
       .catch((error) => {
         if (!active) return;
@@ -66,6 +68,11 @@ export default function AgentPersonaPicker({
     );
   }, [libraryItems, query]);
   const visibleItems = matchingItems.slice(0, VISIBLE_RESULT_LIMIT);
+  const searching = Boolean(query.trim());
+  // With nothing imported there is only one thing to choose, and it is already
+  // named on the trigger. Showing a search field, a repeat of that one row and
+  // a "no results" line for it made an empty library look like a busy one.
+  const emptyLibrary = loaded && libraryItems.length === 0;
 
   async function handleImport(file: File) {
     setImporting(true);
@@ -148,74 +155,91 @@ export default function AgentPersonaPicker({
 
       {libraryOpen && (
         <div className="dc-persona-library">
-          <label className="dc-persona-search">
-            <Search size={16} aria-hidden="true" />
-            <input
-              autoFocus
-              value={query}
-              placeholder="봇카드 또는 모듈 검색"
-              onChange={(event) => setQuery(event.currentTarget.value)}
-            />
-          </label>
-          <div className="dc-persona-grid" role="radiogroup" aria-label="봇카드 또는 Risu 모듈">
-            <button
-              type="button"
-              role="radio"
-              aria-checked={!value}
-              data-selected={!value ? "true" : "false"}
-              onClick={() => {
-                onChange("");
-                setLibraryOpen(false);
-              }}
-            >
-              <span className="dc-persona-symbol" data-kind="none">—</span>
-              <span className="dc-persona-copy">
-                <strong>적용 안 함</strong>
-                <small>기본 모델 성격 사용</small>
-              </span>
-              {!value && <em>선택됨</em>}
-            </button>
-            {visibleItems.map((item) => {
-              const selected = value === item.id;
-              const Icon = item.asset_kind === "module" ? PackageOpen : FileUser;
-              return (
-                <button
-                  key={item.id}
-                  type="button"
-                  role="radio"
-                  aria-checked={selected}
-                  data-selected={selected ? "true" : "false"}
-                  onClick={() => {
-                    onChange(item.id);
-                    setLibraryOpen(false);
-                  }}
-                >
-                  <span className="dc-persona-symbol" data-kind={item.asset_kind}>
-                    {item.thumbnail_url ? (
-                      <img src={item.thumbnail_url} alt="" />
-                    ) : (
-                      <Icon size={19} aria-hidden="true" />
-                    )}
-                  </span>
-                  <span className="dc-persona-copy">
-                    <strong>{item.display_name}</strong>
-                    <small>
-                      {item.asset_kind === "module" ? "Risu 모듈" : "봇카드"}
-                      {item.lorebook_count ? ` · 로어 ${item.lorebook_count}` : ""}
-                    </small>
-                  </span>
-                  {selected && <em>{applied?.id === item.id ? "적용됨" : "선택됨"}</em>}
-                </button>
-              );
-            })}
-          </div>
-          {loaded && matchingItems.length === 0 && (
-            <p className="dc-persona-status">검색 결과가 없습니다.</p>
-          )}
-          {matchingItems.length > VISIBLE_RESULT_LIMIT && (
-            <p className="dc-persona-status">
-              {matchingItems.length.toLocaleString()}개 중 {VISIBLE_RESULT_LIMIT}개만 표시합니다. 검색어로 좁혀보세요.
+          {emptyLibrary ? (
+            <p className="dc-persona-empty preserve-words">
+              아직 가져온 봇카드나 Risu 모듈이 없습니다. 위의 <strong>파일 가져오기</strong>로
+              추가하면 여기에서 고를 수 있습니다.
             </p>
+          ) : (
+            <>
+              {libraryItems.length > VISIBLE_RESULT_LIMIT && (
+                <label className="dc-persona-search">
+                  <Search size={16} aria-hidden="true" />
+                  <input
+                    autoFocus
+                    value={query}
+                    placeholder="봇카드 또는 모듈 검색"
+                    onChange={(event) => setQuery(event.currentTarget.value)}
+                  />
+                </label>
+              )}
+              <div className="dc-persona-grid" role="radiogroup" aria-label="봇카드 또는 Risu 모듈">
+                {/* Clearing the selection is only an option when something is
+                    selected; otherwise it repeats what the trigger already says. */}
+                {value && !searching && (
+                  <button
+                    type="button"
+                    role="radio"
+                    aria-checked={false}
+                    data-selected="false"
+                    onClick={() => {
+                      onChange("");
+                      setLibraryOpen(false);
+                    }}
+                  >
+                    <span className="dc-persona-symbol" data-kind="none">—</span>
+                    <span className="dc-persona-copy">
+                      <strong>적용 안 함</strong>
+                      <small>기본 모델 성격 사용</small>
+                    </span>
+                  </button>
+                )}
+                {visibleItems.map((item) => {
+                  const selected = value === item.id;
+                  const Icon = item.asset_kind === "module" ? PackageOpen : FileUser;
+                  return (
+                    <button
+                      key={item.id}
+                      type="button"
+                      role="radio"
+                      aria-checked={selected}
+                      data-selected={selected ? "true" : "false"}
+                      onClick={() => {
+                        onChange(item.id);
+                        setLibraryOpen(false);
+                      }}
+                    >
+                      <span className="dc-persona-symbol" data-kind={item.asset_kind}>
+                        {item.thumbnail_url ? (
+                          <img src={item.thumbnail_url} alt="" />
+                        ) : (
+                          <Icon size={19} aria-hidden="true" />
+                        )}
+                      </span>
+                      <span className="dc-persona-copy">
+                        <strong>{item.display_name}</strong>
+                        <small>
+                          {item.asset_kind === "module" ? "Risu 모듈" : "봇카드"}
+                          {item.lorebook_count ? ` · 로어 ${item.lorebook_count}` : ""}
+                        </small>
+                      </span>
+                      {selected && <em>{applied?.id === item.id ? "적용됨" : "선택됨"}</em>}
+                    </button>
+                  );
+                })}
+              </div>
+              {searching && matchingItems.length === 0 && (
+                <p className="dc-persona-status">
+                  「{query.trim()}」에 맞는 봇카드나 모듈이 없습니다.
+                </p>
+              )}
+              {matchingItems.length > VISIBLE_RESULT_LIMIT && (
+                <p className="dc-persona-status">
+                  {matchingItems.length.toLocaleString()}개 중 {VISIBLE_RESULT_LIMIT}개만
+                  표시합니다. 검색어로 좁혀보세요.
+                </p>
+              )}
+            </>
           )}
         </div>
       )}

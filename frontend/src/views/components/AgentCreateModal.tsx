@@ -670,7 +670,9 @@ export default function AgentCreateModal({
           {selectedProvider &&
             !existingSessionId &&
             ["api", "local"].includes(providerCatalogGroup(selectedProvider)) && (
-              <AgentPersonaPicker value={personaCardId} onChange={setPersonaCardId} />
+              <section className="dc-agent-section">
+                <AgentPersonaPicker value={personaCardId} onChange={setPersonaCardId} />
+              </section>
             )}
 
           {statusMessage && (

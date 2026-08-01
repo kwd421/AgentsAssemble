@@ -112,7 +112,9 @@ describe("AgentPersonaPicker", () => {
 
     await userEvent.click(screen.getByRole("button", { name: /적용 안 함/ }));
     await waitFor(() => expect(screen.getByText("Persona 0")).toBeTruthy());
-    expect(screen.getAllByRole("radio")).toHaveLength(9);
+    // Nothing is applied yet, so the list is the 8 shown cards; a "clear"
+    // row would only repeat what the closed trigger already says.
+    expect(screen.getAllByRole("radio")).toHaveLength(8);
     expect(screen.queryByText("Persona 99")).toBeNull();
 
     await userEvent.type(screen.getByPlaceholderText("봇카드 또는 모듈 검색"), "Persona 99");

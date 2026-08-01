@@ -1,10 +1,9 @@
+/* A sibling of the modal's other sections, not a panel inside one. The card
+   treatment here gave this one control its own border, tint and padding, so it
+   read as a different level of the hierarchy than 기본 정보 or 모델 · 실행 설정. */
 .dc-persona-picker {
   display: grid;
-  gap: 12px;
-  padding: 14px;
-  border: 1px solid color-mix(in srgb, var(--dc-border, #3f4149) 72%, transparent);
-  border-radius: 14px;
-  background: color-mix(in srgb, var(--dc-panel, #24262d) 86%, #5865f2 3%);
+  gap: 10px;
 }
 
 .dc-persona-picker-head {
@@ -19,7 +18,15 @@
   gap: 3px;
 }
 
-.dc-persona-picker-head strong,
+/* Matches .dc-agent-section-title so this section is titled like its siblings. */
+.dc-persona-picker-head strong {
+  color: var(--color-text-muted, #a5a9b3);
+  font-size: 11px;
+  font-weight: 900;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+}
+
 .dc-persona-copy strong {
   color: var(--dc-text, #f2f3f5);
   font-weight: 700;
@@ -100,6 +107,22 @@
 .dc-persona-library {
   display: grid;
   gap: 8px;
+}
+
+.dc-persona-empty {
+  margin: 0;
+  padding: 14px 12px;
+  border-radius: 10px;
+  border: 1px dashed color-mix(in srgb, var(--dc-text-muted, #a5a9b3) 28%, transparent);
+  color: var(--dc-text-muted, #a5a9b3);
+  font-size: 12.5px;
+  line-height: 1.6;
+  text-align: center;
+}
+
+.dc-persona-empty strong {
+  color: var(--dc-text, #f2f3f5);
+  font-weight: 600;
 }
 
 .dc-persona-search {
