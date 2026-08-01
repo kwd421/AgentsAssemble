@@ -19,6 +19,7 @@ from agentsassemble.providers.workspace_picker import (
 )
 from agentsassemble.web.router import RequestContext, Router
 from agentsassemble.providers.secrets import PROVIDER_SECRETS
+from agentsassemble.providers.sessions import list_provider_sessions
 
 
 class ProviderSecretStore(Protocol):
@@ -92,6 +93,40 @@ def register_provider_routes(
     @router.get("/api/model-catalog")
     def model_catalog(ctx: RequestContext) -> None:
         ctx.send_json(model_catalog_payload())
+
+    @router.get("/api/provider-sessions/local")
+    def local_provider_sessions(ctx: RequestContext) -> None:
+        """Sessions the provider CLI already stores for one workspace.
+
+        Reading another user's CLI history is not something a room guest gets
+        to do, and the paths involved are the operator's own machine, so this
+        stays behind the same gate as provider login.
+        """
+        if not is_local_operator(ctx):
+            ctx.send_error(
+                HTTPStatus.FORBIDDEN,
+                "provider session listing is limited to the local operator UI",
+            )
+            return
+        provider_kind = ctx.query_value("provider_kind")
+        workspace = ctx.query_value("workspace")
+        if not provider_kind:
+            ctx.send_error(HTTPStatus.BAD_REQUEST, "provider_kind is required")
+            return
+        if not workspace:
+            # Without a folder the answer would be every project's history.
+            ctx.send_error(HTTPStatus.BAD_REQUEST, "workspace is required")
+            return
+        ctx.send_json(
+            {
+                "provider_kind": provider_kind,
+                "workspace": workspace,
+                "sessions": list_provider_sessions(
+                    provider_kind,
+                    workspace=workspace,
+                ),
+            }
+        )
 
     @router.post("/api/live-agent-create/login")
     def provider_login(ctx: RequestContext) -> None:
