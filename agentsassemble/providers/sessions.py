@@ -6,13 +6,16 @@ returns a uniform shape:
 
     {"session_id": str, "label": str, "updated_at": iso8601}
 
-Best-effort and never raises — a provider with no readable store returns [].
-The resident already resumes via session_id (codex --resume, grok --resume,
-claude --resume/--session-id, agy --conversation); this just surfaces the ids.
+Discovery never raises across the HTTP boundary. A provider with no local store
+returns a ready empty listing; a store that exists but cannot be read returns an
+explicit error listing and is logged for diagnosis. The resident already resumes
+via session_id (codex --resume, grok --resume, claude --resume/--session-id,
+agy --conversation); this just surfaces the ids.
 """
 from __future__ import annotations
 
 import json
+import logging
 import re
 import sqlite3
 from dataclasses import dataclass
@@ -24,6 +27,7 @@ _UUID_RE = re.compile(r"[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]
 # Rollout headers carry the folder the session was started in.
 _CWD_RE = re.compile(r'"cwd"\s*:\s*"((?:[^"\\]|\\.)*)"')
 _DEFAULT_LIMIT = 15
+LOGGER = logging.getLogger(__name__)
 
 
 @dataclass(frozen=True)
@@ -92,6 +96,7 @@ def inspect_provider_sessions(
         else:
             sessions = []
     except Exception:
+        LOGGER.exception("Provider session discovery failed for %s", kind)
         return ProviderSessionListing(
             status="error",
             sessions=[],
