@@ -16,6 +16,7 @@ import json
 import re
 from datetime import UTC, datetime
 from pathlib import Path
+from urllib.parse import unquote
 
 _UUID_RE = re.compile(r"[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}")
 # Rollout headers carry the folder the session was started in.
@@ -44,10 +45,10 @@ def list_provider_sessions(
             return _list_claude_sessions(base, workspace, limit)
         if kind == "antigravity_live_session":
             return _list_antigravity_sessions(base, workspace, limit)
-        # grok stores no clean per-session list we can surface (active_sessions
-        # is empty; the sessions dir holds internal indexes, not conversations).
         if kind == "grok_live_session":
-            return []
+            return _list_grok_sessions(base, workspace, limit)
+        if kind == "cursor_live_session":
+            return _list_cursor_sessions(base, workspace, limit)
     except Exception:
         return []
     return []
@@ -70,7 +71,15 @@ def _session_id_from(path: Path, *, id_from_name: bool) -> str:
     return path.stem
 
 
-def _first_user_text(path: Path, *, max_lines: int = 60) -> str:
+def _first_user_text(path: Path, *, max_lines: int = 200) -> str:
+    """The first thing the person actually typed, for use as a label.
+
+    A rollout opens with project instructions and plugin lists carrying the
+    user role, so the earliest user-role record is usually harness context.
+    Prefer a record that explicitly marks a typed message and fall back to the
+    first plausible user text only if none appears.
+    """
+    fallback = ""
     try:
         with path.open("r", encoding="utf-8") as handle:
             for index, line in enumerate(handle):
@@ -83,29 +92,58 @@ def _first_user_text(path: Path, *, max_lines: int = 60) -> str:
                     entry = json.loads(line)
                 except (json.JSONDecodeError, ValueError):
                     continue
-                text = _extract_user_text(entry)
-                if text:
-                    return text[:80]
+                if _is_typed_user_record(entry):
+                    typed = _extract_user_text(entry)
+                    if typed:
+                        return typed[:80]
+                if not fallback:
+                    fallback = _extract_user_text(entry)
     except OSError:
         return ""
-    return ""
+    return fallback[:80]
+
+
+def _is_typed_user_record(entry: object) -> bool:
+    if not isinstance(entry, dict):
+        return False
+    payload = entry.get("payload") if isinstance(entry.get("payload"), dict) else entry
+    return str(payload.get("type") or "") == "user_message"
+
+
+def _is_injected_context(text: str) -> bool:
+    """Harness-injected context arrives with the user role but nobody typed it."""
+    return text.lstrip().startswith("<") and ">" in text[:200]
 
 
 def _extract_user_text(entry: object) -> str:
     if not isinstance(entry, dict):
         return ""
-    message = entry.get("message") if isinstance(entry.get("message"), dict) else entry
-    role = str(message.get("role") or entry.get("role") or "")
-    if role and role != "user":
-        return ""
-    content = message.get("content")
+    # claude nests under "message", codex under "payload", others are flat.
+    for key in ("message", "payload"):
+        nested = entry.get(key)
+        if isinstance(nested, dict):
+            entry = nested
+            break
+    # codex records what the person actually typed as its own event.
+    if str(entry.get("type") or "") == "user_message":
+        typed = str(entry.get("message") or "").strip()
+        return "" if _is_injected_context(typed) else typed
+    role = str(entry.get("role") or "")
+    if role != "user":
+        # A flat record with no role at all is still worth reading; anything
+        # that names a non-user role is not.
+        if role:
+            return ""
+    content = entry.get("content")
     if isinstance(content, str):
-        return content.strip()
+        stripped = content.strip()
+        return "" if _is_injected_context(stripped) else stripped
     if isinstance(content, list):
         for block in content:
-            if isinstance(block, dict) and block.get("type") == "text":
+            # codex writes input_text, claude writes text.
+            if isinstance(block, dict) and block.get("type") in {"text", "input_text"}:
                 piece = str(block.get("text") or "").strip()
-                if piece:
+                if piece and not _is_injected_context(piece):
                     return piece
     return ""
 
@@ -214,6 +252,116 @@ def _list_antigravity_sessions(home: Path, workspace: str, limit: int) -> list[d
             }
         )
     return _sorted_limited(items, limit)
+
+
+def _list_grok_sessions(home: Path, workspace: str, limit: int) -> list[dict[str, str]]:
+    """Grok keys its store by workspace already: sessions/<url-encoded cwd>/<id>/."""
+    root = home / ".grok" / "sessions"
+    if not root.exists():
+        return []
+    wanted = _normalized_workspace(workspace)
+    items: list[dict[str, str]] = []
+    for folder in root.iterdir():
+        if not folder.is_dir():
+            continue
+        if wanted and _normalized_workspace(unquote(folder.name)) != wanted:
+            continue
+        prompts = _grok_first_prompts(folder / "prompt_history.jsonl")
+        for session_dir in folder.iterdir():
+            if not session_dir.is_dir():
+                continue
+            summary = _read_json(session_dir / "summary.json")
+            try:
+                mtime = session_dir.stat().st_mtime
+            except OSError:
+                continue
+            info = summary.get("info") if isinstance(summary.get("info"), dict) else {}
+            session_id = str(info.get("id") or session_dir.name)
+            label = (
+                str(summary.get("session_summary") or "").strip()
+                or prompts.get(session_id, "")
+                or session_dir.name
+            )
+            items.append(
+                {
+                    "session_id": session_id,
+                    "label": " ".join(label.split())[:80],
+                    "updated_at": _iso(mtime),
+                }
+            )
+    return _sorted_limited(items, limit)
+
+
+def _grok_first_prompts(path: Path, *, max_lines: int = 4000) -> dict[str, str]:
+    """session_id -> its opening prompt, from the folder's shared history."""
+    first: dict[str, str] = {}
+    for entry in _read_jsonl(path, max_lines=max_lines):
+        if entry.get("is_bash"):
+            continue
+        session_id = str(entry.get("session_id") or "")
+        prompt = str(entry.get("prompt") or "").strip()
+        if _is_injected_context(prompt):
+            continue
+        if session_id and prompt and session_id not in first:
+            first[session_id] = prompt
+    return first
+
+
+def _list_cursor_sessions(home: Path, workspace: str, limit: int) -> list[dict[str, str]]:
+    """Cursor records cwd, title and updated time in each chat's meta.json."""
+    root = home / ".cursor" / "chats"
+    if not root.exists():
+        return []
+    wanted = _normalized_workspace(workspace)
+    items: list[dict[str, str]] = []
+    for bucket in root.iterdir():
+        if not bucket.is_dir():
+            continue
+        for session_dir in bucket.iterdir():
+            meta = _read_json(session_dir / "meta.json")
+            if not meta:
+                continue
+            if wanted and _normalized_workspace(str(meta.get("cwd") or "")) != wanted:
+                continue
+            updated_ms = meta.get("updatedAtMs") or meta.get("createdAtMs") or 0
+            try:
+                updated = _iso(float(updated_ms) / 1000.0)
+            except (TypeError, ValueError):
+                continue
+            items.append(
+                {
+                    "session_id": session_dir.name,
+                    "label": str(meta.get("title") or session_dir.name)[:80],
+                    "updated_at": updated,
+                }
+            )
+    return _sorted_limited(items, limit)
+
+
+def _read_json(path: Path) -> dict:
+    try:
+        payload = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError, ValueError):
+        return {}
+    return payload if isinstance(payload, dict) else {}
+
+
+def _read_jsonl(path: Path, *, max_lines: int) -> list[dict]:
+    entries: list[dict] = []
+    try:
+        with path.open("r", encoding="utf-8") as handle:
+            for index, line in enumerate(handle):
+                if index >= max_lines:
+                    break
+                try:
+                    entry = json.loads(line)
+                except (json.JSONDecodeError, ValueError):
+                    continue
+                if isinstance(entry, dict):
+                    entries.append(entry)
+    except OSError:
+        return []
+    return entries
 
 
 def _normalized_workspace(value: str) -> str:

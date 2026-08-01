@@ -128,5 +128,97 @@ class ProviderSessionWorkspaceScopeTests(unittest.TestCase):
             self.assertEqual(scoped, [])
 
 
+class GrokAndCursorSessionTests(unittest.TestCase):
+    """Both keep per-folder stores; the old code reported neither."""
+
+    def test_grok_lists_by_url_encoded_workspace_folder(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            home = Path(temp_dir)
+            wanted = home / ".grok" / "sessions" / "%2Fw%2Fwanted" / "sess-1"
+            wanted.mkdir(parents=True)
+            (wanted / "summary.json").write_text(
+                json.dumps({"info": {"id": "sess-1", "cwd": "/w/wanted"}}), encoding="utf-8"
+            )
+            (wanted.parent / "prompt_history.jsonl").write_text(
+                json.dumps({"session_id": "sess-1", "prompt": "첫 질문", "is_bash": False}) + "\n",
+                encoding="utf-8",
+            )
+            other = home / ".grok" / "sessions" / "%2Fw%2Fother" / "sess-2"
+            other.mkdir(parents=True)
+            (other / "summary.json").write_text(
+                json.dumps({"info": {"id": "sess-2", "cwd": "/w/other"}}), encoding="utf-8"
+            )
+
+            scoped = list_provider_sessions(
+                "grok_live_session", home=home, workspace="/w/wanted"
+            )
+
+            self.assertEqual([item["session_id"] for item in scoped], ["sess-1"])
+            self.assertEqual(scoped[0]["label"], "첫 질문")
+
+    def test_cursor_lists_by_the_cwd_in_chat_meta(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            home = Path(temp_dir)
+            for bucket, session, cwd, title in (
+                ("b1", "chat-here", "/w/wanted", "Korean Core Debate"),
+                ("b2", "chat-there", "/w/other", "Elsewhere"),
+            ):
+                directory = home / ".cursor" / "chats" / bucket / session
+                directory.mkdir(parents=True)
+                (directory / "meta.json").write_text(
+                    json.dumps({"cwd": cwd, "title": title, "updatedAtMs": 1784910037350}),
+                    encoding="utf-8",
+                )
+
+            scoped = list_provider_sessions(
+                "cursor_live_session", home=home, workspace="/w/wanted"
+            )
+
+            self.assertEqual([item["session_id"] for item in scoped], ["chat-here"])
+            self.assertEqual(scoped[0]["label"], "Korean Core Debate")
+
+
+class SessionLabelTests(unittest.TestCase):
+    def test_a_rollout_is_labelled_by_what_the_person_typed(self) -> None:
+        # Rollouts open with project instructions and plugin lists carrying the
+        # user role; labelling by the first user-role record showed those.
+        with tempfile.TemporaryDirectory() as temp_dir:
+            home = Path(temp_dir)
+            _write(
+                home / ".codex" / "sessions" / "r-019ed0f7-c25b-7e32-badb-3d0143541d95.jsonl",
+                [
+                    {"type": "session_meta", "payload": {"cwd": "/w/wanted"}},
+                    {
+                        "type": "response_item",
+                        "payload": {
+                            "type": "message",
+                            "role": "user",
+                            "content": [
+                                {"type": "input_text", "text": "<recommended_plugins>\nnoise"}
+                            ],
+                        },
+                    },
+                    {
+                        "type": "response_item",
+                        "payload": {
+                            "type": "message",
+                            "role": "user",
+                            "content": [{"type": "input_text", "text": "# AGENTS.md instructions"}],
+                        },
+                    },
+                    {
+                        "type": "event_msg",
+                        "payload": {"type": "user_message", "message": "실제로 친 말"},
+                    },
+                ],
+            )
+
+            sessions = list_provider_sessions(
+                "codex_live_session", home=home, workspace="/w/wanted"
+            )
+
+            self.assertEqual(sessions[0]["label"], "실제로 친 말")
+
+
 if __name__ == "__main__":
     unittest.main()
