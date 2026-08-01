@@ -63,6 +63,8 @@ class AgentSession(TypedDict):
     stderr_warning_count: NotRequired[int]
     notification_drop_count: NotRequired[int]
     max_output_tokens: NotRequired[int]
+    persona_card_id: NotRequired[str]
+    persona_card: NotRequired[dict[str, object]]
 
 
 class RoomCommand(TypedDict):

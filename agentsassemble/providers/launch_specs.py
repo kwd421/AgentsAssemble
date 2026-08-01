@@ -2,91 +2,15 @@
 
 from __future__ import annotations
 
-import hashlib
-import json
 import re
 from dataclasses import dataclass, replace
 from pathlib import Path
 from typing import Callable
 
+from agentsassemble.persona_cards.selection import persona_spec_kwargs, validate_persona_spec
+from agentsassemble.providers.launch_profile import NativeCliProviderSpec
 from agentsassemble.providers.remote_openai import remote_openai_profiles
 from agentsassemble.room.text import clean_room_text
-
-
-@dataclass(frozen=True)
-class NativeCliProviderSpec:
-    agent_id: str
-    display_name: str
-    command: tuple[str, ...]
-    cwd: str = "."
-    provider_kind: str = ""
-    model: str = ""
-    requested_model_id: str = ""
-    model_selection_kind: str = "exact"
-    model_observation_policy: str = "unavailable"
-    catalog_revision: str = ""
-    reasoning_effort: str = ""
-    service_tier: str = ""
-    variant: str = ""
-    permission_mode: str = "meeting_read_only"
-    max_output_tokens: int = 0
-    provider_endpoint: str = ""
-    runtime_kind: str = "live_cli"
-    transport: str = "pty"
-    default_responder: bool = True
-    quiet_seconds: float = 4.0
-    input_mode: str = "line"
-    submit_newline: str = "\r"
-    submit_delay_seconds: float = 0.1
-    terminal_rows: int = 40
-    terminal_columns: int = 120
-    startup_quiet_seconds: float = 1.0
-    startup_timeout_seconds: float = 20.0
-    startup_accept_contains: str = ""
-    startup_accept_keys: str = "\r"
-    startup_ready_contains: str = ""
-    startup_input: str = ""
-    turn_timeout_seconds: float = 180.0
-
-    def normalized_provider_kind(self) -> str:
-        return clean_room_text(self.provider_kind, limit=64) or f"{self.agent_id}_live_session"
-
-    def runtime_profile_key(self) -> str:
-        values = {
-            "provider_kind": self.normalized_provider_kind(),
-            "command": list(self.command),
-            "cwd": str(Path(self.cwd).expanduser().resolve()),
-            "model": self.model,
-            "reasoning_effort": self.reasoning_effort,
-            "service_tier": self.service_tier,
-            "variant": self.variant,
-            "permission_mode": self.permission_mode,
-            "max_output_tokens": self.max_output_tokens,
-            "runtime_kind": self.runtime_kind,
-            "transport": self.transport,
-            "quiet_seconds": self.quiet_seconds,
-            "input_mode": self.input_mode,
-            "submit_newline": self.submit_newline,
-            "submit_delay_seconds": self.submit_delay_seconds,
-            "terminal_rows": self.terminal_rows,
-            "terminal_columns": self.terminal_columns,
-            "startup_quiet_seconds": self.startup_quiet_seconds,
-            "startup_timeout_seconds": self.startup_timeout_seconds,
-            "startup_accept_contains": self.startup_accept_contains,
-            "startup_accept_keys": self.startup_accept_keys,
-            "startup_ready_contains": self.startup_ready_contains,
-            "startup_input": self.startup_input,
-            "turn_timeout_seconds": self.turn_timeout_seconds,
-        }
-        if self.provider_endpoint:
-            values["provider_endpoint"] = self.provider_endpoint
-        profile = json.dumps(
-            values,
-            ensure_ascii=True,
-            sort_keys=True,
-            separators=(",", ":"),
-        )
-        return hashlib.sha256(profile.encode("utf-8")).hexdigest()[:20]
 
 
 @dataclass(frozen=True)
@@ -166,6 +90,8 @@ class NativeCliProviderDefinition:
         permission_mode: str = "",
         max_output_tokens: int = 0,
         provider_endpoint: str = "",
+        persona_card_id: str = "",
+        persona_card_summary: dict[str, object] | None = None,
         model_selection_kind: str = "exact",
         catalog_revision: str = "",
         default_responder: bool = True,
@@ -244,6 +170,8 @@ class NativeCliProviderDefinition:
             permission_mode=selected_permission,
             max_output_tokens=selected_max_output_tokens,
             provider_endpoint=clean_room_text(provider_endpoint, limit=1000),
+            persona_card_id=clean_room_text(persona_card_id, limit=80),
+            persona_card_summary=dict(persona_card_summary or {}),
             runtime_kind=self.runtime_kind,
             transport=self.transport,
             default_responder=default_responder,
@@ -369,6 +297,7 @@ def native_cli_provider_spec_from_stored_session_strict(
         ),
         model_selection_kind=model_selection_kind,
         catalog_revision=catalog_revision,
+        **persona_spec_kwargs(session),
     )
     profile_matches = (
         stored_transport == definition.transport
@@ -945,6 +874,7 @@ def native_cli_provider_spec_from_payload(payload: dict[str, object]) -> NativeC
         model_selection_kind=clean_room_text(payload.get("model_selection_kind"), limit=16)
         or "exact",
         catalog_revision=clean_room_text(payload.get("catalog_revision"), limit=128),
+        **persona_spec_kwargs(payload),
     )
     validate_native_cli_provider_spec(spec)
     return spec
@@ -1027,6 +957,7 @@ def native_cli_provider_spec_from_config(
         or (definition.input_mode if definition else "line"),
         submit_newline=str(payload.get("submit_newline") or "\r"),
         submit_delay_seconds=_float_value(payload.get("submit_delay_seconds"), 0.1),
+        **persona_spec_kwargs(payload),
         terminal_rows=_int_value(payload.get("terminal_rows"), 40),
         terminal_columns=_int_value(payload.get("terminal_columns"), 120),
         startup_quiet_seconds=_float_value(payload.get("startup_quiet_seconds"), 1.0),
@@ -1060,6 +991,7 @@ def validate_native_cli_provider_spec(spec: NativeCliProviderSpec) -> None:
         raise ValueError(
             f"Unsupported model observation policy: {spec.model_observation_policy}"
         )
+    validate_persona_spec(spec.persona_card_id, spec.persona_card_summary)
     is_claude = executable == "claude" or spec.normalized_provider_kind() == "claude_code"
     if is_claude:
         forbidden = [part for part in spec.command[1:] if part in {"-p", "--print"} or part.startswith("--print=")]

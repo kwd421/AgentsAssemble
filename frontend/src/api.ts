@@ -20,6 +20,7 @@ import type { RoomMember } from "./api/room";
 export * from "./api/agentSessions";
 export * from "./api/invites";
 export * from "./api/moderation";
+export * from "./api/personas";
 export * from "./api/room";
 export * from "./api/roomHistory";
 export { clearHostToken, loadHostToken, postJsonHost, saveHostToken } from "./api/http";

@@ -209,6 +209,55 @@ class RoomAgentCreationServiceTests(unittest.TestCase):
         self.assertEqual(spec.model, "vendor-model")
         self.assertEqual(spec.provider_endpoint, "https://api.example.com/v1")
 
+    def test_create_carries_a_server_resolved_persona_into_the_session_profile(self) -> None:
+        self.catalog.selection = replace(
+            self.selection,
+            provider_id="deepseek",
+            provider_kind="deepseek_api",
+            model="deepseek-v4-flash",
+            reasoning_effort="high",
+            variant="thinking",
+        )
+        resolver_calls: list[tuple[str, str]] = []
+
+        def resolve_persona(provider_id: str, persona_card_id: str) -> dict[str, object]:
+            resolver_calls.append((provider_id, persona_card_id))
+            return {
+                "id": "guide",
+                "display_name": "Guide",
+                "asset_kind": "card",
+                "lorebook_count": 2,
+                "ignored_feature_count": 0,
+            }
+
+        service = RoomAgentCreationService(
+            store=self.store,
+            provider_catalog=self.catalog,
+            create_provider_session=self._create_session,
+            start_agent=self._start_agent,
+            resolve_persona=resolve_persona,
+        )
+
+        service.create(
+            "general",
+            {
+                "provider_id": "deepseek",
+                "display_name": "Guide",
+                "model": "deepseek-chat",
+                "permission_mode": "meeting_read_only",
+                "catalog_revision": "revision-1",
+                "persona_card_id": "guide",
+            },
+            operation_id="create-guide",
+            server_url="http://127.0.0.1:8765",
+            ticket_issuer=None,
+        )
+
+        _room_id, spec = self.created_specs[-1]
+        self.assertEqual(resolver_calls, [("deepseek", "guide")])
+        self.assertEqual(spec.persona_card_id, "guide")
+        self.assertEqual(spec.persona_card_summary["display_name"], "Guide")
+
     def test_catalog_error_preserves_its_command_rejection_code(self) -> None:
         self.catalog.error = ProviderCatalogSelectionError(
             "catalog changed",

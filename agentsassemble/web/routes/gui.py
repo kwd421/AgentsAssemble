@@ -11,6 +11,7 @@ from agentsassemble.features.social.routes import register_room_friend_profile_r
 from agentsassemble.web.router import RequestContext, Router
 from agentsassemble.web.routes.attachments import register_attachment_routes
 from agentsassemble.web.routes.observability import register_observability_routes
+from agentsassemble.web.routes.personas import register_persona_routes
 from agentsassemble.web.routes.providers import register_provider_routes
 from agentsassemble.web.routes.public_invite import register_public_invite_admin_routes
 from agentsassemble.web.routes.retired import register_retired_legacy_routes
@@ -35,6 +36,10 @@ def register_current_gui_routes(
         is_local_operator=lambda ctx: ctx.is_local_operator(),
     )
     register_attachment_routes(route_table)
+    register_persona_routes(
+        route_table,
+        is_local_operator=lambda ctx: ctx.is_local_operator(),
+    )
     register_retired_legacy_routes(route_table)
     register_room_creation_routes(route_table)
     register_room_settings_routes(route_table)

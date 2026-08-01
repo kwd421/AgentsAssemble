@@ -1,0 +1,43 @@
+.dc-agent-profile-inline {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: end;
+  gap: 10px;
+  margin-top: 14px;
+  padding: 12px;
+  border-radius: 11px;
+  background: color-mix(in srgb, var(--color-bg-secondary, #2b2d31) 90%, white 2%);
+}
+
+.dc-agent-profile-inline-actions {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  padding-bottom: 1px;
+}
+
+.dc-agent-profile-inline .dc-agent-profile-field input {
+  min-height: 36px;
+  border-color: transparent;
+  background: color-mix(in srgb, #111214 82%, white 3%);
+}
+
+.dc-agent-profile-inline .dc-agent-profile-field input:focus {
+  border-color: rgba(88, 101, 242, 0.78);
+}
+
+.dc-agent-profile-inline > .dc-image-cropper,
+.dc-agent-profile-inline > .dc-member-session-status {
+  grid-column: 1 / -1;
+}
+
+@media (max-width: 640px) {
+  .dc-agent-profile-inline {
+    grid-template-columns: minmax(0, 1fr);
+    align-items: stretch;
+  }
+
+  .dc-agent-profile-inline-actions {
+    justify-content: flex-end;
+  }
+}

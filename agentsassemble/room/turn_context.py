@@ -4,6 +4,9 @@ import re
 from dataclasses import dataclass
 from pathlib import Path
 
+from agentsassemble.persona_cards import render_persona_prompt
+from agentsassemble.persona_cards.library import load_persona_asset
+from agentsassemble.providers.launch_specs import native_cli_provider_definition
 from agentsassemble.room.text import clean_room_text as clean_lobby_text
 from agentsassemble.providers.turn_input import agent_turn_prompt
 from agentsassemble.room.context import (
@@ -28,6 +31,7 @@ class BoundedProviderContext:
     events: tuple[dict[str, object], ...]
     media_manifest: tuple[dict[str, object], ...]
     room_memory_included: bool
+    persona_context_included: bool
 
 
 def _agent_turn_prompt(packet: dict[str, object]) -> str:
@@ -87,6 +91,11 @@ def build_room_turn_packet(
         max_chars=min(DEFAULT_ROOM_CONTEXT_CHARS, max(256, prompt_limit // 2)),
     )
     provider_events = list(provider_projection.events)
+    persona_card_id, persona_context = _persona_context_for_session(
+        output_root,
+        session=session,
+        recent_messages=provider_projection.text,
+    )
     media_events = store.read_events(
         room_id,
         event_types=("media_attached", "unsupported_media"),
@@ -104,6 +113,7 @@ def build_room_turn_packet(
         input_mode=input_mode,
         instruction=clean_instruction if include_instruction else "",
         room_identity=room_identity,
+        persona_context=persona_context,
         room_memory=room_memory,
         events=provider_events,
         omitted_event_count=provider_projection.omitted_message_count,
@@ -137,6 +147,8 @@ def build_room_turn_packet(
         "input_mode": input_mode,
         "provider_visible_chars": len(provider_input),
         "provider_visible_event_count": len(provider_events),
+        "persona_card_id": persona_card_id,
+        "persona_context_included": bounded_context.persona_context_included,
         "filtered_internal_event_count": provider_projection.filtered_internal_event_count,
         "filtered_message_delta_count": provider_projection.filtered_message_delta_count,
         "provider_context_after_seq": context_after_seq,
@@ -178,6 +190,7 @@ def build_provider_bootstrap_input(
     media_manifest: list[dict[str, object]] | None = None,
     unsupported_media: list[dict[str, object]] | None = None,
     room_identity: dict[str, object] | None = None,
+    persona_context: str = "",
 ) -> str:
     parts = [
         "[Agent Session bootstrap]",
@@ -188,6 +201,8 @@ def build_provider_bootstrap_input(
     identity_text = _provider_room_identity_text(room_identity or {})
     if identity_text:
         parts.extend(["", "[Your room identity]", identity_text])
+    if persona_context:
+        parts.extend(["", "[Applied bot card or Risu module]", persona_context])
     memory_text = _room_memory_text(room_memory or {})
     if memory_text:
         parts.extend(["", "[Room memory]", memory_text])
@@ -209,11 +224,14 @@ def build_provider_turn_input(
     media_manifest: list[dict[str, object]] | None = None,
     unsupported_media: list[dict[str, object]] | None = None,
     room_identity: dict[str, object] | None = None,
+    persona_context: str = "",
 ) -> str:
     parts = []
     identity_text = _provider_room_identity_text(room_identity or {})
     if identity_text:
         parts.extend(["[Your room identity]", identity_text, ""])
+    if persona_context:
+        parts.extend(["[Applied bot card or Risu module]", persona_context, ""])
     if room_delta:
         parts.extend(["[Room update since your last turn]", room_delta, ""])
     media_text = _provider_media_text(media_manifest or [], unsupported_media or [])
@@ -233,6 +251,7 @@ def build_provider_recovery_input(
     media_manifest: list[dict[str, object]] | None = None,
     unsupported_media: list[dict[str, object]] | None = None,
     room_identity: dict[str, object] | None = None,
+    persona_context: str = "",
 ) -> str:
     parts = [
         "[Agent Session recovery]",
@@ -241,6 +260,8 @@ def build_provider_recovery_input(
     identity_text = _provider_room_identity_text(room_identity or {})
     if identity_text:
         parts.extend(["", "[Your room identity]", identity_text])
+    if persona_context:
+        parts.extend(["", "[Applied bot card or Risu module]", persona_context])
     memory_text = _room_memory_text(room_memory)
     if memory_text:
         parts.extend(["", "[Room memory]", memory_text])
@@ -368,6 +389,30 @@ def _clean_text_list(value: object, *, limit: int) -> list[str]:
     return cleaned
 
 
+def _persona_context_for_session(
+    output_root: Path,
+    *,
+    session: dict[str, object],
+    recent_messages: str,
+) -> tuple[str, str]:
+    persona_card_id = clean_lobby_text(session.get("persona_card_id"), limit=80)
+    if not persona_card_id:
+        return "", ""
+    definition = native_cli_provider_definition(session.get("provider_kind"))
+    if definition is None or definition.catalog_group not in {"api", "local"}:
+        return "", ""
+    card = load_persona_asset(output_root, persona_card_id)
+    rendered = render_persona_prompt(
+        card,
+        recent_messages=recent_messages,
+        mode="on",
+        surface="play_speech",
+        max_lore_chars=3600,
+    )
+    persona_context = "\n".join(line for line in rendered.lines if line).strip()
+    return persona_card_id, persona_context[:8000].rstrip()
+
+
 def _bound_room_turn_packet(packet: dict[str, object], prompt_limit: int) -> dict[str, object]:
     provider_input = str(packet.get("provider_input") or "")
     if len(provider_input) > prompt_limit:
@@ -387,6 +432,7 @@ def _fit_provider_context(
     input_mode: str,
     instruction: str,
     room_identity: dict[str, object],
+    persona_context: str,
     room_memory: dict[str, object],
     events: list[dict[str, object]],
     omitted_event_count: int,
@@ -397,6 +443,7 @@ def _fit_provider_context(
     included_events = list(events)
     included_media = list(media_manifest)
     included_memory = dict(room_memory)
+    included_persona_context = persona_context
 
     def render() -> str:
         room_delta = _provider_events_text(included_events, omitted_event_count=omitted_event_count)
@@ -405,6 +452,7 @@ def _fit_provider_context(
             return build_provider_recovery_input(
                 instruction=instruction,
                 room_identity=room_identity,
+                persona_context=included_persona_context,
                 room_memory=included_memory,
                 room_delta=room_delta,
                 media_manifest=included_media,
@@ -414,6 +462,7 @@ def _fit_provider_context(
             return build_provider_bootstrap_input(
                 instruction=instruction,
                 room_identity=room_identity,
+                persona_context=included_persona_context,
                 room_memory=included_memory,
                 room_delta=room_delta,
                 media_manifest=included_media,
@@ -422,6 +471,7 @@ def _fit_provider_context(
         return build_provider_turn_input(
             instruction=instruction,
             room_identity=room_identity,
+            persona_context=included_persona_context,
             room_delta=room_delta,
             media_manifest=included_media,
             unsupported_media=unsupported,
@@ -439,6 +489,21 @@ def _fit_provider_context(
     if len(provider_input) > prompt_limit and included_media:
         included_media = []
         provider_input = render()
+    if len(provider_input) > prompt_limit and included_persona_context:
+        low = 0
+        high = len(included_persona_context)
+        best = ""
+        while low <= high:
+            midpoint = (low + high) // 2
+            included_persona_context = persona_context[:midpoint].rstrip()
+            candidate = render()
+            if len(candidate) <= prompt_limit:
+                best = included_persona_context
+                low = midpoint + 1
+            else:
+                high = midpoint - 1
+        included_persona_context = best
+        provider_input = render()
     if len(provider_input) > prompt_limit:
         provider_input = _fit_required_provider_input(
             input_mode=input_mode,
@@ -451,6 +516,7 @@ def _fit_provider_context(
         events=tuple(included_events),
         media_manifest=tuple(included_media),
         room_memory_included=bool(_room_memory_text(included_memory)),
+        persona_context_included=bool(included_persona_context),
     )
 
 

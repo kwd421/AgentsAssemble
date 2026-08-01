@@ -16,9 +16,9 @@ import {
   providerSupportsFast,
 } from "../../../lib/liveAgentPermissionOptions";
 import ImageCropper from "../ImageCropper";
-import ProviderLogo from "../ProviderLogo";
 import { sessionProcessGroupForAgent } from "./memberHelpers";
 import type { MemberEntry } from "./memberTypes";
+import "./AgentIdentitySettings.css";
 
 export default function AgentIdentitySettings({
   entry,
@@ -67,7 +67,6 @@ export default function AgentIdentitySettings({
     setAgentProfileStatus("");
   }, [entry.agent?.agent_id]);
 
-  const DetailIcon = entry.icon;
   const canEditAgentProfile = entry.ownedByViewer;
   const permissionOptions = permissionOptionsForKind(agent.provider_kind);
   const supportsFast = providerSupportsFast(agent.provider_kind);
@@ -151,10 +150,9 @@ export default function AgentIdentitySettings({
   return (
     <>
       {canEditAgentProfile && (
-        <section className="dc-member-detail-section" aria-label={`${entry.displayName} 에이전트 프로필`}>
-          <h3>에이전트 프로필</h3>
+        <section className="dc-agent-profile-inline" aria-label={`${entry.displayName} 에이전트 프로필`}>
           <label className="dc-agent-profile-field">
-            이름
+            <span>표시 이름</span>
             <input
               type="text"
               maxLength={80}
@@ -163,23 +161,13 @@ export default function AgentIdentitySettings({
               placeholder={agent.display_name || agent.agent_id}
             />
           </label>
-          <div className="dc-agent-profile-avatar-row">
-            <span className="dc-member-avatar dc-agent-profile-preview">
-              {agentAvatarImage ? (
-                <img className="dc-member-avatar-image" src={agentAvatarImage} alt="" />
-              ) : (
-                <ProviderLogo
-                  providerKind={entry.providerKind}
-                  size={44}
-                  fallback={<DetailIcon size={18} />}
-                />
-              )}
-            </span>
+          <div className="dc-agent-profile-inline-actions">
             <label className="dc-member-session-button">
-              프로필 사진 편집
+              사진 변경
               <input
                 className="sr-only"
                 type="file"
+                aria-label="프로필 사진 편집"
                 accept="image/*"
                 onChange={(event) => {
                   const file = event.currentTarget.files?.[0] || null;
@@ -189,7 +177,7 @@ export default function AgentIdentitySettings({
               />
             </label>
             <button type="button" className="dc-member-session-button" onClick={() => void handleSaveAgentProfile()}>
-              저장
+              프로필 저장
             </button>
           </div>
           {agentProfileCropFile && (

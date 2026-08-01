@@ -1,5 +1,6 @@
 import type { ServerRoom } from "./room";
 import type { RoomEvent } from "./roomHistory";
+import type { PersonaAssetSummary } from "./personas";
 import { postJson } from "./http";
 
 export interface RoomAgentLatency {
@@ -57,6 +58,8 @@ export interface RoomAgentSession {
   variant?: string;
   permission_mode?: string;
   max_output_tokens?: number;
+  persona_card_id?: string;
+  persona_card?: PersonaAssetSummary;
   message_source?: string;
   message_source_strict?: boolean;
   provider_visible_chars?: number;
@@ -119,6 +122,7 @@ export interface FrontendLiveAgentCreateRequest {
   variant?: string;
   permissionMode?: string;
   maxOutputTokens?: number;
+  personaCardId?: string;
   sessionId?: string;
   startNow?: boolean;
 }

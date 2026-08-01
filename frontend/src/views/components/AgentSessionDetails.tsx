@@ -8,6 +8,7 @@ import {
   effectiveProviderControlOptions,
   reconcileProviderSettings,
 } from "../../lib/providerControlSettings";
+import AgentSessionPersonaSettings from "./AgentSessionPersonaSettings";
 import ProviderControlSelect from "./ProviderControlSelect";
 import ProviderControlToggle from "./ProviderControlToggle";
 
@@ -269,6 +270,15 @@ export default function AgentSessionDetails({
                 : `${runtimeSettingLabels}을 함께 저장합니다. 변경은 다음 세션 시작부터 적용됩니다.`}
           </p>
         </div>
+      )}
+      {provider && onConfigure && (
+        <AgentSessionPersonaSettings
+          session={session}
+          provider={provider}
+          canConfigure={canConfigure}
+          onConfigure={onConfigure}
+          onStatus={setActionStatus}
+        />
       )}
       <div className="dc-agent-activity-setting">
         <div className="dc-agent-activity-copy">

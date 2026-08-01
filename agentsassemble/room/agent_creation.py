@@ -4,6 +4,7 @@ from typing import Callable
 from uuid import NAMESPACE_URL, uuid5
 
 from agentsassemble.providers.capabilities import ProviderCatalogSelectionError
+from agentsassemble.persona_cards.library import PersonaSelectionError
 from agentsassemble.providers.launch_specs import (
     NativeCliProviderSpec,
     UnsupportedNativeCliProvider,
@@ -20,6 +21,7 @@ CreateProviderSession = Callable[
     dict[str, object],
 ]
 StartAgent = Callable[..., dict[str, object]]
+ResolvePersona = Callable[[str, str], dict[str, object]]
 
 
 class RoomAgentCreationService:
@@ -32,11 +34,13 @@ class RoomAgentCreationService:
         provider_catalog: ProviderSelectionCatalog,
         create_provider_session: CreateProviderSession,
         start_agent: StartAgent,
+        resolve_persona: ResolvePersona | None = None,
     ) -> None:
         self.store = store
         self.provider_catalog = provider_catalog
         self._create_provider_session = create_provider_session
         self._start_agent = start_agent
+        self._resolve_persona = resolve_persona
 
     def create(
         self,
@@ -88,6 +92,14 @@ class RoomAgentCreationService:
             )
         except ProviderCatalogSelectionError as error:
             raise RoomCommandRejected(str(error), code=error.code) from error
+        persona_card_id = clean_room_text(payload.get("persona_card_id"), 80)
+        try:
+            persona_card = self._resolved_persona(
+                selection.provider_id,
+                persona_card_id,
+            )
+        except PersonaSelectionError as error:
+            raise RoomCommandRejected(str(error), code=error.code) from error
         agent_id = _agent_id_for_creation(
             provider_id,
             operation_id,
@@ -112,6 +124,8 @@ class RoomAgentCreationService:
                     "permission_mode": selection.permission_mode,
                     "max_output_tokens": selection.max_output_tokens,
                     "provider_endpoint": selection.provider_endpoint,
+                    "persona_card_id": persona_card.get("id", ""),
+                    "persona_card": persona_card,
                 }
             )
         except UnsupportedNativeCliProvider as error:
@@ -139,6 +153,20 @@ class RoomAgentCreationService:
             )
         return result
 
+    def _resolved_persona(
+        self,
+        provider_id: str,
+        persona_card_id: str,
+    ) -> dict[str, object]:
+        if not persona_card_id:
+            return {}
+        if self._resolve_persona is None:
+            raise PersonaSelectionError(
+                "The bot-card library is unavailable.",
+                code="persona_not_found",
+            )
+        return dict(self._resolve_persona(provider_id, persona_card_id))
+
 
 def _agent_id_for_creation(provider_id: str, operation_id: str) -> str:
     clean_operation_id = clean_room_text(operation_id, 128)
@@ -154,5 +182,6 @@ def _agent_id_for_creation(provider_id: str, operation_id: str) -> str:
 __all__ = [
     "CreateProviderSession",
     "RoomAgentCreationService",
+    "ResolvePersona",
     "StartAgent",
 ]

@@ -6,6 +6,7 @@ from agentsassemble.providers.capabilities import (
     ProviderCatalogSelectionError,
     ValidatedProviderSelection,
 )
+from agentsassemble.persona_cards.library import PersonaSelectionError
 from agentsassemble.providers.launch_specs import (
     NativeCliProviderSpec,
     UnsupportedNativeCliProvider,
@@ -21,6 +22,7 @@ ConfigureStoppedProfile = Callable[
     [str, NativeCliProviderSpec],
     dict[str, object],
 ]
+ResolvePersona = Callable[[str, str], dict[str, object]]
 
 
 class ProviderSelectionCatalog(Protocol):
@@ -42,10 +44,12 @@ class RoomAgentRuntimeProfileService:
         store: RoomRepository,
         provider_catalog: ProviderSelectionCatalog,
         configure_stopped_profile: ConfigureStoppedProfile,
+        resolve_persona: ResolvePersona | None = None,
     ) -> None:
         self.store = store
         self.provider_catalog = provider_catalog
         self._configure_stopped_profile = configure_stopped_profile
+        self._resolve_persona = resolve_persona
 
     def configure(
         self,
@@ -100,6 +104,19 @@ class RoomAgentRuntimeProfileService:
                 else current.get("workspace")
             ),
         }
+        requested_persona_id = clean_room_text(
+            payload.get("persona_card_id")
+            if "persona_card_id" in payload
+            else current.get("persona_card_id"),
+            80,
+        )
+        try:
+            persona_card = self._resolved_persona(
+                definition.provider_id,
+                requested_persona_id,
+            )
+        except PersonaSelectionError as error:
+            raise RoomCommandRejected(str(error), code=error.code) from error
         selected_values = {
             key: payload[key] if key in payload else current.get(key)
             for key in (
@@ -155,6 +172,8 @@ class RoomAgentRuntimeProfileService:
                     "permission_mode": selection.permission_mode,
                     "max_output_tokens": selection.max_output_tokens,
                     "provider_endpoint": selection.provider_endpoint,
+                    "persona_card_id": persona_card.get("id", ""),
+                    "persona_card": persona_card,
                 }
             )
         except ProviderCatalogSelectionError as error:
@@ -167,9 +186,24 @@ class RoomAgentRuntimeProfileService:
         session = self._configure_stopped_profile(room_id, spec)
         return {"status": "configured", "agent_session": session}
 
+    def _resolved_persona(
+        self,
+        provider_id: str,
+        persona_card_id: str,
+    ) -> dict[str, object]:
+        if not persona_card_id:
+            return {}
+        if self._resolve_persona is None:
+            raise PersonaSelectionError(
+                "The bot-card library is unavailable.",
+                code="persona_not_found",
+            )
+        return dict(self._resolve_persona(provider_id, persona_card_id))
+
 
 __all__ = [
     "ConfigureStoppedProfile",
     "ProviderSelectionCatalog",
+    "ResolvePersona",
     "RoomAgentRuntimeProfileService",
 ]

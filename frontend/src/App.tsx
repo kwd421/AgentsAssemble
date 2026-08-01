@@ -1416,6 +1416,7 @@ export default function App() {
               variant: request.variant || "",
               permission_mode: request.permissionMode || "meeting_read_only",
               max_output_tokens: request.maxOutputTokens || 0,
+              persona_card_id: request.personaCardId || "",
               start: Boolean(request.startNow),
             });
           }

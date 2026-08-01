@@ -28,6 +28,7 @@ import {
 import ProviderLogo from "./ProviderLogo";
 import ProviderControlSelect from "./ProviderControlSelect";
 import ProviderControlToggle from "./ProviderControlToggle";
+import AgentPersonaPicker from "./AgentPersonaPicker";
 
 type AgentCreateModalProps = {
   open: boolean;
@@ -68,6 +69,7 @@ export default function AgentCreateModal({
   const [providerApiKey, setProviderApiKey] = useState("");
   const [customEndpoint, setCustomEndpoint] = useState("");
   const [customModel, setCustomModel] = useState("");
+  const [personaCardId, setPersonaCardId] = useState("");
   const [credentialStatus, setCredentialStatus] = useState<ProviderCredentialStatus | null>(null);
   const [credentialBusy, setCredentialBusy] = useState(false);
   const [loginBusy, setLoginBusy] = useState(false);
@@ -121,6 +123,7 @@ export default function AgentCreateModal({
       wasOpen.current = false;
       setCustomEndpoint("");
       setCustomModel("");
+      setPersonaCardId("");
       return;
     }
     if (!wasOpen.current) {
@@ -168,6 +171,7 @@ export default function AgentCreateModal({
     setSettings(initialSettings);
     setCustomEndpoint("");
     setCustomModel("");
+    setPersonaCardId("");
     setStartNow(provider.startable);
   }
 
@@ -180,6 +184,7 @@ export default function AgentCreateModal({
     setSettings({});
     setCustomEndpoint("");
     setCustomModel("");
+    setPersonaCardId("");
     setStartNow(false);
     setStatus("");
   }
@@ -253,6 +258,7 @@ export default function AgentCreateModal({
         variant: settings.variant || "",
         permissionMode: settings.permission_mode || "meeting_read_only",
         maxOutputTokens: Number(settings.max_output_tokens || 0),
+        personaCardId,
         startNow,
       });
       onCreated?.();
@@ -659,6 +665,12 @@ export default function AgentCreateModal({
                   </p>
                 </div>
               </section>
+            )}
+
+          {selectedProvider &&
+            !existingSessionId &&
+            ["api", "local"].includes(providerCatalogGroup(selectedProvider)) && (
+              <AgentPersonaPicker value={personaCardId} onChange={setPersonaCardId} />
             )}
 
           {statusMessage && (

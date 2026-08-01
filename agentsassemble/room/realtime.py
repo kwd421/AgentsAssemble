@@ -22,6 +22,7 @@ from agentsassemble.providers.capabilities import (
     PROVIDER_CAPABILITIES,
     ValidatedProviderSelection,
 )
+from agentsassemble.persona_cards.library import resolve_persona_selection
 from agentsassemble.admission.invite_service import InviteApplicationService
 from agentsassemble.admission.session_service import RoomSessionService
 from agentsassemble.persistence.local.identity.registry import (
@@ -121,6 +122,7 @@ AGENT_RUNTIME_PROFILE_KEYS = frozenset(
         "permission_mode",
         "max_output_tokens",
         "transport",
+        "persona_card_id",
     }
 )
 _LOGGER = logging.getLogger("agentsassemble.room_realtime")
@@ -304,6 +306,11 @@ class RoomRealtimeController:
             store=self.store,
             provider_catalog=self.provider_catalog,
             configure_stopped_profile=self.configure_stopped_provider_profile,
+            resolve_persona=lambda provider_id, persona_card_id: resolve_persona_selection(
+                self.output_root,
+                provider_id,
+                persona_card_id,
+            ),
         )
         self._agent_lifecycle = RoomAgentLifecycle(
             store=self.store,
@@ -431,6 +438,11 @@ class RoomRealtimeController:
             provider_catalog=self.provider_catalog,
             create_provider_session=self.create_provider_session,
             start_agent=self._agent_lifecycle.start,
+            resolve_persona=lambda provider_id, persona_card_id: resolve_persona_selection(
+                self.output_root,
+                provider_id,
+                persona_card_id,
+            ),
         )
         self._agent_reactivation = RoomAgentReactivationService(
             store=self.store,
