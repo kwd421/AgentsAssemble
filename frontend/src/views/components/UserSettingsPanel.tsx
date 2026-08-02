@@ -3,6 +3,7 @@ import { Headphones, Mic, MicOff, Palette, UserCircle } from "lucide-react";
 import type { UserProfile, UserProfileIdentity } from "../../api";
 import GuestRecoverySettings from "./GuestRecoverySettings";
 import GoogleAccountSettings from "./GoogleAccountSettings";
+import "./UserSettingsPanel.css";
 
 export type UserSettingsSection = "account" | "profile" | "voice" | "recovery";
 

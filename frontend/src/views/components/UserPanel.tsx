@@ -416,15 +416,21 @@ export default function UserPanel({
       )}
 
       {settingsOpen && (
-        <section className="dc-profile-settings-modal" role="dialog" aria-modal="true" aria-label="프로필 편집">
-          <button
-            type="button"
-            className="dc-profile-close"
-            onClick={() => setSettingsOpen(false)}
-            aria-label="프로필 편집 닫기"
-          >
-            <X size={16} />
-          </button>
+        <section className="dc-profile-settings-modal" role="dialog" aria-modal="true" aria-label="사용자 설정">
+          <header className="dc-profile-settings-header">
+            <div>
+              <span>내 계정</span>
+              <h2>사용자 설정</h2>
+            </div>
+            <button
+              type="button"
+              className="dc-profile-settings-close"
+              onClick={() => setSettingsOpen(false)}
+              aria-label="사용자 설정 닫기"
+            >
+              <X size={18} />
+            </button>
+          </header>
           <UserSettingsPanel
             draft={draft}
             saving={saving}

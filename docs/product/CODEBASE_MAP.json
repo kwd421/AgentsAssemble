@@ -1,12 +1,12 @@
 {
  "readme": "AgentsAssemble codebase map. Regenerate with `make codebase-map`; verify committed outputs with `make codebase-map-verify`. modules[] columns: name, path, package, domain, classification, migration_status, lines, docstring, imports[], imported_by[] (indexes into modules), classes[[name, [[base, defining_module], ...]]] (best-effort, top-level classes only). frontend[] columns: path, group, lines, doc, imports[], imported_by[] (indexes into frontend). package_edges go importer -> dependency with module-import counts; `points` is the precomputed polyline for that edge and `intra_cycle` marks imports whose endpoints share one cycle group. graph{} holds the layered package drawing: layers[] top-to-bottom (each with members[] package ids, member_count, and the dominant domain), (a package sits below everything importing it), clusters[] are mutually dependent packages (import cycles at package level) drawn as one labelled block, plus width/height of the drawing. health{} ranks findings for a reader who has to act: cycles[] (mutually dependent packages, with the lines they hold), leaning_on_retiring[] (current modules importing legacy/compatibility modules - the reason legacy cannot be deleted), highest_leverage_migrations[] (retiring modules with the most current importers), unreferenced_shims[] (compatibility modules with no importer in agentsassemble/ and no reference in tests/; callers outside this repository are not visible, so verify before deleting), and hotspots[] (largest modules). health.scope states exactly what was measured. class_graph{} is the UML generalization DAG over base classes that resolve inside the repo: edges go base -> subclass, so a subclass always sits below the class it extends. Coordinates in graph and class_graph are laid out with a Sugiyama pipeline (cycle condensation, Coffman-Graham layering, dummy-node edge routing, median/transpose crossing reduction) and are deterministic.",
- "generated_at": "2026-08-02T13:55:34Z",
+ "generated_at": "2026-08-02T14:06:56Z",
  "fingerprint": "31941f922a37dd81",
  "stats": {
   "backend_modules": 827,
   "backend_lines": 138754,
-  "frontend_files": 190,
-  "frontend_lines": 45685,
+  "frontend_files": 191,
+  "frontend_lines": 45758,
   "packages": 30,
   "import_cycles": 0,
   "classifications": {
@@ -509,7 +509,7 @@
    "kind": "frontend",
    "doc": "Frontend entry files (App, main, API client, styles) living directly under src/.",
    "files": 13,
-   "lines": 12908,
+   "lines": 12785,
    "domains": {},
    "classes": {},
    "x": 102.0,
@@ -588,8 +588,8 @@
    "id": "fe:views",
    "kind": "frontend",
    "doc": "Top-level room views rendered by the shell.",
-   "files": 91,
-   "lines": 19251,
+   "files": 92,
+   "lines": 19447,
    "domains": {},
    "classes": {},
    "x": 558.0,
@@ -4157,7 +4157,7 @@
      "fe:views"
     ],
     "internal_edges": 16,
-    "lines": 45685,
+    "lines": 45758,
     "heaviest": "fe:views"
    }
   ],
@@ -23769,8 +23769,8 @@
     0,
     139,
     140,
-    168,
-    169
+    169,
+    170
    ]
   ],
   [
@@ -23868,22 +23868,22 @@
     163,
     164,
     165,
-    166,
-    168,
+    167,
     169,
     170,
-    172,
+    171,
     173,
     174,
     175,
-    177,
-    179,
+    176,
+    178,
     180,
     181,
     182,
-    186,
+    183,
     187,
-    188
+    188,
+    189
    ]
   ],
   [
@@ -24335,7 +24335,7 @@
   [
    "frontend/src/index.css",
    "(src root)",
-   7274,
+   7151,
    "",
    [],
    [
@@ -24375,9 +24375,9 @@
     52,
     144,
     151,
-    178,
-    180,
-    182
+    179,
+    181,
+    183
    ]
   ],
   [
@@ -24388,10 +24388,10 @@
    [],
    [
     142,
-    173,
-    175,
-    181,
-    182
+    174,
+    176,
+    182,
+    183
    ]
   ],
   [
@@ -24406,7 +24406,7 @@
     0,
     142,
     153,
-    182
+    183
    ]
   ],
   [
@@ -24417,7 +24417,7 @@
    [],
    [
     125,
-    180
+    181
    ]
   ],
   [
@@ -24557,7 +24557,7 @@
    "Per-provider permission/sandbox options + fast support, mirrored from the",
    [],
    [
-    173
+    174
    ]
   ],
   [
@@ -24570,8 +24570,8 @@
    ],
    [
     125,
-    174,
-    180
+    175,
+    181
    ]
   ],
   [
@@ -24635,7 +24635,7 @@
     126,
     144,
     155,
-    182
+    183
    ]
   ],
   [
@@ -24653,8 +24653,8 @@
     126,
     144,
     155,
-    174,
-    180
+    175,
+    181
    ]
   ],
   [
@@ -24828,7 +24828,7 @@
     120,
     157,
     159,
-    188
+    189
    ]
   ],
   [
@@ -24994,8 +24994,8 @@
     84,
     103,
     104,
-    186,
-    188
+    187,
+    189
    ]
   ],
   [
@@ -25010,7 +25010,7 @@
     32,
     104,
     163,
-    186
+    187
    ]
   ],
   [
@@ -25055,7 +25055,7 @@
     2
    ],
    [
-    170
+    171
    ]
   ],
   [
@@ -25113,10 +25113,10 @@
     148,
     152,
     153,
-    168,
-    175,
-    179,
-    185
+    169,
+    176,
+    180,
+    186
    ]
   ],
   [
@@ -25276,10 +25276,10 @@
     86,
     117,
     140,
-    169,
-    186,
+    170,
     187,
-    188
+    188,
+    189
    ],
    [
     0,
@@ -25409,10 +25409,10 @@
     112,
     142,
     144,
-    175,
     176,
-    179,
-    182
+    177,
+    180,
+    183
    ]
   ],
   [
@@ -25521,7 +25521,7 @@
     121,
     124,
     163,
-    186
+    187
    ]
   ],
   [
@@ -25617,7 +25617,7 @@
    ],
    [
     128,
-    166
+    167
    ]
   ],
   [
@@ -25669,7 +25669,7 @@
     2
    ],
    [
-    166
+    167
    ]
   ],
   [
@@ -25696,7 +25696,7 @@
    [
     132,
     165,
-    173
+    174
    ]
   ],
   [
@@ -25729,7 +25729,7 @@
     2
    ],
    [
-    186
+    187
    ]
   ],
   [
@@ -25760,7 +25760,7 @@
     89,
     93,
     143,
-    167
+    168
    ],
    [
     104,
@@ -25790,10 +25790,10 @@
     93,
     113,
     151,
-    175,
     176,
-    181,
-    182
+    177,
+    182,
+    183
    ],
    [
     141,
@@ -25827,7 +25827,7 @@
     93,
     113,
     150,
-    180
+    181
    ],
    [
     0
@@ -25861,8 +25861,8 @@
    [
     93,
     145,
-    184,
-    185
+    185,
+    186
    ],
    [
     108,
@@ -25899,15 +25899,15 @@
    51,
    "",
    [
-    183
+    184
    ],
    [
     108,
     144,
     149,
-    175,
     176,
-    186
+    177,
+    187
    ]
   ],
   [
@@ -26095,13 +26095,13 @@
   [
    "frontend/src/views/components/UserPanel.tsx",
    "views",
-   507,
+   513,
    "",
    [
     2,
     88,
     135,
-    166
+    167
    ],
    [
     0,
@@ -26110,14 +26110,25 @@
    ]
   ],
   [
+   "frontend/src/views/components/UserSettingsPanel.css",
+   "views",
+   189,
+   "",
+   [],
+   [
+    167
+   ]
+  ],
+  [
    "frontend/src/views/components/UserSettingsPanel.tsx",
    "views",
-   225,
+   226,
    "",
    [
     2,
     129,
-    133
+    133,
+    166
    ],
    [
     165
@@ -26142,7 +26153,7 @@
     1,
     2,
     93,
-    169
+    170
    ],
    []
   ],
@@ -26157,7 +26168,7 @@
    ],
    [
     104,
-    168
+    169
    ]
   ],
   [
@@ -26178,7 +26189,7 @@
    "",
    [],
    [
-    173
+    174
    ]
   ],
   [
@@ -26188,8 +26199,8 @@
    "",
    [
     2,
-    173,
-    181
+    174,
+    182
    ],
    []
   ],
@@ -26203,13 +26214,13 @@
     39,
     53,
     135,
-    171,
-    180,
-    181
+    172,
+    181,
+    182
    ],
    [
-    172,
-    175
+    173,
+    176
    ]
   ],
   [
@@ -26221,11 +26232,11 @@
     2,
     54,
     60,
-    180,
-    181
+    181,
+    182
    ],
    [
-    175
+    176
    ]
   ],
   [
@@ -26239,11 +26250,11 @@
     93,
     113,
     150,
-    173,
     174,
-    178,
+    175,
     179,
-    181
+    180,
+    182
    ],
    [
     142
@@ -26257,8 +26268,8 @@
    [
     113,
     150,
-    180,
-    181
+    181,
+    182
    ],
    [
     142
@@ -26271,8 +26282,8 @@
    "",
    [
     2,
-    178,
-    181
+    179,
+    182
    ],
    []
   ],
@@ -26283,12 +26294,12 @@
    "",
    [
     38,
-    180,
-    181
+    181,
+    182
    ],
    [
-    175,
-    177
+    176,
+    178
    ]
   ],
   [
@@ -26300,10 +26311,10 @@
     2,
     93,
     113,
-    181
+    182
    ],
    [
-    175
+    176
    ]
   ],
   [
@@ -26317,15 +26328,15 @@
     41,
     54,
     60,
-    181
+    182
    ],
    [
     144,
-    173,
     174,
-    176,
-    178,
-    182
+    175,
+    177,
+    179,
+    183
    ]
   ],
   [
@@ -26339,7 +26350,6 @@
    ],
    [
     142,
-    172,
     173,
     174,
     175,
@@ -26348,7 +26358,8 @@
     178,
     179,
     180,
-    182
+    181,
+    183
    ]
   ],
   [
@@ -26363,8 +26374,8 @@
     40,
     59,
     113,
-    180,
-    181
+    181,
+    182
    ],
    [
     142
@@ -26517,8 +26528,8 @@
   {
    "name": "frontend/src",
    "note": "React room client (TS/TSX)",
-   "files": 190,
-   "lines": 45685
+   "files": 191,
+   "lines": 45758
   },
   {
    "name": "tests",
