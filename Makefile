@@ -3,7 +3,8 @@
 .PHONY: help test test-module test-quality-check architecture-check verify postgres-contracts
 .PHONY: frontend-deps frontend-build frontend-test frontend-e2e
 .PHONY: desktop-deps desktop-check desktop-dev desktop-build
-.PHONY: mobile-ios-init mobile-ios-build mobile-android-init mobile-android-build
+.PHONY: mobile-ios-init mobile-ios-build mobile-ios-release
+.PHONY: mobile-android-init mobile-android-build mobile-android-release
 .PHONY: mutation-canaries diff-check
 .PHONY: codebase-map codebase-map-check codebase-map-commit-check codebase-map-verify
 .PHONY: room-event-types room-event-types-check room-event-types-commit-check room-event-types-verify
@@ -34,8 +35,10 @@ help:
 		'make desktop-build        Build the self-contained native desktop installer' \
 		'make mobile-ios-init      Generate the ignored native iOS workspace' \
 		'make mobile-ios-build     Build the keyless iOS simulator application' \
+		'make mobile-ios-release   Build an App Store Connect IPA using the configured Apple account' \
 		'make mobile-android-init  Generate the ignored native Android workspace' \
 		'make mobile-android-build Build the keyless Android debug APK' \
+		'make mobile-android-release Build a signed Play Store AAB from environment credentials' \
 		'make mutation-canaries    Run critical authorization, rollback, room-scope, and response-order canaries' \
 		'make codebase-map         Regenerate all three checked-in architecture maps' \
 		'make codebase-map-check   Check maps without changing the working tree' \
@@ -109,11 +112,17 @@ mobile-ios-init:
 mobile-ios-build:
 	npm --prefix desktop run mobile:ios:build
 
+mobile-ios-release:
+	npm --prefix desktop run mobile:ios:release
+
 mobile-android-init:
 	npm --prefix desktop run mobile:android:init
 
 mobile-android-build:
 	npm --prefix desktop run mobile:android:build
+
+mobile-android-release:
+	npm --prefix desktop run mobile:android:release
 
 postgres-contracts:
 	$(PYTHON) -m tests.run_postgres_contracts

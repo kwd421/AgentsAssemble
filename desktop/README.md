@@ -79,9 +79,11 @@ prerequisites, then produce keyless development builds:
 ```sh
 make mobile-ios-init
 make mobile-ios-build
+make mobile-ios-release
 
 make mobile-android-init
 make mobile-android-build
+make mobile-android-release
 ```
 
 The build helper deliberately resolves `rustc` and `cargo` through `rustup`, so
@@ -90,12 +92,23 @@ standard library. Android uses `ANDROID_HOME`, `NDK_HOME`, and `JAVA_HOME` when
 provided, with macOS development defaults only when they are absent. The iOS
 simulator output and Android debug APK need no signing secret.
 
-Store publication is intentionally not configured in the repository. An iOS
-release still needs the Apple distribution/App Store Connect credentials for
-team `DRUFU8Q688`; an Android release still needs an external upload keystore
-and Play Console credentials. No hosted room URL is baked into either app:
-local-public and future cloud servers are selected by their invite or recovery
-links.
+The iOS release target uses App Store Connect export and the configured Apple
+team `DRUFU8Q688`. It requires the matching distribution identity and
+provisioning profile in Xcode. The Android release target emits a signed AAB
+after these environment-only inputs are supplied:
+
+```text
+ANDROID_UPLOAD_KEYSTORE
+ANDROID_UPLOAD_KEY_ALIAS
+ANDROID_UPLOAD_STORE_PASSWORD
+ANDROID_UPLOAD_KEY_PASSWORD
+```
+
+The generated Gradle project receives only a reference to the committed
+signing policy; no password or keystore is written into the repository. Store
+upload credentials and the final publish action remain external. No hosted room
+URL is baked into either app: local-public and future cloud servers are selected
+by their invite or recovery links.
 
 ## Security boundary
 
