@@ -151,6 +151,28 @@ def external_account_for_user(
     return _account_row(connection, clean_room_text(user_id, limit=128))
 
 
+def disconnect_external_account(
+    connection: Connection,
+    user_id: str,
+) -> bool:
+    clean_user_id = clean_room_text(user_id, limit=128)
+    connection.execute(
+        "SELECT pg_advisory_xact_lock(hashtext(%s))",
+        (f"account-user:{clean_user_id}",),
+    )
+    link = connection.execute(
+        "SELECT account_id FROM identity_user_accounts WHERE user_id = %s FOR UPDATE",
+        (clean_user_id,),
+    ).fetchone()
+    if link is None:
+        return False
+    connection.execute(
+        "DELETE FROM identity_accounts WHERE account_id = %s",
+        (str(link["account_id"]),),
+    )
+    return True
+
+
 def user_for_external_account(
     connection: Connection,
     provider: object,
@@ -234,6 +256,10 @@ class PostgresAccountsMixin:
     def connect_external_account(self, user_id: str, **account: object) -> dict[str, object]:
         with self._connections.connection() as connection, connection.transaction():
             return connect_external_account(connection, user_id, **account)
+
+    def disconnect_external_account(self, user_id: str) -> bool:
+        with self._connections.connection() as connection, connection.transaction():
+            return disconnect_external_account(connection, user_id)
 
     def bind_credential_to_user(self, user_id: str, **credential: object) -> dict[str, object]:
         with self._connections.connection() as connection, connection.transaction():

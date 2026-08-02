@@ -305,6 +305,21 @@ class GoogleAccountLoginService:
             "user": _public_user(target_user),
         }
 
+    def disconnect(
+        self,
+        identities: IdentityBackend,
+        *,
+        current_user: dict[str, object] | None,
+    ) -> dict[str, object]:
+        user_id = str((current_user or {}).get("user_id") or "").strip()
+        if not user_id:
+            raise GoogleLoginRejected(
+                "A signed-in server identity is required to disconnect Google.",
+                code="device_identity_required",
+            )
+        identities.disconnect_external_account(user_id)
+        return {"status": "disconnected"}
+
 
 def _public_account(account: dict[str, object] | None) -> dict[str, object] | None:
     if account is None:

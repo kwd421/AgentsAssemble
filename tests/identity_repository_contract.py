@@ -132,6 +132,32 @@ class IdentityRepositoryContractMixin:
             second["user_id"],
         )
 
+        self.assertTrue(
+            self.repository.disconnect_external_account(str(first["user_id"]))
+        )
+        self.assertIsNone(
+            self.repository.external_account_for_user(str(first["user_id"]))
+        )
+        self.assertIsNone(
+            self.repository.user_for_external_account(
+                "google",
+                "subject-contract-google",
+            )
+        )
+        self.assertEqual(
+            self.repository.user_for_credential("device:account-alpha")["user_id"],
+            first["user_id"],
+        )
+        relinked = self.repository.connect_external_account(
+            str(second["user_id"]),
+            account_id="acct-contract-google",
+            provider="google",
+            subject_fingerprint="subject-contract-google",
+            display_name="Account Bravo",
+            connected_at="2026-08-02T00:04:00+00:00",
+        )
+        self.assertEqual(relinked["user_id"], second["user_id"])
+
     def test_operator_claim_pairing_and_consumption_share_one_identity(self) -> None:
         claimed = self.repository.claim_local_operator_credential(
             "device:operator-alpha",

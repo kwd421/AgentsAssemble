@@ -90,6 +90,10 @@ surface rather than silently counted as React parity.
 | --- | --- | --- | --- | --- | --- |
 | `/api/account` | GET | exact | `fetchAccountStatus()` | yes | Returns the authenticated server user's public account projection and a one-use Google login challenge when configured; never returns a raw external subject or token. |
 | `/api/account/google` | POST | exact | `connectGoogleAccount()` | yes | Verifies a Google ID token and one-use nonce before explicitly linking the current server identity; remote mutation requires HTTPS. |
+| `/api/account/google` | DELETE | exact | `disconnectGoogleAccount()` | yes | Removes the current server user's public Google link and cached Google profile fields while retaining the local profile, rooms, and durable device credential; remote mutation requires HTTPS. |
+| `/api/account/google/handoff/start` | POST | exact | `startGoogleAccountHandoff()` | yes | Creates a short-lived one-use system-browser handoff for the authenticated desktop identity. |
+| `/api/account/google/handoff/configure` | POST | exact | `configureGoogleAccountHandoff()` | yes | Resolves a valid handoff into the bounded Google client ID, nonce, and remaining lifetime used by the browser page. |
+| `/api/account/google/handoff/complete` | POST | exact | `completeGoogleAccountHandoff()` | yes | Consumes the one-use handoff and verified Google credential, then links the requesting desktop identity. |
 | `/api/attachments` | POST | exact | `uploadLobbyAttachment()` | yes | React composer uploads attachments before posting lobby messages. |
 | `/api/attachments/{attachment_id}` | GET | prefix | `-` | no | Vanilla/admin/operator endpoint; not wrapped by React preview yet. |
 | `/api/codex-sessions` | GET | exact | `-` | no | Retired list route; returns explicit `410 legacy_route_retired`. The distinct `/invite` and `/join` compatibility routes remain. |

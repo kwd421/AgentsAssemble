@@ -3,6 +3,7 @@ import { CircleUserRound, LoaderCircle } from "lucide-react";
 
 import {
   connectGoogleAccount,
+  disconnectGoogleAccount,
   fetchAccountStatus,
   startGoogleAccountHandoff,
   type AccountStatusResponse,
@@ -21,6 +22,7 @@ export default function GoogleAccountSettings({
   const [error, setError] = useState("");
   const [connecting, setConnecting] = useState(false);
   const [desktopWaiting, setDesktopWaiting] = useState(false);
+  const [disconnecting, setDisconnecting] = useState(false);
   const desktopLoginExpiresAt = useRef(0);
   const buttonRef = useRef<HTMLDivElement>(null);
 
@@ -148,6 +150,21 @@ export default function GoogleAccountSettings({
     }
   };
 
+  const disconnect = async () => {
+    setDisconnecting(true);
+    setError("");
+    try {
+      await disconnectGoogleAccount(identity);
+      setStatus((current) => (current ? { ...current, account: null } : current));
+      setDesktopWaiting(false);
+      setConnecting(false);
+    } catch (reason) {
+      setError(reason instanceof Error ? reason.message : "공개 계정에서 로그아웃하지 못했습니다.");
+    } finally {
+      setDisconnecting(false);
+    }
+  };
+
   return (
     <section className="mt-4 grid gap-3 rounded-md bg-[#1e1f22] p-3" aria-label="공개 계정 연결">
       <div className="flex items-start gap-2 text-text-secondary">
@@ -167,12 +184,28 @@ export default function GoogleAccountSettings({
       )}
 
       {status?.account && (
-        <div className="grid gap-1 rounded-md bg-[#2b2d31] px-3 py-2">
-          <strong className="text-[13px] text-text-primary">
-            {status.account.display_name || "Google 계정"}
-          </strong>
-          <span className="text-[11px] font-bold text-text-muted">{status.account.email}</span>
-          <code className="truncate text-[10px] text-text-muted">{status.account.account_id}</code>
+        <div className="grid gap-3 rounded-md bg-[#2b2d31] px-3 py-3">
+          <div className="grid gap-1">
+            <strong className="text-[13px] text-text-primary">
+              {status.account.display_name || "Google 계정"}
+            </strong>
+            <span className="text-[11px] font-bold text-text-muted">{status.account.email}</span>
+            <code className="truncate text-[10px] text-text-muted">{status.account.account_id}</code>
+          </div>
+          <div className="flex items-center justify-between gap-3 border-t border-white/5 pt-3">
+            <p className="text-[10px] font-bold leading-4 text-text-muted">
+              로그아웃해도 로컬 프로필과 방은 유지됩니다.
+            </p>
+            <button
+              type="button"
+              aria-label="공개 계정 로그아웃"
+              className="shrink-0 rounded-md bg-[#3a3c42] px-3 py-2 text-[11px] font-black text-[#ffb4b5] hover:bg-[#45474e] disabled:opacity-60"
+              disabled={disconnecting}
+              onClick={() => void disconnect()}
+            >
+              {disconnecting ? "로그아웃 중…" : "로그아웃"}
+            </button>
+          </div>
         </div>
       )}
 

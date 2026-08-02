@@ -128,6 +128,18 @@ export async function postJsonWithIdentity<T>(
   return res.json();
 }
 
+export async function deleteJsonWithIdentity<T>(
+  url: string,
+  { sessionToken = "", deviceToken = "" }: { sessionToken?: string; deviceToken?: string }
+): Promise<T> {
+  const headers: Record<string, string> = {};
+  if (sessionToken) headers.Authorization = `Bearer ${sessionToken}`;
+  if (deviceToken) headers["X-Device-Token"] = deviceToken;
+  const res = await fetch(url, { method: "DELETE", headers });
+  if (!res.ok) throw await responseError(res);
+  return res.json();
+}
+
 export async function deleteJson<T>(url: string): Promise<T> {
   const res = await fetch(url, { method: "DELETE" });
   if (!res.ok) {

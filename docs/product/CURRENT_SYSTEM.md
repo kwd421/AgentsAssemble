@@ -98,13 +98,16 @@ belongs to another server user, so login never silently merges two identities.
 The web account surface uses Google Identity Services only when the server has
 `AGENTSASSEMBLE_GOOGLE_WEB_CLIENT_ID` configured. The backend verifies the ID
 token audience, issuer, expiry, and a short-lived one-use nonce before writing
-the account link. A remote account mutation requires forwarded HTTPS; a spoofed
-loopback Host header is not treated as a local request. Google does not permit
-this web flow inside an embedded WebView. The Tauri client therefore asks the
-selected server for a short-lived, one-use handoff, opens that same-origin URL
-in the system browser, and polls the server until the verified account link is
-visible. The desktop command accepts only the selected server origin, while the
-handoff token and Google nonce expire in process memory and are consumed once.
+the account link. Logging out removes only that server-side public-account link
+and its cached Google profile fields; the local profile, rooms, and durable
+device credential remain. A remote account mutation requires forwarded HTTPS;
+a spoofed loopback Host header is not treated as a local request. Google does
+not permit this web flow inside an embedded WebView. The Tauri client therefore
+asks the selected server for a short-lived, one-use handoff, opens that
+same-origin URL in the system browser, and polls the server until the verified
+account link is visible. The desktop command accepts only the selected server
+origin, while the handoff token and Google nonce expire in process memory and
+are consumed once.
 
 ### Deferred plugin extension boundary
 

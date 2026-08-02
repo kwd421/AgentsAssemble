@@ -15,6 +15,7 @@ from urllib.request import Request, urlopen
 
 from agentsassemble.identity.accounts import external_account_identity
 from agentsassemble.identity.google import GoogleAccountLoginService
+from agentsassemble.identity.repository import device_auth_key
 from agentsassemble.gui import _make_handler
 from agentsassemble.persistence.local.identity.repository import IdentityStore
 from agentsassemble.web.router import GuiDeps, RequestContext, Router
@@ -195,12 +196,27 @@ class GoogleAccountHttpTests(unittest.TestCase):
                     timeout=4,
                 ) as response:
                     linked = json.loads(response.read().decode())
+                with urlopen(
+                    Request(
+                        f"{base}/api/account/google",
+                        headers=headers,
+                        method="DELETE",
+                    ),
+                    timeout=4,
+                ) as response:
+                    disconnected = json.loads(response.read().decode())
+                with urlopen(
+                    Request(f"{base}/api/account", headers=headers), timeout=4
+                ) as response:
+                    status_after_disconnect = json.loads(response.read().decode())
             finally:
                 server.shutdown()
                 server.server_close()
 
         self.assertEqual(linked["status"], "connected")
         self.assertTrue(linked["account"]["account_id"].startswith("acct-"))
+        self.assertEqual(disconnected["status"], "disconnected")
+        self.assertIsNone(status_after_disconnect["account"])
 
     def test_verified_google_identity_links_current_user_and_nonce_cannot_replay(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:
@@ -230,23 +246,45 @@ class GoogleAccountHttpTests(unittest.TestCase):
                 "POST",
                 body={"credential": "google-id-token", "nonce": verifier.nonce},
             )
-
-            self.assertEqual(linked.sent_json["status"], "connected")
-            self.assertEqual(linked.sent_json["account"]["provider"], "google")
-            self.assertEqual(linked.sent_json["account"]["email"], "person@example.invalid")
             _account_id, subject_fingerprint = external_account_identity(
                 "google",
                 "google-subject-123",
             )
+            linked_account_user = identities.user_for_external_account(
+                "google",
+                subject_fingerprint,
+            )
+            disconnected = self._dispatch(
+                router,
+                deps,
+                "/api/account/google",
+                "DELETE",
+            )
+            status_after_disconnect = self._dispatch(
+                router,
+                deps,
+                "/api/account",
+                "GET",
+            )
+            device_user_after_disconnect = identities.user_for_credential(
+                device_auth_key("account-http-device-token")
+            )
+
+            self.assertEqual(linked.sent_json["status"], "connected")
+            self.assertEqual(linked.sent_json["account"]["provider"], "google")
+            self.assertEqual(linked.sent_json["account"]["email"], "person@example.invalid")
             self.assertEqual(
-                identities.user_for_external_account(
-                    "google",
-                    subject_fingerprint,
-                )["user_id"],
+                linked_account_user["user_id"],
                 linked.sent_json["user"]["user_id"],
             )
             self.assertEqual(replay.sent_error[0], HTTPStatus.FORBIDDEN)
             self.assertEqual(replay.sent_error[2], "google_login_challenge_invalid")
+            self.assertEqual(disconnected.sent_json["status"], "disconnected")
+            self.assertIsNone(status_after_disconnect.sent_json["account"])
+            self.assertEqual(
+                device_user_after_disconnect["user_id"],
+                linked.sent_json["user"]["user_id"],
+            )
 
     def test_remote_peer_cannot_spoof_loopback_host_to_bypass_https(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:
@@ -271,8 +309,27 @@ class GoogleAccountHttpTests(unittest.TestCase):
                 host="127.0.0.1:8765",
                 peer_host="203.0.113.10",
             )
+            linked = self._dispatch(
+                router,
+                deps,
+                "/api/account/google",
+                "POST",
+                body={"credential": "google-id-token", "nonce": verifier.nonce},
+            )
+            rejected_disconnect = self._dispatch(
+                router,
+                deps,
+                "/api/account/google",
+                "DELETE",
+                host="127.0.0.1:8765",
+                peer_host="203.0.113.10",
+            )
+            status = self._dispatch(router, deps, "/api/account", "GET")
 
         self.assertEqual(response.sent_error[0], HTTPStatus.FORBIDDEN)
+        self.assertEqual(linked.sent_json["status"], "connected")
+        self.assertEqual(rejected_disconnect.sent_error[0], HTTPStatus.FORBIDDEN)
+        self.assertIsNotNone(status.sent_json["account"])
 
     def _dispatch(
         self,

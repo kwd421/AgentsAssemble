@@ -32,6 +32,9 @@ describe("GoogleAccountSettings", () => {
         avatar_image_url: "",
       },
     });
+    vi.spyOn(identityApi, "disconnectGoogleAccount").mockResolvedValue({
+      status: "disconnected",
+    });
     let credentialCallback: ((response: { credential: string }) => void) | undefined;
     Object.assign(window, {
       google: {
@@ -127,5 +130,34 @@ describe("GoogleAccountSettings", () => {
     expect(invoke).toHaveBeenCalledWith("open_google_account_login", {
       url: "http://localhost:3000/#google_handoff=one-time-token",
     });
+  });
+
+  it("disconnects a public account without discarding the current device identity", async () => {
+    vi.mocked(identityApi.fetchAccountStatus).mockResolvedValue({
+      account: {
+        account_id: "acct-connected",
+        provider: "google",
+        display_name: "Connected Sei",
+        email: "connected@example.test",
+        avatar_image_url: "",
+      },
+      google: {
+        enabled: true,
+        client_id: "client.apps.googleusercontent.com",
+        nonce: "nonce-connected",
+        unavailable_reason: "",
+      },
+    });
+    const identity = { deviceToken: "device-token", sessionToken: "session-token" };
+
+    render(<GoogleAccountSettings identity={identity} />);
+
+    fireEvent.click(await screen.findByRole("button", { name: "공개 계정 로그아웃" }));
+
+    await waitFor(() => {
+      expect(identityApi.disconnectGoogleAccount).toHaveBeenCalledWith(identity);
+    });
+    expect(screen.queryByText("connected@example.test")).toBeNull();
+    expect(await screen.findByRole("button", { name: "Google로 계속" })).not.toBeNull();
   });
 });

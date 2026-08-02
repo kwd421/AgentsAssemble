@@ -1,4 +1,9 @@
-import { fetchJsonWithIdentity, postJson, postJsonWithIdentity } from "./http";
+import {
+  deleteJsonWithIdentity,
+  fetchJsonWithIdentity,
+  postJson,
+  postJsonWithIdentity,
+} from "./http";
 import type { RoomInviteJoinResponse } from "./invites";
 import type { UserProfileIdentity } from "./room";
 
@@ -62,6 +67,15 @@ export function connectGoogleAccount({
   return postJsonWithIdentity<GoogleAccountConnectResponse>(
     "/api/account/google",
     { credential, nonce },
+    identity
+  );
+}
+
+export function disconnectGoogleAccount(
+  identity: UserProfileIdentity = {}
+): Promise<{ status: "disconnected" }> {
+  return deleteJsonWithIdentity<{ status: "disconnected" }>(
+    "/api/account/google",
     identity
   );
 }

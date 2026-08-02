@@ -168,6 +168,24 @@ def external_account_for_user(
     return _account_row(connection, clean_room_text(user_id, limit=128))
 
 
+def disconnect_external_account(
+    connection: sqlite3.Connection,
+    user_id: str,
+) -> bool:
+    clean_user_id = clean_room_text(user_id, limit=128)
+    link = connection.execute(
+        "SELECT account_id FROM user_accounts WHERE user_id = ?",
+        (clean_user_id,),
+    ).fetchone()
+    if link is None:
+        return False
+    connection.execute(
+        "DELETE FROM accounts WHERE account_id = ?",
+        (str(link["account_id"]),),
+    )
+    return True
+
+
 def user_for_external_account(
     connection: sqlite3.Connection,
     provider: object,
@@ -248,6 +266,10 @@ class SqliteAccountsMixin:
         with self._write_lock, closing(self._connect()) as connection, connection:
             row = connect_external_account(connection, user_id, **account)
         return dict(row)
+
+    def disconnect_external_account(self, user_id: str) -> bool:
+        with self._write_lock, closing(self._connect()) as connection, connection:
+            return disconnect_external_account(connection, user_id)
 
     def bind_credential_to_user(self, user_id: str, **credential: object) -> dict[str, object]:
         with self._write_lock, closing(self._connect()) as connection, connection:

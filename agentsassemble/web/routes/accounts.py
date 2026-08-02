@@ -43,6 +43,20 @@ def register_account_routes(
             return
         ctx.send_json(result)
 
+    @router.delete("/api/account/google")
+    def disconnect_google_account(ctx: RequestContext) -> None:
+        if not _account_login_transport_allowed(ctx):
+            return
+        try:
+            result = google.disconnect(
+                ctx.deps.identities,
+                current_user=ctx.authenticated_user(),
+            )
+        except GoogleLoginRejected as error:
+            ctx.send_error(HTTPStatus.FORBIDDEN, str(error), code=error.code)
+            return
+        ctx.send_json(result)
+
     @router.post("/api/account/google/handoff/start")
     def start_google_account_handoff(ctx: RequestContext) -> None:
         if not _account_login_transport_allowed(ctx):

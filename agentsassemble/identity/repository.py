@@ -76,6 +76,7 @@ class IdentityBackend(Protocol):
         avatar_image_url: str = "",
         connected_at: str,
     ) -> dict[str, object]: ...
+    def disconnect_external_account(self, user_id: str) -> bool: ...
     def bind_credential_to_user(
         self,
         user_id: str,
