@@ -3,6 +3,7 @@ import { fetchRooms } from "../api";
 import {
   mergeServerRoomsIntoDock,
   persistableRoom,
+  roomDockIdentity,
   type RoomDockItem,
 } from "../lib/roomDockModel";
 import { persistRoomDockItems } from "../lib/roomDockPersistence";
@@ -23,9 +24,7 @@ export function useRoomDirectory({
 }: UseRoomDirectoryOptions) {
   const roomsRef = useRef<RoomDockItem[]>(initialRooms);
   const [rooms, setRooms] = useState<RoomDockItem[]>(initialRooms);
-  const [syncIssue, setSyncIssue] = useState<RoomDirectorySyncIssue | null>(
-    null
-  );
+  const [syncIssue, setSyncIssue] = useState<RoomDirectorySyncIssue | null>(null);
   const membershipRevisionRef = useRef(0);
   const metadataRevisionRef = useRef(0);
   const hydrationEpochRef = useRef(0);
@@ -58,7 +57,7 @@ export function useRoomDirectory({
       if (!roomOrNull) return;
       commit((current) => {
         const existingIndex = current.findIndex(
-          (room) => room.meetingId === roomOrNull.meetingId
+          (room) => roomDockIdentity(room) === roomDockIdentity(roomOrNull)
         );
         if (existingIndex >= 0) {
           const next = [...current];

@@ -1,0 +1,59 @@
+.dc-disconnected-room {
+  width: min(560px, calc(100% - 48px));
+  margin: auto;
+  padding: 44px;
+  text-align: center;
+  background: var(--color-panel-soft);
+  border: 1px solid var(--color-panel-border);
+  border-radius: 20px;
+}
+
+.dc-disconnected-room-icon {
+  display: grid;
+  width: 60px;
+  height: 60px;
+  margin: 0 auto 18px;
+  place-items: center;
+  color: var(--color-text-secondary);
+  background: var(--color-panel);
+  border-radius: 18px;
+}
+
+.dc-disconnected-room-kicker,
+.dc-disconnected-room-name,
+.dc-disconnected-room-description {
+  margin: 0;
+}
+
+.dc-disconnected-room-kicker {
+  color: var(--color-text-secondary);
+  font-size: 12px;
+  font-weight: 800;
+  letter-spacing: 0.08em;
+}
+
+.dc-disconnected-room h1 {
+  margin: 8px 0 14px;
+  font-size: 28px;
+}
+
+.dc-disconnected-room-name {
+  margin-bottom: 10px;
+  color: var(--color-text-primary);
+  font-weight: 800;
+}
+
+.dc-disconnected-room-description {
+  color: var(--color-text-secondary);
+  line-height: 1.65;
+}
+
+.dc-disconnected-room code {
+  display: block;
+  margin-top: 18px;
+  overflow: hidden;
+  color: var(--color-text-muted);
+  font-size: 12px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}

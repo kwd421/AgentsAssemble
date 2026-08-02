@@ -1,6 +1,6 @@
 import { Hash } from "lucide-react";
 import { beforeEach, describe, expect, it } from "vitest";
-import type { RoomDockItem } from "./roomDockModel";
+import { persistableRoom, type RoomDockItem } from "./roomDockModel";
 import {
   loadRoomDockItems,
   persistRoomDockItems,
@@ -17,6 +17,8 @@ describe("room dock persistence", () => {
       id: `room-${index}`,
       label: `Room ${index}`,
       meetingId: `meeting-${index}`,
+      roomOrigin: index === 1 ? "remote_server" : "local",
+      serverOrigin: index === 1 ? "https://rooms.example.test" : undefined,
       topic: `Topic ${index}`,
       shortLabel: "R",
       appearance: {
@@ -33,7 +35,7 @@ describe("room dock persistence", () => {
       tone: "resident",
     }));
 
-    persistRoomDockItems(rooms);
+    persistRoomDockItems(rooms.map(persistableRoom));
 
     const restored = loadRoomDockItems();
     expect(restored.map((room) => room.meetingId)).toEqual(
@@ -42,6 +44,10 @@ describe("room dock persistence", () => {
     expect(restored[0].appearance).toMatchObject({
       bannerImage: "/api/attachments/banner01?view=1",
       iconImage: "/api/attachments/icon0001?view=1",
+    });
+    expect(restored[1]).toMatchObject({
+      roomOrigin: "remote_server",
+      serverOrigin: "https://rooms.example.test",
     });
   });
 });

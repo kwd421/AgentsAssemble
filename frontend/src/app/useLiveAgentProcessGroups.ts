@@ -10,9 +10,11 @@ const EMPTY_PROCESS_GROUPS: LiveAgentProcessGroup[] = [];
 export function useLiveAgentProcessGroups({
   activeMeetingId,
   guestLocked,
+  enabled = true,
 }: {
   activeMeetingId: string;
   guestLocked: boolean;
+  enabled?: boolean;
 }) {
   const [processData, setProcessData] = useState<LiveAgentProcessesResponse | null>(null);
   const [refreshRevision, setRefreshRevision] = useState(0);
@@ -22,7 +24,7 @@ export function useLiveAgentProcessGroups({
   }, []);
 
   useEffect(() => {
-    if (guestLocked) {
+    if (!enabled || guestLocked) {
       setProcessData(null);
       return undefined;
     }
@@ -37,7 +39,7 @@ export function useLiveAgentProcessGroups({
     return () => {
       cancelled = true;
     };
-  }, [activeMeetingId, guestLocked, refreshRevision]);
+  }, [activeMeetingId, enabled, guestLocked, refreshRevision]);
 
   return {
     processGroups: processData?.groups ?? EMPTY_PROCESS_GROUPS,

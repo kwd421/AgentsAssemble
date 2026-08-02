@@ -1,12 +1,12 @@
 {
  "readme": "AgentsAssemble codebase map. Regenerate with `make codebase-map`; verify committed outputs with `make codebase-map-verify`. modules[] columns: name, path, package, domain, classification, migration_status, lines, docstring, imports[], imported_by[] (indexes into modules), classes[[name, [[base, defining_module], ...]]] (best-effort, top-level classes only). frontend[] columns: path, group, lines, doc, imports[], imported_by[] (indexes into frontend). package_edges go importer -> dependency with module-import counts; `points` is the precomputed polyline for that edge and `intra_cycle` marks imports whose endpoints share one cycle group. graph{} holds the layered package drawing: layers[] top-to-bottom (each with members[] package ids, member_count, and the dominant domain), (a package sits below everything importing it), clusters[] are mutually dependent packages (import cycles at package level) drawn as one labelled block, plus width/height of the drawing. health{} ranks findings for a reader who has to act: cycles[] (mutually dependent packages, with the lines they hold), leaning_on_retiring[] (current modules importing legacy/compatibility modules - the reason legacy cannot be deleted), highest_leverage_migrations[] (retiring modules with the most current importers), unreferenced_shims[] (compatibility modules with no importer in agentsassemble/ and no reference in tests/; callers outside this repository are not visible, so verify before deleting), and hotspots[] (largest modules). health.scope states exactly what was measured. class_graph{} is the UML generalization DAG over base classes that resolve inside the repo: edges go base -> subclass, so a subclass always sits below the class it extends. Coordinates in graph and class_graph are laid out with a Sugiyama pipeline (cycle condensation, Coffman-Graham layering, dummy-node edge routing, median/transpose crossing reduction) and are deterministic.",
- "generated_at": "2026-08-01T18:55:59Z",
+ "generated_at": "2026-08-02T02:09:38Z",
  "fingerprint": "3e4c9ecd7df87650",
  "stats": {
   "backend_modules": 813,
   "backend_lines": 136615,
-  "frontend_files": 175,
-  "frontend_lines": 43935,
+  "frontend_files": 180,
+  "frontend_lines": 44579,
   "packages": 30,
   "import_cycles": 0,
   "classifications": {
@@ -509,7 +509,7 @@
    "kind": "frontend",
    "doc": "Frontend entry files (App, main, API client, styles) living directly under src/.",
    "files": 13,
-   "lines": 12750,
+   "lines": 12765,
    "domains": {},
    "classes": {},
    "x": 102.0,
@@ -541,7 +541,7 @@
    "kind": "frontend",
    "doc": "Application shell, routing, and global client state.",
    "files": 21,
-   "lines": 5698,
+   "lines": 5789,
    "domains": {},
    "classes": {},
    "x": 558.0,
@@ -557,7 +557,7 @@
    "kind": "frontend",
    "doc": "Shared utilities and presentation helpers.",
    "files": 51,
-   "lines": 5423,
+   "lines": 5500,
    "domains": {},
    "classes": {},
    "x": 786.0,
@@ -588,8 +588,8 @@
    "id": "fe:views",
    "kind": "frontend",
    "doc": "Top-level room views rendered by the shell.",
-   "files": 81,
-   "lines": 18244,
+   "files": 86,
+   "lines": 18705,
    "domains": {},
    "classes": {},
    "x": 558.0,
@@ -1009,7 +1009,7 @@
   {
    "from": "fe:(src root)",
    "to": "fe:views",
-   "count": 20,
+   "count": 21,
    "points": [
     [
      310.0,
@@ -1169,7 +1169,7 @@
   {
    "from": "fe:views",
    "to": "fe:app",
-   "count": 4,
+   "count": 5,
    "points": [
     [
      662.0,
@@ -1185,7 +1185,7 @@
   {
    "from": "fe:views",
    "to": "fe:lib",
-   "count": 78,
+   "count": 79,
    "points": [
     [
      755.8823529411765,
@@ -4035,7 +4035,7 @@
      "fe:views"
     ],
     "internal_edges": 16,
-    "lines": 43935,
+    "lines": 44579,
     "heaviest": "fe:views"
    }
   ],
@@ -23212,7 +23212,7 @@
   [
    "frontend/src/App.tsx",
    "(src root)",
-   1989,
+   2004,
    "",
    [
     1,
@@ -23251,18 +23251,19 @@
     108,
     110,
     111,
-    118,
+    113,
     120,
-    121,
-    124,
-    131,
-    140,
-    141,
+    122,
+    123,
+    126,
+    133,
     142,
     144,
     146,
     148,
-    150
+    150,
+    152,
+    154
    ],
    [
     86
@@ -23278,10 +23279,10 @@
    ],
    [
     0,
-    126,
-    127,
-    153,
-    154
+    128,
+    129,
+    158,
+    159
    ]
   ],
   [
@@ -23354,44 +23355,44 @@
     106,
     107,
     108,
-    114,
-    115,
     116,
     117,
+    118,
     119,
-    120,
     121,
-    125,
-    126,
+    122,
+    123,
     127,
     128,
     129,
+    130,
     131,
-    139,
-    140,
+    133,
     141,
-    143,
+    142,
     144,
     147,
     148,
-    149,
-    150,
     151,
+    152,
     153,
     154,
     155,
-    157,
     158,
     159,
     160,
     162,
+    163,
     164,
     165,
-    166,
     167,
+    169,
+    170,
     171,
     172,
-    173
+    176,
+    177,
+    178
    ]
   ],
   [
@@ -23523,7 +23524,7 @@
    ],
    [
     25,
-    115
+    117
    ]
   ],
   [
@@ -23536,7 +23537,7 @@
     0,
     16,
     95,
-    121
+    123
    ]
   ],
   [
@@ -23591,7 +23592,7 @@
   [
    "frontend/src/app/useLiveAgentProcessGroups.ts",
    "app",
-   46,
+   48,
    "",
    [
     2
@@ -23628,7 +23629,7 @@
    [
     0,
     18,
-    120
+    122
    ]
   ],
   [
@@ -23660,7 +23661,7 @@
   [
    "frontend/src/app/useRoomDirectory.test.tsx",
    "app",
-   455,
+   483,
    "",
    [
     2,
@@ -23673,7 +23674,7 @@
   [
    "frontend/src/app/useRoomDirectory.ts",
    "app",
-   208,
+   207,
    "",
    [
     2,
@@ -23688,7 +23689,7 @@
   [
    "frontend/src/app/useRoomInviteController.test.tsx",
    "app",
-   278,
+   306,
    "",
    [
     2,
@@ -23700,7 +23701,7 @@
   [
    "frontend/src/app/useRoomInviteController.ts",
    "app",
-   571,
+   588,
    "",
    [
     2,
@@ -23713,7 +23714,8 @@
    ],
    [
     0,
-    24
+    24,
+    144
    ]
   ],
   [
@@ -23731,7 +23733,7 @@
   [
    "frontend/src/app/useRoomMembers.ts",
    "app",
-   74,
+   76,
    "",
    [
     2,
@@ -23757,7 +23759,7 @@
   [
    "frontend/src/app/useRoomSettingsController.ts",
    "app",
-   520,
+   524,
    "",
    [
     2,
@@ -23772,7 +23774,7 @@
   [
    "frontend/src/app/useRoomSideChat.test.tsx",
    "app",
-   147,
+   156,
    "",
    [
     2,
@@ -23783,7 +23785,7 @@
   [
    "frontend/src/app/useRoomSideChat.ts",
    "app",
-   130,
+   132,
    "",
    [
     2,
@@ -23858,11 +23860,11 @@
    ],
    [
     47,
-    131,
-    138,
-    163,
-    165,
-    167
+    133,
+    140,
+    168,
+    170,
+    172
    ]
   ],
   [
@@ -23872,11 +23874,11 @@
    "",
    [],
    [
-    129,
-    158,
-    160,
-    166,
-    167
+    131,
+    163,
+    165,
+    171,
+    172
    ]
   ],
   [
@@ -23889,9 +23891,9 @@
    ],
    [
     0,
-    129,
-    140,
-    167
+    131,
+    142,
+    172
    ]
   ],
   [
@@ -23901,8 +23903,8 @@
    "",
    [],
    [
-    116,
-    165
+    118,
+    170
    ]
   ],
   [
@@ -23918,7 +23920,7 @@
     19,
     90,
     91,
-    127
+    129
    ]
   ],
   [
@@ -23951,7 +23953,7 @@
    "",
    [],
    [
-    113
+    115
    ]
   ],
   [
@@ -23961,7 +23963,7 @@
    "",
    [],
    [
-    115
+    117
    ]
   ],
   [
@@ -23975,8 +23977,8 @@
    ],
    [
     95,
-    121,
-    141
+    123,
+    144
    ]
   ],
   [
@@ -23997,7 +23999,7 @@
    "Per-provider permission/sandbox options + fast support, mirrored from the",
    [],
    [
-    158
+    163
    ]
   ],
   [
@@ -24009,9 +24011,9 @@
     2
    ],
    [
-    116,
-    159,
-    165
+    118,
+    164,
+    170
    ]
   ],
   [
@@ -24031,7 +24033,7 @@
    "",
    [],
    [
-    127
+    129
    ]
   ],
   [
@@ -24054,9 +24056,9 @@
     76,
     77,
     97,
-    127,
-    130,
-    148
+    129,
+    132,
+    152
    ]
   ],
   [
@@ -24070,12 +24072,12 @@
    [
     46,
     95,
-    115,
-    116,
     117,
-    131,
-    141,
-    167
+    118,
+    119,
+    133,
+    144,
+    172
    ]
   ],
   [
@@ -24088,13 +24090,13 @@
     0,
     25,
     95,
-    115,
-    116,
     117,
-    131,
-    141,
-    159,
-    165
+    118,
+    119,
+    133,
+    144,
+    164,
+    170
    ]
   ],
   [
@@ -24199,7 +24201,7 @@
    [],
    [
     63,
-    113
+    115
    ]
   ],
   [
@@ -24218,11 +24220,11 @@
     69,
     74,
     97,
-    131,
-    141,
-    142,
-    143,
-    144
+    133,
+    144,
+    146,
+    147,
+    148
    ]
   ],
   [
@@ -24239,7 +24241,7 @@
   [
    "frontend/src/lib/roomDockModel.ts",
    "lib",
-   404,
+   457,
    "",
    [
     8,
@@ -24265,15 +24267,16 @@
     73,
     96,
     97,
-    142,
-    144,
-    173
+    113,
+    146,
+    148,
+    178
    ]
   ],
   [
    "frontend/src/lib/roomDockPersistence.test.ts",
    "lib",
-   47,
+   53,
    "",
    [
     67,
@@ -24284,7 +24287,7 @@
   [
    "frontend/src/lib/roomDockPersistence.ts",
    "lib",
-   99,
+   117,
    "",
    [
     65
@@ -24330,7 +24333,7 @@
    [
     0,
     97,
-    127
+    129
    ]
   ],
   [
@@ -24370,7 +24373,7 @@
    [
     0,
     25,
-    141
+    144
    ]
   ],
   [
@@ -24405,7 +24408,7 @@
    [],
    [
     0,
-    142
+    146
    ]
   ],
   [
@@ -24433,8 +24436,8 @@
     79,
     96,
     97,
-    171,
-    173
+    176,
+    178
    ]
   ],
   [
@@ -24448,8 +24451,8 @@
    [
     31,
     97,
-    148,
-    171
+    152,
+    176
    ]
   ],
   [
@@ -24471,8 +24474,8 @@
     2
    ],
    [
-    149,
-    150
+    153,
+    154
    ]
   ],
   [
@@ -24482,7 +24485,7 @@
    "",
    [],
    [
-    127
+    129
    ]
   ],
   [
@@ -24494,7 +24497,7 @@
     2
    ],
    [
-    155
+    160
    ]
   ],
   [
@@ -24543,18 +24546,18 @@
     105,
     106,
     107,
-    126,
-    127,
+    128,
     129,
     131,
-    134,
-    135,
-    139,
-    140,
-    153,
-    160,
-    164,
-    170
+    133,
+    136,
+    137,
+    141,
+    142,
+    158,
+    165,
+    169,
+    175
    ]
   ],
   [
@@ -24652,9 +24655,9 @@
     46,
     54,
     55,
-    115,
-    116,
-    117
+    117,
+    118,
+    119
    ],
    [
     0
@@ -24663,7 +24666,7 @@
   [
    "frontend/src/views/LobbyView.test.tsx",
    "views",
-   435,
+   495,
    "",
    [
     2,
@@ -24687,11 +24690,11 @@
     80,
     81,
     110,
-    127,
-    154,
-    171,
-    172,
-    173
+    129,
+    159,
+    176,
+    177,
+    178
    ],
    [
     0,
@@ -24746,9 +24749,9 @@
     58,
     88,
     104,
-    134,
-    135,
-    137
+    136,
+    137,
+    139
    ],
    [
     0,
@@ -24814,17 +24817,17 @@
     58,
     88,
     107,
-    134,
-    135
+    136,
+    137
    ],
    [
     105,
-    129,
     131,
-    160,
-    161,
-    164,
-    167
+    133,
+    165,
+    166,
+    169,
+    172
    ]
   ],
   [
@@ -24888,12 +24891,35 @@
    ]
   ],
   [
+   "frontend/src/views/components/DisconnectedRoomView.css",
+   "views",
+   59,
+   "",
+   [],
+   [
+    113
+   ]
+  ],
+  [
+   "frontend/src/views/components/DisconnectedRoomView.tsx",
+   "views",
+   21,
+   "",
+   [
+    67,
+    112
+   ],
+   [
+    0
+   ]
+  ],
+  [
    "frontend/src/views/components/DiscordText.test.tsx",
    "views",
    53,
    "",
    [
-    113
+    115
    ],
    []
   ],
@@ -24907,10 +24933,10 @@
     64
    ],
    [
-    112,
-    115,
-    148,
-    171
+    114,
+    117,
+    152,
+    176
    ]
   ],
   [
@@ -24920,7 +24946,7 @@
    "",
    [
     2,
-    115
+    117
    ],
    []
   ],
@@ -24935,11 +24961,11 @@
     45,
     54,
     55,
-    113
+    115
    ],
    [
     95,
-    114
+    116
    ]
   ],
   [
@@ -24989,7 +25015,7 @@
    "",
    [
     2,
-    120
+    122
    ],
    []
   ],
@@ -25001,11 +25027,11 @@
    [
     2,
     19,
-    122
+    124
    ],
    [
     0,
-    119
+    121
    ]
   ],
   [
@@ -25017,7 +25043,7 @@
     2,
     12,
     46,
-    150
+    154
    ],
    [
     0
@@ -25030,9 +25056,9 @@
    "",
    [],
    [
-    120,
-    150,
-    158
+    122,
+    154,
+    163
    ]
   ],
   [
@@ -25041,7 +25067,7 @@
    46,
    "",
    [
-    124
+    126
    ],
    []
   ],
@@ -25053,7 +25079,7 @@
    [],
    [
     0,
-    123
+    125
    ]
   ],
   [
@@ -25065,7 +25091,7 @@
     2
    ],
    [
-    171
+    176
    ]
   ],
   [
@@ -25077,7 +25103,7 @@
     1,
     2,
     88,
-    127
+    129
    ],
    []
   ],
@@ -25095,12 +25121,12 @@
     72,
     84,
     88,
-    130,
-    152
+    132,
+    156
    ],
    [
     97,
-    126
+    128
    ]
   ],
   [
@@ -25110,7 +25136,7 @@
    "",
    [
     2,
-    129
+    131
    ],
    []
   ],
@@ -25125,15 +25151,15 @@
     39,
     88,
     106,
-    138,
-    160,
-    161,
+    140,
+    165,
     166,
-    167
+    171,
+    172
    ],
    [
-    128,
-    140
+    130,
+    142
    ]
   ],
   [
@@ -25145,8 +25171,8 @@
     53
    ],
    [
-    127,
-    148
+    129,
+    152
    ]
   ],
   [
@@ -25162,8 +25188,8 @@
     65,
     88,
     106,
-    137,
-    165
+    139,
+    170
    ],
    [
     0
@@ -25176,7 +25202,7 @@
    "",
    [],
    [
-    134
+    136
    ]
   ],
   [
@@ -25185,7 +25211,7 @@
    162,
    "",
    [
-    134
+    136
    ],
    []
   ],
@@ -25196,14 +25222,14 @@
    "",
    [
     88,
-    132,
-    169,
-    170
+    134,
+    174,
+    175
    ],
    [
     101,
     106,
-    133
+    135
    ]
   ],
   [
@@ -25225,7 +25251,7 @@
    39,
    "",
    [
-    137
+    139
    ],
    []
   ],
@@ -25235,15 +25261,15 @@
    51,
    "",
    [
-    168
+    173
    ],
    [
     101,
-    131,
-    136,
-    160,
-    161,
-    171
+    133,
+    138,
+    165,
+    166,
+    176
    ]
   ],
   [
@@ -25255,7 +25281,7 @@
     37
    ],
    [
-    129
+    131
    ]
   ],
   [
@@ -25266,7 +25292,7 @@
    [
     2,
     88,
-    140
+    142
    ],
    []
   ],
@@ -25279,39 +25305,62 @@
     2,
     39,
     88,
-    129
+    131
    ],
    [
     0,
-    139
+    141
+   ]
+  ],
+  [
+   "frontend/src/views/components/RoomInviteModal.css",
+   "views",
+   115,
+   "",
+   [],
+   [
+    144
    ]
   ],
   [
    "frontend/src/views/components/RoomInviteModal.tsx",
    "views",
-   445,
+   501,
    "",
    [
     2,
+    25,
     46,
     54,
     55,
     65,
-    75
+    75,
+    143
    ],
    [
     0
    ]
   ],
   [
+   "frontend/src/views/components/RoomRail.css",
+   "views",
+   15,
+   "",
+   [],
+   [
+    146
+   ]
+  ],
+  [
    "frontend/src/views/components/RoomRail.tsx",
    "views",
-   164,
+   169,
    "",
    [
     65,
     67,
-    78
+    78,
+    145
    ],
    [
     0
@@ -25325,7 +25374,7 @@
    [
     2,
     65,
-    144
+    148
    ],
    []
   ],
@@ -25341,7 +25390,7 @@
    ],
    [
     0,
-    143
+    147
    ]
   ],
   [
@@ -25350,7 +25399,7 @@
    28,
    "",
    [
-    146
+    150
    ],
    []
   ],
@@ -25362,7 +25411,7 @@
    [],
    [
     0,
-    145
+    149
    ]
   ],
   [
@@ -25372,7 +25421,7 @@
    "",
    [
     2,
-    148
+    152
    ],
    []
   ],
@@ -25385,12 +25434,12 @@
     2,
     53,
     81,
-    113,
-    130
+    115,
+    132
    ],
    [
     0,
-    147
+    151
    ]
   ],
   [
@@ -25401,7 +25450,7 @@
    [
     2,
     83,
-    150
+    154
    ],
    []
   ],
@@ -25413,13 +25462,13 @@
    [
     2,
     83,
-    122,
-    151
+    124,
+    155
    ],
    [
     0,
-    121,
-    149
+    123,
+    153
    ]
   ],
   [
@@ -25431,7 +25480,7 @@
     2
    ],
    [
-    150
+    154
    ]
   ],
   [
@@ -25441,7 +25490,17 @@
    "",
    [],
    [
-    127
+    129
+   ]
+  ],
+  [
+   "frontend/src/views/components/VotePollCard.css",
+   "views",
+   123,
+   "---- /vote poll card (issue 7) ----",
+   [],
+   [
+    159
    ]
   ],
   [
@@ -25453,22 +25512,23 @@
     1,
     2,
     88,
-    154
+    159
    ],
    []
   ],
   [
    "frontend/src/views/components/VotePollCard.tsx",
    "views",
-   169,
+   170,
    "",
    [
     1,
-    2
+    2,
+    157
    ],
    [
     97,
-    153
+    158
    ]
   ],
   [
@@ -25489,7 +25549,7 @@
    "",
    [],
    [
-    158
+    163
    ]
   ],
   [
@@ -25499,8 +25559,8 @@
    "",
    [
     2,
-    158,
-    166
+    163,
+    171
    ],
    []
   ],
@@ -25513,14 +25573,14 @@
     2,
     38,
     48,
-    122,
-    156,
-    165,
-    166
+    124,
+    161,
+    170,
+    171
    ],
    [
-    157,
-    160
+    162,
+    165
    ]
   ],
   [
@@ -25532,11 +25592,11 @@
     2,
     49,
     55,
-    165,
-    166
+    170,
+    171
    ],
    [
-    160
+    165
    ]
   ],
   [
@@ -25549,15 +25609,15 @@
     38,
     88,
     106,
-    137,
-    158,
-    159,
+    139,
     163,
     164,
-    166
+    168,
+    169,
+    171
    ],
    [
-    129
+    131
    ]
   ],
   [
@@ -25567,12 +25627,12 @@
    "",
    [
     106,
-    137,
-    165,
-    166
+    139,
+    170,
+    171
    ],
    [
-    129
+    131
    ]
   ],
   [
@@ -25582,8 +25642,8 @@
    "",
    [
     2,
-    163,
-    166
+    168,
+    171
    ],
    []
   ],
@@ -25594,12 +25654,12 @@
    "",
    [
     37,
-    165,
-    166
+    170,
+    171
    ],
    [
-    160,
-    162
+    165,
+    167
    ]
   ],
   [
@@ -25611,10 +25671,10 @@
     2,
     88,
     106,
-    166
+    171
    ],
    [
-    160
+    165
    ]
   ],
   [
@@ -25628,15 +25688,15 @@
     40,
     49,
     55,
-    166
+    171
    ],
    [
-    131,
-    158,
-    159,
-    161,
+    133,
     163,
-    167
+    164,
+    166,
+    168,
+    172
    ]
   ],
   [
@@ -25649,17 +25709,17 @@
     38
    ],
    [
-    129,
-    157,
-    158,
-    159,
-    160,
-    161,
+    131,
     162,
     163,
     164,
     165,
-    167
+    166,
+    167,
+    168,
+    169,
+    170,
+    172
    ]
   ],
   [
@@ -25674,11 +25734,11 @@
     39,
     54,
     106,
-    165,
-    166
+    170,
+    171
    ],
    [
-    129
+    131
    ]
   ],
   [
@@ -25688,7 +25748,7 @@
    "",
    [],
    [
-    137
+    139
    ]
   ],
   [
@@ -25698,7 +25758,7 @@
    "",
    [],
    [
-    134
+    136
    ]
   ],
   [
@@ -25710,21 +25770,21 @@
     88
    ],
    [
-    134
+    136
    ]
   ],
   [
    "frontend/src/views/lobby/LobbyEventRows.tsx",
    "views",
-   399,
+   405,
    "",
    [
     2,
     80,
     81,
-    113,
-    125,
-    137
+    115,
+    127,
+    139
    ],
    [
     97
@@ -25828,14 +25888,14 @@
   {
    "name": "frontend/src",
    "note": "React room client (TS/TSX)",
-   "files": 175,
-   "lines": 43935
+   "files": 180,
+   "lines": 44579
   },
   {
    "name": "tests",
    "note": "Backend test suite",
    "files": 373,
-   "lines": 147148
+   "lines": 147165
   },
   {
    "name": "scripts",
@@ -25847,7 +25907,7 @@
    "name": "docs",
    "note": "Product and architecture docs",
    "files": 85,
-   "lines": 30814
+   "lines": 30827
   },
   {
    "name": "configs",
@@ -25864,8 +25924,8 @@
   {
    "name": "infra",
    "note": "Deployment / infrastructure",
-   "files": 3,
-   "lines": 47
+   "files": 4,
+   "lines": 53
   }
  ]
 }

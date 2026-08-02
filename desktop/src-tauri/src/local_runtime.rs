@@ -55,20 +55,27 @@ impl LocalRuntime {
         let stderr_path = runtime_root.join("server.stderr.log");
         command.stdout(Stdio::from(create_log(&stdout_path)?));
         command.stderr(Stdio::from(create_log(&stderr_path)?));
-        let mut child = command
+        let child = command
             .spawn()
             .map_err(|error| format!("cannot start {description}: {error}"))?;
+        *self.child.lock().expect("local runtime lock") = Some(child);
 
         let deadline = Instant::now() + STARTUP_TIMEOUT;
         while Instant::now() < deadline {
             if agentsassemble_server_is_ready(&server) {
-                *self.child.lock().expect("local runtime lock") = Some(child);
                 return Ok(server);
             }
-            if let Some(status) = child
-                .try_wait()
-                .map_err(|error| format!("cannot inspect local runtime: {error}"))?
-            {
+            let status = {
+                let mut owned_child = self.child.lock().expect("local runtime lock");
+                let Some(child) = owned_child.as_mut() else {
+                    return Err("The local runtime startup was cancelled.".to_owned());
+                };
+                child
+                    .try_wait()
+                    .map_err(|error| format!("cannot inspect local runtime: {error}"))?
+            };
+            if let Some(status) = status {
+                self.child.lock().expect("local runtime lock").take();
                 return Err(format!(
                     "The local runtime exited with {status}. Details: {}",
                     stderr_path.display()
@@ -77,7 +84,9 @@ impl LocalRuntime {
             thread::sleep(Duration::from_millis(100));
         }
 
-        terminate_process_tree(&mut child);
+        if let Some(mut child) = self.child.lock().expect("local runtime lock").take() {
+            terminate_process_tree(&mut child);
+        }
         Err(format!(
             "The local runtime did not become ready within 45 seconds. Details: {}",
             stderr_path.display()

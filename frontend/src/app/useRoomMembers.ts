@@ -7,6 +7,7 @@ type UseRoomMembersOptions = {
   canonicalParticipants: RoomMember[];
   membershipRevision: number;
   sessionToken: string;
+  enabled?: boolean;
 };
 
 export function useRoomMembers({
@@ -14,6 +15,7 @@ export function useRoomMembers({
   canonicalParticipants,
   membershipRevision,
   sessionToken,
+  enabled = true,
 }: UseRoomMembersOptions) {
   const [membersByRoom, setMembersByRoom] = useState<Record<string, RoomMember[]>>({});
   const requestEpochsRef = useRef<Record<string, number>>({});
@@ -35,7 +37,7 @@ export function useRoomMembers({
   );
 
   const refresh = useCallback(() => {
-    if (!activeMeetingId) return;
+    if (!enabled || !activeMeetingId) return;
     const requestEpoch = (requestEpochsRef.current[activeRoomKey] || 0) + 1;
     requestEpochsRef.current[activeRoomKey] = requestEpoch;
     fetchRoomMembers(activeMeetingId, sessionToken)
@@ -49,7 +51,7 @@ export function useRoomMembers({
       .catch(() => {
         // Keep the previous roster while a transient refresh is unavailable.
       });
-  }, [activeMeetingId, activeRoomKey, sessionToken]);
+  }, [activeMeetingId, activeRoomKey, enabled, sessionToken]);
 
   useEffect(() => {
     refresh();

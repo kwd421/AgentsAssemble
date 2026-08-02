@@ -7,12 +7,14 @@ import {
 } from "../../lib/roomAppearance";
 import {
   roomSettingsKey,
+  roomIsDisconnected,
   type RoomDockItem,
 } from "../../lib/roomDockModel";
 import {
   ROOM_RAIL_MENU_SIZE,
   ROOM_RAIL_MENU_VIEWPORT_MARGIN,
 } from "../../lib/roomRailMenuPosition";
+import "./RoomRail.css";
 
 export type RoomMenuState = {
   roomId: string;
@@ -79,6 +81,7 @@ export default function RoomRail({
         {rooms.map((room) => {
           const Icon = room.icon;
           const active = !adminOpen && !channelIsFriends && activeRoom.id === room.id;
+          const disconnected = roomIsDisconnected(room);
           const roomAppearance = completeRoomAppearance(
             {
               ...room.appearance,
@@ -94,12 +97,14 @@ export default function RoomRail({
               data-active={active}
               data-tone={room.tone}
               data-has-image={Boolean(roomAppearance.iconImage)}
+              data-connection-state={disconnected ? "disconnected" : room.connectionState || "local"}
               style={roomAppearanceStyle(roomAppearance)}
               className="dc-server-btn"
-              aria-label={room.label}
-              title={`${room.label} · ${room.topic}`}
+              aria-label={`${room.label}${disconnected ? " · 연결이 끊긴 서버" : ""}`}
+              title={`${room.label} · ${disconnected ? "연결이 끊긴 서버" : room.topic}`}
             >
               {roomAppearance.iconImage ? null : <Icon size={18} aria-hidden />}
+              {disconnected && <span className="dc-server-connection-dot" aria-hidden />}
               <span className="sr-only">{room.shortLabel}</span>
             </button>
           );
@@ -135,13 +140,13 @@ export default function RoomRail({
             <Check size={16} />
             읽음으로 표시하기
           </button>
-          {!guestLocked && (
+          {!guestLocked && menuRoom && !roomIsDisconnected(menuRoom) && (
             <button type="button" role="menuitem" onClick={() => onInviteRoom(menuRoom.id)}>
               <UserPlus size={16} />
               서버에 초대하기
             </button>
           )}
-          {!guestLocked && (
+          {!guestLocked && menuRoom && !roomIsDisconnected(menuRoom) && (
             <button type="button" role="menuitem" onClick={() => onOpenRoomSettings(menuRoom.id)}>
               <Settings size={16} />
               서버 설정

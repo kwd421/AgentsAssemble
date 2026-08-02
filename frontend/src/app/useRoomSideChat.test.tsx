@@ -67,6 +67,15 @@ describe("useRoomSideChat", () => {
     ]);
   });
 
+  it("does not query the local server for a disconnected cached room", () => {
+    const { result } = renderHook(() =>
+      useRoomSideChat({ meetingId: "remote-room", enabled: false })
+    );
+
+    expect(apiMocks.fetchSideChat).not.toHaveBeenCalled();
+    expect(result.current.events).toEqual([]);
+  });
+
   it("keeps general side chat separate while projecting the selected lobby thread", async () => {
     const roomMessage = makeEvent("room-message");
     const threadReply = makeEvent("thread-reply", { thread_source_event_id: "source-1" });

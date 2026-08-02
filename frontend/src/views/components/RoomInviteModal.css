@@ -1,0 +1,115 @@
+.dc-invite-hosting {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  gap: 14px;
+  align-items: center;
+  margin-top: 18px;
+  padding: 15px 16px;
+  background: color-mix(in srgb, var(--color-panel) 88%, transparent);
+  border: 1px solid var(--color-panel-border);
+  border-radius: 12px;
+}
+
+.dc-invite-hosting[data-state="public"] {
+  background: color-mix(in srgb, #23a559 10%, var(--color-panel));
+  border-color: color-mix(in srgb, #23a559 42%, var(--color-panel-border));
+}
+
+.dc-invite-hosting[data-state="busy"] {
+  background: color-mix(in srgb, #5865f2 10%, var(--color-panel));
+  border-color: color-mix(in srgb, #5865f2 42%, var(--color-panel-border));
+}
+
+.dc-invite-hosting-icon {
+  display: grid;
+  width: 42px;
+  height: 42px;
+  place-items: center;
+  color: var(--color-text-secondary);
+  background: color-mix(in srgb, var(--color-panel-soft) 90%, transparent);
+  border-radius: 11px;
+}
+
+.dc-invite-hosting[data-state="public"] .dc-invite-hosting-icon {
+  color: #53d787;
+}
+
+.dc-invite-hosting[data-state="busy"] .dc-invite-hosting-icon {
+  color: #a7adff;
+}
+
+.dc-invite-hosting-spinner {
+  animation: dc-invite-hosting-spin 0.8s linear infinite;
+}
+
+.dc-invite-hosting-copy {
+  min-width: 0;
+}
+
+.dc-invite-hosting-title-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: center;
+}
+
+.dc-invite-hosting-title-row h3 {
+  margin: 0;
+  color: var(--color-text-primary);
+  font-size: 14px;
+  font-weight: 850;
+}
+
+.dc-invite-hosting-state {
+  padding: 3px 7px;
+  color: var(--color-text-muted);
+  background: color-mix(in srgb, var(--color-panel-soft) 90%, transparent);
+  border-radius: 999px;
+  font-size: 11px;
+  font-weight: 800;
+}
+
+.dc-invite-hosting[data-state="public"] .dc-invite-hosting-state {
+  color: #7ee2a2;
+  background: color-mix(in srgb, #23a559 18%, transparent);
+}
+
+.dc-invite-hosting-copy p {
+  overflow: hidden;
+  margin: 5px 0 0;
+  color: var(--color-text-muted);
+  font-size: 12px;
+  line-height: 1.45;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.dc-invite-hosting-actions {
+  display: flex;
+  gap: 8px;
+}
+
+.dc-invite-hosting-actions button:disabled {
+  opacity: 0.45;
+  cursor: default;
+}
+
+@keyframes dc-invite-hosting-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+@media (max-width: 760px) {
+  .dc-invite-hosting {
+    grid-template-columns: auto minmax(0, 1fr);
+  }
+
+  .dc-invite-hosting-actions {
+    grid-column: 1 / -1;
+  }
+
+  .dc-invite-hosting-actions button {
+    flex: 1;
+  }
+}

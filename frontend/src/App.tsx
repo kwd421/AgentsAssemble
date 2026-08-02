@@ -57,6 +57,7 @@ import GuestJoinProfilePanel from "./views/components/GuestJoinProfilePanel";
 import HomeSidebar from "./views/components/HomeSidebar";
 import LeaveRoomDialog from "./views/components/LeaveRoomDialog";
 import RoomConnectionPanel from "./views/components/RoomConnectionPanel";
+import DisconnectedRoomView from "./views/components/DisconnectedRoomView";
 import RoomInviteModal from "./views/components/RoomInviteModal";
 import MobileRoomInfoPanel from "./views/components/MobileRoomInfoPanel";
 import RoomRail from "./views/components/RoomRail";
@@ -81,6 +82,7 @@ import {
   createStartupRoute,
   localPreviewInviteUrlForRoom,
   roomHasAgent,
+  roomIsDisconnected,
   type RoomDockItem,
 } from "./lib/roomDockModel";
 import { roomRailMenuPosition } from "./lib/roomRailMenuPosition";
@@ -441,14 +443,17 @@ export default function App() {
     [admittedSessionToken, guestLocked, guestReadOnly]
   );
   const activeRoom = rooms.find((room) => room.id === activeRoomId) ?? rooms[0] ?? EMPTY_ROOM;
+  const activeRoomDisconnected = roomIsDisconnected(activeRoom);
+  const activeOperationalMeetingId = activeRoomDisconnected ? "" : activeRoom.meetingId;
   const {
     processGroups,
     refresh: refreshLiveAgentProcessGroups,
   } = useLiveAgentProcessGroups({
-    activeMeetingId: activeRoom.meetingId,
+    activeMeetingId: activeOperationalMeetingId,
     guestLocked,
+    enabled: !activeRoomDisconnected,
   });
-  const activeSideChatMeetingId = activeRoom.meetingId || "";
+  const activeSideChatMeetingId = activeOperationalMeetingId;
   const {
     error: sideChatError,
     selectedThread: sideChatThread,
@@ -461,7 +466,10 @@ export default function App() {
     handleRealtimeError: handleSideChatError,
     selectThread: selectSideChatThread,
     updateDraft: updateSideChatDraft,
-  } = useRoomSideChat({ meetingId: activeSideChatMeetingId });
+  } = useRoomSideChat({
+    meetingId: activeSideChatMeetingId,
+    enabled: !activeRoomDisconnected,
+  });
   // Rooms-as-server-objects: when a room becomes active, promote it to a
   // server-backed meeting (idempotent) so adding agents / roster / lobby always
   // have a real meeting to bind to instead of failing with "Meeting not found".
@@ -474,7 +482,9 @@ export default function App() {
       }
     };
   }, []);
-  const canonicalRoomAuth = guestLocked
+  const canonicalRoomAuth = activeRoomDisconnected
+    ? undefined
+    : guestLocked
     ? admittedSessionToken
       ? ({ kind: "session" as const, sessionToken: admittedSessionToken })
       : undefined
@@ -482,7 +492,7 @@ export default function App() {
       ? ({ kind: "host" as const, meetingId: activeRoom.meetingId })
       : undefined;
   const canonicalRoom = useCanonicalRoom({
-    roomId: activeRoom.meetingId || "",
+    roomId: activeOperationalMeetingId,
     auth: canonicalRoomAuth,
     viewerParticipantId: guestSession?.agentId || "operator-local",
     onSideChat: handleSideChatRealtimeEvents,
@@ -500,6 +510,7 @@ export default function App() {
     canonicalParticipants: canonicalRoom.participants,
     membershipRevision: canonicalRoom.membershipRevision,
     sessionToken: admittedSessionToken,
+    enabled: !activeRoomDisconnected,
   });
   const activeRoomMembers = roomMembers.activeMembers;
   const refreshMembers = roomMembers.refresh;
@@ -511,6 +522,7 @@ export default function App() {
     saveCanonicalGlobalSettings: canonicalRoom.sendRoomSettingsUpdate,
     onRoomMetadataLoaded: updateRoomByMeetingId,
     onMembersChanged: roomMembers.replaceMembers,
+    enabled: !activeRoomDisconnected,
   });
   const roomAppearances = roomSettings.appearances;
   const roomInvite = useRoomInviteController({
@@ -1295,6 +1307,7 @@ export default function App() {
           publicUrlDraft={publicInviteUrlDraft}
           hostTokenDraft={hostTokenDraft}
           hostTokenRequired={inviteHostTokenRequired}
+          publicAccessTransition={roomInvite.publicAccessTransition}
           tunnelStatus={publicInviteStatus?.tunnel}
           inviteScope={inviteModalAppearance?.inviteScope || inviteModalRoom.inviteScope || "room"}
           friends={homeFriendsPayload.friends}
@@ -1712,7 +1725,9 @@ export default function App() {
       {/* Central channel column */}
       <main className="dc-chat flex min-w-0 flex-1 flex-col" aria-label="채널 내용">
         <Suspense fallback={<DeferredViewFallback />}>
-          {channel === "friends" && !guestLocked ? (
+          {activeRoomDisconnected && channel !== "friends" ? (
+            <DisconnectedRoomView room={activeRoom} />
+          ) : channel === "friends" && !guestLocked ? (
             <FriendsView
               typeFilter={homeFilter === "friends" ? null : homeFilter}
               filter={friendListFilter}
@@ -1744,7 +1759,7 @@ export default function App() {
               bindLobbyStream={bindLobbyStream}
               roomSessionToken={lobbyPostingState.sessionToken}
               viewerParticipantId={guestSession?.agentId || "operator-local"}
-              canManageRoom={!guestLocked}
+              canManageRoom={!guestLocked && !activeRoomDisconnected}
               canPostMessages={lobbyPostingState.canPost}
               postingMode={lobbyPostingState.mode}
               composerDisabledReason={

@@ -1,11 +1,13 @@
 import { useEffect, useMemo, useState } from "react";
-import { Copy, Search, X } from "lucide-react";
+import { Copy, Globe2, LoaderCircle, LockKeyhole, Search, X } from "lucide-react";
 import type { RoomFriend, RoomMember } from "../../api";
+import type { PublicAccessTransition } from "../../app/useRoomInviteController";
 import { roomFriendMatchesSearch } from "../../lib/friendSearch";
 import { participantTypeMeta } from "../../lib/participantTypes";
 import { isActivePresence, presenceStatusLabel } from "../../lib/presenceStatus";
 import { inviteFriendButtonLabel, isExternalInviteUrl } from "../../lib/roomInviteCopy";
 import type { RoomAppearance } from "../../lib/roomAppearance";
+import "./RoomInviteModal.css";
 
 function participantIdForFriend(friend: RoomFriend): string {
   return friend.source_agent_id || friend.friend_id;
@@ -44,6 +46,7 @@ export default function RoomInviteModal({
   publicUrlDraft,
   hostTokenDraft,
   hostTokenRequired = false,
+  publicAccessTransition = "idle",
   tunnelStatus,
   inviteScope = "room",
   friends,
@@ -78,6 +81,7 @@ export default function RoomInviteModal({
   publicUrlDraft?: string;
   hostTokenDraft?: string;
   hostTokenRequired?: boolean;
+  publicAccessTransition?: PublicAccessTransition;
   tunnelStatus?: {
     phase?: string;
     running?: boolean;
@@ -114,6 +118,13 @@ export default function RoomInviteModal({
   const searchNeedle = searchQuery.toLowerCase();
   const readOnlyInvite = inviteScope === "read_only";
   const secureInviteReady = isExternalInviteUrl(secureInviteUrl);
+  const publicAccessStarting =
+    publicAccessTransition === "starting" || tunnelStatus?.phase === "starting";
+  const publicAccessStopping = publicAccessTransition === "stopping";
+  const publicAccessRunning = Boolean(
+    publicUrl || tunnelStatus?.public_url || tunnelStatus?.phase === "running"
+  );
+  const publicAccessBusy = publicAccessStarting || publicAccessStopping;
   const visibleFriends = useMemo(() => {
     if (!searchNeedle) return friends;
     return friends.filter((friend) => roomFriendMatchesSearch(friend, searchNeedle));
@@ -153,6 +164,59 @@ export default function RoomInviteModal({
             <X size={18} />
           </button>
         </header>
+
+        <section
+          className="dc-invite-hosting"
+          data-state={publicAccessBusy ? "busy" : publicAccessRunning ? "public" : "local"}
+          aria-labelledby="room-hosting-heading"
+        >
+          <span className="dc-invite-hosting-icon" aria-hidden="true">
+            {publicAccessBusy ? (
+              <LoaderCircle className="dc-invite-hosting-spinner" size={22} />
+            ) : publicAccessRunning ? (
+              <Globe2 size={22} />
+            ) : (
+              <LockKeyhole size={22} />
+            )}
+          </span>
+          <div className="dc-invite-hosting-copy">
+            <div className="dc-invite-hosting-title-row">
+              <h3 id="room-hosting-heading">이 컴퓨터의 서버 공개</h3>
+              <span className="dc-invite-hosting-state">
+                {publicAccessStarting
+                  ? "공개 준비 중"
+                  : publicAccessStopping
+                    ? "외부 접속 닫는 중"
+                    : publicAccessRunning
+                      ? "외부 접속 가능"
+                      : "로컬 전용"}
+              </span>
+            </div>
+            <p>
+              {publicAccessRunning
+                ? publicUrl || tunnelStatus?.public_url || "외부 주소가 연결되어 있습니다."
+                : "서버를 공개하지 않아도 이 컴퓨터의 룸과 에이전트는 그대로 작동합니다."}
+            </p>
+          </div>
+          <div className="dc-invite-hosting-actions">
+            <button
+              type="button"
+              className="dc-invite-copy-button"
+              disabled={publicAccessBusy || publicAccessRunning}
+              onClick={onStartTunnel}
+            >
+              서버 공개
+            </button>
+            <button
+              type="button"
+              className="dc-invite-copy-button"
+              disabled={publicAccessBusy || !publicAccessRunning}
+              onClick={onStopTunnel}
+            >
+              로컬로 전환
+            </button>
+          </div>
+        </section>
 
         <div className="dc-invite-primary-grid">
           <section className="dc-invite-card" aria-labelledby="human-invite-heading">
@@ -360,19 +424,11 @@ export default function RoomInviteModal({
               설정
             </button>
           </div>
-          <div className="mt-2 flex flex-wrap gap-2 text-[12px] font-bold text-text-muted">
-            <button type="button" className="dc-invite-copy-button" onClick={onStartTunnel}>
-              터널 시작
-            </button>
-            <button type="button" className="dc-invite-copy-button" onClick={onStopTunnel}>
-              터널 중지
-            </button>
-            <span className="self-center preserve-words">
-              {publicUrl || tunnelStatus?.public_url || "Paste public URL / Start tunnel first"}
-              {tunnelStatus?.phase ? ` · ${tunnelStatus.phase}` : ""}
-              {tunnelStatus?.last_error ? ` · ${tunnelStatus.last_error}` : ""}
+          {tunnelStatus?.last_error && (
+            <span className="mt-2 text-[12px] font-bold text-offline preserve-words">
+              {tunnelStatus.last_error}
             </span>
-          </div>
+          )}
         </div>
         {hostTokenRequired && (
           <label className="dc-invite-link-label">

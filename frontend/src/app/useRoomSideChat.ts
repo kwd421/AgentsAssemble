@@ -13,9 +13,10 @@ import {
 
 type UseRoomSideChatOptions = {
   meetingId: string;
+  enabled?: boolean;
 };
 
-export function useRoomSideChat({ meetingId }: UseRoomSideChatOptions) {
+export function useRoomSideChat({ meetingId, enabled = true }: UseRoomSideChatOptions) {
   const [events, setEvents] = useState<SideChatEvent[]>([]);
   const [error, setError] = useState<Error | null>(null);
   const [selectedThread, setSelectedThread] = useState<SideChatThreadContext | null>(null);
@@ -28,6 +29,7 @@ export function useRoomSideChat({ meetingId }: UseRoomSideChatOptions) {
     setEvents([]);
     setError(null);
     setSelectedThread(null);
+    if (!enabled || !meetingId) return undefined;
     fetchSideChat(meetingId)
       .then((payload) => {
         if (cancelled) return;
@@ -44,33 +46,33 @@ export function useRoomSideChat({ meetingId }: UseRoomSideChatOptions) {
     return () => {
       cancelled = true;
     };
-  }, [meetingId]);
+  }, [enabled, meetingId]);
 
   const handleRealtimeEvents = useCallback(
     (incoming: SideChatEvent[]) => {
-      if (activeMeetingIdRef.current !== meetingId) return;
+      if (!enabled || activeMeetingIdRef.current !== meetingId) return;
       setError(null);
       setEvents((previous) => mergeSideChatEvents(previous, incoming));
     },
-    [meetingId]
+    [enabled, meetingId]
   );
 
   const handlePostedEvents = useCallback(
     (incoming: SideChatEvent[]) => {
-      if (activeMeetingIdRef.current !== meetingId) return;
+      if (!enabled || activeMeetingIdRef.current !== meetingId) return;
       setEvents((previous) => mergeSideChatEvents(previous, incoming));
     },
-    [meetingId]
+    [enabled, meetingId]
   );
 
   const handleRealtimeError = useCallback(
     (errorValue: Event | Error) => {
-      if (activeMeetingIdRef.current !== meetingId) return;
+      if (!enabled || activeMeetingIdRef.current !== meetingId) return;
       if (errorValue instanceof Error && errorValue.message.includes("Side chat")) {
         setError(errorValue);
       }
     },
-    [meetingId]
+    [enabled, meetingId]
   );
 
   const selectThread = useCallback((event: LobbyEvent, channelLabel: string) => {

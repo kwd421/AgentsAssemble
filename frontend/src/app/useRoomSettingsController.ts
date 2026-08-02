@@ -27,6 +27,7 @@ type UseRoomSettingsControllerOptions = {
   ) => Promise<RoomGlobalSettings>;
   onRoomMetadataLoaded: (meetingId: string, updates: Partial<RoomDockItem>) => void;
   onMembersChanged: (room: RoomDockItem, members: RoomMember[]) => void;
+  enabled?: boolean;
 };
 
 type PersistedRoomSettingsOverrides = RoomGlobalSettingsUpdate;
@@ -75,6 +76,7 @@ export function useRoomSettingsController({
   saveCanonicalGlobalSettings,
   onRoomMetadataLoaded,
   onMembersChanged,
+  enabled = true,
 }: UseRoomSettingsControllerOptions) {
   const [appearances, setAppearances] = useState<Record<string, RoomAppearance>>({});
   const [channelSettings, setChannelSettings] = useState<
@@ -192,7 +194,7 @@ export function useRoomSettingsController({
   }, []);
 
   useEffect(() => {
-    if (!activeMeetingId) return;
+    if (!enabled || !activeMeetingId) return;
     const currentGlobalSettings = canonicalGlobalSettingsRef.current;
     if (
       currentGlobalSettings &&
@@ -216,10 +218,11 @@ export function useRoomSettingsController({
     applyGlobalSettings,
     beginSettingsOperation,
     canonicalGlobalSettingsSignature,
+    enabled,
   ]);
 
   useEffect(() => {
-    if (!activeMeetingId) return;
+    if (!enabled || !activeMeetingId) return;
     const meetingId = activeMeetingId;
     const key = activeRoomKey;
     const generation = beginPreferenceOperation(key);
@@ -256,6 +259,7 @@ export function useRoomSettingsController({
     applyPreferences,
     beginPreferenceOperation,
     deviceToken,
+    enabled,
     isCurrentPreferenceOperation,
     sessionToken,
   ]);

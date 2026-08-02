@@ -2,7 +2,7 @@
 
 Status: current starting point
 
-Updated: 2026-08-01
+Updated: 2026-08-02
 
 Read this file before changing rooms, Agent Sessions, providers, invites,
 moderation, media, or the React room UI. It is intentionally short. Follow its
@@ -59,27 +59,40 @@ Detailed current implementation: `docs/live-cli-room-current-architecture.md`.
 
 ## Current Desktop Client
 
-`desktop/` owns the cross-platform Tauri 2 client. Its bundled connection screen
-always opens before a room server is selected or started. From there the user
-can start a private local runtime, start the same local runtime and later
-publish room invitations, or connect to an existing cloud server. The desktop
-build packages the Python server and React application as a platform-native
-sidecar; users do not start a separate server before opening the client.
+`desktop/` owns the cross-platform Tauri 2 client. Its bundled startup surface
+opens immediately and starts the local room runtime in the background; it does
+not ask the user to select a connection mode. The desktop build packages the
+Python server and React application as a platform-native sidecar, so users do
+not start a separate server before opening the client. A visible progress state
+remains responsive while a first-run package is being prepared. A bounded
+desktop-owned directory cache renders saved room summaries before that runtime
+is ready. Rooms from another server are retained as disconnected entries when
+the local server directory refreshes; selecting one does not bind its room ID
+to the local server or issue local room API calls.
 
-Local and host modes bind the canonical server only to loopback. Hosting is an
-explicit authenticated public-invite action inside the room UI, not a direct
-non-loopback control-plane bind. A desktop-owned local runtime stores its data
-under the operating system application-data directory and exits with its owner
-application. A valid server already listening on the default local address is
-reused but not adopted or stopped.
+Local and hosted use are two exposure states of the same canonical room
+runtime. The runtime remains bound to loopback; hosting is an explicit
+authenticated public-invite action inside the room UI, not a direct
+non-loopback control-plane bind. Stopping public access returns the rooms to
+local-only use without moving their records. A desktop-owned runtime stores its
+data under the operating system application-data directory and exits with its
+owner application. A valid server already listening on the default local
+address is reused but not adopted or stopped.
 
-The bundled connection screen can only start the owned local runtime and open a
-validated HTTP(S) origin. Once server content is active, it cannot invoke those
-native commands or navigate the top-level webview away from the selected
-origin. The webview keeps its own persistent browser storage, separate from
-Safari or Chrome. A first-class public `client_id` and account login remain
-separate identity work; the private device credential must not be repurposed as
-a displayable client identifier.
+The bundled startup surface can start the owned local runtime, open its
+validated HTTP(S) origin, and read the bounded public room-summary cache. The
+native client refreshes local room summaries after the runtime is ready and
+again before graceful shutdown; the navigated room webview has no native
+cache-writing or runtime-lifecycle privilege. The cache accepts only bounded
+room labels, appearance, origin, and timestamps; it drops unknown fields so
+bearer credentials cannot be persisted through this path. The webview keeps its
+own persistent browser storage, separate from Safari or Chrome.
+
+A first-class public `client_id` and account login remain a pending product
+decision. Local startup and local rooms must continue to work without login.
+Any future public account identifier must be issued independently from the
+private device credential, and linking local identities to that account must be
+explicit rather than silently merging them.
 
 ## Current Rolling Restart Contract
 

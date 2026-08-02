@@ -1,0 +1,15 @@
+.dc-server-btn[data-connection-state="disconnected"] {
+  filter: saturate(0.45);
+  opacity: 0.72;
+}
+
+.dc-server-connection-dot {
+  position: absolute;
+  right: -1px;
+  bottom: -1px;
+  width: 13px;
+  height: 13px;
+  background: var(--color-text-muted);
+  border: 3px solid var(--color-server-rail);
+  border-radius: 50%;
+}

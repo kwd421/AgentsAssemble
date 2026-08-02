@@ -275,4 +275,32 @@ describe("useRoomInviteController", () => {
       "https://room.example.com/join?token=token-1"
     );
   });
+
+  it("returns a manually published server to local-only state", async () => {
+    apiMocks.stopPublicInviteTunnel.mockResolvedValue({
+      status: "ok",
+      public_invite: {
+        ...publicStatus,
+        tunnel: { available: true, running: false, phase: "stopped" },
+      },
+    });
+    apiMocks.configurePublicInvitePublicUrl.mockResolvedValue({
+      status: "cleared",
+      public_url: "",
+      public_invite: {
+        ...publicStatus,
+        public_url: "",
+        tunnel: { available: true, running: false, phase: "stopped" },
+      },
+    });
+    const hook = renderInviteController();
+
+    await act(async () => {
+      await hook.result.current.stopTunnel();
+    });
+
+    expect(hook.result.current.publicAccessTransition).toBe("idle");
+    expect(hook.result.current.publicInviteStatus?.public_url).toBe("");
+    expect(hook.result.current.copyStatus).toContain("이 컴퓨터에서 계속 작동");
+  });
 });

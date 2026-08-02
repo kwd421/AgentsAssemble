@@ -90,9 +90,12 @@ describe("useRoomDirectory", () => {
       ])
     );
     expect(apiMocks.fetchRooms).toHaveBeenCalledWith(true);
-    expect(persistenceMocks.persistRoomDockItems).toHaveBeenCalledWith([
-      expect.objectContaining({ meetingId: "local-meeting", label: "Local" }),
-    ]);
+    expect(persistenceMocks.persistRoomDockItems).toHaveBeenCalledWith(
+      expect.arrayContaining([
+        expect.objectContaining({ meetingId: "local-meeting" }),
+        expect.objectContaining({ meetingId: "server-meeting" }),
+      ])
+    );
   });
 
   it("hydrates an inactive room appearance from the canonical directory", async () => {
@@ -150,6 +153,31 @@ describe("useRoomDirectory", () => {
       expect(result.current.syncIssue?.category).toBe(
         "room_directory_unavailable"
       )
+    );
+  });
+
+  it("keeps cached rooms from another server without binding them to the local directory", async () => {
+    const localRoom = makeRoom("local", { meetingId: "local-meeting" });
+    const remoteRoom = makeRoom("remote", {
+      meetingId: "remote-meeting",
+      roomOrigin: "remote_server",
+      serverOrigin: "https://rooms.example.test",
+      connectionState: "connected",
+    });
+    apiMocks.fetchRooms.mockResolvedValueOnce({
+      rooms: [serverRoom("local-meeting", "Local")],
+    });
+
+    const { result } = renderHook(() =>
+      useRoomDirectory({ initialRooms: [localRoom, remoteRoom], hostEnabled: true })
+    );
+
+    await waitFor(() =>
+      expect(result.current.rooms[1]).toMatchObject({
+        roomOrigin: "remote_server",
+        serverOrigin: "https://rooms.example.test",
+        connectionState: "disconnected",
+      })
     );
   });
 

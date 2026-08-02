@@ -34,6 +34,8 @@ type InviteRemoteClientPacketState = {
   preview: string;
 };
 
+export type PublicAccessTransition = "idle" | "starting" | "stopping";
+
 type UseRoomInviteControllerOptions = {
   guestLocked: boolean;
   sessionToken?: string;
@@ -83,6 +85,8 @@ export function useRoomInviteController({
   const [publicInviteStatus, setPublicInviteStatus] = useState<PublicInviteStatus | null>(null);
   const [publicUrlDraft, setPublicUrlDraft] = useState("");
   const [hostTokenDraft, setHostTokenDraft] = useState("");
+  const [publicAccessTransition, setPublicAccessTransition] =
+    useState<PublicAccessTransition>("idle");
   const [friendStatuses, setFriendStatuses] = useState<Record<string, string>>({});
   const [remoteClientPacket, setRemoteClientPacket] =
     useState<InviteRemoteClientPacketState>({ friendName: "", preview: "" });
@@ -94,6 +98,7 @@ export function useRoomInviteController({
     setAgentInviteUrl("");
     setOperatorPairingUrl("");
     setHostTokenDraft(loadHostToken());
+    setPublicAccessTransition("idle");
     setFriendStatuses({});
     setRemoteClientPacket({ friendName: "", preview: "" });
   }
@@ -328,7 +333,8 @@ export function useRoomInviteController({
   }
 
   async function startTunnel() {
-    setCopyStatus("터널 시작 중...");
+    setPublicAccessTransition("starting");
+    setCopyStatus("외부 접속 주소를 준비하는 중...");
     try {
       const status = publicInviteStatus || (await refreshPublicInviteState());
       await ensureHostToken(status);
@@ -348,23 +354,33 @@ export function useRoomInviteController({
       const latest = await waitForTunnelReady();
       setCopyStatus(
         latest.public_url
-          ? "터널 공개 URL 준비됨"
-          : latest.tunnel?.last_error || "터널이 아직 공개 URL을 보고하지 않았습니다."
+          ? "서버가 공개되었습니다. 이제 외부 초대 링크를 만들 수 있습니다."
+          : latest.tunnel?.last_error || "외부 접속 주소가 아직 준비되지 않았습니다."
       );
     } catch (error) {
-      setCopyStatus(error instanceof Error ? error.message : "터널 시작 실패");
+      setCopyStatus(error instanceof Error ? error.message : "서버 공개 실패");
+    } finally {
+      setPublicAccessTransition("idle");
     }
   }
 
   async function stopTunnel() {
-    setCopyStatus("터널 중지 중...");
+    setPublicAccessTransition("stopping");
+    setCopyStatus("외부 접속을 닫는 중...");
     try {
-      const payload = await stopPublicInviteTunnel();
+      let payload = await stopPublicInviteTunnel();
       if (payload.public_invite) setPublicInviteStatus(payload.public_invite);
-      else await refreshPublicInviteState();
-      setCopyStatus("터널 중지됨");
+      if (payload.public_invite?.public_url) {
+        payload = await configurePublicInvitePublicUrl("");
+        if (payload.public_invite) setPublicInviteStatus(payload.public_invite);
+      }
+      if (!payload.public_invite) await refreshPublicInviteState();
+      setPublicUrlDraft("");
+      setCopyStatus("외부 접속을 닫았습니다. 룸은 이 컴퓨터에서 계속 작동합니다.");
     } catch (error) {
-      setCopyStatus(error instanceof Error ? error.message : "터널 중지 실패");
+      setCopyStatus(error instanceof Error ? error.message : "서버 비공개 전환 실패");
+    } finally {
+      setPublicAccessTransition("idle");
     }
   }
 
@@ -543,6 +559,7 @@ export function useRoomInviteController({
     agentInviteUrl,
     operatorPairingUrl,
     publicInviteStatus,
+    publicAccessTransition,
     publicUrlDraft,
     hostTokenDraft,
     friendStatuses,

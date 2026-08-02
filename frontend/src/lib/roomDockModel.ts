@@ -19,6 +19,9 @@ export type RoomDockItem = {
   id: string;
   label: string;
   meetingId: string;
+  roomOrigin?: "local" | "remote_server";
+  serverOrigin?: string;
+  connectionState?: "local" | "connected" | "disconnected";
   topic: string;
   shortLabel: string;
   appearance?: RoomGlobalAppearance;
@@ -67,6 +70,8 @@ export function createFreshRoom(now = new Date()): RoomDockItem {
     id: `fresh-${suffix}`,
     label: "새 회의실",
     meetingId: `room-${suffix}`,
+    roomOrigin: "local",
+    connectionState: "local",
     topic: "빈 채팅방에서 시작",
     shortLabel: "N",
     icon: Sparkles,
@@ -100,6 +105,8 @@ export function persistableRoom(room: RoomDockItem): PersistedRoomDockItem {
     id: room.id,
     label: room.label,
     meetingId: room.meetingId,
+    roomOrigin: room.roomOrigin === "remote_server" ? "remote_server" : "local",
+    serverOrigin: room.roomOrigin === "remote_server" ? room.serverOrigin : undefined,
     topic: room.topic,
     shortLabel: room.shortLabel,
     appearance: room.appearance,
@@ -108,20 +115,34 @@ export function persistableRoom(room: RoomDockItem): PersistedRoomDockItem {
   };
 }
 
-function hydrateRoom(room: PersistedRoomDockItem): RoomDockItem {
+export function hydratePersistedRoom(room: PersistedRoomDockItem): RoomDockItem {
   return {
     ...room,
+    connectionState: room.roomOrigin === "remote_server" ? "disconnected" : "local",
     icon: iconForRoomTone(room.tone),
   };
 }
 
+export function roomIsDisconnected(room: RoomDockItem) {
+  return room.roomOrigin === "remote_server" && room.connectionState !== "connected";
+}
+
+export function roomDockIdentity(
+  room: Pick<RoomDockItem, "meetingId" | "roomOrigin" | "serverOrigin">
+) {
+  if (room.roomOrigin === "remote_server") {
+    return `remote:${room.serverOrigin || "unknown"}:${room.meetingId}`;
+  }
+  return `local:${room.meetingId}`;
+}
+
 export function initialOperatorRooms(directRoom?: RoomDockItem | null) {
   const persisted = loadRoomDockItems()
-    .map(hydrateRoom);
+    .map(hydratePersistedRoom);
   const rooms = persisted;
   if (!directRoom) return rooms;
   const existingIndex = rooms.findIndex(
-    (room) => room.id === directRoom.id || room.meetingId === directRoom.meetingId
+    (room) => room.id === directRoom.id || roomDockIdentity(room) === roomDockIdentity(directRoom)
   );
   if (existingIndex >= 0) {
     const next = [...rooms];
@@ -136,7 +157,10 @@ export function initialOperatorRooms(directRoom?: RoomDockItem | null) {
   return [directRoom, ...rooms];
 }
 
-export function roomFromServerRoom(room: ServerRoomDockSource): RoomDockItem | null {
+export function roomFromServerRoom(
+  room: ServerRoomDockSource,
+  existing?: Pick<RoomDockItem, "roomOrigin" | "serverOrigin">
+): RoomDockItem | null {
   const meetingId = String(room.room_id || "").trim();
   const status = String(room.status || "active").toLowerCase();
   if (!meetingId || room.archived || status === "closed" || status === "archived") return null;
@@ -146,6 +170,9 @@ export function roomFromServerRoom(room: ServerRoomDockSource): RoomDockItem | n
     id: `server-${meetingId}`,
     label,
     meetingId,
+    roomOrigin: existing?.roomOrigin === "remote_server" ? "remote_server" : "local",
+    serverOrigin: existing?.roomOrigin === "remote_server" ? existing.serverOrigin : undefined,
+    connectionState: existing?.roomOrigin === "remote_server" ? "connected" : "local",
     topic: settings?.topic || label,
     shortLabel: settings?.shortLabel || label.slice(0, 1).toUpperCase() || "R",
     appearance: settings?.appearance,
@@ -158,7 +185,8 @@ export function roomFromServerRoom(room: ServerRoomDockSource): RoomDockItem | n
 
 export function mergeServerRoomsIntoDock(
   currentRooms: RoomDockItem[],
-  serverRooms: ServerRoomDockSource[]
+  serverRooms: ServerRoomDockSource[],
+  currentServerOrigin = window.location.origin
 ): RoomDockItem[] {
   const serverRoomsByMeetingId = new Map(
     serverRooms
@@ -169,8 +197,19 @@ export function mergeServerRoomsIntoDock(
   let changed = false;
 
   for (const room of currentRooms) {
+    if (
+      room.roomOrigin === "remote_server" &&
+      room.serverOrigin !== currentServerOrigin
+    ) {
+      const disconnectedRoom = room.connectionState === "disconnected"
+        ? room
+        : { ...room, connectionState: "disconnected" as const };
+      if (disconnectedRoom !== room) changed = true;
+      next.push(disconnectedRoom);
+      continue;
+    }
     const serverRoom = serverRoomsByMeetingId.get(room.meetingId);
-    const canonicalRoom = serverRoom ? roomFromServerRoom(serverRoom) : null;
+    const canonicalRoom = serverRoom ? roomFromServerRoom(serverRoom, room) : null;
     if (!canonicalRoom) {
       changed = true;
       continue;
@@ -185,6 +224,9 @@ export function mergeServerRoomsIntoDock(
       icon: canonicalRoom.icon,
       createdAt: canonicalRoom.createdAt,
       tone: canonicalRoom.tone,
+      roomOrigin: canonicalRoom.roomOrigin,
+      serverOrigin: canonicalRoom.serverOrigin,
+      connectionState: canonicalRoom.connectionState,
     };
     if (
       room.label !== reconciledRoom.label ||
@@ -194,19 +236,22 @@ export function mergeServerRoomsIntoDock(
       room.inviteScope !== reconciledRoom.inviteScope ||
       room.icon !== reconciledRoom.icon ||
       room.createdAt !== reconciledRoom.createdAt ||
-      room.tone !== reconciledRoom.tone
+      room.tone !== reconciledRoom.tone ||
+      room.roomOrigin !== reconciledRoom.roomOrigin ||
+      room.serverOrigin !== reconciledRoom.serverOrigin ||
+      room.connectionState !== reconciledRoom.connectionState
     ) {
       changed = true;
     }
     next.push(reconciledRoom);
   }
 
-  const seenMeetingIds = new Set(next.map((room) => room.meetingId));
+  const seenRoomIdentities = new Set(next.map(roomDockIdentity));
   for (const serverRoom of serverRooms) {
     const dockRoom = roomFromServerRoom(serverRoom);
-    if (!dockRoom || seenMeetingIds.has(dockRoom.meetingId)) continue;
+    if (!dockRoom || seenRoomIdentities.has(roomDockIdentity(dockRoom))) continue;
     next.push(dockRoom);
-    seenMeetingIds.add(dockRoom.meetingId);
+    seenRoomIdentities.add(roomDockIdentity(dockRoom));
     changed = true;
   }
   return changed ? next : currentRooms;
@@ -236,6 +281,9 @@ export function roomFromInviteParams(): RoomDockItem | null {
       id: `guest-${meetingId}`,
       label: label || meetingId,
       meetingId,
+      roomOrigin: "remote_server",
+      serverOrigin: window.location.origin,
+      connectionState: "connected",
       topic,
       shortLabel: (label || meetingId).slice(0, 1).toUpperCase() || "G",
       inviteScope: "read_only",
@@ -254,6 +302,9 @@ export function roomFromGuestSession(session: RoomGuestSession): RoomDockItem {
     id: `guest-session-${session.meetingId || session.agentId}`,
     label,
     meetingId: session.meetingId,
+    roomOrigin: "remote_server",
+    serverOrigin: window.location.origin,
+    connectionState: "connected",
     topic: session.roomTopic || `${session.displayName || session.agentId}로 입장한 방`,
     shortLabel: label.slice(0, 1).toUpperCase() || "G",
     inviteScope: session.inviteScope,
@@ -333,7 +384,9 @@ export function roomFromMafiaParams(): RoomDockItem | null {
 function activeRoomIdForStartup(rooms: RoomDockItem[], routeRoom?: RoomDockItem | null) {
   if (!routeRoom) return "";
   return (
-    rooms.find((room) => room.id === routeRoom.id || room.meetingId === routeRoom.meetingId)?.id ||
+    rooms.find(
+      (room) => room.id === routeRoom.id || roomDockIdentity(room) === roomDockIdentity(routeRoom)
+    )?.id ||
     routeRoom.id
   );
 }
@@ -387,7 +440,7 @@ export function roomHasAgent(room: RoomDockItem, agent: { meeting_id?: string })
 }
 
 export function roomSettingsKey(room: RoomDockItem) {
-  return room.meetingId || room.id;
+  return room.meetingId ? roomDockIdentity(room) : room.id;
 }
 
 export function localPreviewInviteUrlForRoom(room: RoomDockItem) {

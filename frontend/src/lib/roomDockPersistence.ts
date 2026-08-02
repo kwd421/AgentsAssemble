@@ -6,6 +6,8 @@ export type PersistedRoomDockItem = {
   id: string;
   label: string;
   meetingId: string;
+  roomOrigin: "local" | "remote_server";
+  serverOrigin?: string;
   topic: string;
   shortLabel: string;
   appearance?: PersistedRoomAppearance;
@@ -35,6 +37,16 @@ function safeRoomAssetUrl(value: unknown) {
     : undefined;
 }
 
+function safeServerOrigin(value: unknown) {
+  try {
+    const url = new URL(String(value || "").trim());
+    if (!["http:", "https:"].includes(url.protocol)) return undefined;
+    return url.origin;
+  } catch {
+    return undefined;
+  }
+}
+
 function normalizeAppearance(value: unknown): PersistedRoomAppearance | undefined {
   if (!value || typeof value !== "object" || Array.isArray(value)) return undefined;
   const record = value as Record<string, unknown>;
@@ -60,10 +72,16 @@ export function normalizeRoomDockItem(value: unknown): PersistedRoomDockItem | n
   const meetingId = safeText(record.meetingId, "", 128);
   if (!meetingId) return null;
   const label = safeText(record.label, meetingId, 80);
+  const serverOrigin = safeServerOrigin(record.serverOrigin);
+  const roomOrigin = record.roomOrigin === "remote_server" && serverOrigin
+    ? "remote_server"
+    : "local";
   return {
     id: safeText(record.id, meetingId, 128),
     label,
     meetingId,
+    roomOrigin,
+    serverOrigin: roomOrigin === "remote_server" ? serverOrigin : undefined,
     topic: safeText(record.topic, "빈 채팅방에서 시작", 160),
     shortLabel: safeText(record.shortLabel, label.slice(0, 1).toUpperCase() || "R", 4),
     appearance: normalizeAppearance(record.appearance),
