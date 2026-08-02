@@ -4,15 +4,21 @@
   "type": "module",
   "version": "0.1.0",
   "scripts": {
+    "tauri": "tauri",
     "dev": "npm run backend:build && tauri dev",
     "build": "npm run backend:build && tauri build",
     "build:release": "python3 scripts/build_release.py",
+    "mobile:ios:init": "python3 scripts/mobile_build.py ios init",
+    "mobile:ios:build": "python3 scripts/mobile_build.py ios build",
+    "mobile:android:init": "python3 scripts/mobile_build.py android init",
+    "mobile:android:build": "python3 scripts/mobile_build.py android build",
     "backend:build": "npm --prefix ../frontend run build && uv run --with pyinstaller==6.21.0 python scripts/build_backend.py",
     "shell:build": "vite build --config shell/vite.config.mjs",
     "check": "npm run shell:build && cargo test --manifest-path src-tauri/Cargo.toml"
   },
   "dependencies": {
-    "@tauri-apps/api": "2.11.1"
+    "@tauri-apps/api": "2.11.1",
+    "@tauri-apps/plugin-barcode-scanner": "2.4.5"
   },
   "devDependencies": {
     "@tauri-apps/cli": "2.11.4",

@@ -6,7 +6,10 @@ import {
   roomDockIdentity,
   type RoomDockItem,
 } from "../lib/roomDockModel";
-import { persistRoomDockItems } from "../lib/roomDockPersistence";
+import {
+  persistRoomDockItems,
+  syncNativeRoomDockItems,
+} from "../lib/roomDockPersistence";
 
 type UseRoomDirectoryOptions = {
   initialRooms: RoomDockItem[];
@@ -114,8 +117,12 @@ export function useRoomDirectory({
   );
 
   useEffect(() => {
-    if (!hostEnabled) return;
-    persistRoomDockItems(rooms.map(persistableRoom));
+    const persistedRooms = rooms.map(persistableRoom);
+    if (hostEnabled) {
+      persistRoomDockItems(persistedRooms);
+      return;
+    }
+    syncNativeRoomDockItems(persistedRooms);
   }, [hostEnabled, rooms]);
 
   useEffect(() => {

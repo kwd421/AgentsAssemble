@@ -5,8 +5,10 @@
   "windows": ["main"],
   "local": true,
   "permissions": [
+    "allow-client-platform",
     "allow-start-local-runtime",
     "allow-open-server",
+    "allow-open-server-link",
     "allow-load-cached-room-directory"
   ]
 }

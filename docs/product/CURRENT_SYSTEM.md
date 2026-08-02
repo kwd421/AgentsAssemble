@@ -57,9 +57,10 @@ polling-based live UI, or a second participant registry.
 
 Detailed current implementation: `docs/live-cli-room-current-architecture.md`.
 
-## Current Desktop Client
+## Current Native Clients
 
-`desktop/` owns the cross-platform Tauri 2 client. Its bundled startup surface
+`desktop/` owns the cross-platform Tauri 2 desktop and mobile clients. The
+desktop startup surface
 opens immediately and starts the local room runtime in the background; it does
 not ask the user to select a connection mode. The desktop build packages the
 Python server and React application as a platform-native sidecar, so users do
@@ -79,14 +80,26 @@ data under the operating system application-data directory and exits with its
 owner application. A valid server already listening on the default local
 address is reused but not adopted or stopped.
 
-The bundled startup surface can start the owned local runtime, open its
+The bundled desktop startup surface can start the owned local runtime, open its
 validated HTTP(S) origin, and read the bounded public room-summary cache. The
 native client refreshes local room summaries after the runtime is ready and
-again before graceful shutdown; the navigated room webview has no native
-cache-writing or runtime-lifecycle privilege. The cache accepts only bounded
-room labels, appearance, origin, and timestamps; it drops unknown fields so
-bearer credentials cannot be persisted through this path. The webview keeps its
-own persistent browser storage, separate from Safari or Chrome.
+again before graceful shutdown. A room webview at the explicitly selected
+server origin may update that server's room summaries in the native cache, but
+it has no runtime-lifecycle privilege and cannot rewrite entries owned by a
+different server. The cache accepts only bounded room labels, appearance,
+origin, and timestamps; it drops unknown fields so bearer credentials cannot be
+persisted through this path. The webview keeps its own persistent browser
+storage, separate from Safari or Chrome.
+
+The iOS and Android applications use the same Tauri shell and room protocol but
+do not package or start the Python room runtime. They open without a server,
+render the native room-summary cache offline, and accept a validated HTTP(S)
+server, invite, or one-time recovery link by text or QR scan. Only the selected
+same-origin room server may refresh its cached summaries. A mobile client can
+therefore reconnect to local-public or future cloud-hosted rooms without making
+cloud hosting a startup dependency. Native debug builds are keyless; App Store
+and Play Store publication, signing, and hosted room infrastructure are not
+current runtime behavior.
 
 A configured desktop release checks a signed HTTPS update manifest from the
 bundled startup surface before starting its owned room runtime. Download and
@@ -115,10 +128,10 @@ the account link. Logging out removes only that server-side public-account link
 and its cached Google profile fields; the local profile, rooms, and durable
 device credential remain. A remote account mutation requires forwarded HTTPS;
 a spoofed loopback Host header is not treated as a local request. Google does
-not permit this web flow inside an embedded WebView. The Tauri client therefore
-asks the selected server for a short-lived, one-use handoff, opens that
-same-origin URL in the system browser, and polls the server until the verified
-account link is visible. The desktop command accepts only the selected server
+not permit this web flow inside an embedded WebView. The Tauri clients therefore
+ask the selected server for a short-lived, one-use handoff, open that
+same-origin URL in the system browser, and poll the server until the verified
+account link is visible. The native command accepts only the selected server
 origin, while the handoff token and Google nonce expire in process memory and
 are consumed once. A previously unseen remote device may start that handoff
 with its durable device credential before it has a server user row; completion

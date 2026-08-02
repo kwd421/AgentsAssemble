@@ -4,6 +4,10 @@ version = "0.1.0"
 description = "Native desktop client for AgentsAssemble rooms"
 edition = "2021"
 
+[lib]
+name = "agentsassemble_app_lib"
+crate-type = ["staticlib", "cdylib", "rlib"]
+
 [build-dependencies]
 tauri-build = { version = "2", features = [] }
 
@@ -13,6 +17,9 @@ tauri = { version = "2", features = [] }
 tauri-plugin-opener = "2"
 tauri-plugin-updater = "2.10.1"
 url = "2"
+
+[target.'cfg(any(target_os = "android", target_os = "ios"))'.dependencies]
+tauri-plugin-barcode-scanner = "2.4.5"
 
 [target.'cfg(unix)'.dependencies]
 libc = "0.2"

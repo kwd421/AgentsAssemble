@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-cache-selected-room-directory"
+description = "Enables the cache_selected_room_directory command without any pre-configured scope."
+commands.allow = ["cache_selected_room_directory"]
+
+[[permission]]
+identifier = "deny-cache-selected-room-directory"
+description = "Denies the cache_selected_room_directory command without any pre-configured scope."
+commands.deny = ["cache_selected_room_directory"]

@@ -13,7 +13,7 @@
     "windows": [],
     "security": {
       "csp": "default-src 'self'; script-src 'self'; style-src 'self'; connect-src ipc: http: https:",
-      "capabilities": ["desktop-shell", "remote-server"]
+      "capabilities": ["desktop-shell", "mobile-shell", "remote-server"]
     }
   },
   "bundle": {

@@ -1,3 +1,4 @@
+#[cfg(desktop)]
 use std::{
     io::{Read, Write},
     net::{TcpStream, ToSocketAddrs},
@@ -6,6 +7,7 @@ use std::{
 
 use url::Url;
 
+#[cfg(desktop)]
 pub const DEFAULT_LOCAL_SERVER_URL: &str = "http://127.0.0.1:8765/";
 
 pub fn normalized_server_url(raw: &str) -> Result<Url, String> {
@@ -27,6 +29,24 @@ pub fn normalized_server_url(raw: &str) -> Result<Url, String> {
     }
     url.set_path("/");
     Ok(url)
+}
+
+pub fn normalized_navigation_url(raw: &str) -> Result<(Url, Url), String> {
+    let destination = Url::parse(raw.trim()).map_err(|_| "room link is invalid".to_owned())?;
+    if !matches!(destination.scheme(), "http" | "https") {
+        return Err("room link must use http or https".to_owned());
+    }
+    if destination.host_str().is_none() {
+        return Err("room link must include a host".to_owned());
+    }
+    if !destination.username().is_empty() || destination.password().is_some() {
+        return Err("room link must not contain embedded credentials".to_owned());
+    }
+    let mut server = destination.clone();
+    server.set_path("/");
+    server.set_query(None);
+    server.set_fragment(None);
+    Ok((destination, server))
 }
 
 pub fn same_origin(candidate: &Url, server: &Url) -> bool {
@@ -66,6 +86,7 @@ pub fn is_local_app_url(candidate: &Url) -> bool {
         || candidate.host_str() == Some("tauri.localhost")
 }
 
+#[cfg(desktop)]
 pub fn tcp_endpoint_is_reachable(server: &Url) -> bool {
     let Some(host) = server.host_str() else {
         return false;
@@ -81,6 +102,7 @@ pub fn tcp_endpoint_is_reachable(server: &Url) -> bool {
         .any(|address| TcpStream::connect_timeout(&address, Duration::from_millis(350)).is_ok())
 }
 
+#[cfg(desktop)]
 pub fn agentsassemble_server_is_ready(server: &Url) -> bool {
     if server.scheme() != "http" {
         return false;
@@ -165,9 +187,24 @@ mod tests {
     }
 
     #[test]
+    fn room_link_keeps_one_time_join_or_recovery_material_only_in_the_destination() {
+        let (destination, server) = normalized_navigation_url(
+            "https://rooms.example.test/join?token=one-time#recovery=ABCD",
+        )
+        .unwrap();
+
+        assert_eq!(
+            destination.as_str(),
+            "https://rooms.example.test/join?token=one-time#recovery=ABCD"
+        );
+        assert_eq!(server.as_str(), "https://rooms.example.test/");
+    }
+
+    #[test]
     fn google_login_handoff_opens_only_a_scoped_same_origin_token_url() {
         let server = normalized_server_url("https://rooms.example.test:9443").unwrap();
-        let valid = "https://rooms.example.test:9443/#google_handoff=abcdefghijklmnopqrstuvwxyz_123456";
+        let valid =
+            "https://rooms.example.test:9443/#google_handoff=abcdefghijklmnopqrstuvwxyz_123456";
         assert_eq!(
             google_account_handoff_url(valid, &server).unwrap().as_str(),
             valid

@@ -14,7 +14,7 @@
           <span></span><span></span><span></span><span></span><i></i>
         </div>
         <div>
-          <p class="eyebrow">AGENTSASSEMBLE DESKTOP</p>
+          <p class="eyebrow" id="client-platform-label">AGENTSASSEMBLE CLIENT</p>
           <h1 id="startup-title">AgentsAssemble을 여는 중</h1>
           <p class="lead">로컬 룸과 저장된 서버 룸을 준비하고 있습니다.</p>
         </div>
@@ -30,6 +30,29 @@
         </div>
       </section>
 
+      <section id="mobile-connect" class="mobile-connect hidden" aria-labelledby="mobile-connect-title">
+        <div class="section-heading">
+          <h2 id="mobile-connect-title">룸 서버 연결</h2>
+          <span>초대·복구 링크 지원</span>
+        </div>
+        <form id="server-link-form" class="server-link-form">
+          <label for="server-link">서버 주소, 초대 링크 또는 복구 링크</label>
+          <div>
+            <input
+              id="server-link"
+              type="url"
+              inputmode="url"
+              autocomplete="url"
+              placeholder="https://rooms.example.com/…"
+              required
+            />
+            <button type="submit">열기</button>
+          </div>
+        </form>
+        <button id="scan-room-qr" class="scan-room-qr" type="button">QR 코드 스캔</button>
+        <p id="mobile-connect-status" class="mobile-connect-status" role="status" aria-live="polite"></p>
+      </section>
+
       <section class="startup-progress" aria-describedby="startup-detail">
         <span class="spinner" aria-hidden="true"></span>
         <div>
@@ -42,8 +65,8 @@
       </section>
 
       <p class="startup-note">
-        인터넷 연결이 없어도 이 컴퓨터의 로컬 룸은 열립니다. 저장된 외부 서버 룸은
-        클라이언트가 열린 뒤 각 서버의 연결 상태를 표시합니다.
+        인터넷 연결이 없어도 저장된 룸 목록은 표시됩니다. 연결이 필요한 룸은 서버가
+        다시 열리면 같은 항목에서 이어서 들어갈 수 있습니다.
       </p>
       <button id="retry-startup" class="retry hidden" type="button">다시 시도</button>
     </main>

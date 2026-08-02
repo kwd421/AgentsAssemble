@@ -10,6 +10,7 @@ const apiMocks = vi.hoisted(() => ({
 
 const persistenceMocks = vi.hoisted(() => ({
   persistRoomDockItems: vi.fn(),
+  syncNativeRoomDockItems: vi.fn(),
 }));
 
 vi.mock("../api", async () => ({
@@ -22,6 +23,7 @@ vi.mock("../lib/roomDockPersistence", async () => ({
     "../lib/roomDockPersistence"
   )),
   persistRoomDockItems: persistenceMocks.persistRoomDockItems,
+  syncNativeRoomDockItems: persistenceMocks.syncNativeRoomDockItems,
 }));
 
 function makeRoom(id: string, overrides: Partial<RoomDockItem> = {}): RoomDockItem {
@@ -181,7 +183,7 @@ describe("useRoomDirectory", () => {
     );
   });
 
-  it("does not fetch or persist guests and supports replacing the joined room", () => {
+  it("does not fetch or browser-persist guests but keeps their native reconnect entry", () => {
     const initialRoom = makeRoom("pending");
     const joinedRoom = makeRoom("joined");
     const { result } = renderHook(() =>
@@ -192,6 +194,9 @@ describe("useRoomDirectory", () => {
 
     expect(apiMocks.fetchRooms).not.toHaveBeenCalled();
     expect(persistenceMocks.persistRoomDockItems).not.toHaveBeenCalled();
+    expect(persistenceMocks.syncNativeRoomDockItems).toHaveBeenLastCalledWith([
+      expect.objectContaining({ meetingId: joinedRoom.meetingId }),
+    ]);
     expect(result.current.rooms).toEqual([joinedRoom]);
   });
 

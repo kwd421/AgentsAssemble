@@ -1,4 +1,4 @@
-# AgentsAssemble Desktop
+# AgentsAssemble Native Clients
 
 The Tauri 2 desktop application opens immediately and starts its bundled local
 room runtime in the background. There is no connection-mode chooser. Local use
@@ -63,11 +63,46 @@ and restarts the application. A temporarily unavailable update service does not
 block local/offline rooms; malformed or unsigned update artifacts still fail
 closed in the updater verifier.
 
+## iOS and Android
+
+The mobile applications open without starting a Python server. They show the
+sanitized room-directory cache offline and connect to a room using an HTTP(S)
+server, invite, or recovery link entered directly or scanned as a QR code.
+Google account handoff continues in the system browser. A successfully opened
+server may update only its own cached room summaries; bearer and session fields
+are removed before native persistence.
+
+The native Xcode and Gradle workspaces are generated build products and remain
+ignored. Initialize them once after installing the official Tauri mobile
+prerequisites, then produce keyless development builds:
+
+```sh
+make mobile-ios-init
+make mobile-ios-build
+
+make mobile-android-init
+make mobile-android-build
+```
+
+The build helper deliberately resolves `rustc` and `cargo` through `rustup`, so
+a Homebrew Rust installation cannot silently compile against the wrong mobile
+standard library. Android uses `ANDROID_HOME`, `NDK_HOME`, and `JAVA_HOME` when
+provided, with macOS development defaults only when they are absent. The iOS
+simulator output and Android debug APK need no signing secret.
+
+Store publication is intentionally not configured in the repository. An iOS
+release still needs the Apple distribution/App Store Connect credentials for
+team `DRUFU8Q688`; an Android release still needs an external upload keystore
+and Play Console credentials. No hosted room URL is baked into either app:
+local-public and future cloud servers are selected by their invite or recovery
+links.
+
 ## Security boundary
 
-The bundled startup screen can start the owned loopback runtime, open its
-validated origin, and read the bounded room-summary cache. The native client
-refreshes local room summaries after the runtime is ready and again before a
-graceful shutdown. The navigated room webview has no native cache-writing or
-runtime-lifecycle privilege. Provider and credential operations remain behind
-the canonical server rather than becoming ambient desktop-webview privileges.
+The bundled desktop startup screen can start the owned loopback runtime, open
+its validated origin, and read the bounded room-summary cache. The native
+client refreshes local room summaries after the runtime is ready and again
+before a graceful shutdown. A room webview may refresh sanitized summaries only
+for its selected same-origin server and has no native runtime-lifecycle
+privilege. Provider and credential operations remain behind the canonical
+server rather than becoming ambient native-webview privileges.

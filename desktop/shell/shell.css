@@ -130,7 +130,13 @@ h1 {
   padding: 10px;
   background: #202127;
   border-radius: 10px;
+  border: 0;
+  text-align: left;
+  color: inherit;
 }
+
+button.cached-room { cursor: pointer; }
+button.cached-room:hover { background: #292b34; }
 
 .cached-room-icon {
   flex: 0 0 32px;
@@ -182,6 +188,62 @@ h1 {
 button {
   font: inherit;
   color: inherit;
+}
+
+.mobile-connect {
+  margin-bottom: 18px;
+  padding: 18px;
+  background: #16171c;
+  border: 1px solid #2b2d35;
+  border-radius: 16px;
+}
+
+.server-link-form label {
+  display: block;
+  margin-bottom: 8px;
+  color: #b8bac5;
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.server-link-form > div {
+  display: flex;
+  gap: 8px;
+}
+
+.server-link-form input {
+  min-width: 0;
+  flex: 1;
+  padding: 12px 13px;
+  color: #f7f8ff;
+  background: #202127;
+  border: 1px solid #343641;
+  border-radius: 10px;
+  font: inherit;
+}
+
+.server-link-form button,
+.scan-room-qr {
+  padding: 11px 16px;
+  color: #f7f8ff;
+  background: #5b5ff2;
+  border: 0;
+  border-radius: 10px;
+  font-weight: 800;
+  cursor: pointer;
+}
+
+.scan-room-qr {
+  width: 100%;
+  margin-top: 10px;
+  background: #292b34;
+}
+
+.mobile-connect-status {
+  min-height: 18px;
+  margin: 10px 2px 0;
+  color: #aeb0be;
+  font-size: 12px;
 }
 
 .startup-progress {
@@ -284,8 +346,18 @@ button:focus-visible {
 }
 
 @media (max-width: 680px) {
-  .launcher { padding: 28px; }
+  body { display: block; background: #111216; }
+  .launcher {
+    width: 100%;
+    min-height: 100vh;
+    padding: max(28px, env(safe-area-inset-top)) 20px max(28px, env(safe-area-inset-bottom));
+    border: 0;
+    border-radius: 0;
+    box-shadow: none;
+  }
   header { align-items: flex-start; }
   .startup-progress { align-items: flex-start; }
   .cached-room-list { grid-template-columns: 1fr; }
+  .server-link-form > div { flex-direction: column; }
+  .server-link-form button { width: 100%; }
 }

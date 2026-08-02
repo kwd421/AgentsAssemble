@@ -1,0 +1,9 @@
+{
+  "identifier": "app.agentsassemble.mobile",
+  "bundle": {
+    "externalBin": [],
+    "iOS": {
+      "developmentTeam": "DRUFU8Q688"
+    }
+  }
+}

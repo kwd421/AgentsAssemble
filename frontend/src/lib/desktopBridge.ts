@@ -21,3 +21,11 @@ export async function openDesktopGoogleLogin(url: string): Promise<void> {
   }
   await tauri.invoke("open_google_account_login", { url });
 }
+
+export async function cacheNativeRoomDirectory(rooms: unknown[]): Promise<void> {
+  const tauri = tauriInternals();
+  if (!tauri) return;
+  await tauri.invoke("cache_selected_room_directory", {
+    rooms: JSON.stringify(rooms),
+  });
+}

@@ -1,4 +1,5 @@
 import type { RoomAppearance } from "./roomAppearance";
+import { cacheNativeRoomDirectory } from "./desktopBridge";
 
 type PersistedRoomAppearance = Omit<RoomAppearance, "notifications">;
 
@@ -108,13 +109,26 @@ export function loadRoomDockItems(): PersistedRoomDockItem[] {
   }
 }
 
+function normalizedRoomDockItems(rooms: PersistedRoomDockItem[]) {
+  return rooms
+    .map(normalizeRoomDockItem)
+    .filter((item): item is PersistedRoomDockItem => Boolean(item))
+    .slice(0, MAX_STORED_ROOMS);
+}
+
+export function syncNativeRoomDockItems(rooms: PersistedRoomDockItem[]) {
+  void cacheNativeRoomDirectory(normalizedRoomDockItems(rooms)).catch((error) => {
+    // Native cache failure must not break the live room, but it remains visible
+    // in the webview diagnostics instead of silently pretending to be synced.
+    console.error("Native room directory synchronization failed.", error);
+  });
+}
+
 export function persistRoomDockItems(rooms: PersistedRoomDockItem[]) {
   try {
-    const normalized = rooms
-      .map(normalizeRoomDockItem)
-      .filter((item): item is PersistedRoomDockItem => Boolean(item))
-      .slice(0, MAX_STORED_ROOMS);
+    const normalized = normalizedRoomDockItems(rooms);
     window.localStorage.setItem(ROOM_DOCK_STORAGE_KEY, JSON.stringify(normalized));
+    syncNativeRoomDockItems(normalized);
   } catch {
     // Room dock persistence is a browser convenience; keep the live UI state if storage is unavailable.
   }
