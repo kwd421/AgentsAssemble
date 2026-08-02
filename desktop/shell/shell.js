@@ -1,4 +1,5 @@
 import { invoke } from "@tauri-apps/api/core";
+import { listen } from "@tauri-apps/api/event";
 
 const status = document.querySelector("#launcher-status");
 const detail = document.querySelector("#startup-detail");
@@ -15,6 +16,18 @@ function showProgress(message) {
   progress.classList.remove("error");
   status.textContent = message;
   detail.textContent = "앱은 멈춘 것이 아닙니다. 준비가 끝나면 룸 목록으로 자동 이동합니다.";
+}
+
+function showUpdateProgress(message, downloaded = 0, total = 0) {
+  retry.classList.add("hidden");
+  progress.classList.remove("error");
+  status.textContent = message;
+  if (total > 0) {
+    const percent = Math.min(100, Math.floor((downloaded / total) * 100));
+    detail.textContent = `${percent}% · ${downloaded.toLocaleString()} / ${total.toLocaleString()} bytes`;
+  } else {
+    detail.textContent = "서명된 업데이트를 안전하게 내려받고 있습니다.";
+  }
 }
 
 function showError(error) {
@@ -87,6 +100,40 @@ async function startClient() {
   }
 }
 
+async function updateBeforeStartup() {
+  showProgress("앱 업데이트를 확인하는 중…");
+  try {
+    const result = await invoke("check_desktop_update");
+    if (result?.state !== "available") {
+      await startClient();
+      return;
+    }
+    showUpdateProgress(`${result.version} 업데이트를 준비하는 중…`);
+    await invoke("install_desktop_update");
+  } catch (error) {
+    detail.textContent = `업데이트 확인을 건너뜁니다: ${String(error?.message || error)}`;
+    await new Promise((resolve) => window.setTimeout(resolve, 1200));
+    await startClient();
+  }
+}
+
 retry.addEventListener("click", startClient);
-void loadCachedRooms();
-void startClient();
+
+async function initializeDesktop() {
+  await listen("desktop-update-progress", (event) => {
+    const payload = event.payload || {};
+    if (payload.phase === "finished") {
+      showUpdateProgress("업데이트 설치를 마쳤습니다. 다시 시작하는 중…", 1, 1);
+      return;
+    }
+    showUpdateProgress(
+      "앱 업데이트를 내려받는 중…",
+      Number(payload.downloaded || 0),
+      Number(payload.total || 0)
+    );
+  });
+  void loadCachedRooms();
+  await updateBeforeStartup();
+}
+
+void initializeDesktop();

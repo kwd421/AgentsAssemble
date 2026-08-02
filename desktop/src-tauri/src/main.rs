@@ -1,3 +1,4 @@
+mod app_update;
 mod local_runtime;
 mod room_directory;
 mod server_url;
@@ -111,7 +112,11 @@ fn main() {
     let app = tauri::Builder::default()
         .manage(navigation)
         .manage(LocalRuntime::default())
+        .manage(app_update::PendingDesktopUpdate::default())
+        .plugin(tauri_plugin_updater::Builder::new().build())
         .invoke_handler(tauri::generate_handler![
+            app_update::check_desktop_update,
+            app_update::install_desktop_update,
             start_local_runtime,
             open_server,
             load_cached_room_directory,

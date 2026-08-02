@@ -20,5 +20,11 @@
     "active": true,
     "targets": "all",
     "externalBin": ["binaries/agentsassemble-server"]
+  },
+  "plugins": {
+    "updater": {
+      "pubkey": "",
+      "endpoints": []
+    }
   }
 }

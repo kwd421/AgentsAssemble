@@ -4,7 +4,7 @@ Status: generated architecture inventory
 
 Generator: `python3 scripts/generate_package_map.py`
 
-Source fingerprint: `35b1842d2a01688a`
+Source fingerprint: `fc7d6a270df5a4a8`
 
 This file describes current evidence and proposed ownership. It does not by
 itself authorize a module move or a product behavior change.
@@ -87,7 +87,7 @@ itself authorize a module move or a product behavior change.
 | `agentsassemble.application.gui_runtime` | `agentsassemble/application/gui_runtime.py` | 293 | application | current | `agentsassemble.admission.repository`, `agentsassemble.application.gui`, `agentsassemble.application.rolling_restart`, `agentsassemble.identity.repository`, `agentsassemble.room.repository`, `agentsassemble.web.frontend_runtime` | 1 | - | - | - | `application/` | in-target-package |
 | `agentsassemble.application.public_invite_runtime` | `agentsassemble/application/public_invite_runtime.py` | 109 | application | current | - | 9 | - | test-import:10 | `tests/room_realtime_test_support.py`, `tests/test_application_package.py`, `tests/test_attachment_authorization.py`, `+7` | `application/` | in-target-package |
 | `agentsassemble.application.public_tunnel` | `agentsassemble/application/public_tunnel.py` | 154 | application | current | `agentsassemble.application.public_invite_runtime`, `agentsassemble.application.stable_entry` | 4 | `call:compile@15` | test-import:4, monkeypatch:1 | `tests/test_application_package.py`, `tests/test_public_invite_http.py`, `tests/test_public_invite_lifecycle_http.py`, `+1` | `application/` | in-target-package |
-| `agentsassemble.application.rolling_restart` | `agentsassemble/application/rolling_restart.py` | 355 | application | current | - | 1 | - | test-import:1 | `tests/test_rolling_restart.py` | `application/` | in-target-package |
+| `agentsassemble.application.rolling_restart` | `agentsassemble/application/rolling_restart.py` | 357 | application | current | - | 1 | - | test-import:1 | `tests/test_rolling_restart.py` | `application/` | in-target-package |
 | `agentsassemble.application.room_attendee` | `agentsassemble/application/room_attendee.py` | 372 | application | current | `agentsassemble.diagnostics.cleanup`, `agentsassemble.providers.agent_bridge`, `agentsassemble.providers.codex_app_server_live`, `agentsassemble.providers.launch_specs`, `agentsassemble.providers.local_openai`, `agentsassemble.providers.opencode`, `agentsassemble.providers.remote_openai`, `agentsassemble.providers.room_portal`, +4 | 2 | - | test-import:2, monkeypatch:2 | `tests/test_provider_runtime_controls.py`, `tests/test_room_native_cli_e2e.py` | `application/` | in-target-package |
 | `agentsassemble.application.room_connector` | `agentsassemble/application/room_connector.py` | 517 | application | current | `agentsassemble.room.text`, `agentsassemble.web.room_client` | 1 | - | test-import:1 | `tests/test_room_connector.py` | `application/` | in-target-package |
 | `agentsassemble.application.room_native_cli_smoke` | `agentsassemble/application/room_native_cli_smoke.py` | 1560 | application | current | `agentsassemble.admission.invite_service`, `agentsassemble.admission.session_service`, `agentsassemble.application.agent_sessions`, `agentsassemble.application.public_invite_runtime`, `agentsassemble.diagnostics.live_cli_smoke`, `agentsassemble.gui`, `agentsassemble.persistence.local.admission.repository`, `agentsassemble.providers.bridge_process`, +4 | 2 | `call:compile@48`, `call:compile@52` | test-import:1 | `tests/test_application_package.py` | `application/` | in-target-package |

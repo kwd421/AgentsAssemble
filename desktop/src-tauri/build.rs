@@ -6,6 +6,8 @@ fn main() {
                 "open_server",
                 "load_cached_room_directory",
                 "open_google_account_login",
+                "check_desktop_update",
+                "install_desktop_update",
             ]),
         ),
     )

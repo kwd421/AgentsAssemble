@@ -337,8 +337,10 @@ class RollingRestartCoordinator:
 
 
 def rolling_restart_command() -> list[str]:
-    """Re-enter the current CLI command through the importable module."""
+    """Re-enter the source CLI or the bundled executable that owns this server."""
 
+    if getattr(sys, "frozen", False):
+        return [sys.executable, *sys.argv[1:]]
     return [sys.executable, "-m", "agentsassemble.cli", *sys.argv[1:]]
 
 

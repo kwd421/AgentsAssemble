@@ -36,6 +36,33 @@ make desktop-build
 Sidecars are built natively. A Windows installer must therefore be produced on
 Windows and a macOS installer on macOS.
 
+## Signed releases and desktop updates
+
+Ordinary development builds do not contact an update service. The startup
+screen reports the updater as unconfigured internally and continues directly
+to the local runtime. A release build enables signed updater artifacts only
+when its endpoint and signing material are supplied through the environment:
+
+```sh
+AGENTSASSEMBLE_UPDATE_ENDPOINT=https://releases.example/latest.json \
+AGENTSASSEMBLE_UPDATE_PUBLIC_KEY='...' \
+TAURI_SIGNING_PRIVATE_KEY='...' \
+npm --prefix desktop run build:release
+```
+
+`TAURI_SIGNING_PRIVATE_KEY_PASSWORD` may also be supplied when the updater key
+is encrypted. None of these values is accepted on argv or stored in the
+repository. macOS release builds use an installed `Developer ID Application`
+identity and submit the resulting DMG through the Keychain notary profile named
+by `AGENTSASSEMBLE_NOTARY_PROFILE` (default: `seinel-notary`). Windows release
+artifacts must be built on Windows with that platform's signing setup.
+
+At application startup, a configured updater checks before the bundled room
+runtime starts. An available signed release shows download progress, installs,
+and restarts the application. A temporarily unavailable update service does not
+block local/offline rooms; malformed or unsigned update artifacts still fail
+closed in the updater verifier.
+
 ## Security boundary
 
 The bundled startup screen can start the owned loopback runtime, open its

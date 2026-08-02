@@ -88,6 +88,15 @@ room labels, appearance, origin, and timestamps; it drops unknown fields so
 bearer credentials cannot be persisted through this path. The webview keeps its
 own persistent browser storage, separate from Safari or Chrome.
 
+A configured desktop release checks a signed HTTPS update manifest from the
+bundled startup surface before starting its owned room runtime. Download and
+signature-verification progress stays visible, then a successful install
+restarts the native application. Development and keyless builds make no update
+request and continue to local/offline rooms. Update-service failure is
+non-blocking, while an invalid or unsigned artifact is never installed. The
+release endpoint, verification key, updater signing key, and platform signing
+credentials are build/release inputs and are not persisted in the repository.
+
 A public account identity is distinct from the private per-client device
 credential. Local startup and local rooms continue to work without login. A
 verified Google subject produces a stable opaque `acct-...` ID; the raw Google
