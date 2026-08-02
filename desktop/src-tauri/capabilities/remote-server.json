@@ -1,0 +1,16 @@
+{
+  "$schema": "../gen/schemas/desktop-schema.json",
+  "identifier": "remote-server",
+  "description": "Allow the selected room server to request the narrowly validated desktop Google login handoff.",
+  "windows": ["main"],
+  "local": false,
+  "remote": {
+    "urls": [
+      "http://127.0.0.1:8765/*",
+      "http://127.0.0.1:*/*",
+      "http://localhost:*/*",
+      "https://*/*"
+    ]
+  },
+  "permissions": ["allow-open-google-account-login"]
+}

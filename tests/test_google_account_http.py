@@ -10,6 +10,7 @@ from http.server import ThreadingHTTPServer
 from pathlib import Path
 from types import SimpleNamespace
 from urllib.parse import parse_qs, urlparse
+from urllib.error import HTTPError
 from urllib.request import Request, urlopen
 
 from agentsassemble.identity.accounts import external_account_identity
@@ -76,6 +77,89 @@ class _Handler:
 
 
 class GoogleAccountHttpTests(unittest.TestCase):
+    def test_system_browser_handoff_links_the_requesting_user_once(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            verifier = _Verifier()
+            service = GoogleAccountLoginService(
+                client_id="google-client.apps.googleusercontent.com",
+                verifier=verifier,
+            )
+            server = ThreadingHTTPServer(
+                ("127.0.0.1", 0),
+                _make_handler(
+                    Path(temp_dir),
+                    google_account_service_override=service,
+                ),
+            )
+            thread = threading.Thread(target=server.serve_forever, daemon=True)
+            thread.start()
+            try:
+                base = f"http://127.0.0.1:{server.server_port}"
+                identity_headers = {"X-Device-Token": "desktop-handoff-device-token"}
+                with urlopen(
+                    Request(
+                        f"{base}/api/account/google/handoff/start",
+                        data=b"{}",
+                        headers={**identity_headers, "Content-Type": "application/json"},
+                        method="POST",
+                    ),
+                    timeout=4,
+                ) as response:
+                    started = json.loads(response.read().decode())
+
+                token = parse_qs(urlparse(started["handoff_url"]).fragment)[
+                    "google_handoff"
+                ][0]
+                configure_body = json.dumps({"token": token}).encode()
+                with urlopen(
+                    Request(
+                        f"{base}/api/account/google/handoff/configure",
+                        data=configure_body,
+                        headers={"Content-Type": "application/json"},
+                        method="POST",
+                    ),
+                    timeout=4,
+                ) as response:
+                    configuration = json.loads(response.read().decode())
+
+                verifier.nonce = configuration["nonce"]
+                complete_body = json.dumps(
+                    {"token": token, "credential": "google-id-token"}
+                ).encode()
+                with urlopen(
+                    Request(
+                        f"{base}/api/account/google/handoff/complete",
+                        data=complete_body,
+                        headers={"Content-Type": "application/json"},
+                        method="POST",
+                    ),
+                    timeout=4,
+                ) as response:
+                    linked = json.loads(response.read().decode())
+
+                with urlopen(
+                    Request(f"{base}/api/account", headers=identity_headers), timeout=4
+                ) as response:
+                    status = json.loads(response.read().decode())
+                with self.assertRaises(HTTPError) as replay:
+                    urlopen(
+                        Request(
+                            f"{base}/api/account/google/handoff/complete",
+                            data=complete_body,
+                            headers={"Content-Type": "application/json"},
+                            method="POST",
+                        ),
+                        timeout=4,
+                    )
+                replay.exception.close()
+            finally:
+                server.shutdown()
+                server.server_close()
+
+        self.assertEqual(linked["status"], "connected")
+        self.assertEqual(status["account"]["account_id"], linked["account"]["account_id"])
+        self.assertEqual(replay.exception.code, HTTPStatus.FORBIDDEN)
+
     def test_composed_gui_server_exposes_account_login_boundary(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:
             verifier = _Verifier()

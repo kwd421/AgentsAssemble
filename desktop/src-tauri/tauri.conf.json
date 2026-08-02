@@ -12,7 +12,8 @@
     "withGlobalTauri": false,
     "windows": [],
     "security": {
-      "csp": "default-src 'self'; script-src 'self'; style-src 'self'; connect-src ipc: http: https:"
+      "csp": "default-src 'self'; script-src 'self'; style-src 'self'; connect-src ipc: http: https:",
+      "capabilities": ["desktop-shell", "remote-server"]
     }
   },
   "bundle": {

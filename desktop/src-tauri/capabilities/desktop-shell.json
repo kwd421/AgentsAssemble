@@ -1,0 +1,12 @@
+{
+  "$schema": "../gen/schemas/desktop-schema.json",
+  "identifier": "desktop-shell",
+  "description": "Allow the bundled desktop connection screen to start and open the local room server.",
+  "windows": ["main"],
+  "local": true,
+  "permissions": [
+    "allow-start-local-runtime",
+    "allow-open-server",
+    "allow-load-cached-room-directory"
+  ]
+}

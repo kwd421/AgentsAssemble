@@ -5,7 +5,9 @@ mod server_url;
 use std::sync::{Arc, RwLock};
 
 use local_runtime::LocalRuntime;
-use server_url::{is_local_app_url, normalized_server_url, same_origin};
+use server_url::{
+    google_account_handoff_url, is_local_app_url, normalized_server_url, same_origin,
+};
 use tauri::{Manager, RunEvent, State, WebviewUrl, WebviewWindow, WebviewWindowBuilder};
 use url::Url;
 
@@ -23,6 +25,23 @@ fn caller_is_local_shell(window: &WebviewWindow) -> Result<(), String> {
     } else {
         Err("This action is available only from the desktop connection screen.".to_owned())
     }
+}
+
+fn caller_selected_server(
+    window: &WebviewWindow,
+    navigation: &NavigationState,
+) -> Result<Url, String> {
+    let current = window
+        .url()
+        .map_err(|error| format!("cannot inspect desktop window location: {error}"))?;
+    let selected = navigation.server_origin.read().expect("navigation state lock");
+    let server = selected
+        .as_ref()
+        .ok_or_else(|| "No room server is open in this desktop window.".to_owned())?;
+    if !same_origin(&current, server) {
+        return Err("This action is available only from the selected room server.".to_owned());
+    }
+    Ok(server.clone())
 }
 
 #[tauri::command]
@@ -74,6 +93,18 @@ fn load_cached_room_directory(
     room_directory::load(&app)
 }
 
+#[tauri::command]
+fn open_google_account_login(
+    window: WebviewWindow,
+    navigation: State<'_, NavigationState>,
+    url: String,
+) -> Result<(), String> {
+    let server = caller_selected_server(&window, &navigation)?;
+    let handoff = google_account_handoff_url(&url, &server)?;
+    tauri_plugin_opener::open_url(handoff.as_str(), None::<&str>)
+        .map_err(|error| format!("cannot open the system browser: {error}"))
+}
+
 fn main() {
     let navigation = NavigationState::default();
     let navigation_guard = navigation.server_origin.clone();
@@ -83,7 +114,8 @@ fn main() {
         .invoke_handler(tauri::generate_handler![
             start_local_runtime,
             open_server,
-            load_cached_room_directory
+            load_cached_room_directory,
+            open_google_account_login
         ])
         .setup(move |app| {
             WebviewWindowBuilder::new(app, "main", WebviewUrl::App("index.html".into()))

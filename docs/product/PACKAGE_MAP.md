@@ -4,17 +4,17 @@ Status: generated architecture inventory
 
 Generator: `python3 scripts/generate_package_map.py`
 
-Source fingerprint: `9fb7be5d09709a7d`
+Source fingerprint: `20e3f7a82e8c715b`
 
 This file describes current evidence and proposed ownership. It does not by
 itself authorize a module move or a product behavior change.
 
 ## Summary
 
-- Python modules: 826
+- Python modules: 827
 - Top-level package modules: 302
-- Domains: admission=33, application=132, diagnostics=27, features=19, identity=12, legacy=226, persistence=71, providers=142, room=90, web=74
-- Classifications: compatibility=299, current=330, legacy=185, optional=12
+- Domains: admission=33, application=132, diagnostics=27, features=19, identity=13, legacy=226, persistence=71, providers=142, room=90, web=74
+- Classifications: compatibility=299, current=331, legacy=185, optional=12
 
 ## Classification Rules
 
@@ -216,7 +216,8 @@ itself authorize a module move or a product behavior change.
 | `agentsassemble.identity` | `agentsassemble/identity/__init__.py` | 1 | identity | current | - | 0 | - | test-import:4 | `tests/test_identity_pairing_package.py`, `tests/test_identity_repository_factory.py`, `tests/test_identity_repository_package.py`, `+1` | `identity/` | in-target-package |
 | `agentsassemble.identity.accounts` | `agentsassemble/identity/accounts.py` | 35 | identity | current | `agentsassemble.room.text` | 4 | `call:uuid5@10` | test-import:2 | `tests/identity_repository_contract.py`, `tests/test_google_account_http.py` | `identity/` | in-target-package |
 | `agentsassemble.identity.factory` | `agentsassemble/identity/factory.py` | 58 | identity | current | `agentsassemble.application.room_repository_factory`, `agentsassemble.identity.repository`, `agentsassemble.persistence.local.identity.registry` | 2 | - | test-import:1, monkeypatch:1 | `tests/test_identity_repository_factory.py` | `identity/` | in-target-package |
-| `agentsassemble.identity.google` | `agentsassemble/identity/google.py` | 262 | identity | current | `agentsassemble.identity.accounts`, `agentsassemble.identity.repository` | 3 | - | test-import:1 | `tests/test_google_account_http.py` | `identity/` | in-target-package |
+| `agentsassemble.identity.google` | `agentsassemble/identity/google.py` | 336 | identity | current | `agentsassemble.identity.accounts`, `agentsassemble.identity.google_handoff`, `agentsassemble.identity.repository` | 3 | - | test-import:1 | `tests/test_google_account_http.py` | `identity/` | in-target-package |
+| `agentsassemble.identity.google_handoff` | `agentsassemble/identity/google_handoff.py` | 72 | identity | current | - | 1 | - | - | - | `identity/` | in-target-package |
 | `agentsassemble.identity.pairing` | `agentsassemble/identity/pairing.py` | 360 | identity | current | `agentsassemble.admission.lan_invite`, `agentsassemble.admission.session_issuer`, `agentsassemble.admission.session_service`, `agentsassemble.application.transaction`, `agentsassemble.identity.repository`, `agentsassemble.room.repository`, `agentsassemble.room.text` | 5 | - | test-import:5 | `tests/test_gui_application_services.py`, `tests/test_gui_server_room_routes.py`, `tests/test_identity_pairing_package.py`, `+2` | `identity/` | in-target-package |
 | `agentsassemble.identity.preferences` | `agentsassemble/identity/preferences.py` | 12 | identity | current | `agentsassemble.room.text` | 5 | - | test-import:1 | `tests/test_local_identity_persistence_package.py` | `identity/` | in-target-package |
 | `agentsassemble.identity.recovery` | `agentsassemble/identity/recovery.py` | 140 | identity | current | `agentsassemble.admission.session_service`, `agentsassemble.identity.repository`, `agentsassemble.room.repository`, `agentsassemble.room.text` | 1 | - | - | - | `identity/` | in-target-package |
@@ -830,7 +831,7 @@ itself authorize a module move or a product behavior change.
 | `agentsassemble.web.room_ws_composition` | `agentsassemble/web/room_ws_composition.py` | 131 | web | current | `agentsassemble.application.gui`, `agentsassemble.room.realtime`, `agentsassemble.room.repository`, `agentsassemble.web.room_session` | 1 | - | - | - | `web/` | in-target-package |
 | `agentsassemble.web.router` | `agentsassemble/web/router.py` | 589 | web | current | `agentsassemble.admission.coordinator`, `agentsassemble.admission.invite_service`, `agentsassemble.admission.preflight`, `agentsassemble.admission.projection`, `agentsassemble.admission.session_service`, `agentsassemble.application.public_invite_runtime`, `agentsassemble.identity.pairing`, `agentsassemble.identity.repository`, +3 | 55 | - | test-import:38 | `tests/gui_server_test_support.py`, `tests/test_attachment_authorization.py`, `tests/test_google_account_http.py`, `+35` | `web/` | in-target-package |
 | `agentsassemble.web.routes` | `agentsassemble/web/routes/__init__.py` | 1 | web | current | - | 0 | - | test-import:1 | `tests/test_web_routes_package.py` | `web/` | in-target-package |
-| `agentsassemble.web.routes.accounts` | `agentsassemble/web/routes/accounts.py` | 51 | web | current | `agentsassemble.identity.accounts`, `agentsassemble.identity.google`, `agentsassemble.identity.repository`, `agentsassemble.web.router` | 1 | - | test-import:1 | `tests/test_google_account_http.py` | `web/` | in-target-package |
+| `agentsassemble.web.routes.accounts` | `agentsassemble/web/routes/accounts.py` | 106 | web | current | `agentsassemble.identity.accounts`, `agentsassemble.identity.google`, `agentsassemble.identity.repository`, `agentsassemble.web.router` | 1 | - | test-import:1 | `tests/test_google_account_http.py` | `web/` | in-target-package |
 | `agentsassemble.web.routes.agent_sessions` | `agentsassemble/web/routes/agent_sessions.py` | 157 | web | current | `agentsassemble.application.agent_sessions`, `agentsassemble.web.router` | 2 | - | test-import:1 | `tests/test_web_routes_package.py` | `web/` | in-target-package |
 | `agentsassemble.web.routes.attachments` | `agentsassemble/web/routes/attachments.py` | 218 | web | current | `agentsassemble.room.attachments`, `agentsassemble.room.text`, `agentsassemble.web.router` | 3 | - | test-import:2 | `tests/test_attachment_authorization.py`, `tests/test_web_routes_package.py` | `web/` | in-target-package |
 | `agentsassemble.web.routes.gui` | `agentsassemble/web/routes/gui.py` | 91 | web | current | `agentsassemble.application.gui`, `agentsassemble.features.mafia.routes`, `agentsassemble.features.side_chat.routes`, `agentsassemble.features.social.routes`, `agentsassemble.identity.google`, `agentsassemble.web.router`, `agentsassemble.web.routes.accounts`, `agentsassemble.web.routes.attachments`, +10 | 1 | - | - | - | `web/` | in-target-package |
@@ -847,7 +848,7 @@ itself authorize a module move or a product behavior change.
 | `agentsassemble.web.routes.room_members` | `agentsassemble/web/routes/room_members.py` | 125 | web | current | `agentsassemble.room.members`, `agentsassemble.room.moderation`, `agentsassemble.web.router` | 2 | - | test-import:1 | `tests/test_web_routes_package.py` | `web/` | in-target-package |
 | `agentsassemble.web.routes.room_settings` | `agentsassemble/web/routes/room_settings.py` | 77 | web | current | `agentsassemble.room.settings_service`, `agentsassemble.web.router` | 3 | - | test-import:3 | `tests/gui_server_test_support.py`, `tests/test_gui_server_room_settings_http.py`, `tests/test_web_routes_package.py` | `web/` | in-target-package |
 | `agentsassemble.web.routes.runtime` | `agentsassemble/web/routes/runtime.py` | 145 | web | current | `agentsassemble.room.repository`, `agentsassemble.room.text`, `agentsassemble.web.router` | 1 | `call:frozenset@13` | test-import:1 | `tests/test_room_connections.py` | `web/` | in-target-package |
-| `agentsassemble.web.security` | `agentsassemble/web/security.py` | 163 | web | current | `agentsassemble.providers.remote_openai` | 4 | - | test-import:1 | `tests/test_web_transport_package.py` | `web/` | in-target-package |
+| `agentsassemble.web.security` | `agentsassemble/web/security.py` | 166 | web | current | `agentsassemble.providers.remote_openai` | 4 | - | test-import:1 | `tests/test_web_transport_package.py` | `web/` | in-target-package |
 | `agentsassemble.web.sse_cadence` | `agentsassemble/web/sse_cadence.py` | 4 | web | current | - | 5 | - | test-import:1 | `tests/test_web_transport_package.py` | `web/` | in-target-package |
 | `agentsassemble.web.static` | `agentsassemble/web/static.py` | 136 | web | current | `agentsassemble.web.router` | 3 | `call:frozenset@15` | test-import:2 | `tests/test_gui_route_ownership.py`, `tests/test_web_transport_package.py` | `web/` | in-target-package |
 | `agentsassemble.web.websocket` | `agentsassemble/web/websocket.py` | 155 | web | current | `agentsassemble.web.room_session`, `agentsassemble.web.router`, `agentsassemble.web.sse_cadence`, `agentsassemble.web.websocket_codec` | 4 | - | test-import:2 | `tests/test_web_transport_package.py`, `tests/test_ws_endpoint.py` | `web/` | in-target-package |

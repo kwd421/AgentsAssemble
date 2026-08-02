@@ -35,6 +35,32 @@ pub fn same_origin(candidate: &Url, server: &Url) -> bool {
         && candidate.port_or_known_default() == server.port_or_known_default()
 }
 
+pub fn google_account_handoff_url(raw: &str, server: &Url) -> Result<Url, String> {
+    let url = Url::parse(raw.trim()).map_err(|_| "Google login URL is invalid".to_owned())?;
+    if !same_origin(&url, server) || url.path() != "/" || url.query().is_some() {
+        return Err("Google login URL must stay on the selected server".to_owned());
+    }
+    if !url.username().is_empty() || url.password().is_some() {
+        return Err("Google login URL must not contain credentials".to_owned());
+    }
+    let fragment = url
+        .fragment()
+        .ok_or_else(|| "Google login URL is missing its one-time token".to_owned())?;
+    let values = url::form_urlencoded::parse(fragment.as_bytes()).collect::<Vec<_>>();
+    if values.len() != 1 || values[0].0 != "google_handoff" {
+        return Err("Google login URL has an invalid handoff fragment".to_owned());
+    }
+    let token = values[0].1.as_ref();
+    if !(32..=128).contains(&token.len())
+        || !token
+            .bytes()
+            .all(|value| value.is_ascii_alphanumeric() || matches!(value, b'-' | b'_'))
+    {
+        return Err("Google login URL has an invalid one-time token".to_owned());
+    }
+    Ok(url)
+}
+
 pub fn is_local_app_url(candidate: &Url) -> bool {
     matches!(candidate.scheme(), "tauri" | "asset")
         || candidate.host_str() == Some("tauri.localhost")
@@ -136,5 +162,28 @@ mod tests {
             &Url::parse("http://rooms.example.test:9443/").unwrap(),
             &server,
         ));
+    }
+
+    #[test]
+    fn google_login_handoff_opens_only_a_scoped_same_origin_token_url() {
+        let server = normalized_server_url("https://rooms.example.test:9443").unwrap();
+        let valid = "https://rooms.example.test:9443/#google_handoff=abcdefghijklmnopqrstuvwxyz_123456";
+        assert_eq!(
+            google_account_handoff_url(valid, &server).unwrap().as_str(),
+            valid
+        );
+
+        for raw in [
+            "https://evil.example.test/#google_handoff=abcdefghijklmnopqrstuvwxyz_123456",
+            "https://rooms.example.test:9443/account#google_handoff=abcdefghijklmnopqrstuvwxyz_123456",
+            "https://rooms.example.test:9443/?next=evil#google_handoff=abcdefghijklmnopqrstuvwxyz_123456",
+            "https://rooms.example.test:9443/#google_handoff=short",
+            "https://rooms.example.test:9443/#google_handoff=abcdefghijklmnopqrstuvwxyz_123456&next=evil",
+        ] {
+            assert!(
+                google_account_handoff_url(raw, &server).is_err(),
+                "accepted {raw}"
+            );
+        }
     }
 }

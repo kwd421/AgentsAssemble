@@ -10,9 +10,11 @@ from collections.abc import Mapping
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from typing import Protocol
+from urllib.parse import urlencode
 from uuid import uuid4
 
 from agentsassemble.identity.accounts import AccountLinkConflict, external_account_identity
+from agentsassemble.identity.google_handoff import GoogleLoginHandoffStore
 from agentsassemble.identity.repository import IdentityBackend
 
 
@@ -108,10 +110,12 @@ class GoogleAccountLoginService:
         client_id: str = "",
         verifier: GoogleCredentialVerifier | None = None,
         challenges: GoogleLoginChallengeStore | None = None,
+        handoffs: GoogleLoginHandoffStore | None = None,
     ) -> None:
         self.client_id = str(client_id or "").strip()
         self._verifier = verifier or GoogleIdTokenVerifier(self.client_id)
         self._challenges = challenges or GoogleLoginChallengeStore()
+        self._handoffs = handoffs or GoogleLoginHandoffStore()
 
     @classmethod
     def from_environment(
@@ -141,6 +145,76 @@ class GoogleAccountLoginService:
                 "unavailable_reason": "" if enabled else "google_client_id_missing",
             },
         }
+
+    def start_handoff(
+        self,
+        *,
+        current_user: dict[str, object] | None,
+        device_auth_key: str,
+    ) -> dict[str, object]:
+        if not self.client_id:
+            raise GoogleLoginRejected(
+                "Google login is not configured on this server.",
+                code="google_login_not_configured",
+            )
+        user_id = str((current_user or {}).get("user_id") or "").strip()
+        if not user_id:
+            raise GoogleLoginRejected(
+                "A signed-in server identity is required to start Google login.",
+                code="device_identity_required",
+            )
+        nonce = self._challenges.issue()
+        token = self._handoffs.issue(
+            user_id=user_id,
+            device_auth_key=device_auth_key,
+            nonce=nonce,
+        )
+        return {
+            "status": "ready",
+            "handoff_url": f"/#{urlencode({'google_handoff': token})}",
+            "expires_in": int(self._handoffs.ttl_seconds),
+        }
+
+    def handoff_configuration(self, token: object) -> dict[str, object]:
+        handoff = self._handoffs.read(token)
+        if handoff is None:
+            raise GoogleLoginRejected(
+                "Google login handoff expired or was already used.",
+                code="google_login_handoff_invalid",
+            )
+        return {
+            "status": "ready",
+            "client_id": self.client_id,
+            "nonce": handoff.nonce,
+            "expires_in": max(0, int(handoff.expires_at - time.monotonic())),
+        }
+
+    def connect_handoff(
+        self,
+        identities: IdentityBackend,
+        *,
+        token: object,
+        credential: object,
+    ) -> dict[str, object]:
+        handoff = self._handoffs.consume(token)
+        if handoff is None:
+            raise GoogleLoginRejected(
+                "Google login handoff expired or was already used.",
+                code="google_login_handoff_invalid",
+            )
+        current_user = identities.get_user(handoff.user_id)
+        if current_user is None:
+            raise GoogleLoginRejected(
+                "The server identity for this login no longer exists.",
+                code="google_login_handoff_invalid",
+            )
+        return self.connect(
+            identities,
+            current_user=current_user,
+            device_auth_key=handoff.device_auth_key,
+            credential=credential,
+            nonce=handoff.nonce,
+        )
 
     def connect(
         self,

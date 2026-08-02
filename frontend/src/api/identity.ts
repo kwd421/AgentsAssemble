@@ -31,6 +31,19 @@ export type GoogleAccountConnectResponse = {
   };
 };
 
+export type GoogleAccountHandoffStartResponse = {
+  status: "ready";
+  handoff_url: string;
+  expires_in: number;
+};
+
+export type GoogleAccountHandoffConfiguration = {
+  status: "ready";
+  client_id: string;
+  nonce: string;
+  expires_in: number;
+};
+
 export function fetchAccountStatus(
   identity: UserProfileIdentity = {}
 ): Promise<AccountStatusResponse> {
@@ -50,6 +63,40 @@ export function connectGoogleAccount({
     "/api/account/google",
     { credential, nonce },
     identity
+  );
+}
+
+export function startGoogleAccountHandoff({
+  identity = {},
+}: {
+  identity?: UserProfileIdentity;
+}): Promise<GoogleAccountHandoffStartResponse> {
+  return postJsonWithIdentity<GoogleAccountHandoffStartResponse>(
+    "/api/account/google/handoff/start",
+    {},
+    identity
+  );
+}
+
+export function configureGoogleAccountHandoff(
+  token: string
+): Promise<GoogleAccountHandoffConfiguration> {
+  return postJson<GoogleAccountHandoffConfiguration>(
+    "/api/account/google/handoff/configure",
+    { token }
+  );
+}
+
+export function completeGoogleAccountHandoff({
+  token,
+  credential,
+}: {
+  token: string;
+  credential: string;
+}): Promise<GoogleAccountConnectResponse> {
+  return postJson<GoogleAccountConnectResponse>(
+    "/api/account/google/handoff/complete",
+    { token, credential }
   );
 }
 

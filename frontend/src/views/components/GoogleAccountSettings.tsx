@@ -4,67 +4,13 @@ import { CircleUserRound, LoaderCircle } from "lucide-react";
 import {
   connectGoogleAccount,
   fetchAccountStatus,
+  startGoogleAccountHandoff,
   type AccountStatusResponse,
 } from "../../api/identity";
 import type { UserProfileIdentity } from "../../api/room";
+import { isDesktopWebview, openDesktopGoogleLogin } from "../../lib/desktopBridge";
+import { googleIdentityApi, loadGoogleIdentityScript } from "../../lib/googleIdentity";
 
-
-type CredentialResponse = { credential?: string };
-type GoogleIdentityApi = {
-  initialize(options: {
-    client_id: string;
-    nonce: string;
-    callback: (response: CredentialResponse) => void;
-  }): void;
-  renderButton(
-    target: HTMLElement,
-    options: Record<string, string | number | boolean>
-  ): void;
-  cancel(): void;
-};
-
-function googleIdentityApi(): GoogleIdentityApi | undefined {
-  return (
-    window as typeof window & {
-      google?: { accounts?: { id?: GoogleIdentityApi } };
-    }
-  ).google?.accounts?.id;
-}
-
-let googleScriptPromise: Promise<void> | null = null;
-
-function loadGoogleIdentityScript(): Promise<void> {
-  if (googleIdentityApi()) return Promise.resolve();
-  if (googleScriptPromise) return googleScriptPromise;
-  const pending = new Promise<void>((resolve, reject) => {
-    const existing = document.querySelector<HTMLScriptElement>(
-      'script[data-agentsassemble-google-identity="true"]'
-    );
-    const script = existing || document.createElement("script");
-    const onLoad = () => (googleIdentityApi() ? resolve() : reject(new Error("Google 로그인 모듈을 불러오지 못했습니다.")));
-    script.addEventListener("load", onLoad, { once: true });
-    script.addEventListener(
-      "error",
-      () => reject(new Error("Google 로그인 모듈을 불러오지 못했습니다.")),
-      { once: true }
-    );
-    if (!existing) {
-      script.src = "https://accounts.google.com/gsi/client";
-      script.async = true;
-      script.dataset.agentsassembleGoogleIdentity = "true";
-      document.head.append(script);
-    }
-  }).catch((error) => {
-    googleScriptPromise = null;
-    throw error;
-  });
-  googleScriptPromise = pending;
-  return pending;
-}
-
-function isDesktopWebview(): boolean {
-  return "__TAURI_INTERNALS__" in window;
-}
 
 export default function GoogleAccountSettings({
   identity,
@@ -74,6 +20,8 @@ export default function GoogleAccountSettings({
   const [status, setStatus] = useState<AccountStatusResponse | null>(null);
   const [error, setError] = useState("");
   const [connecting, setConnecting] = useState(false);
+  const [desktopWaiting, setDesktopWaiting] = useState(false);
+  const desktopLoginExpiresAt = useRef(0);
   const buttonRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -153,6 +101,53 @@ export default function GoogleAccountSettings({
     };
   }, [identity.deviceToken, identity.sessionToken, status?.account, status?.google.client_id, status?.google.enabled, status?.google.nonce]);
 
+  useEffect(() => {
+    if (!desktopWaiting || status?.account) return;
+    let active = true;
+    const refresh = async () => {
+      const next = await fetchAccountStatus(identity);
+      if (!active) return;
+      setStatus(next);
+      if (next.account) {
+        setDesktopWaiting(false);
+        setConnecting(false);
+      }
+    };
+    void refresh().catch(() => undefined);
+    const timer = window.setInterval(() => void refresh().catch(() => undefined), 1_500);
+    const expiryTimer = window.setTimeout(() => {
+      if (!active) return;
+      setDesktopWaiting(false);
+      setConnecting(false);
+      setError("Google 로그인 시간이 만료됐습니다. 다시 시도해 주세요.");
+    }, Math.max(0, desktopLoginExpiresAt.current - Date.now()));
+    return () => {
+      active = false;
+      window.clearInterval(timer);
+      window.clearTimeout(expiryTimer);
+    };
+  }, [desktopWaiting, identity.deviceToken, identity.sessionToken, status?.account]);
+
+  const beginDesktopLogin = async () => {
+    setConnecting(true);
+    setError("");
+    let stage = "서버에서 Google 로그인 링크를 만드는 중";
+    try {
+      const started = await startGoogleAccountHandoff({ identity });
+      const url = new URL(started.handoff_url, window.location.origin).toString();
+      desktopLoginExpiresAt.current =
+        Date.now() + Math.max(1, started.expires_in) * 1_000;
+      stage = "시스템 브라우저를 여는 중";
+      await openDesktopGoogleLogin(url);
+      setDesktopWaiting(true);
+    } catch (reason) {
+      setConnecting(false);
+      setDesktopWaiting(false);
+      const detail = reason instanceof Error ? reason.message : String(reason || "").trim();
+      setError(`${stage}: ${detail || "요청이 이유 없이 거부됐습니다."}`);
+    }
+  };
+
   return (
     <section className="mt-4 grid gap-3 rounded-md bg-[#1e1f22] p-3" aria-label="공개 계정 연결">
       <div className="flex items-start gap-2 text-text-secondary">
@@ -188,9 +183,19 @@ export default function GoogleAccountSettings({
       )}
 
       {status?.google.enabled && !status.account && isDesktopWebview() && (
-        <p className="text-[11px] font-bold leading-4 text-[#f0b232]">
-          Google은 앱 내 WebView 로그인을 허용하지 않습니다. 시스템 브라우저 연결 경로가 준비되기 전에는 웹에서 연결해 주세요.
-        </p>
+        <div className="grid gap-2">
+          <button
+            type="button"
+            className="rounded-md bg-[#5865f2] px-3 py-2 text-[12px] font-black text-white disabled:opacity-60"
+            disabled={connecting}
+            onClick={() => void beginDesktopLogin()}
+          >
+            {desktopWaiting ? "Google 로그인 완료 대기 중…" : "시스템 브라우저에서 Google 연결"}
+          </button>
+          <p className="text-[11px] font-bold leading-4 text-text-muted">
+            앱 안에 계정 화면을 끼워 넣지 않고 기본 브라우저에서 안전하게 연결합니다.
+          </p>
+        </div>
       )}
 
       {status?.google.enabled && !status.account && !isDesktopWebview() && (
