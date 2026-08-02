@@ -38,7 +38,13 @@ export type OperatorPairingState =
   | "pairing_failed_terminal"
   | "paired";
 
-type AdmissionSource = "initial" | "invite" | "pairing" | "existing_session" | "restored";
+type AdmissionSource =
+  | "initial"
+  | "invite"
+  | "pairing"
+  | "existing_session"
+  | "restored"
+  | "recovery";
 type AdmissionOperation = "preflight" | "join" | "pairing";
 
 export type AdmissionState =
@@ -341,6 +347,13 @@ export function useRoomAdmission({
     [clearInviteUrl, onRoomJoined, pendingGuestDisplayName]
   );
 
+  const acceptRecoveredSession = useCallback(
+    (payload: RoomInviteJoinResponse) => {
+      applyJoinedSession("", payload, payload.avatar_image_url || "", "recovery");
+    },
+    [applyJoinedSession]
+  );
+
   useEffect(() => {
     if (!operatorPairingToken || admissionState.kind !== "pairing") return;
     if (pairingAttemptedTokenRef.current === operatorPairingToken) return;
@@ -579,6 +592,7 @@ export function useRoomAdmission({
     setPendingGuestAvatarImage,
     requestGuestJoin,
     retryOperatorPairing,
+    acceptRecoveredSession,
     expireGuestSession,
     clearGuestSession,
   };

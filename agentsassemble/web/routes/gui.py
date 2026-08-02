@@ -10,6 +10,7 @@ from agentsassemble.features.side_chat.routes import register_side_chat_routes
 from agentsassemble.features.social.routes import register_room_friend_profile_routes
 from agentsassemble.web.router import RequestContext, Router
 from agentsassemble.web.routes.attachments import register_attachment_routes
+from agentsassemble.web.routes.identity_recovery import register_identity_recovery_routes
 from agentsassemble.web.routes.observability import register_observability_routes
 from agentsassemble.web.routes.personas import register_persona_routes
 from agentsassemble.web.routes.providers import register_provider_routes
@@ -36,6 +37,7 @@ def register_current_gui_routes(
         is_local_operator=lambda ctx: ctx.is_local_operator(),
     )
     register_attachment_routes(route_table)
+    register_identity_recovery_routes(route_table)
     register_persona_routes(
         route_table,
         is_local_operator=lambda ctx: ctx.is_local_operator(),

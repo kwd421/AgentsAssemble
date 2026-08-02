@@ -53,6 +53,7 @@ import { RoomSocketProvider } from "./RoomSocketContext";
 import ChannelContextMenu from "./views/components/ChannelContextMenu";
 import type { ChannelHeaderActions } from "./views/components/ChannelHeader";
 import AgentCreateModal from "./views/components/AgentCreateModal";
+import GuestIdentityRecoveryPanel from "./views/components/GuestIdentityRecoveryPanel";
 import GuestJoinProfilePanel from "./views/components/GuestJoinProfilePanel";
 import HomeSidebar from "./views/components/HomeSidebar";
 import LeaveRoomDialog from "./views/components/LeaveRoomDialog";
@@ -94,6 +95,7 @@ import {
 import { remoteClientPacketPreview } from "./lib/roomInviteCopy";
 import { GUEST_SESSION_EXPIRED_MESSAGE } from "./lib/apiErrors";
 import { getOrCreateDeviceToken } from "./lib/deviceIdentity";
+import { consumeGuestRecoveryRequestFromUrl } from "./lib/guestRecovery";
 import { consumeOperatorPairingTokenFromUrl } from "./lib/roomGuestSession";
 import { roomPostingState } from "./lib/roomGuestPosting";
 import type { AgentQuotaVisibilityViewer } from "./lib/agentQuotaVisibility";
@@ -308,6 +310,9 @@ export default function App() {
   const [operatorPairingToken, setOperatorPairingToken] = useState(
     consumeOperatorPairingTokenFromUrl
   );
+  const [guestRecoveryRequest, setGuestRecoveryRequest] = useState(
+    consumeGuestRecoveryRequestFromUrl
+  );
   const [startupRoute] = useState(() =>
     createStartupRoute({ operatorPairingPending: Boolean(operatorPairingToken) })
   );
@@ -331,7 +336,8 @@ export default function App() {
     !startupRoute.guestInvite &&
     !startupRoute.guestSession &&
     !startupRoute.guestJoinToken &&
-    !operatorPairingToken;
+    !operatorPairingToken &&
+    !guestRecoveryRequest;
   const {
     rooms,
     replaceRooms,
@@ -400,6 +406,7 @@ export default function App() {
     setPendingGuestAvatarImage,
     requestGuestJoin,
     retryOperatorPairing,
+    acceptRecoveredSession,
     expireGuestSession,
     clearGuestSession,
   } = useRoomAdmission({
@@ -1442,6 +1449,16 @@ export default function App() {
         }}
         onCreated={() => refreshLiveAgentProcessGroups()}
       />
+
+      {guestRecoveryRequest && (
+        <GuestIdentityRecoveryPanel
+          request={guestRecoveryRequest}
+          onRecovered={(payload) => {
+            acceptRecoveredSession(payload);
+            setGuestRecoveryRequest(null);
+          }}
+        />
+      )}
 
       {createChannelOpen && !guestLocked && (
         <CreateChannelModal

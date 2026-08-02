@@ -19,6 +19,7 @@ import type { RoomMember } from "./api/room";
 
 export * from "./api/agentSessions";
 export * from "./api/invites";
+export * from "./api/identity";
 export * from "./api/moderation";
 export * from "./api/personas";
 export * from "./api/room";

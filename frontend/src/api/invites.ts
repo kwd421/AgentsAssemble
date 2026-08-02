@@ -38,6 +38,9 @@ export interface RoomInviteJoinResponse {
   room_label?: string;
   room_topic?: string;
   room_created_at?: string;
+  room_uid?: string;
+  server_id?: string;
+  client_id?: string;
 }
 
 export interface RoomInviteAdmissionResponse {

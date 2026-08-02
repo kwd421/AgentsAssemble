@@ -7070,6 +7070,116 @@ body[data-sidebar-resizing="true"] {
   opacity: 0.5;
 }
 
+.dc-guest-recovery-card {
+  display: grid;
+  width: min(460px, 100%);
+  gap: 16px;
+  border: 1px solid var(--color-line);
+  border-radius: 12px;
+  background: var(--color-sidebar);
+  padding: 24px;
+  box-shadow: 0 24px 70px rgba(0, 0, 0, 0.42);
+}
+
+.dc-guest-recovery-card h1 {
+  color: var(--color-text-primary);
+  font-size: 22px;
+  font-weight: 950;
+}
+
+.dc-guest-recovery-card p {
+  color: var(--color-text-muted);
+  font-size: 12px;
+  font-weight: 750;
+  line-height: 1.5;
+}
+
+.dc-guest-recovery-icon {
+  display: grid;
+  width: 48px;
+  height: 48px;
+  place-items: center;
+  border-radius: 14px;
+  background: color-mix(in srgb, var(--color-accent) 20%, #1e1f22);
+  color: #c9cdfb;
+}
+
+.dc-guest-recovery-code,
+.dc-guest-recovery-result label {
+  display: grid;
+  gap: 6px;
+  color: var(--color-text-muted);
+  font-size: 11px;
+  font-weight: 900;
+}
+
+.dc-guest-recovery-code input,
+.dc-guest-recovery-result input {
+  min-width: 0;
+  border-radius: 6px;
+  background: #1e1f22;
+  padding: 10px;
+  color: var(--color-text-primary);
+  font-family: var(--font-mono);
+  font-size: 13px;
+  letter-spacing: 0.04em;
+}
+
+.dc-guest-recovery-actions,
+.dc-guest-recovery-result span {
+  display: flex;
+  gap: 8px;
+}
+
+.dc-guest-recovery-actions button,
+.dc-guest-recovery-submit,
+.dc-guest-recovery-issue,
+.dc-guest-recovery-result button {
+  display: inline-flex;
+  min-height: 38px;
+  align-items: center;
+  justify-content: center;
+  gap: 7px;
+  border-radius: 6px;
+  background: #2b2d31;
+  padding: 0 12px;
+  color: var(--color-text-primary);
+  font-size: 12px;
+  font-weight: 900;
+}
+
+.dc-guest-recovery-actions button:last-child,
+.dc-guest-recovery-submit,
+.dc-guest-recovery-issue {
+  background: var(--color-accent);
+  color: #fff;
+}
+
+.dc-guest-recovery-settings,
+.dc-guest-recovery-result {
+  display: grid;
+  gap: 10px;
+}
+
+.dc-guest-recovery-settings header {
+  margin-bottom: 0;
+}
+
+.dc-guest-recovery-result input {
+  flex: 1;
+}
+
+.dc-guest-recovery-warning {
+  border-left: 3px solid #f0b232;
+  padding-left: 9px;
+}
+
+.dc-guest-recovery-submit:disabled,
+.dc-guest-recovery-issue:disabled {
+  cursor: wait;
+  opacity: 0.55;
+}
+
 @keyframes live-pulse {
   0%,
   100% {

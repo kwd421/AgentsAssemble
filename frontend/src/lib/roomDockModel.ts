@@ -335,9 +335,14 @@ export function roomFromInviteParams(): RoomDockItem | null {
 export function roomFromGuestSession(session: RoomGuestSession): RoomDockItem {
   const label = session.roomLabel || session.meetingId || "초대받은 방";
   return {
-    id: `guest-session-${session.meetingId || session.agentId}`,
+    id:
+      session.serverId && session.roomUid
+        ? `server-${session.serverId}-${session.roomUid}`
+        : `guest-session-${session.meetingId || session.agentId}`,
     label,
     meetingId: session.meetingId,
+    roomUid: session.roomUid,
+    serverId: session.serverId,
     roomOrigin: "remote_server",
     serverOrigin: window.location.origin,
     connectionState: "connected",

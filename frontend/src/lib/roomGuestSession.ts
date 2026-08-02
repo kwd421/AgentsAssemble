@@ -13,6 +13,9 @@ export type RoomGuestSession = {
   roomLabel?: string;
   roomTopic?: string;
   roomCreatedAt?: string;
+  roomUid?: string;
+  serverId?: string;
+  clientId?: string;
   // True when this session belongs to the server operator's account —
   // unlocks host moderation through the public entrance.
   operator?: boolean;
@@ -80,6 +83,9 @@ export function roomGuestSessionFromJoinPayload(
     roomLabel: cleanText(record.room_label || record.roomLabel, 80) || undefined,
     roomTopic: cleanText(record.room_topic || record.roomTopic, 160) || undefined,
     roomCreatedAt: cleanText(record.room_created_at || record.roomCreatedAt, 64) || undefined,
+    roomUid: cleanText(record.room_uid || record.roomUid, 64) || undefined,
+    serverId: cleanText(record.server_id || record.serverId, 64) || undefined,
+    clientId: cleanText(record.client_id || record.clientId, 128) || undefined,
     operator: record.operator === true,
   };
 }
@@ -99,6 +105,9 @@ export function normalizeRoomGuestSession(value: unknown): RoomGuestSession | nu
     room_label: record.roomLabel,
     room_topic: record.roomTopic,
     room_created_at: record.roomCreatedAt,
+    room_uid: record.roomUid,
+    server_id: record.serverId,
+    client_id: record.clientId,
   });
   session.joinedAt = cleanText(record.joinedAt, 64) || session.joinedAt;
   if (!session.sessionToken || !session.meetingId || !session.agentId) return null;

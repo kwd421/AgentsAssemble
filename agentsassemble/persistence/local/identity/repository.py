@@ -42,6 +42,10 @@ from agentsassemble.persistence.local.identity.durable_ids import (
     read_or_create_server_id,
     upsert_room_identity,
 )
+from agentsassemble.persistence.local.identity.recovery_codes import (
+    ensure_recovery_code_schema,
+    SqliteRecoveryCodesMixin,
+)
 from agentsassemble.persistence.local.identity.user_profiles import (
     ensure_user_profiles_schema,
     read_user_profile,
@@ -221,7 +225,7 @@ def _now() -> str:
     return datetime.now(UTC).isoformat()
 
 
-class IdentityStore:
+class IdentityStore(SqliteRecoveryCodesMixin):
     def __init__(self, db_path: Path) -> None:
         self.db_path = Path(db_path)
         self._write_lock = threading.Lock()
@@ -241,6 +245,7 @@ class IdentityStore:
             connection.executescript(_SCHEMA)
             ensure_room_preferences_schema(connection)
             ensure_user_profiles_schema(connection)
+            ensure_recovery_code_schema(connection)
             # Additive column migrations (CREATE TABLE IF NOT EXISTS won't add
             # columns to a pre-existing table). Idempotent: skip if present.
             self._ensure_column(connection, "usage_events", "estimated", "INTEGER NOT NULL DEFAULT 0")

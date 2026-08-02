@@ -56,6 +56,7 @@ class PublicInviteLifecycleHttpTests(unittest.TestCase):
         self.public_headers = {
             "Host": "shared-room.example.com",
             "Origin": "https://shared-room.example.com",
+            "X-Forwarded-Proto": "https",
         }
 
     def tearDown(self) -> None:
@@ -216,3 +217,87 @@ class PublicInviteLifecycleHttpTests(unittest.TestCase):
         self.assertEqual(loaded["profile"]["custom_status"], "초대 게스트 프로필")
         self.assertEqual(participant["display_name"], "Guest After")
         self.assertEqual(profile_events[-1]["display_name"], "Guest After")
+
+    def test_guest_recovery_moves_the_same_identity_to_a_new_device_once(self) -> None:
+        with urlopen(
+            _json_request(
+                f"{self.base}/api/room-invite/create",
+                {"meeting_id": "friend-room", "display_name": "Friend"},
+                {"X-Host-Token": "host-secret"},
+            ),
+            timeout=4,
+        ) as response:
+            invite = json.loads(response.read().decode("utf-8"))
+        with urlopen(
+            _json_request(
+                f"{self.base}/api/room-invite/join",
+                {
+                    "invite_token": invite["invite_token"],
+                    "request_id": str(uuid4()),
+                    "display_name": "Recoverable Guest",
+                    "device_token": "original-recovery-device",
+                    "client_id": "original-client",
+                },
+                self.public_headers,
+            ),
+            timeout=4,
+        ) as response:
+            original = json.loads(response.read().decode("utf-8"))
+        session_headers = {
+            **self.public_headers,
+            "Authorization": f"Bearer {original['session_token']}",
+        }
+        with urlopen(
+            _json_request(
+                f"{self.base}/api/identity/recovery-code",
+                {"room_id": "friend-room"},
+                session_headers,
+            ),
+            timeout=4,
+        ) as response:
+            issued = json.loads(response.read().decode("utf-8"))
+        self.assertTrue(issued["recovery_url"].startswith("https://shared-room.example.com/"))
+        with urlopen(
+            _json_request(
+                f"{self.base}/api/identity/recovery-code/redeem",
+                {
+                    "recovery_code": issued["recovery_code"],
+                    "room_id": "friend-room",
+                    "device_token": "replacement-recovery-device",
+                    "client_id": "replacement-client",
+                },
+                self.public_headers,
+            ),
+            timeout=4,
+        ) as response:
+            recovered = json.loads(response.read().decode("utf-8"))
+
+        with self.assertRaises(HTTPError) as reused_error:
+            urlopen(
+                _json_request(
+                    f"{self.base}/api/identity/recovery-code/redeem",
+                    {
+                        "recovery_code": issued["recovery_code"],
+                        "room_id": "friend-room",
+                        "device_token": "third-recovery-device",
+                        "client_id": "third-client",
+                    },
+                    self.public_headers,
+                ),
+                timeout=4,
+            )
+        reused_error.exception.close()
+
+        self.assertEqual(recovered["agent_id"], original["agent_id"])
+        self.assertNotEqual(recovered["session_token"], original["session_token"])
+        self.assertEqual(recovered["client_id"], "replacement-client")
+        self.assertNotEqual(recovered["recovery_code"], issued["recovery_code"])
+        self.assertEqual(reused_error.exception.code, 403)
+        raw_code = issued["recovery_code"].encode("utf-8")
+        self.assertFalse(
+            any(
+                raw_code in path.read_bytes()
+                for path in self.root.rglob("identity.db*")
+                if path.is_file()
+            )
+        )

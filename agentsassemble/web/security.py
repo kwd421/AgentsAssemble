@@ -117,6 +117,8 @@ def _public_invite_route_allowed(path: str, method: str) -> bool:
             "/api/room-members/kick",
             "/api/room-invite/create",
             "/api/room-invite/revoke",
+            "/api/identity/recovery-code",
+            "/api/identity/recovery-code/redeem",
         } or path in _PROVIDER_CREDENTIAL_PATHS
     if method == "DELETE":
         return path in _PROVIDER_CREDENTIAL_PATHS

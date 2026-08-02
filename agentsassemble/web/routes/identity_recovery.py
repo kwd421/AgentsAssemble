@@ -1,0 +1,99 @@
+"""HTTP boundary for issuing and redeeming guest recovery codes."""
+from __future__ import annotations
+
+import threading
+import time
+from collections import defaultdict, deque
+from http import HTTPStatus
+from urllib.parse import quote, urlencode
+
+from agentsassemble.identity.recovery import GuestIdentityRecoveryService
+from agentsassemble.web.router import RequestContext, Router
+
+
+class _RecoveryAttemptLimiter:
+    def __init__(self, *, attempts: int = 8, window_seconds: float = 60.0) -> None:
+        self._attempts = attempts
+        self._window_seconds = window_seconds
+        self._seen: dict[str, deque[float]] = defaultdict(deque)
+        self._lock = threading.Lock()
+
+    def allows(self, key: str) -> bool:
+        now = time.monotonic()
+        with self._lock:
+            seen = self._seen[key]
+            while seen and seen[0] <= now - self._window_seconds:
+                seen.popleft()
+            if len(seen) >= self._attempts:
+                return False
+            seen.append(now)
+            return True
+
+
+def register_identity_recovery_routes(router: Router) -> None:
+    limiter = _RecoveryAttemptLimiter()
+
+    def recovery(ctx: RequestContext) -> GuestIdentityRecoveryService:
+        return GuestIdentityRecoveryService(
+            identities=ctx.deps.identities,
+            rooms=ctx.deps.rooms,
+            sessions=ctx.deps.sessions,
+        )
+
+    @router.post("/api/identity/recovery-code")
+    def issue_recovery_code(ctx: RequestContext) -> None:
+        payload = ctx.read_json_body()
+        if payload is None:
+            return
+        user = ctx.authenticated_user()
+        if user is None:
+            ctx.send_error(HTTPStatus.UNAUTHORIZED, "authenticated identity required")
+            return
+        room_id = str(payload.get("room_id") or (ctx.session() or {}).get("meeting_id") or "").strip()
+        if room_id and not ctx.require_room_access(room_id):
+            return
+        code = recovery(ctx).issue(str(user.get("user_id") or ""))
+        query = urlencode({"recover": "1", "room": room_id})
+        recovery_base = ctx.deps.invites.public_url() or ctx.request_server_url()
+        recovery_url = f"{recovery_base.rstrip('/')}/?{query}#recovery={quote(code)}"
+        ctx.send_json(
+            {
+                "status": "issued",
+                "server_id": ctx.deps.identities.server_id(),
+                "room_id": room_id,
+                "recovery_code": code,
+                "recovery_url": recovery_url,
+            }
+        )
+
+    @router.post("/api/identity/recovery-code/redeem")
+    def redeem_recovery_code(ctx: RequestContext) -> None:
+        if not ctx.uses_loopback_host() and str(ctx.headers.get("X-Forwarded-Proto") or "").lower() != "https":
+            ctx.send_error(HTTPStatus.FORBIDDEN, "HTTPS is required for identity recovery")
+            return
+        client_address = getattr(ctx.handler, "client_address", ())
+        peer = str(client_address[0] if isinstance(client_address, tuple) and client_address else "unknown")
+        if not limiter.allows(peer):
+            ctx.send_error(HTTPStatus.TOO_MANY_REQUESTS, "too many recovery attempts")
+            return
+        payload = ctx.read_json_body()
+        if payload is None:
+            return
+        try:
+            result = recovery(ctx).redeem(
+                recovery_code=str(payload.get("recovery_code") or ""),
+                room_id=str(payload.get("room_id") or ""),
+                device_token=str(payload.get("device_token") or ""),
+                client_id=str(payload.get("client_id") or ""),
+            )
+        except ValueError as error:
+            ctx.send_error(HTTPStatus.CONFLICT, str(error), code="recovery_device_conflict")
+            return
+        if result.get("status") != "recovered":
+            reason = str(result.get("reason") or "recovery_invalid")
+            ctx.send_error(HTTPStatus.FORBIDDEN, reason, code=reason)
+            return
+        ctx.send_json(result)
+
+
+__all__ = ["register_identity_recovery_routes"]

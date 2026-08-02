@@ -18,6 +18,9 @@ from agentsassemble.persistence.postgres.identity.preferences import (
     read_room_preferences,
     update_room_preferences,
 )
+from agentsassemble.persistence.postgres.identity.recovery_codes import (
+    PostgresRecoveryCodesMixin,
+)
 from agentsassemble.persistence.postgres.identity.roster import (
     count_memberships,
     delete_room,
@@ -58,7 +61,7 @@ from agentsassemble.persistence.postgres.identity.users import (
 from agentsassemble.room.user_preferences import RoomUserPreferencesRecord
 
 
-class PostgresIdentityRepository:
+class PostgresIdentityRepository(PostgresRecoveryCodesMixin):
     """Hosted identity authority backed by the room PostgreSQL database."""
 
     def __init__(
@@ -407,6 +410,7 @@ class PostgresIdentityRepository:
                 """TRUNCATE TABLE
                        identity_usage_events,
                        identity_user_profiles,
+                       identity_recovery_codes,
                        identity_room_user_preferences,
                        identity_room_registry,
                        identity_memberships,

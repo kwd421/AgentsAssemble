@@ -1,8 +1,9 @@
 import { Headphones, Mic, MicOff, Palette, UserCircle } from "lucide-react";
 
-import type { UserProfile } from "../../api";
+import type { UserProfile, UserProfileIdentity } from "../../api";
+import GuestRecoverySettings from "./GuestRecoverySettings";
 
-export type UserSettingsSection = "account" | "profile" | "voice";
+export type UserSettingsSection = "account" | "profile" | "voice" | "recovery";
 
 const USER_SETTINGS_SECTIONS: Array<{
   id: UserSettingsSection;
@@ -12,6 +13,7 @@ const USER_SETTINGS_SECTIONS: Array<{
   { id: "account", label: "계정", helper: "이름, 핸들, 현재 표시 상태" },
   { id: "profile", label: "프로필", helper: "배너, 아바타, 상태 문구" },
   { id: "voice", label: "음성", helper: "마이크와 헤드셋 표시" },
+  { id: "recovery", label: "복구", helper: "다른 기기에서 신원 이어가기" },
 ];
 
 export default function UserSettingsPanel({
@@ -23,6 +25,7 @@ export default function UserSettingsPanel({
   onDraftChange,
   onReset,
   onSave,
+  recoveryIdentity,
 }: {
   draft: UserProfile;
   saving: boolean;
@@ -32,12 +35,16 @@ export default function UserSettingsPanel({
   onDraftChange: (profile: UserProfile) => void;
   onReset: () => void;
   onSave: () => void;
+  recoveryIdentity?: UserProfileIdentity;
 }) {
+  const sections = recoveryIdentity?.sessionToken
+    ? USER_SETTINGS_SECTIONS
+    : USER_SETTINGS_SECTIONS.filter((section) => section.id !== "recovery");
   return (
     <div className="dc-user-settings-panel" aria-label="사용자 설정">
       <div className="dc-user-settings-shell">
         <nav className="dc-user-settings-nav" aria-label="사용자 설정 섹션">
-          {USER_SETTINGS_SECTIONS.map((section) => (
+          {sections.map((section) => (
             <button
               key={section.id}
               type="button"
@@ -194,17 +201,23 @@ export default function UserSettingsPanel({
               </div>
             </>
           )}
+
+          {settingsSection === "recovery" && recoveryIdentity?.sessionToken && (
+            <GuestRecoverySettings identity={recoveryIdentity} />
+          )}
         </section>
       </div>
       {profileError && <p className="dc-user-settings-error">{profileError}</p>}
-      <div className="dc-user-settings-actions">
-        <button type="button" onClick={onReset} disabled={saving}>
-          되돌리기
-        </button>
-        <button type="button" onClick={onSave} disabled={saving}>
-          {saving ? "저장 중" : "저장"}
-        </button>
-      </div>
+      {settingsSection !== "recovery" && (
+        <div className="dc-user-settings-actions">
+          <button type="button" onClick={onReset} disabled={saving}>
+            되돌리기
+          </button>
+          <button type="button" onClick={onSave} disabled={saving}>
+            {saving ? "저장 중" : "저장"}
+          </button>
+        </div>
+      )}
     </div>
   );
 }

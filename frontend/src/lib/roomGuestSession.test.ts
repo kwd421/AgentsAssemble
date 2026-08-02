@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { roomFromGuestSession } from "./roomDockModel";
+import { roomDockIdentity, roomFromGuestSession } from "./roomDockModel";
 import {
   loadRoomGuestSession,
   persistRoomGuestSession,
@@ -18,6 +18,8 @@ describe("guest room projection", () => {
       room_label: "Night Council",
       room_topic: "Old elevator",
       room_created_at: "2026-07-10T00:00:00Z",
+      room_uid: "room-uid-1",
+      server_id: "server-1",
     });
 
     const room = roomFromGuestSession(session);
@@ -25,6 +27,7 @@ describe("guest room projection", () => {
     expect(room.label).toBe("Night Council");
     expect(room.topic).toBe("Old elevator");
     expect(room.createdAt).toBe("2026-07-10T00:00:00Z");
+    expect(roomDockIdentity(room)).toBe("server-1:room-uid-1");
   });
 
   it("does not restore a guest session after leave clears it", () => {
