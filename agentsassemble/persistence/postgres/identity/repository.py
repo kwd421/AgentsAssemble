@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 from datetime import UTC, datetime
+from uuid import uuid4
 
 from psycopg.rows import dict_row
 
@@ -101,6 +102,23 @@ class PostgresIdentityRepository:
     def count_memberships(self) -> int:
         with self._connections.connection() as connection:
             return count_memberships(connection)
+
+    def server_id(self) -> str:
+        with self._connections.connection() as connection, connection.transaction():
+            row = connection.execute(
+                "SELECT value FROM identity_server_metadata WHERE key = 'server_id'"
+            ).fetchone()
+            if row is not None:
+                return str(row["value"])
+            server_id = str(uuid4())
+            row = connection.execute(
+                """INSERT INTO identity_server_metadata(key, value, created_at)
+                   VALUES('server_id', %s, %s)
+                   ON CONFLICT(key) DO UPDATE SET value = identity_server_metadata.value
+                   RETURNING value""",
+                (server_id, _now()),
+            ).fetchone()
+            return str(row["value"])
 
     def user_for_credential(self, auth_key: str) -> dict[str, object] | None:
         with self._connections.connection() as connection:
@@ -295,6 +313,7 @@ class PostgresIdentityRepository:
         self,
         *,
         room_id: str,
+        room_uid: str = "",
         owner_id: str = "",
         label: str = "",
         origin: str = "",
@@ -303,6 +322,7 @@ class PostgresIdentityRepository:
             return upsert_room(
                 connection,
                 room_id=room_id,
+                room_uid=room_uid,
                 owner_id=owner_id,
                 label=label,
                 origin=origin,

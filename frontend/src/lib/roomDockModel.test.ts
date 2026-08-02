@@ -1,7 +1,7 @@
 import { beforeEach, describe, expect, it } from "vitest";
 import { persistRoomGuestSession, type RoomGuestSession } from "./roomGuestSession";
 import { consumeOperatorPairingTokenFromUrl } from "./roomGuestSession";
-import { createStartupRoute } from "./roomDockModel";
+import { createStartupRoute, mergeServerRoomsIntoDock, roomDockIdentity } from "./roomDockModel";
 
 const SESSION: RoomGuestSession = {
   inviteToken: "older-invite",
@@ -43,5 +43,27 @@ describe("createStartupRoute", () => {
     expect(route.guestInvite?.meetingId).toBe("pending-pairing");
     expect(window.location.pathname).toBe("/pair");
     expect(window.location.search).toBe("");
+  });
+});
+
+describe("durable room identity", () => {
+  it("does not collapse equal room aliases owned by different servers", () => {
+    const first = mergeServerRoomsIntoDock(
+      [],
+      [{ room_id: "general", room_uid: "room-uid-a", label: "First" }],
+      "https://first.example",
+      "server-a"
+    );
+    const second = mergeServerRoomsIntoDock(
+      first,
+      [{ room_id: "general", room_uid: "room-uid-b", label: "Second" }],
+      "https://second.example",
+      "server-b"
+    );
+
+    expect(second).toHaveLength(2);
+    expect(new Set(second.map(roomDockIdentity))).toEqual(
+      new Set(["server-a:room-uid-a", "server-b:room-uid-b"])
+    );
   });
 });

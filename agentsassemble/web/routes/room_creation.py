@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 from http import HTTPStatus
+from uuid import uuid4
 
 from agentsassemble.room.text import clean_room_text
 from agentsassemble.web.router import RequestContext, Router
@@ -20,10 +21,13 @@ def register_room_creation_routes(router: Router) -> None:
         if not room_id:
             ctx.send_error(HTTPStatus.BAD_REQUEST, "room_id is required")
             return
+        canonical_room = ctx.deps.rooms.room(room_id)
+        room_uid = str(canonical_room.get("room_uid") or uuid4())
         previous_identity_room = ctx.deps.identities.get_room(room_id)
         try:
             identity_room = ctx.deps.identities.upsert_room(
                 room_id=room_id,
+                room_uid=room_uid,
                 owner_id=(
                     ctx.preference_user_id()
                     or ctx.deps.identities.operator_user_id()
@@ -35,6 +39,7 @@ def register_room_creation_routes(router: Router) -> None:
                 room = ctx.deps.rooms.create_room(
                     room_id,
                     label=label or room_id,
+                    room_uid=room_uid,
                 )
             except Exception:
                 _restore_identity_room(
@@ -49,8 +54,10 @@ def register_room_creation_routes(router: Router) -> None:
         ctx.send_json(
             {
                 "status": "ready",
+                "server_id": ctx.deps.identities.server_id(),
                 "room": {
                     "room_id": room_id,
+                    "room_uid": str(room.get("room_uid") or room_uid),
                     "label": str(room.get("label") or room_id),
                     "last_active_at": str(room.get("updated_at") or ""),
                     "archived": False,
@@ -73,6 +80,7 @@ def _restore_identity_room(
         return
     ctx.deps.identities.upsert_room(
         room_id=room_id,
+        room_uid=str(previous.get("room_uid") or ""),
         owner_id=str(previous.get("owner_id") or ""),
         label=str(previous.get("label") or ""),
         origin=str(previous.get("origin") or ""),

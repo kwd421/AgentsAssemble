@@ -76,11 +76,18 @@ def build_room_record(
     label: object,
     status: object,
     existing: dict[str, object],
+    room_uid: object = "",
 ) -> dict[str, object]:
     now = utc_now()
     clean_status = room_status(status)
+    existing_uid = clean_room_text(existing.get("room_uid"), limit=64)
+    requested_uid = clean_room_text(room_uid, limit=64)
+    if existing_uid and requested_uid and existing_uid != requested_uid:
+        raise ValueError(f"room_uid for {room_id} is immutable.")
+    stable_uid = existing_uid or requested_uid or str(uuid4())
     return {
         "room_id": room_id,
+        "room_uid": stable_uid,
         "label": clean_room_text(label, limit=128) or str(existing.get("label") or ""),
         "status": clean_status if existing.get("status") not in {"closed", "archived"} else existing["status"],
         "created_at": str(existing.get("created_at") or now),

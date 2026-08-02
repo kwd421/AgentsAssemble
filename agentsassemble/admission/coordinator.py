@@ -75,6 +75,7 @@ class RoomAdmissionCoordinator:
         meeting_id: str = "",
         display_name: str = "",
         device_token: str = "",
+        client_id: str = "",
         participant_type: str = "",
         owner_display_name: str = "",
         consumer_client_type: str = "browser",
@@ -84,12 +85,14 @@ class RoomAdmissionCoordinator:
         clean_request_id = clean_lobby_text(request_id, limit=128) or f"legacy-{secrets.token_hex(12)}"
         token_fingerprint = hashlib.sha256(str(invite_token or "").encode("utf-8")).hexdigest()
         auth_key = device_auth_key(device_token)
+        clean_client_id = clean_lobby_text(client_id, limit=128)
         payload_hash = _payload_hash(
             {
                 "meeting_id": clean_lobby_text(meeting_id, limit=128),
                 "display_name": clean_lobby_text(display_name, limit=128),
                 "participant_type": clean_lobby_text(participant_type, limit=32),
                 "owner_display_name": clean_lobby_text(owner_display_name, limit=64),
+                "client_id": clean_client_id,
             }
         )
         workflow_id = _workflow_id(
@@ -124,6 +127,7 @@ class RoomAdmissionCoordinator:
                         "request_id": clean_request_id,
                         "token_fingerprint": token_fingerprint,
                         "device_auth_key": auth_key,
+                        "client_id": clean_client_id,
                         "payload_hash": payload_hash,
                         "status": "started",
                         "resume_phase": "started",
@@ -436,6 +440,7 @@ class RoomAdmissionCoordinator:
             "stable_identity": bool(workflow.get("stable_identity")),
             "operator": bool(workflow.get("operator")),
             "connection_kind": str(workflow.get("connection_kind") or ""),
+            "client_id": str(workflow.get("client_id") or ""),
             "expires_at": str(workflow.get("session_expires_at") or ""),
             "room_label": str(workflow.get("room_label") or prepared.meeting_id),
             "room_topic": str(workflow.get("room_topic") or ""),
@@ -587,6 +592,7 @@ def _session_record(workflow: dict[str, object]) -> dict[str, object]:
         "provider_kind": str(workflow.get("provider_kind") or "manual"),
         "owner_id": str(workflow.get("owner_id") or ""),
         "connection_kind": str(workflow.get("connection_kind") or ""),
+        "client_id": str(workflow.get("client_id") or ""),
     }
 
 

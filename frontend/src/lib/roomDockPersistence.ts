@@ -6,6 +6,8 @@ export type PersistedRoomDockItem = {
   id: string;
   label: string;
   meetingId: string;
+  roomUid?: string;
+  serverId?: string;
   roomOrigin: "local" | "remote_server";
   serverOrigin?: string;
   topic: string;
@@ -80,6 +82,8 @@ export function normalizeRoomDockItem(value: unknown): PersistedRoomDockItem | n
     id: safeText(record.id, meetingId, 128),
     label,
     meetingId,
+    roomUid: safeText(record.roomUid, "", 64) || undefined,
+    serverId: safeText(record.serverId, "", 64) || undefined,
     roomOrigin,
     serverOrigin: roomOrigin === "remote_server" ? serverOrigin : undefined,
     topic: safeText(record.topic, "빈 채팅방에서 시작", 160),

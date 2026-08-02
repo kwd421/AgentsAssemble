@@ -132,8 +132,20 @@ class _SQLiteRoomTransaction:
             status,
         )
 
-    def create_room(self, *, label: str = "", status: str = "active") -> tuple[dict[str, object], bool]:
-        return self._store._create_room(self._connection, self._room_id, label=label, status=status)
+    def create_room(
+        self,
+        *,
+        label: str = "",
+        status: str = "active",
+        room_uid: str = "",
+    ) -> tuple[dict[str, object], bool]:
+        return self._store._create_room(
+            self._connection,
+            self._room_id,
+            label=label,
+            status=status,
+            room_uid=room_uid,
+        )
 
     def ensure_room(self, *, label: str = "", status: str = "active") -> tuple[dict[str, object], bool]:
         return self._store._ensure_room(self._connection, self._room_id, label=label, status=status)
@@ -311,10 +323,21 @@ class RoomStore:
     def public_diagnostics(self) -> dict[str, object]:
         return {"backend": "sqlite"}
 
-    def create_room(self, room_id: str, *, label: str = "", status: str = "active") -> dict[str, object]:
+    def create_room(
+        self,
+        room_id: str,
+        *,
+        label: str = "",
+        status: str = "active",
+        room_uid: str = "",
+    ) -> dict[str, object]:
         clean_room_id = _clean_room_id(room_id)
         with self.transaction(clean_room_id) as transaction:
-            room, created = transaction.create_room(label=label, status=status)
+            room, created = transaction.create_room(
+                label=label,
+                status=status,
+                room_uid=room_uid,
+            )
             if created:
                 transaction.append_event("room_created", label=room["label"])
         return room
@@ -958,6 +981,7 @@ class RoomStore:
         *,
         label: str,
         status: str,
+        room_uid: str = "",
     ) -> tuple[dict[str, object], bool]:
         deleted = connection.execute(
             "SELECT deleted_at FROM deleted_rooms WHERE room_id = ?",
@@ -967,10 +991,16 @@ class RoomStore:
             raise ValueError(f"Room {room_id} was deleted and cannot be recreated implicitly.")
         row = connection.execute("SELECT data_json FROM rooms WHERE room_id = ?", (room_id,)).fetchone()
         existing = _row_payload(row)
-        room = build_room_record(room_id, label=label, status=status, existing=existing)
+        room = build_room_record(
+            room_id,
+            label=label,
+            status=status,
+            existing=existing,
+            room_uid=room_uid,
+        )
         connection.execute(
-            """INSERT INTO rooms(room_id, label, status, archived, updated_at, data_json)
-               VALUES(?, ?, ?, ?, ?, ?)
+            """INSERT INTO rooms(room_id, room_uid, label, status, archived, updated_at, data_json)
+               VALUES(?, ?, ?, ?, ?, ?, ?)
                ON CONFLICT(room_id) DO UPDATE SET
                    label = excluded.label,
                    status = excluded.status,
@@ -979,6 +1009,7 @@ class RoomStore:
                    data_json = excluded.data_json""",
             (
                 room_id,
+                str(room["room_uid"]),
                 str(room["label"]),
                 str(room["status"]),
                 1 if room["status"] == "archived" else 0,

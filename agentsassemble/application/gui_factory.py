@@ -50,6 +50,32 @@ from agentsassemble.room.repository import RoomRepository
 from agentsassemble.web.room_session import WsTicketStore
 
 
+def _reconcile_canonical_room_identities(
+    identities: IdentityBackend,
+    rooms: RoomRepository,
+) -> None:
+    """Give the identity directory the canonical room UID without rewriting it."""
+
+    for room in rooms.list_rooms(include_archived=True):
+        room_id = str(room.get("room_id") or "")
+        room_uid = str(room.get("room_uid") or "")
+        if not room_id or not room_uid:
+            raise RuntimeError("Canonical room identity is incomplete.")
+        existing = identities.get_room(room_id)
+        existing_uid = str((existing or {}).get("room_uid") or "")
+        if existing_uid and existing_uid != room_uid:
+            raise RuntimeError(f"Canonical room UID mismatch for {room_id}.")
+        identities.upsert_room(
+            room_id=room_id,
+            room_uid=room_uid,
+            owner_id=str((existing or {}).get("owner_id") or ""),
+            label=str(room.get("label") or (existing or {}).get("label") or room_id),
+            origin=str((existing or {}).get("origin") or "agent_session"),
+        )
+        if bool(room.get("archived")) or str(room.get("status") or "") == "archived":
+            identities.set_room_archived(room_id, True)
+
+
 @dataclass(frozen=True)
 class GuiRuntimeConstructors:
     """Concrete runtime choices supplied by the stable GUI entrypoint.
@@ -160,6 +186,7 @@ def build_gui_application_services(
 
         remember_cleanup("identity_backend.unregister", release_identity_registration)
         configure_room_users_backend(identity_backend)
+        _reconcile_canonical_room_identities(identity_backend, room_repository)
         constructors.backfill_room_registry(output_root, identity_backend)
 
         public_invite_runtime = (

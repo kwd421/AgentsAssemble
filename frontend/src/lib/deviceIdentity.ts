@@ -8,6 +8,7 @@
  */
 
 const DEVICE_TOKEN_STORAGE_KEY = "agentsassemble.deviceToken.v1";
+const CLIENT_ID_STORAGE_KEY = "agentsassemble.clientId.v1";
 const GUEST_PROFILE_STORAGE_KEY = "agentsassemble.guestProfile.v1";
 
 export type RememberedGuestProfile = {
@@ -36,6 +37,18 @@ export function getOrCreateDeviceToken(): string {
   } catch {
     // Storage unavailable (some in-app browsers): a per-load token still works,
     // it just won't survive a restart.
+    return randomToken();
+  }
+}
+
+export function getOrCreateClientId(): string {
+  try {
+    const existing = String(window.localStorage.getItem(CLIENT_ID_STORAGE_KEY) || "").trim();
+    if (existing) return existing;
+    const clientId = randomToken();
+    window.localStorage.setItem(CLIENT_ID_STORAGE_KEY, clientId);
+    return clientId;
+  } catch {
     return randomToken();
   }
 }

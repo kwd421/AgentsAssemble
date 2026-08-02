@@ -19,6 +19,8 @@ export type RoomDockItem = {
   id: string;
   label: string;
   meetingId: string;
+  roomUid?: string;
+  serverId?: string;
   roomOrigin?: "local" | "remote_server";
   serverOrigin?: string;
   connectionState?: "local" | "connected" | "disconnected";
@@ -44,6 +46,7 @@ export type StartupRoute = {
 
 export type ServerRoomDockSource = {
   room_id: string;
+  room_uid?: string;
   label?: string;
   last_active_at?: string;
   archived?: boolean;
@@ -105,6 +108,8 @@ export function persistableRoom(room: RoomDockItem): PersistedRoomDockItem {
     id: room.id,
     label: room.label,
     meetingId: room.meetingId,
+    roomUid: room.roomUid,
+    serverId: room.serverId,
     roomOrigin: room.roomOrigin === "remote_server" ? "remote_server" : "local",
     serverOrigin: room.roomOrigin === "remote_server" ? room.serverOrigin : undefined,
     topic: room.topic,
@@ -128,8 +133,11 @@ export function roomIsDisconnected(room: RoomDockItem) {
 }
 
 export function roomDockIdentity(
-  room: Pick<RoomDockItem, "meetingId" | "roomOrigin" | "serverOrigin">
+  room: Pick<RoomDockItem, "meetingId" | "roomUid" | "serverId" | "roomOrigin" | "serverOrigin">
 ) {
+  if (room.serverId && room.roomUid) {
+    return `${room.serverId}:${room.roomUid}`;
+  }
   if (room.roomOrigin === "remote_server") {
     return `remote:${room.serverOrigin || "unknown"}:${room.meetingId}`;
   }
@@ -159,20 +167,29 @@ export function initialOperatorRooms(directRoom?: RoomDockItem | null) {
 
 export function roomFromServerRoom(
   room: ServerRoomDockSource,
-  existing?: Pick<RoomDockItem, "roomOrigin" | "serverOrigin">
+  existing?: Pick<RoomDockItem, "roomOrigin" | "serverOrigin">,
+  currentServerOrigin = window.location.origin,
+  currentServerId = ""
 ): RoomDockItem | null {
   const meetingId = String(room.room_id || "").trim();
+  const roomUid = String(room.room_uid || "").trim();
   const status = String(room.status || "active").toLowerCase();
   if (!meetingId || room.archived || status === "closed" || status === "archived") return null;
   const settings = normalizeRoomGlobalSettings(room.room_settings, meetingId);
   const label = String(settings?.label || room.label || meetingId).trim() || meetingId;
+  const remote =
+    existing?.roomOrigin === "remote_server" || currentServerOrigin !== window.location.origin;
   return {
-    id: `server-${meetingId}`,
+    id: roomUid && currentServerId
+      ? `server-${currentServerId}-${roomUid}`
+      : `server-${meetingId}`,
     label,
     meetingId,
-    roomOrigin: existing?.roomOrigin === "remote_server" ? "remote_server" : "local",
-    serverOrigin: existing?.roomOrigin === "remote_server" ? existing.serverOrigin : undefined,
-    connectionState: existing?.roomOrigin === "remote_server" ? "connected" : "local",
+    roomUid: roomUid || undefined,
+    serverId: currentServerId || undefined,
+    roomOrigin: remote ? "remote_server" : "local",
+    serverOrigin: remote ? (existing?.serverOrigin || currentServerOrigin) : undefined,
+    connectionState: remote ? "connected" : "local",
     topic: settings?.topic || label,
     shortLabel: settings?.shortLabel || label.slice(0, 1).toUpperCase() || "R",
     appearance: settings?.appearance,
@@ -186,13 +203,20 @@ export function roomFromServerRoom(
 export function mergeServerRoomsIntoDock(
   currentRooms: RoomDockItem[],
   serverRooms: ServerRoomDockSource[],
-  currentServerOrigin = window.location.origin
+  currentServerOrigin = window.location.origin,
+  currentServerId = ""
 ): RoomDockItem[] {
-  const serverRoomsByMeetingId = new Map(
-    serverRooms
-      .map((room) => [String(room.room_id || "").trim(), room] as const)
-      .filter(([meetingId]) => Boolean(meetingId))
-  );
+  const serverRoomsByIdentity = new Map<string, ServerRoomDockSource>();
+  const serverRoomsByMeetingId = new Map<string, ServerRoomDockSource>();
+  for (const room of serverRooms) {
+    const meetingId = String(room.room_id || "").trim();
+    const roomUid = String(room.room_uid || "").trim();
+    if (!meetingId) continue;
+    serverRoomsByMeetingId.set(meetingId, room);
+    if (currentServerId && roomUid) {
+      serverRoomsByIdentity.set(`${currentServerId}:${roomUid}`, room);
+    }
+  }
   const next: RoomDockItem[] = [];
   let changed = false;
 
@@ -208,8 +232,11 @@ export function mergeServerRoomsIntoDock(
       next.push(disconnectedRoom);
       continue;
     }
-    const serverRoom = serverRoomsByMeetingId.get(room.meetingId);
-    const canonicalRoom = serverRoom ? roomFromServerRoom(serverRoom, room) : null;
+    const serverRoom = serverRoomsByIdentity.get(roomDockIdentity(room))
+      || serverRoomsByMeetingId.get(room.meetingId);
+    const canonicalRoom = serverRoom
+      ? roomFromServerRoom(serverRoom, room, currentServerOrigin, currentServerId)
+      : null;
     if (!canonicalRoom) {
       changed = true;
       continue;
@@ -225,6 +252,8 @@ export function mergeServerRoomsIntoDock(
       createdAt: canonicalRoom.createdAt,
       tone: canonicalRoom.tone,
       roomOrigin: canonicalRoom.roomOrigin,
+      roomUid: canonicalRoom.roomUid,
+      serverId: canonicalRoom.serverId,
       serverOrigin: canonicalRoom.serverOrigin,
       connectionState: canonicalRoom.connectionState,
     };
@@ -238,6 +267,8 @@ export function mergeServerRoomsIntoDock(
       room.createdAt !== reconciledRoom.createdAt ||
       room.tone !== reconciledRoom.tone ||
       room.roomOrigin !== reconciledRoom.roomOrigin ||
+      room.roomUid !== reconciledRoom.roomUid ||
+      room.serverId !== reconciledRoom.serverId ||
       room.serverOrigin !== reconciledRoom.serverOrigin ||
       room.connectionState !== reconciledRoom.connectionState
     ) {
@@ -248,7 +279,12 @@ export function mergeServerRoomsIntoDock(
 
   const seenRoomIdentities = new Set(next.map(roomDockIdentity));
   for (const serverRoom of serverRooms) {
-    const dockRoom = roomFromServerRoom(serverRoom);
+    const dockRoom = roomFromServerRoom(
+      serverRoom,
+      undefined,
+      currentServerOrigin,
+      currentServerId
+    );
     if (!dockRoom || seenRoomIdentities.has(roomDockIdentity(dockRoom))) continue;
     next.push(dockRoom);
     seenRoomIdentities.add(roomDockIdentity(dockRoom));

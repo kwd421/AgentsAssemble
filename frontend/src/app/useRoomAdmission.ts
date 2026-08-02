@@ -6,7 +6,12 @@ import {
   type RoomInviteJoinResponse,
 } from "../api";
 import { ApiError, GUEST_SESSION_EXPIRED_MESSAGE } from "../lib/apiErrors";
-import { getOrCreateDeviceToken, loadRememberedGuestProfile, rememberGuestProfile } from "../lib/deviceIdentity";
+import {
+  getOrCreateClientId,
+  getOrCreateDeviceToken,
+  loadRememberedGuestProfile,
+  rememberGuestProfile,
+} from "../lib/deviceIdentity";
 import { roomFromGuestSession, type RoomDockItem } from "../lib/roomDockModel";
 import {
   loadRoomGuestSession,
@@ -506,6 +511,7 @@ export function useRoomAdmission({
       displayName: pendingGuestDisplayName,
       avatarImage: pendingGuestAvatarImage,
       deviceToken: getOrCreateDeviceToken(),
+      clientId: getOrCreateClientId(),
       participantType: "human",
     })
       .then((payload) => {

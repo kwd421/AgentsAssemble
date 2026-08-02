@@ -22,7 +22,7 @@ except ImportError:  # pragma: no cover - AgentsAssemble's supported hosts are U
 
 
 ROOM_DATABASE_FILENAME = "rooms.sqlite3"
-ROOM_SCHEMA_VERSION = 7
+ROOM_SCHEMA_VERSION = 8
 VOTE_BALLOT_INDEX_NAME = "idx_events_vote_ballots"
 VOTE_BALLOT_INDEX_STATEMENT = f"""
 CREATE INDEX IF NOT EXISTS {VOTE_BALLOT_INDEX_NAME}
@@ -320,6 +320,7 @@ def _create_schema(connection: sqlite3.Connection) -> None:
         );
         CREATE TABLE IF NOT EXISTS rooms (
             room_id TEXT PRIMARY KEY,
+            room_uid TEXT NOT NULL UNIQUE,
             label TEXT NOT NULL,
             status TEXT NOT NULL,
             archived INTEGER NOT NULL DEFAULT 0,
@@ -416,7 +417,7 @@ def _migrate_schema(connection: sqlite3.Connection) -> None:
         raise RoomDatabaseMigrationError(
             f"Unsupported room database schema version {version}; expected {ROOM_SCHEMA_VERSION}."
         )
-    if version not in {1, 2, 3, 4, 5, 6}:
+    if version not in {1, 2, 3, 4, 5, 6, 7}:
         raise RoomDatabaseMigrationError(f"Unsupported room database schema version {version}.")
     connection.execute("BEGIN IMMEDIATE")
     try:
@@ -476,6 +477,9 @@ def _migrate_schema(connection: sqlite3.Connection) -> None:
         if version == 6:
             _add_ordered_exclude_previous_speaker_setting(connection)
             version = 7
+        if version == 7:
+            _add_room_uids(connection)
+            version = 8
         connection.execute(
             "INSERT OR REPLACE INTO schema_meta(key, value) VALUES('schema_version', ?)",
             (str(version),),
@@ -525,6 +529,36 @@ def _add_ordered_exclude_previous_speaker_setting(
             "UPDATE room_settings SET data_json = ? WHERE room_id = ?",
             (_json_dumps(settings), str(row["room_id"])),
         )
+
+
+def _add_room_uids(connection: sqlite3.Connection) -> None:
+    columns = {
+        str(row["name"])
+        for row in connection.execute("PRAGMA table_info(rooms)").fetchall()
+    }
+    if "room_uid" not in columns:
+        connection.execute("ALTER TABLE rooms ADD COLUMN room_uid TEXT")
+    rows = connection.execute("SELECT room_id, room_uid, data_json FROM rooms").fetchall()
+    for row in rows:
+        try:
+            payload = json.loads(str(row["data_json"] or "{}"))
+        except json.JSONDecodeError as error:
+            raise RoomDatabaseMigrationError(
+                f"Room record for {row['room_id']} is unreadable."
+            ) from error
+        if not isinstance(payload, dict):
+            raise RoomDatabaseMigrationError(
+                f"Room record for {row['room_id']} is invalid."
+            )
+        room_uid = str(row["room_uid"] or payload.get("room_uid") or uuid4())
+        payload["room_uid"] = room_uid
+        connection.execute(
+            "UPDATE rooms SET room_uid = ?, data_json = ? WHERE room_id = ?",
+            (room_uid, _json_dumps(payload), str(row["room_id"])),
+        )
+    connection.execute(
+        "CREATE UNIQUE INDEX IF NOT EXISTS idx_rooms_uid ON rooms(room_uid)"
+    )
 
 
 def _create_room_settings_schema(connection: sqlite3.Connection) -> None:
@@ -652,15 +686,17 @@ def _import_legacy_rooms(
         room = {
             **room,
             "room_id": room_id,
+            "room_uid": str(room.get("room_uid") or uuid4()),
             "label": clean_room_text(room.get("label"), limit=128) or room_id,
             "status": clean_room_text(room.get("status"), limit=32) or "active",
             "created_at": clean_room_text(room.get("created_at"), limit=128) or now,
             "updated_at": clean_room_text(room.get("updated_at"), limit=128) or now,
         }
         connection.execute(
-            "INSERT INTO rooms(room_id, label, status, archived, updated_at, data_json) VALUES(?, ?, ?, ?, ?, ?)",
+            "INSERT INTO rooms(room_id, room_uid, label, status, archived, updated_at, data_json) VALUES(?, ?, ?, ?, ?, ?, ?)",
             (
                 room_id,
+                str(room["room_uid"]),
                 str(room["label"]),
                 str(room["status"]),
                 1 if room["status"] == "archived" else 0,

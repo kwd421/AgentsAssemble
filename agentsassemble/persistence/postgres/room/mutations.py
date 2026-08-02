@@ -30,6 +30,7 @@ def create_room(
     *,
     label: str,
     status: str,
+    room_uid: str = "",
 ) -> tuple[dict[str, object], bool]:
     deleted = connection.execute(
         "SELECT deleted_at FROM deleted_rooms WHERE room_id = %s",
@@ -43,10 +44,16 @@ def create_room(
             (room_id,),
         ).fetchone()
     )
-    room = build_room_record(room_id, label=label, status=status, existing=existing)
+    room = build_room_record(
+        room_id,
+        label=label,
+        status=status,
+        existing=existing,
+        room_uid=room_uid,
+    )
     connection.execute(
-        """INSERT INTO rooms(room_id, label, status, archived, updated_at, data_json)
-           VALUES(%s, %s, %s, %s, %s, %s)
+        """INSERT INTO rooms(room_id, room_uid, label, status, archived, updated_at, data_json)
+           VALUES(%s, %s, %s, %s, %s, %s, %s)
            ON CONFLICT(room_id) DO UPDATE SET
                label = excluded.label,
                status = excluded.status,
@@ -55,6 +62,7 @@ def create_room(
                data_json = excluded.data_json""",
         (
             room_id,
+            room["room_uid"],
             room["label"],
             room["status"],
             room["status"] == "archived",

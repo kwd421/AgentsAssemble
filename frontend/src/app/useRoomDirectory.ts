@@ -149,7 +149,12 @@ export function useRoomDirectory({
             ) {
               return;
             }
-            commit((current) => mergeServerRoomsIntoDock(current, retryPayload.rooms || []));
+            commit((current) => mergeServerRoomsIntoDock(
+              current,
+              retryPayload.rooms || [],
+              window.location.origin,
+              retryPayload.server_id || ""
+            ));
             setSyncIssue(null);
           })
           .catch((errorValue) => {
@@ -164,7 +169,12 @@ export function useRoomDirectory({
           });
         return;
       }
-      commit((current) => mergeServerRoomsIntoDock(current, payload.rooms || []));
+      commit((current) => mergeServerRoomsIntoDock(
+        current,
+        payload.rooms || [],
+        window.location.origin,
+        payload.server_id || ""
+      ));
       setSyncIssue(null);
     };
     const capturedMembershipRevision = membershipRevisionRef.current;

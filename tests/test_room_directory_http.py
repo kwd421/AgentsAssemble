@@ -10,9 +10,43 @@ from tests.gui_server_test_support import (
 )
 from urllib.error import HTTPError
 from urllib.request import Request
+from uuid import UUID
 
 
 class RoomDirectoryHttpTests(unittest.TestCase):
+
+    def test_room_directory_exposes_stable_server_and_room_ids(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = RoomStore(temp_dir).output_root
+            first_store = RoomStore(root)
+            first_room = first_store.create_room("uid-room", label="UID Room")
+            first_store.close()
+
+            def read_directory():
+                server = ThreadingHTTPServer(("127.0.0.1", 0), _make_handler(root))
+                thread = threading.Thread(target=server.serve_forever, daemon=True)
+                thread.start()
+                try:
+                    with urlopen(
+                        f"http://127.0.0.1:{server.server_port}/api/rooms",
+                        timeout=4,
+                    ) as response:
+                        return json.loads(response.read().decode("utf-8"))
+                finally:
+                    server.shutdown()
+                    server.server_close()
+
+            first = read_directory()
+            second = read_directory()
+
+        room = next(item for item in first["rooms"] if item["room_id"] == "uid-room")
+        self.assertEqual(str(UUID(first["server_id"])), first["server_id"])
+        self.assertEqual(second["server_id"], first["server_id"])
+        self.assertEqual(room["room_uid"], first_room["room_uid"])
+        self.assertEqual(
+            next(item for item in second["rooms"] if item["room_id"] == "uid-room")["room_uid"],
+            room["room_uid"],
+        )
 
     def test_inactive_room_appearance_is_available_from_the_room_directory(self):
         with tempfile.TemporaryDirectory() as temp_dir:

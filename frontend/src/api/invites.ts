@@ -166,6 +166,7 @@ export function joinRoomInvite({
   displayName,
   avatarImage,
   deviceToken,
+  clientId,
   participantType = "human",
 }: {
   inviteToken: string;
@@ -173,6 +174,7 @@ export function joinRoomInvite({
   displayName?: string;
   avatarImage?: string;
   deviceToken?: string;
+  clientId?: string;
   participantType?: "human" | "agent";
 }) {
   return postJson<RoomInviteJoinResponse>("/api/room-invite/join", {
@@ -181,6 +183,7 @@ export function joinRoomInvite({
     display_name: displayName,
     avatar_image_url: avatarImage,
     device_token: deviceToken,
+    client_id: clientId,
     participant_type: participantType,
   });
 }

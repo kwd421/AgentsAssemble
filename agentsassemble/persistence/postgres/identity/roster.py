@@ -1,6 +1,8 @@
 """PostgreSQL operations for identity-owned memberships and room registry."""
 from __future__ import annotations
 
+from uuid import uuid4
+
 from psycopg import Connection
 
 from agentsassemble.room.text import clean_room_text
@@ -99,6 +101,7 @@ def upsert_membership(
         (meeting_id, participant_id),
     ).fetchone()
     if existing is None:
+        stable_room_uid = clean_room_uid or str(uuid4())
         connection.execute(
             """INSERT INTO identity_memberships(
                    meeting_id, participant_id, display_name, role,
@@ -215,6 +218,7 @@ def upsert_room(
     connection: Connection,
     *,
     room_id: str,
+    room_uid: str,
     owner_id: str,
     label: str,
     origin: str,
@@ -224,6 +228,7 @@ def upsert_room(
     if not clean_room_id:
         raise ValueError("room_id is required.")
     clean_owner_id = clean_room_text(owner_id, limit=128)
+    clean_room_uid = clean_room_text(room_uid, limit=64)
     clean_label = clean_room_text(label, limit=128)
     clean_origin = clean_room_text(origin, limit=64)
     connection.execute(
@@ -231,20 +236,34 @@ def upsert_room(
         (f"identity-room:{clean_room_id}",),
     )
     existing = connection.execute(
-        "SELECT 1 FROM identity_room_registry WHERE room_id = %s",
+        "SELECT room_uid FROM identity_room_registry WHERE room_id = %s",
         (clean_room_id,),
     ).fetchone()
     if existing is None:
         connection.execute(
             """INSERT INTO identity_room_registry(
-                   room_id, owner_id, label, created_at, last_active_at,
+                   room_id, room_uid, owner_id, label, created_at, last_active_at,
                    archived, origin
-               ) VALUES(%s, %s, %s, %s, %s, FALSE, %s)""",
-            (clean_room_id, clean_owner_id, clean_label, now, now, clean_origin),
+               ) VALUES(%s, %s, %s, %s, %s, %s, FALSE, %s)""",
+            (
+                clean_room_id,
+                stable_room_uid,
+                clean_owner_id,
+                clean_label,
+                now,
+                now,
+                clean_origin,
+            ),
         )
     else:
+        existing_uid = str(existing.get("room_uid") or "")
+        if clean_room_uid and existing_uid and clean_room_uid != existing_uid:
+            raise ValueError(f"room_uid for {clean_room_id} is immutable.")
         assignments = ["last_active_at = %s"]
         values: list[object] = [now]
+        if clean_room_uid and not existing_uid:
+            assignments.append("room_uid = %s")
+            values.append(clean_room_uid)
         for column, value in (
             ("owner_id", clean_owner_id),
             ("label", clean_label),

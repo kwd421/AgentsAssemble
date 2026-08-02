@@ -928,9 +928,15 @@ export default function App() {
     if (guestLocked) return;
     const room = createFreshRoom();
     try {
-      await createRoom(room.meetingId, room.label);
-      prependRoom(room);
-      setActiveRoomId(room.id);
+      const created = await createRoom(room.meetingId, room.label);
+      const canonicalRoom = {
+        ...room,
+        id: `server-${created.server_id}-${created.room.room_uid}`,
+        roomUid: created.room.room_uid,
+        serverId: created.server_id,
+      };
+      prependRoom(canonicalRoom);
+      setActiveRoomId(canonicalRoom.id);
       setAdminOpen(false);
       setChannel("lobby");
       setRoomMenu(null);

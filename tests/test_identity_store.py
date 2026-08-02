@@ -5,6 +5,7 @@ from contextlib import closing
 import tempfile
 import unittest
 from pathlib import Path
+from uuid import UUID
 
 from agentsassemble.identity.repository import (
     IdentityBackend,
@@ -148,6 +149,15 @@ class MembershipTests(IdentityStoreTestCase):
 
 
 class RoomRegistryTests(IdentityStoreTestCase):
+    def test_server_and_room_ids_survive_repository_reopen(self):
+        server_id = self.store.server_id()
+        created = self.store.upsert_room(room_id="room-a")
+        reopened = IdentityStore(self.root / "identity.db")
+
+        self.assertEqual(str(UUID(server_id)), server_id)
+        self.assertEqual(reopened.server_id(), server_id)
+        self.assertEqual(reopened.get_room("room-a")["room_uid"], created["room_uid"])
+
     def test_upsert_room_creates_then_updates_non_empty_fields_and_last_active(self):
         created = self.store.upsert_room(
             room_id="room-a",

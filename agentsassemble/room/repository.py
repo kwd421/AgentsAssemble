@@ -35,7 +35,13 @@ class RoomTransaction(Protocol):
 
     def update_room_status(self, status: str) -> RoomRecord: ...
 
-    def create_room(self, *, label: str = "", status: str = "active") -> tuple[RoomRecord, bool]: ...
+    def create_room(
+        self,
+        *,
+        label: str = "",
+        status: str = "active",
+        room_uid: str = "",
+    ) -> tuple[RoomRecord, bool]: ...
 
     def ensure_room(self, *, label: str = "", status: str = "active") -> tuple[RoomRecord, bool]: ...
 
@@ -141,7 +147,14 @@ class RoomRepository(Protocol):
 
     def transaction(self, room_id: str) -> ContextManager[RoomTransaction]: ...
 
-    def create_room(self, room_id: str, *, label: str = "", status: str = "active") -> RoomRecord: ...
+    def create_room(
+        self,
+        room_id: str,
+        *,
+        label: str = "",
+        status: str = "active",
+        room_uid: str = "",
+    ) -> RoomRecord: ...
 
     def ensure_room(self, room_id: str, *, label: str = "", status: str = "active") -> RoomRecord: ...
 

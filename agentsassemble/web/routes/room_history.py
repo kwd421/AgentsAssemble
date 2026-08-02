@@ -28,6 +28,7 @@ def register_room_history_routes(router: Router) -> None:
         )
         return {
             "room_id": str(room.get("room_id") or ""),
+            "room_uid": str(room.get("room_uid") or ""),
             "label": str(room.get("label") or ""),
             "last_active_at": str(room.get("last_active_at") or ""),
             "archived": bool(room.get("archived")) or status == "archived",
@@ -159,6 +160,7 @@ def register_room_history_routes(router: Router) -> None:
                 **_room_payload(
                     {
                         "room_id": room_id,
+                        "room_uid": room.get("room_uid", ""),
                         "label": room_settings["label"],
                         "last_active_at": room.get("updated_at", ""),
                         "status": room.get("status", "active"),
@@ -170,7 +172,12 @@ def register_room_history_routes(router: Router) -> None:
                     **room_settings,
                 },
             }
-        ctx.send_json({"rooms": list(rooms_by_id.values())})
+        ctx.send_json(
+            {
+                "server_id": ctx.deps.identities.server_id(),
+                "rooms": list(rooms_by_id.values()),
+            }
+        )
 
     @router.get("/api/rooms/state")
     def room_state(ctx: RequestContext) -> None:

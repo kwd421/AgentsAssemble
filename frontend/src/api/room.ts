@@ -69,6 +69,7 @@ export interface RoomSettings {
 
 export interface ServerRoom {
   room_id: string;
+  room_uid: string;
   label: string;
   last_active_at: string;
   archived: boolean;
@@ -78,6 +79,7 @@ export interface ServerRoom {
 }
 
 export interface ServerRoomsResponse {
+  server_id: string;
   rooms: ServerRoom[];
 }
 
@@ -470,7 +472,7 @@ export function fetchRoomFriends() {
 }
 
 export function createRoom(roomId: string, label = "") {
-  return postJson<{ status: string; room: ServerRoom }>("/api/rooms", {
+  return postJson<{ status: string; server_id: string; room: ServerRoom }>("/api/rooms", {
     room_id: roomId,
     label,
   });

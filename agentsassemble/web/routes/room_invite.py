@@ -326,6 +326,11 @@ def _admit_invite(
                 if consumer_client_type == "browser"
                 else ""
             ),
+            client_id=(
+                str(payload.get("client_id") or "")
+                if consumer_client_type == "browser"
+                else ""
+            ),
             participant_type=(
                 str(payload.get("participant_type") or "")
                 if consumer_client_type == "browser"

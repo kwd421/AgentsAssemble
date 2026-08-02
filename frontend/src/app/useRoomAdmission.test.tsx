@@ -10,6 +10,7 @@ import { useRoomAdmission } from "./useRoomAdmission";
 
 const deviceMocks = vi.hoisted(() => ({
   getOrCreateDeviceToken: vi.fn(() => "device-1"),
+  getOrCreateClientId: vi.fn(() => "client-1"),
   loadRememberedGuestProfile: vi.fn<() => { displayName: string; avatarImage?: string } | null>(() => null),
   rememberGuestProfile: vi.fn(),
 }));
@@ -120,6 +121,7 @@ describe("useRoomAdmission", () => {
       displayName: "Known Guest",
       avatarImage: "data:image/png;base64,avatar",
       deviceToken: "device-1",
+      clientId: "client-1",
       participantType: "human",
       requestId: expect.any(String),
     });

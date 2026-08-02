@@ -136,8 +136,20 @@ class _PostgresRoomTransaction:
     def update_room_status(self, status: str) -> dict[str, object]:
         return update_room_status(self._connection, self._room_id, status)
 
-    def create_room(self, *, label: str = "", status: str = "active") -> tuple[dict[str, object], bool]:
-        return create_room_record(self._connection, self._room_id, label=label, status=status)
+    def create_room(
+        self,
+        *,
+        label: str = "",
+        status: str = "active",
+        room_uid: str = "",
+    ) -> tuple[dict[str, object], bool]:
+        return create_room_record(
+            self._connection,
+            self._room_id,
+            label=label,
+            status=status,
+            room_uid=room_uid,
+        )
 
     def ensure_room(self, *, label: str = "", status: str = "active") -> tuple[dict[str, object], bool]:
         if query_room_is_deleted(self._connection, self._room_id):
@@ -354,10 +366,21 @@ class PostgresRoomRepository:
             "pool": provider_diagnostics.get("pool", provider_diagnostics),
         }
 
-    def create_room(self, room_id: str, *, label: str = "", status: str = "active") -> dict[str, object]:
+    def create_room(
+        self,
+        room_id: str,
+        *,
+        label: str = "",
+        status: str = "active",
+        room_uid: str = "",
+    ) -> dict[str, object]:
         clean_id = clean_room_id(room_id)
         with self.transaction(clean_id) as transaction:
-            room, created = transaction.create_room(label=label, status=status)
+            room, created = transaction.create_room(
+                label=label,
+                status=status,
+                room_uid=room_uid,
+            )
             if created:
                 transaction.append_event("room_created", label=room["label"])
         return room

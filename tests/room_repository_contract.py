@@ -5,6 +5,7 @@ import time
 from concurrent.futures import ThreadPoolExecutor
 from typing import cast
 from unittest import TestCase
+from uuid import UUID
 
 from agentsassemble.room_attention import (
     AttentionEvaluation,
@@ -42,6 +43,17 @@ class RoomRepositoryContractMixin:
         case.assertEqual(second["room_id"], "general")
         case.assertEqual(second["label"], "General renamed")
         case.assertEqual([event["type"] for event in events], ["room_created"])
+
+    def test_room_uid_is_server_assigned_stable_and_unique(self) -> None:
+        first = self.repository.create_room("uid-room-a", label="Room A")
+        repeated = self.repository.create_room("uid-room-a", label="Renamed A")
+        second = self.repository.create_room("uid-room-b", label="Room B")
+
+        first_uid = str(first["room_uid"])
+        case = self._test_case()
+        case.assertEqual(str(UUID(first_uid)), first_uid)
+        case.assertEqual(repeated["room_uid"], first_uid)
+        case.assertNotEqual(second["room_uid"], first_uid)
 
     def test_room_ensure_creates_once_without_overwriting_existing_room(self) -> None:
         first = self.repository.ensure_room("ensured-room", label="Original")

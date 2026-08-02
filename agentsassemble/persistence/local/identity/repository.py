@@ -37,6 +37,11 @@ from agentsassemble.persistence.local.identity.preferences import (
     read_room_preferences,
     update_room_preferences,
 )
+from agentsassemble.persistence.local.identity.durable_ids import (
+    ensure_durable_identity_schema,
+    read_or_create_server_id,
+    upsert_room_identity,
+)
 from agentsassemble.persistence.local.identity.user_profiles import (
     ensure_user_profiles_schema,
     read_user_profile,
@@ -111,6 +116,7 @@ CREATE TABLE IF NOT EXISTS memberships (
 
 CREATE TABLE IF NOT EXISTS rooms (
     room_id TEXT PRIMARY KEY,
+    room_uid TEXT,
     owner_id TEXT NOT NULL DEFAULT '',
     label TEXT NOT NULL DEFAULT '',
     created_at TEXT NOT NULL,
@@ -184,6 +190,7 @@ _MEMBERSHIP_MERGE_FIELDS = (
 
 _ROOM_FIELDS = (
     "room_id",
+    "room_uid",
     "owner_id",
     "label",
     "created_at",
@@ -243,6 +250,7 @@ class IdentityStore:
             self._ensure_column(connection, "rooms", "last_active_at", "TEXT NOT NULL DEFAULT ''")
             self._ensure_column(connection, "rooms", "archived", "INTEGER NOT NULL DEFAULT 0")
             self._ensure_column(connection, "rooms", "origin", "TEXT NOT NULL DEFAULT ''")
+            ensure_durable_identity_schema(connection, self._ensure_column)
             self._ensure_column(
                 connection,
                 "operator_pairings",
@@ -310,6 +318,10 @@ class IdentityStore:
     def count_memberships(self) -> int:
         with closing(self._connect()) as connection:
             return int(connection.execute("SELECT COUNT(*) FROM memberships").fetchone()[0])
+
+    def server_id(self) -> str:
+        with self._write_lock, closing(self._connect()) as connection, connection:
+            return read_or_create_server_id(connection, now=_now())
 
     # -- users + credentials --------------------------------------------------
     def user_for_credential(self, auth_key: str) -> dict[str, object] | None:
@@ -904,42 +916,26 @@ class IdentityStore:
         return bool(member and member.get("muted"))
 
     # -- rooms ---------------------------------------------------------------
-    def upsert_room(self, *, room_id: str, owner_id: str = "", label: str = "", origin: str = "") -> dict[str, object]:
-        clean_room_id = clean_lobby_text(room_id, limit=128)
-        if not clean_room_id:
-            raise ValueError("room_id is required.")
-        clean_owner_id = clean_lobby_text(owner_id, limit=128)
-        clean_label = clean_lobby_text(label, limit=128)
-        clean_origin = clean_lobby_text(origin, limit=64)
+    def upsert_room(
+        self,
+        *,
+        room_id: str,
+        room_uid: str = "",
+        owner_id: str = "",
+        label: str = "",
+        origin: str = "",
+    ) -> dict[str, object]:
         now = _now()
         with self._write_lock, closing(self._connect()) as connection, connection:
-            existing = connection.execute(
-                "SELECT * FROM rooms WHERE room_id = ?",
-                (clean_room_id,),
-            ).fetchone()
-            if existing is None:
-                connection.execute(
-                    "INSERT INTO rooms (room_id, owner_id, label, created_at, last_active_at, archived, origin)"
-                    " VALUES (?, ?, ?, ?, ?, 0, ?)",
-                    (clean_room_id, clean_owner_id, clean_label, now, now, clean_origin),
-                )
-            else:
-                updates: dict[str, object] = {"last_active_at": now}
-                if clean_owner_id:
-                    updates["owner_id"] = clean_owner_id
-                if clean_label:
-                    updates["label"] = clean_label
-                if clean_origin:
-                    updates["origin"] = clean_origin
-                assignments = ", ".join(f"{column} = ?" for column in updates)
-                connection.execute(
-                    f"UPDATE rooms SET {assignments} WHERE room_id = ?",
-                    (*updates.values(), clean_room_id),
-                )
-            refreshed = connection.execute(
-                "SELECT * FROM rooms WHERE room_id = ?",
-                (clean_room_id,),
-            ).fetchone()
+            refreshed = upsert_room_identity(
+                connection,
+                room_id=room_id,
+                room_uid=room_uid,
+                owner_id=owner_id,
+                label=label,
+                origin=origin,
+                now=now,
+            )
         return self._room_dict(refreshed)
 
     def list_rooms(self, *, owner_id: str = "", include_archived: bool = False) -> list[dict[str, object]]:
