@@ -94,6 +94,31 @@ Any future public account identifier must be issued independently from the
 private device credential, and linking local identities to that account must be
 explicit rather than silently merging them.
 
+### Deferred plugin extension boundary
+
+A user-installable plugin system is a product direction, not current behavior.
+Account identity and the shared room-directory contract come first so plugin
+ownership, settings, and synchronization have an unambiguous user and server
+authority. Do not add arbitrary Python or JavaScript discovery as an interim
+shortcut.
+
+The intended model is closer to RisuAI's versioned, permissioned extension API
+than to patching private client internals. A future manifest may declare
+separate server, sandboxed web-client, and Agent-tool entry points. Plugins must
+use canonical room commands/events, named UI contribution slots, and
+plugin-scoped storage and secrets; they must not mutate the room database or
+React application internals directly. File access, external network access,
+room reads, room writes, moderation, secrets, and native execution require
+separate visible permissions. Desktop-only native capabilities must fail closed
+or render unavailable in an ordinary browser.
+
+The existing provider registries, route registration functions, feature
+packages, capability checks, and Room Connector/MCP tools are useful internal
+extension seams, but they do not yet provide plugin discovery, manifests,
+sandboxing, lifecycle isolation, version compatibility, installation, or
+updates. When this work starts, prove the API by moving one bounded first-party
+feature through it before accepting third-party plugins.
+
 ## Current Rolling Restart Contract
 
 The local POSIX GUI server can replace its backend process without changing its
