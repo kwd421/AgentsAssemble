@@ -158,9 +158,9 @@ class GoogleAccountLoginService:
                 code="google_login_not_configured",
             )
         user_id = str((current_user or {}).get("user_id") or "").strip()
-        if not user_id:
+        if not user_id and not device_auth_key:
             raise GoogleLoginRejected(
-                "A signed-in server identity is required to start Google login.",
+                "A signed-in server identity or durable device identity is required to start Google login.",
                 code="device_identity_required",
             )
         nonce = self._challenges.issue()
@@ -202,8 +202,8 @@ class GoogleAccountLoginService:
                 "Google login handoff expired or was already used.",
                 code="google_login_handoff_invalid",
             )
-        current_user = identities.get_user(handoff.user_id)
-        if current_user is None:
+        current_user = identities.get_user(handoff.user_id) if handoff.user_id else None
+        if handoff.user_id and current_user is None:
             raise GoogleLoginRejected(
                 "The server identity for this login no longer exists.",
                 code="google_login_handoff_invalid",

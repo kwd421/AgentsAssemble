@@ -107,7 +107,11 @@ asks the selected server for a short-lived, one-use handoff, opens that
 same-origin URL in the system browser, and polls the server until the verified
 account link is visible. The desktop command accepts only the selected server
 origin, while the handoff token and Google nonce expire in process memory and
-are consumed once.
+are consumed once. A previously unseen remote device may start that handoff
+with its durable device credential before it has a server user row; completion
+binds the still-unowned credential to the verified account's existing server
+user. A credential that already belongs to a different server user continues
+to fail closed rather than silently merging identities.
 
 ### Deferred plugin extension boundary
 

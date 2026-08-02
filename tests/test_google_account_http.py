@@ -47,6 +47,8 @@ class _Handler:
         *,
         host: str = "127.0.0.1:8765",
         peer_host: str = "127.0.0.1",
+        device_token: str = "account-http-device-token",
+        forwarded_proto: str = "",
     ) -> None:
         raw_body = json.dumps(body or {}).encode()
         self.path = path
@@ -54,8 +56,10 @@ class _Handler:
         self.headers = {
             "Content-Length": str(len(raw_body)),
             "Host": host,
-            "X-Device-Token": "account-http-device-token",
+            "X-Device-Token": device_token,
         }
+        if forwarded_proto:
+            self.headers["X-Forwarded-Proto"] = forwarded_proto
         self.rfile = io.BytesIO(raw_body)
         self.server = SimpleNamespace(server_address=("127.0.0.1", 8765))
         self.client_address = (peer_host, 54321)
@@ -331,6 +335,79 @@ class GoogleAccountHttpTests(unittest.TestCase):
         self.assertEqual(rejected_disconnect.sent_error[0], HTTPStatus.FORBIDDEN)
         self.assertIsNotNone(status.sent_json["account"])
 
+    def test_system_browser_handoff_reconnects_an_unbound_remote_device(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            identities = IdentityStore(Path(temp_dir) / "identity.db")
+            verifier = _Verifier()
+            service = GoogleAccountLoginService(
+                client_id="google-client.apps.googleusercontent.com",
+                verifier=verifier,
+            )
+            router = Router()
+            register_account_routes(router, google=service)
+            deps = GuiDeps(output_root=Path(temp_dir), identity_backend=identities)
+
+            initial = self._dispatch(router, deps, "/api/account", "GET")
+            verifier.nonce = str(initial.sent_json["google"]["nonce"])
+            linked = self._dispatch(
+                router,
+                deps,
+                "/api/account/google",
+                "POST",
+                body={"credential": "google-id-token", "nonce": verifier.nonce},
+            )
+
+            remote = {
+                "host": "rooms.example.invalid",
+                "peer_host": "203.0.113.10",
+                "device_token": "fresh-remote-device-token",
+                "forwarded_proto": "https",
+            }
+            started = self._dispatch(
+                router,
+                deps,
+                "/api/account/google/handoff/start",
+                "POST",
+                body={},
+                **remote,
+            )
+            token = parse_qs(urlparse(started.sent_json["handoff_url"]).fragment)[
+                "google_handoff"
+            ][0]
+            configured = self._dispatch(
+                router,
+                deps,
+                "/api/account/google/handoff/configure",
+                "POST",
+                body={"token": token},
+                **remote,
+            )
+            verifier.nonce = str(configured.sent_json["nonce"])
+            completed = self._dispatch(
+                router,
+                deps,
+                "/api/account/google/handoff/complete",
+                "POST",
+                body={"token": token, "credential": "google-id-token"},
+                **remote,
+            )
+            remote_status = self._dispatch(
+                router,
+                deps,
+                "/api/account",
+                "GET",
+                **remote,
+            )
+
+        self.assertEqual(
+            completed.sent_json["user"]["user_id"],
+            linked.sent_json["user"]["user_id"],
+        )
+        self.assertEqual(
+            remote_status.sent_json["account"]["account_id"],
+            linked.sent_json["account"]["account_id"],
+        )
+
     def _dispatch(
         self,
         router: Router,
@@ -341,8 +418,18 @@ class GoogleAccountHttpTests(unittest.TestCase):
         body: dict[str, object] | None = None,
         host: str = "127.0.0.1:8765",
         peer_host: str = "127.0.0.1",
+        device_token: str = "account-http-device-token",
+        forwarded_proto: str = "",
     ) -> _Handler:
-        handler = _Handler(path, method, body, host=host, peer_host=peer_host)
+        handler = _Handler(
+            path,
+            method,
+            body,
+            host=host,
+            peer_host=peer_host,
+            device_token=device_token,
+            forwarded_proto=forwarded_proto,
+        )
         parsed = urlparse(path)
         context = RequestContext(handler, deps, parsed, parse_qs(parsed.query))
         self.assertTrue(router.dispatch(method, context))
