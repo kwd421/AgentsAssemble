@@ -58,6 +58,32 @@ class IdentityBackend(Protocol):
     def count_users(self) -> int: ...
     def count_memberships(self) -> int: ...
     def server_id(self) -> str: ...
+    def external_account_for_user(self, user_id: str) -> dict[str, object] | None: ...
+    def user_for_external_account(
+        self,
+        provider: str,
+        subject_fingerprint: str,
+    ) -> dict[str, object] | None: ...
+    def connect_external_account(
+        self,
+        user_id: str,
+        *,
+        account_id: str,
+        provider: str,
+        subject_fingerprint: str,
+        display_name: str = "",
+        email: str = "",
+        avatar_image_url: str = "",
+        connected_at: str,
+    ) -> dict[str, object]: ...
+    def bind_credential_to_user(
+        self,
+        user_id: str,
+        *,
+        auth_key: str,
+        provider: str,
+        used_at: str,
+    ) -> dict[str, object]: ...
     def create_recovery_code(
         self,
         *,

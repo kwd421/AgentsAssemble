@@ -4,7 +4,7 @@ from __future__ import annotations
 from pathlib import Path
 
 
-POSTGRES_ROOM_SCHEMA_REVISION = "0014_guest_recovery_codes"
+POSTGRES_ROOM_SCHEMA_REVISION = "0015_public_accounts"
 POSTGRES_ROOM_AUTHORITY_ID = "canonical-room-repository"
 POSTGRES_ROOM_REQUIRED_TABLES = (
     "rooms",
@@ -25,6 +25,9 @@ POSTGRES_ROOM_REQUIRED_TABLES = (
     "room_invite_used_nonces",
     "room_access_sessions",
     "identity_users",
+    "identity_accounts",
+    "identity_external_accounts",
+    "identity_user_accounts",
     "identity_server_metadata",
     "identity_recovery_codes",
     "identity_credentials",

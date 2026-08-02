@@ -5,6 +5,7 @@ from agentsassemble.identity.repository import (
     LOCAL_OPERATOR_PARTICIPANT_ID,
     LOCAL_OPERATOR_USER_ID,
 )
+from agentsassemble.identity.accounts import AccountLinkConflict
 
 
 class IdentityRepositoryContractMixin:
@@ -59,6 +60,76 @@ class IdentityRepositoryContractMixin:
         self.assertEqual(
             refreshed["avatar_image_url"],
             "/api/attachments/alpha_123?view=1",
+        )
+
+    def test_external_account_link_is_explicit_and_cannot_steal_an_identity(self) -> None:
+        first = self.repository.resolve_credential_user(
+            "device:account-alpha",
+            user_id="account-user-alpha",
+            participant_id="account-participant-alpha",
+        )
+        second = self.repository.resolve_credential_user(
+            "device:account-bravo",
+            user_id="account-user-bravo",
+            participant_id="account-participant-bravo",
+        )
+
+        linked = self.repository.connect_external_account(
+            str(first["user_id"]),
+            account_id="acct-contract-google",
+            provider="google",
+            subject_fingerprint="subject-contract-google",
+            display_name="Account Alpha",
+            email="alpha@example.invalid",
+            avatar_image_url="https://example.invalid/account.png",
+            connected_at="2026-08-02T00:00:00+00:00",
+        )
+
+        self.assertEqual(linked["account_id"], "acct-contract-google")
+        self.assertEqual(linked["user_id"], first["user_id"])
+        self.assertEqual(
+            self.repository.external_account_for_user(str(first["user_id"])),
+            linked,
+        )
+        self.assertEqual(
+            self.repository.user_for_external_account(
+                "google",
+                "subject-contract-google",
+            )["user_id"],
+            first["user_id"],
+        )
+
+        with self.assertRaises(AccountLinkConflict):
+            self.repository.connect_external_account(
+                str(second["user_id"]),
+                account_id="acct-contract-google",
+                provider="google",
+                subject_fingerprint="subject-contract-google",
+                connected_at="2026-08-02T00:01:00+00:00",
+            )
+
+        rebound = self.repository.bind_credential_to_user(
+            str(first["user_id"]),
+            auth_key="device:account-new-device",
+            provider="device",
+            used_at="2026-08-02T00:02:00+00:00",
+        )
+        self.assertEqual(rebound["user_id"], first["user_id"])
+        self.assertEqual(
+            self.repository.user_for_credential("device:account-new-device")["user_id"],
+            first["user_id"],
+        )
+
+        with self.assertRaises(AccountLinkConflict):
+            self.repository.bind_credential_to_user(
+                str(first["user_id"]),
+                auth_key="device:account-bravo",
+                provider="device",
+                used_at="2026-08-02T00:03:00+00:00",
+            )
+        self.assertEqual(
+            self.repository.user_for_credential("device:account-bravo")["user_id"],
+            second["user_id"],
         )
 
     def test_operator_claim_pairing_and_consumption_share_one_identity(self) -> None:
