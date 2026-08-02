@@ -88,11 +88,21 @@ room labels, appearance, origin, and timestamps; it drops unknown fields so
 bearer credentials cannot be persisted through this path. The webview keeps its
 own persistent browser storage, separate from Safari or Chrome.
 
-A first-class public `client_id` and account login remain a pending product
-decision. Local startup and local rooms must continue to work without login.
-Any future public account identifier must be issued independently from the
-private device credential, and linking local identities to that account must be
-explicit rather than silently merging them.
+A public account identity is distinct from the private per-client device
+credential. Local startup and local rooms continue to work without login. A
+verified Google subject produces a stable opaque `acct-...` ID; the raw Google
+subject and ID token are not stored. Linking is an explicit account action and
+fails closed when either the external account or device credential already
+belongs to another server user, so login never silently merges two identities.
+
+The web account surface uses Google Identity Services only when the server has
+`AGENTSASSEMBLE_GOOGLE_WEB_CLIENT_ID` configured. The backend verifies the ID
+token audience, issuer, expiry, and a short-lived one-use nonce before writing
+the account link. A remote account mutation requires forwarded HTTPS; a spoofed
+loopback Host header is not treated as a local request. Google does not permit
+this web flow inside an embedded WebView, so the current Tauri client reports
+that boundary instead of opening an embedded fallback. A system-browser native
+handoff remains required before desktop account connection is complete.
 
 ### Deferred plugin extension boundary
 
@@ -240,6 +250,11 @@ recover the same still-active bounded bearer after a lost response; another
 device is rejected. Raw pairing, device, host, and room bearer tokens are never
 stored in the pairing record or sent to the public origin. This is not account
 login and does not identify a user across different AgentsAssemble servers.
+
+Public account identity is stored by the selected identity backend alongside
+users and credential bindings. It is not a replacement for room admission or
+the private device credential: an account may reconnect identity across
+clients, while each room still grants its own membership and bounded session.
 
 Detailed implementation and verification:
 `docs/reports/2026-07-15-browser-identity-admission.md`.
@@ -744,7 +759,7 @@ Detailed product policy: `docs/product/OPERATING_MODEL.md`.
 | Provider turn coordination | pending input, active turn phase, delta/final commit, and recovery in `room/turn_coordinator.py`; compatibility export in `room_turn_coordinator.py` |
 | Invites, browser admission, current-session connector, and operator-origin pairing | invite policy/application service in `admission/invite_service.py` with compatibility exports in `room_invite_application.py`; process-local facade in `room_invite.py`; preflight owner in `admission/preflight.py` with compatibility export in `room_admission.py`; session lifecycle in `admission/session_issuer.py` and `admission/session_service.py`; durable mutation and compensation in `admission/coordinator.py` and `admission/saga.py`, all with root compatibility exports; current app/CLI session adapter in `application/room_connector.py` and stdio MCP boundary in `providers/room_connector_mcp.py`; pairing in `identity/pairing.py` with compatibility exports in `operator_pairing.py`; HTTP in `web/routes/room_invite.py` with root compatibility export; managed native attendee in `room_attendee.py`; browser flow in `frontend/src/app/useRoomAdmission.ts` |
 | Invite/session persistence | contracts and fail-closed default in `admission/repository.py`; durable workflow allowlist in `admission/workflow_record.py`; explicit terminal-workflow selection/reporting in `admission/maintenance.py` and CLI boundary in `admission/maintenance_command.py`; local memory/JSON owner in `persistence/local/admission/`; hosted owner in `persistence/postgres/admission/`; root compatibility exports retained; selection in `room_invite_repository_factory.py` |
-| Identity, credential, membership compatibility, preference, and usage persistence | storage-independent contract and normalization in `identity/repository.py` and `identity/preferences.py`; backend selection in `identity/factory.py`; process-scoped compatibility binding and local fallback in `application/room_users.py` with root export in `room_users.py`; local SQLite implementation, cache/binding registry, and one-time JSON import in `persistence/local/identity/`; hosted owner in `persistence/postgres/identity/`; compatibility exports in `identity_store.py`, `identity_room_preferences.py`, `identity_repository_factory.py`, and `postgres_identity_*.py` |
+| Identity, public account, credential, membership compatibility, preference, and usage persistence | storage-independent contracts in `identity/repository.py`, `identity/accounts.py`, and `identity/preferences.py`; Google verification/link policy in `identity/google.py`; backend selection in `identity/factory.py`; account HTTP in `web/routes/accounts.py`; process-scoped compatibility binding and local fallback in `application/room_users.py` with root export in `room_users.py`; local SQLite implementation, cache/binding registry, and one-time JSON import in `persistence/local/identity/`; hosted owner in `persistence/postgres/identity/`; compatibility exports in `identity_store.py`, `identity_room_preferences.py`, `identity_repository_factory.py`, and `postgres_identity_*.py` |
 | Provider credentials | `provider_secrets.py`, provider credential routes |
 | Canonical attachment upload/download HTTP | `web/routes/attachments.py` with compatibility export in `gui_attachment_http.py`; storage in `attachments.py`, room media in `persistence/local/room/repository.py` or the selected `RoomRepository` |
 | GUI HTTP routing, response, static delivery, and WebSocket transport | route/request-context owner in `web/router.py`; response owner in `web/response.py`; static owner in `web/static.py`; shared SSE/WebSocket cadence in `web/sse_cadence.py`; RFC 6455 handshake/frame codec in `web/websocket_codec.py`; Python resident/bridge room client in `web/room_client.py`; ticket and per-connection protocol in `web/room_session.py`; ticket route and WebSocket upgrade owner in `web/websocket.py`; root compatibility exports retained; composition in `gui.py` |

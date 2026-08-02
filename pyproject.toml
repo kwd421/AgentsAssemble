@@ -4,6 +4,7 @@ version = "0.1.0"
 description = "Local-first multi-agent council orchestrator."
 requires-python = ">=3.11"
 dependencies = [
+    "google-auth[requests]>=2.40,<3",
     "keyring>=25,<26",
     "mcp>=1,<2",
     "pywinpty>=3,<4; platform_system == 'Windows'",

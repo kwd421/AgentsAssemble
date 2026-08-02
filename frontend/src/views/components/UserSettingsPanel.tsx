@@ -2,6 +2,7 @@ import { Headphones, Mic, MicOff, Palette, UserCircle } from "lucide-react";
 
 import type { UserProfile, UserProfileIdentity } from "../../api";
 import GuestRecoverySettings from "./GuestRecoverySettings";
+import GoogleAccountSettings from "./GoogleAccountSettings";
 
 export type UserSettingsSection = "account" | "profile" | "voice" | "recovery";
 
@@ -25,7 +26,7 @@ export default function UserSettingsPanel({
   onDraftChange,
   onReset,
   onSave,
-  recoveryIdentity,
+  profileIdentity,
 }: {
   draft: UserProfile;
   saving: boolean;
@@ -35,9 +36,9 @@ export default function UserSettingsPanel({
   onDraftChange: (profile: UserProfile) => void;
   onReset: () => void;
   onSave: () => void;
-  recoveryIdentity?: UserProfileIdentity;
+  profileIdentity?: UserProfileIdentity;
 }) {
-  const sections = recoveryIdentity?.sessionToken
+  const sections = profileIdentity?.sessionToken
     ? USER_SETTINGS_SECTIONS
     : USER_SETTINGS_SECTIONS.filter((section) => section.id !== "recovery");
   return (
@@ -102,6 +103,7 @@ export default function UserSettingsPanel({
                   </select>
                 </label>
               </div>
+              <GoogleAccountSettings identity={profileIdentity || {}} />
             </>
           )}
 
@@ -202,8 +204,8 @@ export default function UserSettingsPanel({
             </>
           )}
 
-          {settingsSection === "recovery" && recoveryIdentity?.sessionToken && (
-            <GuestRecoverySettings identity={recoveryIdentity} />
+          {settingsSection === "recovery" && profileIdentity?.sessionToken && (
+            <GuestRecoverySettings identity={profileIdentity} />
           )}
         </section>
       </div>

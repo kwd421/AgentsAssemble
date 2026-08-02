@@ -1,5 +1,57 @@
-import { postJson, postJsonWithIdentity } from "./http";
+import { fetchJsonWithIdentity, postJson, postJsonWithIdentity } from "./http";
 import type { RoomInviteJoinResponse } from "./invites";
+import type { UserProfileIdentity } from "./room";
+
+export type PublicAccount = {
+  account_id: string;
+  provider: "google" | string;
+  display_name: string;
+  email: string;
+  avatar_image_url: string;
+};
+
+export type AccountStatusResponse = {
+  account: PublicAccount | null;
+  google: {
+    enabled: boolean;
+    client_id: string;
+    nonce: string;
+    unavailable_reason: string;
+  };
+};
+
+export type GoogleAccountConnectResponse = {
+  status: "connected";
+  account: PublicAccount;
+  user: {
+    user_id: string;
+    participant_id: string;
+    display_name: string;
+    avatar_image_url: string;
+  };
+};
+
+export function fetchAccountStatus(
+  identity: UserProfileIdentity = {}
+): Promise<AccountStatusResponse> {
+  return fetchJsonWithIdentity<AccountStatusResponse>("/api/account", identity);
+}
+
+export function connectGoogleAccount({
+  credential,
+  nonce,
+  identity = {},
+}: {
+  credential: string;
+  nonce: string;
+  identity?: UserProfileIdentity;
+}): Promise<GoogleAccountConnectResponse> {
+  return postJsonWithIdentity<GoogleAccountConnectResponse>(
+    "/api/account/google",
+    { credential, nonce },
+    identity
+  );
+}
 
 export type GuestRecoveryCodeResponse = {
   status: "issued";

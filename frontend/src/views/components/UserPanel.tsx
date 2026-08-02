@@ -434,7 +434,7 @@ export default function UserPanel({
             onDraftChange={setDraft}
             onReset={() => setDraft(profile)}
             onSave={() => void saveDraft()}
-            recoveryIdentity={profileIdentity.sessionToken ? profileIdentity : undefined}
+            profileIdentity={profileIdentity}
           />
         </section>
       )}

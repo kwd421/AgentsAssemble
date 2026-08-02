@@ -88,6 +88,8 @@ surface rather than silently counted as React parity.
 
 | Path | Method | Handler form | React wrapper | React wired | Notes |
 | --- | --- | --- | --- | --- | --- |
+| `/api/account` | GET | exact | `fetchAccountStatus()` | yes | Returns the authenticated server user's public account projection and a one-use Google login challenge when configured; never returns a raw external subject or token. |
+| `/api/account/google` | POST | exact | `connectGoogleAccount()` | yes | Verifies a Google ID token and one-use nonce before explicitly linking the current server identity; remote mutation requires HTTPS. |
 | `/api/attachments` | POST | exact | `uploadLobbyAttachment()` | yes | React composer uploads attachments before posting lobby messages. |
 | `/api/attachments/{attachment_id}` | GET | prefix | `-` | no | Vanilla/admin/operator endpoint; not wrapped by React preview yet. |
 | `/api/codex-sessions` | GET | exact | `-` | no | Retired list route; returns explicit `410 legacy_route_retired`. The distinct `/invite` and `/join` compatibility routes remain. |
@@ -238,6 +240,8 @@ surface rather than silently counted as React parity.
 | `/api/provider-credentials/vercel` | DELETE | exact | `deleteProviderCredential()` | yes | Deletes the Vercel AI Gateway key from the host secure store; the response never returns the credential value. |
 | `/api/room-events/stream` | GET | sse | `-` | no | Legacy/read-only SSE compatibility endpoint. React receives canonical RoomStore snapshots and events from `/ws?ticket=...`. |
 | `/api/host/claim` | POST | exact | `claimHostDevice()` | yes | Host-token gated: binds this device's stable identity to the operator account so its sessions moderate from any entrance. |
+| `/api/identity/recovery-code` | POST | exact | `issueGuestRecoveryCode()` | yes | An admitted guest issues one bounded, one-use recovery code for the same durable identity. |
+| `/api/identity/recovery-code/redeem` | POST | exact | `redeemGuestRecoveryCode()` | yes | A different client consumes the recovery code and receives a bounded room session for the same user and participant. |
 | `/api/live-agent-create/options` | GET | exact | `-` | no | Retired with `410 legacy_route_retired`; canonical provider controls arrive in the room WebSocket snapshot. |
 | `/api/live-agent-create` | POST | exact | `-` | no | Retired with `410 legacy_route_retired`; React sends `agent.create` over the canonical room WebSocket. |
 | `/api/live-agent-create/check` | POST | exact | `-` | no | Retired with `410 legacy_route_retired`; canonical command validation returns ACK/NACK. |
@@ -251,6 +255,10 @@ surface rather than silently counted as React parity.
 | `/api/operator-pairing/create` | POST | exact | `createOperatorPairing()` | yes | A moderator creates a room- and origin-bound, one-use operator pairing link with a two-minute maximum lifetime. |
 | `/api/operator-pairing/redeem` | POST | exact | `redeemOperatorPairing()` | yes | The target browser binds its device credential to the canonical operator and receives a bounded room session. |
 | `/api/operator-pairing/revoke` | POST | exact | `-` | no | Internal/admin cancellation endpoint; the current React flow relies on expiry or successful one-use redemption. |
+| `/api/personas` | GET | exact | `fetchPersonaAssets()` | yes | Lists imported API/Local persona assets without executing embedded scripts or triggers. |
+| `/api/personas/import` | POST | exact | `importPersonaAsset()` | yes | Local operator imports one bounded Risu character/module asset after server-side validation. |
+| `/api/personas/{persona_id}/thumbnail` | GET | prefix | `-` | no | Safe thumbnail bytes referenced by listed persona assets; React consumes the returned URL rather than a separate API wrapper. |
+| `/api/provider-sessions/local` | GET | exact | `-` | no | Local operator discovery route for resumable provider sessions; the canonical room snapshot remains the normal React source. |
 | `/api/side-chat` | GET | exact | `fetchSideChat()` | yes | React side-chat read/write. |
 | `/api/side-chat` | POST | exact | `postSideChatMessage()` | yes | React side-chat read/write. |
 | `/api/room-invite/admission` | POST | exact | `preflightRoomInvite()` | yes | Side-effect-free preflight distinguishes an existing session or known device from a genuinely new guest before invite consumption. |
@@ -270,6 +278,9 @@ surface rather than silently counted as React parity.
 | `/api/room/voice/join` | POST | exact | `joinVoiceChannel()` | yes | React joins (and heartbeats) a voice channel; audio streaming deferred. |
 | `/api/room/voice/leave` | POST | exact | `leaveVoiceChannel()` | yes | React leaves a voice channel. |
 | `/api/room/ensure` | POST | exact | `-` | no | Legacy compatibility route; the React client uses `POST /api/rooms`. |
+| `/api/runtime/version` | GET | exact | `-` | no | The update notice reads this endpoint directly without an API-barrel wrapper. |
+| `/api/runtime/rolling-restart` | GET | exact | `-` | no | Operator rolling-restart status endpoint; no general React API wrapper. |
+| `/api/runtime/rolling-restart` | POST | exact | `-` | no | Operator rolling-restart mutation endpoint; no general React API wrapper. |
 | `/api/play/mafia/action` | POST | exact | `-` | no | Mafia night action endpoint. |
 
 ## Room-Event Contract Signals

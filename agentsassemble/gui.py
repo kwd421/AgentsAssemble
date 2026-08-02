@@ -383,6 +383,7 @@ from agentsassemble.web.frontend_runtime import (
 from agentsassemble.features.social.direct_messages import enqueue_room_friend_direct_dm
 from agentsassemble.identity.factory import build_identity_repository
 from agentsassemble.identity.repository import IdentityBackend
+from agentsassemble.identity.google import GoogleAccountLoginService
 from agentsassemble.persistence.local.identity.registry import identity_store_for_output_root
 from agentsassemble.room.moderation import is_room_member_muted
 from agentsassemble.room.members import mark_thinking, room_members_payload
@@ -1746,6 +1747,7 @@ def _make_handler(
     public_tunnel_manager: PublicTunnelManager | None = None,
     live_agent_login_launcher: object | None = None,
     live_agent_login_command_resolver: object | None = None,
+    google_account_service_override: GoogleAccountLoginService | None = None,
     room_realtime_controller_override: RoomRealtimeController | None = None,
     room_repository_override: RoomRepository | None = None,
     invite_repository_override: InviteSessionRepository | None = None,
@@ -2009,6 +2011,9 @@ def _make_handler(
                     refresh=True
                 )
             ),
+        ),
+        google_account_service=(
+            google_account_service_override or GoogleAccountLoginService.from_environment()
         ),
         post_direct_dm=_room_friend_direct_dm,
         read_operation_payload=_read_operation_payload,

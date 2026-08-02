@@ -8,8 +8,10 @@ from agentsassemble.application.gui import GuiApplicationServices
 from agentsassemble.features.mafia.routes import register_mafia_routes
 from agentsassemble.features.side_chat.routes import register_side_chat_routes
 from agentsassemble.features.social.routes import register_room_friend_profile_routes
+from agentsassemble.identity.google import GoogleAccountLoginService
 from agentsassemble.web.router import RequestContext, Router
 from agentsassemble.web.routes.attachments import register_attachment_routes
+from agentsassemble.web.routes.accounts import register_account_routes
 from agentsassemble.web.routes.identity_recovery import register_identity_recovery_routes
 from agentsassemble.web.routes.observability import register_observability_routes
 from agentsassemble.web.routes.personas import register_persona_routes
@@ -27,6 +29,7 @@ def register_current_gui_routes(
     *,
     services: GuiApplicationServices,
     provider_login_service: object,
+    google_account_service: GoogleAccountLoginService,
     post_direct_dm: Callable[[RequestContext, dict[str, object]], dict[str, object]],
     read_operation_payload: Callable[..., dict[str, object] | None],
     record_operation: Callable[..., object],
@@ -37,6 +40,7 @@ def register_current_gui_routes(
         is_local_operator=lambda ctx: ctx.is_local_operator(),
     )
     register_attachment_routes(route_table)
+    register_account_routes(route_table, google=google_account_service)
     register_identity_recovery_routes(route_table)
     register_persona_routes(
         route_table,
