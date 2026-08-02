@@ -3,6 +3,7 @@ from __future__ import annotations
 
 from http import HTTPStatus
 
+from agentsassemble.application.account_switch import ConfirmedGuestAccountSwitchService
 from agentsassemble.identity.accounts import AccountLinkConflict
 from agentsassemble.identity.google import GoogleAccountLoginService, GoogleLoginRejected
 from agentsassemble.identity.repository import device_auth_key
@@ -34,6 +35,17 @@ def register_account_routes(
                 ),
                 credential=payload.get("credential"),
                 nonce=payload.get("nonce"),
+                discard_guest_on_account_switch=(
+                    payload.get("discard_guest_on_account_switch") is True
+                ),
+                switch_guest=lambda current, target, auth_key, switched_at: (
+                    _account_switcher(ctx).switch(
+                        current,
+                        target,
+                        auth_key,
+                        switched_at,
+                    )
+                ),
             )
         except AccountLinkConflict as error:
             ctx.send_error(HTTPStatus.CONFLICT, str(error), code=error.code)
@@ -61,13 +73,17 @@ def register_account_routes(
     def start_google_account_handoff(ctx: RequestContext) -> None:
         if not _account_login_transport_allowed(ctx):
             return
-        if ctx.read_json_body() is None:
+        payload = ctx.read_json_body()
+        if payload is None:
             return
         try:
             result = google.start_handoff(
                 current_user=ctx.authenticated_user(),
                 device_auth_key=device_auth_key(
                     str(ctx.headers.get("X-Device-Token") or "")
+                ),
+                discard_guest_on_account_switch=(
+                    payload.get("discard_guest_on_account_switch") is True
                 ),
             )
         except GoogleLoginRejected as error:
@@ -99,6 +115,14 @@ def register_account_routes(
                 ctx.deps.identities,
                 token=payload.get("token"),
                 credential=payload.get("credential"),
+                switch_guest=lambda current, target, auth_key, switched_at: (
+                    _account_switcher(ctx).switch(
+                        current,
+                        target,
+                        auth_key,
+                        switched_at,
+                    )
+                ),
             )
         except AccountLinkConflict as error:
             ctx.send_error(HTTPStatus.CONFLICT, str(error), code=error.code)
@@ -115,6 +139,14 @@ def _account_login_transport_allowed(ctx: RequestContext) -> bool:
         return True
     ctx.send_error(HTTPStatus.FORBIDDEN, "HTTPS is required for account login")
     return False
+
+
+def _account_switcher(ctx: RequestContext) -> ConfirmedGuestAccountSwitchService:
+    return ConfirmedGuestAccountSwitchService(
+        identities=ctx.deps.identities,
+        sessions=ctx.deps.sessions,
+        handle_room_command=ctx.deps.handle_room_command,
+    )
 
 
 __all__ = ["register_account_routes"]

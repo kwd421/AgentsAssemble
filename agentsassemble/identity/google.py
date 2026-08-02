@@ -6,7 +6,7 @@ import os
 import secrets
 import threading
 import time
-from collections.abc import Mapping
+from collections.abc import Callable, Mapping
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from typing import Protocol
@@ -19,6 +19,11 @@ from agentsassemble.identity.repository import IdentityBackend
 
 
 GOOGLE_WEB_CLIENT_ID_ENV = "AGENTSASSEMBLE_GOOGLE_WEB_CLIENT_ID"
+
+GuestAccountSwitcher = Callable[
+    [dict[str, object], dict[str, object], str, str],
+    dict[str, object],
+]
 
 
 class GoogleCredentialVerifier(Protocol):
@@ -151,6 +156,7 @@ class GoogleAccountLoginService:
         *,
         current_user: dict[str, object] | None,
         device_auth_key: str,
+        discard_guest_on_account_switch: bool = False,
     ) -> dict[str, object]:
         if not self.client_id:
             raise GoogleLoginRejected(
@@ -168,6 +174,7 @@ class GoogleAccountLoginService:
             user_id=user_id,
             device_auth_key=device_auth_key,
             nonce=nonce,
+            discard_guest_on_account_switch=discard_guest_on_account_switch,
         )
         return {
             "status": "ready",
@@ -195,6 +202,7 @@ class GoogleAccountLoginService:
         *,
         token: object,
         credential: object,
+        switch_guest: GuestAccountSwitcher | None = None,
     ) -> dict[str, object]:
         handoff = self._handoffs.consume(token)
         if handoff is None:
@@ -214,6 +222,10 @@ class GoogleAccountLoginService:
             device_auth_key=handoff.device_auth_key,
             credential=credential,
             nonce=handoff.nonce,
+            discard_guest_on_account_switch=(
+                handoff.discard_guest_on_account_switch
+            ),
+            switch_guest=switch_guest,
         )
 
     def connect(
@@ -224,6 +236,8 @@ class GoogleAccountLoginService:
         device_auth_key: str,
         credential: object,
         nonce: object,
+        discard_guest_on_account_switch: bool = False,
+        switch_guest: GuestAccountSwitcher | None = None,
     ) -> dict[str, object]:
         if not self.client_id:
             raise GoogleLoginRejected(
@@ -257,10 +271,28 @@ class GoogleAccountLoginService:
         subject = str(claims.get("sub") or "").strip()
         account_id, subject_fingerprint = external_account_identity("google", subject)
         linked_user = identities.user_for_external_account("google", subject_fingerprint)
+        identity_switched = False
         if linked_user is not None and current_user is not None and (
             str(linked_user.get("user_id") or "") != str(current_user.get("user_id") or "")
         ):
-            raise AccountLinkConflict("This Google account is linked to another local user.")
+            if not discard_guest_on_account_switch:
+                raise AccountLinkConflict(
+                    "This Google account already has data on this server. "
+                    "Confirm discarding the current guest before switching.",
+                    code="account_switch_confirmation_required",
+                )
+            if switch_guest is None:
+                raise AccountLinkConflict(
+                    "This server cannot safely discard the current guest identity.",
+                    code="account_switch_unavailable",
+                )
+            current_user = switch_guest(
+                current_user,
+                linked_user,
+                device_auth_key,
+                datetime.now(UTC).isoformat(),
+            )
+            identity_switched = True
 
         target_user = linked_user or current_user
         now = datetime.now(UTC).isoformat()
@@ -301,6 +333,7 @@ class GoogleAccountLoginService:
         )
         return {
             "status": "connected",
+            "identity_switched": identity_switched,
             "account": _public_account(account),
             "user": _public_user(target_user),
         }

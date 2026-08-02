@@ -10,8 +10,22 @@ import {
 } from "../../api/identity";
 import type { UserProfileIdentity } from "../../api/room";
 import { isDesktopWebview, openDesktopGoogleLogin } from "../../lib/desktopBridge";
+import { clearRememberedGuestProfile } from "../../lib/deviceIdentity";
 import { googleIdentityApi, loadGoogleIdentityScript } from "../../lib/googleIdentity";
+import { persistRoomGuestSession } from "../../lib/roomGuestSession";
 
+const ACCOUNT_SWITCH_WARNING =
+  "선택한 Google 계정이 이 서버에서 이미 사용 중이면 현재 게스트 프로필, 참여 상태, 복구 코드가 폐기되고 기존 계정으로 전환됩니다. 과거 채팅 기록은 남습니다. 계속할까요?";
+
+function confirmPossibleGuestDiscard(): boolean {
+  return window.confirm(ACCOUNT_SWITCH_WARNING);
+}
+
+function resetRetiredGuestBrowserState() {
+  persistRoomGuestSession(null);
+  clearRememberedGuestProfile();
+  window.location.reload();
+}
 
 export default function GoogleAccountSettings({
   identity,
@@ -59,15 +73,21 @@ export default function GoogleAccountSettings({
               setError("Google이 로그인 응답을 반환하지 않았습니다.");
               return;
             }
+            if (!confirmPossibleGuestDiscard()) return;
             setConnecting(true);
             setError("");
             void connectGoogleAccount({
               credential,
               nonce: status.google.nonce,
+              discardGuestOnAccountSwitch: true,
               identity,
             })
               .then((connected) => {
                 if (!active) return;
+                if (connected.identity_switched) {
+                  resetRetiredGuestBrowserState();
+                  return;
+                }
                 setStatus((current) =>
                   current ? { ...current, account: connected.account } : current
                 );
@@ -131,11 +151,15 @@ export default function GoogleAccountSettings({
   }, [desktopWaiting, identity.deviceToken, identity.sessionToken, status?.account]);
 
   const beginDesktopLogin = async () => {
+    if (!confirmPossibleGuestDiscard()) return;
     setConnecting(true);
     setError("");
     let stage = "서버에서 Google 로그인 링크를 만드는 중";
     try {
-      const started = await startGoogleAccountHandoff({ identity });
+      const started = await startGoogleAccountHandoff({
+        discardGuestOnAccountSwitch: true,
+        identity,
+      });
       const url = new URL(started.handoff_url, window.location.origin).toString();
       desktopLoginExpiresAt.current =
         Date.now() + Math.max(1, started.expires_in) * 1_000;
@@ -190,7 +214,6 @@ export default function GoogleAccountSettings({
               {status.account.display_name || "Google 계정"}
             </strong>
             <span className="text-[11px] font-bold text-text-muted">{status.account.email}</span>
-            <code className="truncate text-[10px] text-text-muted">{status.account.account_id}</code>
           </div>
           <div className="flex items-center justify-between gap-3 border-t border-white/5 pt-3">
             <p className="text-[10px] font-bold leading-4 text-text-muted">

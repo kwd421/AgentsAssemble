@@ -24,6 +24,7 @@ describe("GoogleAccountHandoffPage", () => {
     });
     vi.spyOn(identityApi, "completeGoogleAccountHandoff").mockResolvedValue({
       status: "connected",
+      identity_switched: false,
       account: {
         account_id: "acct-1",
         provider: "google",

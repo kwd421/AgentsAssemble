@@ -408,6 +408,155 @@ class GoogleAccountHttpTests(unittest.TestCase):
             linked.sent_json["account"]["account_id"],
         )
 
+    def test_existing_account_switch_requires_confirmation_and_retires_guest_access(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            identities = IdentityStore(Path(temp_dir) / "identity.db")
+            verifier = _Verifier()
+            service = GoogleAccountLoginService(
+                client_id="google-client.apps.googleusercontent.com",
+                verifier=verifier,
+            )
+            router = Router()
+            register_account_routes(router, google=service)
+            left_rooms: list[str] = []
+            revoked_sessions: list[tuple[str, str]] = []
+            deps = GuiDeps(
+                output_root=Path(temp_dir),
+                identity_backend=identities,
+                room_sessions=SimpleNamespace(
+                    active_summary=lambda: [],
+                    revoke_participant=lambda room_id, participant_id: revoked_sessions.append(
+                        (room_id, participant_id)
+                    )
+                ),
+                room_command_handler=lambda identity, _command: (
+                    left_rooms.append(str(identity["meeting_id"]))
+                    or {"accepted": True}
+                ),
+            )
+            remote = {
+                "host": "rooms.example.invalid",
+                "peer_host": "203.0.113.10",
+                "forwarded_proto": "https",
+            }
+
+            original_device = "existing-account-device-token"
+            original_config = self._dispatch(
+                router,
+                deps,
+                "/api/account",
+                "GET",
+                device_token=original_device,
+                **remote,
+            )
+            verifier.nonce = str(original_config.sent_json["google"]["nonce"])
+            existing_account = self._dispatch(
+                router,
+                deps,
+                "/api/account/google",
+                "POST",
+                body={"credential": "google-id-token", "nonce": verifier.nonce},
+                device_token=original_device,
+                **remote,
+            )
+
+            guest_device = "guest-account-switch-device-token"
+            guest_auth_key = device_auth_key(guest_device)
+            guest = identities.resolve_credential_user(
+                guest_auth_key,
+                user_id="guest-account-switch-user",
+                participant_id="guest-account-switch-participant",
+                display_name="Temporary Guest",
+            )
+            identities.update_user_profile(
+                str(guest["user_id"]),
+                {"display_name": "Temporary Guest", "custom_status": "temporary"},
+            )
+            identities.create_recovery_code(
+                user_id=str(guest["user_id"]),
+                token_fingerprint="guest-account-switch-recovery",
+                created_at="2026-08-03T00:00:00+00:00",
+            )
+            identities.upsert_membership(
+                {
+                    "meeting_id": "guest-room",
+                    "participant_id": str(guest["participant_id"]),
+                    "display_name": "Temporary Guest",
+                    "participant_type": "human",
+                    "status": "joined",
+                }
+            )
+
+            unconfirmed_config = self._dispatch(
+                router,
+                deps,
+                "/api/account",
+                "GET",
+                device_token=guest_device,
+                **remote,
+            )
+            verifier.nonce = str(unconfirmed_config.sent_json["google"]["nonce"])
+            unconfirmed = self._dispatch(
+                router,
+                deps,
+                "/api/account/google",
+                "POST",
+                body={"credential": "google-id-token", "nonce": verifier.nonce},
+                device_token=guest_device,
+                **remote,
+            )
+            self.assertEqual(unconfirmed.sent_error[0], HTTPStatus.CONFLICT)
+            self.assertIsNotNone(identities.get_user(str(guest["user_id"])))
+
+            confirmed_config = self._dispatch(
+                router,
+                deps,
+                "/api/account",
+                "GET",
+                device_token=guest_device,
+                **remote,
+            )
+            verifier.nonce = str(confirmed_config.sent_json["google"]["nonce"])
+            confirmed = self._dispatch(
+                router,
+                deps,
+                "/api/account/google",
+                "POST",
+                body={
+                    "credential": "google-id-token",
+                    "nonce": verifier.nonce,
+                    "discard_guest_on_account_switch": True,
+                },
+                device_token=guest_device,
+                **remote,
+            )
+
+            self.assertEqual(confirmed.sent_json["status"], "connected")
+            self.assertTrue(confirmed.sent_json["identity_switched"])
+            self.assertEqual(
+                confirmed.sent_json["user"]["user_id"],
+                existing_account.sent_json["user"]["user_id"],
+            )
+            self.assertEqual(
+                identities.user_for_credential(guest_auth_key)["user_id"],
+                existing_account.sent_json["user"]["user_id"],
+            )
+            self.assertIsNone(identities.get_user(str(guest["user_id"])))
+            self.assertIsNone(
+                identities.recovery_code_user("guest-account-switch-recovery")
+            )
+            self.assertIsNone(
+                identities.get_membership(
+                    "guest-room",
+                    str(guest["participant_id"]),
+                )
+            )
+            self.assertEqual(left_rooms, ["guest-room"])
+            self.assertEqual(
+                revoked_sessions,
+                [("guest-room", str(guest["participant_id"]))],
+            )
+
     def _dispatch(
         self,
         router: Router,

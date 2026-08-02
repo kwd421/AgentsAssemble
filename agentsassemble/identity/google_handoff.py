@@ -12,6 +12,7 @@ class GoogleLoginHandoff:
     user_id: str
     device_auth_key: str
     nonce: str
+    discard_guest_on_account_switch: bool
     expires_at: float
 
 
@@ -24,7 +25,14 @@ class GoogleLoginHandoffStore:
         self._handoffs: dict[str, GoogleLoginHandoff] = {}
         self._lock = threading.Lock()
 
-    def issue(self, *, user_id: str, device_auth_key: str, nonce: str) -> str:
+    def issue(
+        self,
+        *,
+        user_id: str,
+        device_auth_key: str,
+        nonce: str,
+        discard_guest_on_account_switch: bool = False,
+    ) -> str:
         now = time.monotonic()
         token = secrets.token_urlsafe(32)
         with self._lock:
@@ -39,6 +47,7 @@ class GoogleLoginHandoffStore:
                 user_id=user_id,
                 device_auth_key=device_auth_key,
                 nonce=nonce,
+                discard_guest_on_account_switch=discard_guest_on_account_switch,
                 expires_at=now + self.ttl_seconds,
             )
         return token

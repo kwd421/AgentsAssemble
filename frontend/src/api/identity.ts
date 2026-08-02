@@ -27,6 +27,7 @@ export type AccountStatusResponse = {
 
 export type GoogleAccountConnectResponse = {
   status: "connected";
+  identity_switched: boolean;
   account: PublicAccount;
   user: {
     user_id: string;
@@ -58,15 +59,21 @@ export function fetchAccountStatus(
 export function connectGoogleAccount({
   credential,
   nonce,
+  discardGuestOnAccountSwitch = false,
   identity = {},
 }: {
   credential: string;
   nonce: string;
+  discardGuestOnAccountSwitch?: boolean;
   identity?: UserProfileIdentity;
 }): Promise<GoogleAccountConnectResponse> {
   return postJsonWithIdentity<GoogleAccountConnectResponse>(
     "/api/account/google",
-    { credential, nonce },
+    {
+      credential,
+      nonce,
+      discard_guest_on_account_switch: discardGuestOnAccountSwitch,
+    },
     identity
   );
 }
@@ -81,13 +88,15 @@ export function disconnectGoogleAccount(
 }
 
 export function startGoogleAccountHandoff({
+  discardGuestOnAccountSwitch = false,
   identity = {},
 }: {
+  discardGuestOnAccountSwitch?: boolean;
   identity?: UserProfileIdentity;
 }): Promise<GoogleAccountHandoffStartResponse> {
   return postJsonWithIdentity<GoogleAccountHandoffStartResponse>(
     "/api/account/google/handoff/start",
-    {},
+    { discard_guest_on_account_switch: discardGuestOnAccountSwitch },
     identity
   );
 }

@@ -85,6 +85,14 @@ class IdentityBackend(Protocol):
         provider: str,
         used_at: str,
     ) -> dict[str, object]: ...
+    def retire_guest_for_existing_account(
+        self,
+        guest_user_id: str,
+        target_user_id: str,
+        *,
+        auth_key: str,
+        switched_at: str,
+    ) -> dict[str, object]: ...
     def create_recovery_code(
         self,
         *,

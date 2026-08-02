@@ -247,6 +247,80 @@ def bind_credential_to_user(
     return row
 
 
+def retire_guest_for_existing_account(
+    connection: sqlite3.Connection,
+    guest_user_id: str,
+    target_user_id: str,
+    *,
+    auth_key: object,
+    switched_at: object,
+) -> sqlite3.Row:
+    clean_guest_id = clean_room_text(guest_user_id, limit=128)
+    clean_target_id = clean_room_text(target_user_id, limit=128)
+    clean_auth_key = clean_room_text(auth_key, limit=128)
+    clean_switched_at = clean_room_text(switched_at, limit=64)
+    if (
+        not clean_guest_id
+        or not clean_target_id
+        or clean_guest_id == clean_target_id
+        or not clean_auth_key
+        or not clean_switched_at
+    ):
+        raise ValueError("Guest account switch is incomplete.")
+
+    guest = connection.execute(
+        "SELECT * FROM users WHERE user_id = ?", (clean_guest_id,)
+    ).fetchone()
+    target = connection.execute(
+        "SELECT * FROM users WHERE user_id = ?", (clean_target_id,)
+    ).fetchone()
+    if guest is None or target is None:
+        raise AccountLinkConflict("The account switch identity no longer exists.")
+    if bool(guest["is_operator"]):
+        raise AccountLinkConflict("The server operator identity cannot be discarded.")
+    if connection.execute(
+        "SELECT 1 FROM user_accounts WHERE user_id = ?", (clean_guest_id,)
+    ).fetchone() is not None:
+        raise AccountLinkConflict("A linked public account cannot be discarded as a guest.")
+    if connection.execute(
+        "SELECT 1 FROM user_accounts WHERE user_id = ?", (clean_target_id,)
+    ).fetchone() is None:
+        raise AccountLinkConflict("The destination public account is no longer linked.")
+    participant_id = str(guest["participant_id"] or "")
+    if connection.execute(
+        "SELECT 1 FROM rooms WHERE owner_id IN (?, ?) LIMIT 1",
+        (clean_guest_id, participant_id),
+    ).fetchone() is not None:
+        raise AccountLinkConflict(
+            "Transfer or delete guest-owned servers before switching accounts.",
+            code="account_switch_guest_owns_room",
+        )
+    credential = connection.execute(
+        "SELECT user_id FROM credentials WHERE auth_key = ?", (clean_auth_key,)
+    ).fetchone()
+    if credential is None or str(credential["user_id"] or "") != clean_guest_id:
+        raise AccountLinkConflict("The current device no longer belongs to this guest.")
+
+    connection.execute(
+        "UPDATE credentials SET user_id = ?, last_used_at = ? WHERE auth_key = ?",
+        (clean_target_id, clean_switched_at, clean_auth_key),
+    )
+    connection.execute(
+        "DELETE FROM memberships WHERE participant_id = ?", (participant_id,)
+    )
+    connection.execute("DELETE FROM users WHERE user_id = ?", (clean_guest_id,))
+    connection.execute(
+        "UPDATE users SET last_seen_at = ? WHERE user_id = ?",
+        (clean_switched_at, clean_target_id),
+    )
+    row = connection.execute(
+        "SELECT * FROM users WHERE user_id = ?", (clean_target_id,)
+    ).fetchone()
+    if row is None:
+        raise RuntimeError("Account destination disappeared during guest retirement.")
+    return row
+
+
 class SqliteAccountsMixin:
     def external_account_for_user(self, user_id: str) -> dict[str, object] | None:
         with closing(self._connect()) as connection:
@@ -274,6 +348,21 @@ class SqliteAccountsMixin:
     def bind_credential_to_user(self, user_id: str, **credential: object) -> dict[str, object]:
         with self._write_lock, closing(self._connect()) as connection, connection:
             row = bind_credential_to_user(connection, user_id, **credential)
+        return self._user_dict(row)
+
+    def retire_guest_for_existing_account(
+        self,
+        guest_user_id: str,
+        target_user_id: str,
+        **switch: object,
+    ) -> dict[str, object]:
+        with self._write_lock, closing(self._connect()) as connection, connection:
+            row = retire_guest_for_existing_account(
+                connection,
+                guest_user_id,
+                target_user_id,
+                **switch,
+            )
         return self._user_dict(row)
 
 

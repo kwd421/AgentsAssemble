@@ -240,6 +240,94 @@ def bind_credential_to_user(
     return user_from_row(row)
 
 
+def retire_guest_for_existing_account(
+    connection: Connection,
+    guest_user_id: str,
+    target_user_id: str,
+    *,
+    auth_key: object,
+    switched_at: object,
+) -> dict[str, object]:
+    clean_guest_id = clean_room_text(guest_user_id, limit=128)
+    clean_target_id = clean_room_text(target_user_id, limit=128)
+    clean_auth_key = clean_room_text(auth_key, limit=128)
+    clean_switched_at = clean_room_text(switched_at, limit=64)
+    if (
+        not clean_guest_id
+        or not clean_target_id
+        or clean_guest_id == clean_target_id
+        or not clean_auth_key
+        or not clean_switched_at
+    ):
+        raise ValueError("Guest account switch is incomplete.")
+    for lock_key in (
+        f"account-switch-user:{clean_guest_id}",
+        f"account-switch-user:{clean_target_id}",
+        f"account-switch-device:{clean_auth_key}",
+    ):
+        connection.execute("SELECT pg_advisory_xact_lock(hashtext(%s))", (lock_key,))
+
+    guest = connection.execute(
+        "SELECT * FROM identity_users WHERE user_id = %s FOR UPDATE",
+        (clean_guest_id,),
+    ).fetchone()
+    target = connection.execute(
+        "SELECT * FROM identity_users WHERE user_id = %s FOR UPDATE",
+        (clean_target_id,),
+    ).fetchone()
+    if guest is None or target is None:
+        raise AccountLinkConflict("The account switch identity no longer exists.")
+    if bool(guest["is_operator"]):
+        raise AccountLinkConflict("The server operator identity cannot be discarded.")
+    if connection.execute(
+        "SELECT 1 FROM identity_user_accounts WHERE user_id = %s FOR UPDATE",
+        (clean_guest_id,),
+    ).fetchone() is not None:
+        raise AccountLinkConflict("A linked public account cannot be discarded as a guest.")
+    if connection.execute(
+        "SELECT 1 FROM identity_user_accounts WHERE user_id = %s FOR UPDATE",
+        (clean_target_id,),
+    ).fetchone() is None:
+        raise AccountLinkConflict("The destination public account is no longer linked.")
+    participant_id = str(guest["participant_id"] or "")
+    if connection.execute(
+        "SELECT 1 FROM identity_room_registry WHERE owner_id IN (%s, %s) LIMIT 1",
+        (clean_guest_id, participant_id),
+    ).fetchone() is not None:
+        raise AccountLinkConflict(
+            "Transfer or delete guest-owned servers before switching accounts.",
+            code="account_switch_guest_owns_room",
+        )
+    credential = connection.execute(
+        "SELECT user_id FROM identity_credentials WHERE auth_key = %s FOR UPDATE",
+        (clean_auth_key,),
+    ).fetchone()
+    if credential is None or str(credential["user_id"] or "") != clean_guest_id:
+        raise AccountLinkConflict("The current device no longer belongs to this guest.")
+
+    connection.execute(
+        "UPDATE identity_credentials SET user_id = %s, last_used_at = %s WHERE auth_key = %s",
+        (clean_target_id, clean_switched_at, clean_auth_key),
+    )
+    connection.execute(
+        "DELETE FROM identity_memberships WHERE participant_id = %s",
+        (participant_id,),
+    )
+    connection.execute(
+        "DELETE FROM identity_users WHERE user_id = %s", (clean_guest_id,)
+    )
+    connection.execute(
+        "UPDATE identity_users SET last_seen_at = %s WHERE user_id = %s",
+        (clean_switched_at, clean_target_id),
+    )
+    row = connection.execute(
+        "SELECT * FROM identity_users WHERE user_id = %s", (clean_target_id,)
+    ).fetchone()
+    if row is None:
+        raise RuntimeError("Account destination disappeared during guest retirement.")
+    return user_from_row(row)
+
+
 class PostgresAccountsMixin:
     def external_account_for_user(self, user_id: str) -> dict[str, object] | None:
         with self._connections.connection() as connection:
@@ -264,6 +352,20 @@ class PostgresAccountsMixin:
     def bind_credential_to_user(self, user_id: str, **credential: object) -> dict[str, object]:
         with self._connections.connection() as connection, connection.transaction():
             return bind_credential_to_user(connection, user_id, **credential)
+
+    def retire_guest_for_existing_account(
+        self,
+        guest_user_id: str,
+        target_user_id: str,
+        **switch: object,
+    ) -> dict[str, object]:
+        with self._connections.connection() as connection, connection.transaction():
+            return retire_guest_for_existing_account(
+                connection,
+                guest_user_id,
+                target_user_id,
+                **switch,
+            )
 
 
 __all__ = ["PostgresAccountsMixin"]

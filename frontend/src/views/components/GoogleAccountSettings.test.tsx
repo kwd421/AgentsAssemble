@@ -7,6 +7,7 @@ import GoogleAccountSettings from "./GoogleAccountSettings";
 
 describe("GoogleAccountSettings", () => {
   beforeEach(() => {
+    vi.spyOn(window, "confirm").mockReturnValue(true);
     vi.spyOn(identityApi, "fetchAccountStatus").mockResolvedValue({
       account: null,
       google: {
@@ -18,6 +19,7 @@ describe("GoogleAccountSettings", () => {
     });
     vi.spyOn(identityApi, "connectGoogleAccount").mockResolvedValue({
       status: "connected",
+      identity_switched: false,
       account: {
         account_id: "acct-1",
         provider: "google",
@@ -76,10 +78,26 @@ describe("GoogleAccountSettings", () => {
       expect(identityApi.connectGoogleAccount).toHaveBeenCalledWith({
         credential: "jwt",
         nonce: "nonce-1",
+        discardGuestOnAccountSwitch: true,
         identity: { deviceToken: "device-token", sessionToken: "session-token" },
       });
     });
     expect(await screen.findByText("sei@example.test")).not.toBeNull();
+  });
+
+  it("does not submit Google credentials when the guest-discard warning is declined", async () => {
+    vi.mocked(window.confirm).mockReturnValue(false);
+
+    render(
+      <GoogleAccountSettings
+        identity={{ deviceToken: "device-token", sessionToken: "session-token" }}
+      />
+    );
+
+    fireEvent.click(await screen.findByRole("button", { name: "Google로 계속" }));
+
+    await waitFor(() => expect(window.confirm).toHaveBeenCalledOnce());
+    expect(identityApi.connectGoogleAccount).not.toHaveBeenCalled();
   });
 
   it("finishes a desktop system-browser handoff without embedding Google login", async () => {
@@ -129,6 +147,10 @@ describe("GoogleAccountSettings", () => {
     expect(await screen.findByText("desktop@example.test")).not.toBeNull();
     expect(invoke).toHaveBeenCalledWith("open_google_account_login", {
       url: "http://localhost:3000/#google_handoff=one-time-token",
+    });
+    expect(identityApi.startGoogleAccountHandoff).toHaveBeenCalledWith({
+      discardGuestOnAccountSwitch: true,
+      identity: { deviceToken: "device-token", sessionToken: "session-token" },
     });
   });
 

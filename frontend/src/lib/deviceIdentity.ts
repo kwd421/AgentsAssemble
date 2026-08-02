@@ -83,3 +83,11 @@ export function rememberGuestProfile(profile: RememberedGuestProfile) {
     // Best-effort: the join itself still works without remembering.
   }
 }
+
+export function clearRememberedGuestProfile() {
+  try {
+    window.localStorage.removeItem(GUEST_PROFILE_STORAGE_KEY);
+  } catch {
+    // The server-side identity switch is authoritative even when browser storage is unavailable.
+  }
+}

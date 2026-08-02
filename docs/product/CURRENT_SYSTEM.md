@@ -92,8 +92,12 @@ A public account identity is distinct from the private per-client device
 credential. Local startup and local rooms continue to work without login. A
 verified Google subject produces a stable opaque `acct-...` ID; the raw Google
 subject and ID token are not stored. Linking is an explicit account action and
-fails closed when either the external account or device credential already
-belongs to another server user, so login never silently merges two identities.
+never silently merges two identities. When the selected Google account already
+belongs to another server user, the client must warn that the current guest
+profile, recovery material, and active participation will be discarded. Only
+an explicit confirmation may move the current device to that existing account;
+past public room events remain immutable. Operator identities and guests that
+still own a server fail closed instead of being discarded.
 
 The web account surface uses Google Identity Services only when the server has
 `AGENTSASSEMBLE_GOOGLE_WEB_CLIENT_ID` configured. The backend verifies the ID
@@ -110,8 +114,10 @@ origin, while the handoff token and Google nonce expire in process memory and
 are consumed once. A previously unseen remote device may start that handoff
 with its durable device credential before it has a server user row; completion
 binds the still-unowned credential to the verified account's existing server
-user. A credential that already belongs to a different server user continues
-to fail closed rather than silently merging identities.
+user. A credential that already belongs to a guest may move only through the
+same confirmed replacement path; the server leaves active rooms, revokes room
+sessions, removes the guest's other credentials/profile/recovery state, and
+then binds the current device to the existing account in identity storage.
 
 ### Deferred plugin extension boundary
 

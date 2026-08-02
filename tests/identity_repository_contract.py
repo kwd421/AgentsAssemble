@@ -158,6 +158,78 @@ class IdentityRepositoryContractMixin:
         )
         self.assertEqual(relinked["user_id"], second["user_id"])
 
+    def test_confirmed_account_switch_retires_guest_credentials_and_recovery(self) -> None:
+        target = self.repository.resolve_credential_user(
+            "device:account-switch-target",
+            user_id="account-switch-target-user",
+            participant_id="account-switch-target-participant",
+        )
+        self.repository.connect_external_account(
+            str(target["user_id"]),
+            account_id="acct-account-switch-target",
+            provider="google",
+            subject_fingerprint="subject-account-switch-target",
+            connected_at="2026-08-03T00:00:00+00:00",
+        )
+        guest = self.repository.resolve_credential_user(
+            "device:account-switch-guest",
+            user_id="account-switch-guest-user",
+            participant_id="account-switch-guest-participant",
+        )
+        self.repository.bind_credential_to_user(
+            str(guest["user_id"]),
+            auth_key="device:account-switch-guest-secondary",
+            provider="device",
+            used_at="2026-08-03T00:01:00+00:00",
+        )
+        self.repository.update_user_profile(
+            str(guest["user_id"]),
+            {"display_name": "Temporary Guest"},
+        )
+        self.repository.create_recovery_code(
+            user_id=str(guest["user_id"]),
+            token_fingerprint="account-switch-guest-recovery",
+            created_at="2026-08-03T00:02:00+00:00",
+        )
+        self.repository.upsert_membership(
+            {
+                "meeting_id": "account-switch-room",
+                "participant_id": str(guest["participant_id"]),
+                "status": "joined",
+            }
+        )
+
+        switched = self.repository.retire_guest_for_existing_account(
+            str(guest["user_id"]),
+            str(target["user_id"]),
+            auth_key="device:account-switch-guest",
+            switched_at="2026-08-03T00:03:00+00:00",
+        )
+
+        self.assertEqual(switched["user_id"], target["user_id"])
+        self.assertEqual(
+            self.repository.user_for_credential("device:account-switch-guest")[
+                "user_id"
+            ],
+            target["user_id"],
+        )
+        self.assertIsNone(
+            self.repository.user_for_credential(
+                "device:account-switch-guest-secondary"
+            )
+        )
+        self.assertIsNone(self.repository.get_user(str(guest["user_id"])))
+        self.assertIsNone(self.repository.user_profile(str(guest["user_id"])))
+        self.assertIsNone(
+            self.repository.recovery_code_user("account-switch-guest-recovery")
+        )
+        self.assertIsNone(
+            self.repository.get_membership(
+                "account-switch-room",
+                str(guest["participant_id"]),
+            )
+        )
+
     def test_operator_claim_pairing_and_consumption_share_one_identity(self) -> None:
         claimed = self.repository.claim_local_operator_credential(
             "device:operator-alpha",
