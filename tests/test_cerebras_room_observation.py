@@ -118,7 +118,11 @@ class CerebrasRoomObservationTests(unittest.TestCase):
             )
             runtime.send_room_observation("room.wake cerebras-turn")
 
-            result = runtime.read_output(timeout_seconds=2)
+            activities: list[dict[str, object]] = []
+            result = runtime.read_output(
+                timeout_seconds=2,
+                on_activity=activities.append,
+            )
             receipt = portal.observation_receipt("cerebras-turn")
             results = portal.observation_results("cerebras-turn")
             publication = portal.consume_publication("cerebras-turn")
@@ -126,6 +130,19 @@ class CerebrasRoomObservationTests(unittest.TestCase):
         self.assertEqual(result["content"], "done")
         self.assertEqual(receipt, 5)
         self.assertEqual(publication, "CEREBRAS_ROOM_OK")
+        self.assertEqual(
+            [
+                (activity["status"], activity["activity_title"], activity.get("activity_detail"))
+                for activity in activities
+                if activity["activity_title"] in {"주사위 굴리기", "무작위 선택"}
+            ],
+            [
+                ("running", "주사위 굴리기", "1d6"),
+                ("completed", "주사위 굴리기", "1d6"),
+                ("running", "무작위 선택", "2개 선택지"),
+                ("completed", "무작위 선택", "2개 선택지"),
+            ],
+        )
         self.assertEqual(
             [item["operation"] for item in results],
             ["roll_dice", "choose_random"],
@@ -140,6 +157,54 @@ class CerebrasRoomObservationTests(unittest.TestCase):
                 "cache_miss_input_tokens": 0,
                 "reasoning_tokens": 0,
             },
+        )
+
+    def test_room_tool_failure_terminates_the_visible_activity(self) -> None:
+        response = _stream(
+            {
+                "model": "gpt-oss-120b",
+                "choices": [
+                    {
+                        "delta": {
+                            "tool_calls": [
+                                {
+                                    "index": 0,
+                                    "id": "call-invalid-choice",
+                                    "type": "function",
+                                    "function": {
+                                        "name": "choose_random",
+                                        "arguments": json.dumps({"options": "not-a-list"}),
+                                    },
+                                }
+                            ]
+                        },
+                        "finish_reason": "tool_calls",
+                    }
+                ],
+            }
+        )
+        with tempfile.TemporaryDirectory() as temp_dir:
+            portal = RoomPortal(Path(temp_dir) / "portal", participant_id="cerebras")
+            portal.prepare()
+            portal.begin_observation("cerebras-turn", input_up_to_seq=1)
+            runtime = CerebrasApiRuntime(
+                "cerebras",
+                api_key="csk-private",
+                opener=lambda *args, **kwargs: response,
+                room_portal=portal,
+            )
+            runtime.send_room_observation("room.wake cerebras-turn")
+            activities: list[dict[str, object]] = []
+
+            with self.assertRaisesRegex(RuntimeError, "options must be a list"):
+                runtime.read_output(
+                    timeout_seconds=2,
+                    on_activity=activities.append,
+                )
+
+        self.assertEqual(
+            [activity["status"] for activity in activities],
+            ["running", "failed"],
         )
 
 

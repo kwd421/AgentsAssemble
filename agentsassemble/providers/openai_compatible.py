@@ -207,21 +207,25 @@ class OpenAICompatibleApiRuntime:
                         else ""
                     )
                     activity_id = clean_room_text(tool_call.get("id"), limit=128)
-                    activity_title = _room_tool_title(tool_name)
+                    activity_title, activity_detail = _room_tool_activity(tool_call)
+                    activity_fields = {
+                        "category": "tool",
+                        "activity_id": activity_id,
+                        "activity_title": activity_title,
+                        "activity_detail": activity_detail,
+                        "content": activity_detail or activity_title,
+                    }
                     if on_activity is not None:
-                        on_activity(
-                            {
-                                "category": "tool",
-                                "status": "running",
-                                "activity_id": activity_id,
-                                "activity_title": activity_title,
-                                "content": activity_title,
-                            }
+                        on_activity({**activity_fields, "status": "running"})
+                    try:
+                        executed_name, tool_result = execute_room_tool(
+                            self._room_portal,
+                            tool_call,
                         )
-                    executed_name, tool_result = execute_room_tool(
-                        self._room_portal,
-                        tool_call,
-                    )
+                    except Exception:
+                        if on_activity is not None:
+                            on_activity({**activity_fields, "status": "failed"})
+                        raise
                     if executed_name == "publish_message":
                         room_publication_completed = True
                     messages.append(
@@ -233,15 +237,7 @@ class OpenAICompatibleApiRuntime:
                         }
                     )
                     if on_activity is not None:
-                        on_activity(
-                            {
-                                "category": "tool",
-                                "status": "completed",
-                                "activity_id": activity_id,
-                                "activity_title": _room_tool_title(executed_name),
-                                "content": _room_tool_title(executed_name),
-                            }
-                        )
+                        on_activity({**activity_fields, "status": "completed"})
                 if time.monotonic() >= deadline:
                     raise TimeoutError(
                         f"{self.provider_name} runtime timed out after {timeout_seconds} seconds."
@@ -493,9 +489,37 @@ def _room_tool_title(tool_name: object) -> str:
         "publish_message": "메시지 공개",
         "decline_to_speak": "발언 건너뛰기",
         "roll_dice": "주사위 굴리기",
+        "choose_random": "무작위 선택",
         "create_vote": "투표 만들기",
         "cast_vote": "투표하기",
     }.get(value, value or "방 도구")
+
+
+def _room_tool_activity(
+    tool_call: dict[str, object],
+) -> tuple[str, str]:
+    function = tool_call.get("function")
+    if not isinstance(function, dict):
+        return "방 도구", ""
+    name = clean_room_text(function.get("name"), limit=120)
+    title = _room_tool_title(name)
+    try:
+        arguments = json.loads(function.get("arguments") or "{}")
+    except (TypeError, json.JSONDecodeError):
+        return title, ""
+    if not isinstance(arguments, dict):
+        return title, ""
+    if name == "roll_dice":
+        return title, clean_room_text(arguments.get("notation"), limit=64)
+    if name == "choose_random":
+        options = arguments.get("options")
+        if isinstance(options, list):
+            return title, f"{len(options)}개 선택지"
+    if name == "publish_message":
+        target = clean_room_text(arguments.get("next_agent_id"), limit=128)
+        if target:
+            return title, f"@{target}에게 전달"
+    return title, ""
 
 
 def _bounded_messages(
