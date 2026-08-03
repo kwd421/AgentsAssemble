@@ -51,7 +51,11 @@ export function providerControlOptionHasDescription(option: ProviderControlOptio
 }
 
 export function providerControlOptionAccessibleName(option: ProviderControlOption): string {
-  return [option.label, ...optionBadges(option)].join(" ");
+  const description =
+    typeof option.metadata?.description === "string"
+      ? option.metadata.description.trim()
+      : "";
+  return [option.label, ...optionBadges(option), description].filter(Boolean).join(" ");
 }
 
 function optionBadges(option: ProviderControlOption): string[] {

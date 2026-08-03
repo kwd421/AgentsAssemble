@@ -460,9 +460,12 @@ def _grok_command(
     effort: str,
     _service_tier: str,
     _variant: str,
-    _permission_mode: str,
+    permission_mode: str,
 ) -> tuple[str, ...]:
-    command = ["grok", "agent"]
+    command = ["grok"]
+    if permission_mode == "workspace_write":
+        command.extend(("--permission-mode", "acceptEdits"))
+    command.append("agent")
     if model:
         command.extend(("--model", model))
     if effort:

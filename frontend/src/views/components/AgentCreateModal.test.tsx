@@ -632,7 +632,9 @@ describe("AgentCreateModal", () => {
       screen.getByRole("menuitemradio", { name: "Claude Haiku 4.5" })
     ).toBeTruthy();
     expect(screen.queryByRole("menuitem", { name: "Haiku" })).toBeNull();
-    await userEvent.click(screen.getByRole("menuitem", { name: "Sonnet" }));
+    await userEvent.click(
+      screen.getByRole("menuitem", { name: "Sonnet 제공사, 2개 모델" })
+    );
     expect(
       within(screen.getByRole("listbox", { name: "Sonnet 모델" })).getByRole(
         "option",
@@ -657,7 +659,9 @@ describe("AgentCreateModal", () => {
     await userEvent.click(screen.getByRole("listitem", { name: "OpenCode" }));
     await userEvent.click(screen.getByRole("combobox", { name: "모델" }));
 
-    await userEvent.click(screen.getByRole("menuitem", { name: "Zen" }));
+    await userEvent.click(
+      screen.getByRole("menuitem", { name: "Zen 제공사, 2개 모델" })
+    );
     const zenModels = screen.getByRole("listbox", { name: "Zen 모델" });
     const freeModel = within(zenModels).getByRole("option", {
         name: "DeepSeek V4 Flash Free",
@@ -665,8 +669,10 @@ describe("AgentCreateModal", () => {
     expect(freeModel).toBeTruthy();
     expect(within(freeModel).getByText("Free")).toBeTruthy();
 
-    await userEvent.click(screen.getByRole("button", { name: "모델 분류로 돌아가기" }));
-    await userEvent.click(screen.getByRole("menuitem", { name: "Go" }));
+    await userEvent.click(screen.getByRole("button", { name: "모델 제공사로 돌아가기" }));
+    await userEvent.click(
+      screen.getByRole("menuitem", { name: "Go 제공사, 2개 모델" })
+    );
     expect(
       within(screen.getByRole("listbox", { name: "Go 모델" })).getByRole(
         "option",
@@ -745,9 +751,7 @@ describe("AgentCreateModal", () => {
     expect(
       (screen.getByRole("switch", { name: "응답 속도" }) as HTMLButtonElement).disabled
     ).toBe(true);
-    expect(
-      (screen.getByRole("combobox", { name: "권한" }) as HTMLButtonElement).disabled
-    ).toBe(true);
+    expect(screen.queryByRole("combobox", { name: "권한" })).toBeNull();
     expect(screen.queryByRole("button", { name: "폴더 선택" })).toBeNull();
     await userEvent.click(primaryActionButton());
 

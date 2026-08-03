@@ -34,8 +34,14 @@
   border: 1px solid var(--color-panel-separator);
   border-radius: 8px;
   background: #1b1c20;
-  padding: 4px;
+  /* The scrollbar already occupies the trailing edge. Keeping another 4px of
+     padding there made selected rows look clipped short of the panel border. */
+  padding: 4px 0 4px 4px;
   box-shadow: 0 16px 44px rgba(0, 0, 0, 0.48);
+}
+
+.dc-agent-select-menu::-webkit-scrollbar {
+  width: 5px;
 }
 
 .dc-agent-select-menu button {
@@ -302,4 +308,53 @@
   color: var(--color-text-muted);
   font-size: 12px;
   text-align: center;
+}
+
+.dc-agent-model-details-popover {
+  position: fixed;
+  z-index: 240;
+  display: grid;
+  gap: 8px;
+  border: 1px solid var(--color-panel-separator);
+  border-radius: 8px;
+  background: #16171a;
+  box-shadow: 0 14px 36px rgba(0, 0, 0, 0.42);
+  padding: 10px 11px;
+  color: var(--color-text-primary);
+  pointer-events: none;
+}
+
+.dc-agent-model-details-popover > strong {
+  font-size: 12px;
+  font-weight: 850;
+}
+
+.dc-agent-model-details-popover dl {
+  display: grid;
+  gap: 4px;
+  margin: 0;
+}
+
+.dc-agent-model-details-popover dl > div {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12px;
+  min-height: 18px;
+}
+
+.dc-agent-model-details-popover dt,
+.dc-agent-model-details-popover dd {
+  margin: 0;
+  font-size: 10px;
+}
+
+.dc-agent-model-details-popover dt {
+  color: var(--color-text-muted);
+}
+
+.dc-agent-model-details-popover dd {
+  color: var(--color-text-secondary);
+  font-weight: 750;
+  text-align: right;
 }

@@ -148,6 +148,23 @@ class NativeCliProviderCatalogTests(unittest.TestCase):
         self.assertEqual(spec.command[mode_index + 1], "acceptEdits")
         self.assertNotIn("plan", spec.command)
 
+    def test_grok_workspace_write_uses_native_accept_edits_mode(self):
+        definition = native_cli_provider_definition("grok")
+        self.assertIsNotNone(definition)
+
+        spec = definition.make_selected_spec(
+            agent_id="grok-write",
+            display_name="Grok Write",
+            cwd=".",
+            model="grok-4.5",
+            reasoning_effort="medium",
+            permission_mode="workspace_write",
+        )
+
+        mode_index = spec.command.index("--permission-mode")
+        self.assertEqual(spec.command[mode_index + 1], "acceptEdits")
+        self.assertEqual(spec.command[-1], "stdio")
+
     def test_create_payload_aliases_use_the_same_catalog_definition(self):
         antigravity = native_cli_provider_spec_from_payload(
             {

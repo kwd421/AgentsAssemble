@@ -110,6 +110,43 @@ describe("ProviderControlSelect", () => {
     expect(within(results).getByRole("option", { name: /Vision Reasoning/ })).toBeTruthy();
     expect(within(results).queryByRole("option", { name: "Text Only" })).toBeNull();
   });
+
+  it("shows verified model limits and capabilities beside the hovered model", async () => {
+    render(
+      <ProviderControlSelect
+        label="모델"
+        options={[
+          {
+            value: "vendor/reasoner",
+            label: "Reasoner",
+            metadata: {
+              context_length: 128_000,
+              max_output_tokens: 16_384,
+              input_price_per_million: "0.55",
+              output_price_per_million: "2.19",
+              reasoning: true,
+              vision: false,
+            },
+          },
+          { value: "vendor/other", label: "Other" },
+        ]}
+        value="vendor/other"
+        onChange={vi.fn()}
+      />
+    );
+
+    await userEvent.click(screen.getByRole("combobox", { name: "모델" }));
+    await userEvent.hover(screen.getByRole("option", { name: /Reasoner/ }));
+
+    const detail = document.querySelector(".dc-agent-model-details-popover");
+    expect(detail).toBeTruthy();
+    expect(within(detail as HTMLElement).getByText("128,000 tokens")).toBeTruthy();
+    expect(within(detail as HTMLElement).getByText("16,384 tokens")).toBeTruthy();
+    expect(within(detail as HTMLElement).getByText("$0.55/M")).toBeTruthy();
+    expect(within(detail as HTMLElement).getByText("$2.19/M")).toBeTruthy();
+    expect(within(detail as HTMLElement).getAllByText("지원")).toHaveLength(1);
+    expect(within(detail as HTMLElement).getAllByText("미지원")).toHaveLength(1);
+  });
 });
 
 describe("whole-row menu sizing", () => {

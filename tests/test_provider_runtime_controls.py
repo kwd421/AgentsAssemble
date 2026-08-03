@@ -605,7 +605,7 @@ class ProviderRuntimeControlTests(unittest.TestCase):
                     "unsupported_model_effort_combination",
                 )
 
-    def test_grok_catalog_exposes_its_enforced_read_only_permission(self):
+    def test_grok_catalog_applies_the_selected_workspace_permission(self):
         catalog = ProviderCapabilityCatalog(
             runner=lambda _command, _timeout: (
                 0,
@@ -621,13 +621,14 @@ class ProviderRuntimeControlTests(unittest.TestCase):
             for provider in snapshot["providers"]
             if provider["id"] == "grok"
         )
-        self.assertEqual(
-            grok["fixed_values"],
-            {"permission_mode": "meeting_read_only"},
+        permission = next(
+            control
+            for control in grok["controls"]
+            if control["key"] == "permission_mode"
         )
-        self.assertNotIn(
-            "permission_mode",
-            {control["key"] for control in grok["controls"]},
+        self.assertEqual(
+            [option["value"] for option in permission["options"]],
+            ["meeting_read_only", "workspace_write"],
         )
 
         selected = catalog.validate_selection(
@@ -636,21 +637,10 @@ class ProviderRuntimeControlTests(unittest.TestCase):
             values={
                 "model": "grok-4.5",
                 "reasoning_effort": "medium",
+                "permission_mode": "workspace_write",
             },
         )
-        self.assertEqual(selected.permission_mode, "meeting_read_only")
-
-        with self.assertRaises(ProviderCatalogSelectionError) as rejected:
-            catalog.validate_selection(
-                catalog_revision=str(snapshot["catalog_revision"]),
-                provider_id="grok",
-                values={
-                    "model": "grok-4.5",
-                    "reasoning_effort": "medium",
-                    "permission_mode": "workspace_write",
-                },
-            )
-        self.assertEqual(rejected.exception.code, "unsupported_provider_option")
+        self.assertEqual(selected.permission_mode, "workspace_write")
 
     def test_claude_catalog_exposes_only_exact_models(self):
         def runner(command: list[str], _timeout: float):

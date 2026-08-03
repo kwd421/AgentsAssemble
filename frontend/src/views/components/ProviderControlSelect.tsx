@@ -18,6 +18,7 @@ import ProviderControlOptionContent, {
   providerControlOptionEffect,
   providerControlOptionHasDescription,
 } from "./ProviderControlOptionContent";
+import { useProviderModelDetails } from "./ProviderModelDetailsPopover";
 import "./ProviderControlSelect.css";
 
 export default function ProviderControlSelect({
@@ -49,6 +50,7 @@ export default function ProviderControlSelect({
   const hasOnlyResolvedOption = options.length === 1 && Boolean(selectedOption);
   const controlDisabled = disabled || options.length === 0 || hasOnlyResolvedOption;
   const isModelControl = label === "모델";
+  const modelDetails = useProviderModelDetails(isModelControl && open);
   const showModelTools = isModelControl && options.length > 1;
   const hasFreeOptions = options.some(isFreeProviderOption);
   const hasVisionOptions = options.some((option) => option.metadata?.vision === true);
@@ -149,7 +151,8 @@ export default function ProviderControlSelect({
       return;
     }
     const rect = buttonRef.current.getBoundingClientRect();
-    const optionHeight = options.some(providerControlOptionHasDescription) ? 50 : 36;
+    const optionHeight =
+      !isModelControl && options.some(providerControlOptionHasDescription) ? 50 : 36;
     const estimatedHeight = Math.min(
       menuHeightCap(optionHeight) + (showModelTools ? 90 : 0),
       (showGroupLabels ? optionGroups.length * 36 : filteredOptions.length * optionHeight) +
@@ -294,6 +297,7 @@ export default function ProviderControlSelect({
                       ? `${label} 분류`
                       : label
                 }
+                onScroll={modelDetails.hide}
               >
               {filteredOptions.length === 0 ? (
                 <p className="dc-agent-model-empty" role="status">조건에 맞는 모델이 없습니다.</p>
@@ -309,9 +313,10 @@ export default function ProviderControlSelect({
                         aria-selected={selected}
                         data-selected={selected}
                         data-effect={providerControlOptionEffect(option)}
+                        {...modelDetails.bind(option)}
                         onClick={() => selectOption(option)}
                       >
-                        <ProviderControlOptionContent option={option} showDescription />
+                        <ProviderControlOptionContent option={option} showDescription={!isModelControl} />
                         {selected && <Check size={15} aria-hidden="true" />}
                       </button>
                     );
@@ -330,9 +335,10 @@ export default function ProviderControlSelect({
                           aria-checked={selected}
                           data-selected={selected}
                           data-effect={providerControlOptionEffect(option)}
+                          {...modelDetails.bind(option)}
                           onClick={() => selectOption(option)}
                         >
-                          <ProviderControlOptionContent option={option} showDescription contextBadge="모델" />
+                          <ProviderControlOptionContent option={option} showDescription={!isModelControl} contextBadge="모델" />
                           {selected && <Check size={15} aria-hidden="true" />}
                         </button>
                       );
@@ -374,9 +380,10 @@ export default function ProviderControlSelect({
                       aria-selected={selected}
                       data-selected={selected}
                       data-effect={providerControlOptionEffect(option)}
+                      {...modelDetails.bind(option)}
                       onClick={() => selectOption(option)}
                     >
-                      <ProviderControlOptionContent option={option} showDescription />
+                      <ProviderControlOptionContent option={option} showDescription={!isModelControl} />
                       {selected && <Check size={15} aria-hidden="true" />}
                     </button>
                   );
@@ -385,6 +392,7 @@ export default function ProviderControlSelect({
           </div>,
           document.body
         )}
+      {modelDetails.popover}
     </div>
   );
 }

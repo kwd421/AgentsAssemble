@@ -18,13 +18,6 @@ const PASSIVE_STANDARD_CONTROLS: Record<string, ProviderControl> = {
     options: [{ value: "", label: "기본" }],
     default_value: "",
   },
-  permission_mode: {
-    key: "permission_mode",
-    label: "권한",
-    kind: "select",
-    options: [{ value: "meeting_read_only", label: "읽기 전용" }],
-    default_value: "meeting_read_only",
-  },
 };
 
 export function displayProviderControls(

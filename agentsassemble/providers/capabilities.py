@@ -486,8 +486,6 @@ class ProviderCapabilityCatalog:
                 "controls": [],
             }
         )
-        if definition.provider_id == "grok":
-            base["fixed_values"] = {"permission_mode": "meeting_read_only"}
         if not resolved:
             base["discovery_error_code"] = "command_missing"
             base["discovery_error"] = "configured command missing"
@@ -969,6 +967,10 @@ def _permission_control(provider_id: str = "") -> dict[str, object]:
             "meeting_read_only": "OpenCode · permission deny",
             "workspace_write": "OpenCode · permission ask",
         },
+        "grok": {
+            "meeting_read_only": "Grok · approval reject / RoomPortal only",
+            "workspace_write": "Grok · permission acceptEdits",
+        },
     }.get(provider_id, {})
 
     def permission_option(value: str, label: str) -> dict[str, object]:
@@ -1186,6 +1188,7 @@ def _grok_controls(output: str) -> list[dict[str, object]]:
             default_match.group(1) if default_match else models[0],
         ),
         _control("reasoning_effort", "추론 강도", [_option(value) for value in ("low", "medium", "high")], "medium"),
+        _permission_control("grok"),
     ]
 
 
