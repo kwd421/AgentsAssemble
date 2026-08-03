@@ -4,6 +4,7 @@ import os
 from pathlib import Path
 from typing import TYPE_CHECKING
 
+from agentsassemble.providers.antigravity_hooks import AntigravityHookRuntime
 from agentsassemble.providers.codex_app_server_live import CodexAppServerLiveRuntime
 from agentsassemble.providers.cursor_room_portal import CursorRoomPortalRuntime
 from agentsassemble.providers.grok_acp import GrokAcpRuntime
@@ -159,36 +160,44 @@ def runtime_from_config(
         ("antigravity_live_session", "pty"),
         ("antigravity_live_session", "conpty"),
     }
-    terminal_interaction_policy = (
-        AntigravityRoomPortalInteraction()
-        if antigravity_runtime
-        else None
-    )
-    return runtime_class(
-        config.participant_id,
-        list(config.command),
-        cwd=config.cwd,
-        env=environment,
-        idle_quiet_seconds=config.quiet_seconds,
-        input_mode=config.input_mode,
-        submit_newline=config.submit_newline,
-        submit_delay_seconds=config.submit_delay_seconds,
-        terminal_rows=config.terminal_rows,
-        terminal_columns=config.terminal_columns,
-        startup_quiet_seconds=config.startup_quiet_seconds,
-        startup_timeout_seconds=config.startup_timeout_seconds,
-        startup_accept_contains=config.startup_accept_contains,
-        startup_accept_keys=config.startup_accept_keys,
-        startup_ready_contains=config.startup_ready_contains,
-        startup_input=config.startup_input,
-        terminal_interaction_policy=terminal_interaction_policy,
-        profile_settings={
+    runtime_kwargs = {
+        "env": environment,
+        "idle_quiet_seconds": config.quiet_seconds,
+        "input_mode": config.input_mode,
+        "submit_newline": config.submit_newline,
+        "submit_delay_seconds": config.submit_delay_seconds,
+        "terminal_rows": config.terminal_rows,
+        "terminal_columns": config.terminal_columns,
+        "startup_quiet_seconds": config.startup_quiet_seconds,
+        "startup_timeout_seconds": config.startup_timeout_seconds,
+        "startup_accept_contains": config.startup_accept_contains,
+        "startup_accept_keys": config.startup_accept_keys,
+        "startup_ready_contains": config.startup_ready_contains,
+        "startup_input": config.startup_input,
+        "terminal_interaction_policy": (
+            AntigravityRoomPortalInteraction() if antigravity_runtime else None
+        ),
+        "profile_settings": {
             "model": config.model,
             "reasoning_effort": config.reasoning_effort,
             "service_tier": config.service_tier,
             "variant": config.variant,
             "permission_mode": config.permission_mode,
         },
+    }
+    if antigravity_runtime:
+        return AntigravityHookRuntime(
+            config.participant_id,
+            list(config.command),
+            cwd=config.cwd,
+            terminal_runtime_factory=runtime_class,
+            **runtime_kwargs,
+        )
+    return runtime_class(
+        config.participant_id,
+        list(config.command),
+        cwd=config.cwd,
+        **runtime_kwargs,
     )
 
 

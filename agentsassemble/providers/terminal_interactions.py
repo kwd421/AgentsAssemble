@@ -49,7 +49,7 @@ class AntigravityRoomPortalInteraction:
         if not command or command in self._handled_commands:
             return b""
         self._handled_commands.add(command)
-        if not _is_safe_room_portal_command(command):
+        if not is_safe_room_portal_command(command):
             self._rejection_count += 1
             raise AdapterContractError(
                 "Antigravity requested an unapproved terminal command during room observation.",
@@ -81,7 +81,7 @@ def _latest_permission_command(output: bytes) -> str:
     return ""
 
 
-def _is_safe_room_portal_command(command: str) -> bool:
+def is_safe_room_portal_command(command: str) -> bool:
     # A newline is a shell command separator. Never normalize it into a space
     # before the allow-list sees it, even when the leading line is safe.
     if "\r" in command or "\n" in command:
@@ -188,5 +188,6 @@ def _split_shell_command(command: str) -> list[str]:
 __all__ = [
     "AntigravityRoomPortalInteraction",
     "TerminalInteractionPolicy",
+    "is_safe_room_portal_command",
     "is_safe_room_roll_command",
 ]

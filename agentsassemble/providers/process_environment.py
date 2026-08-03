@@ -31,6 +31,12 @@ _PLATFORM_ENV_KEYS = frozenset(
     }
 )
 _SECRET_MARKERS = ("API_KEY", "TOKEN", "SECRET", "PASSWORD", "CREDENTIAL", "AUTH_KEY")
+_PROVIDER_INTERNAL_ENV_KEYS = frozenset(
+    {
+        "AGENTSASSEMBLE_ANTIGRAVITY_HOOK_ENDPOINT",
+        "AGENTSASSEMBLE_ANTIGRAVITY_HOOK_TOKEN",
+    }
+)
 
 
 def sanitized_child_environment(
@@ -61,6 +67,10 @@ def sanitized_provider_environment(
     environment = sanitized_child_environment(source=source)
     for key, value in dict(extra or {}).items():
         upper = str(key or "").upper()
+        if upper in _PROVIDER_INTERNAL_ENV_KEYS:
+            if value is not None:
+                environment[upper] = str(value)
+            continue
         if upper.startswith("AGENTSASSEMBLE_") or any(marker in upper for marker in _SECRET_MARKERS):
             continue
         if key and value is not None:
