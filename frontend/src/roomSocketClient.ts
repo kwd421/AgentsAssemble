@@ -21,7 +21,7 @@ export interface RoomSocketHandlers {
   onLobby?: (events: LobbyEvent[]) => void;
   onRoster?: (members: RoomMember[]) => void;
   onSideChat?: (events: SideChatEvent[]) => void;
-  onRoomSnapshot?: (snapshot: RoomSocketSnapshot) => void;
+  onRoomSnapshot?: (snapshot: RoomSocketSnapshot) => boolean | void;
   onProviderCatalog?: (catalog: ProviderCatalogSnapshot) => void;
   onRoomEvents?: (events: RoomEvent[]) => void;
   onRoomDeleted?: (roomId: string, roomName: string) => void;
@@ -282,8 +282,9 @@ export function openRoomSocket(
     }
     if (msg.op === "snapshot" && msg.stream === "room_events") {
       const snapshot = msg as unknown as RoomSocketSnapshot;
+      const accepted = handlers.onRoomSnapshot?.(snapshot);
+      if (accepted === false) return;
       lastSeq = Math.max(lastSeq, Number(snapshot.last_seq || 0));
-      handlers.onRoomSnapshot?.(snapshot);
       return;
     }
     if (msg.op === "provider_catalog_updated" && msg.catalog) {

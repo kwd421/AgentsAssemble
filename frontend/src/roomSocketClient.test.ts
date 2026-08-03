@@ -261,6 +261,60 @@ describe("canonical room socket client", () => {
     handle.close();
   });
 
+  it("does not advance the durable cursor when the room projection rejects a snapshot", async () => {
+    vi.useFakeTimers();
+    const sockets: FakeWebSocket[] = [];
+    let handle: ReturnType<typeof openRoomSocket>;
+    handle = openRoomSocket(
+      { kind: "host", meetingId: "general" },
+      ["room_events"],
+      {
+        onRoomSnapshot: () => {
+          handle.resync?.();
+          return false;
+        },
+      },
+      {
+        getTicket: async () => `ticket-${sockets.length + 1}`,
+        createSocket: () => {
+          const socket = new FakeWebSocket();
+          sockets.push(socket);
+          return socket as unknown as WebSocket;
+        },
+      }
+    );
+    await flushPromises();
+    sockets[0].open();
+    sockets[0].receive({
+      op: "snapshot",
+      stream: "room_events",
+      room: { room_id: "general" },
+      room_settings: {},
+      participants: [],
+      agent_sessions: [],
+      active_turns: [],
+      events: [],
+      oldest_seq: 0,
+      last_seq: 42,
+      has_more_before: false,
+      resume_gap: false,
+      snapshot_mode: "initial",
+      provider_catalog: { status: "ready", catalog_revision: "", providers: [] },
+      available_providers: [],
+      capabilities: {},
+    });
+
+    await vi.advanceTimersByTimeAsync(500);
+    await flushPromises();
+    sockets[1].open();
+    expect(sockets[1].sent[0]).toEqual({
+      op: "subscribe",
+      streams: ["room_events"],
+      resume_from_seq: 0,
+    });
+    handle.close();
+  });
+
   it("closes permanently when the server deletes the room", async () => {
     vi.useFakeTimers();
     const sockets: FakeWebSocket[] = [];

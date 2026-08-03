@@ -334,7 +334,7 @@ export function useCanonicalRoom(options: UseCanonicalRoomOptions) {
     setConnectionState("connecting");
     const currentSocket = openSocket(auth, ["room_events", "side_chat"], {
       onRoomSnapshot: (snapshot) => {
-        if (!connectionIsCurrent()) return;
+        if (!connectionIsCurrent()) return false;
         const snapshotSettings = normalizeRoomGlobalSettings(
           snapshot.room_settings,
           roomId
@@ -347,7 +347,7 @@ export function useCanonicalRoom(options: UseCanonicalRoomOptions) {
           setLastError(error);
           callbacksRef.current.onError?.(error);
           currentSocket.resync?.();
-          return;
+          return false;
         }
         roomSettingsSeqRef.current = {
           ...roomSettingsSeqRef.current,
@@ -408,6 +408,7 @@ export function useCanonicalRoom(options: UseCanonicalRoomOptions) {
         }));
         setMembershipRevision((previous) => previous + 1);
         setLastError(null);
+        return true;
       },
       onRoomEvents: (events) => {
         if (connectionIsCurrent()) applyEvents(roomId, events);
