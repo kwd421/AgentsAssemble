@@ -11,6 +11,8 @@ type HastNode = {
   children?: HastNode[];
 };
 
+export type MentionLabels = Readonly<Record<string, string>>;
+
 const ROOM_REFERENCE_PATTERN = /(<@[^>\r\n]{1,80}>|@[^\s@#:`*~<>]+|#[^\s@#:`*~<>]+)/gu;
 
 function previewTitleForUrl(url: URL) {
@@ -49,19 +51,24 @@ function linkPreviewsForText(text: string) {
     .filter((preview): preview is { url: string; host: string; title: string } => Boolean(preview));
 }
 
-function roomReferenceNodes(value: string): HastNode[] {
+function roomReferenceNodes(value: string, mentionLabels: MentionLabels): HastNode[] {
   const nodes: HastNode[] = [];
   let cursor = 0;
   for (const match of value.matchAll(ROOM_REFERENCE_PATTERN)) {
     const index = match.index ?? 0;
     if (index > cursor) nodes.push({ type: "text", value: value.slice(cursor, index) });
     const raw = match[0];
-    const mention = raw.startsWith("@");
+    const structuredMention = raw.startsWith("<@");
+    const mention = structuredMention || raw.startsWith("@");
+    const mentionToken = structuredMention ? raw.slice(2, -1).trim() : "";
+    const mentionLabel = structuredMention
+      ? mentionLabels[mentionToken] || mentionToken
+      : raw.slice(1);
     nodes.push({
       type: "element",
       tagName: "span",
       properties: { className: [mention ? "dc-mention" : "dc-channel-mention"] },
-      children: [{ type: "text", value: raw.startsWith("<@") ? `@${raw.slice(2, -1)}` : raw }],
+      children: [{ type: "text", value: mention ? `@${mentionLabel}` : raw }],
     });
     cursor = index + raw.length;
   }
@@ -69,7 +76,7 @@ function roomReferenceNodes(value: string): HastNode[] {
   return nodes.length ? nodes : [{ type: "text", value }];
 }
 
-function rehypeRoomReferences() {
+function rehypeRoomReferences({ mentionLabels = {} }: { mentionLabels?: MentionLabels } = {}) {
   return (tree: HastNode) => {
     const visit = (node: HastNode, blocked = false) => {
       const nextBlocked = blocked || ["a", "code", "pre"].includes(node.tagName || "");
@@ -78,7 +85,7 @@ function rehypeRoomReferences() {
       node.children.forEach((child) => {
         if (child.type === "text" && child.value && ROOM_REFERENCE_PATTERN.test(child.value)) {
           ROOM_REFERENCE_PATTERN.lastIndex = 0;
-          nextChildren.push(...roomReferenceNodes(child.value));
+          nextChildren.push(...roomReferenceNodes(child.value, mentionLabels));
         } else {
           ROOM_REFERENCE_PATTERN.lastIndex = 0;
           visit(child, nextBlocked);
@@ -91,14 +98,20 @@ function rehypeRoomReferences() {
   };
 }
 
-export default function DiscordText({ text }: { text: string }) {
+export default function DiscordText({
+  text,
+  mentionLabels = {},
+}: {
+  text: string;
+  mentionLabels?: MentionLabels;
+}) {
   const previews = linkPreviewsForText(text);
   return (
     <>
       <div className="dc-markdown">
         <ReactMarkdown
           remarkPlugins={[[remarkGfm, { singleTilde: false }]]}
-          rehypePlugins={[rehypeRoomReferences]}
+          rehypePlugins={[[rehypeRoomReferences, { mentionLabels }]]}
           skipHtml
           components={{
             a: ({ children, href }) => (

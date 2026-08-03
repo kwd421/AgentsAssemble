@@ -21,7 +21,7 @@ import {
 import type { LobbyEvent } from "../../api";
 import type { LobbyThreadSummary } from "../../lib/sideChatThreadModel";
 import type { RoomTypingIndicator } from "../../lib/roomTypingIndicators";
-import DiscordText from "../components/DiscordText";
+import DiscordText, { type MentionLabels } from "../components/DiscordText";
 import LobbyAttachments from "../components/LobbyAttachments";
 import ProviderLogo from "../components/ProviderLogo";
 
@@ -84,9 +84,11 @@ function isReasoningEvent(event: LobbyEvent) {
 function ThinkingDetails({
   events,
   label,
+  mentionLabels,
 }: {
   events: LobbyEvent[];
   label: string;
+  mentionLabels: MentionLabels;
 }) {
   const [open, setOpen] = useState(false);
   const contentId = useId();
@@ -122,11 +124,14 @@ function ThinkingDetails({
               >
                 <Brain size={14} className="mt-0.5 shrink-0 opacity-70" aria-hidden="true" />
                 <div className="min-w-0 italic">
-                  <DiscordText text={event.activity_detail || event.message || ""} />
+                  <DiscordText
+                    text={event.activity_detail || event.message || ""}
+                    mentionLabels={mentionLabels}
+                  />
                 </div>
               </div>
             ) : (
-              <ActivityRow key={event.id} event={event} />
+              <ActivityRow key={event.id} event={event} mentionLabels={mentionLabels} />
             )
           )}
         </div>
@@ -172,7 +177,13 @@ function ActivityIcon({ category }: { category?: string }) {
 }
 
 
-function ActivityRow({ event }: { event: LobbyEvent }) {
+function ActivityRow({
+  event,
+  mentionLabels,
+}: {
+  event: LobbyEvent;
+  mentionLabels: MentionLabels;
+}) {
   const status = event.activity_status || "running";
   const detail =
     event.activity_detail ||
@@ -205,7 +216,7 @@ function ActivityRow({ event }: { event: LobbyEvent }) {
         </span>
         {detail && (
           <span className="ml-2 text-text-muted preserve-words">
-            <DiscordText text={detail} />
+            <DiscordText text={detail} mentionLabels={mentionLabels} />
           </span>
         )}
       </span>
@@ -218,10 +229,12 @@ export function LobbyThinkingGroup({
   events,
   showHeader,
   providerKind,
+  mentionLabels,
 }: {
   events: LobbyEvent[];
   showHeader: boolean;
   providerKind?: string;
+  mentionLabels: MentionLabels;
 }) {
   const header = events[0];
   const name = header?.name || "agent";
@@ -247,7 +260,11 @@ export function LobbyThinkingGroup({
             </span>
           </p>
         )}
-        <ThinkingDetails events={events} label={`💭 ${name}의 생각과 작업`} />
+        <ThinkingDetails
+          events={events}
+          label={`💭 ${name}의 생각과 작업`}
+          mentionLabels={mentionLabels}
+        />
       </div>
     </div>
   );
@@ -257,9 +274,11 @@ export function LobbyThinkingGroup({
 export function LobbyTypingRow({
   indicator,
   thinkingEvents,
+  mentionLabels,
 }: {
   indicator: RoomTypingIndicator;
   thinkingEvents: LobbyEvent[];
+  mentionLabels: MentionLabels;
 }) {
   return (
     <div
@@ -295,6 +314,7 @@ export function LobbyTypingRow({
             <ThinkingDetails
               events={thinkingEvents}
               label={`💭 ${indicator.displayName}의 생각과 작업`}
+              mentionLabels={mentionLabels}
             />
           </div>
         )}
@@ -303,7 +323,13 @@ export function LobbyTypingRow({
   );
 }
 
-export function LobbySystemRow({ event }: { event: LobbyEvent }) {
+export function LobbySystemRow({
+  event,
+  mentionLabels,
+}: {
+  event: LobbyEvent;
+  mentionLabels: MentionLabels;
+}) {
   return (
     <div
       className="dc-system-divider px-4"
@@ -311,7 +337,7 @@ export function LobbySystemRow({ event }: { event: LobbyEvent }) {
       role="status"
     >
       <span>
-        <DiscordText text={event.message || ""} />
+        <DiscordText text={event.message || ""} mentionLabels={mentionLabels} />
       </span>
     </div>
   );
@@ -325,6 +351,7 @@ export function LobbyMessageRow({
   threadSummary,
   voteCard,
   showHeader = true,
+  mentionLabels,
 }: {
   event: LobbyEvent;
   providerKind?: string;
@@ -332,6 +359,7 @@ export function LobbyMessageRow({
   threadSummary?: LobbyThreadSummary;
   voteCard?: ReactNode;
   showHeader?: boolean;
+  mentionLabels: MentionLabels;
 }) {
   const systemLike =
     event.kind === "system" || event.kind === "flow_event" || event.kind === "vote_cast";
@@ -386,7 +414,7 @@ export function LobbyMessageRow({
           voteCard
         ) : (
           <div className="text-[14px] leading-relaxed text-text-secondary preserve-words">
-            <DiscordText text={event.message || ""} />
+            <DiscordText text={event.message || ""} mentionLabels={mentionLabels} />
           </div>
         )}
         <LobbyAttachments attachments={event.attachments} />

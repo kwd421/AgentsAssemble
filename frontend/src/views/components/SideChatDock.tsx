@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { AtSign, MessageCircle, MessageSquare, Send, Smile } from "lucide-react";
 import { postSideChatMessage, type SideChatEvent } from "../../api";
 import type { SideChatThreadContext } from "../../lib/sideChatThreadModel";
@@ -32,7 +32,13 @@ function draftKeyForContext(
   return `${meetingId}:side-chat`;
 }
 
-function SideChatMessage({ event }: { event: SideChatEvent }) {
+function SideChatMessage({
+  event,
+  mentionLabels,
+}: {
+  event: SideChatEvent;
+  mentionLabels: Readonly<Record<string, string>>;
+}) {
   return (
     <article className="dc-side-message">
       <p className="flex items-baseline gap-2">
@@ -42,7 +48,7 @@ function SideChatMessage({ event }: { event: SideChatEvent }) {
         <span className="shrink-0 text-[10px] text-text-muted">{formatTime(event.created_at)}</span>
       </p>
       <div className="text-[12px] leading-relaxed text-text-secondary preserve-words">
-        <DiscordText text={event.message || ""} />
+        <DiscordText text={event.message || ""} mentionLabels={mentionLabels} />
       </div>
     </article>
   );
@@ -88,6 +94,10 @@ export default function SideChatDock({
       : "";
   const composerDisabled = Boolean(readOnlyReason || missingThreadReason);
   const composerAriaLabel = isThread ? "비공식 스레드 입력" : "비공식 사이드챗 입력";
+  const mentionLabels = useMemo(
+    () => Object.fromEntries(mentionables.map(({ token, label }) => [token, label])),
+    [mentionables]
+  );
 
   useEffect(() => {
     if (busy || !restoreFocusAfterSendRef.current) return;
@@ -173,7 +183,10 @@ export default function SideChatDock({
             #{threadContext.channelLabel} · {threadContext.sourceName}
           </p>
           <div className="mt-1 line-clamp-3 text-[12px] leading-relaxed text-text-muted preserve-words">
-            <DiscordText text={threadContext.sourceMessage || "메시지 본문 없음"} />
+            <DiscordText
+              text={threadContext.sourceMessage || "메시지 본문 없음"}
+              mentionLabels={mentionLabels}
+            />
           </div>
         </article>
       )}
@@ -187,7 +200,9 @@ export default function SideChatDock({
               : "사이드챗 메시지가 아직 없습니다."}
           </p>
         ) : (
-          events.map((event) => <SideChatMessage key={event.id} event={event} />)
+          events.map((event) => (
+            <SideChatMessage key={event.id} event={event} mentionLabels={mentionLabels} />
+          ))
         )}
       </div>
       {(error || sendError) && (

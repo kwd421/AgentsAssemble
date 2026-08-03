@@ -58,6 +58,7 @@ export function mentionOptions(
 export function formatMentionToken(value: MentionableInput): string {
   const mentionable = normalizedMentionable(value);
   if (!mentionable) return "@";
+  if (typeof value !== "string") return `<@${mentionable.token}>`;
   if (/\s/u.test(mentionable.token)) return `<@${mentionable.token}>`;
   return `@${mentionable.token}`;
 }

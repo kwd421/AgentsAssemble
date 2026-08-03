@@ -29,9 +29,9 @@ describe("roomMentionables", () => {
       });
 
     expect(mentionables).toEqual([
-      { token: "나", label: "나" },
+      { token: "operator-local", label: "나" },
       {
-        token: "Luna — 플레이어",
+        token: "codex-codex-gpt-5.6-luna",
         label: "Luna — 플레이어",
       },
     ]);
@@ -39,7 +39,7 @@ describe("roomMentionables", () => {
       mentionOptions(mentionables, mentionQueryAtCursor("@luna"))
     ).toEqual([
       {
-        token: "Luna — 플레이어",
+        token: "codex-codex-gpt-5.6-luna",
         label: "Luna — 플레이어",
       },
     ]);
@@ -57,15 +57,15 @@ describe("roomMentionables", () => {
         members: [],
       })
     ).toEqual([
-      { token: "나", label: "나" },
+      { token: "host", label: "나" },
       { token: "alpha", label: "동일 이름 · alpha" },
       { token: "bravo", label: "동일 이름 · bravo" },
       { token: "charlie", label: "charlie" },
     ]);
   });
 
-  it("keeps a unique spaced display name intact when inserting a mention", () => {
-    const expectedMention = "<@Sol — 던전 마스터> ";
+  it("inserts a participant id while preserving a spaced display label", () => {
+    const expectedMention = "<@sol-dm> ";
     const mentionable = roomMentionables({
       viewerParticipantId: "host",
       agents: [{ agent_id: "sol-dm", display_name: "Sol — 던전 마스터" }],
@@ -73,7 +73,7 @@ describe("roomMentionables", () => {
     })[1];
 
     expect(mentionable).toEqual({
-      token: "Sol — 던전 마스터",
+      token: "sol-dm",
       label: "Sol — 던전 마스터",
     });
     expect(

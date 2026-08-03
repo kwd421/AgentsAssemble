@@ -40,6 +40,25 @@ describe("DiscordText", () => {
     expect(container.querySelector("script")).toBeNull();
   });
 
+  it("renders a durable participant mention with the current display name", () => {
+    const { container, rerender } = render(
+      <DiscordText
+        text={"<@agent-uid-123> 확인"}
+        mentionLabels={{ "agent-uid-123": "Opus 5" }}
+      />
+    );
+
+    expect(container.querySelector(".dc-mention")?.textContent).toBe("@Opus 5");
+
+    rerender(
+      <DiscordText
+        text={"<@agent-uid-123> 확인"}
+        mentionLabels={{ "agent-uid-123": "Opus Prime" }}
+      />
+    );
+    expect(container.querySelector(".dc-mention")?.textContent).toBe("@Opus Prime");
+  });
+
   it("keeps numeric ranges with single tildes while rendering explicit strikethrough", () => {
     const { container } = render(
       <DiscordText text={"game.py:385~393, routes.py:63~67·84~88, ~~removed~~"} />

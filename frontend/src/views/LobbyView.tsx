@@ -133,6 +133,10 @@ export default function LobbyView({
     () => new Map(agents.map((agent) => [agent.agent_id, agent.provider_kind])),
     [agents]
   );
+  const mentionLabels = useMemo(
+    () => Object.fromEntries(mentionables.map(({ token, label }) => [token, label])),
+    [mentionables]
+  );
   const activeThinking = useMemo(() => {
     const indicatorByTurn = new Map<string, RoomTypingIndicator>();
     typingIndicators.forEach((indicator) => {
@@ -253,6 +257,7 @@ export default function LobbyView({
                     header?.provider_kind ||
                     providerKindByParticipant.get(header?.actor_id || "")
                   }
+                  mentionLabels={mentionLabels}
                 />
               );
             }
@@ -262,12 +267,13 @@ export default function LobbyView({
               event.kind === "flow_event" ||
               event.kind === "vote_cast"
             ) {
-              return <LobbySystemRow key={row.key} event={event} />;
+              return <LobbySystemRow key={row.key} event={event} mentionLabels={mentionLabels} />;
             }
             return (
               <LobbyMessageRow
                 key={row.key}
                 event={event}
+                mentionLabels={mentionLabels}
                 providerKind={
                   event.provider_kind ||
                   providerKindByParticipant.get(event.actor_id || "")
@@ -298,6 +304,7 @@ export default function LobbyView({
               key={`typing-${key}`}
               indicator={indicator}
               thinkingEvents={activeThinking.eventsByParticipant.get(key) || []}
+              mentionLabels={mentionLabels}
             />
           );
         })}

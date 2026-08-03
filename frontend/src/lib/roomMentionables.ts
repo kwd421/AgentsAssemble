@@ -47,12 +47,12 @@ export function roomMentionables({
     if (key) displayNameCounts.set(key, (displayNameCounts.get(key) || 0) + 1);
   });
   return [
-    { token: "나", label: "나" },
+    ...(viewerId ? [{ token: viewerId, label: "나" }] : []),
     ...Array.from(participants.values(), ({ token, displayName }) => {
       const uniqueDisplayName =
         displayName && displayNameCounts.get(displayName.toLowerCase()) === 1;
       return {
-        token: uniqueDisplayName ? displayName : token,
+        token,
         label: uniqueDisplayName
           ? displayName
           : displayName
