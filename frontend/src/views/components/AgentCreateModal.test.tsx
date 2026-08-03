@@ -669,7 +669,7 @@ describe("AgentCreateModal", () => {
     expect(freeModel).toBeTruthy();
     expect(within(freeModel).getByText("Free")).toBeTruthy();
 
-    await userEvent.click(screen.getByRole("button", { name: "모델 제공사로 돌아가기" }));
+    await userEvent.click(screen.getByRole("button", { name: "모델 목록으로 돌아가기" }));
     await userEvent.click(
       screen.getByRole("menuitem", { name: "Go 제공사, 2개 모델" })
     );
