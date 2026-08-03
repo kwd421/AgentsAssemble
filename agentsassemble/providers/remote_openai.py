@@ -19,6 +19,21 @@ from agentsassemble.room.text import clean_room_text
 
 
 @dataclass(frozen=True)
+class RemoteOpenAIModel:
+    model_id: str
+    label: str
+    context_length: int = 0
+    max_output_tokens: int = 0
+    input_price_per_million: str = ""
+    output_price_per_million: str = ""
+    pricing: str = ""
+    reasoning: bool | None = None
+    vision: bool | None = None
+    tools: bool = True
+    training_policy: str = ""
+
+
+@dataclass(frozen=True)
 class RemoteOpenAIProfile:
     provider_id: str
     display_name: str
@@ -26,8 +41,7 @@ class RemoteOpenAIProfile:
     base_url: str
     default_model: str
     credential_env: str
-    static_models: tuple[tuple[str, str], ...] = ()
-    free_models: tuple[str, ...] = ()
+    static_models: tuple[RemoteOpenAIModel, ...] = ()
     reasoning_efforts: tuple[str, ...] = ()
     default_reasoning_effort: str = ""
     variants: tuple[tuple[str, str], ...] = ()
@@ -48,8 +62,28 @@ REMOTE_OPENAI_PROFILES = (
         default_model="deepseek-v4-flash",
         credential_env="DEEPSEEK_API_KEY",
         static_models=(
-            ("deepseek-v4-flash", "DeepSeek V4 Flash"),
-            ("deepseek-v4-pro", "DeepSeek V4 Pro"),
+            RemoteOpenAIModel(
+                "deepseek-v4-flash",
+                "DeepSeek V4 Flash",
+                context_length=1_000_000,
+                max_output_tokens=384_000,
+                input_price_per_million="0.14",
+                output_price_per_million="0.28",
+                pricing="paid",
+                reasoning=True,
+                training_policy="사용될 수 있음 · opt-out 가능",
+            ),
+            RemoteOpenAIModel(
+                "deepseek-v4-pro",
+                "DeepSeek V4 Pro",
+                context_length=1_000_000,
+                max_output_tokens=384_000,
+                input_price_per_million="0.435",
+                output_price_per_million="0.87",
+                pricing="paid",
+                reasoning=True,
+                training_policy="사용될 수 있음 · opt-out 가능",
+            ),
         ),
         reasoning_efforts=("high", "max"),
         default_reasoning_effort="high",
@@ -64,7 +98,7 @@ REMOTE_OPENAI_PROFILES = (
         base_url="https://api.cerebras.ai/v1",
         default_model="gpt-oss-120b",
         credential_env="CEREBRAS_API_KEY",
-        static_models=(("gpt-oss-120b", "GPT OSS 120B"),),
+        static_models=(RemoteOpenAIModel("gpt-oss-120b", "GPT OSS 120B"),),
         reasoning_efforts=("low", "medium", "high"),
         default_reasoning_effort="low",
         discovery_path="/public/v1/models?format=openrouter",
@@ -115,8 +149,13 @@ REMOTE_OPENAI_PROFILES = (
         base_url="https://api.tokenrouter.com/v1",
         default_model="moonshotai/kimi-k3-free",
         credential_env="TOKENROUTER_API_KEY",
-        static_models=(("moonshotai/kimi-k3-free", "Kimi K3 Free"),),
-        free_models=("moonshotai/kimi-k3-free",),
+        static_models=(
+            RemoteOpenAIModel(
+                "moonshotai/kimi-k3-free",
+                "Kimi K3 Free",
+                pricing="free",
+            ),
+        ),
         max_output_tokens=4096,
     ),
     RemoteOpenAIProfile(
@@ -234,15 +273,11 @@ def remote_openai_catalog_payload(
             # validator rejects any effort the user picks -- including the
             # profile's own default -- and the provider cannot be created at
             # all. The discovery path already sets this in _gateway_model_option.
-            _model_option(
-                model_id,
-                label,
+            _static_model_option(
+                model,
                 relation_scope="global",
-                family=_model_family(model_id),
-                tools=True,
-                **({"pricing": "free"} if model_id in profile.free_models else {}),
             )
-            for model_id, label in profile.static_models
+            for model in profile.static_models
         ]
     )
     default_model = (
@@ -500,6 +535,31 @@ def _is_free_pricing(pricing: object) -> bool:
 def _model_family(model_id: str) -> str:
     owner, separator, _model = model_id.partition("/")
     return owner.replace("-", " ").title() if separator else ""
+
+
+def _static_model_option(
+    model: RemoteOpenAIModel,
+    **shared_metadata: object,
+) -> dict[str, object]:
+    metadata: dict[str, object] = {
+        **shared_metadata,
+        "family": _model_family(model.model_id),
+        "tools": model.tools,
+    }
+    for key in (
+        "context_length",
+        "max_output_tokens",
+        "input_price_per_million",
+        "output_price_per_million",
+        "pricing",
+        "reasoning",
+        "vision",
+        "training_policy",
+    ):
+        value = getattr(model, key)
+        if isinstance(value, bool) or value not in ("", 0, None):
+            metadata[key] = value
+    return _model_option(model.model_id, model.label, **metadata)
 
 
 def _option(value: str, label: str = "", **metadata: object) -> dict[str, object]:

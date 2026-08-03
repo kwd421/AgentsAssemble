@@ -128,6 +128,7 @@ describe("ProviderControlSelect", () => {
               output_price_per_million: "2.19",
               reasoning: true,
               vision: false,
+              training_policy: "사용될 수 있음 · opt-out 가능",
             },
           },
           { value: "vendor/other", label: "Other" },
@@ -149,6 +150,7 @@ describe("ProviderControlSelect", () => {
     expect(within(detail as HTMLElement).getByText("$2.19/M")).toBeTruthy();
     expect(within(detail as HTMLElement).getAllByText("지원")).toHaveLength(1);
     expect(within(detail as HTMLElement).getAllByText("미지원")).toHaveLength(1);
+    expect(within(detail as HTMLElement).getByText("사용될 수 있음 · opt-out 가능")).toBeTruthy();
   });
 });
 

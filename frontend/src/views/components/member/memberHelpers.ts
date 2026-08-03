@@ -119,9 +119,9 @@ export function inlineQuotaChips(agent: LiveAgent) {
   if (balances.length > 0) {
     return balances.slice(0, 2).map((balance) => ({
       label: "잔액",
-      value: `${balance.amount} ${balance.currency}`,
+      value: formatAccountBalance(balance.amount, balance.currency),
       tone: signalToneClass(agent.account_available === false ? "danger" : "muted"),
-      title: `DeepSeek account balance: ${balance.amount} ${balance.currency}`,
+      title: `Provider account balance: ${balance.amount} ${balance.currency}`,
     }));
   }
   const legacy = [];
@@ -142,6 +142,11 @@ export function inlineQuotaChips(agent: LiveAgent) {
     });
   }
   return legacy;
+}
+
+function formatAccountBalance(amount: string, currency: string) {
+  const normalizedCurrency = currency.trim().toUpperCase();
+  return normalizedCurrency === "USD" ? `$${amount}` : `${amount} ${normalizedCurrency}`.trim();
 }
 
 export function signalTone(tone: "accent" | "online" | "idle" | "danger" | "muted") {

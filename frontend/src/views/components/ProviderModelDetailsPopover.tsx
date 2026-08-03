@@ -92,6 +92,8 @@ function providerModelDetailItems(option: ProviderControlOption): DetailItem[] {
   addText(items, "출력", metadata.output_price_per_million, "$", "/M");
   addSupport(items, "추론", metadata.reasoning);
   addSupport(items, "비전", metadata.vision);
+  addPlainText(items, "학습", metadata.training_policy);
+  addPlainText(items, "로깅", metadata.logging_policy);
   return items;
 }
 
@@ -114,4 +116,9 @@ function addText(
 function addSupport(items: DetailItem[], label: string, value: unknown) {
   if (typeof value !== "boolean") return;
   items.push({ label, value: value ? "지원" : "미지원" });
+}
+
+function addPlainText(items: DetailItem[], label: string, value: unknown) {
+  if (typeof value !== "string" || !value.trim()) return;
+  items.push({ label, value: value.trim() });
 }
