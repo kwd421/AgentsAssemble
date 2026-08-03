@@ -576,13 +576,28 @@ def _room_tool_activity(
 def _bounded_messages(
     messages: list[dict[str, object]],
 ) -> list[dict[str, object]]:
-    bounded = messages[-50:]
-    while bounded and sum(
-        len(json.dumps(item, ensure_ascii=False, default=str))
-        for item in bounded
-    ) > 64_000:
-        bounded.pop(0)
-    return bounded
+    turns: list[list[dict[str, object]]] = []
+    for message in messages:
+        if message.get("role") == "user" or not turns:
+            turns.append([])
+        turns[-1].append(message)
+
+    def message_count() -> int:
+        return sum(len(turn) for turn in turns)
+
+    def encoded_size() -> int:
+        return sum(
+            len(json.dumps(message, ensure_ascii=False, default=str))
+            for turn in turns
+            for message in turn
+        )
+
+    # Tool results are protocol children of the preceding assistant tool-call
+    # message. Evict complete user turns so retention can never leave an orphan
+    # `tool` message that OpenAI-compatible providers reject.
+    while len(turns) > 1 and (message_count() > 50 or encoded_size() > 64_000):
+        turns.pop(0)
+    return [message for turn in turns for message in turn]
 
 
 def _normalized_usage(value: dict[str, object]) -> dict[str, int]:

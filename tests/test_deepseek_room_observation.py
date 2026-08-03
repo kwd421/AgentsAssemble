@@ -160,6 +160,69 @@ class DeepSeekRoomObservationTests(unittest.TestCase):
         self.assertEqual(request_bodies[0]["stream_options"], {"include_usage": True})
         self.assertEqual(request_bodies[1]["messages"][-1]["role"], "tool")
 
+    def test_long_running_tool_history_never_starts_with_an_orphan_tool_result(self):
+        call_number = 0
+
+        def opener(request, timeout: float):
+            nonlocal call_number
+            del timeout
+            messages = json.loads(request.data)["messages"]
+            for index, message in enumerate(messages):
+                if message["role"] != "tool":
+                    continue
+                self.assertGreater(index, 0)
+                previous = messages[index - 1]
+                self.assertEqual(previous["role"], "assistant")
+                self.assertTrue(previous.get("tool_calls"))
+            call_number += 1
+            if call_number % 2:
+                return _stream(
+                    {
+                        "choices": [
+                            {
+                                "delta": {
+                                    "tool_calls": [
+                                        {
+                                            "index": 0,
+                                            "id": f"call-read-{call_number}",
+                                            "type": "function",
+                                            "function": {
+                                                "name": "read_discussion",
+                                                "arguments": "{}",
+                                            },
+                                        }
+                                    ]
+                                },
+                                "finish_reason": "tool_calls",
+                            }
+                        ]
+                    }
+                )
+            return _stream(
+                {
+                    "choices": [
+                        {
+                            "delta": {"content": "done"},
+                            "finish_reason": "stop",
+                        }
+                    ]
+                }
+            )
+
+        with tempfile.TemporaryDirectory() as temp_dir:
+            portal = RoomPortal(Path(temp_dir) / "portal", participant_id="deepseek")
+            portal.prepare()
+            runtime = DeepSeekApiRuntime(
+                "deepseek",
+                api_key="sk-private",
+                opener=opener,
+                room_portal=portal,
+            )
+            for turn in range(14):
+                portal.begin_observation(f"turn-{turn}", input_up_to_seq=turn)
+                runtime.send_room_observation(f"room.wake turn-{turn}")
+                self.assertEqual(runtime.read_output(timeout_seconds=2)["content"], "done")
+
 
 if __name__ == "__main__":
     unittest.main()
