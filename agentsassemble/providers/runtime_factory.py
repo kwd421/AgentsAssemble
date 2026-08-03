@@ -175,7 +175,9 @@ def runtime_from_config(
         "startup_ready_contains": config.startup_ready_contains,
         "startup_input": config.startup_input,
         "terminal_interaction_policy": (
-            AntigravityRoomPortalInteraction() if antigravity_runtime else None
+            AntigravityRoomPortalInteraction(defer_external_permissions=True)
+            if antigravity_runtime
+            else None
         ),
         "profile_settings": {
             "model": config.model,

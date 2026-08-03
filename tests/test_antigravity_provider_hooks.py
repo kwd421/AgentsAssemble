@@ -9,6 +9,7 @@ from pathlib import Path
 
 from agentsassemble.providers.antigravity_hooks import AntigravityHookRuntime
 from agentsassemble.providers.process_environment import sanitized_provider_environment
+from agentsassemble.providers.terminal_interactions import AntigravityRoomPortalInteraction
 
 
 class _FakeTerminalRuntime:
@@ -66,6 +67,9 @@ class AntigravityProviderHookTests(unittest.TestCase):
     def test_hook_process_round_trips_permission_and_question_through_room_handler(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:
             runtime_environment: dict[str, str] = {}
+            terminal_policy = AntigravityRoomPortalInteraction(
+                defer_external_permissions=True
+            )
 
             def terminal_runtime(agent_id, command, **kwargs):
                 runtime_environment.update(kwargs.get("env") or {})
@@ -76,6 +80,7 @@ class AntigravityProviderHookTests(unittest.TestCase):
                 ["agy", "--sandbox"],
                 cwd=temp_dir,
                 terminal_runtime_factory=terminal_runtime,
+                terminal_interaction_policy=terminal_policy,
             )
             requests: list[dict[str, object]] = []
 
@@ -113,6 +118,14 @@ class AntigravityProviderHookTests(unittest.TestCase):
                     timeout=5,
                     check=True,
                 )
+                terminal_prompt = b"\n".join(
+                    [
+                        b"Requesting permission for:",
+                        b"   git status",
+                        b"Do you want to proceed?",
+                    ]
+                )
+                terminal_response = terminal_policy.response_for(terminal_prompt)
                 question = subprocess.run(
                     command,
                     input=json.dumps(
@@ -145,6 +158,7 @@ class AntigravityProviderHookTests(unittest.TestCase):
             self.assertFalse(hooks_path.exists())
 
         self.assertEqual(json.loads(permission.stdout)["decision"], "allow")
+        self.assertEqual(terminal_response, b"\x1b[B\r")
         question_result = json.loads(question.stdout)
         self.assertEqual(question_result["decision"], "deny")
         self.assertIn("둘째 안", question_result["reason"])

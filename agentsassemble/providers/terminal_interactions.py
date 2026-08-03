@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import re
 import shlex
+import threading
 from typing import Protocol
 
 from agentsassemble.providers.claude_resident import render_terminal_screen
@@ -36,25 +37,46 @@ class TerminalInteractionPolicy(Protocol):
 class AntigravityRoomPortalInteraction:
     """Approve only validated room-portal commands during an ambient turn."""
 
-    def __init__(self) -> None:
+    def __init__(self, *, defer_external_permissions: bool = False) -> None:
         self._handled_commands: set[str] = set()
         self._approval_count = 0
         self._rejection_count = 0
+        self._defer_external_permissions = bool(defer_external_permissions)
+        self._external_decisions: dict[str, bool] = {}
+        self._decision_lock = threading.Lock()
 
     def begin_turn(self) -> None:
         self._handled_commands.clear()
+        with self._decision_lock:
+            self._external_decisions.clear()
+
+    def resolve_external_permission(self, command: str, *, allowed: bool) -> None:
+        with self._decision_lock:
+            self._external_decisions[str(command or "").strip()] = bool(allowed)
 
     def response_for(self, output: bytes) -> bytes:
         command = _latest_permission_command(output)
         if not command or command in self._handled_commands:
             return b""
-        self._handled_commands.add(command)
         if not is_safe_room_portal_command(command):
+            if self._defer_external_permissions:
+                with self._decision_lock:
+                    decision = self._external_decisions.pop(command, None)
+                if decision is None:
+                    return b""
+                self._handled_commands.add(command)
+                if decision:
+                    self._approval_count += 1
+                    return b"\x1b[B\r"
+                self._rejection_count += 1
+                return b"\r"
+            self._handled_commands.add(command)
             self._rejection_count += 1
             raise AdapterContractError(
                 "Antigravity requested an unapproved terminal command during room observation.",
                 code="unexpected_provider_permission_request",
             )
+        self._handled_commands.add(command)
         self._approval_count += 1
         # Conversation-scoped approval lets long room messages bypass the
         # truncated permission card. Antigravity still asks again when shell

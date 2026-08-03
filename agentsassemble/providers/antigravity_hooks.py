@@ -44,6 +44,9 @@ class AntigravityHookRuntime:
         self._runtime_factory = terminal_runtime_factory
         self._cwd = cwd
         self._runtime_kwargs = dict(runtime_kwargs)
+        self._terminal_interaction_policy = self._runtime_kwargs.get(
+            "terminal_interaction_policy"
+        )
         self._runtime: Any | None = None
 
     def set_request_handler(self, handler: ProviderRequestHandler | None) -> None:
@@ -110,10 +113,18 @@ class AntigravityHookRuntime:
             command = clean_room_text(args.get("CommandLine"), limit=4000)
             if is_safe_room_portal_command(command):
                 return {"decision": "allow", "reason": "AgentsAssemble room tool command."}
-            return self._resolve_permission(
+            result = self._resolve_permission(
                 title="Antigravity 터미널 명령",
                 description=_command_description(command, args.get("Cwd")),
             )
+            resolver = getattr(
+                self._terminal_interaction_policy,
+                "resolve_external_permission",
+                None,
+            )
+            if callable(resolver):
+                resolver(command, allowed=result.get("decision") == "allow")
+            return result
         if name == "ask_permission":
             action = clean_room_text(args.get("Action"), limit=200)
             target = clean_room_text(args.get("Target"), limit=1000)
