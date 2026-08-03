@@ -471,6 +471,7 @@ describe("RoomConnectionPanel", () => {
     const onAgentConfigure = vi.fn().mockResolvedValue(undefined);
     const session = {
       ...agentSession("stopped"),
+      enabled: false,
       model: "gpt-current",
       reasoning_effort: "low",
       service_tier: "default",
@@ -575,6 +576,7 @@ describe("RoomConnectionPanel", () => {
   it("does not save a stopped runtime profile that conflicts with the current catalog", async () => {
     const session = {
       ...agentSession("stopped"),
+      enabled: false,
       model: "gpt-next",
       reasoning_effort: "low",
       service_tier: "default",
@@ -621,6 +623,7 @@ describe("RoomConnectionPanel", () => {
     provider.controls[1].options = [{ value: "", label: "기본" }];
     const session = {
       ...agentSession("error"),
+      enabled: false,
       model: "Claude Opus 4.6 (Thinking)",
       reasoning_effort: "",
       service_tier: "default",
@@ -648,6 +651,38 @@ describe("RoomConnectionPanel", () => {
         .disabled
     ).toBe(false);
     expect(screen.queryByText(/현재 선택 가능한 모델 목록에 없습니다/)).toBeNull();
+  });
+
+  it("requires a failed bridge to be stopped before changing its runtime profile", async () => {
+    const session = {
+      ...agentSession("error"),
+      enabled: true,
+      model: "gpt-current",
+      reasoning_effort: "low",
+      service_tier: "default",
+      permission_mode: "meeting_read_only",
+    };
+    render(
+      <RoomConnectionPanel
+        room={room}
+        agents={[agent("offline")]}
+        members={[member("stopped")]}
+        agentSessions={[session]}
+        capabilities={agentControlCapability}
+        availableProviders={[codexProvider()]}
+        onAgentConfigure={vi.fn()}
+      />
+    );
+
+    openAgentDetails();
+
+    await waitFor(() =>
+      expect(
+        (screen.getByRole("button", { name: "런타임 설정 저장" }) as HTMLButtonElement)
+          .disabled
+      ).toBe(true)
+    );
+    expect(screen.getByText(/변경하려면 세션을 중지하세요/)).toBeTruthy();
   });
 
   it("retains the compatibility options editor for a legacy agent without a canonical session", () => {

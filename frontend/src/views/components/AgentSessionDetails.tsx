@@ -128,7 +128,9 @@ export default function AgentSessionDetails({
       ["stopped", "error", "disconnected", "available"].includes(status || ""));
   const canInterrupt = status === "busy";
   const continuity = providerSessionContinuity(session);
-  const canConfigure = ["", "available", "stopped", "error", "disconnected"].includes(status || "");
+  const canConfigure =
+    !session.enabled &&
+    ["", "available", "stopped", "error", "disconnected"].includes(status || "");
   const runtimeSettingLabels =
     (provider?.controls || []).map((control) => control.label).join("·") || "런타임 설정";
   const invalidRuntimeControl = provider?.controls.find((control) =>
