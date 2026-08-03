@@ -43,9 +43,7 @@ function speakerIdentity(
   const mine = actorId === "operator-local" || Boolean(viewerParticipantId && actorId === viewerParticipantId);
   const currentProfile = participantProfiles[actorId];
   return {
-    name: mine
-      ? "나"
-      : String(currentProfile?.displayName || event.display_name || actorId || "Agent Session"),
+    name: String(currentProfile?.displayName || event.display_name || actorId || "Agent Session"),
     avatarImageUrl: String(
       currentProfile ? currentProfile.avatarImageUrl || "" : event.avatar_image_url || ""
     ),

@@ -41,13 +41,18 @@ export function roomMentionables({
 
   agents.forEach((agent) => append(agent.agent_id, agent.display_name));
   members.forEach((member) => append(member.participant_id, member.display_name));
+  const viewerDisplayName = clean(
+    members.find((member) => clean(member.participant_id) === viewerId)?.display_name
+  );
   const displayNameCounts = new Map<string, number>();
   participants.forEach(({ displayName }) => {
     const key = displayName.toLowerCase();
     if (key) displayNameCounts.set(key, (displayNameCounts.get(key) || 0) + 1);
   });
   return [
-    ...(viewerId ? [{ token: viewerId, label: "나" }] : []),
+    ...(viewerId && viewerDisplayName
+      ? [{ token: viewerId, label: viewerDisplayName }]
+      : []),
     ...Array.from(participants.values(), ({ token, displayName }) => {
       const uniqueDisplayName =
         displayName && displayNameCounts.get(displayName.toLowerCase()) === 1;

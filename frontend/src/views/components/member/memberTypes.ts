@@ -20,6 +20,7 @@ export type MemberEntry = {
   role: RoleId;
   owner: boolean;
   ownedByViewer: boolean;
+  ownerId?: string;
   ownerDisplayName?: string;
   agentDisplayName?: string;
   agentProfile?: AgentProfileSettings;

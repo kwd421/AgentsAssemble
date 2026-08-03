@@ -49,9 +49,11 @@ describe("MemberList component wiring", () => {
       />
     );
 
-    fireEvent.click(screen.getByText("나's Agent One"));
+    const agentRow = screen.getByText("Agent One");
+    expect(agentRow.closest(".dc-person-member-group")?.textContent).toContain("SeiNel");
+    fireEvent.click(agentRow);
 
-    const dialog = screen.getByRole("dialog", { name: "나's Agent One" });
+    const dialog = screen.getByRole("dialog", { name: "Agent One" });
     expect(within(dialog).getByRole("region", { name: "Agent One 실행 및 설정" })).toBeTruthy();
     expect(within(dialog).getByRole("button", { name: "시작" })).toBeTruthy();
     expect(within(dialog).getByText("고급 진단")).toBeTruthy();
@@ -70,9 +72,9 @@ describe("MemberList component wiring", () => {
       />
     );
 
-    fireEvent.click(screen.getByText("나's Agent One"));
+    fireEvent.click(screen.getByText("Agent One"));
 
-    const dialog = screen.getByRole("dialog", { name: "나's Agent One" });
+    const dialog = screen.getByRole("dialog", { name: "Agent One" });
     expect(within(dialog).getByRole("button", { name: "추방" })).toBeTruthy();
     expect(within(dialog).queryByRole("button", { name: "세션 삭제" })).toBeNull();
   });
@@ -194,14 +196,13 @@ describe("MemberList component wiring", () => {
       />
     );
 
-    const peopleGroup = screen.getByText("사람 — 2").closest("details");
-    const otherAgentGroup = screen.getByText("다른 사람의 에이전트 — 1").closest("details");
-    expect(peopleGroup).not.toBeNull();
-    expect(otherAgentGroup).not.toBeNull();
-    expect(within(peopleGroup as HTMLElement).getByText("호스트")).toBeTruthy();
-    expect(within(otherAgentGroup as HTMLElement).queryByText("호스트")).toBeNull();
-    expect(screen.getByText("다른 사람's Agent One")).toBeTruthy();
-    expect(screen.queryByText("내 에이전트 — 1")).toBeNull();
+    const hostGroup = screen.getByText("호스트").closest(".dc-person-member-group");
+    const guestGroup = screen.getByText("Guest").closest(".dc-person-member-group");
+    expect(hostGroup).not.toBeNull();
+    expect(guestGroup).not.toBeNull();
+    expect(within(hostGroup as HTMLElement).getByText("Agent One")).toBeTruthy();
+    expect(within(guestGroup as HTMLElement).queryByText("Agent One")).toBeNull();
+    expect(screen.queryByText("다른 사람's Agent One")).toBeNull();
   });
 
   it("does not let a legacy local profile override canonical room identity", () => {
@@ -240,11 +241,11 @@ describe("MemberList component wiring", () => {
       />
     );
 
-    const canonicalRow = screen.getByText("나's Canonical Makima").closest("[role='button']");
+    const canonicalRow = screen.getByText("Canonical Makima").closest("[role='button']");
     expect(canonicalRow).not.toBeNull();
     expect(canonicalRow?.querySelector(".dc-member-avatar-image")).toBeNull();
     expect(canonicalRow?.querySelector('[data-provider-brand="codex"]')).not.toBeNull();
-    expect(screen.queryByText("나's Local Makima")).toBeNull();
+    expect(screen.queryByText("Local Makima")).toBeNull();
   });
 
   it("moves a legacy local profile into canonical Agent Session state on save", async () => {
@@ -270,8 +271,8 @@ describe("MemberList component wiring", () => {
       />
     );
 
-    fireEvent.click(screen.getByText("나's Agent One"));
-    const dialog = screen.getByRole("dialog", { name: "나's Agent One" });
+    fireEvent.click(screen.getByText("Agent One"));
+    const dialog = screen.getByRole("dialog", { name: "Agent One" });
     expect((within(dialog).getByRole("textbox", { name: "표시 이름" }) as HTMLInputElement).value)
       .toBe("Makima");
     fireEvent.click(within(dialog).getByRole("button", { name: "프로필 저장" }));

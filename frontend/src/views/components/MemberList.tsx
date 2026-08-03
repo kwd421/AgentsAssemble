@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import type { MouseEvent as ReactMouseEvent } from "react";
-import { Bot, Search, User, UserMinus, Volume2, VolumeX } from "lucide-react";
+import { Bot, Search, UserMinus, Volume2, VolumeX } from "lucide-react";
 import type {
   LiveAgent,
   LiveAgentProcessGroup,
@@ -21,9 +21,11 @@ import type {
 } from "./AgentSessionDetails";
 import MemberDetailModal from "./member/MemberDetailModal";
 import MemberRow from "./member/MemberRow";
+import { buildMemberOwnerGroups } from "./member/memberOwnerGroups";
 import { useMemberEntries } from "./member/useMemberEntries";
 import type { MemberEntry, RoleId } from "./member/memberTypes";
 import type { NativeCliProviderAvailability } from "../../roomSocketClient";
+import "./member/MemberOwnership.css";
 
 export type { RoleId };
 
@@ -115,15 +117,10 @@ export default function MemberList({
     () => entries.find((entry) => entry.id === detailEntryId) || null,
     [detailEntryId, entries]
   );
-  const visibleEntries = useMemo(() => {
-    const needle = query.trim().toLowerCase();
-    if (!needle) return entries;
-    return entries.filter((entry) =>
-      [entry.displayName, entry.detail, entry.role].some((value) =>
-        value.toLowerCase().includes(needle)
-      )
-    );
-  }, [entries, query]);
+  const ownerGroups = useMemo(
+    () => buildMemberOwnerGroups(entries, viewerParticipantId, query),
+    [entries, query, viewerParticipantId]
+  );
 
   useEffect(() => {
     try {
@@ -205,41 +202,6 @@ export default function MemberList({
     }
   }
 
-  const visibleGroups = useMemo(
-    () => [
-      // Invited members carry no LiveAgent record, so split them by role
-      // (seeded from participant_type at join, host-adjustable via dropdown)
-      // instead of dumping every guest into the people section.
-      {
-        id: "people",
-        label: "사람",
-        icon: User,
-        entries: visibleEntries.filter(
-          (entry) => !entry.agent && !entry.agentSession && entry.role === "human"
-        ),
-      },
-      {
-        id: "owned-agents",
-        label: "내 에이전트",
-        icon: Bot,
-        entries: visibleEntries.filter(
-          (entry) => Boolean(entry.agent || entry.agentSession) && entry.ownedByViewer
-        ),
-      },
-      {
-        id: "other-agents",
-        label: "다른 사람의 에이전트",
-        icon: Bot,
-        entries: visibleEntries.filter(
-          (entry) =>
-            (Boolean(entry.agent || entry.agentSession) && !entry.ownedByViewer) ||
-            (!entry.agent && !entry.agentSession && entry.role !== "human")
-        ),
-      },
-    ],
-    [visibleEntries]
-  );
-
   return (
     <div className="flex h-full min-h-0 flex-col">
       {!hideSearch && (
@@ -269,39 +231,55 @@ export default function MemberList({
             {roomName}에는 아직 멤버가 없습니다.
           </p>
         )}
-        {visibleGroups.map(({ id, label, icon: Icon, entries: groupEntries }) => {
-          if (!groupEntries.length) return null;
+        {ownerGroups.map((group) => {
+          const collapseId = `owner:${group.id}`;
           return (
-            <details
-              key={id}
-              className="dc-role-group"
-              open={!collapsedGroups[id]}
-              onToggle={(event) => {
-                const open = event.currentTarget.open;
-                setCollapsedGroups((previous) => ({ ...previous, [id]: !open }));
-              }}
-            >
-              <summary
-                className="dc-role-heading"
-                onClick={(event) => {
-                  event.preventDefault();
-                  toggleGroup(id);
-                }}
-              >
-                <Icon size={13} />
-                {label} — {groupEntries.length}
-              </summary>
-              {groupEntries.map((entry) => (
+            <section key={group.id} className="dc-person-member-group">
+              {group.person ? (
                 <MemberRow
-                  key={entry.id}
-                  entry={entry}
+                  entry={group.person}
                   onOpenDetails={openMemberDetails}
                   onRoleChange={handleRoleChange}
                   onContextMenu={handleMemberContextMenu}
                   canEditRoles={canEditRoles}
                 />
-              ))}
-            </details>
+              ) : (
+                <p className="dc-person-owner-label preserve-words">{group.label}</p>
+              )}
+              {group.agents.length > 0 && (
+                <details
+                  className="dc-owner-agent-group"
+                  open={!collapsedGroups[collapseId]}
+                  onToggle={(event) => {
+                    const open = event.currentTarget.open;
+                    setCollapsedGroups((previous) => ({ ...previous, [collapseId]: !open }));
+                  }}
+                >
+                  <summary
+                    className="dc-owner-agent-heading"
+                    onClick={(event) => {
+                      event.preventDefault();
+                      toggleGroup(collapseId);
+                    }}
+                  >
+                    <Bot size={12} />
+                    에이전트 — {group.agents.length}
+                  </summary>
+                  <div className="dc-owner-agent-list">
+                    {group.agents.map((entry) => (
+                      <MemberRow
+                        key={entry.id}
+                        entry={entry}
+                        onOpenDetails={openMemberDetails}
+                        onRoleChange={handleRoleChange}
+                        onContextMenu={handleMemberContextMenu}
+                        canEditRoles={canEditRoles}
+                      />
+                    ))}
+                  </div>
+                </details>
+              )}
+            </section>
           );
         })}
         {contextBadges.length > 0 && (

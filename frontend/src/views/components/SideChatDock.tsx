@@ -63,6 +63,7 @@ export default function SideChatDock({
   mode = "side-chat",
   threadContext = null,
   canPostMessages = true,
+  authorName = "SeiNel",
   draftsByContext,
   onDraftChange,
 }: {
@@ -74,6 +75,7 @@ export default function SideChatDock({
   mode?: SideChatDockMode;
   threadContext?: SideChatThreadContext | null;
   canPostMessages?: boolean;
+  authorName?: string;
   draftsByContext: Record<string, string>;
   onDraftChange: (key: string, value: string) => void;
 }) {
@@ -143,7 +145,7 @@ export default function SideChatDock({
     setSendError("");
     try {
       const payload = await postSideChatMessage({
-        name: "나",
+        name: authorName,
         side: "mine",
         message: trimmed,
         meetingId,

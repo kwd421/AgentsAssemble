@@ -24,6 +24,7 @@ import type { NativeCliProviderAvailability } from "../../roomSocketClient";
 import AgentSessionDetails, { type AgentSessionControlAction } from "./AgentSessionDetails";
 import { memberRole } from "./member/memberHelpers";
 import ProviderLogo from "./ProviderLogo";
+import "./member/MemberOwnership.css";
 
 type MobileRoomSummary = {
   id: string;
@@ -45,6 +46,15 @@ type MobileMemberRow = {
   avatarImage?: string;
   providerKind?: string;
   app?: boolean;
+  ownerId?: string;
+  ownerDisplayName?: string;
+};
+
+type MobileMemberGroup = {
+  id: string;
+  person?: MobileMemberRow;
+  label: string;
+  agents: MobileMemberRow[];
 };
 
 const MOBILE_INFO_TABS: Array<{ id: MobileInfoTab; label: string; icon: LucideIcon }> = [
@@ -67,6 +77,56 @@ function statusTone(active: boolean) {
   return active ? "online" : "offline";
 }
 
+function MobileMemberItem({
+  row,
+  session,
+  nested = false,
+  onSelectAgentSession,
+}: {
+  row: MobileMemberRow;
+  session?: RoomAgentSession;
+  nested?: boolean;
+  onSelectAgentSession: (session: RoomAgentSession) => void;
+}) {
+  const Icon = row.icon;
+  function selectSession() {
+    if (session) onSelectAgentSession(session);
+  }
+  return (
+    <article
+      className={`dc-mobile-info-member-row${nested ? " dc-mobile-owner-agent-row" : ""}`}
+      role={session ? "button" : undefined}
+      tabIndex={session ? 0 : undefined}
+      onClick={selectSession}
+      onKeyDown={(event) => {
+        if (!session || (event.key !== "Enter" && event.key !== " ")) return;
+        event.preventDefault();
+        selectSession();
+      }}
+    >
+      <span className="dc-mobile-info-member-avatar" data-status={statusTone(row.active)}>
+        {row.avatarImage ? (
+          <img className="dc-member-avatar-image" src={row.avatarImage} alt="" />
+        ) : (
+          <ProviderLogo
+            providerKind={row.providerKind}
+            size={42}
+            fallback={<Icon size={18} />}
+          />
+        )}
+        <span className="dc-mobile-info-member-status" aria-hidden />
+      </span>
+      <span className="min-w-0 flex-1">
+        <span className="dc-mobile-info-member-name preserve-words">{row.displayName}</span>
+        <span className="dc-mobile-info-member-detail preserve-words">
+          {roleLabel(row.role)} · {row.detail}
+        </span>
+      </span>
+      {row.app && <span className="dc-mobile-info-app-badge">앱</span>}
+    </article>
+  );
+}
+
 function buildMobileMembers({
   agents,
   members,
@@ -85,8 +145,8 @@ function buildMobileMembers({
     (member) => member.participant_id === viewerParticipantId
   );
   const self: MobileMemberRow = {
-    id: viewerMember?.participant_id || "human:self",
-    displayName: "나",
+    id: viewerMember?.participant_id || viewerParticipantId || "human:self",
+    displayName: viewerMember?.display_name || "SeiNel",
     detail: "사람",
     active: viewerMember ? isActivePresence(viewerMember.status) : true,
     role: "human",
@@ -95,6 +155,8 @@ function buildMobileMembers({
   const agentRows = agents.map((agent) => {
     const member = memberById.get(agent.agent_id);
     const role = roleOverrides?.[agent.agent_id] || "agent";
+    const ownerId = String(member?.owner_id || agent.owner_id || "").trim();
+    const ownedByViewer = ownerId === viewerParticipantId;
     return {
       id: agent.agent_id,
       displayName: agent.display_name || agent.agent_id,
@@ -109,6 +171,11 @@ function buildMobileMembers({
       avatarImage: member ? member.avatar_image_url : agent.avatar_image_url,
       providerKind: member ? member.provider_kind : agent.provider_kind,
       app: true,
+      ownerId: ownerId || (ownedByViewer ? self.id : undefined),
+      ownerDisplayName:
+        agent.owner_display_name ||
+        memberById.get(ownerId)?.display_name ||
+        (ownedByViewer ? self.displayName : "소유자 정보 없음"),
     } satisfies MobileMemberRow;
   });
   const agentIds = new Set(agentRows.map((entry) => entry.id));
@@ -132,85 +199,98 @@ function buildMobileMembers({
         avatarImage: member.avatar_image_url,
         providerKind: member.provider_kind,
         app: member.participant_type !== "human",
+        ownerId:
+          role === "human"
+            ? member.participant_id
+            : String(member.owner_id || "").trim() || undefined,
+        ownerDisplayName:
+          memberById.get(String(member.owner_id || ""))?.display_name || undefined,
       } satisfies MobileMemberRow;
     });
   const people = [self, ...invitedRows.filter((entry) => !entry.app)];
-  const bots = [...agentRows, ...invitedRows.filter((entry) => entry.app)];
-  return { people, bots };
+  const agentLike = [...agentRows, ...invitedRows.filter((entry) => entry.app)];
+  const groups: MobileMemberGroup[] = people.map((person) => ({
+    id: person.id,
+    person,
+    label: person.displayName,
+    agents: [],
+  }));
+  const groupByOwnerId = new Map(groups.map((group) => [group.id, group]));
+  agentLike.forEach((agent) => {
+    const ownerId = String(agent.ownerId || "").trim();
+    let group = groupByOwnerId.get(ownerId);
+    if (!group && agent.ownerDisplayName) {
+      group = groups.find((candidate) => candidate.label === agent.ownerDisplayName);
+    }
+    if (!group) {
+      const id = ownerId || `unassigned:${agent.ownerDisplayName || "agents"}`;
+      group = groupByOwnerId.get(id);
+      if (!group) {
+        group = {
+          id,
+          label: agent.ownerDisplayName || "소유자 정보 없음",
+          agents: [],
+        };
+        groups.push(group);
+        groupByOwnerId.set(id, group);
+      }
+    }
+    group.agents.push(agent);
+  });
+  return groups;
 }
 
 function MobileMemberList({
-  people,
-  bots,
+  groups,
   agentSessions,
   onSelectAgentSession,
 }: {
-  people: MobileMemberRow[];
-  bots: MobileMemberRow[];
+  groups: MobileMemberGroup[];
   agentSessions: RoomAgentSession[];
   onSelectAgentSession: (session: RoomAgentSession) => void;
 }) {
   const sessionByParticipantId = new Map(
     agentSessions.map((session) => [session.participant_id, session])
   );
-  const sections = [
-    { id: "people", label: "MEMBERS", rows: people },
-    { id: "bots", label: "AI & Bots", rows: bots },
-  ];
   return (
     <div className="dc-mobile-info-member-groups">
-      {sections.map((section) => {
-        if (!section.rows.length) return null;
+      <h3 className="dc-mobile-info-member-heading">
+        참가자 — {groups.length}
+      </h3>
+      {groups.map((group) => {
+        const rows = group.person ? [group.person] : [];
         return (
-          <section key={section.id} className="dc-mobile-info-member-section">
-            <h3>
-              {section.label} — {section.rows.length}
-            </h3>
+          <section key={group.id} className="dc-mobile-info-member-section">
+            {!group.person && <h3>{group.label}</h3>}
             <div className="dc-mobile-info-member-card">
-              {section.rows.map((row) => {
-                const Icon = row.icon;
+              {rows.map((row) => {
                 return (
-                  <article
+                  <MobileMemberItem
                     key={row.id}
-                    className="dc-mobile-info-member-row"
-                    role={sessionByParticipantId.has(row.id) ? "button" : undefined}
-                    tabIndex={sessionByParticipantId.has(row.id) ? 0 : undefined}
-                    onClick={() => {
-                      const session = sessionByParticipantId.get(row.id);
-                      if (session) onSelectAgentSession(session);
-                    }}
-                    onKeyDown={(event) => {
-                      if (event.key !== "Enter" && event.key !== " ") return;
-                      const session = sessionByParticipantId.get(row.id);
-                      if (!session) return;
-                      event.preventDefault();
-                      onSelectAgentSession(session);
-                    }}
-                  >
-                    <span className="dc-mobile-info-member-avatar" data-status={statusTone(row.active)}>
-                      {row.avatarImage ? (
-                        <img className="dc-member-avatar-image" src={row.avatarImage} alt="" />
-                      ) : (
-                        <ProviderLogo
-                          providerKind={row.providerKind}
-                          size={42}
-                          fallback={<Icon size={18} />}
-                        />
-                      )}
-                      <span className="dc-mobile-info-member-status" aria-hidden />
-                    </span>
-                    <span className="min-w-0 flex-1">
-                      <span className="dc-mobile-info-member-name preserve-words">
-                        {row.displayName}
-                      </span>
-                      <span className="dc-mobile-info-member-detail preserve-words">
-                        {roleLabel(row.role)} · {row.detail}
-                      </span>
-                    </span>
-                    {row.app && <span className="dc-mobile-info-app-badge">앱</span>}
-                  </article>
+                    row={row}
+                    session={sessionByParticipantId.get(row.id)}
+                    onSelectAgentSession={onSelectAgentSession}
+                  />
                 );
               })}
+              {group.agents.length > 0 && (
+                <details className="dc-mobile-owner-agent-group" open>
+                  <summary>
+                    <Bot size={14} /> 에이전트 — {group.agents.length}
+                  </summary>
+                  {group.agents.map((row) => {
+                    return (
+                      <MobileMemberItem
+                        key={row.id}
+                        row={row}
+                        session={sessionByParticipantId.get(row.id)}
+                        nested
+                        onSelectAgentSession={onSelectAgentSession}
+                      />
+                    );
+                  })}
+                </details>
+              )}
             </div>
           </section>
         );
@@ -276,7 +356,7 @@ export default function MobileRoomInfoPanel({
   const selectedAgentSession = agentSessions.find(
     (session) => session.session_id === selectedAgentSessionId
   );
-  const { people, bots } = useMemo(
+  const memberGroups = useMemo(
     () => buildMobileMembers({ agents, members, viewerParticipantId, roleOverrides }),
     [agents, members, roleOverrides, viewerParticipantId]
   );
@@ -415,8 +495,7 @@ export default function MobileRoomInfoPanel({
             </button>
           )}
           <MobileMemberList
-            people={people}
-            bots={bots}
+            groups={memberGroups}
             agentSessions={agentSessions}
             onSelectAgentSession={(session) => setSelectedAgentSessionId(session.session_id)}
           />

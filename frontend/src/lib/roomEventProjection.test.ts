@@ -66,10 +66,13 @@ describe("projectRoomEventsToTimeline", () => {
   it("uses the authenticated viewer identity for own-message styling", () => {
     const timeline = projectRoomEventsToTimeline(
       [event({ actor: { participant_id: "guest-1", participant_type: "human" }, content: "mine" })],
-      { viewerParticipantId: "guest-1" }
+      {
+        viewerParticipantId: "guest-1",
+        participantProfiles: { "guest-1": { displayName: "Guest" } },
+      }
     );
 
-    expect(timeline[0]).toMatchObject({ name: "나", side: "mine" });
+    expect(timeline[0]).toMatchObject({ name: "Guest", side: "mine" });
   });
 
   it("does not render internal turn state and finishes progress on final", () => {

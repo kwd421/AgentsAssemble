@@ -30,6 +30,7 @@ function SideChatDockHarness({
       events={[]}
       error={null}
       onPosted={vi.fn()}
+      authorName="SeiNel"
       mode={mode}
       draftsByContext={draftsByContext}
       onDraftChange={(key, value) =>
@@ -59,7 +60,7 @@ describe("SideChatDock", () => {
 
     await waitFor(() =>
       expect(apiMocks.postSideChatMessage).toHaveBeenCalledWith({
-        name: "나",
+        name: "SeiNel",
         side: "mine",
         message: "옆 대화",
         meetingId: "room-a",

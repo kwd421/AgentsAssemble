@@ -29,7 +29,7 @@ describe("roomMentionables", () => {
       });
 
     expect(mentionables).toEqual([
-      { token: "operator-local", label: "나" },
+      { token: "operator-local", label: "호스트" },
       {
         token: "codex-codex-gpt-5.6-luna",
         label: "Luna — 플레이어",
@@ -57,7 +57,6 @@ describe("roomMentionables", () => {
         members: [],
       })
     ).toEqual([
-      { token: "host", label: "나" },
       { token: "alpha", label: "동일 이름 · alpha" },
       { token: "bravo", label: "동일 이름 · bravo" },
       { token: "charlie", label: "charlie" },
@@ -70,7 +69,7 @@ describe("roomMentionables", () => {
       viewerParticipantId: "host",
       agents: [{ agent_id: "sol-dm", display_name: "Sol — 던전 마스터" }],
       members: [],
-    })[1];
+    })[0];
 
     expect(mentionable).toEqual({
       token: "sol-dm",

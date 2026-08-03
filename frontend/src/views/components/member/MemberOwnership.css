@@ -1,0 +1,121 @@
+.dc-person-member-group + .dc-person-member-group {
+  margin-top: 10px;
+}
+
+.dc-person-owner-label {
+  padding: 7px 8px 4px;
+  color: var(--color-text-secondary);
+  font-size: 12px;
+  font-weight: 800;
+}
+
+.dc-owner-agent-group {
+  margin-left: 18px;
+  padding-left: 7px;
+  border-left: 1px solid rgba(148, 155, 164, 0.2);
+}
+
+.dc-owner-agent-heading {
+  display: flex;
+  width: fit-content;
+  align-items: center;
+  gap: 5px;
+  margin: 1px 0 2px;
+  padding: 3px 6px;
+  border-radius: 4px;
+  cursor: pointer;
+  color: var(--color-text-muted);
+  font-size: 10px;
+  font-weight: 800;
+  list-style: none;
+}
+
+.dc-owner-agent-heading::-webkit-details-marker {
+  display: none;
+}
+
+.dc-owner-agent-heading::before {
+  border-top: 3px solid transparent;
+  border-bottom: 3px solid transparent;
+  border-left: 4px solid currentColor;
+  content: "";
+  transform: rotate(90deg);
+}
+
+.dc-owner-agent-group:not([open]) .dc-owner-agent-heading::before {
+  transform: rotate(0deg);
+}
+
+.dc-owner-agent-heading:hover,
+.dc-owner-agent-heading:focus-visible {
+  background: var(--color-sidebar-hover);
+  color: var(--color-text-secondary);
+  outline: none;
+}
+
+.dc-owner-agent-list .dc-member {
+  padding-left: 6px;
+}
+
+@media (max-width: 760px) {
+  .dc-mobile-info-member-groups {
+    display: grid;
+    gap: 12px;
+    padding: 0 24px;
+  }
+
+  .dc-mobile-info-member-heading {
+    margin-bottom: -2px;
+    color: #c4c8d0;
+    font-size: 14px;
+    font-weight: 950;
+  }
+
+  .dc-mobile-info-member-section h3 {
+    margin-bottom: 10px;
+    color: #c4c8d0;
+    font-size: 14px;
+    font-weight: 950;
+  }
+
+  .dc-mobile-info-member-card {
+    overflow: hidden;
+    border-radius: 16px;
+    background: #24252e;
+  }
+
+  .dc-mobile-info-member-row {
+    display: flex;
+    min-height: 74px;
+    align-items: center;
+    gap: 14px;
+    padding: 10px 18px;
+  }
+
+  .dc-mobile-info-member-row + .dc-mobile-info-member-row {
+    border-top: 1px solid rgba(255, 255, 255, 0.055);
+  }
+
+  .dc-mobile-owner-agent-group {
+    border-top: 1px solid rgba(255, 255, 255, 0.055);
+  }
+
+  .dc-mobile-owner-agent-group > summary {
+    display: flex;
+    align-items: center;
+    gap: 7px;
+    padding: 9px 18px 7px;
+    color: #aeb2bb;
+    font-size: 12px;
+    font-weight: 900;
+    list-style: none;
+  }
+
+  .dc-mobile-owner-agent-group > summary::-webkit-details-marker {
+    display: none;
+  }
+
+  .dc-mobile-owner-agent-row {
+    padding-left: 28px;
+  }
+}

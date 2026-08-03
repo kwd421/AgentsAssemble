@@ -154,7 +154,7 @@ function codexProvider(): NativeCliProviderAvailability {
 }
 
 function openAgentDetails() {
-  fireEvent.click(screen.getByText("나's Codex Spark"));
+  fireEvent.click(screen.getByText("Codex Spark"));
 }
 
 async function chooseProviderControl(label: string, option: string): Promise<void> {
@@ -212,9 +212,8 @@ describe("RoomConnectionPanel", () => {
       />
     );
 
-    expect(screen.getByText("사람 — 1")).toBeTruthy();
+    expect(screen.getByText("호스트")).toBeTruthy();
     expect(screen.getByText("참여 중")).toBeTruthy();
-    expect(screen.queryByText("내 에이전트 — 1")).toBeNull();
     expect(screen.queryByText("나's 호스트")).toBeNull();
   });
 
@@ -232,7 +231,7 @@ describe("RoomConnectionPanel", () => {
       />
     );
 
-    expect(screen.getAllByText("나's Codex Spark")).toHaveLength(1);
+    expect(screen.getAllByText("Codex Spark")).toHaveLength(1);
     expect(screen.queryByTitle("세션 시작")).toBeNull();
     openAgentDetails();
     fireEvent.click(screen.getByTitle("세션 시작"));

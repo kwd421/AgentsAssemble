@@ -120,13 +120,10 @@ export default function LobbyView({
     () =>
       roomMentionables?.length
         ? roomMentionables
-        : [
-            { token: "나", label: "나" },
-            ...agents.map((agent) => ({
+        : agents.map((agent) => ({
               token: agent.agent_id,
               label: agent.display_name || agent.agent_id,
             })),
-          ],
     [agents, roomMentionables]
   );
   const providerKindByParticipant = useMemo(

@@ -40,6 +40,14 @@ type MemberEntriesOptions = {
   agentProfileSettings: Record<string, AgentProfileSettings>;
 };
 
+function localViewerDisplayName() {
+  try {
+    return String(window.localStorage.getItem("agentsassemble.name") || "").trim();
+  } catch {
+    return "";
+  }
+}
+
 export function useMemberEntries({
   agents,
   members,
@@ -64,11 +72,14 @@ export function useMemberEntries({
     );
     const mutedById = new Map(members.map((member) => [member.participant_id, Boolean(member.muted)]));
     const viewerMember = memberById.get(viewerParticipantId);
-    const viewerEntryId = viewerMember?.participant_id || "human:self";
+    const viewerEntryId = viewerMember?.participant_id || viewerParticipantId || "human:self";
+    const viewerDisplayName = String(
+      viewerMember?.display_name || localViewerDisplayName() || "SeiNel"
+    ).trim();
     const human: MemberEntry = {
       id: viewerEntryId,
       member: viewerMember,
-      displayName: "나",
+      displayName: viewerDisplayName,
       detail: "사람",
       statusLabel: viewerMember ? memberStatusLabel(viewerMember) : undefined,
       role: viewerMember
@@ -80,6 +91,8 @@ export function useMemberEntries({
       meetingId: String(viewerMember?.meeting_id || ""),
       canViewQuota: false,
       ownedByViewer: true,
+      ownerId: viewerEntryId,
+      ownerDisplayName: viewerDisplayName,
       icon: UserCheck,
     };
     const agentEntries = agents.map((agent) => {
@@ -93,7 +106,11 @@ export function useMemberEntries({
       const ownedByViewer = ownerId
         ? ownerId === viewerParticipantId
         : canViewQuotaForAgent || canEditRoles;
-      const ownerDisplayName = String(agent.owner_display_name || (ownedByViewer ? "나" : "다른 사람")).trim();
+      const ownerDisplayName = String(
+        agent.owner_display_name ||
+          memberById.get(ownerId)?.display_name ||
+          (ownedByViewer ? viewerDisplayName : "소유자 정보 없음")
+      ).trim();
       const canonicalIdentity = member || agentSession;
       const agentDisplayName = String(
         canonicalIdentity
@@ -103,7 +120,6 @@ export function useMemberEntries({
       const avatarImage = canonicalIdentity
         ? canonicalIdentity.avatar_image_url
         : profile.avatarImage || agent.avatar_image_url;
-      const agentPanelDisplayName = `${ownerDisplayName}'s ${agentDisplayName}`;
       const executionDetail = providerExecutionLabel(agent);
       const modelLabel = String(agentSession?.model || agent.model_id || "").trim();
       const reasoningEffort = String(
@@ -126,7 +142,7 @@ export function useMemberEntries({
         agent,
         agentSession,
         member,
-        displayName: agentPanelDisplayName,
+        displayName: agentDisplayName,
         detail,
         modelLabel,
         reasoningEffort,
@@ -147,6 +163,7 @@ export function useMemberEntries({
         meetingId: String(agent.meeting_id || ""),
         canViewQuota: canViewQuotaForAgent,
         ownedByViewer,
+        ownerId: ownerId || (ownedByViewer ? viewerEntryId : undefined),
         ownerDisplayName,
         agentDisplayName,
         agentProfile: profile,
@@ -210,6 +227,14 @@ export function useMemberEntries({
           meetingId: String(member.meeting_id || ""),
           canViewQuota: false,
           ownedByViewer: Boolean(agentSession && !agentSession.external_owned),
+          ownerId:
+            role === "human"
+              ? member.participant_id
+              : String(member.owner_id || "").trim() || undefined,
+          ownerDisplayName: String(
+            memberById.get(String(member.owner_id || ""))?.display_name ||
+              ""
+          ).trim() || undefined,
           avatarImage: member.avatar_image_url,
           providerKind: String(agentSession?.provider_kind || member.provider_kind || ""),
           icon: ROLE_OPTIONS.find((option) => option.id === role)?.icon || typeMeta.icon,

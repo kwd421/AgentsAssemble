@@ -765,6 +765,11 @@ export default function App() {
   }
 
   const scopedAgents = agents.filter((agent) => roomHasAgent(activeRoom, agent));
+  const scopedViewerParticipantId = guestSession?.agentId || "operator-local";
+  const scopedViewerDisplayName =
+    activeRoomMembers.find(
+      (member) => member.participant_id === scopedViewerParticipantId
+    )?.display_name || guestSession?.displayName || "SeiNel";
   useEffect(() => {
     if (visibleRoomTimelineEvents.length) {
       lobbyStreamRef.current?.(visibleRoomTimelineEvents);
@@ -792,11 +797,11 @@ export default function App() {
   const scopedMentionables = useMemo(
     () =>
       roomMentionables({
-        viewerParticipantId: guestSession?.agentId || "operator-local",
+        viewerParticipantId: scopedViewerParticipantId,
         agents: scopedAgents,
         members: activeRoomMembers,
       }),
-    [activeRoomMembers, guestSession?.agentId, scopedAgents]
+    [activeRoomMembers, scopedAgents, scopedViewerParticipantId]
   );
   const scopedOnlineCount = scopedAgents.filter((agent) => isActivePresence(agent.status)).length;
   const typingIndicators = useMemo(
@@ -1873,6 +1878,7 @@ export default function App() {
               canPostMessages={!guestLocked}
               draftsByContext={sideChatDraftsByContext}
               onDraftChange={updateSideChatDraft}
+              authorName={scopedViewerDisplayName}
             />
           }
           threadContent={
@@ -1887,6 +1893,7 @@ export default function App() {
               canPostMessages={!guestLocked}
               draftsByContext={sideChatDraftsByContext}
               onDraftChange={updateSideChatDraft}
+              authorName={scopedViewerDisplayName}
             />
           }
           agentSessions={activeRoomAgentSessions}
@@ -2021,6 +2028,7 @@ export default function App() {
                 canPostMessages={!guestLocked}
                 draftsByContext={sideChatDraftsByContext}
                 onDraftChange={updateSideChatDraft}
+                authorName={scopedViewerDisplayName}
               />
             </section>
           ) : (
@@ -2042,6 +2050,7 @@ export default function App() {
                 canPostMessages={!guestLocked}
                 draftsByContext={sideChatDraftsByContext}
                 onDraftChange={updateSideChatDraft}
+                authorName={scopedViewerDisplayName}
               />
             </section>
           )}
