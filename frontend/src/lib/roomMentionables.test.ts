@@ -31,7 +31,7 @@ describe("roomMentionables", () => {
     expect(mentionables).toEqual([
       { token: "나", label: "나" },
       {
-        token: "Luna",
+        token: "Luna — 플레이어",
         label: "Luna — 플레이어",
       },
     ]);
@@ -39,7 +39,7 @@ describe("roomMentionables", () => {
       mentionOptions(mentionables, mentionQueryAtCursor("@luna"))
     ).toEqual([
       {
-        token: "Luna",
+        token: "Luna — 플레이어",
         label: "Luna — 플레이어",
       },
     ]);
@@ -64,7 +64,8 @@ describe("roomMentionables", () => {
     ]);
   });
 
-  it("inserts the unique participant id even when the visible label contains spaces", () => {
+  it("keeps a unique spaced display name intact when inserting a mention", () => {
+    const expectedMention = "<@Sol — 던전 마스터> ";
     const mentionable = roomMentionables({
       viewerParticipantId: "host",
       agents: [{ agent_id: "sol-dm", display_name: "Sol — 던전 마스터" }],
@@ -72,7 +73,7 @@ describe("roomMentionables", () => {
     })[1];
 
     expect(mentionable).toEqual({
-      token: "Sol",
+      token: "Sol — 던전 마스터",
       label: "Sol — 던전 마스터",
     });
     expect(
@@ -83,8 +84,8 @@ describe("roomMentionables", () => {
         mentionable
       )
     ).toEqual({
-      message: "@Sol ",
-      cursor: 5,
+      message: expectedMention,
+      cursor: expectedMention.length,
     });
   });
 });

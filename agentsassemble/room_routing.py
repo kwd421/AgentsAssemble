@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import re
+from collections.abc import Iterator
 from dataclasses import dataclass
 from typing import Mapping
 
@@ -72,12 +73,7 @@ def direct_message_targets(
         last_positions[target_agent_id] = -1
     lowered = content.casefold()
     for alias, agent_id in _provider_mention_aliases(providers).items():
-        matches = tuple(
-            re.finditer(
-                rf"(?<![\w-])@{re.escape(alias)}(?![\w-])",
-                lowered,
-            )
-        )
+        matches = tuple(_mention_matches(lowered, alias))
         if matches:
             last_positions[agent_id] = max(
                 last_positions.get(agent_id, -1),
@@ -100,8 +96,16 @@ def _mentioned_agents(
     return {
         agent_id
         for alias, agent_id in _provider_mention_aliases(providers).items()
-        if re.search(rf"(?<![\w-])@{re.escape(alias)}(?![\w-])", lowered)
+        if next(_mention_matches(lowered, alias), None) is not None
     }
+
+
+def _mention_matches(content: str, alias: str) -> Iterator[re.Match[str]]:
+    token = re.escape(alias)
+    return re.finditer(
+        rf"(?:<@\s*{token}\s*>|(?<![\w-])@{token}(?![\w-]))",
+        content,
+    )
 
 
 def _provider_mention_aliases(
@@ -110,13 +114,18 @@ def _provider_mention_aliases(
     candidates: dict[str, set[str]] = {}
     for agent_id, spec in providers.items():
         display_name = clean_lobby_text(spec.display_name, limit=128)
-        aliases = [agent_id]
-        if display_name and not any(character.isspace() for character in display_name):
-            aliases.append(display_name)
-        aliases.extend(_DISPLAY_ALIAS_SPLIT.split(display_name))
+        aliases = [agent_id, display_name, *_DISPLAY_ALIAS_SPLIT.split(display_name)]
         for value in aliases:
             alias = str(value or "").strip(" @,;!?[]{}").casefold()
-            if not alias or alias == "all" or _MENTION_ALIAS.fullmatch(alias) is None:
+            if (
+                not alias
+                or alias == "all"
+                or any(character in alias for character in "@<>\r\n")
+                or (
+                    not any(character.isspace() for character in alias)
+                    and _MENTION_ALIAS.fullmatch(alias) is None
+                )
+            ):
                 continue
             candidates.setdefault(alias, set()).add(agent_id)
     return {

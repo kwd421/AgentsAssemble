@@ -151,6 +151,25 @@ class RoomRoutingPolicyTests(unittest.TestCase):
 
         self.assertEqual(direct_message_targets(_event("@alex 답해"), providers), ())
 
+    def test_structured_spaced_name_targets_only_the_exact_agent(self):
+        providers = {
+            "opus-5": NativeCliProviderSpec("opus-5", "Opus 5", ("claude",)),
+            "opus-46": NativeCliProviderSpec("opus-46", "Opus 4.6", ("claude",)),
+        }
+
+        self.assertEqual(
+            direct_message_targets(_event("<@Opus 5> 답해"), providers),
+            ("opus-5",),
+        )
+        self.assertEqual(
+            route_message_targets(
+                _event("<@Opus 5> 답해"),
+                providers,
+                max_agent_relay_depth=2,
+            ).targets,
+            ("opus-5",),
+        )
+
 
 if __name__ == "__main__":
     unittest.main()
