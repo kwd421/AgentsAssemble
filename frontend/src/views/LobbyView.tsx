@@ -22,6 +22,11 @@ import {
   LobbyTypingRow,
 } from "./lobby/LobbyEventRows";
 import { useLobbyHistory } from "./lobby/useLobbyHistory";
+import type {
+  PendingProviderRequest,
+  ProviderRequestResolution,
+} from "../lib/providerRequestModel";
+import ProviderRequestCard from "./components/ProviderRequestCard";
 
 export default function LobbyView({
   activeRoom,
@@ -50,6 +55,8 @@ export default function LobbyView({
   canonicalOldestSeq = 0,
   canonicalHasMoreHistory = false,
   loadCanonicalHistory,
+  providerRequests = [],
+  resolveProviderRequest,
 }: {
   activeRoom: RoomDockItem;
   agents: LiveAgent[];
@@ -81,6 +88,11 @@ export default function LobbyView({
     oldestSeq: number;
     hasMoreBefore: boolean;
   }>;
+  providerRequests?: PendingProviderRequest[];
+  resolveProviderRequest?: (
+    providerRequestId: string,
+    resolution: ProviderRequestResolution
+  ) => Promise<void>;
 }) {
   const {
     handleLobbyPosted,
@@ -293,6 +305,17 @@ export default function LobbyView({
 
       {/* Composer */}
       <div className="shrink-0 px-4 pb-5">
+        {resolveProviderRequest && providerRequests.length > 0 && (
+          <div className="dc-provider-request-stack">
+            {providerRequests.map((request) => (
+              <ProviderRequestCard
+                key={request.provider_request_id}
+                request={request}
+                onResolve={resolveProviderRequest}
+              />
+            ))}
+          </div>
+        )}
         <LobbyComposer
           meetingId={activeRoom.meetingId}
           onPosted={handleLobbyPosted}

@@ -170,6 +170,7 @@ def _normalize_questions(value: object) -> list[dict[str, object]]:
                 "header": clean_room_text(raw.get("header"), limit=120),
                 "question": question_text,
                 "options": _normalize_options(raw.get("options")),
+                "multiple": bool(raw.get("multiple")),
                 "is_other": bool(raw.get("is_other")),
                 "is_secret": bool(raw.get("is_secret")),
             }

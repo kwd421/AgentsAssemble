@@ -59,12 +59,16 @@ class PublicProviderRequestQuestion(TypedDict):
     header: str
     question: str
     options: list[PublicProviderRequestOption]
+    multiple: bool
     is_other: bool
     is_secret: bool
 
 
 class PublicProviderRequest(TypedDict, total=False):
     provider_request_id: str
+    participant_id: str
+    display_name: str
+    provider_kind: str
     request_kind: str
     response_kind: str
     title: str

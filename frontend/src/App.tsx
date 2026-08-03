@@ -1827,6 +1827,8 @@ export default function App() {
               canonicalOldestSeq={activeRoomHistory.oldestSeq}
               canonicalHasMoreHistory={activeRoomHistory.hasMoreBefore}
               loadCanonicalHistory={loadCanonicalRoomHistory}
+              providerRequests={canonicalRoom.providerRequests}
+              resolveProviderRequest={canonicalRoom.sendProviderRequestResolution}
             />
           ) : activeCustomChannel ? (
             <CustomChannelView

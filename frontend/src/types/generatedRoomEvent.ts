@@ -13,12 +13,16 @@ export interface PublicProviderRequestQuestion {
   header: string;
   question: string;
   options: PublicProviderRequestOption[];
+  multiple: boolean;
   is_other: boolean;
   is_secret: boolean;
 }
 
 export interface PublicProviderRequest {
   provider_request_id?: string;
+  participant_id?: string;
+  display_name?: string;
+  provider_kind?: string;
   request_kind?: string;
   response_kind?: string;
   title?: string;

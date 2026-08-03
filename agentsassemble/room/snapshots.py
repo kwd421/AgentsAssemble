@@ -17,6 +17,20 @@ ROOM_SNAPSHOT_EVENT_LIMIT = 200
 ROOM_HISTORY_MAX_LIMIT = 200
 BRIDGE_ROOM_VIEW_MESSAGE_LIMIT = 50
 BRIDGE_ROOM_VIEW_CHAR_LIMIT = 32_768
+_PUBLIC_PROVIDER_REQUEST_FIELDS = frozenset(
+    {
+        "provider_request_id",
+        "request_kind",
+        "response_kind",
+        "title",
+        "description",
+        "status",
+        "options",
+        "questions",
+        "timeout_seconds",
+        "action_url",
+    }
+)
 
 EnsureRoom = Callable[[str], dict[str, object]]
 CapabilityProjection = Callable[[dict[str, object]], dict[str, bool]]
@@ -97,6 +111,12 @@ class RoomSnapshotService:
                 for session in stored_sessions
                 if session.get("session_id") == own_session_id
             ]
+        capabilities = self._capabilities(identity)
+        provider_requests = [] if bridge else _pending_provider_requests(
+            stored_sessions,
+            identity,
+            can_manage_room=bool(capabilities.get("room.manage")),
+        )
         sessions = [public_session(session) for session in stored_sessions]
         public_events = [public_event_for_identity(event, identity) for event in events]
         active_turns = [
@@ -130,6 +150,7 @@ class RoomSnapshotService:
                 for participant in participants
             ],
             "agent_sessions": sessions,
+            "provider_requests": provider_requests,
             "active_turns": active_turns,
             "events": public_events,
             "oldest_seq": oldest_seq,
@@ -139,7 +160,7 @@ class RoomSnapshotService:
             "snapshot_mode": snapshot_mode,
             "provider_catalog": provider_catalog,
             "available_providers": list(provider_catalog.get("providers") or []),
-            "capabilities": self._capabilities(identity),
+            "capabilities": capabilities,
         }
 
     def _bridge_room_view_events(self, room_id: str) -> list[dict[str, object]]:
@@ -201,6 +222,40 @@ class RoomSnapshotService:
             ),
             "last_seq": self.store.latest_event_sequence(clean_room_id),
         }
+
+
+def _pending_provider_requests(
+    sessions: list[dict[str, object]],
+    identity: dict[str, object],
+    *,
+    can_manage_room: bool,
+) -> list[dict[str, object]]:
+    principals = {
+        clean_room_text(identity.get("agent_id"), 128),
+        clean_room_text(identity.get("user_id"), 128),
+        clean_room_text(identity.get("session_id"), 128),
+    }
+    principals.discard("")
+    visible: list[dict[str, object]] = []
+    for session in sessions:
+        pending = session.get("pending_provider_request")
+        if not isinstance(pending, dict) or not pending:
+            continue
+        owner_id = clean_room_text(pending.get("owner_id"), 128)
+        if not can_manage_room and owner_id not in principals:
+            continue
+        request = {
+            key: value
+            for key, value in pending.items()
+            if key in _PUBLIC_PROVIDER_REQUEST_FIELDS
+        }
+        request.update(
+            participant_id=clean_room_text(session.get("participant_id"), 128),
+            display_name=clean_room_text(session.get("display_name"), 160),
+            provider_kind=clean_room_text(session.get("provider_kind"), 128),
+        )
+        visible.append(request)
+    return visible
 
 
 __all__ = [

@@ -25,6 +25,12 @@ import {
   type AgentSessionProgress,
 } from "./lib/roomEventProjection";
 import { isUnauthorizedApiError } from "./lib/apiErrors";
+import {
+  applyProviderRequestEvents,
+  normalizePendingProviderRequests,
+  type PendingProviderRequest,
+  type ProviderRequestResolution,
+} from "./lib/providerRequestModel";
 
 export type CanonicalRoomHistoryState = {
   initialized: boolean;
@@ -193,6 +199,9 @@ export function useCanonicalRoom(options: UseCanonicalRoomOptions) {
   const [providerCatalogByRoom, setProviderCatalogByRoom] = useState<
     Record<string, ProviderCatalogSnapshot>
   >({});
+  const [providerRequestsByRoom, setProviderRequestsByRoom] = useState<
+    Record<string, PendingProviderRequest[]>
+  >({});
   const [progressByRoom, setProgressByRoom] = useState<
     Record<string, AgentSessionProgress | null>
   >({});
@@ -298,6 +307,12 @@ export function useCanonicalRoom(options: UseCanonicalRoomOptions) {
     ) {
       setMembershipRevision((previous) => previous + 1);
     }
+    if (incoming.some((event) => event.type.startsWith("provider_request_"))) {
+      setProviderRequestsByRoom((previous) => ({
+        ...previous,
+        [targetRoomId]: applyProviderRequestEvents(previous[targetRoomId] || [], incoming),
+      }));
+    }
   }, []);
 
   const authKey = auth
@@ -387,6 +402,10 @@ export function useCanonicalRoom(options: UseCanonicalRoomOptions) {
           projectParticipantState: false,
           projectSessionState: snapshot.snapshot_mode === "resume",
         });
+        setProviderRequestsByRoom((previous) => ({
+          ...previous,
+          [roomId]: normalizePendingProviderRequests(snapshot.provider_requests || []),
+        }));
         setMembershipRevision((previous) => previous + 1);
         setLastError(null);
       },
@@ -601,6 +620,21 @@ export function useCanonicalRoom(options: UseCanonicalRoomOptions) {
     [applyEvents, roomId, socket]
   );
 
+  const sendProviderRequestResolution = useCallback(
+    async (providerRequestId: string, resolution: ProviderRequestResolution) => {
+      if (!socket) throw new Error("방 연결이 준비되지 않았습니다.");
+      const ack = await socket.command("provider.request.resolve", {
+        provider_request_id: providerRequestId,
+        ...resolution,
+      });
+      const event = ack.result?.event as RoomEvent | undefined;
+      if (event?.type === "provider_request_resolution_requested") {
+        applyEvents(roomId, [event]);
+      }
+    },
+    [applyEvents, roomId, socket]
+  );
+
   const events = eventsByRoom[roomId] || [];
   const participantProfiles = useMemo(() => {
     const profiles: Record<
@@ -663,6 +697,7 @@ export function useCanonicalRoom(options: UseCanonicalRoomOptions) {
     capabilities: capabilitiesByRoom[roomId] || {},
     availableProviders: providersByRoom[roomId] || [],
     providerCatalog: providerCatalogByRoom[roomId] || EMPTY_PROVIDER_CATALOG,
+    providerRequests: providerRequestsByRoom[roomId] || [],
     agentSessionProgress: progressByRoom[roomId] || null,
     history: historyByRoom[roomId] || EMPTY_HISTORY,
     loadHistory,
@@ -671,5 +706,6 @@ export function useCanonicalRoom(options: UseCanonicalRoomOptions) {
     sendParticipantKick,
     sendParticipantMute,
     sendRoomSettingsUpdate,
+    sendProviderRequestResolution,
   };
 }

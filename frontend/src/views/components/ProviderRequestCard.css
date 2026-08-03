@@ -1,0 +1,195 @@
+.dc-provider-request-stack {
+  display: grid;
+  gap: 8px;
+  margin-bottom: 10px;
+}
+
+.dc-provider-request {
+  border: 1px solid rgba(240, 178, 50, 0.3);
+  border-radius: 10px;
+  background: #24252b;
+  box-shadow: 0 12px 30px rgba(0, 0, 0, 0.22);
+  padding: 12px;
+}
+
+.dc-provider-request[data-kind="user_input"] {
+  border-color: rgba(88, 101, 242, 0.38);
+}
+
+.dc-provider-request-header {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.dc-provider-request-icon {
+  display: grid;
+  flex: 0 0 34px;
+  height: 34px;
+  place-items: center;
+  border-radius: 9px;
+  background: rgba(240, 178, 50, 0.12);
+  color: var(--color-idle);
+}
+
+.dc-provider-request[data-kind="user_input"] .dc-provider-request-icon {
+  background: rgba(88, 101, 242, 0.14);
+  color: #aeb4ff;
+}
+
+.dc-provider-request-header div {
+  min-width: 0;
+}
+
+.dc-provider-request-header strong,
+.dc-provider-request-header span {
+  display: block;
+}
+
+.dc-provider-request-header strong {
+  color: var(--color-text-primary);
+  font-size: 14px;
+  font-weight: 850;
+}
+
+.dc-provider-request-header span {
+  margin-top: 1px;
+  color: var(--color-text-muted);
+  font-size: 11px;
+  font-weight: 700;
+}
+
+.dc-provider-request-description {
+  margin: 10px 0 0 44px;
+  white-space: pre-wrap;
+  color: var(--color-text-secondary);
+  font-family: var(--font-mono);
+  font-size: 12px;
+  line-height: 1.5;
+}
+
+.dc-provider-request-actions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 7px;
+  margin-top: 11px;
+}
+
+.dc-provider-request-actions button,
+.dc-provider-request-actions a,
+.dc-provider-request-choices button {
+  display: inline-flex;
+  min-height: 34px;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  border-radius: 7px;
+  background: #35363d;
+  padding: 7px 11px;
+  color: var(--color-text-primary);
+  font-size: 12px;
+  font-weight: 800;
+  text-decoration: none;
+}
+
+.dc-provider-request-actions button:first-of-type,
+.dc-provider-request-actions a {
+  background: var(--color-accent);
+  color: #fff;
+}
+
+.dc-provider-request-actions button[data-kind="decline"],
+.dc-provider-request-actions button[data-kind="deny"],
+.dc-provider-request-actions button[data-kind="reject_once"],
+.dc-provider-request-actions button[data-kind="reject_always"],
+.dc-provider-request-actions button[data-kind="cancel"] {
+  background: rgba(242, 63, 66, 0.13);
+  color: #ffb3b5;
+}
+
+.dc-provider-request-actions button:hover:not(:disabled),
+.dc-provider-request-actions a:hover,
+.dc-provider-request-choices button:hover:not(:disabled),
+.dc-provider-request-choices button[data-selected="true"] {
+  filter: brightness(1.12);
+}
+
+.dc-provider-request-actions button:disabled,
+.dc-provider-request-choices button:disabled {
+  opacity: 0.48;
+}
+
+.dc-provider-request-questions {
+  margin: 10px 0 0 44px;
+}
+
+.dc-provider-request-questions fieldset {
+  margin: 0 0 10px;
+  border: 0;
+  padding: 0;
+}
+
+.dc-provider-request-questions legend {
+  color: var(--color-text-primary);
+  font-size: 12px;
+  font-weight: 850;
+}
+
+.dc-provider-request-questions fieldset > p {
+  margin: 2px 0 7px;
+  color: var(--color-text-muted);
+  font-size: 12px;
+}
+
+.dc-provider-request-choices {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.dc-provider-request-choices button[data-selected="true"] {
+  background: var(--color-accent);
+  color: #fff;
+}
+
+.dc-provider-request-questions input {
+  width: 100%;
+  min-height: 36px;
+  border: 1px solid var(--color-panel-border);
+  border-radius: 7px;
+  background: #18191d;
+  padding: 7px 10px;
+  color: var(--color-text-primary);
+  font-size: 12px;
+  outline: none;
+}
+
+.dc-provider-request-questions input:focus {
+  border-color: var(--color-accent);
+}
+
+.dc-provider-request-error {
+  margin: 8px 0 0 44px;
+  color: #ffb3b5;
+  font-size: 11px;
+  font-weight: 700;
+}
+
+.dc-provider-request-spinner {
+  animation: dc-provider-request-spin 900ms linear infinite;
+}
+
+@keyframes dc-provider-request-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+@media (max-width: 680px) {
+  .dc-provider-request-description,
+  .dc-provider-request-questions,
+  .dc-provider-request-error {
+    margin-left: 0;
+  }
+}

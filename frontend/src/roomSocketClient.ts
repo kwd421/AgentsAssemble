@@ -10,7 +10,10 @@ import {
   type ServerRoom,
   type SideChatEvent,
 } from "./api";
-import type { PublicRoomGlobalSettings } from "./types/generatedRoomEvent";
+import type {
+  PublicProviderRequest,
+  PublicRoomGlobalSettings,
+} from "./types/generatedRoomEvent";
 
 export type { RoomSocketAuth } from "./api";
 
@@ -117,6 +120,7 @@ export interface RoomSocketSnapshot {
   room_settings: PublicRoomGlobalSettings;
   participants: RoomMember[];
   agent_sessions: RoomAgentSession[];
+  provider_requests?: PublicProviderRequest[];
   active_turns: Array<Record<string, unknown>>;
   events: RoomEvent[];
   oldest_seq: number;

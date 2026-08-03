@@ -8,6 +8,7 @@ from agentsassemble.providers.launch_specs import NativeCliProviderSpec
 from agentsassemble.room.errors import RoomCommandRejected
 from agentsassemble.room.event_broker import RoomEventBroker
 from agentsassemble.room.realtime import RoomRealtimeController
+from agentsassemble.room.snapshots import ROOM_SNAPSHOT_EVENT_LIMIT
 from tests.room_realtime_test_support import memory_room_access_services
 
 
@@ -173,6 +174,41 @@ class RoomProviderRequestTests(unittest.TestCase):
                 },
             )
         self.assertEqual(duplicate.exception.code, "provider_request_not_pending")
+
+    def test_pending_request_survives_snapshot_history_window(self) -> None:
+        self.command(
+            self.bridge,
+            "open-old-request",
+            "provider.request.open",
+            {
+                "provider_request_id": "provider-request-old",
+                "request_kind": "permission",
+                "response_kind": "option",
+                "title": "파일 변경",
+                "options": [
+                    {"id": "accept", "label": "이번만 허용", "kind": "allow_once"},
+                    {"id": "decline", "label": "거절", "kind": "decline"},
+                ],
+            },
+        )
+        for index in range(ROOM_SNAPSHOT_EVENT_LIMIT):
+            self.command(
+                HOST,
+                f"message-{index}",
+                "message.send",
+                {"message": f"later message {index}"},
+            )
+
+        snapshot = self.controller.snapshot(HOST)
+
+        self.assertNotIn(
+            "provider_request_opened",
+            [event["type"] for event in snapshot["events"]],
+        )
+        self.assertEqual(
+            snapshot["provider_requests"][0]["provider_request_id"],
+            "provider-request-old",
+        )
 
 
 if __name__ == "__main__":
