@@ -271,14 +271,18 @@ export default function VoteComposerDialog({
           <div className="dc-create-channel-actions">
             <button
               type="button"
-              className="ops-button"
+              className="ops-button min-w-[58px] px-3 py-2"
               onClick={onClose}
               disabled={busy}
             >
               취소
             </button>
-            <button type="submit" className="ops-cta" disabled={busy}>
-              {busy ? "만드는 중..." : "투표 만들기"}
+            <button
+              type="submit"
+              className="ops-cta min-w-[58px] px-3 py-2"
+              disabled={busy}
+            >
+              {busy ? "저장 중…" : "만들기"}
             </button>
           </div>
         </form>

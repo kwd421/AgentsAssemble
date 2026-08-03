@@ -26,6 +26,9 @@ type MentionInputProps = {
   disabled?: boolean;
   maxLength?: number;
   ariaLabel?: string;
+  externalListId?: string;
+  externalActiveOptionId?: string;
+  externalListOpen?: boolean;
 };
 
 export default function MentionInput({
@@ -39,6 +42,9 @@ export default function MentionInput({
   disabled,
   maxLength,
   ariaLabel,
+  externalListId,
+  externalActiveOptionId,
+  externalListOpen = false,
 }: MentionInputProps) {
   const internalRef = useRef<HTMLTextAreaElement>(null);
   const targetRef = inputRef || internalRef;
@@ -61,6 +67,10 @@ export default function MentionInput({
   );
   const activeOptionId =
     options.length > 0 ? `${mentionListId}-option-${activeOptionIndex}` : undefined;
+  const controlledListId =
+    options.length > 0 ? mentionListId : externalListOpen ? externalListId : undefined;
+  const controlledOptionId =
+    options.length > 0 ? activeOptionId : externalListOpen ? externalActiveOptionId : undefined;
 
   useEffect(() => {
     setActiveOptionIndex(0);
@@ -177,9 +187,9 @@ export default function MentionInput({
         maxLength={maxLength}
         aria-label={ariaLabel}
         aria-autocomplete="list"
-        aria-controls={options.length > 0 ? mentionListId : undefined}
-        aria-expanded={options.length > 0}
-        aria-activedescendant={activeOptionId}
+        aria-controls={controlledListId}
+        aria-expanded={options.length > 0 || externalListOpen}
+        aria-activedescendant={controlledOptionId}
         rows={1}
       />
     </>

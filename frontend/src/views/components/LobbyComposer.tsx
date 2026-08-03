@@ -1,6 +1,7 @@
 import {
   useCallback,
   useEffect,
+  useId,
   useRef,
   useState,
   type ChangeEvent,
@@ -27,6 +28,10 @@ import type { RoomPostingMode } from "../../lib/roomGuestPosting";
 import type { Mentionable } from "../../lib/mentionComposerModel";
 import { parseVoteCommand } from "../../lib/votePoll";
 import MentionInput from "./MentionInput";
+import ComposerCommandMenu, {
+  matchingComposerCommands,
+  type ComposerCommand,
+} from "./ComposerCommandMenu";
 import VoteComposerDialog, {
   type VoteComposerValue,
 } from "./VoteComposerDialog";
@@ -106,12 +111,15 @@ export default function LobbyComposer({
   const fileInputRef = useRef<HTMLInputElement>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
   const restoreFocusAfterSubmitRef = useRef(false);
+  const commandListId = useId();
   const [draftsByRoom, setDraftsByRoom] = useState<Record<string, LobbyComposerDraft>>({});
   const [busy, setBusy] = useState(false);
   const [uploading, setUploading] = useState(false);
   const [error, setError] = useState("");
   const [accessoryNotice, setAccessoryNotice] = useState("");
   const [voteDialogOpen, setVoteDialogOpen] = useState(false);
+  const [activeCommandIndex, setActiveCommandIndex] = useState(0);
+  const [dismissedCommandMessage, setDismissedCommandMessage] = useState("");
   const roomSocket = useRoomSocket();
   const activeDraft = draftsByRoom[meetingId] || EMPTY_LOBBY_COMPOSER_DRAFT;
   const message = activeDraft.message;
@@ -121,6 +129,12 @@ export default function LobbyComposer({
     postingMode === "host" ||
     (postingMode === "guest" && Boolean(roomSessionToken.trim()));
   const canSubmit = Boolean(message.trim() || pendingAttachments.length) && !busy && !uploading && !disabled;
+  const matchingCommands = matchingComposerCommands(message);
+  const commandMenuOpen =
+    !disabled &&
+    !busy &&
+    matchingCommands.length > 0 &&
+    dismissedCommandMessage !== message;
   const closeVoteDialog = useCallback(() => setVoteDialogOpen(false), []);
 
   function setMessage(nextMessage: string) {
@@ -132,6 +146,19 @@ export default function LobbyComposer({
         [meetingId]: { ...current, message: nextMessage },
       };
     });
+  }
+
+  function updateMessage(nextMessage: string) {
+    setMessage(nextMessage);
+    setActiveCommandIndex(0);
+    if (nextMessage !== dismissedCommandMessage) setDismissedCommandMessage("");
+  }
+
+  function selectCommand(command: ComposerCommand) {
+    setMessage(command.command);
+    setDismissedCommandMessage(command.command);
+    setAccessoryNotice("");
+    if (command.id === "vote") setVoteDialogOpen(true);
   }
 
   function setPendingAttachments(
@@ -237,6 +264,7 @@ export default function LobbyComposer({
     if (!trimmed && draftAttachments.length === 0) return;
     if (trimmed.toLocaleLowerCase() === "/vote") {
       setError("");
+      setDismissedCommandMessage(draftMessage);
       setVoteDialogOpen(true);
       return;
     }
@@ -335,6 +363,31 @@ export default function LobbyComposer({
   }
 
   function handleKeyDown(event: KeyboardEvent<HTMLTextAreaElement>) {
+    if (commandMenuOpen) {
+      if (event.key === "ArrowDown") {
+        event.preventDefault();
+        setActiveCommandIndex((current) => (current + 1) % matchingCommands.length);
+        return;
+      }
+      if (event.key === "ArrowUp") {
+        event.preventDefault();
+        setActiveCommandIndex(
+          (current) => (current - 1 + matchingCommands.length) % matchingCommands.length
+        );
+        return;
+      }
+      if (event.key === "Enter" || event.key === "Tab") {
+        event.preventDefault();
+        const command = matchingCommands[activeCommandIndex] || matchingCommands[0];
+        if (command) selectCommand(command);
+        return;
+      }
+      if (event.key === "Escape") {
+        event.preventDefault();
+        setDismissedCommandMessage(message);
+        return;
+      }
+    }
     if (event.key !== "Enter" || event.nativeEvent.isComposing) return;
     if (event.shiftKey) return;
     event.preventDefault();
@@ -383,16 +436,30 @@ export default function LobbyComposer({
       )}
 
       <div className="dc-composer-bar">
+        {commandMenuOpen && (
+          <ComposerCommandMenu
+            listId={commandListId}
+            commands={matchingCommands}
+            activeIndex={activeCommandIndex}
+            onActiveIndexChange={setActiveCommandIndex}
+            onSelect={selectCommand}
+          />
+        )}
         <MentionInput
           inputRef={inputRef}
           value={message}
-          onChange={setMessage}
+          onChange={updateMessage}
           onKeyDown={handleKeyDown}
           className="dc-composer-input"
           placeholder={disabledReason || (uploading ? "첨부 업로드 중..." : "이 방에 메시지 남기기...")}
           disabled={busy || disabled}
           mentionables={mentionables}
           ariaLabel="채팅 입력"
+          externalListId={commandListId}
+          externalActiveOptionId={
+            commandMenuOpen ? `${commandListId}-option-${activeCommandIndex}` : undefined
+          }
+          externalListOpen={commandMenuOpen}
         />
         <input
           ref={fileInputRef}

@@ -177,7 +177,7 @@ describe("LobbyComposer", () => {
     expect(apiMocks.uploadLobbyAttachment).not.toHaveBeenCalled();
   });
 
-  it("opens the vote dialog for the exact slash command without sending chat", async () => {
+  it("discovers and opens the vote command without sending chat", async () => {
     const say = vi.fn().mockResolvedValue({ events: [] });
     const socket = {
       ready: () => true,
@@ -190,7 +190,12 @@ describe("LobbyComposer", () => {
     );
 
     const input = screen.getByLabelText("채팅 입력");
-    fireEvent.change(input, { target: { value: "/vote" } });
+    fireEvent.change(input, { target: { value: "/" } });
+
+    const commandMenu = screen.getByRole("listbox", { name: "채팅 명령" });
+    expect(within(commandMenu).getByRole("option").textContent).toContain("/vote");
+    expect(input.getAttribute("aria-controls")).toBe(commandMenu.id);
+    expect(input.getAttribute("aria-expanded")).toBe("true");
     fireEvent.keyDown(input, { key: "Enter" });
 
     const dialog = await screen.findByRole("dialog", { name: "투표 만들기" });
@@ -229,7 +234,7 @@ describe("LobbyComposer", () => {
     const first = within(dialog).getByRole("button", {
       name: "투표 만들기 닫기",
     });
-    const last = within(dialog).getByRole("button", { name: "투표 만들기" });
+    const last = within(dialog).getByRole("button", { name: "만들기" });
 
     first.focus();
     fireEvent.keyDown(first, { key: "Tab", shiftKey: true });
@@ -286,7 +291,7 @@ describe("LobbyComposer", () => {
       target: { value: "북쪽" },
     });
     fireEvent.click(
-      within(dialog).getByRole("button", { name: "투표 만들기" })
+      within(dialog).getByRole("button", { name: "만들기" })
     );
 
     expect((await within(dialog).findByRole("alert")).textContent).toContain(
@@ -302,7 +307,7 @@ describe("LobbyComposer", () => {
       { target: { value: "15" } }
     );
     fireEvent.click(
-      within(dialog).getByRole("button", { name: "투표 만들기" })
+      within(dialog).getByRole("button", { name: "만들기" })
     );
 
     await waitFor(() =>
