@@ -23,14 +23,16 @@ describe("ProviderControlSelect", () => {
     );
 
     await userEvent.click(screen.getByRole("combobox", { name: "모델" }));
-    await userEvent.click(screen.getByRole("menuitem", { name: "Gemini" }));
+    await userEvent.click(
+      screen.getByRole("menuitem", { name: "Gemini 제공사, 2개 모델" })
+    );
 
     expect(screen.queryByRole("menu", { name: "모델 분류" })).toBeNull();
     expect(screen.getAllByRole("listbox")).toHaveLength(1);
     expect(screen.getByRole("option", { name: "Gemini Flash" })).toBeTruthy();
     expect(screen.queryByRole("option", { name: "Claude Sonnet" })).toBeNull();
 
-    await userEvent.click(screen.getByRole("button", { name: "모델 분류로 돌아가기" }));
+    await userEvent.click(screen.getByRole("button", { name: "모델 제공사로 돌아가기" }));
     expect(screen.getByRole("menu", { name: "모델 분류" })).toBeTruthy();
   });
 
@@ -83,6 +85,30 @@ describe("ProviderControlSelect", () => {
     expect(within(results).getByRole("option", { name: "Free Model Free" })).toBeTruthy();
     expect(within(results).getByRole("option", { name: "Free Tier Model Free tier" })).toBeTruthy();
     expect(within(results).queryByRole("option", { name: "Paid Model" })).toBeNull();
+  });
+
+  it("filters the catalog by capabilities reported by the provider", async () => {
+    render(
+      <ProviderControlSelect
+        label="모델"
+        options={[
+          {
+            value: "vendor/vision-reasoning",
+            label: "Vision Reasoning",
+            metadata: { vision: true, reasoning: true },
+          },
+          { value: "vendor/text", label: "Text Only", metadata: {} },
+        ]}
+        value="vendor/text"
+        onChange={vi.fn()}
+      />
+    );
+
+    await userEvent.click(screen.getByRole("combobox", { name: "모델" }));
+    await userEvent.click(screen.getByRole("button", { name: "비전 모델만 보기" }));
+    const results = screen.getByRole("listbox", { name: "모델" });
+    expect(within(results).getByRole("option", { name: /Vision Reasoning/ })).toBeTruthy();
+    expect(within(results).queryByRole("option", { name: "Text Only" })).toBeNull();
   });
 });
 

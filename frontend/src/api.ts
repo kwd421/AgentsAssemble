@@ -564,6 +564,7 @@ export async function fetchProviderCredentialStatus(
     custom_api: "/api/provider-credentials/custom_api",
     deepseek: "/api/provider-credentials/deepseek",
     openrouter: "/api/provider-credentials/openrouter",
+    llmgateway: "/api/provider-credentials/llmgateway",
     vercel: "/api/provider-credentials/vercel",
   };
   const path = paths[providerId];
@@ -587,6 +588,7 @@ export async function setProviderCredential(
     custom_api: "/api/provider-credentials/custom_api",
     deepseek: "/api/provider-credentials/deepseek",
     openrouter: "/api/provider-credentials/openrouter",
+    llmgateway: "/api/provider-credentials/llmgateway",
     vercel: "/api/provider-credentials/vercel",
   };
   const path = paths[providerId];
@@ -603,6 +605,7 @@ export async function deleteProviderCredential(
     custom_api: "/api/provider-credentials/custom_api",
     deepseek: "/api/provider-credentials/deepseek",
     openrouter: "/api/provider-credentials/openrouter",
+    llmgateway: "/api/provider-credentials/llmgateway",
     vercel: "/api/provider-credentials/vercel",
   };
   const path = paths[providerId];

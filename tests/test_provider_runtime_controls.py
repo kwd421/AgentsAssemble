@@ -989,7 +989,7 @@ class ProviderRuntimeControlTests(unittest.TestCase):
         self.assertEqual(diagnostics["category"], "refresh_ready")
         self.assertTrue(diagnostics["last_failure_at"])
 
-    def test_deepseek_stream_emits_content_but_not_reasoning_or_key(self):
+    def test_deepseek_stream_reports_reasoning_activity_without_leaking_it_into_final_or_health(self):
         captured = {}
 
         def opener(request, timeout: float):
@@ -1003,12 +1003,23 @@ class ProviderRuntimeControlTests(unittest.TestCase):
 
         runtime = DeepSeekApiRuntime("deepseek", api_key="sk-private", opener=opener)
         deltas: list[str] = []
+        activities: list[dict[str, object]] = []
         runtime.send("say hi")
-        result = runtime.read_output(timeout_seconds=2, on_delta=deltas.append)
+        result = runtime.read_output(
+            timeout_seconds=2,
+            on_delta=deltas.append,
+            on_activity=activities.append,
+        )
 
         self.assertEqual(result["content"], "hello")
         self.assertEqual(result["metadata"]["observed_model_id"], "deepseek-v4-flash")
         self.assertEqual(deltas, ["hello"])
+        self.assertEqual(
+            [activity["status"] for activity in activities],
+            ["running", "completed"],
+        )
+        self.assertTrue(all(activity["category"] == "reasoning" for activity in activities))
+        self.assertEqual(activities[-1]["activity_detail"], "private")
         self.assertNotIn("private", json.dumps(result))
         self.assertNotIn("sk-private", json.dumps(runtime.health()))
         self.assertEqual(captured["body"]["reasoning_effort"], "high")

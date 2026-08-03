@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { Brain, CirclePause, Play, RotateCcw, Save, Square, Zap } from "lucide-react";
+import { CirclePause, Play, RotateCcw, Save, Square, Zap } from "lucide-react";
 import type { RoomAgentSession } from "../../api";
 import type { NativeCliProviderAvailability, ProviderControl } from "../../roomSocketClient";
 import {
@@ -9,6 +9,7 @@ import {
   reconcileProviderSettings,
 } from "../../lib/providerControlSettings";
 import AgentSessionPersonaSettings from "./AgentSessionPersonaSettings";
+import AgentActivitySettings from "./AgentActivitySettings";
 import ProviderControlSelect from "./ProviderControlSelect";
 import ProviderControlToggle from "./ProviderControlToggle";
 
@@ -280,30 +281,13 @@ export default function AgentSessionDetails({
           onStatus={setActionStatus}
         />
       )}
-      <div className="dc-agent-activity-setting">
-        <div className="dc-agent-activity-copy">
-          <div>
-            <Brain size={15} aria-hidden />
-            <span>생각과 작업 표시</span>
-          </div>
-          <p>공개용 생각 요약과 안전하게 정리된 도구 활동만 표시합니다.</p>
-        </div>
-        <button
-          type="button"
-          className="dc-agent-activity-toggle"
-          role="switch"
-          aria-label="생각과 작업 표시"
-          aria-checked={activityVisible}
-          data-on={activityVisible}
-          disabled={!onActivityVisibilityChange}
-          onClick={() => onActivityVisibilityChange?.(session, !activityVisible)}
-        >
-          <span className="dc-agent-activity-switch" aria-hidden="true">
-            <i />
-          </span>
-          <span>{activityVisible ? "켜짐" : "꺼짐"}</span>
-        </button>
-      </div>
+      <AgentActivitySettings
+        session={session}
+        activityVisible={activityVisible}
+        onActivityVisibilityChange={onActivityVisibilityChange}
+        onConfigure={onConfigure}
+        onStatus={setActionStatus}
+      />
       {onControl && (
         <div className="dc-member-session-actions" aria-label={`${session.display_name} 세션 제어`}>
           <button

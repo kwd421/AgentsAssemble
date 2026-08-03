@@ -50,16 +50,37 @@ class RoomAgentProfileService:
             payload.get("display_name") or current.get("display_name") or agent_id,
             80,
         )
-        avatar_image_url = clean_room_text(payload.get("avatar_image_url"), 4096)
+        avatar_image_url = clean_room_text(
+            payload.get("avatar_image_url")
+            if "avatar_image_url" in payload
+            else current.get("avatar_image_url"),
+            4096,
+        )
+        share_activity_value = (
+            payload.get("share_activity")
+            if "share_activity" in payload
+            else current.get("share_activity", False)
+        )
+        if isinstance(share_activity_value, bool):
+            share_activity = share_activity_value
+        elif isinstance(share_activity_value, str) and share_activity_value in {"true", "false"}:
+            share_activity = share_activity_value == "true"
+        else:
+            raise RoomCommandRejected(
+                "share_activity must be a boolean.",
+                code="invalid_profile",
+            )
         updated_participant = unit.update_participant_fields(
             agent_id,
             display_name=display_name,
             avatar_image_url=avatar_image_url,
+            share_activity=share_activity,
         )
         updated_session = unit.update_session_fields(
             agent_id,
             display_name=display_name,
             avatar_image_url=avatar_image_url,
+            share_activity=share_activity,
         )
         unit.append_event(
             "participant_updated",

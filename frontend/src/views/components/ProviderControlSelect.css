@@ -1,8 +1,10 @@
 .dc-agent-select-popover {
+  box-sizing: border-box;
   position: fixed;
   z-index: 220;
   display: grid;
   min-width: min(280px, calc(100vw - 16px));
+  max-width: calc(100vw - 16px);
   max-height: calc(100vh - 16px);
   overflow: hidden;
   border: 1px solid var(--color-panel-separator);
@@ -16,6 +18,7 @@
   --dc-select-gap: 2px;
   --dc-select-rows: 7;
   position: fixed;
+  box-sizing: border-box;
   z-index: 220;
   display: grid;
   max-height: min(
@@ -97,12 +100,19 @@
 }
 
 .dc-agent-select-ultra-badge,
+.dc-agent-select-context-badge,
 .dc-agent-select-badges small {
   border-radius: 999px;
   padding: 1px 6px;
   font-size: 9px;
   font-weight: 900;
   line-height: 16px;
+}
+
+.dc-agent-select-context-badge {
+  background: rgba(255, 255, 255, 0.06);
+  color: var(--color-text-muted);
+  letter-spacing: 0.04em;
 }
 
 .dc-agent-select-ultra-badge {
@@ -129,7 +139,8 @@
 .dc-agent-select-popover > .dc-agent-select-menu {
   position: static;
   z-index: auto;
-  width: auto;
+  width: 100%;
+  min-width: 0;
   min-height: 0;
   border: 0;
   border-radius: 0;
@@ -138,7 +149,9 @@
 }
 
 .dc-agent-select-drilldown-header {
-  padding: 4px 4px 0;
+  min-width: 0;
+  padding: 6px 8px 2px;
+  border-bottom: 1px solid var(--color-panel-separator);
 }
 
 .dc-agent-select-drilldown-header button {
@@ -156,6 +169,31 @@
   text-align: left;
 }
 
+.dc-agent-select-drilldown-header > .dc-agent-select-level-copy {
+  padding: 2px 6px 6px;
+}
+
+.dc-agent-select-level-copy {
+  display: grid;
+  min-width: 0;
+  gap: 1px;
+  text-align: left;
+}
+
+.dc-agent-select-level-copy small {
+  color: var(--color-text-muted);
+  font-size: 9px;
+  font-weight: 800;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+}
+
+.dc-agent-select-level-copy strong {
+  color: var(--color-text-primary);
+  font-size: 12px;
+  font-weight: 800;
+}
+
 .dc-agent-select-drilldown-header button:hover,
 .dc-agent-select-drilldown-header button:focus-visible {
   background: var(--color-sidebar-hover);
@@ -163,8 +201,7 @@
 }
 
 .dc-agent-model-tools {
-  display: flex;
-  align-items: center;
+  display: grid;
   gap: 6px;
   padding: 6px;
   border-bottom: 1px solid var(--color-panel-separator);
@@ -212,6 +249,13 @@
   font-weight: 800;
 }
 
+.dc-agent-model-filters {
+  display: flex;
+  min-width: 0;
+  flex-wrap: wrap;
+  gap: 5px;
+}
+
 .dc-agent-model-free-filter:hover,
 .dc-agent-model-free-filter[data-active="true"] {
   background: rgba(88, 101, 242, 0.2);
@@ -220,6 +264,32 @@
 
 .dc-agent-select-menu .dc-agent-select-group {
   padding-right: 4px;
+}
+
+.dc-agent-select-group-copy {
+  display: grid;
+  min-width: 0;
+  gap: 1px;
+}
+
+.dc-agent-select-group-copy small {
+  color: var(--color-text-muted);
+  font-size: 9px;
+  font-weight: 700;
+}
+
+.dc-agent-select-group-trailing {
+  display: inline-flex;
+  flex: 0 0 auto;
+  align-items: center;
+  gap: 2px;
+}
+
+.dc-agent-select-group-trailing small {
+  color: var(--color-text-muted);
+  font-size: 9px;
+  font-weight: 800;
+  letter-spacing: 0.04em;
 }
 
 .dc-agent-select-group-arrow {

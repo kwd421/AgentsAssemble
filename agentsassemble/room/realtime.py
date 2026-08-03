@@ -510,9 +510,17 @@ class RoomRealtimeController:
     def snapshot(self, identity: dict[str, object], *, after_seq: int = 0) -> dict[str, object]:
         return self._snapshots.snapshot(identity, after_seq=after_seq)
 
-    def history_page(self, room_id: str, *, before_seq: int, limit: int = ROOM_HISTORY_MAX_LIMIT) -> dict[str, object]:
+    def history_page(
+        self,
+        room_id: str,
+        *,
+        identity: dict[str, object],
+        before_seq: int,
+        limit: int = ROOM_HISTORY_MAX_LIMIT,
+    ) -> dict[str, object]:
         return self._snapshots.history_page(
             room_id,
+            identity=identity,
             before_seq=before_seq,
             limit=limit,
         )
@@ -646,6 +654,7 @@ class RoomRealtimeController:
                 raise RoomCommandRejected("Agent Bridges receive assigned context, not browser history pages.", code="permission_denied")
             result = self.history_page(
                 room_id,
+                identity=identity,
                 before_seq=_safe_bounded_int(payload.get("before_seq"), default=0, minimum=0),
                 limit=_safe_bounded_int(
                     payload.get("limit"),

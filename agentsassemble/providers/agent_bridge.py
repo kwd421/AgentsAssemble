@@ -960,7 +960,7 @@ def _safe_activity(activity: object) -> dict[str, str]:
     activity_title = safe_activity_detail(values.get("activity_title"), limit=160)
     activity_detail = safe_activity_display_detail(
         values.get("activity_detail"),
-        limit=600,
+        limit=2000 if category == "reasoning" else 600,
     )
     content, activity_kind = public_activity(
         category,

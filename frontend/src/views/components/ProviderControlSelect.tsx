@@ -13,6 +13,11 @@ import {
   type MenuPosition,
   useWholeRowMenu,
 } from "./providerControlMenuLayout";
+import ProviderControlOptionContent, {
+  providerControlOptionAccessibleName,
+  providerControlOptionEffect,
+  providerControlOptionHasDescription,
+} from "./ProviderControlOptionContent";
 import "./ProviderControlSelect.css";
 
 export default function ProviderControlSelect({
@@ -34,6 +39,8 @@ export default function ProviderControlSelect({
   const [activeGroup, setActiveGroup] = useState("");
   const [query, setQuery] = useState("");
   const [freeOnly, setFreeOnly] = useState(false);
+  const [visionOnly, setVisionOnly] = useState(false);
+  const [reasoningOnly, setReasoningOnly] = useState(false);
   const listboxId = useId();
   const controlRef = useRef<HTMLDivElement>(null);
   const buttonRef = useRef<HTMLButtonElement>(null);
@@ -44,7 +51,16 @@ export default function ProviderControlSelect({
   const isModelControl = label === "모델";
   const showModelTools = isModelControl && options.length > 1;
   const hasFreeOptions = options.some(isFreeProviderOption);
-  const filteredOptions = filterProviderControlOptions(label, options, query, freeOnly);
+  const hasVisionOptions = options.some((option) => option.metadata?.vision === true);
+  const hasReasoningOptions = options.some((option) => option.metadata?.reasoning === true);
+  const filteredOptions = filterProviderControlOptions(
+    label,
+    options,
+    query,
+    freeOnly,
+    visionOnly,
+    reasoningOnly
+  );
   const optionGroups = groupProviderControlOptions(label, filteredOptions);
   const showGroupLabels = !query.trim() && optionGroups.length > 1;
   const activeOptionGroup = showGroupLabels
@@ -106,7 +122,7 @@ export default function ProviderControlSelect({
 
   useEffect(() => {
     setActiveGroup("");
-  }, [freeOnly, query]);
+  }, [freeOnly, query, reasoningOnly, visionOnly]);
 
   useLayoutEffect(() => {
     if (!open || !menuPosition || !menuRef.current) return;
@@ -123,7 +139,7 @@ export default function ProviderControlSelect({
     if (left !== menuPosition.left || top !== menuPosition.top) {
       setMenuPosition((current) => current && { ...current, left, top });
     }
-  }, [activeGroup, filteredOptions.length, freeOnly, menuPosition, open, query]);
+  }, [activeGroup, filteredOptions.length, freeOnly, menuPosition, open, query, reasoningOnly, visionOnly]);
 
   function toggleMenu() {
     if (controlDisabled || !buttonRef.current) return;
@@ -133,11 +149,11 @@ export default function ProviderControlSelect({
       return;
     }
     const rect = buttonRef.current.getBoundingClientRect();
-    const optionHeight = options.some(hasOptionDescription) ? 50 : 36;
+    const optionHeight = options.some(providerControlOptionHasDescription) ? 50 : 36;
     const estimatedHeight = Math.min(
-      menuHeightCap(optionHeight) + (showModelTools ? 50 : 0),
+      menuHeightCap(optionHeight) + (showModelTools ? 90 : 0),
       (showGroupLabels ? optionGroups.length * 36 : filteredOptions.length * optionHeight) +
-        (showModelTools ? 50 : 8)
+        (showModelTools ? 90 : 8)
     );
     const spaceBelow = window.innerHeight - rect.bottom - 8;
     const spaceAbove = rect.top - 8;
@@ -171,12 +187,12 @@ export default function ProviderControlSelect({
         aria-controls={listboxId}
         aria-expanded={open}
         aria-haspopup={showGroupLabels ? "menu" : "listbox"}
-        data-effect={optionEffect(selectedOption)}
+        data-effect={providerControlOptionEffect(selectedOption)}
         disabled={controlDisabled}
         onClick={toggleMenu}
       >
         {selectedOption ? (
-          <OptionContent option={selectedOption} />
+          <ProviderControlOptionContent option={selectedOption} />
         ) : (
           <span className="truncate preserve-words">선택 필요</span>
         )}
@@ -202,30 +218,68 @@ export default function ProviderControlSelect({
                       onChange={(event) => setQuery(event.currentTarget.value)}
                     />
                   </label>
-                  {hasFreeOptions && (
-                    <button
-                      type="button"
-                      className="dc-agent-model-free-filter"
-                      aria-label="무료 모델만 보기"
-                      aria-pressed={freeOnly}
-                      data-active={freeOnly}
-                      onClick={() => setFreeOnly((current) => !current)}
-                    >
-                      무료
-                    </button>
+                  {(hasFreeOptions || hasVisionOptions || hasReasoningOptions) && (
+                    <div className="dc-agent-model-filters" aria-label="모델 필터">
+                      {hasFreeOptions && (
+                        <button
+                          type="button"
+                          className="dc-agent-model-free-filter"
+                          aria-label="무료 모델만 보기"
+                          aria-pressed={freeOnly}
+                          data-active={freeOnly}
+                          onClick={() => setFreeOnly((current) => !current)}
+                        >
+                          무료
+                        </button>
+                      )}
+                      {hasVisionOptions && (
+                        <button
+                          type="button"
+                          className="dc-agent-model-free-filter"
+                          aria-label="비전 모델만 보기"
+                          aria-pressed={visionOnly}
+                          data-active={visionOnly}
+                          onClick={() => setVisionOnly((current) => !current)}
+                        >
+                          비전
+                        </button>
+                      )}
+                      {hasReasoningOptions && (
+                        <button
+                          type="button"
+                          className="dc-agent-model-free-filter"
+                          aria-label="추론 모델만 보기"
+                          aria-pressed={reasoningOnly}
+                          data-active={reasoningOnly}
+                          onClick={() => setReasoningOnly((current) => !current)}
+                        >
+                          추론
+                        </button>
+                      )}
+                    </div>
                   )}
                 </div>
               )}
-              {activeOptionGroup && (
+              {showGroupLabels && (
                 <div className="dc-agent-select-drilldown-header">
-                  <button
-                    type="button"
-                    aria-label="모델 분류로 돌아가기"
-                    onClick={() => setActiveGroup("")}
-                  >
-                    <ChevronLeft size={15} aria-hidden="true" />
-                    <span className="truncate preserve-words">{activeOptionGroup.label}</span>
-                  </button>
+                  {activeOptionGroup ? (
+                    <button
+                      type="button"
+                      aria-label="모델 제공사로 돌아가기"
+                      onClick={() => setActiveGroup("")}
+                    >
+                      <ChevronLeft size={15} aria-hidden="true" />
+                      <span className="dc-agent-select-level-copy">
+                        <small>모델 제공사</small>
+                        <strong className="truncate preserve-words">{activeOptionGroup.label} 모델</strong>
+                      </span>
+                    </button>
+                  ) : (
+                    <div className="dc-agent-select-level-copy">
+                      <small>모델 카탈로그</small>
+                      <strong>제공사 또는 모델 선택</strong>
+                    </div>
+                  )}
                 </div>
               )}
               <div
@@ -251,13 +305,13 @@ export default function ProviderControlSelect({
                         key={option.value || "default"}
                         type="button"
                         role="option"
-                        aria-label={optionAccessibleName(option)}
+                        aria-label={providerControlOptionAccessibleName(option)}
                         aria-selected={selected}
                         data-selected={selected}
-                        data-effect={optionEffect(option)}
+                        data-effect={providerControlOptionEffect(option)}
                         onClick={() => selectOption(option)}
                       >
-                        <OptionContent option={option} showDescription />
+                        <ProviderControlOptionContent option={option} showDescription />
                         {selected && <Check size={15} aria-hidden="true" />}
                       </button>
                     );
@@ -272,13 +326,13 @@ export default function ProviderControlSelect({
                           key={group.label}
                           type="button"
                           role="menuitemradio"
-                          aria-label={optionAccessibleName(option)}
+                          aria-label={providerControlOptionAccessibleName(option)}
                           aria-checked={selected}
                           data-selected={selected}
-                          data-effect={optionEffect(option)}
+                          data-effect={providerControlOptionEffect(option)}
                           onClick={() => selectOption(option)}
                         >
-                          <OptionContent option={option} showDescription />
+                          <ProviderControlOptionContent option={option} showDescription contextBadge="모델" />
                           {selected && <Check size={15} aria-hidden="true" />}
                         </button>
                       );
@@ -292,13 +346,20 @@ export default function ProviderControlSelect({
                         type="button"
                         role="menuitem"
                         className="dc-agent-select-group"
+                        aria-label={`${group.label} 제공사, ${group.options.length.toLocaleString()}개 모델`}
                         aria-haspopup="listbox"
                         aria-expanded={activeGroup === group.label}
                         data-selected={containsSelected}
                         onClick={() => setActiveGroup(group.label)}
                       >
-                        <span className="truncate preserve-words">{group.label}</span>
-                        <ChevronRight className="dc-agent-select-group-arrow" size={15} aria-hidden="true" />
+                        <span className="dc-agent-select-group-copy">
+                          <span className="truncate preserve-words">{group.label}</span>
+                          <small>{group.options.length.toLocaleString()}개 모델</small>
+                        </span>
+                        <span className="dc-agent-select-group-trailing">
+                          <small>제공사</small>
+                          <ChevronRight className="dc-agent-select-group-arrow" size={15} aria-hidden="true" />
+                        </span>
                       </button>
                     );
                   })
@@ -309,13 +370,13 @@ export default function ProviderControlSelect({
                       key={option.value || "default"}
                       type="button"
                       role="option"
-                      aria-label={optionAccessibleName(option)}
+                      aria-label={providerControlOptionAccessibleName(option)}
                       aria-selected={selected}
                       data-selected={selected}
-                      data-effect={optionEffect(option)}
+                      data-effect={providerControlOptionEffect(option)}
                       onClick={() => selectOption(option)}
                     >
-                      <OptionContent option={option} showDescription />
+                      <ProviderControlOptionContent option={option} showDescription />
                       {selected && <Check size={15} aria-hidden="true" />}
                     </button>
                   );
@@ -326,70 +387,4 @@ export default function ProviderControlSelect({
         )}
     </div>
   );
-}
-
-function OptionContent({
-  option,
-  showDescription = false,
-}: {
-  option: ProviderControlOption;
-  showDescription?: boolean;
-}) {
-  const badges = optionBadges(option);
-  const description =
-    showDescription && typeof option.metadata?.description === "string"
-      ? option.metadata.description.trim()
-      : "";
-  return (
-    <span className="dc-agent-select-option-content">
-      <span className="dc-agent-select-option-copy">
-        <span className="truncate preserve-words">{option.label}</span>
-        {description && (
-          <small className="truncate preserve-words">{description}</small>
-        )}
-      </span>
-      <span className="dc-agent-select-option-trailing">
-        {optionEffect(option) === "ultra" && (
-          <small className="dc-agent-select-ultra-badge">Ultra</small>
-        )}
-        {badges.length > 0 && (
-          <span className="dc-agent-select-badges">
-            {badges.map((badge) => (
-              <small key={badge}>{badge}</small>
-            ))}
-          </span>
-        )}
-      </span>
-    </span>
-  );
-}
-
-function optionEffect(option?: ProviderControlOption): string {
-  return option?.metadata?.effect === "ultra" ? "ultra" : "";
-}
-
-function hasOptionDescription(option: ProviderControlOption): boolean {
-  return (
-    typeof option.metadata?.description === "string" &&
-    Boolean(option.metadata.description.trim())
-  );
-}
-
-function optionBadges(option: ProviderControlOption): string[] {
-  const badges: string[] = [];
-  const configured = option.metadata?.badges;
-  if (Array.isArray(configured)) {
-    for (const value of configured) {
-      if (typeof value === "string" && value.trim()) badges.push(value.trim());
-    }
-  }
-  if (option.metadata?.pricing === "free") badges.push("Free");
-  if (option.metadata?.pricing === "free_tier") badges.push("Free tier");
-  if (option.metadata?.execution_location === "cloud") badges.push("Cloud");
-  if (option.metadata?.execution_location === "local") badges.push("Local");
-  return [...new Set(badges)];
-}
-
-function optionAccessibleName(option: ProviderControlOption): string {
-  return [option.label, ...optionBadges(option)].join(" ");
 }

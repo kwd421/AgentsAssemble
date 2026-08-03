@@ -149,6 +149,14 @@ class OpenAICompatibleApiRuntime:
                     room_observation=room_observation,
                     timeout_seconds=max(1.0, deadline - time.monotonic()),
                     on_delta=on_delta,
+                    on_reasoning=(
+                        _reasoning_activity_reporter(
+                            on_activity,
+                            activity_id=f"api-reasoning-{len(api_calls) + 1}",
+                        )
+                        if on_activity is not None
+                        else None
+                    ),
                 )
                 observed_model_id = round_result.observed_model_id or observed_model_id
                 api_calls.append(round_result.usage)
@@ -281,6 +289,7 @@ class OpenAICompatibleApiRuntime:
         room_observation: bool,
         timeout_seconds: float,
         on_delta=None,
+        on_reasoning=None,
     ) -> _StreamRound:
         payload: dict[str, object] = {
             "model": self.model,
@@ -362,6 +371,7 @@ class OpenAICompatibleApiRuntime:
                 reasoning = str(
                     delta.get("reasoning_content")
                     or delta.get("reasoning")
+                    or delta.get("thinking")
                     or ""
                 )
                 if text:
@@ -370,6 +380,8 @@ class OpenAICompatibleApiRuntime:
                         on_delta(text)
                 if reasoning:
                     reasoning_parts.append(reasoning)
+                    if on_reasoning is not None:
+                        on_reasoning(reasoning, False)
                 accumulate_streaming_tool_calls(tool_calls, delta.get("tool_calls"))
         finally:
             with self._lock:
@@ -379,9 +391,12 @@ class OpenAICompatibleApiRuntime:
                 response.close()
             except Exception:
                 pass
+        reasoning_content = "".join(reasoning_parts)
+        if reasoning_content and on_reasoning is not None:
+            on_reasoning("", True)
         return _StreamRound(
             content="".join(content_parts),
-            reasoning_content="".join(reasoning_parts),
+            reasoning_content=reasoning_content,
             finish_reason=finish_reason,
             tool_calls=complete_tool_calls(tool_calls),
             observed_model_id=observed_model_id,
@@ -439,6 +454,42 @@ class _StreamRound:
     observed_model_id: str
     usage: dict[str, object]
     finish_reason: str = ""
+
+
+def _reasoning_activity_reporter(on_activity, *, activity_id: str):
+    """Coalesce provider reasoning deltas into bounded live activity updates."""
+
+    parts: list[str] = []
+    last_reported_chars = 0
+    last_reported_at = 0.0
+
+    def report(delta: str, completed: bool) -> None:
+        nonlocal last_reported_chars, last_reported_at
+        if delta:
+            parts.append(str(delta))
+        content = "".join(parts)
+        now = time.monotonic()
+        should_report = completed or (
+            len(content) - last_reported_chars >= 40
+            or now - last_reported_at >= 0.15
+        )
+        if not content or not should_report:
+            return
+        visible = content[-2000:]
+        on_activity(
+            {
+                "category": "reasoning",
+                "status": "completed" if completed else "running",
+                "activity_id": activity_id,
+                "activity_title": "생각",
+                "activity_detail": visible,
+                "content": visible,
+            }
+        )
+        last_reported_chars = len(content)
+        last_reported_at = now
+
+    return report
 
 
 def _empty_round_message(

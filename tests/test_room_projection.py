@@ -4,6 +4,7 @@ from agentsassemble.room.projection import (
     merged_latency,
     public_activity,
     public_event,
+    public_event_for_identity,
     public_participant,
     public_runtime_diagnostics,
     public_session,
@@ -13,6 +14,28 @@ from agentsassemble.room.projection import (
 
 
 class RoomProjectionTests(unittest.TestCase):
+    def test_owner_only_reasoning_keeps_event_sequence_without_exposing_content(self):
+        event = {
+            "id": "evt-reasoning",
+            "seq": 41,
+            "room_id": "general",
+            "created_at": "2026-08-03T00:00:00+00:00",
+            "type": "activity_delta",
+            "participant_id": "agent-1",
+            "owner_id": "owner-1",
+            "visibility": "owner",
+            "category": "reasoning",
+            "activity_detail": "provider reasoning",
+        }
+
+        owner = public_event_for_identity(event, {"user_id": "owner-1"})
+        peer = public_event_for_identity(event, {"user_id": "peer-1"})
+
+        self.assertEqual(owner["activity_detail"], "provider reasoning")
+        self.assertEqual(peer["type"], "event_hidden")
+        self.assertEqual(peer["seq"], 41)
+        self.assertNotIn("activity_detail", peer)
+
     def test_public_session_keeps_room_state_and_removes_runtime_secrets(self):
         session = {
             "session_id": "agent-1",

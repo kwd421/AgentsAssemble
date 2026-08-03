@@ -140,6 +140,11 @@ class RoomSnapshotServiceTests(unittest.TestCase):
         )
         history = self.service.history_page(
             "general",
+            identity={
+                "meeting_id": "general",
+                "agent_id": "member",
+                "client_type": "browser",
+            },
             before_seq=int(snapshot["oldest_seq"]),
             limit=25,
         )

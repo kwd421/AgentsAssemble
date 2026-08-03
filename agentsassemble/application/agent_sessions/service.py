@@ -196,6 +196,7 @@ def create_agent_session(
             "workspace": clean_lobby_text(payload.get("workspace") or payload.get("cwd"), limit=300),
             "codex_home": clean_lobby_text(payload.get("codex_home") or payload.get("config_profile"), limit=200),
             "runtime_sharing_policy": runtime_sharing_policy,
+            "share_activity": bool(payload.get("share_activity", False)),
         },
     )
     session, session_created = store.upsert_session(
@@ -218,6 +219,7 @@ def create_agent_session(
             "workspace": clean_lobby_text(payload.get("workspace") or payload.get("cwd"), limit=300),
             "codex_home": clean_lobby_text(payload.get("codex_home") or payload.get("config_profile"), limit=200),
             "runtime_sharing_policy": runtime_sharing_policy,
+            "share_activity": bool(payload.get("share_activity", False)),
             "diagnostics": payload.get("diagnostics") if isinstance(payload.get("diagnostics"), list) else [],
         },
     )

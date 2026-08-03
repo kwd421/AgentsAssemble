@@ -5,6 +5,7 @@ import threading
 from collections import deque
 from uuid import uuid4
 
+from agentsassemble.room.projection import public_event_for_identity
 from agentsassemble.room.text import clean_room_text as clean_lobby_text
 
 ROOM_EVENT_STREAM = "room_events"
@@ -170,12 +171,17 @@ class RoomEventBroker:
 
     def broadcast_event(self, event: dict[str, object]) -> None:
         room_id = clean_lobby_text(event.get("room_id"), limit=128)
-        message = {"op": "event", "stream": ROOM_EVENT_STREAM, "events": [dict(event)]}
         with self._lock:
             channels = list(self._channels.values())
         for channel in channels:
             if channel.room_id == room_id and channel.subscribed(ROOM_EVENT_STREAM):
-                channel.send(message)
+                channel.send(
+                    {
+                        "op": "event",
+                        "stream": ROOM_EVENT_STREAM,
+                        "events": [public_event_for_identity(event, channel.identity)],
+                    }
+                )
 
     def direct_to_bridge(self, room_id: str, participant_id: str, message: dict[str, object]) -> bool:
         clean_room_id = clean_lobby_text(room_id, limit=128)

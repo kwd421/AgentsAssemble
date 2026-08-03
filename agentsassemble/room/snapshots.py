@@ -4,7 +4,7 @@ from typing import Callable, Protocol
 
 from agentsassemble.room.event_broker import ROOM_EVENT_STREAM
 from agentsassemble.room.projection import (
-    public_event,
+    public_event_for_identity,
     public_participant,
     public_session,
 )
@@ -98,7 +98,7 @@ class RoomSnapshotService:
                 if session.get("session_id") == own_session_id
             ]
         sessions = [public_session(session) for session in stored_sessions]
-        public_events = [public_event(event) for event in events]
+        public_events = [public_event_for_identity(event, identity) for event in events]
         active_turns = [
             {
                 "turn_id": session.get("active_turn_id"),
@@ -174,6 +174,7 @@ class RoomSnapshotService:
         self,
         room_id: str,
         *,
+        identity: dict[str, object],
         before_seq: int,
         limit: int = ROOM_HISTORY_MAX_LIMIT,
     ) -> dict[str, object]:
@@ -192,7 +193,7 @@ class RoomSnapshotService:
         )
         oldest_seq = int(events[0].get("seq") or 0) if events else 0
         return {
-            "events": events,
+            "events": [public_event_for_identity(event, identity) for event in events],
             "oldest_seq": oldest_seq,
             "has_more_before": bool(
                 oldest_seq

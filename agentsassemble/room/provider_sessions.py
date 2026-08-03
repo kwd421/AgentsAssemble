@@ -465,6 +465,7 @@ class RoomProviderSessionService:
                     "variant": spec.variant,
                     "permission_mode": spec.permission_mode,
                     "max_output_tokens": spec.max_output_tokens,
+                    "share_activity": False,
                     "provider_endpoint": spec.provider_endpoint,
                     "persona_card_id": spec.persona_card_id,
                     "persona_card": dict(spec.persona_card_summary),

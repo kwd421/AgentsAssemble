@@ -268,6 +268,12 @@ def run_agent_session_turn_payload(
                     session_id=session_id,
                     provider_kind=provider_kind,
                     turn_id=turn_id,
+                    owner_id=session.get("owner_id") or session.get("created_by") or "",
+                    visibility=(
+                        "public"
+                        if session.get("share_activity")
+                        else "owner"
+                    ) if event_type == "thinking_delta" else "public",
                     content=content,
                     diagnostics=diagnostics,
                 )

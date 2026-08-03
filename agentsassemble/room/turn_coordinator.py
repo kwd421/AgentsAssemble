@@ -1222,7 +1222,7 @@ class RoomTurnCoordinator:
         activity_title = safe_activity_detail(payload.get("activity_title"), limit=160)
         activity_detail = safe_activity_display_detail(
             payload.get("activity_detail"),
-            limit=600,
+            limit=2000 if category == "reasoning" else 600,
         )
         activity_fields: dict[str, object] = {}
         if activity_id:
@@ -1241,6 +1241,8 @@ class RoomTurnCoordinator:
             display_name=session.get("display_name") or agent_id,
             session_id=session["session_id"],
             turn_id=session["active_turn_id"],
+            owner_id=session.get("owner_id") or session.get("created_by") or "",
+            visibility="public" if session.get("share_activity") else "owner",
             activity_kind=activity_kind,
             category=category,
             status=status,

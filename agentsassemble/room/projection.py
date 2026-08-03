@@ -183,6 +183,35 @@ def public_event(event: RoomEvent | dict[str, object]) -> dict[str, object]:
     return dict(project(dict(event)))
 
 
+def public_event_for_identity(
+    event: RoomEvent | dict[str, object],
+    identity: dict[str, object],
+) -> dict[str, object]:
+    """Project one event while preserving sequence continuity for private activity."""
+
+    projected = public_event(event)
+    if projected.get("visibility") != "owner":
+        return projected
+    participant_id = clean_lobby_text(projected.get("participant_id"), limit=128)
+    owner_id = clean_lobby_text(projected.get("owner_id"), limit=128)
+    principals = {
+        clean_lobby_text(identity.get("agent_id"), limit=128),
+        clean_lobby_text(identity.get("user_id"), limit=128),
+        clean_lobby_text(identity.get("session_id"), limit=128),
+    }
+    principals.discard("")
+    if participant_id in principals or owner_id in principals:
+        return projected
+    return {
+        key: projected[key]
+        for key in ("id", "seq", "room_id", "created_at")
+        if key in projected
+    } | {
+        "type": "event_hidden",
+        "visibility": "owner",
+    }
+
+
 def safe_activity_detail(value: object, *, limit: int = 600) -> str:
     """Return bounded provider activity text safe for the public room event log."""
     text = clean_lobby_text(value, limit=max(1, int(limit)))
@@ -340,6 +369,7 @@ __all__ = [
     "merged_latency",
     "public_activity",
     "public_event",
+    "public_event_for_identity",
     "public_participant",
     "public_runtime_diagnostics",
     "public_session",

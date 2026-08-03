@@ -1553,10 +1553,13 @@ class RoomRealtimeControllerTests(unittest.TestCase):
                 "agent_id": "codex",
                 "display_name": "Luna",
                 "avatar_image_url": "/api/room-media/avatar-luna",
+                "share_activity": True,
             },
         )["result"]
         self.assertEqual(updated["status"], "profile_updated")
         self.assertEqual(RoomStore(self.root).participant("general", "codex")["display_name"], "Luna")
+        self.assertTrue(RoomStore(self.root).participant("general", "codex")["share_activity"])
+        self.assertTrue(RoomStore(self.root).session("general", "codex")["share_activity"])
         self._command("profile-message", "message.send", {"content": "@codex introduce yourself"})
         assignment = next(message for message in channel.drain() if message.get("op") == "turn.assign")
         self.assertIn("Your display name in this room is: Luna", assignment["provider_input"])
@@ -2952,7 +2955,7 @@ class RoomRealtimeControllerTests(unittest.TestCase):
         self.assertEqual(rejected.exception.code, "not_found")
 
     def test_stopping_ambient_agent_cancels_active_observation_and_preserves_backlog(self):
-        _identity, channel = self._connect_bridge("codex")
+        identity, channel = self._connect_bridge("codex")
         channel.drain()
         self.controller.store.update_room_settings(
             "general",
@@ -2970,7 +2973,7 @@ class RoomRealtimeControllerTests(unittest.TestCase):
         )
         self.assertTrue(wake["turn_id"])
 
-        self._command("ambient-stop", "agent.stop", {"agent_id": "codex"})
+        self._confirmed_external_stop(identity, channel, request_id="ambient-stop")
 
         stopped = self.controller.store.session("general", "codex")
         self.assertEqual(stopped["runtime_status"], "stopped")
@@ -3636,6 +3639,7 @@ class RoomRealtimeControllerTests(unittest.TestCase):
                 "cerebras",
                 "openrouter",
                 "vercel",
+                "llmgateway",
                 "custom_api",
                 "ollama",
                 "lmstudio",

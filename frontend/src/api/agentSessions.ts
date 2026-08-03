@@ -58,6 +58,7 @@ export interface RoomAgentSession {
   variant?: string;
   permission_mode?: string;
   max_output_tokens?: number;
+  share_activity?: boolean;
   persona_card_id?: string;
   persona_card?: PersonaAssetSummary;
   message_source?: string;

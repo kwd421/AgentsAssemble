@@ -55,6 +55,7 @@ export interface RoomEvent {
   participant_type?: string;
   actor_id?: string;
   actor_type?: string;
+  owner_id?: string;
   session_id?: string;
   turn_id?: string;
   source_event_id?: string;

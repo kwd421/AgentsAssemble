@@ -207,6 +207,10 @@ def register_provider_routes(
     def vercel_credentials_status(ctx: RequestContext) -> None:
         _credential_status(ctx, "vercel")
 
+    @router.get("/api/provider-credentials/llmgateway")
+    def llmgateway_credentials_status(ctx: RequestContext) -> None:
+        _credential_status(ctx, "llmgateway")
+
     @router.get("/api/provider-credentials/custom_api")
     def custom_api_credentials_status(ctx: RequestContext) -> None:
         _credential_status(ctx, "custom_api")
@@ -277,6 +281,10 @@ def register_provider_routes(
     def vercel_credentials_set(ctx: RequestContext) -> None:
         _credential_set(ctx, "vercel")
 
+    @router.post("/api/provider-credentials/llmgateway")
+    def llmgateway_credentials_set(ctx: RequestContext) -> None:
+        _credential_set(ctx, "llmgateway")
+
     @router.post("/api/provider-credentials/custom_api")
     def custom_api_credentials_set(ctx: RequestContext) -> None:
         _credential_set(ctx, "custom_api")
@@ -301,6 +309,10 @@ def register_provider_routes(
     @router.delete("/api/provider-credentials/vercel")
     def vercel_credentials_delete(ctx: RequestContext) -> None:
         _credential_delete(ctx, "vercel")
+
+    @router.delete("/api/provider-credentials/llmgateway")
+    def llmgateway_credentials_delete(ctx: RequestContext) -> None:
+        _credential_delete(ctx, "llmgateway")
 
     @router.delete("/api/provider-credentials/custom_api")
     def custom_api_credentials_delete(ctx: RequestContext) -> None:

@@ -96,6 +96,18 @@ REMOTE_OPENAI_PROFILES = (
         max_output_tokens=4096,
     ),
     RemoteOpenAIProfile(
+        provider_id="llmgateway",
+        display_name="LLM Gateway",
+        provider_kind="llm_gateway_api",
+        base_url="https://api.llmgateway.io/v1",
+        default_model="gpt-oss-120b",
+        credential_env="LLM_GATEWAY_API_KEY",
+        reasoning_efforts=("none", "minimal", "low", "medium", "high", "xhigh", "max"),
+        default_reasoning_effort="",
+        discovery_path="/models",
+        max_output_tokens=4096,
+    ),
+    RemoteOpenAIProfile(
         provider_id="custom_api",
         display_name="Custom API",
         provider_kind="custom_openai_api",
@@ -225,11 +237,14 @@ def remote_openai_catalog_payload(
             _control("model", "모델", options, default_model, kind="combobox")
         )
         if profile.reasoning_efforts:
+            effort_options = [_option(value) for value in profile.reasoning_efforts]
+            if not profile.default_reasoning_effort:
+                effort_options.insert(0, _option("", "기본"))
             controls.append(
                 _control(
                     "reasoning_effort",
                     "추론 강도",
-                    [_option(value) for value in profile.reasoning_efforts],
+                    effort_options,
                     profile.default_reasoning_effort,
                 )
             )
@@ -316,7 +331,7 @@ class RemoteOpenAICompatibleRuntime(OpenAICompatibleApiRuntime):
             allowed_models=frozenset({model}),
             reasoning_effort=reasoning_effort,
             allowed_reasoning_efforts=frozenset(
-                profile.reasoning_efforts or ("",)
+                (*profile.reasoning_efforts, "")
             ),
             base_url=base_url or profile.base_url,
             message_source=f"{profile.provider_id}_sse",
@@ -342,7 +357,18 @@ def _gateway_model_option(entry: dict[str, object]) -> dict[str, object] | None:
     declared_modalities = entry.get("input_modalities")
     if not isinstance(declared_modalities, list) and isinstance(architecture, dict):
         declared_modalities = architecture.get("input_modalities")
+    modalities = entry.get("modalities")
+    if not isinstance(declared_modalities, list) and isinstance(modalities, dict):
+        declared_modalities = modalities.get("input")
     input_modalities = set(declared_modalities or ["text"])
+    providers = entry.get("providers") if isinstance(entry.get("providers"), list) else []
+    tool_providers = [
+        provider
+        for provider in providers
+        if isinstance(provider, dict) and provider.get("tools") is True
+    ]
+    if tool_providers:
+        supported.add("tools")
     if not model_id or "tools" not in supported or "text" not in input_modalities:
         return None
     pricing = entry.get("pricing")
@@ -354,14 +380,86 @@ def _gateway_model_option(entry: dict[str, object]) -> dict[str, object] | None:
     }
     context = entry.get("context_length") or entry.get("context_window")
     if isinstance(context, int) and context > 0:
-        metadata["description"] = f"Context {context:,}"
+        metadata["context_length"] = context
     if _is_free_pricing(pricing):
         metadata["pricing"] = "free"
+    elif entry.get("free") is True:
+        metadata["pricing"] = "free"
+    elif isinstance(pricing, dict):
+        metadata["pricing"] = "paid"
+    input_price, output_price = _per_million_prices(pricing)
+    if input_price:
+        metadata["input_price_per_million"] = input_price
+    if output_price:
+        metadata["output_price_per_million"] = output_price
+    max_output = entry.get("max_tokens") or entry.get("max_output_tokens")
+    if isinstance(max_output, int) and max_output > 0:
+        metadata["max_output_tokens"] = max_output
+    reasoning = entry.get("reasoning")
+    reasoning_options = entry.get("reasoning_options")
+    metadata["vision"] = "image" in input_modalities or any(
+        provider.get("vision") is True for provider in providers if isinstance(provider, dict)
+    )
+    metadata["reasoning"] = bool(
+        reasoning
+        or reasoning_options
+        or {"reasoning", "reasoning_effort", "include_reasoning"}.intersection(supported)
+        or any(
+            provider.get("reasoning") is True
+            for provider in providers
+            if isinstance(provider, dict)
+        )
+    )
+    metadata["tools"] = True
+    description_parts: list[str] = []
+    if isinstance(context, int) and context > 0:
+        description_parts.append(f"Context {context:,}")
+    if metadata.get("pricing") == "free":
+        description_parts.append("무료")
+    else:
+        if input_price:
+            description_parts.append(f"입력 ${input_price}/M")
+        if output_price:
+            description_parts.append(f"출력 ${output_price}/M")
+    if description_parts:
+        metadata["description"] = " · ".join(description_parts)
+    model_efforts = sorted(
+        {
+            str(effort)
+            for provider in tool_providers
+            for effort in list(provider.get("reasoning_efforts") or [])
+            if str(effort)
+        }
+    )
+    if model_efforts:
+        metadata["relation_scope"] = "per_model"
+        metadata["reasoning_efforts"] = model_efforts
     return _model_option(
         model_id,
         clean_room_text(entry.get("name"), limit=160) or model_id,
         **metadata,
     )
+
+
+def _per_million_prices(pricing: object) -> tuple[str, str]:
+    if not isinstance(pricing, dict):
+        return "", ""
+    input_value = pricing.get("prompt") if "prompt" in pricing else pricing.get("input")
+    output_value = (
+        pricing.get("completion") if "completion" in pricing else pricing.get("output")
+    )
+    return _per_million_price(input_value), _per_million_price(output_value)
+
+
+def _per_million_price(value: object) -> str:
+    if value is None:
+        return ""
+    try:
+        amount = Decimal(str(value)) * Decimal(1_000_000)
+    except InvalidOperation:
+        return ""
+    normalized = format(amount.normalize(), "f")
+    return normalized.rstrip("0").rstrip(".") if "." in normalized else normalized
 
 
 def _is_free_pricing(pricing: object) -> bool:

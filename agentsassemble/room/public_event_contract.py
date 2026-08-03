@@ -59,6 +59,7 @@ class PublicRoomEvent(TypedDict):
     participant_type: NotRequired[str]
     actor_id: NotRequired[str]
     actor_type: NotRequired[str]
+    owner_id: NotRequired[str]
     session_id: NotRequired[str]
     turn_id: NotRequired[str]
     source_event_id: NotRequired[str]

@@ -25,12 +25,16 @@ export function filterProviderControlOptions(
   controlLabel: string,
   options: ProviderControlOption[],
   query: string,
-  freeOnly: boolean
+  freeOnly: boolean,
+  visionOnly = false,
+  reasoningOnly = false
 ): ProviderControlOption[] {
   if (controlLabel !== "모델") return options;
   const needle = query.trim().toLocaleLowerCase();
   return options.filter((option) => {
     if (freeOnly && !isFreeProviderOption(option)) return false;
+    if (visionOnly && option.metadata?.vision !== true) return false;
+    if (reasoningOnly && option.metadata?.reasoning !== true) return false;
     if (!needle) return true;
     const metadata = option.metadata || {};
     return [
