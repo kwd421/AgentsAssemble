@@ -73,6 +73,14 @@ function MessageAvatar({
 }
 
 
+function isReasoningEvent(event: LobbyEvent) {
+  return (
+    event.activity_kind === "reasoning" ||
+    (!event.activity_kind && !event.activity_category)
+  );
+}
+
+
 function ThinkingDetails({
   events,
   label,
@@ -82,12 +90,6 @@ function ThinkingDetails({
 }) {
   const [open, setOpen] = useState(false);
   const contentId = useId();
-  const reasoningEvents = events.filter(
-    (event) =>
-      event.activity_kind === "reasoning" ||
-      (!event.activity_kind && !event.activity_category)
-  );
-  const toolEvents = events.filter((event) => !reasoningEvents.includes(event));
   return (
     <>
       <button
@@ -108,21 +110,25 @@ function ThinkingDetails({
           aria-live="polite"
           aria-relevant="additions text"
         >
-          {reasoningEvents.map((event) => (
-            <div
-              key={event.id}
-              className="dc-thinking-step flex gap-2 py-1 text-[13px] leading-relaxed text-text-muted preserve-words"
-              data-activity-kind="reasoning"
-            >
-              <Brain size={14} className="mt-0.5 shrink-0 opacity-70" aria-hidden="true" />
-              <div className="min-w-0 italic">
-                <DiscordText text={event.activity_detail || event.message || ""} />
+          {/* Kept in arrival order: an agent thinks, acts on that thought,
+              then thinks again, and splitting the two apart hid which
+              reasoning led to which tool call. */}
+          {events.map((event) =>
+            isReasoningEvent(event) ? (
+              <div
+                key={event.id}
+                className="dc-thinking-step flex gap-2 py-1 text-[13px] leading-relaxed text-text-muted preserve-words"
+                data-activity-kind="reasoning"
+              >
+                <Brain size={14} className="mt-0.5 shrink-0 opacity-70" aria-hidden="true" />
+                <div className="min-w-0 italic">
+                  <DiscordText text={event.activity_detail || event.message || ""} />
+                </div>
               </div>
-            </div>
-          ))}
-          {toolEvents.map((event) => (
-            <ActivityRow key={event.id} event={event} />
-          ))}
+            ) : (
+              <ActivityRow key={event.id} event={event} />
+            )
+          )}
         </div>
       )}
     </>

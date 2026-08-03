@@ -181,6 +181,66 @@ describe("LobbyView active provider turn", () => {
     expect(screen.queryByLabelText("완료")).toBeNull();
   });
 
+  it("interleaves thoughts and tool rows in the order they arrived", async () => {
+    // A think -> act -> think -> act turn. Grouping all reasoning above all
+    // tools loses which thought produced which call.
+    renderLobby(
+      [
+        {
+          ...thought("먼저 파일을 읽어야겠다."),
+          id: "reasoning-a",
+          activity_kind: "reasoning",
+          activity_id: "reasoning-1",
+          activity_detail: "먼저 파일을 읽어야겠다.",
+          activity_category: "reasoning",
+          activity_status: "running",
+        },
+        {
+          ...thought("package.json"),
+          id: "tool-a",
+          activity_kind: "tool",
+          activity_id: "tool-1",
+          activity_title: "Read",
+          activity_detail: "package.json",
+          activity_category: "file_read",
+          activity_status: "completed",
+        },
+        {
+          ...thought("이제 테스트를 돌리자."),
+          id: "reasoning-b",
+          activity_kind: "reasoning",
+          activity_id: "reasoning-2",
+          activity_detail: "이제 테스트를 돌리자.",
+          activity_category: "reasoning",
+          activity_status: "running",
+        },
+        {
+          ...thought("npm test"),
+          id: "tool-b",
+          activity_kind: "tool",
+          activity_id: "tool-2",
+          activity_title: "Bash",
+          activity_detail: "npm test",
+          activity_category: "command",
+          activity_status: "completed",
+        },
+      ],
+      [indicator]
+    );
+
+    const details = await screen.findByRole("button", { name: /Agent A의 생각과 작업/ });
+    fireEvent.click(details);
+
+    const steps = document.querySelectorAll(".dc-thinking-steps > *");
+    expect(
+      Array.from(steps).map((step) => step.getAttribute("data-activity-kind"))
+    ).toEqual(["reasoning", "tool", "reasoning", "tool"]);
+    expect(steps[0].textContent).toContain("먼저 파일을 읽어야겠다.");
+    expect(steps[1].textContent).toContain("package.json");
+    expect(steps[2].textContent).toContain("이제 테스트를 돌리자.");
+    expect(steps[3].textContent).toContain("npm test");
+  });
+
   it("holds partial answer text until the active turn publishes its final answer", async () => {
     renderLobby([activeDelta("아직 스트리밍 중인 답변")], [indicator]);
 

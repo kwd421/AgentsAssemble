@@ -1,0 +1,123 @@
+/* ---- /vote poll card (issue 7) ---- */
+.dc-vote-card {
+  margin-top: 4px;
+  max-width: 460px;
+  border: 1px solid var(--color-panel-border);
+  border-radius: 12px;
+  background: var(--color-panel);
+  padding: 12px;
+}
+
+.dc-vote-card-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  color: var(--color-text-primary);
+}
+
+.dc-vote-card-question {
+  min-width: 0;
+  flex: 1;
+  font-size: 14px;
+  font-weight: 700;
+}
+
+.dc-vote-refresh {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 24px;
+  border-radius: 6px;
+  color: var(--color-text-muted);
+}
+
+.dc-vote-refresh:hover {
+  color: var(--color-text-primary);
+  background: rgba(255, 255, 255, 0.06);
+}
+
+.dc-vote-options {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin-top: 10px;
+}
+
+.dc-vote-option {
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  overflow: hidden;
+  border: 1px solid var(--color-panel-separator);
+  border-radius: 8px;
+  padding: 8px 10px;
+  text-align: left;
+  font-size: 13px;
+  color: var(--color-text-secondary);
+  transition: border-color 120ms ease;
+}
+
+.dc-vote-option:hover:not(:disabled) {
+  border-color: var(--color-accent);
+}
+
+.dc-vote-option:disabled {
+  opacity: 0.7;
+  cursor: not-allowed;
+}
+
+.dc-vote-option[data-mine="true"] {
+  border-color: var(--color-accent);
+  color: var(--color-text-primary);
+}
+
+.dc-vote-option-bar {
+  position: absolute;
+  inset: 0 auto 0 0;
+  background: color-mix(in srgb, var(--color-accent) 22%, transparent);
+  transition: width 200ms ease;
+}
+
+.dc-vote-option-label {
+  position: relative;
+  min-width: 0;
+  flex: 1;
+  font-weight: 600;
+}
+
+.dc-vote-mine-mark {
+  font-style: normal;
+  font-size: 11px;
+  color: var(--color-accent);
+}
+
+.dc-vote-option-count {
+  position: relative;
+  flex-shrink: 0;
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--color-text-muted);
+}
+
+.dc-vote-card-foot {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  margin-top: 10px;
+  font-size: 11px;
+  color: var(--color-text-muted);
+}
+
+.dc-vote-card-hint {
+  text-align: right;
+}
+
+.dc-vote-card-error {
+  margin-top: 6px;
+  font-size: 12px;
+  color: var(--color-danger, #f23f43);
+}
