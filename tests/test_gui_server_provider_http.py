@@ -152,6 +152,8 @@ class ProviderRouteTests(unittest.TestCase):
                 ("GET", "/api/provider-credentials/custom_api"),
                 ("GET", "/api/provider-credentials/deepseek"),
                 ("GET", "/api/provider-credentials/openrouter"),
+                ("GET", "/api/provider-credentials/llmgateway"),
+                ("GET", "/api/provider-credentials/tokenrouter"),
                 ("GET", "/api/provider-credentials/vercel"),
                 ("GET", "/api/provider-usage/antigravity"),
                 ("GET", "/api/provider-usage/claude"),
@@ -165,11 +167,15 @@ class ProviderRouteTests(unittest.TestCase):
                 ("POST", "/api/provider-credentials/custom_api"),
                 ("POST", "/api/provider-credentials/deepseek"),
                 ("POST", "/api/provider-credentials/openrouter"),
+                ("POST", "/api/provider-credentials/llmgateway"),
+                ("POST", "/api/provider-credentials/tokenrouter"),
                 ("POST", "/api/provider-credentials/vercel"),
                 ("DELETE", "/api/provider-credentials/cerebras"),
                 ("DELETE", "/api/provider-credentials/custom_api"),
                 ("DELETE", "/api/provider-credentials/deepseek"),
                 ("DELETE", "/api/provider-credentials/openrouter"),
+                ("DELETE", "/api/provider-credentials/llmgateway"),
+                ("DELETE", "/api/provider-credentials/tokenrouter"),
                 ("DELETE", "/api/provider-credentials/vercel"),
             },
         )
@@ -270,7 +276,14 @@ class ProviderRouteTests(unittest.TestCase):
         self.assertEqual(self.login.calls, [])
 
     def test_local_provider_credentials_reach_the_named_store_without_disclosing_keys(self):
-        for provider_id in ("cerebras", "deepseek", "openrouter", "vercel"):
+        for provider_id in (
+            "cerebras",
+            "deepseek",
+            "openrouter",
+            "vercel",
+            "llmgateway",
+            "tokenrouter",
+        ):
             with self.subTest(provider_id=provider_id):
                 self.store.calls.clear()
                 path = f"/api/provider-credentials/{provider_id}"

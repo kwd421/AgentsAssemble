@@ -5,6 +5,7 @@ import deepSeekLogo from "../../assets/provider-logos/deepseek.png";
 import geminiLogo from "../../assets/provider-logos/gemini.webp";
 import grokLogo from "../../assets/provider-logos/grok.png";
 import lmStudioLogo from "../../assets/provider-logos/lmstudio.png";
+import llmGatewayLogo from "../../assets/provider-logos/llmgateway.svg";
 import ollamaLogo from "../../assets/provider-logos/ollama.png";
 import openAILogo from "../../assets/provider-logos/openai.svg";
 import openCodeLogo from "../../assets/provider-logos/opencode.png";
@@ -22,6 +23,7 @@ export type ProviderBrandKey =
   | "cerebras"
   | "ollama"
   | "lmstudio"
+  | "llmgateway"
   | "openrouter"
   | "vercel";
 
@@ -57,6 +59,8 @@ const PROVIDER_ALIASES: Record<string, ProviderBrandKey> = {
   lmstudio: "lmstudio",
   lmstudio_api: "lmstudio",
   lm_studio: "lmstudio",
+  llmgateway: "llmgateway",
+  llm_gateway_api: "llmgateway",
   openrouter: "openrouter",
   openrouter_api: "openrouter",
   vercel: "vercel",
@@ -126,6 +130,12 @@ export const PROVIDER_BRANDS: Record<ProviderBrandKey, ProviderBrand> = {
     logo: lmStudioLogo,
     background: "#5d45dd",
     scale: "89%",
+  },
+  llmgateway: {
+    label: "LLM Gateway",
+    logo: llmGatewayLogo,
+    background: "#151515",
+    scale: "76%",
   },
   openrouter: {
     label: "OpenRouter",

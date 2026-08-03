@@ -19,6 +19,7 @@ the light or dark surface paired with that official asset.
 | `lmstudio.png` | Installed official LM Studio app | `LM Studio.app/Contents/Resources/icon.icns` | `87725a6502b989abb603aecb7634a6668f959684267ba927419c26b37c8c6d62` |
 | `openrouter.svg` | [OpenRouter brand assets](https://openrouter.ai/brand/v2/openrouter-light.svg) | Official 2026 glyph path | `81b6db95fea21fd95defeba8cdda57c1f7400ad056fd3767f3930037a751127f` |
 | `vercel.svg` | [Vercel Geist brand assets](https://vercel.com/geist/brands) | `logo-vercel-light` symbol | `e238cc1d30c2fb14f397ee7ff8c571d1dd3055c530da23e1371fac9a79223c44` |
+| `llmgateway.svg` | [LLM Gateway brand assets](https://llmgateway.io/brand) | `logo-white.svg` | `656849fa045b49d0bb9f894c10dcf01eb9f683aa15b1ec0aa0e16fd02513db21` |
 
 OpenAI assets are subject to the
 [OpenAI design guidelines and marks usage terms](https://openai.com/brand/).

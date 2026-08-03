@@ -50,6 +50,7 @@ _STRUCTURED_RUNTIME_KINDS = {
     ("openrouter_api", "https"): "api",
     ("vercel_ai_gateway", "https"): "api",
     ("llm_gateway_api", "https"): "api",
+    ("tokenrouter_api", "https"): "api",
     ("custom_openai_api", "https"): "api",
     ("ollama_api", "http"): "api",
     ("lmstudio_api", "http"): "api",

@@ -27,6 +27,7 @@ class RemoteOpenAIProfile:
     default_model: str
     credential_env: str
     static_models: tuple[tuple[str, str], ...] = ()
+    free_models: tuple[str, ...] = ()
     reasoning_efforts: tuple[str, ...] = ()
     default_reasoning_effort: str = ""
     variants: tuple[tuple[str, str], ...] = ()
@@ -105,6 +106,17 @@ REMOTE_OPENAI_PROFILES = (
         reasoning_efforts=("none", "minimal", "low", "medium", "high", "xhigh", "max"),
         default_reasoning_effort="",
         discovery_path="/models",
+        max_output_tokens=4096,
+    ),
+    RemoteOpenAIProfile(
+        provider_id="tokenrouter",
+        display_name="TokenRouter",
+        provider_kind="tokenrouter_api",
+        base_url="https://api.tokenrouter.com/v1",
+        default_model="moonshotai/kimi-k3-free",
+        credential_env="TOKENROUTER_API_KEY",
+        static_models=(("moonshotai/kimi-k3-free", "Kimi K3 Free"),),
+        free_models=("moonshotai/kimi-k3-free",),
         max_output_tokens=4096,
     ),
     RemoteOpenAIProfile(
@@ -222,7 +234,14 @@ def remote_openai_catalog_payload(
             # validator rejects any effort the user picks -- including the
             # profile's own default -- and the provider cannot be created at
             # all. The discovery path already sets this in _gateway_model_option.
-            _model_option(model_id, label, relation_scope="global")
+            _model_option(
+                model_id,
+                label,
+                relation_scope="global",
+                family=_model_family(model_id),
+                tools=True,
+                **({"pricing": "free"} if model_id in profile.free_models else {}),
+            )
             for model_id, label in profile.static_models
         ]
     )

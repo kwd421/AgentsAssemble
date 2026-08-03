@@ -211,6 +211,10 @@ def register_provider_routes(
     def llmgateway_credentials_status(ctx: RequestContext) -> None:
         _credential_status(ctx, "llmgateway")
 
+    @router.get("/api/provider-credentials/tokenrouter")
+    def tokenrouter_credentials_status(ctx: RequestContext) -> None:
+        _credential_status(ctx, "tokenrouter")
+
     @router.get("/api/provider-credentials/custom_api")
     def custom_api_credentials_status(ctx: RequestContext) -> None:
         _credential_status(ctx, "custom_api")
@@ -285,6 +289,10 @@ def register_provider_routes(
     def llmgateway_credentials_set(ctx: RequestContext) -> None:
         _credential_set(ctx, "llmgateway")
 
+    @router.post("/api/provider-credentials/tokenrouter")
+    def tokenrouter_credentials_set(ctx: RequestContext) -> None:
+        _credential_set(ctx, "tokenrouter")
+
     @router.post("/api/provider-credentials/custom_api")
     def custom_api_credentials_set(ctx: RequestContext) -> None:
         _credential_set(ctx, "custom_api")
@@ -313,6 +321,10 @@ def register_provider_routes(
     @router.delete("/api/provider-credentials/llmgateway")
     def llmgateway_credentials_delete(ctx: RequestContext) -> None:
         _credential_delete(ctx, "llmgateway")
+
+    @router.delete("/api/provider-credentials/tokenrouter")
+    def tokenrouter_credentials_delete(ctx: RequestContext) -> None:
+        _credential_delete(ctx, "tokenrouter")
 
     @router.delete("/api/provider-credentials/custom_api")
     def custom_api_credentials_delete(ctx: RequestContext) -> None:

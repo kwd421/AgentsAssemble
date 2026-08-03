@@ -3640,6 +3640,7 @@ class RoomRealtimeControllerTests(unittest.TestCase):
                 "openrouter",
                 "vercel",
                 "llmgateway",
+                "tokenrouter",
                 "custom_api",
                 "ollama",
                 "lmstudio",
