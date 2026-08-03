@@ -156,6 +156,31 @@ describe("LobbyView active provider turn", () => {
     expect(screen.queryByText("도구 사용 완료")).toBeNull();
   });
 
+  it("shows failed tool activity as failed instead of completed or still running", async () => {
+    renderLobby(
+      [
+        {
+          ...thought("false"),
+          id: "tool-failed",
+          activity_kind: "tool",
+          activity_id: "tool-failed",
+          activity_title: "Run Command",
+          activity_detail: "false",
+          activity_category: "command",
+          activity_status: "failed",
+        },
+      ],
+      [indicator]
+    );
+
+    fireEvent.click(await screen.findByRole("button", { name: /Agent A의 생각과 작업/ }));
+
+    expect(screen.getByText("Run Command")).toBeTruthy();
+    expect(screen.getByLabelText("실패")).toBeTruthy();
+    expect(screen.queryByLabelText("진행 중")).toBeNull();
+    expect(screen.queryByLabelText("완료")).toBeNull();
+  });
+
   it("holds partial answer text until the active turn publishes its final answer", async () => {
     renderLobby([activeDelta("아직 스트리밍 중인 답변")], [indicator]);
 

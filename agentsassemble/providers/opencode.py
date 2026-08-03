@@ -315,7 +315,14 @@ class OpenCodeRuntime:
                 return
             state = part.get("state") if isinstance(part.get("state"), dict) else {}
             raw_status = str(state.get("status") or part.get("status") or "running").casefold()
-            status = "completed" if raw_status in {"completed", "success", "done"} else "running"
+            if raw_status in {"cancelled", "canceled"}:
+                status = "cancelled"
+            elif raw_status in {"error", "failed"}:
+                status = "failed"
+            elif raw_status in {"completed", "success", "done"}:
+                status = "completed"
+            else:
+                status = "running"
             marker = (part_id, status)
             if marker in activity_states:
                 return

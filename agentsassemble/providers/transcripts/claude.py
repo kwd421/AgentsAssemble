@@ -73,11 +73,16 @@ class ClaudeSessionMessageSource(_JsonlOffsetMessageSource):
                         )
                         previous = self._turn_tool_activities.get(activity_id)
                         if activity_id and previous:
+                            failed = bool(
+                                block.get("is_error")
+                                or block.get("isError")
+                                or block.get("error")
+                            )
                             self._pending_activities.append(
                                 {
                                     **previous,
                                     "activity_id": activity_id,
-                                    "status": "completed",
+                                    "status": "failed" if failed else "completed",
                                 }
                             )
                 continue

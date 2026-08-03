@@ -5,6 +5,8 @@ import {
   ChevronDown,
   ChevronRight,
   CircleCheck,
+  CircleStop,
+  CircleX,
   FileText,
   Globe,
   LoaderCircle,
@@ -165,7 +167,7 @@ function ActivityIcon({ category }: { category?: string }) {
 
 
 function ActivityRow({ event }: { event: LobbyEvent }) {
-  const completed = event.activity_status === "completed";
+  const status = event.activity_status || "running";
   const detail =
     event.activity_detail ||
     (!GENERIC_ACTIVITY_TEXT.has(event.message || "") ? event.message : "");
@@ -176,8 +178,12 @@ function ActivityRow({ event }: { event: LobbyEvent }) {
       data-activity-status={event.activity_status || "running"}
     >
       <span className="mt-0.5 flex shrink-0 items-center gap-1.5">
-        {completed ? (
+        {status === "completed" ? (
           <CircleCheck size={14} className="text-emerald-400" aria-label="완료" />
+        ) : status === "failed" ? (
+          <CircleX size={14} className="text-red-400" aria-label="실패" />
+        ) : status === "cancelled" ? (
+          <CircleStop size={14} className="text-amber-400" aria-label="중단됨" />
         ) : (
           <LoaderCircle
             size={14}

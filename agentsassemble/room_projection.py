@@ -2,6 +2,7 @@
 
 from agentsassemble.room.projection import (
     PUBLIC_ACTIVITY_LABELS,
+    PUBLIC_ACTIVITY_STATUSES,
     merged_latency,
     public_activity,
     public_event,
@@ -14,6 +15,7 @@ from agentsassemble.room.projection import (
 
 __all__ = [
     "PUBLIC_ACTIVITY_LABELS",
+    "PUBLIC_ACTIVITY_STATUSES",
     "merged_latency",
     "public_activity",
     "public_event",

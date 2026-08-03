@@ -6,6 +6,7 @@ from collections import deque
 import json
 from pathlib import Path
 import queue
+import shlex
 import subprocess
 import threading
 import time
@@ -1186,7 +1187,7 @@ def _app_server_activity(
 ) -> dict[str, str]:
     item = params.get("item") if isinstance(params.get("item"), dict) else {}
     item_type = clean_room_text(item.get("type"), limit=64)
-    status = "completed" if completed else "running"
+    status = _app_server_activity_status(item, completed=completed)
     activity_id = clean_room_text(
         item.get("id") or params.get("itemId") or params.get("item_id"),
         limit=128,
@@ -1263,11 +1264,29 @@ def _app_server_reasoning_detail(item: dict[str, object]) -> str:
 
 def _app_server_command_detail(value: object) -> str:
     if isinstance(value, (list, tuple)):
-        executable = clean_room_text(value[0], limit=200) if value else ""
-        if not executable:
+        parts = [clean_room_text(part, limit=300) for part in value]
+        parts = [part for part in parts if part]
+        if not parts:
             return ""
-        return f"{Path(executable).name} …" if len(value) > 1 else Path(executable).name
+        parts[0] = Path(parts[0]).name
+        return clean_room_text(shlex.join(parts), limit=600)
     return clean_room_text(value, limit=600)
+
+
+def _app_server_activity_status(
+    item: dict[str, object],
+    *,
+    completed: bool,
+) -> str:
+    raw_status = clean_room_text(item.get("status"), limit=32).casefold()
+    if raw_status in {"cancelled", "canceled"}:
+        return "cancelled"
+    if raw_status in {"error", "failed"}:
+        return "failed"
+    exit_code = item.get("exitCode", item.get("exit_code"))
+    if completed and isinstance(exit_code, int) and not isinstance(exit_code, bool) and exit_code != 0:
+        return "failed"
+    return "completed" if completed else "running"
 
 
 def clean_provider_session_id(value: object) -> str:

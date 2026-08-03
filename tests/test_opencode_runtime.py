@@ -228,6 +228,19 @@ class OpenCodeRuntimeTests(unittest.TestCase):
                     },
                 ),
                 _event(
+                    "message.part.updated",
+                    {
+                        "sessionID": session_id,
+                        "part": {
+                            "id": "tool-1",
+                            "messageID": message_id,
+                            "type": "tool",
+                            "tool": "read_file",
+                            "state": {"status": "failed", "input": {"path": "/private/project/.env"}},
+                        },
+                    },
+                ),
+                _event(
                     "message.part.delta",
                     {"sessionID": session_id, "messageID": message_id, "partID": "text-1", "field": "text", "delta": "visible "},
                 ),
@@ -311,6 +324,14 @@ class OpenCodeRuntimeTests(unittest.TestCase):
                 {
                     "category": "file_read",
                     "status": "running",
+                    "activity_id": "tool-1",
+                    "activity_title": "read_file",
+                    "activity_detail": "[local path]/.env",
+                    "content": "[local path]/.env",
+                },
+                {
+                    "category": "file_read",
+                    "status": "failed",
                     "activity_id": "tool-1",
                     "activity_title": "read_file",
                     "activity_detail": "[local path]/.env",

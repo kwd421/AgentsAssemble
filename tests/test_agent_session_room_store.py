@@ -2306,8 +2306,8 @@ class AgentSessionRoomStoreTests(unittest.TestCase):
                         '{"jsonrpc":"2.0","id":3,"result":{"turn":{"id":"turn-a"}}}\n',
                         '{"jsonrpc":"2.0","method":"turn/started","params":{"threadId":"thread-3","turn":{"id":"turn-a"}}}\n',
                         '{"jsonrpc":"2.0","method":"item/started","params":{"threadId":"thread-3","turnId":"turn-a","startedAtMs":1,"item":{"id":"r","type":"reasoning","summary":[{"text":"Checking room context."}]}}}\n',
-                        '{"jsonrpc":"2.0","method":"item/started","params":{"threadId":"thread-3","turnId":"turn-a","startedAtMs":2,"item":{"id":"c","type":"commandExecution","command":"cat /Users/alice/private.txt TOKEN=secret"}}}\n',
-                        '{"jsonrpc":"2.0","method":"item/completed","params":{"threadId":"thread-3","turnId":"turn-a","completedAtMs":3,"item":{"id":"c","type":"commandExecution","command":"cat /Users/alice/private.txt TOKEN=secret"}}}\n',
+                        '{"jsonrpc":"2.0","method":"item/started","params":{"threadId":"thread-3","turnId":"turn-a","startedAtMs":2,"item":{"id":"c","type":"commandExecution","command":["cat","/Users/alice/private.txt","--token","secret"]}}}\n',
+                        '{"jsonrpc":"2.0","method":"item/completed","params":{"threadId":"thread-3","turnId":"turn-a","completedAtMs":3,"item":{"id":"c","type":"commandExecution","status":"failed","command":["cat","/Users/alice/private.txt","--token","secret"]}}}\n',
                         '{"jsonrpc":"2.0","method":"item/completed","params":{"threadId":"thread-3","turnId":"turn-a","completedAtMs":4,"item":{"id":"a","type":"agentMessage","text":"ok"}}}\n',
                         '{"jsonrpc":"2.0","method":"turn/completed","params":{"threadId":"thread-3","turn":{"id":"turn-a"}}}\n',
                     ]
@@ -2320,6 +2320,15 @@ class AgentSessionRoomStoreTests(unittest.TestCase):
         self.assertIn("Thinking: Checking room context.", thinking)
         self.assertIn("Using tool: cat [local path] [redacted]", thinking)
         self.assertIn("Tool finished: cat [local path] [redacted]", thinking)
+        self.assertIn(
+            "failed",
+            [
+                chunk.get("status")
+                for chunk in chunks
+                if chunk.get("type") == "thinking_delta"
+                and chunk.get("activity_id") == "c"
+            ],
+        )
         self.assertNotIn("/Users/alice", str(thinking))
         self.assertNotIn("secret", str(thinking))
         self.assertIn("message_final", [chunk["type"] for chunk in chunks])

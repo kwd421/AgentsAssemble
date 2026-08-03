@@ -7,14 +7,60 @@ from agentsassemble.room.text import clean_room_text as clean_lobby_text
 from agentsassemble.room.types import RoomEvent
 
 
+PUBLIC_ACTIVITY_STATUSES = frozenset(
+    {"started", "running", "completed", "failed", "cancelled"}
+)
+
 PUBLIC_ACTIVITY_LABELS = {
-    "reasoning": {"started": "생각 정리 중", "running": "생각 정리 중", "completed": "생각 정리 완료"},
-    "compaction": {"started": "압축 중...", "running": "압축 중...", "completed": "압축 완료"},
-    "file_read": {"started": "파일 읽는 중", "running": "파일 읽는 중", "completed": "파일 확인 완료"},
-    "search": {"started": "정보 검색 중", "running": "정보 검색 중", "completed": "정보 검색 완료"},
-    "command": {"started": "명령 실행 중", "running": "명령 실행 중", "completed": "명령 실행 완료"},
-    "web": {"started": "웹 확인 중", "running": "웹 확인 중", "completed": "웹 확인 완료"},
-    "tool": {"started": "도구 사용 중", "running": "도구 사용 중", "completed": "도구 사용 완료"},
+    "reasoning": {
+        "started": "생각 정리 중",
+        "running": "생각 정리 중",
+        "completed": "생각 정리 완료",
+        "failed": "생각 정리 실패",
+        "cancelled": "생각 정리 중단",
+    },
+    "compaction": {
+        "started": "압축 중...",
+        "running": "압축 중...",
+        "completed": "압축 완료",
+        "failed": "압축 실패",
+        "cancelled": "압축 중단",
+    },
+    "file_read": {
+        "started": "파일 읽는 중",
+        "running": "파일 읽는 중",
+        "completed": "파일 확인 완료",
+        "failed": "파일 확인 실패",
+        "cancelled": "파일 확인 중단",
+    },
+    "search": {
+        "started": "정보 검색 중",
+        "running": "정보 검색 중",
+        "completed": "정보 검색 완료",
+        "failed": "정보 검색 실패",
+        "cancelled": "정보 검색 중단",
+    },
+    "command": {
+        "started": "명령 실행 중",
+        "running": "명령 실행 중",
+        "completed": "명령 실행 완료",
+        "failed": "명령 실행 실패",
+        "cancelled": "명령 실행 중단",
+    },
+    "web": {
+        "started": "웹 확인 중",
+        "running": "웹 확인 중",
+        "completed": "웹 확인 완료",
+        "failed": "웹 확인 실패",
+        "cancelled": "웹 확인 중단",
+    },
+    "tool": {
+        "started": "도구 사용 중",
+        "running": "도구 사용 중",
+        "completed": "도구 사용 완료",
+        "failed": "도구 사용 실패",
+        "cancelled": "도구 사용 중단",
+    },
 }
 
 _SENSITIVE_ACTIVITY_ASSIGNMENT = re.compile(
@@ -290,6 +336,7 @@ def public_runtime_diagnostics(diagnostics: object) -> dict[str, object]:
 
 __all__ = [
     "PUBLIC_ACTIVITY_LABELS",
+    "PUBLIC_ACTIVITY_STATUSES",
     "merged_latency",
     "public_activity",
     "public_event",

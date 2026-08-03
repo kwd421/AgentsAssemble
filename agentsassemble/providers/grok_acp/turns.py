@@ -130,19 +130,14 @@ class GrokAcpTurnProjectionMixin:
                 )
                 if on_activity is not None:
                     raw_status = str(update.get("status") or "running").casefold()
-                    status = (
-                        "completed"
-                        if raw_status
-                        in {
-                            "cancelled",
-                            "completed",
-                            "error",
-                            "failed",
-                            "success",
-                            "done",
-                        }
-                        else "running"
-                    )
+                    if raw_status in {"cancelled", "canceled"}:
+                        status = "cancelled"
+                    elif raw_status in {"error", "failed"}:
+                        status = "failed"
+                    elif raw_status in {"completed", "success", "done"}:
+                        status = "completed"
+                    else:
+                        status = "running"
                     category_source, activity_title, detail = grok_tool_activity(update)
                     tool_call_id = clean_room_text(
                         update.get("toolCallId") or update.get("tool_call_id"),

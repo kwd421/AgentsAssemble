@@ -33,6 +33,7 @@ from agentsassemble.room.command_uow import RoomCommandUnitOfWork
 from agentsassemble.room.event_broker import RoomEventBroker
 from agentsassemble.room.projection import (
     PUBLIC_ACTIVITY_LABELS,
+    PUBLIC_ACTIVITY_STATUSES,
     merged_latency,
     public_activity,
     public_runtime_diagnostics,
@@ -1207,7 +1208,7 @@ class RoomTurnCoordinator:
         require_active_turn_phase(session)
         category = clean_lobby_text(payload.get("category"), limit=32)
         status = clean_lobby_text(payload.get("status"), limit=32)
-        if category not in PUBLIC_ACTIVITY_LABELS or status not in {"started", "running", "completed"}:
+        if category not in PUBLIC_ACTIVITY_LABELS or status not in PUBLIC_ACTIVITY_STATUSES:
             raise RoomCommandRejected(
                 "Agent activity category or status is invalid.",
                 code="adapter_activity_invalid",

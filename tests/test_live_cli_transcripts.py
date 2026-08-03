@@ -243,6 +243,7 @@ class TranscriptMessageSourceTests(unittest.TestCase):
                                     {
                                         "type": "tool_result",
                                         "tool_use_id": "tool-read-1",
+                                        "is_error": True,
                                         "content": "private file contents",
                                     }
                                 ],
@@ -310,7 +311,7 @@ class TranscriptMessageSourceTests(unittest.TestCase):
             [
                 {
                     "category": "file_read",
-                    "status": "completed",
+                    "status": "failed",
                     "activity_id": "tool-read-1",
                     "activity_title": "Read",
                     "activity_detail": "/tmp/noise",

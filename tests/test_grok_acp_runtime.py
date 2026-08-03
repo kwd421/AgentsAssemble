@@ -184,6 +184,20 @@ class GrokAcpRuntimeTests(unittest.TestCase):
                     "rawInput": {"command": "pwd"},
                     "rawOutput": {"content": "must stay private"},
                 },
+                {
+                    "sessionUpdate": "tool_call_update",
+                    "toolCallId": "tool-failed",
+                    "status": "failed",
+                    "title": "Execute command",
+                    "_meta": {
+                        "x.ai/tool": {
+                            "name": "run_terminal_command",
+                            "label": "Run Command",
+                        }
+                    },
+                    "rawInput": {"command": "false"},
+                    "rawOutput": {"content": "private failure output"},
+                },
             ):
                 runtime._notifications.put(
                     {
@@ -238,9 +252,18 @@ class GrokAcpRuntimeTests(unittest.TestCase):
                     "activity_detail": "pwd",
                     "content": "Run Command: pwd",
                 },
+                {
+                    "category": "command",
+                    "status": "failed",
+                    "activity_id": "tool-failed",
+                    "activity_title": "Run Command",
+                    "activity_detail": "false",
+                    "content": "Run Command: false",
+                },
             ],
         )
         self.assertNotIn("must stay private", str(activities))
+        self.assertNotIn("private failure output", str(activities))
 
     def test_always_approve_session_is_rejected(self):
         with tempfile.TemporaryDirectory() as temp_dir:

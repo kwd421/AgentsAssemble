@@ -24,6 +24,7 @@ from agentsassemble.room.text import (
     has_room_visible_text,
 )
 from agentsassemble.room.projection import (
+    PUBLIC_ACTIVITY_STATUSES,
     public_activity,
     safe_activity_display_detail,
     safe_activity_detail,
@@ -953,7 +954,7 @@ def _safe_activity(activity: object) -> dict[str, str]:
     values = activity if isinstance(activity, dict) else {}
     category = clean_lobby_text(values.get("category"), limit=32)
     status = clean_lobby_text(values.get("status"), limit=32)
-    if category not in _ACTIVITY_CATEGORIES or status not in {"started", "running", "completed"}:
+    if category not in _ACTIVITY_CATEGORIES or status not in PUBLIC_ACTIVITY_STATUSES:
         return {}
     activity_id = safe_activity_id(values.get("activity_id"))
     activity_title = safe_activity_detail(values.get("activity_title"), limit=160)

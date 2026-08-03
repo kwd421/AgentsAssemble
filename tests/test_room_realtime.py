@@ -4450,7 +4450,7 @@ class RoomRealtimeControllerTests(unittest.TestCase):
             {
                 "turn_id": assignment["turn_id"],
                 "category": "command",
-                "status": "running",
+                "status": "failed",
                 "activity_id": "command-1",
                 "activity_title": "Bash",
                 "activity_detail": "cat /private/project/.env TOKEN=secret",
@@ -4492,6 +4492,7 @@ class RoomRealtimeControllerTests(unittest.TestCase):
         self.assertEqual(activity["content"], "cat [local path] [redacted]")
         self.assertEqual(activity["activity_id"], "command-1")
         self.assertEqual(activity["activity_title"], "Bash")
+        self.assertEqual(activity["status"], "failed")
         self.assertEqual(
             activity["activity_detail"],
             "cat [local path]/.env [redacted]",
