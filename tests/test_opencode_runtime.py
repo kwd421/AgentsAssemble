@@ -26,6 +26,236 @@ def _event(event_type, properties):
 
 
 class OpenCodeRuntimeTests(unittest.TestCase):
+    def test_routes_structured_permission_request_and_sends_exact_reply(self):
+        session_id = "session-1"
+        state = {"request_message_id": "", "reply": None}
+        stream = _Response(lines=[])
+
+        def opener(request, timeout):
+            del timeout
+            if "/event?" in request.full_url:
+                return stream
+            if "/prompt_async?" in request.full_url:
+                state["request_message_id"] = json.loads(request.data.decode("utf-8"))["messageID"]
+                stream._lines = [
+                    _event(
+                        "permission.asked",
+                        {
+                            "id": "per_1",
+                            "sessionID": session_id,
+                            "permission": "bash",
+                            "patterns": ["git status --short"],
+                            "metadata": {},
+                            "always": ["git status *"],
+                        },
+                    ),
+                    _event(
+                        "message.updated",
+                        {
+                            "sessionID": session_id,
+                            "info": {
+                                "id": "assistant-1",
+                                "parentID": state["request_message_id"],
+                                "role": "assistant",
+                            },
+                        },
+                    ),
+                    _event(
+                        "message.part.updated",
+                        {
+                            "sessionID": session_id,
+                            "part": {"id": "text-1", "messageID": "assistant-1", "type": "text"},
+                        },
+                    ),
+                    _event(
+                        "message.part.delta",
+                        {
+                            "sessionID": session_id,
+                            "messageID": "assistant-1",
+                            "partID": "text-1",
+                            "field": "text",
+                            "delta": "done",
+                        },
+                    ),
+                    _event("session.idle", {"sessionID": session_id}),
+                ]
+                return _Response(payload={})
+            if "/permission/per_1/reply?" in request.full_url:
+                state["reply"] = json.loads(request.data.decode("utf-8"))
+                return _Response(payload=True)
+            if "/message?" in request.full_url:
+                return _Response(payload=[])
+            raise AssertionError(request.full_url)
+
+        with tempfile.TemporaryDirectory() as temp_dir:
+            runtime = OpenCodeRuntime(
+                "opencode",
+                endpoint="http://127.0.0.1:1",
+                workspace="/tmp",
+                state_dir=Path(temp_dir),
+                opener=opener,
+            )
+            runtime._session_id = session_id
+            runtime._running = True
+            requests = []
+
+            def handle(request, respond):
+                requests.append(request)
+                respond({"option_id": "always"})
+
+            runtime.set_request_handler(handle)
+            runtime.send("inspect the repository")
+            result = runtime.read_output(timeout_seconds=5)
+
+        self.assertEqual(result["content"], "done")
+        self.assertEqual(state["reply"], {"reply": "always"})
+        self.assertEqual(requests[0]["request_kind"], "permission")
+        self.assertEqual(
+            [option["id"] for option in requests[0]["options"]],
+            ["once", "always", "reject"],
+        )
+
+    def test_routes_structured_multi_question_answers_in_provider_order(self):
+        session_id = "session-1"
+        state = {"request_message_id": "", "reply": None}
+        stream = _Response(lines=[])
+
+        def opener(request, timeout):
+            del timeout
+            if "/event?" in request.full_url:
+                return stream
+            if "/prompt_async?" in request.full_url:
+                state["request_message_id"] = json.loads(request.data.decode("utf-8"))["messageID"]
+                stream._lines = [
+                    _event(
+                        "question.asked",
+                        {
+                            "id": "que_1",
+                            "sessionID": session_id,
+                            "questions": [
+                                {
+                                    "header": "검증",
+                                    "question": "어떤 검증을 실행할까요?",
+                                    "multiple": True,
+                                    "custom": False,
+                                    "options": [
+                                        {"label": "단위 테스트", "description": "빠른 검증"},
+                                        {"label": "빌드", "description": "구조 검증"},
+                                    ],
+                                }
+                            ],
+                        },
+                    ),
+                    _event(
+                        "message.updated",
+                        {
+                            "sessionID": session_id,
+                            "info": {
+                                "id": "assistant-1",
+                                "parentID": state["request_message_id"],
+                                "role": "assistant",
+                            },
+                        },
+                    ),
+                    _event(
+                        "message.part.updated",
+                        {
+                            "sessionID": session_id,
+                            "part": {"id": "text-1", "messageID": "assistant-1", "type": "text"},
+                        },
+                    ),
+                    _event(
+                        "message.part.delta",
+                        {
+                            "sessionID": session_id,
+                            "messageID": "assistant-1",
+                            "partID": "text-1",
+                            "field": "text",
+                            "delta": "selected",
+                        },
+                    ),
+                    _event("session.idle", {"sessionID": session_id}),
+                ]
+                return _Response(payload={})
+            if "/question/que_1/reply?" in request.full_url:
+                state["reply"] = json.loads(request.data.decode("utf-8"))
+                return _Response(payload=True)
+            if "/message?" in request.full_url:
+                return _Response(payload=[])
+            raise AssertionError(request.full_url)
+
+        with tempfile.TemporaryDirectory() as temp_dir:
+            runtime = OpenCodeRuntime(
+                "opencode",
+                endpoint="http://127.0.0.1:1",
+                workspace="/tmp",
+                state_dir=Path(temp_dir),
+                opener=opener,
+            )
+            runtime._session_id = session_id
+            runtime._running = True
+
+            def handle(request, respond):
+                self.assertTrue(request["questions"][0]["multiple"])
+                respond({"answers": {"question-0": ["단위 테스트", "빌드"]}})
+
+            runtime.set_request_handler(handle)
+            runtime.send("choose checks")
+            result = runtime.read_output(timeout_seconds=5)
+
+        self.assertEqual(result["content"], "selected")
+        self.assertEqual(state["reply"], {"answers": [["단위 테스트", "빌드"]]})
+
+    def test_reports_original_structured_session_error_without_waiting_for_a_final(self):
+        session_id = "session-1"
+        stream = _Response(lines=[])
+
+        def opener(request, timeout):
+            del timeout
+            if "/event?" in request.full_url:
+                return stream
+            if "/prompt_async?" in request.full_url:
+                stream._lines = [
+                    _event(
+                        "session.error",
+                        {
+                            "sessionID": session_id,
+                            "error": {
+                                "name": "APIError",
+                                "data": {
+                                    "message": "Provider rejected the request before generation.",
+                                    "isRetryable": False,
+                                },
+                            },
+                        },
+                    ),
+                    _event("session.idle", {"sessionID": session_id}),
+                ]
+                return _Response(payload={})
+            if "/message?" in request.full_url:
+                return _Response(payload=[])
+            raise AssertionError(request.full_url)
+
+        with tempfile.TemporaryDirectory() as temp_dir:
+            runtime = OpenCodeRuntime(
+                "opencode",
+                endpoint="http://127.0.0.1:1",
+                workspace="/tmp",
+                state_dir=Path(temp_dir),
+                opener=opener,
+            )
+            runtime._session_id = session_id
+            runtime._running = True
+            runtime.send("reply")
+
+            with self.assertRaisesRegex(
+                RuntimeError,
+                "Provider rejected the request before generation",
+            ) as raised:
+                runtime.read_output(timeout_seconds=5)
+
+        self.assertNotIn("without a final assistant message", str(raised.exception))
+
     def test_late_previous_turn_events_do_not_complete_current_turn(self):
         session_id = "session-1"
         previous_message_id = "message-previous"
