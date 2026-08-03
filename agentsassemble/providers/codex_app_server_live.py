@@ -8,6 +8,7 @@ from agentsassemble.providers.codex_app_server import (
 )
 from agentsassemble.providers.room_portal import RoomPortal
 from agentsassemble.providers.room_portal_mcp import room_portal_mcp_settings
+from agentsassemble.providers.provider_requests import ProviderRequestHandler
 from agentsassemble.room.text import clean_room_text
 
 
@@ -52,6 +53,9 @@ class CodexAppServerLiveRuntime:
         self.pending_input: list[dict[str, object]] = []
         self.pending_room_observation = False
         self.running = False
+
+    def set_request_handler(self, handler: ProviderRequestHandler | None) -> None:
+        self.runtime.provider_request_handler = handler
 
     def start(self) -> dict[str, object]:
         self.runtime.start(self.profile)

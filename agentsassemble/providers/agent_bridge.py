@@ -43,6 +43,7 @@ from agentsassemble.providers.room_portal import (
     room_wake_orientation,
 )
 from agentsassemble.providers.provider_errors import provider_failure_code
+from agentsassemble.providers.provider_requests import BridgeProviderRequestRouter
 
 
 class BridgeRoomClient(Protocol):
@@ -126,6 +127,13 @@ class RoomAgentBridge:
         self.remote_stop_control_id = ""
         self.remote_stop_confirmation_required = False
         self.last_cleanup_report = CleanupReport("room_agent_bridge")
+        self._provider_requests = BridgeProviderRequestRouter(
+            report=self._command,
+            stopping=self._stop,
+        )
+        set_request_handler = getattr(self.runtime, "set_request_handler", None)
+        if callable(set_request_handler):
+            set_request_handler(self._provider_requests.handle)
 
     def run(self) -> int:
         self._run_thread = threading.current_thread()
@@ -225,6 +233,16 @@ class RoomAgentBridge:
             return
         if op == "turn.assign":
             self._start_turn(message)
+            return
+        if op == "provider.request.resolve":
+            if not self._provider_requests.resolve(message):
+                self._fail_protocol(
+                    BridgeProtocolError(
+                        "Provider request resolution did not match a pending request.",
+                        code="provider_request_resolution_invalid",
+                        fatal=False,
+                    )
+                )
             return
         if op != "agent.control":
             return

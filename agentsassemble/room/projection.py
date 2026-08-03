@@ -125,6 +125,7 @@ _PRIVATE_SESSION_FIELDS = frozenset(
         "stderr_path",
         "provider_endpoint",
         "provider_observation_kind",
+        "pending_provider_request",
         "pending_event_observation_kinds",
         "lifecycle_intent_action",
         "lifecycle_intent_id",
@@ -190,7 +191,8 @@ def public_event_for_identity(
     """Project one event while preserving sequence continuity for private activity."""
 
     projected = public_event(event)
-    if projected.get("visibility") != "owner":
+    owner_only = projected.get("visibility") == "owner" or projected.get("audience") == "owner"
+    if not owner_only:
         return projected
     participant_id = clean_lobby_text(projected.get("participant_id"), limit=128)
     owner_id = clean_lobby_text(projected.get("owner_id"), limit=128)
@@ -201,7 +203,11 @@ def public_event_for_identity(
     }
     principals.discard("")
     if participant_id in principals or owner_id in principals:
-        return projected
+        return {
+            key: value
+            for key, value in projected.items()
+            if key != "audience"
+        } | {"visibility": "owner"}
     return {
         key: projected[key]
         for key in ("id", "seq", "room_id", "created_at")

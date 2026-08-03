@@ -89,6 +89,10 @@ from agentsassemble.room.projection import (
 )
 from agentsassemble.room.provider_registry import RoomProviderRegistry
 from agentsassemble.room.provider_sessions import RoomProviderSessionService
+from agentsassemble.room.provider_requests import (
+    PROVIDER_REQUEST_ACTIONS,
+    RoomProviderRequestService,
+)
 from agentsassemble.providers.sync_cursor import (
     ProviderSyncCursorParityError,
     ProviderSyncCursorReconciler,
@@ -455,6 +459,13 @@ class RoomRealtimeController:
         )
         self._messages = RoomMessageService(FileAttachmentStore(self.output_root))
         self._room_settings = RoomGlobalSettingsCommandService()
+        self._provider_requests = RoomProviderRequestService(
+            store=self.store,
+            broker=self.broker,
+            bridge_session=self._turn_coordinator.bridge_session,
+            is_room_owner=self._is_room_owner,
+            lock=self._lock,
+        )
         self.last_cleanup_report = CleanupReport("room_realtime_controller")
         self.ensure_room(self.default_room_id)
         self._provider_sessions.restore_server_owned_providers()
@@ -623,6 +634,12 @@ class RoomRealtimeController:
                         tombstone=deleted,
                     )
         self.ensure_room(room_id)
+        if action in PROVIDER_REQUEST_ACTIONS:
+            return self._provider_requests.handle_command(
+                identity, room_id, action, payload,
+                can_resolve=self.capabilities(identity).get("provider.request.resolve", False),
+                execute=lambda operation: self._execute_durable_command(identity, room_id, request_id, action, payload, operation),
+            )
         if action == "room.delete":
             with self._lock:
                 prior_ack = self._prior_command_ack(

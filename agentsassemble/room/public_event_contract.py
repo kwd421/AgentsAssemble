@@ -47,6 +47,35 @@ class PublicRoomGlobalSettings(TypedDict):
     channels: list[PublicRoomGlobalChannel]
 
 
+class PublicProviderRequestOption(TypedDict):
+    id: str
+    label: str
+    kind: str
+    description: str
+
+
+class PublicProviderRequestQuestion(TypedDict):
+    id: str
+    header: str
+    question: str
+    options: list[PublicProviderRequestOption]
+    is_other: bool
+    is_secret: bool
+
+
+class PublicProviderRequest(TypedDict, total=False):
+    provider_request_id: str
+    request_kind: str
+    response_kind: str
+    title: str
+    description: str
+    status: str
+    options: list[PublicProviderRequestOption]
+    questions: list[PublicProviderRequestQuestion]
+    timeout_seconds: int
+    action_url: str
+
+
 class PublicRoomEvent(TypedDict):
     v: int
     id: str
@@ -93,6 +122,7 @@ class PublicRoomEvent(TypedDict):
     relay_depth: NotRequired[int]
     reason_code: NotRequired[str]
     room_settings: NotRequired[PublicRoomGlobalSettings]
+    provider_request: NotRequired[PublicProviderRequest]
 
 
 __all__ = [
@@ -101,5 +131,8 @@ __all__ = [
     "PublicRoomGlobalAppearance",
     "PublicRoomGlobalChannel",
     "PublicRoomGlobalSettings",
+    "PublicProviderRequest",
+    "PublicProviderRequestOption",
+    "PublicProviderRequestQuestion",
     "PublicRoomEvent",
 ]

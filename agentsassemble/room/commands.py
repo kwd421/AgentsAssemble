@@ -37,6 +37,9 @@ ROOM_COMMAND_ACTIONS = frozenset(
         "message.delta",
         "message.final",
         "turn.failed",
+        "provider.request.open",
+        "provider.request.resolve",
+        "provider.request.closed",
     }
 )
 
@@ -80,6 +83,7 @@ def capabilities_for_identity(identity: dict[str, object]) -> dict[str, bool]:
         "participant.kick": operator,
         "participant.mute": operator,
         "agent.control": operator,
+        "provider.request.resolve": read_write and not bridge,
         "bridge.report": bridge,
     }
 

@@ -2266,15 +2266,29 @@ class AgentSessionRoomStoreTests(unittest.TestCase):
                         '{"jsonrpc":"2.0","id":1,"result":{}}\n',
                         '{"jsonrpc":"2.0","id":2,"result":{"thread":{"id":"thread-2"}}}\n',
                         '{"jsonrpc":"2.0","id":3,"result":{"turn":{"id":"turn-a"}}}\n',
-                        '{"jsonrpc":"2.0","method":"command_execution/request_approval","params":{"threadId":"thread-2","turnId":"turn-a"}}\n',
+                        '{"jsonrpc":"2.0","id":44,"method":"item/commandExecution/requestApproval","params":{"threadId":"thread-2","turnId":"turn-a","itemId":"command-1","startedAtMs":1,"command":"python3 -m unittest"}}\n',
                         '{"jsonrpc":"2.0","method":"turn/error","params":{"message":"contextWindowExceeded"}}\n',
                     ]
                 )
 
-        runtime = CodexAppServerRuntime(process_factory=FakeProcess)
+        requests = []
+
+        def handle(request, respond):
+            requests.append(request)
+            respond({"option_id": "decline"})
+
+        runtime = CodexAppServerRuntime(
+            process_factory=FakeProcess,
+            provider_request_handler=handle,
+        )
         chunks = list(runtime.send_turn({}, {"room_id": "room-a", "current_turn_instruction": "x"}))
 
-        self.assertIn("approval_requested", [chunk["type"] for chunk in chunks])
+        self.assertEqual(requests[0]["request_kind"], "permission")
+        responses = [__import__("json").loads(line) for line in runtime.process.stdin.writes]
+        self.assertIn(
+            {"jsonrpc": "2.0", "id": 44, "result": {"decision": "decline"}},
+            responses,
+        )
         self.assertEqual(chunks[-1]["type"], "error")
 
     def test_codex_app_server_surfaces_safe_reasoning_and_tool_progress(self):

@@ -17,6 +17,8 @@ from agentsassemble.providers.grok_acp.process import (
     resolve_executable as _resolve_executable,
     terminate_process as _terminate_process,
 )
+from agentsassemble.providers.grok_acp.permissions import handle_permission_request
+from agentsassemble.providers.provider_requests import ProviderRequestHandler
 from agentsassemble.providers.grok_acp.room_access import (
     merge_permission_context,
     permission_context_update,
@@ -109,6 +111,7 @@ class GrokAcpRuntime(GrokAcpTransportMixin, GrokAcpTurnProjectionMixin):
         self._notification_drop_count = 0
         self._turn_notification_drop_start = 0
         self._permission_request_count = 0
+        self._provider_request_handler: ProviderRequestHandler | None = None
         self._permission_denied_count = 0
         self._denied_permission_names: tuple[str, ...] = ()
         self._tool_permission_context: dict[
@@ -124,6 +127,9 @@ class GrokAcpRuntime(GrokAcpTransportMixin, GrokAcpTurnProjectionMixin):
         self._stderr_last_line_at = ""
         self._stderr_tail: deque[str] = deque(maxlen=100)
         self._stderr_tail_truncated = False
+
+    def set_request_handler(self, handler: ProviderRequestHandler | None) -> None:
+        self._provider_request_handler = handler
 
     def start(self) -> dict[str, object]:
         with self._lock:
@@ -523,7 +529,29 @@ class GrokAcpRuntime(GrokAcpTransportMixin, GrokAcpTurnProjectionMixin):
         if allow_room_mcp:
             allow_option_id = _permission_option_id(params, "allow_once")
         allow_request = bool(allow_option_id)
-        option_kind = "allow_once" if allow_request else "reject_once"
+        if not allow_request:
+            allowed, selected_id = handle_permission_request(
+                message,
+                handler=self._provider_request_handler,
+                send_json=self._send_json,
+            )
+            with self._lock:
+                self._permission_request_count += 1
+                if not allowed:
+                    self._permission_denied_count += 1
+                    denied_name = clean_room_text(
+                        raw_mcp_tool_name(tool_call)
+                        or tool_call.get("name")
+                        or params.get("title"),
+                        limit=128,
+                    ) or "unnamed"
+                    self._denied_permission_names = (
+                        *self._denied_permission_names[-4:],
+                        denied_name,
+                    )
+            del selected_id
+            return
+        option_kind = "allow_once"
         option_id = (
             allow_option_id
             if allow_request
@@ -531,22 +559,6 @@ class GrokAcpRuntime(GrokAcpTransportMixin, GrokAcpTurnProjectionMixin):
         )
         with self._lock:
             self._permission_request_count += 1
-            if not allow_request:
-                self._permission_denied_count += 1
-                # A denial is why a room turn produces nothing, and until now it
-                # left no trace of what was refused: the counters said 36 denied
-                # and the tool name was nowhere. Keep the last few so the reason
-                # survives into health and the session record.
-                denied_name = clean_room_text(
-                    raw_mcp_tool_name(tool_call)
-                    or tool_call.get("name")
-                    or params.get("title"),
-                    limit=128,
-                ) or "unnamed"
-                self._denied_permission_names = (
-                    *self._denied_permission_names[-4:],
-                    denied_name,
-                )
         outcome: dict[str, object]
         if option_id:
             outcome = {"outcome": "selected", "optionId": option_id}

@@ -14,6 +14,11 @@ from typing import Callable, Iterable
 
 from agentsassemble.providers.turn_input import agent_turn_prompt
 from agentsassemble.providers.process_environment import sanitized_provider_environment
+from agentsassemble.providers.codex_provider_requests import (
+    CODEX_PROVIDER_REQUEST_METHODS,
+    handle_codex_provider_request,
+)
+from agentsassemble.providers.provider_requests import ProviderRequestHandler
 from agentsassemble.room.projection import (
     safe_activity_detail,
     safe_activity_display_detail,
@@ -59,6 +64,7 @@ class CodexAppServerRuntime:
         environment: dict[str, str] | None = None,
         dynamic_tools: list[dict[str, object]] | None = None,
         dynamic_tool_handler: DynamicToolHandler | None = None,
+        provider_request_handler: ProviderRequestHandler | None = None,
     ) -> None:
         self.process_factory = process_factory
         self.command = command or ["codex", "app-server", "--stdio"]
@@ -67,6 +73,7 @@ class CodexAppServerRuntime:
         self.environment = dict(environment or {})
         self.dynamic_tools = [dict(item) for item in list(dynamic_tools or [])]
         self.dynamic_tool_handler = dynamic_tool_handler
+        self.provider_request_handler = provider_request_handler
         self.process: object | None = None
         self._next_id = 1
         self._initialized = False
@@ -779,6 +786,13 @@ class CodexAppServerRuntime:
             method = clean_room_text(message.get("method"), limit=128)
             if method == "item/tool/call" and "id" in message:
                 self._handle_dynamic_tool_request(message)
+                continue
+            if method in CODEX_PROVIDER_REQUEST_METHODS and "id" in message:
+                handle_codex_provider_request(
+                    message,
+                    handler=self.provider_request_handler,
+                    write_json=self._write_json,
+                )
                 continue
             if method == "mcpServer/elicitation/request" and "id" in message:
                 self._record_mcp_elicitation_shape(message)

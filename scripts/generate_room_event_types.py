@@ -15,6 +15,9 @@ if str(REPOSITORY_ROOT) not in sys.path:
     sys.path.insert(0, str(REPOSITORY_ROOT))
 
 from agentsassemble.room.public_event_contract import (  # noqa: E402
+    PublicProviderRequest,
+    PublicProviderRequestOption,
+    PublicProviderRequestQuestion,
     PublicRoomActor,
     PublicRoomAttachment,
     PublicRoomEvent,
@@ -25,6 +28,9 @@ from agentsassemble.room.public_event_contract import (  # noqa: E402
 
 
 TYPESCRIPT_NAME = {
+    PublicProviderRequest: "PublicProviderRequest",
+    PublicProviderRequestOption: "PublicProviderRequestOption",
+    PublicProviderRequestQuestion: "PublicProviderRequestQuestion",
     PublicRoomActor: "PublicRoomActor",
     PublicRoomAttachment: "PublicRoomAttachment",
     PublicRoomGlobalAppearance: "PublicRoomGlobalAppearance",
@@ -81,6 +87,9 @@ def render() -> str:
         "",
     ]
     contracts = (
+        ("PublicProviderRequestOption", PublicProviderRequestOption),
+        ("PublicProviderRequestQuestion", PublicProviderRequestQuestion),
+        ("PublicProviderRequest", PublicProviderRequest),
         ("PublicRoomActor", PublicRoomActor),
         ("PublicRoomAttachment", PublicRoomAttachment),
         ("PublicRoomGlobalAppearance", PublicRoomGlobalAppearance),

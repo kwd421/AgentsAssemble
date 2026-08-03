@@ -67,6 +67,34 @@ class GrokAcpRuntimeTests(unittest.TestCase):
         self.assertEqual(health["permission_request_count"], 1)
         self.assertEqual(health["permission_denied_count"], 1)
 
+    def test_permission_request_waits_for_the_registered_structured_handler(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            runtime = self.make_runtime(Path(temp_dir))
+            requests: list[dict[str, object]] = []
+
+            def handle(request, respond):
+                requests.append(request)
+                reject = next(
+                    option["id"]
+                    for option in request["options"]
+                    if option["kind"] == "reject_once"
+                )
+                respond({"option_id": reject})
+
+            runtime.set_request_handler(handle)
+            try:
+                runtime.send("permission")
+                output = runtime.read_output(timeout_seconds=5)
+            finally:
+                runtime.stop()
+
+        self.assertEqual(output["content"], "permission denied safely")
+        self.assertEqual(requests[0]["request_kind"], "permission")
+        self.assertEqual(
+            [option["id"] for option in requests[0]["options"]],
+            ["allow-once", "reject-once"],
+        )
+
     def test_room_observation_allows_only_registered_room_mcp_tools(self):
         with tempfile.TemporaryDirectory() as temp_dir:
             root = Path(temp_dir)
