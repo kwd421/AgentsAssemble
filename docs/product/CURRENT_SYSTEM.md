@@ -111,7 +111,9 @@ release endpoint, verification key, updater signing key, and platform signing
 credentials are build/release inputs and are not persisted in the repository.
 
 A public account identity is distinct from the private per-client device
-credential. Local startup and local rooms continue to work without login. A
+credential. Before host-room connections begin, first use requires an explicit
+choice between a linked public account and a device-local guest profile. Local
+rooms remain usable without a public account or Internet connection. A
 verified Google subject produces a stable opaque `acct-...` ID; the raw Google
 subject and ID token are not stored. Linking is an explicit account action and
 never silently merges two identities. When the selected Google account already
@@ -381,6 +383,14 @@ aggregate tally and ended state on the vote card. Ballot result rows
 do not wake providers. There is no separate vote-close/final-winner event.
 Agent Sessions answer a requested vote through an ordinary public room message
 rather than claiming a structured ballot.
+
+Provider reasoning summaries and tool/work activity use the canonical room
+event stream but are private to the owning participant by default. Other
+participants receive a sequence-preserving hidden event so their durable room
+cursor remains contiguous without exposing the activity payload. An operator
+may explicitly enable `share_activity` for an Agent Session; only then are that
+session's subsequent activity events projected publicly. Public final messages
+are unaffected by this preference.
 
 API-provider compatibility is defined by protocol family and room-tool
 capability, not by an “API” label alone. DeepSeek, Cerebras, OpenRouter, and

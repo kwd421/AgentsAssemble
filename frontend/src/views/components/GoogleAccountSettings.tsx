@@ -29,8 +29,10 @@ function resetRetiredGuestBrowserState() {
 
 export default function GoogleAccountSettings({
   identity,
+  onAccountConnected,
 }: {
   identity: UserProfileIdentity;
+  onAccountConnected?: () => void;
 }) {
   const [status, setStatus] = useState<AccountStatusResponse | null>(null);
   const [error, setError] = useState("");
@@ -91,6 +93,7 @@ export default function GoogleAccountSettings({
                 setStatus((current) =>
                   current ? { ...current, account: connected.account } : current
                 );
+                onAccountConnected?.();
               })
               .catch(async (reason: Error) => {
                 if (!active) return;
@@ -133,6 +136,7 @@ export default function GoogleAccountSettings({
       if (next.account) {
         setDesktopWaiting(false);
         setConnecting(false);
+        onAccountConnected?.();
       }
     };
     void refresh().catch(() => undefined);
@@ -148,7 +152,7 @@ export default function GoogleAccountSettings({
       window.clearInterval(timer);
       window.clearTimeout(expiryTimer);
     };
-  }, [desktopWaiting, identity.deviceToken, identity.sessionToken, status?.account]);
+  }, [desktopWaiting, identity.deviceToken, identity.sessionToken, onAccountConnected, status?.account]);
 
   const beginDesktopLogin = async () => {
     if (!confirmPossibleGuestDiscard()) return;

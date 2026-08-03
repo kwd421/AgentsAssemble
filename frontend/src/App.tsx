@@ -55,6 +55,7 @@ import type { ChannelHeaderActions } from "./views/components/ChannelHeader";
 import AgentCreateModal from "./views/components/AgentCreateModal";
 import GuestIdentityRecoveryPanel from "./views/components/GuestIdentityRecoveryPanel";
 import GuestJoinProfilePanel from "./views/components/GuestJoinProfilePanel";
+import StartupIdentityGate from "./views/components/StartupIdentityGate";
 import HomeSidebar from "./views/components/HomeSidebar";
 import LeaveRoomDialog from "./views/components/LeaveRoomDialog";
 import RoomConnectionPanel from "./views/components/RoomConnectionPanel";
@@ -94,7 +95,7 @@ import {
 } from "./lib/agentActivityPreferences";
 import { remoteClientPacketPreview } from "./lib/roomInviteCopy";
 import { GUEST_SESSION_EXPIRED_MESSAGE } from "./lib/apiErrors";
-import { getOrCreateDeviceToken } from "./lib/deviceIdentity";
+import { getOrCreateDeviceToken, loadRememberedGuestProfile } from "./lib/deviceIdentity";
 import { consumeGuestRecoveryRequestFromUrl } from "./lib/guestRecovery";
 import { consumeOperatorPairingTokenFromUrl } from "./lib/roomGuestSession";
 import { roomPostingState } from "./lib/roomGuestPosting";
@@ -317,8 +318,21 @@ export default function App() {
     createStartupRoute({ operatorPairingPending: Boolean(operatorPairingToken) })
   );
   const [deviceToken] = useState(getOrCreateDeviceToken);
+  const [startupIdentityReady, setStartupIdentityReady] = useState(
+    () => Boolean(loadRememberedGuestProfile())
+  );
+  const completeStartupIdentity = useCallback(() => setStartupIdentityReady(true), []);
   const guestInvite = startupRoute.guestInvite;
   const guestJoinToken = startupRoute.guestJoinToken;
+  const startupIdentityResolved =
+    startupIdentityReady ||
+    Boolean(
+      startupRoute.guestInvite ||
+        startupRoute.guestSession ||
+        startupRoute.guestJoinToken ||
+        operatorPairingToken ||
+        guestRecoveryRequest
+    );
   // A built-in surface ("friends"/"lobby") or an opaque custom channel id.
   const [channel, setChannel] = useState<string>(() => {
     if (
@@ -333,6 +347,7 @@ export default function App() {
   const [membersOpen, setMembersOpen] = useState(true);
   const [rightPanelMode, setRightPanelMode] = useState<RightPanelMode>("room-info");
   const startupHostEnabled =
+    startupIdentityReady &&
     !startupRoute.guestInvite &&
     !startupRoute.guestSession &&
     !startupRoute.guestJoinToken &&
@@ -439,7 +454,7 @@ export default function App() {
     addCandidate: addFriendsCandidate,
     addManual: addFriendsManual,
     deleteFriend: deleteDirectoryFriend,
-  } = useFriendsDirectory({ enabled: !guestLocked });
+  } = useFriendsDirectory({ enabled: startupIdentityResolved && !guestLocked });
   const lobbyPostingState = useMemo(
     () =>
       roomPostingState({
@@ -458,7 +473,7 @@ export default function App() {
   } = useLiveAgentProcessGroups({
     activeMeetingId: activeOperationalMeetingId,
     guestLocked,
-    enabled: !activeRoomDisconnected,
+    enabled: startupIdentityResolved && !activeRoomDisconnected,
   });
   const activeSideChatMeetingId = activeOperationalMeetingId;
   const {
@@ -475,7 +490,7 @@ export default function App() {
     updateDraft: updateSideChatDraft,
   } = useRoomSideChat({
     meetingId: activeSideChatMeetingId,
-    enabled: !activeRoomDisconnected,
+    enabled: startupIdentityResolved && !activeRoomDisconnected,
   });
   // Rooms-as-server-objects: when a room becomes active, promote it to a
   // server-backed meeting (idempotent) so adding agents / roster / lobby always
@@ -499,7 +514,7 @@ export default function App() {
       ? ({ kind: "host" as const, meetingId: activeRoom.meetingId })
       : undefined;
   const canonicalRoom = useCanonicalRoom({
-    roomId: activeOperationalMeetingId,
+    roomId: startupIdentityResolved ? activeOperationalMeetingId : "",
     auth: canonicalRoomAuth,
     viewerParticipantId: guestSession?.agentId || "operator-local",
     onSideChat: handleSideChatRealtimeEvents,
@@ -517,7 +532,7 @@ export default function App() {
     canonicalParticipants: canonicalRoom.participants,
     membershipRevision: canonicalRoom.membershipRevision,
     sessionToken: admittedSessionToken,
-    enabled: !activeRoomDisconnected,
+    enabled: startupIdentityResolved && !activeRoomDisconnected,
   });
   const activeRoomMembers = roomMembers.activeMembers;
   const refreshMembers = roomMembers.refresh;
@@ -529,7 +544,7 @@ export default function App() {
     saveCanonicalGlobalSettings: canonicalRoom.sendRoomSettingsUpdate,
     onRoomMetadataLoaded: updateRoomByMeetingId,
     onMembersChanged: roomMembers.replaceMembers,
-    enabled: !activeRoomDisconnected,
+    enabled: startupIdentityResolved && !activeRoomDisconnected,
   });
   const roomAppearances = roomSettings.appearances;
   const roomInvite = useRoomInviteController({
@@ -1261,6 +1276,15 @@ export default function App() {
       ...previous,
       [sectionId]: !previous[sectionId],
     }));
+  }
+
+  if (!startupIdentityResolved) {
+    return (
+      <StartupIdentityGate
+        deviceToken={deviceToken}
+        onComplete={completeStartupIdentity}
+      />
+    );
   }
 
   return (
