@@ -123,6 +123,7 @@ class GrokAcpRuntimeTests(unittest.TestCase):
         common = {
             "session_id": "session-1",
             "active_room_observation": True,
+            "allowed_tool_names": frozenset({"read_discussion", "publish_message"}),
             "cached": {},
         }
         for name in (

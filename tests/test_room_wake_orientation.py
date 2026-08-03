@@ -10,6 +10,7 @@ class RoomWakeOrientationTests(unittest.TestCase):
         orientation = room_wake_orientation(
             "ollama_api",
             observation_kind="ambient_observation",
+            tool_names={"read_discussion", "publish_message", "roll_dice", "choose_random"},
         )
 
         self.assertIn("`read_discussion` MCP tool", orientation)

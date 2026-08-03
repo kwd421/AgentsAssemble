@@ -92,6 +92,15 @@ def audit(operation, turn_id="", details=None):
     except OSError:
         pass
 
+def require_tool(name):
+    try:
+        turn = json.loads(TURN.read_text(encoding="utf-8"))
+        allowed = turn.get("allowed_tools")
+    except (OSError, json.JSONDecodeError):
+        allowed = None
+    if not isinstance(allowed, list) or name not in allowed:
+        fail(f"room tool {name} is unavailable for this observation")
+
 command = sys.argv[1] if len(sys.argv) > 1 else "help"
 if command == "read":
     content = VIEW.read_text(encoding="utf-8")
@@ -130,6 +139,7 @@ elif command == "media":
     audit("media")
     print(item["path"])
 elif command == "roll":
+    require_tool("roll_dice")
     if len(sys.argv) != 3:
         fail("usage: agentsassemble-room roll '<NdS+M>'")
     match = re.fullmatch(r"\s*(\d{0,3})d(\d{1,4})([+-]\d{1,5})?\s*", sys.argv[2], re.IGNORECASE)

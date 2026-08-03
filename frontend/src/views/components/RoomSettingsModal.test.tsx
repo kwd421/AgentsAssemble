@@ -37,7 +37,8 @@ function renderSettings(
   settingsStatus: "loading" | "ready" | "saving" | "stale" | "error" = "ready",
   onRetrySettings = vi.fn(),
   onOrderedExcludePreviousSpeakerChange = vi.fn(),
-  onAppearanceChange = vi.fn().mockResolvedValue(undefined)
+  onAppearanceChange = vi.fn().mockResolvedValue(undefined),
+  onToolModeChange = vi.fn()
 ) {
   render(
     <RoomSettingsModal
@@ -47,6 +48,7 @@ function renderSettings(
       settingsStatus={settingsStatus}
       settingsError={settingsStatus === "error" ? "offline" : ""}
       conversationMode={conversationMode}
+      toolMode={conversationMode ? "chat" : null}
       orderedExcludePreviousSpeaker={conversationMode ? true : null}
       maxRelayTurns={conversationMode ? 6 : null}
       canInvite
@@ -56,6 +58,7 @@ function renderSettings(
       onAppearanceChange={onAppearanceChange}
       onChannelSettingChange={() => undefined}
       onConversationModeChange={onConversationModeChange}
+      onToolModeChange={onToolModeChange}
       onOrderedExcludePreviousSpeakerChange={onOrderedExcludePreviousSpeakerChange}
       onMaxRelayTurnsChange={() => undefined}
       onRetrySettings={onRetrySettings}
@@ -111,6 +114,23 @@ describe("RoomSettingsModal conversation mode", () => {
     expect(onConversationModeChange).toHaveBeenCalledWith("ambient");
   });
 
+  it("lets the host enable tabletop tools independently of conversation order", async () => {
+    const onToolModeChange = vi.fn();
+    renderSettings(
+      "ordered",
+      vi.fn(),
+      "ready",
+      vi.fn(),
+      vi.fn(),
+      vi.fn().mockResolvedValue(undefined),
+      onToolModeChange
+    );
+
+    await userEvent.click(screen.getByRole("radio", { name: /테이블탑/ }));
+
+    expect(onToolModeChange).toHaveBeenCalledWith("tabletop");
+  });
+
   it("lets the user allow the previous speaker in general ordered selection", async () => {
     const onChange = vi.fn();
     renderSettings("ordered", vi.fn(), "ready", vi.fn(), onChange);
@@ -131,6 +151,7 @@ describe("RoomSettingsModal conversation mode", () => {
         settingsStatus="ready"
         settingsError=""
         conversationMode="ordered"
+        toolMode="chat"
         orderedExcludePreviousSpeaker
         maxRelayTurns={6}
         canInvite
@@ -140,6 +161,7 @@ describe("RoomSettingsModal conversation mode", () => {
         onAppearanceChange={async () => undefined}
         onChannelSettingChange={() => undefined}
         onConversationModeChange={() => undefined}
+        onToolModeChange={() => undefined}
         onOrderedExcludePreviousSpeakerChange={() => undefined}
         onMaxRelayTurnsChange={() => undefined}
         onRetrySettings={() => undefined}
@@ -157,6 +179,7 @@ describe("RoomSettingsModal conversation mode", () => {
         settingsStatus="ready"
         settingsError=""
         conversationMode="continuous"
+        toolMode="chat"
         orderedExcludePreviousSpeaker
         maxRelayTurns={6}
         canInvite
@@ -166,6 +189,7 @@ describe("RoomSettingsModal conversation mode", () => {
         onAppearanceChange={async () => undefined}
         onChannelSettingChange={() => undefined}
         onConversationModeChange={() => undefined}
+        onToolModeChange={() => undefined}
         onOrderedExcludePreviousSpeakerChange={() => undefined}
         onMaxRelayTurnsChange={() => undefined}
         onRetrySettings={() => undefined}
@@ -204,6 +228,7 @@ describe("RoomSettingsModal conversation mode", () => {
         settingsStatus="ready"
         settingsError=""
         conversationMode="ordered"
+        toolMode="chat"
         orderedExcludePreviousSpeaker
         maxRelayTurns={6}
         canInvite
@@ -213,6 +238,7 @@ describe("RoomSettingsModal conversation mode", () => {
         onAppearanceChange={async () => undefined}
         onChannelSettingChange={onChannelSettingChange}
         onConversationModeChange={() => undefined}
+        onToolModeChange={() => undefined}
         onOrderedExcludePreviousSpeakerChange={() => undefined}
         onMaxRelayTurnsChange={() => undefined}
         onRetrySettings={() => undefined}

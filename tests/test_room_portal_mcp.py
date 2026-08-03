@@ -16,6 +16,7 @@ class RoomPortalMcpTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as temp_dir:
             portal = RoomPortal(Path(temp_dir) / "portal", participant_id="codex")
             portal.prepare()
+            portal.ingest_frame({"room_settings": {"tool_mode": "tabletop"}})
             portal.begin_observation("wake-a", input_up_to_seq=7)
 
             tool_names, read_error, publish_error, roll, choice = anyio.run(

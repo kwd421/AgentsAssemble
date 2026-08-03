@@ -4,6 +4,7 @@ import {
   type ChannelNotificationSetting,
   type ChannelSettings,
   type ConversationMode,
+  type RoomToolMode,
   uploadLobbyAttachment,
 } from "../../api";
 import {
@@ -42,6 +43,7 @@ export default function RoomSettingsModal({
   settingsStatus,
   settingsError,
   conversationMode,
+  toolMode,
   orderedExcludePreviousSpeaker,
   maxRelayTurns,
   canInvite,
@@ -51,6 +53,7 @@ export default function RoomSettingsModal({
   onAppearanceChange,
   onChannelSettingChange,
   onConversationModeChange,
+  onToolModeChange,
   onOrderedExcludePreviousSpeakerChange,
   onMaxRelayTurnsChange,
   onRetrySettings,
@@ -63,6 +66,7 @@ export default function RoomSettingsModal({
   settingsStatus: "loading" | "ready" | "saving" | "stale" | "error";
   settingsError: string;
   conversationMode: ConversationMode | null;
+  toolMode: RoomToolMode | null;
   orderedExcludePreviousSpeaker: boolean | null;
   maxRelayTurns: number | null;
   canInvite: boolean;
@@ -72,6 +76,7 @@ export default function RoomSettingsModal({
   onAppearanceChange: (updates: Partial<RoomAppearance>) => Promise<void>;
   onChannelSettingChange: (channelId: string, updates: Partial<ChannelSettings>) => void;
   onConversationModeChange: (mode: ConversationMode) => void;
+  onToolModeChange: (mode: RoomToolMode) => void;
   onOrderedExcludePreviousSpeakerChange: (exclude: boolean) => void;
   onMaxRelayTurnsChange: (turns: number) => void;
   onRetrySettings: () => void;
@@ -288,6 +293,35 @@ export default function RoomSettingsModal({
                   />
                 </label>
               )}
+            </div>
+            <div className="dc-settings-field">
+              <p className="dc-settings-field-label">방 도구</p>
+              <div className="dc-radio-stack">
+                <label>
+                  <input
+                    type="radio"
+                    name="room-tool-mode"
+                    checked={toolMode === "chat"}
+                    disabled={!routingSettingsReady}
+                    onChange={() => onToolModeChange("chat")}
+                  />
+                  <span className="preserve-words">
+                    일반 대화 — 방 읽기와 발언만 제공합니다.
+                  </span>
+                </label>
+                <label>
+                  <input
+                    type="radio"
+                    name="room-tool-mode"
+                    checked={toolMode === "tabletop"}
+                    disabled={!routingSettingsReady}
+                    onChange={() => onToolModeChange("tabletop")}
+                  />
+                  <span className="preserve-words">
+                    테이블탑 · D&amp;D — 검증된 서버 주사위와 무작위 선택을 추가합니다.
+                  </span>
+                </label>
+              </div>
             </div>
           </section>
 

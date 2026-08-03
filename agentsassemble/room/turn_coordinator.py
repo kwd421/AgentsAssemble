@@ -28,6 +28,7 @@ from agentsassemble.providers.runtime_contracts import (
     SUPPORTED_DECLINE_REASONS,
 )
 from agentsassemble.room.errors import RoomCommandRejected
+from agentsassemble.room.tool_authorization import require_room_random_tools
 from agentsassemble.room_attention import AttentionLeaseConflict
 from agentsassemble.room.command_uow import RoomCommandUnitOfWork
 from agentsassemble.room.event_broker import RoomEventBroker
@@ -1280,6 +1281,7 @@ class RoomTurnCoordinator:
                 "Official room tool results require a room observation turn.",
                 code="room_result_input_mode_invalid",
             )
+        require_room_random_tools(unit.room_settings())
         try:
             prepared = prepare_room_system_result(
                 result_id=payload.get("result_id"),

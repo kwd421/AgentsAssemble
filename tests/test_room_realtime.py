@@ -33,6 +33,7 @@ from agentsassemble.persistence.local.identity.registry import (
 from agentsassemble.providers.capabilities import ProviderCapabilityCatalog
 from agentsassemble.providers.launch_specs import native_cli_provider_definition
 from tests.room_realtime_test_support import memory_room_access_services
+from tests.room_tool_mode_realtime_contract import RoomToolModeRealtimeContract
 
 
 HOST = {
@@ -255,7 +256,7 @@ class NativeCliProviderSpecTests(unittest.TestCase):
         self.assertNotEqual(first.runtime_profile_key(), second.runtime_profile_key())
 
 
-class RoomRealtimeControllerTests(unittest.TestCase):
+class RoomRealtimeControllerTests(RoomToolModeRealtimeContract, unittest.TestCase):
     def setUp(self):
         self.temp = tempfile.TemporaryDirectory()
         self.root = Path(self.temp.name)
@@ -2467,7 +2468,7 @@ class RoomRealtimeControllerTests(unittest.TestCase):
         channel.drain()
         self.controller.store.update_room_settings(
             "general",
-            {"conversation_mode": "ambient"},
+            {"conversation_mode": "ambient", "tool_mode": "tabletop"},
         )
         source = self._command(
             "ambient-receipt-source",
@@ -2506,7 +2507,7 @@ class RoomRealtimeControllerTests(unittest.TestCase):
         )
         self.controller.store.update_room_settings(
             "general",
-            {"conversation_mode": "ambient"},
+            {"conversation_mode": "ambient", "tool_mode": "tabletop"},
         )
         ambient_source = self._command(
             "pending-ambient-source",
@@ -4512,7 +4513,7 @@ class RoomRealtimeControllerTests(unittest.TestCase):
         channel.drain()
         self.controller.store.update_room_settings(
             "general",
-            {"conversation_mode": "ambient"},
+            {"conversation_mode": "ambient", "tool_mode": "tabletop"},
         )
         self._command(
             "room-result-source",
@@ -4608,7 +4609,7 @@ class RoomRealtimeControllerTests(unittest.TestCase):
         channel.drain()
         self.controller.store.update_room_settings(
             "general",
-            {"conversation_mode": "ambient"},
+            {"conversation_mode": "ambient", "tool_mode": "tabletop"},
         )
         self._command(
             "invalid-room-result-source",
@@ -4699,6 +4700,10 @@ class RoomRealtimeControllerTests(unittest.TestCase):
 
     def test_bridge_room_result_requires_a_room_observation_turn(self):
         self._use_continuous_routing()
+        self.controller.store.update_room_settings(
+            "general",
+            {"tool_mode": "tabletop"},
+        )
         self._command("result-mode-start", "agent.start", {"agent_id": "codex"})
         identity, channel = self._connect_bridge()
         channel.drain()

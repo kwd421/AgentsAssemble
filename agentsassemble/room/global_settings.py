@@ -28,6 +28,7 @@ from agentsassemble.room.setting_values import (
     clean_room_text,
     clean_short_label,
 )
+from agentsassemble.room.tool_modes import CHAT_TOOL_MODE, validate_room_tool_mode
 
 
 DEFAULT_CONVERSATION_MODE = "ordered"
@@ -43,6 +44,7 @@ ROOM_GLOBAL_SETTING_FIELDS = frozenset(
         "topic",
         "appearance",
         "conversation_mode",
+        "tool_mode",
         "ordered_exclude_previous_speaker",
         "max_relay_turns",
         "channels",
@@ -81,6 +83,7 @@ class RoomGlobalSettingsRecord(TypedDict):
     topic: str
     appearance: RoomGlobalAppearance
     conversation_mode: str
+    tool_mode: str
     ordered_exclude_previous_speaker: bool
     max_relay_turns: int
     channels: list[RoomGlobalChannel]
@@ -124,6 +127,7 @@ def default_room_global_settings(*, label: str = "") -> RoomGlobalSettingsRecord
                 "invite_scope": "room",
             },
             "conversation_mode": DEFAULT_CONVERSATION_MODE,
+            "tool_mode": CHAT_TOOL_MODE,
             "ordered_exclude_previous_speaker": DEFAULT_ORDERED_EXCLUDE_PREVIOUS_SPEAKER,
             "max_relay_turns": DEFAULT_MAX_RELAY_TURNS,
             "channels": [],
@@ -141,6 +145,7 @@ def validate_room_global_settings(value: object) -> RoomGlobalSettingsRecord:
         "topic": _strict_text(source["topic"], field="topic", limit=ROOM_TEXT_LIMIT),
         "appearance": _validate_appearance(source["appearance"]),
         "conversation_mode": _validate_conversation_mode(source["conversation_mode"]),
+        "tool_mode": validate_room_tool_mode(source["tool_mode"]),
         "ordered_exclude_previous_speaker": _validate_boolean(
             source["ordered_exclude_previous_speaker"],
             field="ordered_exclude_previous_speaker",

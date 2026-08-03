@@ -73,6 +73,20 @@ ROOM_TOOL_SCHEMAS: tuple[dict[str, object], ...] = (
 )
 
 
+def room_tool_schemas(tool_names: object) -> tuple[dict[str, object], ...]:
+    allowed = (
+        frozenset(tool_names)
+        if isinstance(tool_names, (set, frozenset, list, tuple))
+        else frozenset()
+    )
+    return tuple(
+        schema
+        for schema in ROOM_TOOL_SCHEMAS
+        if isinstance(schema.get("function"), dict)
+        and schema["function"].get("name") in allowed
+    )
+
+
 @dataclass
 class StreamingToolCall:
     index: int
@@ -172,4 +186,5 @@ __all__ = [
     "accumulate_streaming_tool_calls",
     "complete_tool_calls",
     "execute_room_tool",
+    "room_tool_schemas",
 ]

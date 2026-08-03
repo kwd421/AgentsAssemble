@@ -125,6 +125,7 @@ class RoomConnectorTests(unittest.TestCase):
             self.assertEqual(summary["tallies"], {"north": 1, "south": 0})
             self.assertEqual(summary["voter_ids"]["north"], ["external-agent"])
 
+            store.update_room_settings("room-a", {"tool_mode": "tabletop"})
             rolled = connector.roll_dice("1d6", reason="route check")
             roll_event = rolled["event"]
             self.assertEqual(roll_event["actor_id"], "room-system")

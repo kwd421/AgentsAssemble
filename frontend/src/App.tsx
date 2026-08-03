@@ -1397,6 +1397,7 @@ export default function App() {
           settingsStatus={roomSettings.settingsStateFor(settingsModalRoom).status}
           settingsError={roomSettings.settingsStateFor(settingsModalRoom).error?.message || ""}
           conversationMode={roomSettings.conversationModeFor(settingsModalRoom)}
+          toolMode={roomSettings.toolModeFor(settingsModalRoom)}
           orderedExcludePreviousSpeaker={
             roomSettings.orderedExcludePreviousSpeakerFor(settingsModalRoom)
           }
@@ -1426,6 +1427,9 @@ export default function App() {
           }
           onConversationModeChange={(mode) =>
             roomSettings.updateConversationMode(settingsModalRoom, mode)
+          }
+          onToolModeChange={(mode) =>
+            roomSettings.updateToolMode(settingsModalRoom, mode)
           }
           onOrderedExcludePreviousSpeakerChange={(exclude) =>
             roomSettings.updateOrderedExcludePreviousSpeaker(

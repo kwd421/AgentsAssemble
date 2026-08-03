@@ -71,6 +71,7 @@ export interface PublicRoomGlobalSettings {
   topic: string;
   appearance: PublicRoomGlobalAppearance;
   conversation_mode: string;
+  tool_mode: string;
   ordered_exclude_previous_speaker: boolean;
   max_relay_turns: number;
   channels: PublicRoomGlobalChannel[];

@@ -111,6 +111,7 @@ class DeepSeekRoomObservationTests(unittest.TestCase):
             portal.ingest_frame(
                 {
                     "stream": "room_events",
+                    "room_settings": {"tool_mode": "tabletop"},
                     "events": [
                         {
                             "type": "message_final",

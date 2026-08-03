@@ -403,7 +403,7 @@ class RoomAgentBridge:
         turn_id = wake.turn_id
         provider_input = self._with_initial_orientation(
             (
-                f"{room_wake_orientation(self._provider_kind(), observation_kind=wake.observation_kind)}"
+                f"{room_wake_orientation(self._provider_kind(), observation_kind=wake.observation_kind, tool_names=portal.active_tool_names())}"
                 f"\n\nroom.wake {turn_id}"
             )
         )

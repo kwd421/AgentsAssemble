@@ -168,6 +168,10 @@ sandboxing, lifecycle isolation, version compatibility, installation, or
 updates. When this work starts, prove the API by moving one bounded first-party
 feature through it before accepting third-party plugins.
 
+The first bounded capability split is built in rather than installed as a
+plugin: canonical room `tool_mode` selects `chat` or `tabletop` tools while
+conversation cadence remains separately controlled by `conversation_mode`.
+
 ## Current Rolling Restart Contract
 
 The local POSIX GUI server can replace its backend process without changing its
@@ -349,17 +353,21 @@ the compatibility path never infers an ordered floor.
 Portal publication may atomically include one `target_agent_id` handoff. Codex
 and other MCP-backed providers use the optional `next_agent_id` argument on
 `publish_message`; terminal providers use `agentsassemble-room speak-to`.
-Grok ACP receives the same four room tools through its `session/new` /
-`session/load` MCP configuration and permits only those correlated MCP calls
-during an observation. Its former virtual-file publication and terminal-roll
-paths were removed before external adoption. The bridge carries a publication
+Grok ACP receives the tools allowed by the observation's canonical room-tool
+mode through its `session/new` / `session/load` MCP configuration and permits
+only those correlated MCP calls during an observation. Its former virtual-file
+publication and terminal-roll paths were removed before external adoption. The bridge carries a publication
 target into the canonical message event; ordered routing then gives that
 provider the next observation without parsing the public prose.
 
-MCP-backed and OpenAI-tool-compatible room portals expose server-side
-`roll_dice` and `choose_random` for facilitator-owned game randomness. Terminal
-providers use the bounded `agentsassemble-room roll '<NdS±M>'` helper for the
-same audited contract. Inputs and results are recorded in the private portal
+Room-global `tool_mode` is independent of conversation routing. New rooms use
+`chat`, which exposes only `read_discussion` and `publish_message`. A host may
+select `tabletop` to additionally expose server-side `roll_dice` and
+`choose_random`; terminal providers then receive the bounded
+`agentsassemble-room roll '<NdS±M>'` helper for the same audited contract. The
+server enforces this capability on browser commands, provider schemas, portal
+execution, bridge result publication, and Grok permission auto-approval. Inputs
+and results are recorded in the private portal
 activity log with a tool-generated result ID. During the active turn, the
 server-owned bridge projects each validated dice or random-choice record through
 the bridge-only `room.result.publish` command. The server accepts that command

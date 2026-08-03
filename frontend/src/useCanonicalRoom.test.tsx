@@ -59,6 +59,7 @@ function rawRoomSettings(
       invite_scope: "room",
     },
     conversation_mode: conversationMode,
+    tool_mode: "chat",
     ordered_exclude_previous_speaker: true,
     max_relay_turns: 6,
     channels: [],

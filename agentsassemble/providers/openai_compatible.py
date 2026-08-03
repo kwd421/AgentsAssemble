@@ -11,10 +11,10 @@ from urllib.error import HTTPError
 from urllib.request import Request, urlopen
 
 from agentsassemble.providers.openai_compatible_room_tools import (
-    ROOM_TOOL_SCHEMAS,
     accumulate_streaming_tool_calls,
     complete_tool_calls,
     execute_room_tool,
+    room_tool_schemas,
 )
 from agentsassemble.providers.room_portal import RoomPortal
 from agentsassemble.providers.provider_errors import provider_http_error
@@ -301,7 +301,9 @@ class OpenAICompatibleApiRuntime:
         if self.reasoning_effort:
             payload["reasoning_effort"] = self.reasoning_effort
         if room_observation:
-            payload["tools"] = list(ROOM_TOOL_SCHEMAS)
+            payload["tools"] = list(
+                room_tool_schemas(self._room_portal.active_tool_names())
+            )
             payload["tool_choice"] = "auto"
         headers = {
             "Content-Type": "application/json",

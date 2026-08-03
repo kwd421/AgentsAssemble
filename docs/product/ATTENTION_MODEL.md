@@ -196,8 +196,9 @@ process IDs, and backend topology are not written into the room view.
 
 Provider access is adapter-specific:
 
-- Codex app-server receives session-scoped MCP tools to read the current room,
-  publish one room message, roll bounded dice, and choose from a bounded list.
+- Codex app-server receives session-scoped MCP tools allowed by the room's
+  canonical tool mode. `chat` provides room read/publication; `tabletop` also
+  provides bounded dice and random choice.
   The app-server remains in `read-only` sandbox mode.
 - Grok ACP receives equivalent virtual read/write paths. Its assigned
   observation is confirmed only by reading the exact virtual path through ACP;
@@ -205,11 +206,14 @@ Provider access is adapter-specific:
   active observation, the permission boundary additionally allows only the
   bounded `agentsassemble-room roll '<NdS±M>'` helper for audited game dice.
 - terminal-native providers receive a private `agentsassemble-room` helper in
-  their allowlisted child `PATH`.
+  their allowlisted child `PATH`; its roll command fails closed unless the
+  assigned observation was created in `tabletop` mode.
 
 The provider must explicitly use the publication boundary. A normal assistant
 final, terminal text, or TUI output is not copied into the room.
-Official randomness is first recorded in the private portal activity log with a
+Conversation routing and tool availability are separate server-owned settings.
+Changing ordered/ambient routing never grants game tools. Official randomness
+is first recorded in the private portal activity log with a
 tool-generated result ID. Before the bridge finishes, declines, or reports a
 provider-output failure, it reports only strictly validated post-observation
 records through `room.result.publish`. The server accepts these reports only

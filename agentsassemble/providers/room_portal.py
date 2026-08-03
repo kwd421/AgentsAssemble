@@ -32,6 +32,12 @@ from agentsassemble.room.system_results import (
     validate_room_system_result,
 )
 from agentsassemble.room.text import clean_room_text
+from agentsassemble.room.tool_modes import (
+    CHAT_TOOL_MODE,
+    CORE_ROOM_TOOLS,
+    room_tool_names,
+    validate_room_tool_mode,
+)
 
 
 VIRTUAL_ROOM_VIEW_PATH = "/agentsassemble-room/current.md"
@@ -120,6 +126,7 @@ def room_wake_orientation(
     provider_kind: object = "",
     *,
     observation_kind: RoomObservationKind,
+    tool_names: Iterable[str] = CORE_ROOM_TOOLS,
 ) -> str:
     read_interface, speak_interface, provider_note = _room_interfaces(provider_kind)
     kind = clean_room_text(provider_kind, limit=64)
@@ -134,7 +141,13 @@ def room_wake_orientation(
     else:
         raise ValueError("Unsupported room observation kind.")
     random_note = ""
-    if kind in {
+    available_tools = frozenset(tool_names)
+    if "roll_dice" not in available_tools:
+        provider_note = provider_note.replace(
+            "Run the documented `read`,\n  `roll`, and `speak` commands",
+            "Run the documented `read` and `speak` commands",
+        )
+    if "roll_dice" in available_tools and kind in {
         "codex_live_session",
         "cursor_live_session",
         "grok_live_session",
@@ -152,7 +165,7 @@ def room_wake_orientation(
         random_note = """
 - For official game randomness, use `roll_dice` with NdS±M notation or
   `choose_random`; do not invent a result yourself."""
-    elif kind in {"claude_code", "antigravity_live_session"}:
+    elif "roll_dice" in available_tools and kind in {"claude_code", "antigravity_live_session"}:
         random_note = """
 - For official game dice, run exactly one terminal command per roll:
   `agentsassemble-room roll '<NdS±M>'`. If another roll is needed, wait for the
@@ -234,6 +247,7 @@ class RoomPortal:
         self._display_name = self.participant_id
         self._participants: dict[str, str] = {}
         self._participant_roles: dict[str, str] = {}
+        self._tool_mode = CHAT_TOOL_MODE
         self._media: dict[str, dict[str, object]] = {}
         self._active_media_ids: tuple[str, ...] = ()
         self._active_messages: tuple[dict[str, object], ...] | None = None
@@ -336,6 +350,8 @@ class RoomPortal:
                 {
                     "turn_id": clean_turn_id,
                     "input_up_to_seq": assigned_seq,
+                    "tool_mode": self._tool_mode,
+                    "allowed_tools": sorted(room_tool_names(self._tool_mode)),
                     "activity_offset": (
                         self.activity_path.stat().st_size
                         if self.activity_path.exists()
@@ -515,6 +531,27 @@ class RoomPortal:
 
         return self.acp_read_text(VIRTUAL_ROOM_VIEW_PATH)
 
+    def active_tool_names(self) -> frozenset[str]:
+        """Return tools allowed for the active observation, failing closed."""
+
+        with self._lock:
+            try:
+                turn = json.loads(self.turn_path.read_text(encoding="utf-8"))
+            except (OSError, json.JSONDecodeError):
+                return CORE_ROOM_TOOLS
+        values = turn.get("allowed_tools") if isinstance(turn, dict) else None
+        if not isinstance(values, list) or any(not isinstance(value, str) for value in values):
+            return CORE_ROOM_TOOLS
+        try:
+            tool_mode = validate_room_tool_mode(turn.get("tool_mode"))
+        except ValueError:
+            return CORE_ROOM_TOOLS
+        allowed_for_mode = room_tool_names(tool_mode)
+        return frozenset(value for value in values if value in allowed_for_mode)
+
+    def tool_allowed(self, name: object) -> bool:
+        return clean_room_text(name, limit=64) in self.active_tool_names()
+
     def acp_write_text(self, path: object, content: object) -> None:
         target_agent_id = direct_outbox_target(path)
         if str(path or "") != VIRTUAL_ROOM_OUTBOX_PATH and not target_agent_id:
@@ -557,6 +594,7 @@ class RoomPortal:
     def roll_dice(self, notation: object, *, reason: object = "") -> dict[str, object]:
         """Record one validated, server-random dice result for publication."""
 
+        self._require_tool("roll_dice")
         result = roll_dice_result(notation)
         self._record_activity(
             "roll_dice",
@@ -575,6 +613,7 @@ class RoomPortal:
     ) -> dict[str, object]:
         """Record one validated, server-random choice result for publication."""
 
+        self._require_tool("choose_random")
         result = choose_random_result(options)
         self._record_activity(
             "choose_random",
@@ -661,6 +700,12 @@ class RoomPortal:
         return blocks
 
     def _ingest_identity(self, value: dict[str, object]) -> None:
+        settings = value.get("room_settings")
+        if isinstance(settings, dict) and "tool_mode" in settings:
+            try:
+                self._tool_mode = validate_room_tool_mode(settings["tool_mode"])
+            except ValueError:
+                self._tool_mode = CHAT_TOOL_MODE
         participants = (
             value.get("participants")
             if isinstance(value.get("participants"), list)
@@ -732,6 +777,7 @@ class RoomPortal:
             "# Shared room",
             f"Your display name: {self._display_name or self.participant_id}",
             f"Your room role: {self._participant_roles.get(self.participant_id, 'agent')}",
+            f"Available room tools: {', '.join(sorted(room_tool_names(self._tool_mode)))}",
             "",
         ]
         peers = [
@@ -911,6 +957,12 @@ class RoomPortal:
         with self.activity_path.open("a", encoding="utf-8") as stream:
             stream.write(json.dumps(payload, ensure_ascii=False, sort_keys=True) + "\n")
         self._chmod(self.activity_path, 0o600)
+
+    def _require_tool(self, name: str) -> None:
+        if not self.tool_allowed(name):
+            raise RoomPortalError(
+                f"Room tool {name} is unavailable in {self._tool_mode} mode."
+            )
 
 
 def _frame_events(frame: dict[str, object]) -> Iterable[dict[str, object]]:

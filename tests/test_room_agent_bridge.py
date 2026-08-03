@@ -87,6 +87,7 @@ class RoomWakeOrientationTests(unittest.TestCase):
         orientation = room_wake_orientation(
             "antigravity_live_session",
             observation_kind="ambient_observation",
+            tool_names={"read_discussion", "publish_message", "roll_dice", "choose_random"},
         )
 
         self.assertIn('agentsassemble-room speak "<message>"', orientation)
@@ -438,6 +439,7 @@ class RoomAgentBridgeTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as temp_dir:
             portal = RoomPortal(Path(temp_dir) / "portal", participant_id="gemini")
             portal.prepare()
+            portal.ingest_frame({"room_settings": {"tool_mode": "tabletop"}})
             portal.begin_observation("wake-game", input_up_to_seq=9)
 
             completed = subprocess.run(

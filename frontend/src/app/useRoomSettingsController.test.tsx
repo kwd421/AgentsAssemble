@@ -54,6 +54,7 @@ function settings(room: RoomDockItem, bannerPreset: "forest" | "ember"): RoomSet
     },
     channelSettings: {},
     conversationMode: "ordered",
+    toolMode: "chat",
     orderedExcludePreviousSpeaker: true,
     maxRelayTurns: 6,
   };
@@ -89,6 +90,7 @@ function globalSettings(
       inviteScope: "room",
     },
     conversationMode: "ordered",
+    toolMode: "chat",
     orderedExcludePreviousSpeaker: true,
     maxRelayTurns: 6,
     channels: [],

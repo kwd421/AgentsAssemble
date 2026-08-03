@@ -15,6 +15,7 @@ from agentsassemble.room.system_results import (
     prepare_room_system_result,
 )
 from agentsassemble.room.text import clean_room_text
+from agentsassemble.room.tool_authorization import require_room_random_tools
 from agentsassemble.room.turn_coordinator import room_message_text
 from agentsassemble.room.votes import (
     deadline_for_vote,
@@ -164,6 +165,7 @@ class RoomMessageService:
     ) -> dict[str, object]:
         """Generate and append one canonical system randomness result."""
 
+        require_room_random_tools(unit.room_settings())
         participant_id = self._require_active_participant(
             identity,
             unit=unit,

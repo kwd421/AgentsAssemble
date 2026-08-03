@@ -6,22 +6,12 @@ from agentsassemble.room.text import clean_room_text
 
 
 _ROOM_MCP_SERVER_NAME = "agentsassemble_room"
-_ROOM_MCP_TOOL_NAMES = frozenset(
-    {"read_discussion", "publish_message", "roll_dice", "choose_random"}
-)
 # Clients qualify an MCP tool with its server name, and they do not agree on the
 # separator: one underscore (agentsassemble_room_read_discussion, what the room
 # MCP server is registered as and what opencode's permission glob matches) or
 # two. Accepting only the double form denied every room tool call, so both
 # spellings are allowed here and the bare tool name stays accepted for clients
 # that do not qualify at all.
-_ROOM_MCP_PERMISSION_NAMES = _ROOM_MCP_TOOL_NAMES | frozenset(
-    f"{_ROOM_MCP_SERVER_NAME}{separator}{name}"
-    for name in _ROOM_MCP_TOOL_NAMES
-    for separator in ("_", "__")
-)
-
-
 def raw_mcp_tool_name(value: dict[str, object]) -> str:
     """Actual MCP tool name hidden in a wrapper tool's rawInput.
 
@@ -41,6 +31,7 @@ def permission_is_room_mcp_tool(
     *,
     session_id: str,
     active_room_observation: bool,
+    allowed_tool_names: frozenset[str],
     cached: dict[str, object],
 ) -> bool:
     tool_call_id = permission_tool_call_id(params, tool_call)
@@ -60,7 +51,12 @@ def permission_is_room_mcp_tool(
         )
         if value
     ]
-    return any(identity in _ROOM_MCP_PERMISSION_NAMES for identity in identities)
+    allowed_permission_names = frozenset(allowed_tool_names) | frozenset(
+        f"{_ROOM_MCP_SERVER_NAME}{separator}{name}"
+        for name in allowed_tool_names
+        for separator in ("_", "__")
+    )
+    return any(identity in allowed_permission_names for identity in identities)
 
 
 def permission_context_update(

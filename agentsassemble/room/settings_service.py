@@ -24,6 +24,7 @@ _TOP_LEVEL_FIELDS = ROOM_GLOBAL_SETTING_FIELDS | frozenset(
         "channel_settings",
         "channelSettings",
         "conversationMode",
+        "toolMode",
         "orderedExcludePreviousSpeaker",
         "maxRelayTurns",
     }
@@ -49,6 +50,8 @@ _GLOBAL_TOP_LEVEL_FIELDS = frozenset(
         "short_label",
         "conversation_mode",
         "conversationMode",
+        "tool_mode",
+        "toolMode",
         "ordered_exclude_previous_speaker",
         "orderedExcludePreviousSpeaker",
         "max_relay_turns",
@@ -216,6 +219,7 @@ def _global_updates(payload: dict[str, object]) -> dict[str, object]:
             }
 
     _copy_alias(payload, updates, "conversation_mode", "conversationMode")
+    _copy_alias(payload, updates, "tool_mode", "toolMode")
     _copy_alias(
         payload,
         updates,

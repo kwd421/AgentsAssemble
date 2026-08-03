@@ -595,6 +595,7 @@ class GrokAcpRuntime(GrokAcpTransportMixin, GrokAcpTurnProjectionMixin):
             tool_call,
             session_id=session_id,
             active_room_observation=active_room_observation,
+            allowed_tool_names=self.room_portal.active_tool_names(),
             cached=cached,
         )
 

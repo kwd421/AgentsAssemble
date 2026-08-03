@@ -22,6 +22,7 @@ def _settings() -> dict[str, object]:
             "invite_scope": "room",
         },
         "conversation_mode": "ambient",
+        "tool_mode": "tabletop",
         "ordered_exclude_previous_speaker": False,
         "max_relay_turns": 4,
         "channels": [
@@ -43,6 +44,7 @@ class RoomGlobalSettingsTests(unittest.TestCase):
         self.assertEqual(set(settings), ROOM_GLOBAL_SETTING_FIELDS)
         self.assertEqual(settings["label"], "General")
         self.assertEqual(settings["conversation_mode"], "ordered")
+        self.assertEqual(settings["tool_mode"], "chat")
         self.assertTrue(settings["ordered_exclude_previous_speaker"])
         self.assertEqual(settings["max_relay_turns"], 6)
         self.assertEqual(settings["channels"], [])
@@ -86,6 +88,11 @@ class RoomGlobalSettingsTests(unittest.TestCase):
             with self.subTest(relay=invalid):
                 with self.assertRaisesRegex(ValueError, "max_relay_turns"):
                     validate_room_global_settings({**source, "max_relay_turns": invalid})
+
+        for invalid in ("dnd", "general", "TABLETOP", "", None):
+            with self.subTest(tool_mode=invalid):
+                with self.assertRaisesRegex(ValueError, "tool_mode"):
+                    validate_room_global_settings({**source, "tool_mode": invalid})
 
         for invalid in (1, 0, "true", None):
             with self.subTest(exclude_previous=invalid):

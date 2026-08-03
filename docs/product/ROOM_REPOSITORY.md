@@ -199,6 +199,11 @@ SQLite schema version 7 adds the ordered-mode previous-speaker exclusion field
 to existing canonical settings rows as enabled; an existing non-boolean value
 blocks migration instead of being repaired silently.
 
+Revision `0016_room_tool_mode`, corresponding to SQLite schema version 9,
+backfills canonical room `tool_mode` as `chat`. Only `chat` and `tabletop` are
+accepted; an existing invalid value blocks migration rather than being guessed
+or repaired.
+
 `PostgresRoomRepository` now implements the same transaction, event replay,
 participant/session lifecycle, command dedupe, media metadata, and durable
 attention contract as `RoomStore`. PostgreSQL-specific reads, mutations, and

@@ -14,6 +14,10 @@ from uuid import uuid4
 from agentsassemble.room.global_settings import default_room_global_settings
 from agentsassemble.room.text import clean_room_text
 from agentsassemble.room.visibility import LEGACY_HIDDEN, VISIBLE
+from agentsassemble.persistence.local.room.tool_mode_migration import (
+    RoomDatabaseMigrationError,
+    add_room_tool_mode_setting,
+)
 
 try:
     import fcntl
@@ -22,7 +26,7 @@ except ImportError:  # pragma: no cover - AgentsAssemble's supported hosts are U
 
 
 ROOM_DATABASE_FILENAME = "rooms.sqlite3"
-ROOM_SCHEMA_VERSION = 8
+ROOM_SCHEMA_VERSION = 9
 VOTE_BALLOT_INDEX_NAME = "idx_events_vote_ballots"
 VOTE_BALLOT_INDEX_STATEMENT = f"""
 CREATE INDEX IF NOT EXISTS {VOTE_BALLOT_INDEX_NAME}
@@ -122,10 +126,6 @@ ATTENTION_SCHEMA_STATEMENTS = (
     """CREATE INDEX IF NOT EXISTS idx_conversation_obligations_open
        ON conversation_obligations(room_id, participant_id, status)""",
 )
-
-
-class RoomDatabaseMigrationError(RuntimeError):
-    """Legacy room state could not be moved without losing or reordering data."""
 
 
 def open_room_database(path: Path) -> sqlite3.Connection:
@@ -417,7 +417,7 @@ def _migrate_schema(connection: sqlite3.Connection) -> None:
         raise RoomDatabaseMigrationError(
             f"Unsupported room database schema version {version}; expected {ROOM_SCHEMA_VERSION}."
         )
-    if version not in {1, 2, 3, 4, 5, 6, 7}:
+    if version not in {1, 2, 3, 4, 5, 6, 7, 8}:
         raise RoomDatabaseMigrationError(f"Unsupported room database schema version {version}.")
     connection.execute("BEGIN IMMEDIATE")
     try:
@@ -480,6 +480,9 @@ def _migrate_schema(connection: sqlite3.Connection) -> None:
         if version == 7:
             _add_room_uids(connection)
             version = 8
+        if version == 8:
+            add_room_tool_mode_setting(connection)
+            version = 9
         connection.execute(
             "INSERT OR REPLACE INTO schema_meta(key, value) VALUES('schema_version', ?)",
             (str(version),),

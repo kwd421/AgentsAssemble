@@ -10,6 +10,7 @@ import {
   type RoomGlobalSettingsUpdate,
   type RoomMember,
   type RoomSettings,
+  type RoomToolMode,
 } from "../api";
 import {
   completeRoomAppearance,
@@ -34,6 +35,7 @@ type PersistedRoomSettingsOverrides = RoomGlobalSettingsUpdate;
 
 export type AuthoritativeRoomSettings = {
   conversationMode: ConversationMode;
+  toolMode: RoomToolMode;
   orderedExcludePreviousSpeaker: boolean;
   maxRelayTurns: number;
 };
@@ -58,11 +60,12 @@ function settingsError(errorValue: unknown, fallback: string): Error {
 function authoritativeSettings(
   settings: Pick<
     RoomGlobalSettings,
-    "conversationMode" | "orderedExcludePreviousSpeaker" | "maxRelayTurns"
+    "conversationMode" | "toolMode" | "orderedExcludePreviousSpeaker" | "maxRelayTurns"
   >
 ): AuthoritativeRoomSettings {
   return {
     conversationMode: settings.conversationMode,
+    toolMode: settings.toolMode,
     orderedExcludePreviousSpeaker: settings.orderedExcludePreviousSpeaker,
     maxRelayTurns: settings.maxRelayTurns,
   };
@@ -120,6 +123,11 @@ export function useRoomSettingsController({
   const conversationModeFor = useCallback(
     (room: RoomDockItem): ConversationMode | null =>
       settingsStateFor(room).value?.conversationMode ?? null,
+    [settingsStateFor]
+  );
+  const toolModeFor = useCallback(
+    (room: RoomDockItem): RoomToolMode | null =>
+      settingsStateFor(room).value?.toolMode ?? null,
     [settingsStateFor]
   );
   const maxRelayTurnsFor = useCallback(
@@ -367,6 +375,7 @@ export function useRoomSettingsController({
       const nextValue = currentValue
         ? {
             conversationMode: overrides.conversationMode ?? currentValue.conversationMode,
+            toolMode: overrides.toolMode ?? currentValue.toolMode,
             orderedExcludePreviousSpeaker:
               overrides.orderedExcludePreviousSpeaker
               ?? currentValue.orderedExcludePreviousSpeaker,
@@ -461,6 +470,15 @@ export function useRoomSettingsController({
     [persist, settingsStateFor]
   );
 
+  const updateToolMode = useCallback(
+    (room: RoomDockItem, mode: RoomToolMode) => {
+      const currentValue = settingsStateFor(room).value;
+      if (!currentValue) return;
+      void persist(room, { toolMode: mode }).catch(() => undefined);
+    },
+    [persist, settingsStateFor]
+  );
+
   const updateMaxRelayTurns = useCallback(
     (room: RoomDockItem, turns: number) => {
       const currentValue = settingsStateFor(room).value;
@@ -510,6 +528,7 @@ export function useRoomSettingsController({
     channelSettingsFor,
     settingsStateFor,
     conversationModeFor,
+    toolModeFor,
     orderedExcludePreviousSpeakerFor,
     maxRelayTurnsFor,
     refresh,
@@ -518,6 +537,7 @@ export function useRoomSettingsController({
     updateMemberRole,
     updateChannelSetting,
     updateConversationMode,
+    updateToolMode,
     updateOrderedExcludePreviousSpeaker,
     updateMaxRelayTurns,
   };

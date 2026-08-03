@@ -16,6 +16,7 @@ from agentsassemble.room.setting_values import (
     clean_room_text,
     clean_short_label,
 )
+from agentsassemble.room.tool_modes import CHAT_TOOL_MODE, ROOM_TOOL_MODES
 
 ROOM_ID_LIMIT = 128
 ROLE_ID_LIMIT = 32
@@ -74,6 +75,10 @@ def update_room_settings(output_root: Path, payload: dict[str, object]) -> dict[
         settings["conversation_mode"] = clean_conversation_mode(
             payload.get("conversation_mode") or payload.get("conversationMode")
         )
+    if "tool_mode" in payload or "toolMode" in payload:
+        settings["tool_mode"] = clean_tool_mode(
+            payload.get("tool_mode") or payload.get("toolMode")
+        )
     if "max_relay_turns" in payload or "maxRelayTurns" in payload:
         settings["max_relay_turns"] = clean_max_relay_turns(
             payload.get("max_relay_turns") or payload.get("maxRelayTurns")
@@ -104,6 +109,7 @@ def public_room_settings(value: object, *, room_id: str) -> dict[str, object]:
         "conversation_mode": clean_conversation_mode(
             source.get("conversation_mode") or source.get("conversationMode")
         ),
+        "tool_mode": clean_tool_mode(source.get("tool_mode") or source.get("toolMode")),
         "max_relay_turns": clean_max_relay_turns(
             source.get("max_relay_turns") or source.get("maxRelayTurns")
         ),
@@ -116,6 +122,11 @@ def public_room_settings(value: object, *, room_id: str) -> dict[str, object]:
 def clean_conversation_mode(value: object) -> str:
     mode = str(value or "").strip().lower()
     return mode if mode in CONVERSATION_MODES else "ordered"
+
+
+def clean_tool_mode(value: object) -> str:
+    mode = str(value or "").strip().lower()
+    return mode if mode in ROOM_TOOL_MODES else CHAT_TOOL_MODE
 
 
 def clean_max_relay_turns(value: object) -> int:

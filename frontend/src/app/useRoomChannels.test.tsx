@@ -36,6 +36,7 @@ function settings(channels: RoomChannel[] = [firstChannel]): RoomGlobalSettings 
       inviteScope: "room",
     },
     conversationMode: "ordered",
+    toolMode: "chat",
     orderedExcludePreviousSpeaker: true,
     maxRelayTurns: 6,
     channels,
