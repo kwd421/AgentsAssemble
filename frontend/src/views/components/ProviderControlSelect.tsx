@@ -195,7 +195,10 @@ export default function ProviderControlSelect({
         onClick={toggleMenu}
       >
         {selectedOption ? (
-          <ProviderControlOptionContent option={selectedOption} />
+          <ProviderControlOptionContent
+            option={selectedOption}
+            pricingOnly={isModelControl}
+          />
         ) : (
           <span className="truncate preserve-words">선택 필요</span>
         )}
@@ -263,26 +266,19 @@ export default function ProviderControlSelect({
                   )}
                 </div>
               )}
-              {showGroupLabels && (
+              {activeOptionGroup && (
                 <div className="dc-agent-select-drilldown-header">
-                  {activeOptionGroup ? (
-                    <button
-                      type="button"
-                      aria-label="모델 제공사로 돌아가기"
-                      onClick={() => setActiveGroup("")}
-                    >
-                      <ChevronLeft size={15} aria-hidden="true" />
-                      <span className="dc-agent-select-level-copy">
-                        <small>모델 제공사</small>
-                        <strong className="truncate preserve-words">{activeOptionGroup.label} 모델</strong>
-                      </span>
-                    </button>
-                  ) : (
-                    <div className="dc-agent-select-level-copy">
-                      <small>모델 카탈로그</small>
-                      <strong>제공사 또는 모델 선택</strong>
-                    </div>
-                  )}
+                  <button
+                    type="button"
+                    aria-label="모델 목록으로 돌아가기"
+                    onClick={() => setActiveGroup("")}
+                  >
+                    <ChevronLeft size={15} aria-hidden="true" />
+                    <span className="dc-agent-select-level-copy">
+                      <small>모델 제공사</small>
+                      <strong className="truncate preserve-words">{activeOptionGroup.label} 모델</strong>
+                    </span>
+                  </button>
                 </div>
               )}
               <div
@@ -316,7 +312,11 @@ export default function ProviderControlSelect({
                         {...modelDetails.bind(option)}
                         onClick={() => selectOption(option)}
                       >
-                        <ProviderControlOptionContent option={option} showDescription={!isModelControl} />
+                        <ProviderControlOptionContent
+                          option={option}
+                          showDescription={!isModelControl}
+                          pricingOnly={isModelControl}
+                        />
                         {selected && <Check size={15} aria-hidden="true" />}
                       </button>
                     );
@@ -338,7 +338,11 @@ export default function ProviderControlSelect({
                           {...modelDetails.bind(option)}
                           onClick={() => selectOption(option)}
                         >
-                          <ProviderControlOptionContent option={option} showDescription={!isModelControl} contextBadge="모델" />
+                          <ProviderControlOptionContent
+                            option={option}
+                            showDescription={!isModelControl}
+                            pricingOnly={isModelControl}
+                          />
                           {selected && <Check size={15} aria-hidden="true" />}
                         </button>
                       );
@@ -363,7 +367,6 @@ export default function ProviderControlSelect({
                           <small>{group.options.length.toLocaleString()}개 모델</small>
                         </span>
                         <span className="dc-agent-select-group-trailing">
-                          <small>제공사</small>
                           <ChevronRight className="dc-agent-select-group-arrow" size={15} aria-hidden="true" />
                         </span>
                       </button>
@@ -383,7 +386,11 @@ export default function ProviderControlSelect({
                       {...modelDetails.bind(option)}
                       onClick={() => selectOption(option)}
                     >
-                      <ProviderControlOptionContent option={option} showDescription={!isModelControl} />
+                      <ProviderControlOptionContent
+                        option={option}
+                        showDescription={!isModelControl}
+                        pricingOnly={isModelControl}
+                      />
                       {selected && <Check size={15} aria-hidden="true" />}
                     </button>
                   );

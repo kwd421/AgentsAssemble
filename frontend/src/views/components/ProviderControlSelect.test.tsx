@@ -23,6 +23,8 @@ describe("ProviderControlSelect", () => {
     );
 
     await userEvent.click(screen.getByRole("combobox", { name: "모델" }));
+    expect(screen.queryByText("모델 카탈로그")).toBeNull();
+    expect(screen.queryByText("제공사 또는 모델 선택")).toBeNull();
     await userEvent.click(
       screen.getByRole("menuitem", { name: "Gemini 제공사, 2개 모델" })
     );
@@ -32,7 +34,7 @@ describe("ProviderControlSelect", () => {
     expect(screen.getByRole("option", { name: "Gemini Flash" })).toBeTruthy();
     expect(screen.queryByRole("option", { name: "Claude Sonnet" })).toBeNull();
 
-    await userEvent.click(screen.getByRole("button", { name: "모델 제공사로 돌아가기" }));
+    await userEvent.click(screen.getByRole("button", { name: "모델 목록으로 돌아가기" }));
     expect(screen.getByRole("menu", { name: "모델 분류" })).toBeTruthy();
   });
 
@@ -136,6 +138,7 @@ describe("ProviderControlSelect", () => {
     );
 
     await userEvent.click(screen.getByRole("combobox", { name: "모델" }));
+    expect(screen.queryByText("Reasoning")).toBeNull();
     await userEvent.hover(screen.getByRole("option", { name: /Reasoner/ }));
 
     const detail = document.querySelector(".dc-agent-model-details-popover");

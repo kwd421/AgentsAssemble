@@ -4,12 +4,14 @@ export default function ProviderControlOptionContent({
   option,
   showDescription = false,
   contextBadge = "",
+  pricingOnly = false,
 }: {
   option: ProviderControlOption;
   showDescription?: boolean;
   contextBadge?: string;
+  pricingOnly?: boolean;
 }) {
-  const badges = optionBadges(option);
+  const badges = pricingOnly ? pricingBadges(option) : optionBadges(option);
   const description =
     showDescription && typeof option.metadata?.description === "string"
       ? option.metadata.description.trim()
@@ -73,4 +75,10 @@ function optionBadges(option: ProviderControlOption): string[] {
   if (option.metadata?.vision === true) badges.push("Vision");
   if (option.metadata?.reasoning === true) badges.push("Reasoning");
   return [...new Set(badges)];
+}
+
+function pricingBadges(option: ProviderControlOption): string[] {
+  if (option.metadata?.pricing === "free") return ["Free"];
+  if (option.metadata?.pricing === "free_tier") return ["Free tier"];
+  return [];
 }

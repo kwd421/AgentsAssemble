@@ -34,9 +34,8 @@
   border: 1px solid var(--color-panel-separator);
   border-radius: 8px;
   background: #1b1c20;
-  /* The scrollbar already occupies the trailing edge. Keeping another 4px of
-     padding there made selected rows look clipped short of the panel border. */
-  padding: 4px 0 4px 4px;
+  scrollbar-gutter: stable;
+  padding: 4px;
   box-shadow: 0 16px 44px rgba(0, 0, 0, 0.48);
 }
 
@@ -269,7 +268,7 @@
 }
 
 .dc-agent-select-menu .dc-agent-select-group {
-  padding-right: 4px;
+  padding-right: 7px;
 }
 
 .dc-agent-select-group-copy {
@@ -291,15 +290,8 @@
   gap: 2px;
 }
 
-.dc-agent-select-group-trailing small {
-  color: var(--color-text-muted);
-  font-size: 9px;
-  font-weight: 800;
-  letter-spacing: 0.04em;
-}
-
 .dc-agent-select-group-arrow {
-  margin-right: -2px;
+  margin-right: 0;
 }
 
 .dc-agent-model-empty {
