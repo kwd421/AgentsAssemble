@@ -155,7 +155,7 @@ class OpenAICompatibleApiRuntime:
             raise RuntimeError(f"{self.provider_name} runtime has no pending turn.")
         deadline = time.monotonic() + max(1.0, float(timeout_seconds))
         tool_rounds = 0
-        room_publication_completed = False
+        room_action_completed = False
         observed_model_id = ""
         api_calls: list[dict[str, object]] = []
         try:
@@ -178,8 +178,8 @@ class OpenAICompatibleApiRuntime:
                 api_calls.append(round_result.usage)
                 if not round_result.tool_calls:
                     content = round_result.content.strip()
-                    if not content and room_publication_completed:
-                        content = "RoomPortal publication completed."
+                    if not content and room_action_completed:
+                        content = "RoomPortal action completed."
                     elif not content:
                         raise RuntimeError(
                             _empty_round_message(
@@ -260,8 +260,13 @@ class OpenAICompatibleApiRuntime:
                         if on_activity is not None:
                             on_activity({**activity_fields, "status": "failed"})
                         raise
-                    if executed_name == "publish_message":
-                        room_publication_completed = True
+                    if executed_name in {
+                        "publish_message",
+                        "decline_to_speak",
+                        "create_vote",
+                        "cast_vote",
+                    }:
+                        room_action_completed = True
                     messages.append(
                         {
                             "role": "tool",
@@ -590,12 +595,14 @@ def _tool_title(tool_name: object) -> str:
     value = clean_room_text(tool_name, limit=120)
     return {
         "read_discussion": "방 대화 읽기",
+        "list_participants": "참가자 확인",
         "publish_message": "메시지 공개",
         "decline_to_speak": "발언 건너뛰기",
         "roll_dice": "주사위 굴리기",
         "choose_random": "무작위 선택",
         "create_vote": "투표 만들기",
         "cast_vote": "투표하기",
+        "vote_summary": "투표 결과 확인",
         "list_workspace_files": "작업 폴더 살펴보기",
         "read_workspace_file": "파일 읽기",
         "search_workspace_text": "파일 내용 검색",

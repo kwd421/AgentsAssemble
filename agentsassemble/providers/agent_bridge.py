@@ -488,6 +488,7 @@ class RoomAgentBridge:
             self._publish_observation_results(portal, turn_id)
             result = ProviderTurnResult.parse(raw_result)
             observed_through_seq = portal.observation_receipt(turn_id)
+            explicit_decline_reason = portal.observation_decline_reason(turn_id)
             publication = portal.consume_publication_result(turn_id)
             public_content = publication.content
             completed = time.monotonic()
@@ -503,16 +504,17 @@ class RoomAgentBridge:
                 "total_turn_ms": round((completed - started) * 1000, 1),
                 "delta_count": delta_count,
             }
-            if not public_content:
+            if not publication.has_message:
+                decline_reason = explicit_decline_reason or (
+                    result.decline_reason
+                    if result.outcome == "decline"
+                    else "nothing_useful_to_add"
+                )
                 self._command(
                     "turn.decline",
                     {
                         "turn_id": turn_id,
-                        "reason_code": (
-                            result.decline_reason
-                            if result.outcome == "decline"
-                            else "nothing_useful_to_add"
-                        ),
+                        "reason_code": decline_reason,
                         "diagnostics": self._health_payload(self.runtime.health()),
                         "latency": latency,
                         "observed_through_seq": observed_through_seq,
@@ -530,6 +532,12 @@ class RoomAgentBridge:
                         limit=128,
                     ),
                     "message_source": "room_portal",
+                    "kind": publication.message_kind,
+                    "vote_id": publication.vote_id,
+                    "vote_question": publication.vote_question,
+                    "vote_options": list(publication.vote_options),
+                    "vote_duration_seconds": publication.vote_duration_seconds,
+                    "vote_choice": publication.vote_choice,
                     "observed_through_seq": observed_through_seq,
                     "diagnostics": self._health_payload(self.runtime.health()),
                     "latency": latency,

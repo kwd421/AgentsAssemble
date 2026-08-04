@@ -20,6 +20,14 @@ ROOM_TOOL_SCHEMAS: tuple[dict[str, object], ...] = (
     {
         "type": "function",
         "function": {
+            "name": "list_participants",
+            "description": "List the people and agents currently visible in the shared room.",
+            "parameters": {"type": "object", "properties": {}, "additionalProperties": False},
+        },
+    },
+    {
+        "type": "function",
+        "function": {
             "name": "publish_message",
             "description": "Publish one substantive message to the shared room.",
             "parameters": {
@@ -39,6 +47,86 @@ ROOM_TOOL_SCHEMAS: tuple[dict[str, object], ...] = (
                     },
                 },
                 "required": ["content"],
+                "additionalProperties": False,
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "decline_to_speak",
+            "description": (
+                "End this room wake without posting a message when speaking would add no value."
+            ),
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "reason_code": {
+                        "type": "string",
+                        "enum": ["nothing_useful_to_add", "not_addressed", "duplicate"],
+                    }
+                },
+                "required": ["reason_code"],
+                "additionalProperties": False,
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "create_vote",
+            "description": "Create one structured room vote as this turn's public action.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "question": {"type": "string"},
+                    "options": {
+                        "type": "array",
+                        "items": {"type": "string"},
+                        "minItems": 2,
+                        "maxItems": 10,
+                    },
+                    "duration_seconds": {
+                        "type": "integer",
+                        "description": "0 for no deadline, otherwise 30 to 86400 seconds.",
+                    },
+                },
+                "required": ["question", "options"],
+                "additionalProperties": False,
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "cast_vote",
+            "description": "Cast or replace this agent's ballot in an existing structured vote.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "vote_id": {"type": "string"},
+                    "choice": {
+                        "type": "string",
+                        "description": "Exact option text or its 1-based number.",
+                    },
+                },
+                "required": ["vote_id", "choice"],
+                "additionalProperties": False,
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "vote_summary",
+            "description": (
+                "Summarize a vote from this session's current bounded room view. "
+                "The result identifies that scope and is not an authoritative full-history query."
+            ),
+            "parameters": {
+                "type": "object",
+                "properties": {"vote_id": {"type": "string"}},
+                "required": ["vote_id"],
                 "additionalProperties": False,
             },
         },
@@ -169,12 +257,32 @@ def execute_room_tool(
         raise RuntimeError(f"{name or 'Room tool'} arguments must be an object.")
     if name == "read_discussion":
         result: object = portal.read_discussion()
+    elif name == "list_participants":
+        result = portal.list_participants()
     elif name == "publish_message":
         portal.publish_message(
             arguments.get("content"),
             next_agent_id=arguments.get("next_agent_id"),
         )
         result = {"published": True}
+    elif name == "decline_to_speak":
+        result = portal.decline_to_speak(arguments.get("reason_code"))
+    elif name == "create_vote":
+        options = arguments.get("options")
+        if not isinstance(options, list):
+            raise RuntimeError("create_vote options must be a list.")
+        result = portal.create_vote(
+            arguments.get("question"),
+            options,
+            duration_seconds=arguments.get("duration_seconds", 0),
+        )
+    elif name == "cast_vote":
+        result = portal.cast_vote(
+            arguments.get("vote_id"),
+            arguments.get("choice"),
+        )
+    elif name == "vote_summary":
+        result = portal.vote_summary(arguments.get("vote_id"))
     elif name == "roll_dice":
         result = portal.roll_dice(
             arguments.get("notation"),

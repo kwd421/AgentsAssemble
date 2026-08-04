@@ -22,6 +22,11 @@ from agentsassemble.providers.room_portal_helper import (
     helper_script,
     windows_helper_wrapper,
 )
+from agentsassemble.providers.room_portal_collaboration import (
+    RoomPortalCollaboration,
+    RoomPortalError,
+    RoomPublication,
+)
 from agentsassemble.providers.runtime_contracts import (
     AMBIENT_OBSERVATION,
     ORDERED_FLOOR,
@@ -85,8 +90,9 @@ def _room_interfaces(provider_kind: object = "") -> tuple[str, str, str]:
         )
         provider_note = """
 - `agentsassemble-room` is already on `PATH`. Run the documented `read`,
-  `roll`, and `speak` commands directly; do not try to locate or inspect the
-  helper with `which`, `find`, or other discovery commands.
+  collaboration, and `speak` commands directly. `agentsassemble-room help`
+  lists their syntax; do not try to locate or inspect the helper with `which`,
+  `find`, or other discovery commands.
 - The terminal command is shell-parsed. Wrap the whole public message in one
   pair of ASCII double quotes. Inside the message, use Unicode quotation marks
   such as `「」` and Unicode arrows such as `→`; do not use ASCII `"`, `$`, or
@@ -108,9 +114,8 @@ def room_session_orientation(provider_kind: object = "") -> str:
     del provider_kind
     return f"""Shared room session:
 - You are an ongoing participant in a shared AgentsAssemble room.
-- Room vote cards are visible in finalized messages. Agent sessions do not have
-  structured ballot buttons yet; when asked to vote, publish the chosen option
-  clearly and do not claim it was counted by the structured tally.
+- Structured room votes are available through `create_vote`, `cast_vote`, and
+  `vote_summary` when those names appear under Available room tools.
 - Public room messages follow the language of the latest human or host message,
   unless that message explicitly asks for another language.
 - The private room mirror shows your canonical room role. In ordered mode, a
@@ -142,11 +147,6 @@ def room_wake_orientation(
         raise ValueError("Unsupported room observation kind.")
     random_note = ""
     available_tools = frozenset(tool_names)
-    if "roll_dice" not in available_tools:
-        provider_note = provider_note.replace(
-            "Run the documented `read`,\n  `roll`, and `speak` commands",
-            "Run the documented `read` and `speak` commands",
-        )
     if "roll_dice" in available_tools and kind in {
         "codex_live_session",
         "cursor_live_session",
@@ -177,7 +177,9 @@ def room_wake_orientation(
 - Read the private room mirror through {read_interface}.
 - If you should speak, only {speak_interface} creates a public room message.
 - Ordinary assistant output is private on this turn and is never published.
-  Do not merely draft the intended public message as your final answer.{floor_note}{random_note}{provider_note}"""
+  Do not merely draft the intended public message as your final answer.
+- Never invent or simulate a room tool. Only operations listed under Available
+  room tools in the private room mirror are real for this turn.{floor_note}{random_note}{provider_note}"""
 
 
 def automatic_turn_orientation() -> str:
@@ -188,16 +190,6 @@ def automatic_turn_orientation() -> str:
 
 
 ROOM_SESSION_ORIENTATION = room_session_orientation()
-
-
-class RoomPortalError(RuntimeError):
-    pass
-
-
-@dataclass(frozen=True)
-class RoomPublication:
-    content: str = ""
-    target_agent_id: str = ""
 
 
 @dataclass(frozen=True)
@@ -258,6 +250,18 @@ class RoomPortal:
         # itself because nothing marks which line is new.
         self._seen_through_seq = 0
         self._new_since_seq = 0
+        self._collaboration = RoomPortalCollaboration(
+            participant_id=self.participant_id,
+            turn_path=self.turn_path,
+            outbox_path=self.outbox_path,
+            activity_path=self.activity_path,
+            participant_index_path=self.participant_index_path,
+            lock=self._lock,
+            write_json=self._write_json_atomic,
+            record_activity=self._record_activity,
+            require_tool=self._require_tool,
+            messages=lambda: self._messages,
+        )
 
     def prepare(self) -> None:
         with self._lock:
@@ -281,6 +285,7 @@ class RoomPortal:
                 self._write_atomic(self.helper_path, helper_script(), mode=0o700)
             self._write_media_index()
             self._write_participant_index()
+            self._write_message_index()
             self._write_view()
 
     def provider_environment(self, source_path: str = "") -> dict[str, str]:
@@ -308,6 +313,7 @@ class RoomPortal:
                 )
             self._write_participant_index()
             self._bound_messages()
+            self._write_message_index()
             self._write_view()
         return attachments
 
@@ -491,13 +497,7 @@ class RoomPortal:
                 return RoomPublication()
             if clean_room_text(payload.get("turn_id"), limit=128) != clean_turn_id:
                 return RoomPublication()
-            return RoomPublication(
-                content=_publication_text(payload.get("content")),
-                target_agent_id=clean_room_text(
-                    payload.get("target_agent_id"),
-                    limit=128,
-                ),
-            )
+            return RoomPublication.from_payload(payload)
 
     def end_observation(self, turn_id: str) -> None:
         clean_turn_id = clean_room_text(turn_id, limit=128)
@@ -533,6 +533,9 @@ class RoomPortal:
         """Read the current bounded room view and record the observation receipt."""
 
         return self.acp_read_text(VIRTUAL_ROOM_VIEW_PATH)
+
+    def list_participants(self) -> list[dict[str, str]]:
+        return self._collaboration.list_participants()
 
     def active_tool_names(self) -> frozenset[str]:
         """Return tools allowed for the active observation, failing closed."""
@@ -574,12 +577,12 @@ class RoomPortal:
             )
             if not turn_id:
                 raise RoomPortalError("No room observation is active.")
-            self._write_json_atomic(
-                self.outbox_path,
+            self._collaboration.stage_publication(
+                turn_id,
                 {
-                    "turn_id": turn_id,
                     "content": text,
                     "target_agent_id": target_agent_id,
+                    "message_kind": "message",
                 },
             )
             self._record_activity("speak", turn_id=turn_id)
@@ -617,6 +620,24 @@ class RoomPortal:
             else VIRTUAL_ROOM_OUTBOX_PATH
         )
         self.acp_write_text(path, content)
+
+    def decline_to_speak(self, reason_code: object) -> dict[str, object]:
+        return self._collaboration.decline_to_speak(reason_code)
+
+    def create_vote(self, question: object, options: list[object], *,
+                    duration_seconds: object = 0) -> dict[str, object]:
+        return self._collaboration.create_vote(
+            question, options, duration_seconds=duration_seconds,
+        )
+
+    def cast_vote(self, vote_id: object, choice: object) -> dict[str, object]:
+        return self._collaboration.cast_vote(vote_id, choice)
+
+    def vote_summary(self, vote_id: object) -> dict[str, object]:
+        return self._collaboration.vote_summary(vote_id)
+
+    def observation_decline_reason(self, turn_id: str) -> str:
+        return self._collaboration.decline_reason(turn_id)
 
     def roll_dice(self, notation: object, *, reason: object = "") -> dict[str, object]:
         """Record one validated, server-random dice result for publication."""
@@ -767,6 +788,14 @@ class RoomPortal:
                 self._participant_roles[identity] = role
             if participant_type == "agent" or item in sessions:
                 self._participants[identity] = name or identity
+            self._collaboration.remember_participant(
+                identity,
+                display_name=name or identity,
+                participant_type=participant_type or (
+                    "agent" if item in sessions else "human"
+                ),
+                role=role or "",
+            )
             if identity == self.participant_id and name:
                 self._display_name = name
 
@@ -924,11 +953,11 @@ class RoomPortal:
     def _write_media_index(self) -> None:
         self._write_json_atomic(self.media_index_path, {"media": self._media})
 
+    def _write_message_index(self) -> None:
+        self._collaboration.write_message_index()
+
     def _write_participant_index(self) -> None:
-        self._write_json_atomic(
-            self.participant_index_path,
-            {"agents": sorted(self._participants)},
-        )
+        self._collaboration.write_participant_index(list(self._participants))
 
     def _write_json_atomic(self, path: Path, value: dict[str, object]) -> None:
         self._write_atomic(

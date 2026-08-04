@@ -26,10 +26,43 @@ def serve_room_portal_mcp(root: str | Path) -> None:
         return portal.read_discussion()
 
     @server.tool()
+    def list_participants() -> list[dict[str, str]]:
+        """List the people and agents currently visible in the shared room."""
+        return portal.list_participants()
+
+    @server.tool()
     def publish_message(content: str, next_agent_id: str = "") -> str:
         """Publish one substantive message, optionally handing the floor to one agent."""
         portal.publish_message(content, next_agent_id=next_agent_id)
         return "Published to the shared room."
+
+    @server.tool()
+    def decline_to_speak(reason_code: str) -> dict[str, object]:
+        """End this wake without posting when speaking would add no value."""
+        return portal.decline_to_speak(reason_code)
+
+    @server.tool()
+    def create_vote(
+        question: str,
+        options: list[str],
+        duration_seconds: int = 0,
+    ) -> dict[str, object]:
+        """Create one structured room vote as this turn's public action."""
+        return portal.create_vote(
+            question,
+            options,
+            duration_seconds=duration_seconds,
+        )
+
+    @server.tool()
+    def cast_vote(vote_id: str, choice: str) -> dict[str, object]:
+        """Cast or replace this agent's ballot in an existing vote."""
+        return portal.cast_vote(vote_id, choice)
+
+    @server.tool()
+    def vote_summary(vote_id: str) -> dict[str, object]:
+        """Summarize a vote from this session's bounded current room view."""
+        return portal.vote_summary(vote_id)
 
     @server.tool()
     def roll_dice(notation: str, reason: str = "") -> dict[str, object]:

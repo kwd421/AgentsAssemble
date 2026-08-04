@@ -203,6 +203,107 @@ class DeepSeekRoomObservationTests(unittest.TestCase):
         self.assertEqual(request_bodies[0]["stream_options"], {"include_usage": True})
         self.assertEqual(request_bodies[1]["messages"][-1]["role"], "tool")
 
+    def test_chat_turn_can_inspect_participants_and_stage_a_structured_vote(self):
+        responses = [
+            _stream(
+                {
+                    "model": "deepseek-v4-flash",
+                    "choices": [
+                        {
+                            "delta": {
+                                "tool_calls": [
+                                    {
+                                        "index": 0,
+                                        "id": "call-read",
+                                        "type": "function",
+                                        "function": {
+                                            "name": "read_discussion",
+                                            "arguments": "{}",
+                                        },
+                                    },
+                                    {
+                                        "index": 1,
+                                        "id": "call-participants",
+                                        "type": "function",
+                                        "function": {
+                                            "name": "list_participants",
+                                            "arguments": "{}",
+                                        },
+                                    },
+                                    {
+                                        "index": 2,
+                                        "id": "call-vote",
+                                        "type": "function",
+                                        "function": {
+                                            "name": "create_vote",
+                                            "arguments": json.dumps(
+                                                {
+                                                    "question": "Which patch?",
+                                                    "options": ["Small", "Large"],
+                                                    "duration_seconds": 300,
+                                                }
+                                            ),
+                                        },
+                                    },
+                                ]
+                            },
+                            "finish_reason": "tool_calls",
+                        }
+                    ],
+                }
+            ),
+            _stream(
+                {
+                    "model": "deepseek-v4-flash",
+                    "choices": [
+                        {"delta": {"content": "done"}, "finish_reason": "stop"}
+                    ],
+                }
+            ),
+        ]
+
+        def opener(_request, timeout: float):
+            del timeout
+            return responses.pop(0)
+
+        with tempfile.TemporaryDirectory() as temp_dir:
+            portal = RoomPortal(Path(temp_dir) / "portal", participant_id="deepseek")
+            portal.prepare()
+            portal.ingest_frame(
+                {
+                    "room_settings": {"tool_mode": "chat"},
+                    "participants": [
+                        {
+                            "participant_id": "host-id",
+                            "participant_type": "human",
+                            "display_name": "Host",
+                            "role": "host",
+                        },
+                        {
+                            "participant_id": "deepseek",
+                            "participant_type": "agent",
+                            "display_name": "DeepSeek",
+                            "role": "agent",
+                        },
+                    ],
+                }
+            )
+            portal.begin_observation("vote-turn", input_up_to_seq=4)
+            runtime = DeepSeekApiRuntime(
+                "deepseek",
+                api_key="sk-private",
+                opener=opener,
+                room_portal=portal,
+            )
+            runtime.send_room_observation("room.wake vote-turn")
+            runtime.read_output(timeout_seconds=2)
+            publication = portal.consume_publication_result("vote-turn")
+
+        self.assertEqual(publication.message_kind, "vote")
+        self.assertEqual(publication.vote_question, "Which patch?")
+        self.assertEqual(publication.vote_options, ("Small", "Large"))
+        self.assertEqual(publication.vote_duration_seconds, 300)
+
     def test_long_running_tool_history_never_starts_with_an_orphan_tool_result(self):
         call_number = 0
 

@@ -55,6 +55,13 @@ from agentsassemble.room.system_results import (
     RoomSystemResultError,
     prepare_room_system_result,
 )
+from agentsassemble.room.structured_messages import (
+    StructuredMessageError,
+    StructuredRoomMessage,
+    canonical_structured_fields,
+    prepare_structured_message,
+    room_message_text,
+)
 from agentsassemble.room_turn_attention import RoomTurnAttention
 from agentsassemble.room.types import RoomEvent, TurnAssignment
 
@@ -85,6 +92,7 @@ class PreparedFinalMessage:
     latency: dict[str, object]
     diagnostics: dict[str, object]
     observed_model_id: str
+    structured: StructuredRoomMessage
 
 
 class RoomTurnCoordinator:
@@ -1341,7 +1349,12 @@ class RoomTurnCoordinator:
             payload,
             session=session,
         )
-        content = room_message_text(payload.get("content"), limit=12000)
+        try:
+            structured = prepare_structured_message(payload)
+        except StructuredMessageError as error:
+            if error.code != "empty_provider_final":
+                raise RoomCommandRejected(str(error), code=error.code) from error
+            structured = None
         active_turn_id = str(session["active_turn_id"])
         latency = merged_latency(session.get("latency"), payload.get("latency"))
         diagnostics = payload.get("diagnostics") if isinstance(payload.get("diagnostics"), dict) else {}
@@ -1395,7 +1408,7 @@ class RoomTurnCoordinator:
                 "Provider used a different model than the exact session selection.",
                 code="provider_model_mismatch",
             )
-        if not has_room_visible_text(content):
+        if structured is None:
             self.turn_failed(
                 identity,
                 room_id,
@@ -1408,10 +1421,11 @@ class RoomTurnCoordinator:
             )
             raise RoomCommandRejected("Provider final message was empty.", code="empty_provider_final")
         return PreparedFinalMessage(
-            content=content,
+            content=structured.content,
             latency=latency,
             diagnostics=diagnostics,
             observed_model_id=observed_model_id,
+            structured=structured,
         )
 
     def message_final_in_unit(
@@ -1446,6 +1460,13 @@ class RoomTurnCoordinator:
         active_turn_id = str(session["active_turn_id"])
         input_up_to_event_id = clean_lobby_text(session.get("input_up_to_event_id"), limit=128)
         input_up_to_seq = safe_bounded_int(session.get("input_up_to_seq"), default=0, minimum=0)
+        try:
+            structured_fields = canonical_structured_fields(
+                prepared.structured,
+                events=writer,
+            )
+        except StructuredMessageError as error:
+            raise RoomCommandRejected(str(error), code=error.code) from error
         event = writer.append_event(
             "message_final",
             participant_id=agent_id,
@@ -1457,8 +1478,11 @@ class RoomTurnCoordinator:
             session_id=session["session_id"],
             turn_id=active_turn_id,
             content=prepared.content,
+            **structured_fields,
             target_agent_id=clean_lobby_text(
-                payload.get("target_agent_id"),
+                None
+                if prepared.structured.message_kind == "vote_cast"
+                else payload.get("target_agent_id"),
                 limit=128,
             ),
             source_event_id=session.get("active_source_event_id"),
@@ -2104,10 +2128,6 @@ def validate_turn_phase_transition(session: dict[str, object], phase: str) -> No
 
 def message_delta_text(value: object, *, limit: int) -> str:
     return str(value or "").replace("\x00", "").replace("\r\n", "\n").replace("\r", "\n")[:limit]
-
-
-def room_message_text(value: object, *, limit: int) -> str:
-    return message_delta_text(value, limit=limit).strip()
 
 
 def provider_process_exited(message: str, diagnostics: dict[str, object]) -> bool:

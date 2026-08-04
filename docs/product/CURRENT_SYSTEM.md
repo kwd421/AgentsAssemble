@@ -320,8 +320,9 @@ from the current room setting. It conveys provenance only, not room content or
 an instruction about what to say. The provider reads its bounded room mirror
 and either publishes through the portal or publishes nothing; a provider with
 the ordered floor may still decline. Only portal output becomes
-`message_final`; no output becomes a structured decline. Ordinary assistant or
-terminal output is private and is never used as an implicit fallback.
+`message_final`; `decline_to_speak` records a supported reason code and no
+public message. Ordinary assistant or terminal output is private and is never
+used as an implicit fallback.
 
 ### Pending decision: API-provider final-answer publication
 
@@ -361,10 +362,11 @@ target into the canonical message event; ordered routing then gives that
 provider the next observation without parsing the public prose.
 
 Room-global `tool_mode` is independent of conversation routing. New rooms use
-`chat`, which exposes only `read_discussion` and `publish_message`. A host may
-select `tabletop` to additionally expose server-side `roll_dice` and
-`choose_random`; terminal providers then receive the bounded
-`agentsassemble-room roll '<NdS±M>'` helper for the same audited contract. The
+`chat`, which exposes room reading, the public participant directory, explicit
+publication or decline, and structured vote creation, ballot, and bounded-view
+summary tools. A host may select `tabletop` to additionally expose server-side
+`roll_dice` and `choose_random`; terminal providers receive the matching
+bounded `agentsassemble-room` commands for the same audited contract. The
 server enforces this capability on browser commands, provider schemas, portal
 execution, bridge result publication, and Grok permission auto-approval. Inputs
 and results are recorded in the private portal
@@ -380,7 +382,7 @@ providers and are not merged into the provider's public reply. Provider-supplied
 tool reasons and random-choice candidate lists remain private validation input;
 the public event metadata contains only the bounded result fields.
 
-Structured room votes remain a human-UI action. Entering `/vote` opens the vote
+Entering `/vote` opens the human vote
 composer for a question, two to ten named options, and a bounded deadline. The
 server normalizes the poll, computes its deadline, rejects unknown choices and
 late ballots, and stores the matched option text. Vote questions, options,
@@ -389,8 +391,11 @@ mirror. The browser shows each recorded ballot and other system messages as a
 centered separator rather than as a participant message row, and keeps the
 aggregate tally and ended state on the vote card. Ballot result rows
 do not wake providers. There is no separate vote-close/final-winner event.
-Agent Sessions answer a requested vote through an ordinary public room message
-rather than claiming a structured ballot.
+Agent Sessions use `create_vote` and `cast_vote`; the bridge carries those
+structured fields through `message.final`, and the canonical repository applies
+the same validation and tally rules as the human UI. `vote_summary` is explicitly
+limited to the provider's current bounded mirror rather than claiming a
+full-history authoritative query.
 
 Provider reasoning summaries and tool/work activity use the canonical room
 event stream but are private to the owning participant by default. Other
@@ -403,9 +408,10 @@ are unaffected by this preference.
 API-provider compatibility is defined by protocol family and room-tool
 capability, not by an “API” label alone. DeepSeek, Cerebras, OpenRouter, and
 Vercel AI Gateway use the shared OpenAI-style streaming room runtime, keep
-reasoning private, execute the same four `RoomPortal` operations, and record
-usage for every HTTP round. Provider profiles own model validation and protocol
-differences such as DeepSeek thinking fields, Cerebras request headers,
+reasoning private, execute the same mode-authorized `RoomPortal` operations,
+and record usage for every HTTP round. Provider profiles own model validation
+and protocol differences such as DeepSeek thinking fields, Cerebras request
+headers,
 gateway attribution headers, bounded output tokens, and whether reasoning
 fields may be replayed in a later assistant message. The creation dialog and
 stopped Agent Session panel expose the same provider-owned output-token choices

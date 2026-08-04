@@ -51,6 +51,8 @@ VIEW = ROOT / "current.md"
 TURN = ROOT / "turn.json"
 OUTBOX = ROOT / "outbox.json"
 MEDIA = ROOT / "media.json"
+PARTICIPANTS = ROOT / "participants.json"
+MESSAGES = ROOT / "messages.json"
 ACTIVITY = ROOT / "activity.jsonl"
 
 def fail(message):
@@ -101,11 +103,61 @@ def require_tool(name):
     if not isinstance(allowed, list) or name not in allowed:
         fail(f"room tool {name} is unavailable for this observation")
 
+def active_turn():
+    try:
+        turn = json.loads(TURN.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        fail("no room observation is active")
+    turn_id = str(turn.get("turn_id") or "")
+    if not turn_id:
+        fail("no room observation is active")
+    return turn_id
+
+def stage_publication(payload):
+    if OUTBOX.exists():
+        fail("a public room action is already staged for this turn")
+    atomic_json(OUTBOX, {"turn_id": active_turn(), **payload})
+
+def clean_text(value, limit):
+    return str(value or "").replace("\x00", "").strip()[:limit]
+
+def load_messages():
+    try:
+        values = json.loads(MESSAGES.read_text(encoding="utf-8")).get("messages", [])
+    except (OSError, json.JSONDecodeError):
+        return []
+    return values if isinstance(values, list) else []
+
+def find_poll(vote_id):
+    for item in load_messages():
+        if not isinstance(item, dict):
+            continue
+        if item.get("message_kind") == "vote" and str(item.get("id") or "") == vote_id:
+            return item
+    fail(f"vote {vote_id} was not found in the current bounded room view")
+
+def resolve_choice(choice, options):
+    cleaned = clean_text(choice, 100)
+    for option in options:
+        if str(option).casefold() == cleaned.casefold():
+            return str(option)
+    if cleaned.isdigit() and 1 <= int(cleaned) <= len(options):
+        return str(options[int(cleaned) - 1])
+    fail("choice must match one of the vote options")
+
 command = sys.argv[1] if len(sys.argv) > 1 else "help"
 if command == "read":
     content = VIEW.read_text(encoding="utf-8")
     audit("read")
     sys.stdout.write(content)
+elif command == "participants":
+    require_tool("list_participants")
+    try:
+        result = json.loads(PARTICIPANTS.read_text(encoding="utf-8")).get("participants", [])
+    except (OSError, json.JSONDecodeError):
+        result = []
+    audit("list_participants")
+    print(json.dumps(result, ensure_ascii=False))
 elif command in {"speak", "speak-to"}:
     target_agent_id = ""
     content_start = 2
@@ -117,19 +169,123 @@ elif command in {"speak", "speak-to"}:
     content = " ".join(sys.argv[content_start:]).strip() if len(sys.argv) > content_start else sys.stdin.read().strip()
     if not content:
         fail("room message is empty")
-    turn = json.loads(TURN.read_text(encoding="utf-8"))
-    turn_id = str(turn.get("turn_id") or "")
-    if not turn_id:
-        fail("no room observation is active")
-    atomic_json(
-        OUTBOX,
+    turn_id = active_turn()
+    stage_publication(
         {
-            "turn_id": turn_id,
             "content": content[:12000],
             "target_agent_id": target_agent_id,
+            "message_kind": "message",
         },
     )
     audit("speak", turn_id, {"target_agent_id": target_agent_id} if target_agent_id else None)
+elif command == "decline":
+    require_tool("decline_to_speak")
+    if len(sys.argv) != 3 or sys.argv[2] not in {"nothing_useful_to_add", "not_addressed", "duplicate"}:
+        fail("usage: agentsassemble-room decline <nothing_useful_to_add|not_addressed|duplicate>")
+    turn_id = active_turn()
+    stage_publication({"content": "", "target_agent_id": "", "message_kind": "decline"})
+    audit("decline_to_speak", turn_id, {"reason_code": sys.argv[2]})
+    print(json.dumps({"declined": True, "reason_code": sys.argv[2]}))
+elif command == "vote-create":
+    require_tool("create_vote")
+    if len(sys.argv) not in {4, 5}:
+        fail("usage: agentsassemble-room vote-create '<question>' '<json-options>' [duration-seconds]")
+    question = clean_text(sys.argv[2], 300)
+    try:
+        raw_options = json.loads(sys.argv[3])
+    except json.JSONDecodeError:
+        fail("vote options must be a JSON array")
+    if not question or not isinstance(raw_options, list):
+        fail("a vote requires a question and a JSON option array")
+    options = []
+    seen = set()
+    for value in raw_options:
+        if not isinstance(value, str):
+            fail("every vote option must be text")
+        option = clean_text(value, 100)
+        if option and option.casefold() not in seen:
+            seen.add(option.casefold())
+            options.append(option)
+    if not 2 <= len(options) <= 10:
+        fail("a vote requires 2 to 10 distinct options")
+    try:
+        duration = int(sys.argv[4]) if len(sys.argv) == 5 else 0
+    except ValueError:
+        fail("vote duration must be an integer")
+    if duration != 0 and not 30 <= duration <= 86400:
+        fail("vote duration must be 0 or between 30 and 86400 seconds")
+    turn_id = active_turn()
+    stage_publication({
+        "content": "",
+        "target_agent_id": "",
+        "message_kind": "vote",
+        "vote_question": question,
+        "vote_options": options,
+        "vote_duration_seconds": duration,
+    })
+    details = {"question": question, "options": options, "duration_seconds": duration}
+    audit("create_vote", turn_id, details)
+    print(json.dumps({"queued": True, **details}, ensure_ascii=False))
+elif command == "vote-cast":
+    require_tool("cast_vote")
+    if len(sys.argv) != 4:
+        fail("usage: agentsassemble-room vote-cast <vote-id> '<choice>'")
+    vote_id = clean_text(sys.argv[2], 128)
+    poll = find_poll(vote_id)
+    deadline = str(poll.get("vote_deadline_at") or "")
+    if deadline:
+        try:
+            deadline_at = datetime.fromisoformat(deadline.replace("Z", "+00:00"))
+        except ValueError:
+            fail("vote deadline is invalid")
+        if deadline_at <= datetime.now(timezone.utc):
+            fail("this vote has ended")
+    choice = resolve_choice(sys.argv[3], list(poll.get("vote_options") or []))
+    turn_id = active_turn()
+    stage_publication({
+        "content": "",
+        "target_agent_id": "",
+        "message_kind": "vote_cast",
+        "vote_id": vote_id,
+        "vote_choice": choice,
+    })
+    details = {"vote_id": vote_id, "choice": choice}
+    audit("cast_vote", turn_id, details)
+    print(json.dumps({"queued": True, **details}, ensure_ascii=False))
+elif command == "vote-summary":
+    require_tool("vote_summary")
+    if len(sys.argv) != 3:
+        fail("usage: agentsassemble-room vote-summary <vote-id>")
+    vote_id = clean_text(sys.argv[2], 128)
+    poll = find_poll(vote_id)
+    options = [str(value) for value in poll.get("vote_options") or []]
+    latest = {}
+    for item in load_messages():
+        if not isinstance(item, dict) or item.get("message_kind") != "vote_cast":
+            continue
+        if str(item.get("vote_id") or "") != vote_id:
+            continue
+        participant_id = str(item.get("participant_id") or "")
+        if not participant_id:
+            continue
+        choice = resolve_choice(item.get("vote_choice"), options)
+        latest[participant_id] = (choice, str(item.get("display_name") or participant_id))
+    tallies = {option: 0 for option in options}
+    voters = {option: [] for option in options}
+    for choice, display_name in latest.values():
+        tallies[choice] += 1
+        voters[choice].append(display_name)
+    result = {
+        "vote_id": vote_id,
+        "question": str(poll.get("vote_question") or ""),
+        "options": options,
+        "tallies": tallies,
+        "voters": voters,
+        "total_votes": len(latest),
+        "scope": "bounded_current_view",
+    }
+    audit("vote_summary", details={"vote_id": vote_id})
+    print(json.dumps(result, ensure_ascii=False))
 elif command == "media":
     attachment_id = sys.argv[2] if len(sys.argv) > 2 else ""
     index = json.loads(MEDIA.read_text(encoding="utf-8")).get("media", {})
@@ -160,8 +316,30 @@ elif command == "roll":
     }
     audit("roll_dice", details=result)
     print(json.dumps(result, ensure_ascii=False))
+elif command == "choose":
+    require_tool("choose_random")
+    if len(sys.argv) != 3:
+        fail("usage: agentsassemble-room choose '<json-options>'")
+    try:
+        raw_options = json.loads(sys.argv[2])
+    except json.JSONDecodeError:
+        fail("random options must be a JSON array")
+    if not isinstance(raw_options, list):
+        fail("random options must be a JSON array")
+    options = [clean_text(value, 200) for value in raw_options if isinstance(value, str)]
+    if len(options) != len(raw_options) or not 2 <= len(options) <= 50 or any(not value for value in options):
+        fail("random choice requires 2 to 50 non-empty text options")
+    index = secrets.randbelow(len(options))
+    result = {
+        "choice": options[index],
+        "index": index,
+        "option_count": len(options),
+        "options": options,
+    }
+    audit("choose_random", details=result)
+    print(json.dumps(result, ensure_ascii=False))
 elif command == "help":
-    print("agentsassemble-room read | speak [text] | speak-to <agent-id> [text] | media <id> | roll '<NdS+M>'")
+    print("agentsassemble-room read | participants | speak [text] | speak-to <agent-id> [text] | decline <reason> | vote-create <question> <json-options> [duration] | vote-cast <vote-id> <choice> | vote-summary <vote-id> | media <id> | roll <NdS+M> | choose <json-options>")
 else:
     fail("unknown command")
 """

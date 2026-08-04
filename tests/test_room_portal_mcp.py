@@ -43,7 +43,12 @@ class RoomPortalMcpTests(unittest.TestCase):
             tool_names,
             [
                 "read_discussion",
+                "list_participants",
                 "publish_message",
+                "decline_to_speak",
+                "create_vote",
+                "cast_vote",
+                "vote_summary",
                 "roll_dice",
                 "choose_random",
             ],

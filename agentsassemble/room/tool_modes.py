@@ -7,7 +7,17 @@ CHAT_TOOL_MODE = "chat"
 TABLETOP_TOOL_MODE = "tabletop"
 ROOM_TOOL_MODES = frozenset({CHAT_TOOL_MODE, TABLETOP_TOOL_MODE})
 
-CORE_ROOM_TOOLS = frozenset({"read_discussion", "publish_message"})
+CORE_ROOM_TOOLS = frozenset(
+    {
+        "read_discussion",
+        "list_participants",
+        "publish_message",
+        "decline_to_speak",
+        "create_vote",
+        "cast_vote",
+        "vote_summary",
+    }
+)
 TABLETOP_ROOM_TOOLS = CORE_ROOM_TOOLS | frozenset(
     {"roll_dice", "choose_random"}
 )
