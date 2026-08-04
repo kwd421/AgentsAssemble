@@ -102,6 +102,17 @@ class RoomMessageServiceTests(unittest.TestCase):
         self.assertEqual(event["target_agent_id"], "codex")
         self.assertEqual(event["relay_depth"], 0)
 
+    def test_message_uses_the_current_room_profile_after_the_socket_identity_was_created(self) -> None:
+        self.store.update_participant_fields(
+            "general",
+            "host",
+            display_name="Renamed Host",
+        )
+
+        event = self._send({"request_id": "renamed", "content": "after rename"})["event"]
+
+        self.assertEqual(event["display_name"], "Renamed Host")
+
     def test_empty_plain_message_is_rejected_but_vote_event_is_allowed(self) -> None:
         with self.assertRaises(RoomCommandRejected) as raised:
             self._send({"request_id": "empty", "content": ""})

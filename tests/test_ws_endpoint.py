@@ -164,6 +164,12 @@ class WsEndpointTests(unittest.TestCase):
                     self.assertEqual(snapshot["op"], "snapshot")
                     self.assertEqual(snapshot["room"]["room_id"], "general")
                     self.assertIn("codex", [session["participant_id"] for session in snapshot["agent_sessions"]])
+                    operator = next(
+                        participant
+                        for participant in snapshot["participants"]
+                        if participant["participant_id"] == "operator-local"
+                    )
+                    self.assertEqual(operator["display_name"], "SeiNel")
                 finally:
                     sock.close()
             finally:

@@ -17,7 +17,10 @@ import time
 from dataclasses import dataclass, field
 from typing import Callable
 
-from agentsassemble.identity.repository import LOCAL_OPERATOR_PARTICIPANT_ID
+from agentsassemble.identity.repository import (
+    LOCAL_OPERATOR_DISPLAY_NAME_DEFAULT,
+    LOCAL_OPERATOR_PARTICIPANT_ID,
+)
 from agentsassemble.web.websocket_codec import (
     CLOSE_NORMAL,
     CLOSE_POLICY_VIOLATION,
@@ -37,7 +40,7 @@ WS_DEFAULT_STREAMS = ("lobby", "roster", "side_chat")
 WS_SESSION_TOKEN_KEY = "_ws_session_token"
 WS_SESSION_REVOKED_CATEGORY = "session_revoked"
 HOST_BROWSER_PARTICIPANT_ID = LOCAL_OPERATOR_PARTICIPANT_ID
-HOST_BROWSER_DISPLAY_DEFAULT = "호스트"
+HOST_BROWSER_DISPLAY_DEFAULT = LOCAL_OPERATOR_DISPLAY_NAME_DEFAULT
 
 
 def host_browser_ws_session(meeting_id: str) -> dict[str, object]:

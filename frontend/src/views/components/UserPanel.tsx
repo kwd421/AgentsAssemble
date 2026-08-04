@@ -88,6 +88,7 @@ export default function UserPanel({
   useEffect(() => {
     if (guestProfile?.expired) return;
     let ignore = false;
+    setProfileError("");
     fetchUserProfile(profileIdentity)
       .then((loadedProfile) => {
         if (ignore) return;

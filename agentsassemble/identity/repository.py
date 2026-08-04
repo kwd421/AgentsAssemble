@@ -9,6 +9,7 @@ from agentsassemble.room.user_preferences import RoomUserPreferencesRecord
 
 LOCAL_OPERATOR_USER_ID = "operator-local-user"
 LOCAL_OPERATOR_PARTICIPANT_ID = "operator-local"
+LOCAL_OPERATOR_DISPLAY_NAME_DEFAULT = "SeiNel"
 OPERATOR_PAIRING_REDEMPTION_STATUSES = {
     "claiming",
     "completed",
@@ -230,6 +231,7 @@ class IdentityBackend(Protocol):
 __all__ = [
     "IdentityBackend",
     "LOCAL_OPERATOR_PARTICIPANT_ID",
+    "LOCAL_OPERATOR_DISPLAY_NAME_DEFAULT",
     "LOCAL_OPERATOR_USER_ID",
     "OPERATOR_PAIRING_REDEMPTION_STATUSES",
     "PARTICIPANT_TYPES",

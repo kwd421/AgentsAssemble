@@ -6,7 +6,11 @@ import re
 from datetime import UTC, datetime
 from pathlib import Path
 
-from agentsassemble.identity.repository import IdentityBackend, LOCAL_OPERATOR_USER_ID
+from agentsassemble.identity.repository import (
+    IdentityBackend,
+    LOCAL_OPERATOR_DISPLAY_NAME_DEFAULT,
+    LOCAL_OPERATOR_USER_ID,
+)
 from agentsassemble.room.repository import RoomRepository
 
 PROFILE_TEXT_LIMIT = 120
@@ -16,7 +20,7 @@ IMAGE_URL_LIMIT = 240
 VALID_STATUSES = {"online", "idle", "dnd", "offline"}
 VALID_BANNER_PRESETS = {"default", "forest", "midnight", "ember", "custom"}
 DEFAULT_PROFILE = {
-    "display_name": "SeiNel",
+    "display_name": LOCAL_OPERATOR_DISPLAY_NAME_DEFAULT,
     "handle": "seinel.",
     "status": "online",
     "custom_status": "AgentsAssemble",

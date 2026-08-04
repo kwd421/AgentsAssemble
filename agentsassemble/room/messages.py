@@ -61,10 +61,16 @@ class RoomMessageService:
                 "Message content or an attachment is required.",
                 code="empty",
             )
-        participant_id = self._require_active_participant(
+        participant = self._require_active_participant(
             identity,
             unit=unit,
             compatibility_muted=compatibility_muted,
+        )
+        participant_id = clean_room_text(participant.get("participant_id"), 128)
+        display_name = (
+            clean_room_text(participant.get("display_name"), 64)
+            or clean_room_text(identity.get("display_name"), 64)
+            or participant_id
         )
         vote_duration_seconds: int | None = None
         vote_deadline_at = ""
@@ -134,10 +140,7 @@ class RoomMessageService:
             participant_type="human",
             actor_id=participant_id,
             actor_type="human",
-            display_name=(
-                clean_room_text(identity.get("display_name"), 64)
-                or participant_id
-            ),
+            display_name=display_name,
             content=content,
             message_kind=kind,
             attachments=attachments,
@@ -166,10 +169,16 @@ class RoomMessageService:
         """Generate and append one canonical system randomness result."""
 
         require_room_random_tools(unit.room_settings())
-        participant_id = self._require_active_participant(
+        participant = self._require_active_participant(
             identity,
             unit=unit,
             compatibility_muted=compatibility_muted,
+        )
+        participant_id = clean_room_text(participant.get("participant_id"), 128)
+        display_name = (
+            clean_room_text(participant.get("display_name"), 64)
+            or clean_room_text(identity.get("display_name"), 64)
+            or participant_id
         )
         reason = clean_room_text(payload.get("reason"), 200)
         try:
@@ -189,10 +198,7 @@ class RoomMessageService:
                 operation=operation,
                 details=details,
                 participant_id=participant_id,
-                display_name=(
-                    clean_room_text(identity.get("display_name"), 64)
-                    or participant_id
-                ),
+                display_name=display_name,
                 source_turn_id="",
             )
         except (RoomRandomError, RoomSystemResultError) as error:
@@ -220,7 +226,7 @@ class RoomMessageService:
         *,
         unit: RoomCommandUnitOfWork,
         compatibility_muted: bool,
-    ) -> str:
+    ) -> dict[str, object]:
         participant_id = clean_room_text(identity.get("agent_id"), 128)
         participant = unit.participant(participant_id)
         if participant.get("status") in {"kicked", "left"}:
@@ -238,7 +244,7 @@ class RoomMessageService:
                 "You are muted by the room host.",
                 code="muted",
             )
-        return participant_id
+        return participant
 
 
 __all__ = ["RoomMessageService"]

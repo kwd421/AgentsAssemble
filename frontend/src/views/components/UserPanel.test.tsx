@@ -1,4 +1,4 @@
-import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import { DEFAULT_USER_PROFILE } from "../../lib/userProfileModel";
@@ -70,5 +70,67 @@ describe("UserPanel", () => {
       )
     );
     expect(screen.getByRole("button", { name: /Guest After/ })).toBeTruthy();
+  });
+
+  it("clears a pre-admission profile error after the guest session becomes authenticated", async () => {
+    const loaded = {
+      ...DEFAULT_USER_PROFILE,
+      displayName: "Guest Joined",
+      avatarLabel: "GJ",
+    };
+    apiMocks.fetchUserProfile
+      .mockRejectedValueOnce(new Error("authenticated user profile required"))
+      .mockResolvedValueOnce(loaded);
+
+    const view = render(
+      <UserPanel
+        onlineCount={1}
+        agentCount={0}
+        hasBackendError={false}
+        guestProfile={{
+          displayName: "Guest Pending",
+          avatarLabel: "GP",
+          statusLabel: "온라인",
+        }}
+        profileIdentity={{ deviceToken: "guest-device" }}
+      />
+    );
+
+    fireEvent.click(
+      within(view.container).getByRole("button", { name: "사용자 설정" })
+    );
+    await within(view.container).findByText("authenticated user profile required");
+
+    view.rerender(
+      <UserPanel
+        onlineCount={1}
+        agentCount={0}
+        hasBackendError={false}
+        guestProfile={{
+          displayName: "Guest Joined",
+          avatarLabel: "GJ",
+          statusLabel: "온라인",
+        }}
+        profileIdentity={{
+          sessionToken: "guest-session",
+          deviceToken: "guest-device",
+        }}
+      />
+    );
+
+    await waitFor(() =>
+      expect(apiMocks.fetchUserProfile).toHaveBeenLastCalledWith({
+        sessionToken: "guest-session",
+        deviceToken: "guest-device",
+      })
+    );
+    await waitFor(() =>
+      expect(
+        within(view.container).queryByText("authenticated user profile required")
+      ).toBeNull()
+    );
+    expect(
+      within(view.container).getByRole("button", { name: /Guest Joined/ })
+    ).toBeTruthy();
   });
 });
