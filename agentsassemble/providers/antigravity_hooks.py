@@ -112,7 +112,14 @@ class AntigravityHookRuntime:
         if name == "run_command":
             command = clean_room_text(args.get("CommandLine"), limit=4000)
             if is_safe_room_portal_command(command):
-                return {"decision": "allow", "reason": "AgentsAssemble room tool command."}
+                return {
+                    "decision": "allow",
+                    "reason": "AgentsAssemble room tool command.",
+                    "permissionOverrides": [
+                        "command(agentsassemble-room)",
+                        "unsandboxed(agentsassemble-room)",
+                    ],
+                }
             result = self._resolve_permission(
                 title="Antigravity 터미널 명령",
                 description=_command_description(command, args.get("Cwd")),
