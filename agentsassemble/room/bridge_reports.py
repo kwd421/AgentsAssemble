@@ -143,6 +143,7 @@ class RoomBridgeReportService:
                 "reasoning_effort": profile.reasoning_effort,
                 "service_tier": profile.service_tier,
                 "variant": profile.variant,
+                "execution_harness": profile.execution_harness,
                 "permission_mode": profile.permission_mode,
                 "max_output_tokens": profile.max_output_tokens,
                 "runtime_kind": profile.runtime_kind,

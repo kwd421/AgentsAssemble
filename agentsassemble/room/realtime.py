@@ -122,7 +122,7 @@ AGENT_RUNTIME_PROFILE_KEYS = frozenset(
         "model",
         "reasoning_effort",
         "service_tier",
-        "variant",
+        "variant", "execution_harness",
         "permission_mode",
         "max_output_tokens",
         "transport",

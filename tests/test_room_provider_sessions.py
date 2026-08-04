@@ -171,6 +171,33 @@ class RoomProviderSessionServiceTests(unittest.TestCase):
 
         self.assertTrue(restored_registry.contains("general", restorable.agent_id))
 
+    def test_ensure_existing_api_session_persists_its_native_harness(self) -> None:
+        definition = native_cli_provider_definition("deepseek")
+        assert definition is not None
+        builtin = definition.make_default_spec(
+            agent_id="deepseek",
+            display_name="DeepSeek",
+            cwd=self.root,
+        )
+        native = definition.make_selected_spec(
+            agent_id="deepseek",
+            display_name="DeepSeek",
+            cwd=self.root,
+            model=builtin.model,
+            reasoning_effort=builtin.reasoning_effort,
+            variant=builtin.variant,
+            execution_harness="claude",
+            permission_mode=builtin.permission_mode,
+            max_output_tokens=builtin.max_output_tokens,
+        )
+        self.service.create_provider_session("general", builtin)
+
+        self.service.ensure_provider_session("general", native)
+
+        session = self.store.session("general", "deepseek")
+        self.assertEqual(session["execution_harness"], "claude")
+        self.assertEqual(session["runtime_profile_key"], native.runtime_profile_key())
+
     def test_restore_repairs_reported_transport_overwrite_and_clears_profile_error(self) -> None:
         definition = native_cli_provider_definition("opencode")
         self.assertIsNotNone(definition)

@@ -38,8 +38,13 @@ New MVP direction:
   not lower the interface to complete(prompt) -> text.
 - API coding work is an explicit operator-selected capability. Meeting-only
   sessions receive no workspace tools. A work-enabled session is confined to
-  one selected workspace; every mutation and command requires a private,
-  one-use owner approval and remains distinct from a provider-native coding CLI.
+  one selected workspace. The built-in API harness keeps private one-use
+  approval for each mutation and command. As a separate explicit choice, an
+  installed Codex or Claude Code harness may run the API/Local model through
+  that native coding control plane while the room still owns lifecycle,
+  publication, workspace selection, and activity visibility. A loopback
+  protocol translator may adapt the model wire but never becomes a second room
+  authority or receives durable room credentials.
 
 Work Mode:
 - Runs auditable council meetings.

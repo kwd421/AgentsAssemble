@@ -432,6 +432,17 @@ receive a bounded environment and timeout, and return bounded output. This is a
 small auditable harness, not a claim that the API model has acquired a native
 Codex, Claude Code, or Grok CLI session.
 
+API and Local sessions may instead select an installed `Codex` or `Claude Code`
+execution harness. This keeps the same server-owned Agent Session lifecycle,
+workspace, publication, and private activity stream while replacing only the
+model wire beneath the native coding harness. Codex talks directly to Ollama or
+LM Studio, and Claude Code talks directly to LM Studio. Other OpenAI-compatible
+providers use one loopback-only OpenCodex translator owned by that Agent
+Session. The translator is an optional protocol adapter, not a second room
+runtime: it has isolated state, starts and stops with the provider runtime, and
+must not own room events or approvals. Claude `workspace_write` maps to its
+safe `auto` mode; the product does not enable `bypassPermissions`.
+
 The Agent Session creation UI uses three English top-level catalog groups:
 `Subscription`, `API`, and `Local`. Provider definitions own their default
 group instead of the UI inferring product type from transport. A discovered
@@ -452,7 +463,8 @@ listed models whose Ollama metadata advertises tool use. LM Studio is presented
 under Local and connects only to its fixed loopback endpoint; its catalog
 includes loaded LLMs that LM Studio reports as trained for tool use. Neither
 local endpoint asks for an API key. A workspace is requested only when the
-operator explicitly enables the shared API work harness. Each provider exposes
+operator explicitly enables the built-in work harness or a native coding
+harness. Each provider exposes
 only discovered models and controls. Cerebras discovers its current
 tool-capable text models from the provider's unauthenticated public model
 catalog and offers low, medium, and high reasoning effort; `gpt-oss-120b`
@@ -526,7 +538,10 @@ permission to approve filesystem, command, network, or full-access actions.
 API-provider credentials are server-owned and read from the OS keyring (or the
 provider's explicit process environment fallback), then sent to the bridge
 once over inherited stdin. They are not written to the bridge config, room
-state, provider transcript, or public diagnostics. Remote
+state, provider transcript, or public diagnostics. Remote native-harness
+translation writes only an environment-variable reference to
+its private `0600` config; the credential exists only in the sanitized child
+environment and the translator remains bound to loopback. Remote
 credential-management requests require a host token, forwarded HTTPS, and an
 actual loopback proxy peer; a public URL setting or spoofed forwarded header is
 not transport proof.

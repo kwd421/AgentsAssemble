@@ -27,6 +27,8 @@ class CodexAppServerLiveRuntime:
         executable: str = "codex",
         environment: dict[str, str] | None = None,
         room_portal: RoomPortal | None = None,
+        model_provider: str = "",
+        provider_base_url: str = "",
     ) -> None:
         sandbox = "workspace-write" if permission_mode == "workspace_write" else "read-only"
         permissions = "on-request" if permission_mode == "workspace_write" else "never"
@@ -39,6 +41,10 @@ class CodexAppServerLiveRuntime:
             "sandbox": sandbox,
             "permissions": permissions,
         }
+        if model_provider:
+            self.profile["model_provider"] = model_provider
+        if provider_base_url:
+            self.profile["provider_base_url"] = provider_base_url
         if room_portal is not None:
             self.profile["room_mcp_server"] = room_portal_mcp_settings(room_portal.root)
         command = codex_app_server_runtime_command(self.profile)

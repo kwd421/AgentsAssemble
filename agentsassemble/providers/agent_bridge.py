@@ -955,6 +955,9 @@ class RoomAgentBridge:
             "reasoning_effort": str(details.get("reasoning_effort") or ""),
             "service_tier": str(details.get("service_tier") or ""),
             "variant": str(details.get("variant") or ""),
+            "execution_harness": str(
+                details.get("execution_harness") or "builtin"
+            ),
             "permission_mode": str(details.get("permission_mode") or ""),
             "runtime_kind": runtime_kind,
         }

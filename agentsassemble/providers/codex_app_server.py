@@ -18,6 +18,9 @@ from agentsassemble.providers.codex_provider_requests import (
     CODEX_PROVIDER_REQUEST_METHODS,
     handle_codex_provider_request,
 )
+from agentsassemble.providers.codex_model_provider import (
+    codex_model_provider_command_args,
+)
 from agentsassemble.providers.provider_requests import ProviderRequestHandler
 from agentsassemble.room.projection import (
     safe_activity_detail,
@@ -1035,6 +1038,7 @@ def codex_app_server_runtime_command(profile_settings: dict[str, object]) -> lis
     room_mcp_server = profile_settings.get("room_mcp_server")
     if model:
         command.extend(["-c", _codex_toml_string_config("model", model)])
+    command.extend(codex_model_provider_command_args(profile_settings))
     if effort:
         command.extend(["-c", _codex_toml_string_config("model_reasoning_effort", effort)])
     if service_tier and service_tier != "default":

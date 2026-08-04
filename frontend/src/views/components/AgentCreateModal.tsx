@@ -79,8 +79,15 @@ export default function AgentCreateModal({
   const workHarnessEnabled = Boolean(
     selectedProvider?.work_harness_available && settings.permission_mode === "workspace_write"
   );
+  const nativeHarnessEnabled = Boolean(
+    settings.execution_harness && settings.execution_harness !== "builtin"
+  );
   const workspaceRequired = Boolean(
-    selectedProvider && (selectedProvider.workspace_required !== false || workHarnessEnabled)
+    selectedProvider && (
+      selectedProvider.workspace_required !== false ||
+      workHarnessEnabled ||
+      nativeHarnessEnabled
+    )
   );
   const selectedProviderMissing = Boolean(providerId && providers.length && !selectedProvider);
   const reusableSessions = existingSessions.filter(
@@ -214,6 +221,7 @@ export default function AgentCreateModal({
       reasoning_effort: session.reasoning_effort || "",
       service_tier: session.service_tier || "",
       variant: session.variant || "",
+      execution_harness: session.execution_harness || "builtin",
       permission_mode: session.permission_mode || "",
       max_output_tokens: String(session.max_output_tokens || ""),
     }));
@@ -261,6 +269,7 @@ export default function AgentCreateModal({
         reasoningEffort: settings.reasoning_effort || "",
         serviceTier: settings.service_tier || "",
         variant: settings.variant || "",
+        executionHarness: settings.execution_harness || "builtin",
         permissionMode: settings.permission_mode || "meeting_read_only",
         maxOutputTokens: Number(settings.max_output_tokens || 0),
         personaCardId,

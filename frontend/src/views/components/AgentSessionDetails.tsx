@@ -144,9 +144,15 @@ export default function AgentSessionDetails({
     : "";
   const visibleSessionError = sessionErrorMessage(session);
   const workHarnessNeedsWorkspace = Boolean(
-    provider?.work_harness_available &&
+    (
+      provider?.work_harness_available &&
       settings.permission_mode === "workspace_write" &&
       session.permission_mode !== "workspace_write"
+    ) || (
+      settings.execution_harness &&
+      settings.execution_harness !== "builtin" &&
+      (session.execution_harness || "builtin") === "builtin"
+    )
   );
 
   useEffect(() => {
@@ -161,6 +167,8 @@ export default function AgentSessionDetails({
       service_tier:
         session.service_tier ?? controlDefault(provider, "service_tier"),
       variant: session.variant ?? controlDefault(provider, "variant"),
+      execution_harness:
+        session.execution_harness || controlDefault(provider, "execution_harness") || "builtin",
       permission_mode:
         session.permission_mode || controlDefault(provider, "permission_mode") || "meeting_read_only",
       max_output_tokens:
@@ -177,6 +185,7 @@ export default function AgentSessionDetails({
     session.reasoning_effort,
     session.service_tier,
     session.variant,
+    session.execution_harness,
     session.permission_mode,
     session.max_output_tokens,
   ]);

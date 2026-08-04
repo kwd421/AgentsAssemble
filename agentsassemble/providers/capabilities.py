@@ -22,6 +22,7 @@ from agentsassemble.providers.launch_specs import (
     native_cli_provider_definition,
     split_cursor_model,
 )
+from agentsassemble.providers.native_harness_catalog import add_native_harness_catalog_controls
 from agentsassemble.providers.process_environment import sanitized_provider_environment
 from agentsassemble.providers.remote_openai import (
     RemoteOpenAIProfile,
@@ -186,6 +187,7 @@ class ProviderCapabilityCatalog:
                 "reasoning_effort",
                 "service_tier",
                 "variant",
+                "execution_harness",
                 "permission_mode",
                 "max_output_tokens",
             )
@@ -215,6 +217,7 @@ class ProviderCapabilityCatalog:
                     "reasoning_effort": "unsupported_reasoning_effort",
                     "service_tier": "unsupported_service_tier",
                     "variant": "unsupported_variant",
+                    "execution_harness": "unsupported_execution_harness",
                     "permission_mode": "unsupported_permission_mode",
                     "max_output_tokens": "unsupported_max_output_tokens",
                 }.get(key, "unsupported_provider_option")
@@ -294,6 +297,7 @@ class ProviderCapabilityCatalog:
             reasoning_effort=resolved_values["reasoning_effort"],
             service_tier=selected_tier,
             variant=resolved_values["variant"],
+            execution_harness=resolved_values["execution_harness"] or "builtin",
             permission_mode=resolved_values["permission_mode"],
             max_output_tokens=int(resolved_values["max_output_tokens"] or 0),
             provider_endpoint=provider_endpoint,
@@ -381,12 +385,10 @@ class ProviderCapabilityCatalog:
             }
         payload = [self._native_payload(definition) for definition in NATIVE_CLI_PROVIDER_CATALOG]
         payload.append(self._opencode_payload())
-        payload.extend(
-            self._remote_openai_payload(profile)
-            for profile in remote_openai_profiles()
-        )
+        payload.extend(map(self._remote_openai_payload, remote_openai_profiles()))
         payload.append(self._ollama_payload())
         payload.append(self._lmstudio_payload())
+        payload = add_native_harness_catalog_controls(payload, resolver=self._resolver)
         payload = [
             self._preserve_last_verified_provider(
                 provider,

@@ -25,6 +25,7 @@ class NativeCliProviderDefinition:
     default_reasoning_effort: str = ""
     default_service_tier: str = ""
     default_variant: str = ""
+    default_execution_harness: str = "builtin"
     default_permission_mode: str = "meeting_read_only"
     default_max_output_tokens: int = 0
     catalog_exact_model_allows_empty_reasoning_effort: bool = False
@@ -72,6 +73,7 @@ class NativeCliProviderDefinition:
             reasoning_effort=self.default_reasoning_effort,
             service_tier=self.default_service_tier,
             variant=self.default_variant,
+            execution_harness=self.default_execution_harness,
             permission_mode=self.default_permission_mode,
             max_output_tokens=self.default_max_output_tokens,
             default_responder=default_responder,
@@ -87,6 +89,7 @@ class NativeCliProviderDefinition:
         reasoning_effort: str = "",
         service_tier: str = "",
         variant: str = "",
+        execution_harness: str = "",
         permission_mode: str = "",
         max_output_tokens: int = 0,
         provider_endpoint: str = "",
@@ -112,6 +115,18 @@ class NativeCliProviderDefinition:
             if inferred_fast and not selected_service_tier:
                 selected_service_tier = "fast"
         selected_variant = clean_room_text(variant, limit=64)
+        selected_execution_harness = (
+            clean_room_text(execution_harness, limit=32)
+            or self.default_execution_harness
+        )
+        if selected_execution_harness not in {"builtin", "codex", "claude"}:
+            raise ValueError(
+                f"Provider {self.provider_id} execution harness is invalid."
+            )
+        if self.runtime_kind != "api" and selected_execution_harness != "builtin":
+            raise ValueError(
+                f"Provider {self.provider_id} does not support an alternate execution harness."
+            )
         selected_permission = clean_room_text(permission_mode, limit=64)
         selected_max_output_tokens = int(
             max_output_tokens or self.default_max_output_tokens
@@ -167,6 +182,7 @@ class NativeCliProviderDefinition:
             reasoning_effort=selected_effort,
             service_tier=selected_service_tier,
             variant=selected_variant,
+            execution_harness=selected_execution_harness,
             permission_mode=selected_permission,
             max_output_tokens=selected_max_output_tokens,
             provider_endpoint=clean_room_text(provider_endpoint, limit=1000),
@@ -286,6 +302,10 @@ def native_cli_provider_spec_from_stored_session_strict(
         reasoning_effort=clean_room_text(session.get("reasoning_effort"), limit=32),
         service_tier=clean_room_text(session.get("service_tier"), limit=32),
         variant=clean_room_text(session.get("variant"), limit=64),
+        execution_harness=(
+            clean_room_text(session.get("execution_harness"), limit=32)
+            or "builtin"
+        ),
         permission_mode=required["permission_mode"],
         max_output_tokens=_nonnegative_int(
             session.get("max_output_tokens"),
@@ -855,7 +875,14 @@ def native_cli_provider_spec_from_payload(payload: dict[str, object]) -> NativeC
     )
     if not workspace and (
         definition.workspace_required
-        or (definition.runtime_kind == "api" and requested_permission == "workspace_write")
+        or (
+            definition.runtime_kind == "api"
+            and (
+                requested_permission == "workspace_write"
+                or clean_room_text(payload.get("execution_harness"), limit=32)
+                not in {"", "builtin"}
+            )
+        )
     ):
         raise ValueError("Native CLI Agent Session workspace is required.")
     if not workspace:
@@ -870,6 +897,10 @@ def native_cli_provider_spec_from_payload(payload: dict[str, object]) -> NativeC
         ),
         service_tier=clean_room_text(payload.get("service_tier"), limit=32),
         variant=clean_room_text(payload.get("variant"), limit=64),
+        execution_harness=clean_room_text(
+            payload.get("execution_harness"),
+            limit=32,
+        ),
         permission_mode=requested_permission,
         max_output_tokens=_nonnegative_int(
             payload.get("max_output_tokens"),
@@ -908,6 +939,10 @@ def native_cli_provider_spec_from_config(
     reasoning_effort = clean_room_text(payload.get("reasoning_effort") or payload.get("effort"), limit=32)
     service_tier = clean_room_text(payload.get("service_tier"), limit=32)
     variant = clean_room_text(payload.get("variant"), limit=64)
+    execution_harness = (
+        clean_room_text(payload.get("execution_harness"), limit=32)
+        or "builtin"
+    )
     permission_mode = clean_room_text(payload.get("permission_mode"), limit=64)
     if definition is not None and definition.default_reasoning_effort and not reasoning_effort:
         raise ValueError(f"live CLI provider {agent_id} reasoning effort is required")
@@ -946,6 +981,7 @@ def native_cli_provider_spec_from_config(
         reasoning_effort=reasoning_effort,
         service_tier=service_tier,
         variant=variant,
+        execution_harness=execution_harness,
         permission_mode=permission_mode,
         max_output_tokens=_nonnegative_int(
             payload.get("max_output_tokens"),
@@ -995,6 +1031,14 @@ def validate_native_cli_provider_spec(spec: NativeCliProviderSpec) -> None:
             raise ValueError("Grok Agent Sessions require grok agent stdio; PTY fallback is disabled.")
     if spec.permission_mode not in {"meeting_read_only", "workspace_write"}:
         raise ValueError(f"Unsupported native CLI permission mode: {spec.permission_mode}")
+    if spec.execution_harness not in {"builtin", "codex", "claude"}:
+        raise ValueError(
+            f"Unsupported execution harness: {spec.execution_harness}"
+        )
+    if spec.runtime_kind != "api" and spec.execution_harness != "builtin":
+        raise ValueError(
+            "Alternate execution harnesses are available only for API and Local providers."
+        )
     if spec.model_observation_policy not in {"required", "unavailable"}:
         raise ValueError(
             f"Unsupported model observation policy: {spec.model_observation_policy}"

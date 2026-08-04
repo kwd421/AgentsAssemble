@@ -10,6 +10,7 @@ from agentsassemble.providers.cursor_room_portal import CursorRoomPortalRuntime
 from agentsassemble.providers.grok_acp import GrokAcpRuntime
 from agentsassemble.providers.live_cli import LiveCliRuntime
 from agentsassemble.providers.local_openai import LocalOpenAICompatibleRuntime
+from agentsassemble.providers.native_harness import native_harness_runtime
 from agentsassemble.providers.opencode import OpenCodeRuntime
 from agentsassemble.providers.remote_openai import (
     RemoteOpenAICompatibleRuntime,
@@ -74,6 +75,31 @@ def runtime_from_config(
         raise ProviderRuntimeFactoryError(
             "Provider runtime kind does not match its provider and transport.",
             code="provider_runtime_kind_mismatch",
+        )
+    if config.execution_harness != "builtin":
+        if config.runtime_kind != "api":
+            raise ProviderRuntimeFactoryError(
+                "Alternate execution harnesses require an API or Local provider.",
+                code="provider_runtime_kind_mismatch",
+            )
+        remote_profile = remote_openai_profile(config.provider_kind)
+        return native_harness_runtime(
+            agent_id=config.participant_id,
+            harness=config.execution_harness,
+            provider_kind=config.provider_kind,
+            provider_endpoint=config.provider_endpoint,
+            credential=credential,
+            model=config.model,
+            reasoning_effort=config.reasoning_effort,
+            permission_mode=config.permission_mode,
+            service_tier=config.service_tier,
+            workspace=config.cwd,
+            runtime_state_dir=config.runtime_state_dir,
+            environment=environment,
+            room_portal=room_portal,
+            request_headers=(
+                remote_profile.request_headers if remote_profile is not None else ()
+            ),
         )
     if key == ("codex_live_session", "pty"):
         return CodexAppServerLiveRuntime(

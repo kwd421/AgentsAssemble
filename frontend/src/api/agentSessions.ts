@@ -56,6 +56,7 @@ export interface RoomAgentSession {
   reasoning_effort?: string;
   service_tier?: string;
   variant?: string;
+  execution_harness?: string;
   permission_mode?: string;
   max_output_tokens?: number;
   share_activity?: boolean;
@@ -121,6 +122,7 @@ export interface FrontendLiveAgentCreateRequest {
   reasoningEffort?: string;
   serviceTier?: string;
   variant?: string;
+  executionHarness?: string;
   permissionMode?: string;
   maxOutputTokens?: number;
   personaCardId?: string;

@@ -1473,6 +1473,7 @@ export default function App() {
               reasoning_effort: request.reasoningEffort || "",
               service_tier: request.serviceTier || "",
               variant: request.variant || "",
+              execution_harness: request.executionHarness || "builtin",
               permission_mode: request.permissionMode || "meeting_read_only",
               max_output_tokens: request.maxOutputTokens || 0,
               persona_card_id: request.personaCardId || "",

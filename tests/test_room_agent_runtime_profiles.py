@@ -206,6 +206,63 @@ class RoomAgentRuntimeProfileServiceTests(unittest.TestCase):
             selected_workspace.resolve(),
         )
 
+    def test_enabling_a_native_api_harness_requires_and_persists_its_workspace(self) -> None:
+        definition = native_cli_provider_definition("deepseek")
+        assert definition is not None
+        default = definition.make_default_spec(
+            agent_id="codex",
+            display_name="DeepSeek",
+            cwd=self.root,
+        )
+        self.store.update_session_fields(
+            "general",
+            "codex",
+            provider_kind=definition.provider_kind,
+            model=default.model,
+            permission_mode="meeting_read_only",
+        )
+        self.catalog.selection = ValidatedProviderSelection(
+            catalog_revision="api-revision",
+            provider_id=definition.provider_id,
+            provider_kind=definition.provider_kind,
+            model=default.model,
+            model_selection_kind="exact",
+            reasoning_effort=default.reasoning_effort,
+            service_tier=default.service_tier,
+            variant=default.variant,
+            permission_mode="meeting_read_only",
+            max_output_tokens=4096,
+            execution_harness="claude",
+        )
+
+        with self.assertRaises(RoomCommandRejected) as raised:
+            self.service.configure(
+                "general",
+                "codex",
+                {
+                    "catalog_revision": "api-revision",
+                    "execution_harness": "claude",
+                },
+            )
+
+        self.assertEqual(raised.exception.code, "workspace_required")
+        selected_workspace = self.root / "native-harness-workspace"
+        selected_workspace.mkdir()
+
+        self.service.configure(
+            "general",
+            "codex",
+            {
+                "catalog_revision": "api-revision",
+                "execution_harness": "claude",
+                "workspace": str(selected_workspace),
+            },
+        )
+
+        spec = self.configured_specs[-1][1]
+        self.assertEqual(spec.execution_harness, "claude")
+        self.assertEqual(Path(spec.cwd).resolve(), selected_workspace.resolve())
+
     def test_stopped_local_session_can_replace_its_selected_bot_card(self) -> None:
         definition = native_cli_provider_definition("lmstudio")
         assert definition is not None

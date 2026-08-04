@@ -24,3 +24,4 @@ class ValidatedProviderSelection:
     permission_mode: str
     max_output_tokens: int = 0
     provider_endpoint: str = ""
+    execution_harness: str = "builtin"

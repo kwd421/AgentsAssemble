@@ -80,6 +80,10 @@ class RoomAgentCreationService:
                         32,
                     ),
                     "variant": clean_room_text(payload.get("variant"), 64),
+                    "execution_harness": clean_room_text(
+                        payload.get("execution_harness"),
+                        32,
+                    ),
                     "permission_mode": clean_room_text(
                         payload.get("permission_mode")
                         or payload.get("permission_option"),
@@ -121,6 +125,7 @@ class RoomAgentCreationService:
                     "reasoning_effort": selection.reasoning_effort,
                     "service_tier": selection.service_tier,
                     "variant": selection.variant,
+                    "execution_harness": selection.execution_harness,
                     "permission_mode": selection.permission_mode,
                     "max_output_tokens": selection.max_output_tokens,
                     "provider_endpoint": selection.provider_endpoint,

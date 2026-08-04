@@ -26,6 +26,7 @@ class NativeCliProviderSpec:
     reasoning_effort: str = ""
     service_tier: str = ""
     variant: str = ""
+    execution_harness: str = "builtin"
     permission_mode: str = "meeting_read_only"
     max_output_tokens: int = 0
     provider_endpoint: str = ""
@@ -80,6 +81,8 @@ class NativeCliProviderSpec:
         }
         if self.provider_endpoint:
             values["provider_endpoint"] = self.provider_endpoint
+        if self.execution_harness != "builtin":
+            values["execution_harness"] = self.execution_harness
         add_persona_runtime_profile(values, self.persona_card_id)
         profile = json.dumps(values, ensure_ascii=True, sort_keys=True, separators=(",", ":"))
         return hashlib.sha256(profile.encode("utf-8")).hexdigest()[:20]

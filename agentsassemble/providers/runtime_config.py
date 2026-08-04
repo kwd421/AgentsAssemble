@@ -29,6 +29,7 @@ class ProviderRuntimeProfile:
     permission_mode: str
     transport: str
     max_output_tokens: int = 0
+    execution_harness: str = "builtin"
 
     @classmethod
     def parse_strict(cls, values: dict[str, object]) -> ProviderRuntimeProfile:
@@ -44,6 +45,11 @@ class ProviderRuntimeProfile:
             ),
             service_tier=_required_text(values, "service_tier", limit=32, allow_empty=True),
             variant=_required_text(values, "variant", limit=64, allow_empty=True),
+            execution_harness=(
+                _required_text(values, "execution_harness", limit=32)
+                if "execution_harness" in values
+                else "builtin"
+            ),
             permission_mode=_required_text(values, "permission_mode", limit=64),
             transport=_required_text(values, "transport", limit=64),
             max_output_tokens=(
@@ -61,6 +67,7 @@ class ProviderRuntimeProfile:
             "reasoning_effort": self.reasoning_effort,
             "service_tier": self.service_tier,
             "variant": self.variant,
+            "execution_harness": self.execution_harness,
             "permission_mode": self.permission_mode,
             "max_output_tokens": self.max_output_tokens,
         }
@@ -95,6 +102,7 @@ class ProviderRuntimeConfig:
     runtime_state_dir: str
     provider_endpoint: str
     provider_server_pid: int | None
+    execution_harness: str = "builtin"
 
     @property
     def profile(self) -> ProviderRuntimeProfile:
@@ -105,6 +113,7 @@ class ProviderRuntimeConfig:
             reasoning_effort=self.reasoning_effort,
             service_tier=self.service_tier,
             variant=self.variant,
+            execution_harness=self.execution_harness,
             permission_mode=self.permission_mode,
             max_output_tokens=self.max_output_tokens,
             transport=self.transport,
@@ -138,6 +147,7 @@ class ProviderRuntimeConfig:
             reasoning_effort=profile.reasoning_effort,
             service_tier=profile.service_tier,
             variant=profile.variant,
+            execution_harness=profile.execution_harness,
             permission_mode=profile.permission_mode,
             max_output_tokens=profile.max_output_tokens,
             transport=profile.transport,

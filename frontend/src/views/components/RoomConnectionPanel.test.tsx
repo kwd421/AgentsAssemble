@@ -510,6 +510,7 @@ describe("RoomConnectionPanel", () => {
         reasoning_effort: "high",
         service_tier: "fast",
         variant: "",
+        execution_harness: "builtin",
         permission_mode: "workspace_write",
         max_output_tokens: "8192",
       })

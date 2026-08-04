@@ -299,6 +299,7 @@ class NativeCliBridgeProcessManager:
             "reasoning_effort": spec.reasoning_effort,
             "service_tier": spec.service_tier,
             "variant": spec.variant,
+            "execution_harness": spec.execution_harness,
             "permission_mode": spec.permission_mode,
             "max_output_tokens": spec.max_output_tokens,
             "transport": spec.transport,

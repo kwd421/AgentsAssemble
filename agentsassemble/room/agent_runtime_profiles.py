@@ -125,6 +125,7 @@ class RoomAgentRuntimeProfileService:
                 "reasoning_effort",
                 "service_tier",
                 "variant",
+                "execution_harness",
                 "permission_mode",
                 "max_output_tokens",
             )
@@ -151,6 +152,10 @@ class RoomAgentRuntimeProfileService:
                         32,
                     ),
                     "variant": clean_room_text(selected_values["variant"], 64),
+                    "execution_harness": clean_room_text(
+                        selected_values["execution_harness"],
+                        32,
+                    ),
                     "permission_mode": clean_room_text(
                         selected_values["permission_mode"],
                         64,
@@ -164,12 +169,22 @@ class RoomAgentRuntimeProfileService:
             raise RoomCommandRejected(str(error), code=error.code) from error
         if (
             definition.runtime_kind == "api"
-            and selection.permission_mode == "workspace_write"
-            and clean_room_text(current.get("permission_mode"), 64) != "workspace_write"
+            and (
+                selection.permission_mode == "workspace_write"
+                or selection.execution_harness != "builtin"
+            )
+            and not (
+                clean_room_text(current.get("permission_mode"), 64) == "workspace_write"
+                or (
+                    clean_room_text(current.get("execution_harness"), 32)
+                    or "builtin"
+                )
+                != "builtin"
+            )
             and not clean_room_text(payload.get("workspace"), 500)
         ):
             raise RoomCommandRejected(
-                "Select a workspace before enabling the API work harness.",
+                "Select a workspace before enabling a coding harness.",
                 code="workspace_required",
             )
         try:
@@ -182,6 +197,7 @@ class RoomAgentRuntimeProfileService:
                     "reasoning_effort": selection.reasoning_effort,
                     "service_tier": selection.service_tier,
                     "variant": selection.variant,
+                    "execution_harness": selection.execution_harness,
                     "permission_mode": selection.permission_mode,
                     "max_output_tokens": selection.max_output_tokens,
                     "provider_endpoint": selection.provider_endpoint,
