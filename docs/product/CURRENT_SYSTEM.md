@@ -437,11 +437,16 @@ execution harness. This keeps the same server-owned Agent Session lifecycle,
 workspace, publication, and private activity stream while replacing only the
 model wire beneath the native coding harness. Codex talks directly to Ollama or
 LM Studio, and Claude Code talks directly to LM Studio. Other OpenAI-compatible
-providers use one loopback-only OpenCodex translator owned by that Agent
-Session. The translator is an optional protocol adapter, not a second room
-runtime: it has isolated state, starts and stops with the provider runtime, and
-must not own room events or approvals. Claude `workspace_write` maps to its
-safe `auto` mode; the product does not enable `bypassPermissions`.
+providers use one loopback-only model-wire adapter owned by that Agent Session.
+AgentsAssemble owns that internal adapter: it exposes the
+native Responses wire to Codex and the native Messages wire to Claude Code,
+then translates those requests to the provider's Chat Completions endpoint.
+It does not install, start, or depend on another coding harness. The adapter is
+not a second room runtime: it starts and stops with the provider runtime, keeps
+credentials in memory, and must not own room events or approvals. Claude
+`workspace_write` maps to its safe `auto` mode; non-streaming classifier side
+requests are preserved because Claude's native command approvals depend on
+them. The product does not enable `bypassPermissions`.
 
 The Agent Session creation UI uses three English top-level catalog groups:
 `Subscription`, `API`, and `Local`. Provider definitions own their default

@@ -17,11 +17,8 @@ def add_native_harness_controls(
     result = copy.deepcopy(payload)
     fixed_values = dict(result.get("fixed_values") or {})
     controls = list(result.get("controls") or [])
-    gateway = resolver("ocx") or resolver("opencodex")
-    direct_codex = provider_id in {"ollama", "lmstudio"}
-    direct_claude = provider_id == "lmstudio"
     options = [_option("builtin", "기본")]
-    if resolver("codex") and (direct_codex or gateway):
+    if resolver("codex"):
         options.append(
             _option(
                 "codex",
@@ -29,7 +26,7 @@ def add_native_harness_controls(
                 description="Codex의 파일·명령·승인 하네스를 사용합니다.",
             )
         )
-    if resolver("claude") and (direct_claude or gateway):
+    if resolver("claude"):
         options.append(
             _option(
                 "claude",
@@ -62,11 +59,6 @@ def add_native_harness_controls(
         )
     result["fixed_values"] = fixed_values
     result["controls"] = controls
-    result["native_harness_gateway_available"] = bool(gateway)
-    result["native_harness_gateway_required"] = provider_id not in {
-        "ollama",
-        "lmstudio",
-    }
     return result
 
 

@@ -100,6 +100,8 @@ def runtime_from_config(
             request_headers=(
                 remote_profile.request_headers if remote_profile is not None else ()
             ),
+            variant=config.variant,
+            max_output_tokens=config.max_output_tokens,
         )
     if key == ("codex_live_session", "pty"):
         return CodexAppServerLiveRuntime(

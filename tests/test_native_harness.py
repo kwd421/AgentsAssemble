@@ -1,57 +1,14 @@
 from __future__ import annotations
 
 import json
-import os
-from pathlib import Path
-import sys
-import tempfile
+import threading
 import unittest
-
-from agentsassemble.providers.native_harness import (
-    HARNESS_GATEWAY_ENV_KEY,
-    NativeHarnessRuntime,
-    OpenCodexHarnessGateway,
-)
-from agentsassemble.providers.capabilities import ProviderCapabilityCatalog
-
-
-_FAKE_GATEWAY = """#!/usr/bin/env python3
-import json
-import os
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
-from pathlib import Path
-import signal
-import sys
+from urllib.request import Request, urlopen
 
-port = int(sys.argv[sys.argv.index("--port") + 1])
-state_dir = Path(os.environ["OPENCODEX_HOME"])
-config = json.loads((state_dir / "config.json").read_text(encoding="utf-8"))
-provider = config["providers"]["agentsassemble"]
-(state_dir / "child-observation.json").write_text(
-    json.dumps(
-        {
-            "credential_available": bool(
-                os.environ.get("AGENTSASSEMBLE_HARNESS_UPSTREAM_KEY")
-            ),
-            "credential_is_reference": provider.get("apiKey")
-            == "${AGENTSASSEMBLE_HARNESS_UPSTREAM_KEY}",
-        }
-    ),
-    encoding="utf-8",
-)
-
-class Handler(BaseHTTPRequestHandler):
-    def do_GET(self):
-        self.send_response(200 if self.path == "/healthz" else 404)
-        self.end_headers()
-
-    def log_message(self, _format, *args):
-        pass
-
-server = ThreadingHTTPServer(("127.0.0.1", port), Handler)
-signal.signal(signal.SIGTERM, lambda _signum, _frame: sys.exit(0))
-server.serve_forever()
-"""
+from agentsassemble.providers.capabilities import ProviderCapabilityCatalog
+from agentsassemble.providers.native_harness import NativeHarnessRuntime
+from agentsassemble.providers.native_harness_gateway import NativeModelGateway
 
 
 class _FailingDelegate:
@@ -65,9 +22,49 @@ class _FailingDelegate:
         del timeout_seconds
 
 
+class _UpstreamServer:
+    def __init__(self, responses: list[dict[str, object]]) -> None:
+        self.responses = list(responses)
+        self.requests: list[dict[str, object]] = []
+        self.authorizations: list[str] = []
+        owner = self
+
+        class Handler(BaseHTTPRequestHandler):
+            def do_POST(self) -> None:
+                length = int(self.headers.get("Content-Length") or 0)
+                owner.requests.append(json.loads(self.rfile.read(length)))
+                owner.authorizations.append(self.headers.get("Authorization") or "")
+                body = json.dumps(owner.responses.pop(0)).encode("utf-8")
+                self.send_response(200)
+                self.send_header("Content-Type", "application/json")
+                self.send_header("Content-Length", str(len(body)))
+                self.end_headers()
+                self.wfile.write(body)
+
+            def log_message(self, _format: str, *args: object) -> None:
+                del args
+
+        self.server = ThreadingHTTPServer(("127.0.0.1", 0), Handler)
+        self.thread = threading.Thread(target=self.server.serve_forever, daemon=True)
+
+    @property
+    def endpoint(self) -> str:
+        host, port = self.server.server_address
+        return f"http://{host}:{port}/v1"
+
+    def __enter__(self):
+        self.thread.start()
+        return self
+
+    def __exit__(self, *_args: object) -> None:
+        self.server.shutdown()
+        self.server.server_close()
+        self.thread.join(timeout=2.0)
+
+
 class NativeHarnessCatalogTests(unittest.TestCase):
     def test_api_catalog_exposes_installed_native_coding_harnesses(self) -> None:
-        available = {"codex", "claude", "ocx"}
+        available = {"codex", "claude"}
         catalog = ProviderCapabilityCatalog(
             runner=lambda _command, _timeout: (1, "", "not installed"),
             resolver=lambda executable: (
@@ -92,57 +89,189 @@ class NativeHarnessCatalogTests(unittest.TestCase):
             [option["value"] for option in harness["options"]],
             ["builtin", "codex", "claude"],
         )
-        self.assertTrue(deepseek["native_harness_gateway_available"])
-        self.assertTrue(deepseek["native_harness_gateway_required"])
 
 
-@unittest.skipIf(os.name == "nt", "fake executable uses a POSIX shebang")
 class NativeHarnessGatewayTests(unittest.TestCase):
-    def setUp(self) -> None:
-        self.temporary_directory = tempfile.TemporaryDirectory()
-        self.root = Path(self.temporary_directory.name)
-        self.executable = self.root / "fake-ocx"
-        self.executable.write_text(
-            _FAKE_GATEWAY.replace("#!/usr/bin/env python3", f"#!{sys.executable}"),
-            encoding="utf-8",
-        )
-        self.executable.chmod(0o700)
-
-    def tearDown(self) -> None:
-        self.temporary_directory.cleanup()
-
-    def _gateway(self) -> OpenCodexHarnessGateway:
-        return OpenCodexHarnessGateway(
-            state_dir=self.root / "gateway",
-            upstream_base_url="https://api.example.test/v1",
-            upstream_api_key="credential-must-not-be-persisted",
-            model="vendor/model",
-            executable=str(self.executable),
-        )
-
-    def test_gateway_keeps_the_credential_out_of_its_config_and_stops_cleanly(self) -> None:
-        gateway = self._gateway()
-        try:
-            gateway.start()
-            pid = gateway.pid
-            observation = json.loads(
-                (gateway.state_dir / "child-observation.json").read_text(encoding="utf-8")
+    def test_codex_responses_request_round_trips_a_native_tool_call(self) -> None:
+        upstream_response = {
+            "id": "chat-1",
+            "choices": [
+                {
+                    "message": {
+                        "role": "assistant",
+                        "content": None,
+                        "tool_calls": [
+                            {
+                                "id": "call-1",
+                                "type": "function",
+                                "function": {
+                                    "name": "run_command",
+                                    "arguments": '{"command":"pwd"}',
+                                },
+                            }
+                        ],
+                    },
+                    "finish_reason": "tool_calls",
+                }
+            ],
+            "usage": {"prompt_tokens": 10, "completion_tokens": 4, "total_tokens": 14},
+        }
+        with _UpstreamServer([upstream_response]) as upstream:
+            gateway = NativeModelGateway(
+                upstream_base_url=upstream.endpoint,
+                upstream_api_key="secret-only-in-memory",
+                model="deepseek-test",
+                provider_kind="deepseek_api",
+                max_output_tokens=4096,
             )
-            config_text = (gateway.state_dir / "config.json").read_text(encoding="utf-8")
+            gateway.start()
+            try:
+                response = _post(
+                    f"{gateway.endpoint}/responses",
+                    {
+                        "model": "deepseek-test",
+                        "instructions": "Use the tool.",
+                        "input": [
+                            {
+                                "type": "message",
+                                "role": "user",
+                                "content": [{"type": "input_text", "text": "pwd"}],
+                            }
+                        ],
+                        "tools": [
+                            {
+                                "type": "function",
+                                "name": "run_command",
+                                "description": "Run one command",
+                                "parameters": {
+                                    "type": "object",
+                                    "properties": {"command": {"type": "string"}},
+                                    "required": ["command"],
+                                },
+                            }
+                        ],
+                        "stream": True,
+                    },
+                )
+            finally:
+                gateway.stop()
 
-            self.assertTrue(observation["credential_available"])
-            self.assertTrue(observation["credential_is_reference"])
-            self.assertNotIn("credential-must-not-be-persisted", config_text)
-            self.assertIn(f"${{{HARNESS_GATEWAY_ENV_KEY}}}", config_text)
-        finally:
-            gateway.stop()
+        events = _sse_events(response)
+        tool_item = next(
+            event["item"]
+            for event in events
+            if event["type"] == "response.output_item.done"
+            and event.get("item", {}).get("type") == "function_call"
+        )
+        self.assertEqual(tool_item["name"], "run_command")
+        self.assertEqual(tool_item["call_id"], "call-1")
+        self.assertEqual(upstream.authorizations, ["Bearer secret-only-in-memory"])
+        self.assertEqual(upstream.requests[0]["tools"][0]["function"]["name"], "run_command")
 
-        self.assertIsNotNone(pid)
-        with self.assertRaises(ProcessLookupError):
-            os.kill(int(pid), 0)
+    def test_claude_messages_request_round_trips_native_tool_schema_and_text(self) -> None:
+        upstream_response = {
+            "id": "chat-2",
+            "choices": [
+                {
+                    "message": {"role": "assistant", "content": "finished"},
+                    "finish_reason": "stop",
+                }
+            ],
+            "usage": {"prompt_tokens": 8, "completion_tokens": 2, "total_tokens": 10},
+        }
+        with _UpstreamServer([upstream_response]) as upstream:
+            gateway = NativeModelGateway(
+                upstream_base_url=upstream.endpoint,
+                upstream_api_key="secret",
+                model="deepseek-test",
+                provider_kind="deepseek_api",
+            )
+            gateway.start()
+            try:
+                response = _post(
+                    f"{gateway.endpoint}/messages",
+                    {
+                        "model": "deepseek-test",
+                        "system": "Edit files when asked.",
+                        "messages": [{"role": "user", "content": "finish"}],
+                        "tools": [
+                            {
+                                "name": "Read",
+                                "description": "Read a file",
+                                "input_schema": {
+                                    "type": "object",
+                                    "properties": {"file_path": {"type": "string"}},
+                                    "required": ["file_path"],
+                                },
+                            }
+                        ],
+                        "max_tokens": 1024,
+                        "stream": True,
+                    },
+                )
+            finally:
+                gateway.stop()
 
-    def test_delegate_start_failure_also_stops_the_gateway_process(self) -> None:
-        gateway = self._gateway()
+        events = _sse_events(response)
+        text_delta = next(
+            event["delta"]["text"]
+            for event in events
+            if event["type"] == "content_block_delta"
+            and event["delta"]["type"] == "text_delta"
+        )
+        self.assertEqual(text_delta, "finished")
+        self.assertEqual(upstream.requests[0]["tools"][0]["function"]["name"], "Read")
+        self.assertEqual(events[-1]["type"], "message_stop")
+
+    def test_claude_nonstreaming_side_request_includes_top_level_usage(self) -> None:
+        upstream_response = {
+            "id": "chat-classifier",
+            "choices": [
+                {
+                    "message": {
+                        "role": "assistant",
+                        "content": "<severity>1</severity>",
+                    },
+                    "finish_reason": "stop",
+                }
+            ],
+            "usage": {"prompt_tokens": 21, "completion_tokens": 4, "total_tokens": 25},
+        }
+        with _UpstreamServer([upstream_response]) as upstream:
+            gateway = NativeModelGateway(
+                upstream_base_url=upstream.endpoint,
+                upstream_api_key="secret",
+                model="deepseek-test",
+                provider_kind="deepseek_api",
+            )
+            gateway.start()
+            try:
+                response = _post_json(
+                    f"{gateway.endpoint}/messages",
+                    {
+                        "model": "deepseek-test",
+                        "messages": [
+                            {"role": "user", "content": "Classify this safe command."}
+                        ],
+                        "max_tokens": 128,
+                        "stream": False,
+                    },
+                )
+            finally:
+                gateway.stop()
+
+        self.assertEqual(response["type"], "message")
+        self.assertEqual(response["content"][0]["text"], "<severity>1</severity>")
+        self.assertEqual(response["usage"]["input_tokens"], 21)
+        self.assertEqual(response["usage"]["output_tokens"], 4)
+
+    def test_delegate_start_failure_stops_the_internal_gateway(self) -> None:
+        gateway = NativeModelGateway(
+            upstream_base_url="https://api.example.test/v1",
+            upstream_api_key="secret",
+            model="vendor/model",
+            provider_kind="custom_openai_api",
+        )
         runtime = NativeHarnessRuntime(
             _FailingDelegate(),
             harness="codex",
@@ -153,6 +282,30 @@ class NativeHarnessGatewayTests(unittest.TestCase):
             runtime.start()
 
         self.assertIsNone(gateway.pid)
+
+
+def _post(url: str, payload: dict[str, object]) -> str:
+    request = Request(
+        url,
+        data=json.dumps(payload).encode("utf-8"),
+        headers={"Content-Type": "application/json", "Accept": "text/event-stream"},
+        method="POST",
+    )
+    with urlopen(request, timeout=5.0) as response:
+        return response.read().decode("utf-8")
+
+
+def _post_json(url: str, payload: dict[str, object]) -> dict[str, object]:
+    return json.loads(_post(url, payload))
+
+
+def _sse_events(body: str) -> list[dict[str, object]]:
+    return [
+        json.loads(line[5:].strip())
+        for line in body.splitlines()
+        if line.startswith("data:")
+    ]
+
 
 if __name__ == "__main__":
     unittest.main()
