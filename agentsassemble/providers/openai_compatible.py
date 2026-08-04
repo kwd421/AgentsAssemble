@@ -10,12 +10,18 @@ from typing import IO
 from urllib.error import HTTPError
 from urllib.request import Request, urlopen
 
+from agentsassemble.providers.api_work_tools import (
+    ApiWorkHarness,
+    parse_work_tool_arguments,
+    work_tool_schemas,
+)
 from agentsassemble.providers.openai_compatible_room_tools import (
     accumulate_streaming_tool_calls,
     complete_tool_calls,
     execute_room_tool,
     room_tool_schemas,
 )
+from agentsassemble.providers.provider_requests import ProviderRequestHandler
 from agentsassemble.providers.room_portal import RoomPortal
 from agentsassemble.providers.provider_errors import provider_http_error
 from agentsassemble.room.text import clean_room_text
@@ -47,6 +53,8 @@ class OpenAICompatibleApiRuntime:
         transport: str = "https_sse",
         opener: UrlOpen = urlopen,
         room_portal: RoomPortal | None = None,
+        workspace: str = "",
+        permission_mode: str = "meeting_read_only",
     ) -> None:
         if require_api_key and not str(api_key or "").strip():
             raise RuntimeError("credential_missing")
@@ -75,6 +83,11 @@ class OpenAICompatibleApiRuntime:
         self._transport = clean_room_text(transport, limit=64) or "https_sse"
         self._opener = opener
         self._room_portal = room_portal
+        self.permission_mode = clean_room_text(permission_mode, limit=64) or "meeting_read_only"
+        self._work_harness = ApiWorkHarness(
+            workspace or ".",
+            permission_mode=self.permission_mode,
+        )
         self._messages: list[dict[str, object]] = []
         self._pending = ""
         self._pending_room_observation = False
@@ -84,6 +97,9 @@ class OpenAICompatibleApiRuntime:
         self._interrupted = threading.Event()
         self._lock = threading.RLock()
         self._response: IO[bytes] | None = None
+
+    def set_request_handler(self, handler: ProviderRequestHandler) -> None:
+        self._work_harness.request_handler = handler
 
     def start(self) -> dict[str, object]:
         with self._lock:
@@ -187,14 +203,10 @@ class OpenAICompatibleApiRuntime:
                         }
                     )
                     break
-                if not room_observation or self._room_portal is None:
-                    raise RuntimeError(
-                        f"{self.provider_name} requested room tools outside a room observation."
-                    )
                 tool_rounds += 1
-                if tool_rounds > 8:
+                if tool_rounds > 16:
                     raise RuntimeError(
-                        f"{self.provider_name} exceeded the bounded room tool-call rounds."
+                        f"{self.provider_name} exceeded the bounded tool-call rounds."
                     )
                 assistant_message: dict[str, object] = {
                     "role": "assistant",
@@ -215,7 +227,7 @@ class OpenAICompatibleApiRuntime:
                         else ""
                     )
                     activity_id = clean_room_text(tool_call.get("id"), limit=128)
-                    activity_title, activity_detail = _room_tool_activity(tool_call)
+                    activity_title, activity_detail = _tool_activity(tool_call)
                     activity_fields = {
                         "category": "tool",
                         "activity_id": activity_id,
@@ -226,10 +238,21 @@ class OpenAICompatibleApiRuntime:
                     if on_activity is not None:
                         on_activity({**activity_fields, "status": "running"})
                     try:
-                        executed_name, tool_result = execute_room_tool(
-                            self._room_portal,
-                            tool_call,
-                        )
+                        if tool_name in _work_tool_names():
+                            executed_name, arguments = parse_work_tool_arguments(tool_call)
+                            tool_result = json.dumps(
+                                self._work_harness.execute(executed_name, arguments),
+                                ensure_ascii=False,
+                            )
+                        elif room_observation and self._room_portal is not None:
+                            executed_name, tool_result = execute_room_tool(
+                                self._room_portal,
+                                tool_call,
+                            )
+                        else:
+                            raise RuntimeError(
+                                f"{self.provider_name} requested a room tool outside a room observation."
+                            )
                     except Exception:
                         if on_activity is not None:
                             on_activity({**activity_fields, "status": "failed"})
@@ -300,10 +323,11 @@ class OpenAICompatibleApiRuntime:
         }
         if self.reasoning_effort:
             payload["reasoning_effort"] = self.reasoning_effort
-        if room_observation:
-            payload["tools"] = list(
-                room_tool_schemas(self._room_portal.active_tool_names())
-            )
+        tools = [*work_tool_schemas(self.permission_mode)]
+        if room_observation and self._room_portal is not None:
+            tools.extend(room_tool_schemas(self._room_portal.active_tool_names()))
+        if tools:
+            payload["tools"] = list(tools)
             payload["tool_choice"] = "auto"
         headers = {
             "Content-Type": "application/json",
@@ -444,7 +468,9 @@ class OpenAICompatibleApiRuntime:
                 "model": self.model,
                 "reasoning_effort": self.reasoning_effort,
                 "variant": self.variant,
-                "permission_mode": "meeting_read_only",
+                "permission_mode": self.permission_mode,
+                "work_harness": self._work_harness.enabled,
+                "workspace": str(self._work_harness.workspace) if self._work_harness.enabled else "",
             }
 
 
@@ -535,7 +561,23 @@ def _empty_round_message(
     )
 
 
-def _room_tool_title(tool_name: object) -> str:
+_WORK_TOOL_NAMES = frozenset(
+    {
+        "list_workspace_files",
+        "read_workspace_file",
+        "search_workspace_text",
+        "write_workspace_file",
+        "replace_workspace_text",
+        "run_workspace_command",
+    }
+)
+
+
+def _work_tool_names() -> frozenset[str]:
+    return _WORK_TOOL_NAMES
+
+
+def _tool_title(tool_name: object) -> str:
     value = clean_room_text(tool_name, limit=120)
     return {
         "read_discussion": "방 대화 읽기",
@@ -545,17 +587,23 @@ def _room_tool_title(tool_name: object) -> str:
         "choose_random": "무작위 선택",
         "create_vote": "투표 만들기",
         "cast_vote": "투표하기",
-    }.get(value, value or "방 도구")
+        "list_workspace_files": "작업 폴더 살펴보기",
+        "read_workspace_file": "파일 읽기",
+        "search_workspace_text": "파일 내용 검색",
+        "write_workspace_file": "파일 쓰기",
+        "replace_workspace_text": "파일 수정",
+        "run_workspace_command": "명령 실행",
+    }.get(value, value or "도구")
 
 
-def _room_tool_activity(
+def _tool_activity(
     tool_call: dict[str, object],
 ) -> tuple[str, str]:
     function = tool_call.get("function")
     if not isinstance(function, dict):
-        return "방 도구", ""
+        return "도구", ""
     name = clean_room_text(function.get("name"), limit=120)
-    title = _room_tool_title(name)
+    title = _tool_title(name)
     try:
         arguments = json.loads(function.get("arguments") or "{}")
     except (TypeError, json.JSONDecodeError):
@@ -572,6 +620,14 @@ def _room_tool_activity(
         target = clean_room_text(arguments.get("next_agent_id"), limit=128)
         if target:
             return title, f"@{target}에게 전달"
+    if name in {"read_workspace_file", "write_workspace_file", "replace_workspace_text"}:
+        return title, clean_room_text(arguments.get("path"), limit=240)
+    if name == "search_workspace_text":
+        return title, clean_room_text(arguments.get("query"), limit=240)
+    if name == "run_workspace_command":
+        command = arguments.get("command")
+        if isinstance(command, list):
+            return title, " ".join(str(part) for part in command)[:240]
     return title, ""
 
 

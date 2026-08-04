@@ -703,6 +703,7 @@ describe("AgentCreateModal", () => {
     await userEvent.click(screen.getByRole("listitem", { name: "DeepSeek" }));
     expect(screen.getByLabelText("API 키")).toBeTruthy();
     await chooseProviderControl("최대 응답 길이", "8,192 토큰");
+    await chooseProviderControl("권한", "작업 폴더 쓰기");
     await chooseWorkspace();
     await userEvent.click(primaryActionButton());
 
@@ -751,7 +752,7 @@ describe("AgentCreateModal", () => {
     expect(
       (screen.getByRole("switch", { name: "응답 속도" }) as HTMLButtonElement).disabled
     ).toBe(true);
-    expect(screen.queryByRole("combobox", { name: "권한" })).toBeNull();
+    expectProviderControlValue("권한", "읽기 전용");
     expect(screen.queryByRole("button", { name: "폴더 선택" })).toBeNull();
     await userEvent.click(primaryActionButton());
 
@@ -940,6 +941,9 @@ function deepSeekProvider(): NativeCliProviderAvailability {
     interactive: true,
     startable: true,
     available: true,
+    catalog_group: "api",
+    workspace_required: false,
+    work_harness_available: true,
     controls: [
       {
         key: "max_output_tokens",
@@ -951,6 +955,20 @@ function deepSeekProvider(): NativeCliProviderAvailability {
           { value: "8192", label: "8,192 토큰" },
         ],
       },
+      workPermissionControl(),
+    ],
+  };
+}
+
+function workPermissionControl() {
+  return {
+    key: "permission_mode",
+    label: "권한",
+    kind: "select" as const,
+    default_value: "meeting_read_only",
+    options: [
+      { value: "meeting_read_only", label: "읽기 전용" },
+      { value: "workspace_write", label: "작업 폴더 쓰기" },
     ],
   };
 }
@@ -1000,6 +1018,7 @@ function ollamaProvider(): NativeCliProviderAvailability {
           },
         ],
       },
+      workPermissionControl(),
     ],
   };
 }
@@ -1012,6 +1031,8 @@ function openCodeProvider(): NativeCliProviderAvailability {
     provider_kind: "opencode_server",
     runtime_kind: "opencode",
     catalog_group: "subscription",
+    workspace_required: true,
+    work_harness_available: false,
     executable: "opencode",
     default_model: "opencode-go/glm-5.2",
     controls: [
@@ -1064,6 +1085,7 @@ function lmStudioProvider(): NativeCliProviderAvailability {
         default_value: "gemma-4-e4b-it",
         options: [{ value: "gemma-4-e4b-it", label: "Gemma 4 E4B IT" }],
       },
+      workPermissionControl(),
     ],
   };
 }

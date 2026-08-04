@@ -148,6 +148,64 @@ class RoomAgentRuntimeProfileServiceTests(unittest.TestCase):
         self.assertEqual(raised.exception.code, "runtime_profile_conflict")
         self.assertEqual(self.catalog.calls, [])
 
+    def test_enabling_api_work_harness_requires_and_uses_an_explicit_workspace(self) -> None:
+        definition = native_cli_provider_definition("deepseek")
+        assert definition is not None
+        default = definition.make_default_spec(
+            agent_id="codex",
+            display_name="DeepSeek",
+            cwd=self.root,
+        )
+        self.store.update_session_fields(
+            "general",
+            "codex",
+            provider_kind=definition.provider_kind,
+            model=default.model,
+            permission_mode="meeting_read_only",
+        )
+        self.catalog.selection = ValidatedProviderSelection(
+            catalog_revision="api-revision",
+            provider_id=definition.provider_id,
+            provider_kind=definition.provider_kind,
+            model=default.model,
+            model_selection_kind="exact",
+            reasoning_effort=default.reasoning_effort,
+            service_tier=default.service_tier,
+            variant=default.variant,
+            permission_mode="workspace_write",
+            max_output_tokens=4096,
+        )
+
+        with self.assertRaises(RoomCommandRejected) as raised:
+            self.service.configure(
+                "general",
+                "codex",
+                {
+                    "catalog_revision": "api-revision",
+                    "permission_mode": "workspace_write",
+                },
+            )
+
+        self.assertEqual(raised.exception.code, "workspace_required")
+        self.assertEqual(self.configured_specs, [])
+
+        selected_workspace = self.root / "selected-workspace"
+        selected_workspace.mkdir()
+        self.service.configure(
+            "general",
+            "codex",
+            {
+                "catalog_revision": "api-revision",
+                "permission_mode": "workspace_write",
+                "workspace": str(selected_workspace),
+            },
+        )
+
+        self.assertEqual(
+            Path(self.configured_specs[-1][1].cwd).resolve(),
+            selected_workspace.resolve(),
+        )
+
     def test_stopped_local_session_can_replace_its_selected_bot_card(self) -> None:
         definition = native_cli_provider_definition("lmstudio")
         assert definition is not None

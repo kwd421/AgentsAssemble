@@ -34,6 +34,8 @@ class LocalOpenAICompatibleRuntime(OpenAICompatibleApiRuntime):
         message_source: str,
         opener: UrlOpen = urlopen,
         room_portal: RoomPortal | None = None,
+        workspace: str = "",
+        permission_mode: str = "meeting_read_only",
     ) -> None:
         super().__init__(
             agent_id,
@@ -49,4 +51,6 @@ class LocalOpenAICompatibleRuntime(OpenAICompatibleApiRuntime):
             transport="http_sse",
             opener=opener,
             room_portal=room_portal,
+            workspace=workspace,
+            permission_mode=permission_mode,
         )

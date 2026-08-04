@@ -92,20 +92,31 @@ class RemoteOpenAIProviderTests(unittest.TestCase):
     def test_static_model_profiles_accept_their_default_effort(self):
         # The end of the same contract, through the real validator: creating an
         # agent with the values the modal defaults to must succeed.
+        catalog = ProviderCapabilityCatalog(
+            runner=lambda _command, _timeout: (1, "", "not installed"),
+            resolver=lambda _executable: None,
+            claude_model_discovery=lambda _executable: [],
+            claude_xhigh_model_discovery=lambda _executable: [],
+            remote_model_discovery=lambda _profile, _api_key: [],
+        )
+        snapshot = catalog.snapshot(refresh=True)
+        revision = str(snapshot["catalog_revision"])
         for profile in remote_openai_profiles():
             if profile.discovery_path or not profile.reasoning_efforts:
                 continue
             payload = remote_openai_catalog_payload(profile)
-            controls = {control["key"]: control for control in payload["controls"]}
-            metadata = dict(controls["model"]["options"][0].get("metadata") or {})
+            defaults = {
+                control["key"]: str(control.get("default_value") or "")
+                for control in payload["controls"]
+            }
             with self.subTest(provider=profile.provider_id):
-                ProviderCapabilityCatalog._validate_model_relation(
+                selection = catalog.validate_selection(
+                    catalog_revision=revision,
                     provider_id=profile.provider_id,
-                    metadata=metadata,
-                    metadata_key="reasoning_efforts",
-                    selected_value=profile.default_reasoning_effort,
-                    error_code="unsupported_model_effort_combination",
+                    values=defaults,
                 )
+                self.assertEqual(selection.model, profile.default_model)
+                self.assertEqual(selection.reasoning_effort, profile.default_reasoning_effort)
 
     def test_openrouter_runtime_reads_and_publishes_through_room_tools(self):
         profile = remote_openai_profile("openrouter")
@@ -164,6 +175,139 @@ class RemoteOpenAIProviderTests(unittest.TestCase):
         self.assertTrue(all(request["max_tokens"] == 8192 for request in requests))
         self.assertNotIn("secret-never-reported", json.dumps(result))
         self.assertNotIn("secret-never-reported", json.dumps(runtime.health()))
+
+    def test_api_work_harness_changes_only_the_selected_workspace_after_approval(self):
+        profile = remote_openai_profile("tokenrouter")
+        self.assertIsNotNone(profile)
+        requests: list[dict[str, object]] = []
+        approval_requests: list[dict[str, object]] = []
+
+        def opener(request: Request, timeout: float):
+            del timeout
+            requests.append(json.loads(request.data))
+            if len(requests) == 1:
+                return _tool_call_response(
+                    "call-read",
+                    "read_workspace_file",
+                    {"path": "note.txt"},
+                )
+            if len(requests) == 2:
+                return _tool_call_response(
+                    "call-edit",
+                    "replace_workspace_text",
+                    {
+                        "path": "note.txt",
+                        "old_text": "before",
+                        "new_text": "after",
+                    },
+                )
+            return _content_response("moonshotai/kimi-k3-free", "수정했습니다.")
+
+        with tempfile.TemporaryDirectory() as temp_dir:
+            workspace = Path(temp_dir) / "workspace"
+            workspace.mkdir()
+            note = workspace / "note.txt"
+            note.write_text("before\n", encoding="utf-8")
+            runtime = RemoteOpenAICompatibleRuntime(
+                "tokenrouter-worker",
+                profile=profile,
+                api_key="test-key",
+                model="moonshotai/kimi-k3-free",
+                max_output_tokens=4096,
+                opener=opener,
+                workspace=str(workspace),
+                permission_mode="workspace_write",
+            )
+
+            def approve(request, respond):
+                approval_requests.append(request)
+                respond({"option_id": "allow_once"})
+
+            runtime.set_request_handler(approve)
+            runtime.send("note.txt를 읽고 before를 after로 바꿔 줘.")
+            result = runtime.read_output(timeout_seconds=2)
+
+            self.assertEqual(note.read_text(encoding="utf-8"), "after\n")
+
+        self.assertEqual(result["content"], "수정했습니다.")
+        self.assertEqual(len(approval_requests), 1)
+        self.assertEqual(approval_requests[0]["request_kind"], "permission")
+        first_tools = {
+            tool["function"]["name"]
+            for tool in requests[0]["tools"]
+        }
+        self.assertIn("read_workspace_file", first_tools)
+        self.assertIn("replace_workspace_text", first_tools)
+
+    def test_api_work_harness_does_not_expose_workspace_tools_in_read_only_mode(self):
+        profile = remote_openai_profile("tokenrouter")
+        self.assertIsNotNone(profile)
+        requests: list[dict[str, object]] = []
+
+        def opener(request: Request, timeout: float):
+            del timeout
+            requests.append(json.loads(request.data))
+            return _content_response("moonshotai/kimi-k3-free", "대화만 합니다.")
+
+        with tempfile.TemporaryDirectory() as temp_dir:
+            runtime = RemoteOpenAICompatibleRuntime(
+                "tokenrouter-chat",
+                profile=profile,
+                api_key="test-key",
+                model="moonshotai/kimi-k3-free",
+                max_output_tokens=4096,
+                opener=opener,
+                workspace=temp_dir,
+                permission_mode="meeting_read_only",
+            )
+            runtime.send("인사해 줘.")
+            runtime.read_output(timeout_seconds=2)
+
+        self.assertNotIn("tools", requests[0])
+
+    def test_api_work_harness_search_does_not_follow_symlinks_outside_workspace(self):
+        profile = remote_openai_profile("tokenrouter")
+        self.assertIsNotNone(profile)
+        requests: list[dict[str, object]] = []
+
+        def opener(request: Request, timeout: float):
+            del timeout
+            requests.append(json.loads(request.data))
+            if len(requests) == 1:
+                return _tool_call_response(
+                    "call-search",
+                    "search_workspace_text",
+                    {"query": "outside-secret"},
+                )
+            return _content_response("moonshotai/kimi-k3-free", "검색했습니다.")
+
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            workspace = root / "workspace"
+            workspace.mkdir()
+            outside = root / "outside.txt"
+            outside.write_text("outside-secret\n", encoding="utf-8")
+            try:
+                (workspace / "linked.txt").symlink_to(outside)
+            except OSError as error:
+                self.skipTest(f"symlinks are unavailable: {error}")
+            runtime = RemoteOpenAICompatibleRuntime(
+                "tokenrouter-worker",
+                profile=profile,
+                api_key="test-key",
+                model="moonshotai/kimi-k3-free",
+                max_output_tokens=4096,
+                opener=opener,
+                workspace=str(workspace),
+                permission_mode="workspace_write",
+            )
+            runtime.send("선택한 작업 폴더에서 outside-secret을 찾아 줘.")
+            runtime.read_output(timeout_seconds=2)
+
+        tool_result = next(
+            message for message in requests[1]["messages"] if message.get("role") == "tool"
+        )
+        self.assertEqual(json.loads(tool_result["content"])["matches"], [])
 
 
 def _tool_call_response(

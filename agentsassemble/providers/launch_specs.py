@@ -849,7 +849,14 @@ def native_cli_provider_spec_from_payload(payload: dict[str, object]) -> NativeC
         payload.get("workspace") or payload.get("workspace_path") or payload.get("cwd"),
         limit=500,
     )
-    if not workspace and definition.workspace_required:
+    requested_permission = clean_room_text(
+        payload.get("permission_mode") or payload.get("permission_option"),
+        limit=64,
+    )
+    if not workspace and (
+        definition.workspace_required
+        or (definition.runtime_kind == "api" and requested_permission == "workspace_write")
+    ):
         raise ValueError("Native CLI Agent Session workspace is required.")
     if not workspace:
         workspace = str(Path.cwd())
@@ -863,9 +870,7 @@ def native_cli_provider_spec_from_payload(payload: dict[str, object]) -> NativeC
         ),
         service_tier=clean_room_text(payload.get("service_tier"), limit=32),
         variant=clean_room_text(payload.get("variant"), limit=64),
-        permission_mode=clean_room_text(
-            payload.get("permission_mode") or payload.get("permission_option"), limit=64
-        ),
+        permission_mode=requested_permission,
         max_output_tokens=_nonnegative_int(
             payload.get("max_output_tokens"),
             field="max_output_tokens",

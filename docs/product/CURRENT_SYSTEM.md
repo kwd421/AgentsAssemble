@@ -421,6 +421,17 @@ only. Anthropic Messages and Gemini
 `generateContent` need their own protocol adapters; a text-completion endpoint
 alone is not a room provider.
 
+OpenAI-compatible API and Local sessions start with meeting-only access and no
+workspace tools. An operator may explicitly choose `workspace_write` and a
+workspace to attach the built-in API work harness. The model may then list,
+search, and read bounded UTF-8 content only below that resolved workspace;
+repository control directories and path escapes are rejected. File creation,
+exact replacement, and argv command execution each block on a private one-use
+owner approval before the side effect. Commands do not use an implicit shell,
+receive a bounded environment and timeout, and return bounded output. This is a
+small auditable harness, not a claim that the API model has acquired a native
+Codex, Claude Code, or Grok CLI session.
+
 The Agent Session creation UI uses three English top-level catalog groups:
 `Subscription`, `API`, and `Local`. Provider definitions own their default
 group instead of the UI inferring product type from transport. A discovered
@@ -440,11 +451,12 @@ separately from zero-price-per-token API models. Its catalog includes only
 listed models whose Ollama metadata advertises tool use. LM Studio is presented
 under Local and connects only to its fixed loopback endpoint; its catalog
 includes loaded LLMs that LM Studio reports as trained for tool use. Neither
-local endpoint asks for an API key or a workspace because these runtimes expose
-room tools, not filesystem tools. Each provider exposes only discovered models
-and controls. Cerebras discovers its current tool-capable text models from the
-provider's unauthenticated public model catalog and offers low, medium, and high
-reasoning effort; `gpt-oss-120b` remains the default.
+local endpoint asks for an API key. A workspace is requested only when the
+operator explicitly enables the shared API work harness. Each provider exposes
+only discovered models and controls. Cerebras discovers its current
+tool-capable text models from the provider's unauthenticated public model
+catalog and offers low, medium, and high reasoning effort; `gpt-oss-120b`
+remains the default.
 
 `Custom API` uses the same server-owned OpenAI-compatible runtime for an
 operator-supplied model ID and direct HTTPS endpoint. It accepts either a base
@@ -503,14 +515,13 @@ Codex `ultra` or Claude `ultracode` session receives the same Ultra visual
 treatment as its control; the UI does not synthesize Ultra styling for an
 unrelated provider workflow.
 
-Provider permission requests do not currently have a canonical approval
-response path. A provider adapter may observe and record that an approval was
-requested, but a host or facilitator cannot yet resolve it from the room UI.
-Adding facilitator approval requires a private correlated request record,
-host-assigned approval capability, bounded server policy, one-use resolution,
-and a provider-specific response adapter. Public room role or ordinary
-facilitator status alone must never grant permission to approve filesystem,
-command, network, or full-access actions.
+Provider permission and choice requests use a private correlated request
+record, one-use resolution, bounded expiry, and a provider-specific response
+adapter. Only the owning participant sees and resolves the request in the room
+UI; other participants receive a sequence-preserving hidden event. The built-in
+API work harness uses only `allow_once` or deny for each filesystem mutation or
+command. Public room role or ordinary facilitator status does not grant
+permission to approve filesystem, command, network, or full-access actions.
 
 API-provider credentials are server-owned and read from the OS keyring (or the
 provider's explicit process environment fallback), then sent to the bridge

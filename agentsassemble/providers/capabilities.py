@@ -1466,7 +1466,7 @@ def _local_openai_payload(
         "discovery_error": "",
         "discovery_error_code": "",
         "catalog_source": "discovered",
-        "fixed_values": {"permission_mode": "meeting_read_only"},
+        "fixed_values": {},
         "controls": [
             _control(
                 "model",
@@ -1474,8 +1474,10 @@ def _local_openai_payload(
                 resolved_options,
                 default_model,
                 kind="combobox",
-            )
+            ),
+            _permission_control(definition.provider_id),
         ],
+        "work_harness_available": True,
     }
 
 

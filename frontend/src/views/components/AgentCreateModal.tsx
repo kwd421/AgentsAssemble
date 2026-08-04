@@ -1,7 +1,6 @@
 import { useEffect, useRef, useState } from "react";
-import { Folder, Play, Plus, X } from "lucide-react";
+import { Play, Plus, X } from "lucide-react";
 import {
-  chooseLocalWorkspace,
   deleteProviderCredential,
   fetchProviderCredentialStatus,
   refreshProviderCatalog,
@@ -29,6 +28,7 @@ import ProviderLogo from "./ProviderLogo";
 import ProviderControlSelect from "./ProviderControlSelect";
 import ProviderControlToggle from "./ProviderControlToggle";
 import AgentPersonaPicker from "./AgentPersonaPicker";
+import WorkspacePickerField from "./WorkspacePickerField";
 
 type AgentCreateModalProps = {
   open: boolean;
@@ -61,7 +61,6 @@ export default function AgentCreateModal({
   const [displayName, setDisplayName] = useState("");
   const [displayNameEdited, setDisplayNameEdited] = useState(false);
   const [workspacePath, setWorkspacePath] = useState("");
-  const [workspaceBusy, setWorkspaceBusy] = useState(false);
   const [settings, setSettings] = useState<Record<string, string>>({});
   const [startNow, setStartNow] = useState(false);
   const [status, setStatus] = useState("");
@@ -77,6 +76,12 @@ export default function AgentCreateModal({
   const groupedProviders = projectProvidersByCatalogGroup(providers);
   const visibleProviders = providerGroup ? groupedProviders[providerGroup] : [];
   const selectedProvider = visibleProviders.find((provider) => provider.id === providerId);
+  const workHarnessEnabled = Boolean(
+    selectedProvider?.work_harness_available && settings.permission_mode === "workspace_write"
+  );
+  const workspaceRequired = Boolean(
+    selectedProvider && (selectedProvider.workspace_required !== false || workHarnessEnabled)
+  );
   const selectedProviderMissing = Boolean(providerId && providers.length && !selectedProvider);
   const reusableSessions = existingSessions.filter(
     (session) =>
@@ -104,7 +109,7 @@ export default function AgentCreateModal({
       (!selectedProvider.custom_model || customModel.trim()) &&
       (
         existingSessionId ||
-        selectedProvider?.workspace_required === false ||
+        !workspaceRequired ||
         workspacePath.trim()
       )
   );
@@ -116,6 +121,7 @@ export default function AgentCreateModal({
     hasProviders: providers.length > 0,
     invalidControl,
     existingSessionId,
+    workspaceRequired,
   });
 
   useEffect(() => {
@@ -128,7 +134,6 @@ export default function AgentCreateModal({
     }
     if (!wasOpen.current) {
       setWorkspacePath("");
-      setWorkspaceBusy(false);
     }
     if (!providers.length) return;
     const current = visibleProviders.find((provider) => provider.id === providerId);
@@ -309,26 +314,6 @@ export default function AgentCreateModal({
     }
   }
 
-  async function pickWorkspace() {
-    if (workspaceBusy || existingSessionId) return;
-    setWorkspaceBusy(true);
-    setStatus("");
-    try {
-      const selected = await chooseLocalWorkspace();
-      if (selected.selected && selected.path) {
-        setWorkspacePath(selected.path);
-      }
-    } catch (error) {
-      setStatus(
-        error instanceof Error
-          ? error.message
-          : "작업 폴더를 선택하지 못했습니다"
-      );
-    } finally {
-      setWorkspaceBusy(false);
-    }
-  }
-
   async function startProviderLogin() {
     if (!selectedProvider?.login_available || loginBusy) return;
     setLoginBusy(true);
@@ -494,26 +479,17 @@ export default function AgentCreateModal({
                   }}
                 />
               </label>
-              {!existingSessionId && selectedProvider?.workspace_required !== false && (
-                <label className="dc-agent-field">
-                  <span>작업 폴더</span>
-                  <div className="dc-agent-folder-field">
-                    <Folder size={16} aria-hidden="true" />
-                    <input
-                      aria-label="선택한 작업 폴더"
-                      value={workspacePath}
-                      placeholder="선택되지 않음"
-                      readOnly
-                    />
-                    <button
-                      type="button"
-                      disabled={workspaceBusy}
-                      onClick={() => void pickWorkspace()}
-                    >
-                      {workspaceBusy ? "선택 중..." : "폴더 선택"}
-                    </button>
-                  </div>
-                </label>
+              {!existingSessionId && workspaceRequired && (
+                <WorkspacePickerField
+                  value={workspacePath}
+                  description={
+                    workHarnessEnabled
+                      ? "API 모델이 이 폴더의 텍스트를 읽을 수 있습니다. 파일 변경과 명령 실행은 매번 승인을 요청합니다."
+                      : ""
+                  }
+                  onChange={setWorkspacePath}
+                  onError={setStatus}
+                />
               )}
             </div>
           </section>
@@ -768,6 +744,7 @@ function deriveStatusMessage({
   hasProviders,
   invalidControl,
   existingSessionId,
+  workspaceRequired,
 }: {
   status: string;
   workspacePath: string;
@@ -776,6 +753,7 @@ function deriveStatusMessage({
   hasProviders: boolean;
   invalidControl: ProviderControl | undefined;
   existingSessionId: string;
+  workspaceRequired: boolean;
 }): string {
   if (status) return status;
   if (selectedProvider && !selectedProvider.available) {
@@ -807,7 +785,7 @@ function deriveStatusMessage({
   if (
     !existingSessionId &&
     selectedProvider &&
-    selectedProvider.workspace_required !== false &&
+    workspaceRequired &&
     !workspacePath.trim()
   ) {
     return "작업 폴더를 선택하세요. 이 폴더에서 세션이 실행됩니다.";

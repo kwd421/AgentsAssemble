@@ -160,6 +160,19 @@ class RoomAgentRuntimeProfileService:
                     ),
                 },
             )
+        except ProviderCatalogSelectionError as error:
+            raise RoomCommandRejected(str(error), code=error.code) from error
+        if (
+            definition.runtime_kind == "api"
+            and selection.permission_mode == "workspace_write"
+            and clean_room_text(current.get("permission_mode"), 64) != "workspace_write"
+            and not clean_room_text(payload.get("workspace"), 500)
+        ):
+            raise RoomCommandRejected(
+                "Select a workspace before enabling the API work harness.",
+                code="workspace_required",
+            )
+        try:
             spec = native_cli_provider_spec_from_payload(
                 {
                     **merged,
@@ -176,8 +189,6 @@ class RoomAgentRuntimeProfileService:
                     "persona_card": persona_card,
                 }
             )
-        except ProviderCatalogSelectionError as error:
-            raise RoomCommandRejected(str(error), code=error.code) from error
         except (UnsupportedNativeCliProvider, ValueError) as error:
             raise RoomCommandRejected(
                 str(error),

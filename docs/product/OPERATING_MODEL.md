@@ -36,6 +36,10 @@ New MVP direction:
 - API runtime is later compatibility: an API provider may join only by
   implementing the same AgentRuntime room-event contract. API convenience must
   not lower the interface to complete(prompt) -> text.
+- API coding work is an explicit operator-selected capability. Meeting-only
+  sessions receive no workspace tools. A work-enabled session is confined to
+  one selected workspace; every mutation and command requires a private,
+  one-use owner approval and remains distinct from a provider-native coding CLI.
 
 Work Mode:
 - Runs auditable council meetings.

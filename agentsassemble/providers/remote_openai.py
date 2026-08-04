@@ -323,6 +323,25 @@ def remote_openai_catalog_payload(
                 str(profile.max_output_tokens),
             )
         )
+    if options or profile.custom_endpoint:
+        controls.append(
+            _control(
+                "permission_mode",
+                "권한",
+                [
+                    _option("meeting_read_only", "읽기 전용"),
+                    _option(
+                        "workspace_write",
+                        "작업 폴더 쓰기",
+                        description=(
+                            "선택한 폴더를 API 모델이 읽을 수 있습니다. "
+                            "파일 변경과 명령 실행은 매번 소유자 승인을 받습니다."
+                        ),
+                    ),
+                ],
+                "meeting_read_only",
+            )
+        )
     ready = profile.custom_endpoint or bool(options)
     return {
         "id": profile.provider_id,
@@ -340,9 +359,10 @@ def remote_openai_catalog_payload(
         "discovery_error": "" if ready else discovery_error,
         "discovery_error_code": "" if ready else discovery_error_code,
         "catalog_source": "discovered" if profile.discovery_path else "static_manifest",
-        "fixed_values": {"permission_mode": "meeting_read_only"},
+        "fixed_values": {},
         "controls": controls,
         "workspace_required": False,
+        "work_harness_available": True,
         "custom_endpoint": profile.custom_endpoint,
         "custom_model": profile.custom_endpoint,
     }
@@ -364,6 +384,8 @@ class RemoteOpenAICompatibleRuntime(OpenAICompatibleApiRuntime):
         base_url: str = "",
         opener: UrlOpen = urlopen,
         room_portal: RoomPortal | None = None,
+        workspace: str = "",
+        permission_mode: str = "meeting_read_only",
     ) -> None:
         request_payload: dict[str, object] = {}
         include_reasoning = False
@@ -395,6 +417,8 @@ class RemoteOpenAICompatibleRuntime(OpenAICompatibleApiRuntime):
             request_headers=dict(profile.request_headers),
             opener=opener,
             room_portal=room_portal,
+            workspace=workspace,
+            permission_mode=permission_mode,
         )
 
 

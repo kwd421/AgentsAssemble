@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import { CirclePause, Play, RotateCcw, Save, Square, Zap } from "lucide-react";
 import type { RoomAgentSession } from "../../api";
-import type { NativeCliProviderAvailability, ProviderControl } from "../../roomSocketClient";
+import type { NativeCliProviderAvailability } from "../../roomSocketClient";
 import {
   canonicalProviderModelValue,
   displayProviderControls,
@@ -10,8 +10,8 @@ import {
 } from "../../lib/providerControlSettings";
 import AgentSessionPersonaSettings from "./AgentSessionPersonaSettings";
 import AgentActivitySettings from "./AgentActivitySettings";
-import ProviderControlSelect from "./ProviderControlSelect";
-import ProviderControlToggle from "./ProviderControlToggle";
+import ProviderRuntimeSettingField from "./ProviderRuntimeSettingField";
+import WorkspacePickerField from "./WorkspacePickerField";
 
 export type AgentSessionControlAction = "start" | "pause" | "stop" | "resume" | "interrupt";
 
@@ -111,6 +111,7 @@ export default function AgentSessionDetails({
   const [actionStatus, setActionStatus] = useState("");
   const [settings, setSettings] = useState<Record<string, string>>({});
   const [settingsBusy, setSettingsBusy] = useState(false);
+  const [workspacePath, setWorkspacePath] = useState("");
   const status = session.runtime_status;
   const hasRunBefore = Boolean(
     session.started_at ||
@@ -142,6 +143,11 @@ export default function AgentSessionDetails({
     ? settings[invalidRuntimeControl.key] || ""
     : "";
   const visibleSessionError = sessionErrorMessage(session);
+  const workHarnessNeedsWorkspace = Boolean(
+    provider?.work_harness_available &&
+      settings.permission_mode === "workspace_write" &&
+      session.permission_mode !== "workspace_write"
+  );
 
   useEffect(() => {
     const storedModel = session.model || controlDefault(provider, "model");
@@ -162,6 +168,7 @@ export default function AgentSessionDetails({
         controlDefault(provider, "max_output_tokens"),
     };
     setSettings(storedSettings);
+    setWorkspacePath("");
   }, [
     provider,
     session.session_id,
@@ -189,11 +196,20 @@ export default function AgentSessionDetails({
   }
 
   async function saveSettings() {
-    if (!onConfigure || !canConfigure || invalidRuntimeControl || settingsBusy) return;
+    if (
+      !onConfigure ||
+      !canConfigure ||
+      invalidRuntimeControl ||
+      settingsBusy ||
+      (workHarnessNeedsWorkspace && !workspacePath)
+    ) return;
     setSettingsBusy(true);
     setActionStatus("");
     try {
-      await onConfigure(session, settings);
+      await onConfigure(session, {
+        ...settings,
+        ...(workspacePath ? { workspace: workspacePath } : {}),
+      });
       setActionStatus("런타임 설정 저장 완료 · 다음 시작부터 적용");
     } catch (error) {
       setActionStatus(error instanceof Error ? error.message : "런타임 설정 저장 실패");
@@ -240,7 +256,7 @@ export default function AgentSessionDetails({
               ? effectiveProviderControlOptions(provider, control, settings)
               : control.options;
             return (
-              <RuntimeSettingField
+              <ProviderRuntimeSettingField
                 key={`${session.session_id}:${control.key}`}
                 control={control}
                 options={options}
@@ -254,10 +270,23 @@ export default function AgentSessionDetails({
               />
             );
           })}
+          {workHarnessNeedsWorkspace && (
+            <WorkspacePickerField
+              value={workspacePath}
+              disabled={!canConfigure || settingsBusy}
+              onChange={setWorkspacePath}
+              onError={setActionStatus}
+            />
+          )}
           <button
             type="button"
             className="dc-member-session-button"
-            disabled={!canConfigure || Boolean(invalidRuntimeControl) || settingsBusy}
+            disabled={
+              !canConfigure ||
+              Boolean(invalidRuntimeControl) ||
+              settingsBusy ||
+              (workHarnessNeedsWorkspace && !workspacePath)
+            }
             onClick={() => void saveSettings()}
           >
             <Save size={14} />
@@ -397,41 +426,4 @@ export default function AgentSessionDetails({
 
 function controlDefault(provider: NativeCliProviderAvailability | undefined, key: string) {
   return provider?.controls?.find((control) => control.key === key)?.default_value || "";
-}
-
-function RuntimeSettingField({
-  control,
-  options,
-  value,
-  disabled,
-  onChange,
-}: {
-  control: ProviderControl;
-  options: ProviderControl["options"];
-  value: string;
-  disabled: boolean;
-  onChange: (value: string) => void;
-}) {
-  return (
-    <label>
-      <span>{control.label}</span>
-      {control.key === "service_tier" && options.length <= 2 ? (
-        <ProviderControlToggle
-          label={control.label}
-          options={options}
-          value={value}
-          disabled={disabled}
-          onChange={onChange}
-        />
-      ) : (
-        <ProviderControlSelect
-          label={control.label}
-          options={options}
-          value={value}
-          disabled={disabled}
-          onChange={onChange}
-        />
-      )}
-    </label>
-  );
 }

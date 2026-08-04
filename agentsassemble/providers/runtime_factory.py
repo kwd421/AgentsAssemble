@@ -99,6 +99,8 @@ def runtime_from_config(
             max_output_tokens=config.max_output_tokens,
             base_url=config.provider_endpoint,
             room_portal=room_portal,
+            workspace=config.cwd,
+            permission_mode=config.permission_mode,
         )
     if key == ("ollama_api", "http"):
         return LocalOpenAICompatibleRuntime(
@@ -108,6 +110,8 @@ def runtime_from_config(
             base_url=config.provider_endpoint,
             message_source="ollama_sse",
             room_portal=room_portal,
+            workspace=config.cwd,
+            permission_mode=config.permission_mode,
         )
     if key == ("lmstudio_api", "http"):
         return LocalOpenAICompatibleRuntime(
@@ -117,6 +121,8 @@ def runtime_from_config(
             base_url=config.provider_endpoint,
             message_source="lmstudio_sse",
             room_portal=room_portal,
+            workspace=config.cwd,
+            permission_mode=config.permission_mode,
         )
     if key == ("opencode_server", "http"):
         return OpenCodeRuntime(

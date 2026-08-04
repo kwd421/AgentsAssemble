@@ -74,6 +74,7 @@ export interface NativeCliProviderAvailability {
   runtime_kind: "live_cli" | "opencode" | "api";
   catalog_group?: "subscription" | "api" | "local";
   workspace_required?: boolean;
+  work_harness_available?: boolean;
   custom_endpoint?: boolean;
   custom_model?: boolean;
   connection_kind: "native_cli_bridge";
