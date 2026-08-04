@@ -237,6 +237,7 @@ class RoomPortal:
         self.activity_path = self.root / "activity.jsonl"
         self.media_root = self.root / "media"
         self.media_index_path = self.root / "media.json"
+        self.participant_index_path = self.root / "participants.json"
         self.bin_dir = self.root / "bin"
         self.helper_path = self.bin_dir / "agentsassemble-room"
         self.helper_python_path = self.bin_dir / "agentsassemble_room_helper.py"
@@ -279,6 +280,7 @@ class RoomPortal:
             else:
                 self._write_atomic(self.helper_path, helper_script(), mode=0o700)
             self._write_media_index()
+            self._write_participant_index()
             self._write_view()
 
     def provider_environment(self, source_path: str = "") -> dict[str, str]:
@@ -304,6 +306,7 @@ class RoomPortal:
                     for item in projected.get("attachments", [])
                     if isinstance(item, dict)
                 )
+            self._write_participant_index()
             self._bound_messages()
             self._write_view()
         return attachments
@@ -553,9 +556,10 @@ class RoomPortal:
         return clean_room_text(name, limit=64) in self.active_tool_names()
 
     def acp_write_text(self, path: object, content: object) -> None:
-        target_agent_id = direct_outbox_target(path)
-        if str(path or "") != VIRTUAL_ROOM_OUTBOX_PATH and not target_agent_id:
+        requested_target_id = direct_outbox_target(path)
+        if str(path or "") != VIRTUAL_ROOM_OUTBOX_PATH and not requested_target_id:
             raise RoomPortalError("Only the shared room outbox may be written.")
+        target_agent_id = self.resolve_handoff_target(requested_target_id)
         text = _publication_text(content)
         if not text:
             raise RoomPortalError("A room publication cannot be empty.")
@@ -580,10 +584,33 @@ class RoomPortal:
             )
             self._record_activity("speak", turn_id=turn_id)
 
+    def resolve_handoff_target(self, value: object) -> str:
+        """Return an exact visible agent id, or no handoff for aliases/humans."""
+
+        target_agent_id = clean_room_text(value, limit=128)
+        if not target_agent_id or target_agent_id == self.participant_id:
+            return ""
+        with self._lock:
+            known_agent_ids = set(self._participants)
+            try:
+                persisted = json.loads(
+                    self.participant_index_path.read_text(encoding="utf-8")
+                )
+            except (OSError, json.JSONDecodeError):
+                persisted = {}
+            values = persisted.get("agents") if isinstance(persisted, dict) else None
+            if isinstance(values, list):
+                known_agent_ids.update(
+                    agent_id
+                    for value in values
+                    if (agent_id := clean_room_text(value, limit=128))
+                )
+            return target_agent_id if target_agent_id in known_agent_ids else ""
+
     def publish_message(self, content: object, *, next_agent_id: object = "") -> None:
         """Stage one public room message for the active observation."""
 
-        target_agent_id = clean_room_text(next_agent_id, limit=128)
+        target_agent_id = self.resolve_handoff_target(next_agent_id)
         path = (
             f"{VIRTUAL_ROOM_DIRECT_OUTBOX_PREFIX}{target_agent_id}.txt"
             if target_agent_id
@@ -896,6 +923,12 @@ class RoomPortal:
 
     def _write_media_index(self) -> None:
         self._write_json_atomic(self.media_index_path, {"media": self._media})
+
+    def _write_participant_index(self) -> None:
+        self._write_json_atomic(
+            self.participant_index_path,
+            {"agents": sorted(self._participants)},
+        )
 
     def _write_json_atomic(self, path: Path, value: dict[str, object]) -> None:
         self._write_atomic(

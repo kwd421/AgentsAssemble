@@ -8,12 +8,15 @@ import {
   type KeyboardEvent,
   type RefObject,
 } from "react";
+import { Bot, UserRound } from "lucide-react";
 import {
   insertMentionText,
   mentionOptions,
   mentionQueryAtCursor,
   type Mentionable,
 } from "../../lib/mentionComposerModel";
+import ProviderLogo from "./ProviderLogo";
+import "./MentionInput.css";
 
 type MentionInputProps = {
   value: string;
@@ -166,9 +169,30 @@ export default function MentionInput({
               onClick={() => chooseMention(option)}
               role="option"
               aria-selected={index === activeOptionIndex}
+              aria-label={
+                option.detail ? `${option.label}, ${option.detail}` : option.label
+              }
             >
-              <span className="dc-mention-avatar">@</span>
-              <span>{option.label}</span>
+              <span
+                className="dc-mention-avatar"
+                data-participant-kind={option.participantKind || "unknown"}
+              >
+                {option.avatarImage ? (
+                  <img src={option.avatarImage} alt="" />
+                ) : option.participantKind === "agent" ? (
+                  <ProviderLogo
+                    providerKind={option.providerKind}
+                    size={32}
+                    fallback={<Bot size={16} />}
+                  />
+                ) : (
+                  <UserRound size={17} />
+                )}
+              </span>
+              <span className="dc-mention-copy">
+                <strong>{option.label}</strong>
+                {option.detail && <small>{option.detail}</small>}
+              </span>
             </button>
           ))}
         </div>

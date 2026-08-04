@@ -227,7 +227,10 @@ class OpenAICompatibleApiRuntime:
                         else ""
                     )
                     activity_id = clean_room_text(tool_call.get("id"), limit=128)
-                    activity_title, activity_detail = _tool_activity(tool_call)
+                    activity_title, activity_detail = _tool_activity(
+                        tool_call,
+                        room_portal=self._room_portal if room_observation else None,
+                    )
                     activity_fields = {
                         "category": "tool",
                         "activity_id": activity_id,
@@ -356,10 +359,16 @@ class OpenAICompatibleApiRuntime:
             raise provider_http_error(error, provider_name=self.provider_name) from error
         with self._lock:
             self._response = response
+        stream_deadline = time.monotonic() + max(0.0, float(timeout_seconds))
         try:
             for raw_line in response:
                 if self._interrupted.is_set():
                     raise RuntimeError(f"{self.provider_name} turn interrupted.")
+                if time.monotonic() >= stream_deadline:
+                    raise TimeoutError(
+                        f"{self.provider_name} runtime timed out after "
+                        f"{timeout_seconds:g} seconds."
+                    )
                 line = raw_line.decode("utf-8", errors="replace").strip()
                 if not line.startswith("data:"):
                     continue
@@ -598,6 +607,8 @@ def _tool_title(tool_name: object) -> str:
 
 def _tool_activity(
     tool_call: dict[str, object],
+    *,
+    room_portal: RoomPortal | None = None,
 ) -> tuple[str, str]:
     function = tool_call.get("function")
     if not isinstance(function, dict):
@@ -617,9 +628,13 @@ def _tool_activity(
         if isinstance(options, list):
             return title, f"{len(options)}개 선택지"
     if name == "publish_message":
-        target = clean_room_text(arguments.get("next_agent_id"), limit=128)
+        target = (
+            room_portal.resolve_handoff_target(arguments.get("next_agent_id"))
+            if room_portal is not None
+            else ""
+        )
         if target:
-            return title, f"@{target}에게 전달"
+            return title, f"<@{target}>에게 전달"
     if name in {"read_workspace_file", "write_workspace_file", "replace_workspace_text"}:
         return title, clean_room_text(arguments.get("path"), limit=240)
     if name == "search_workspace_text":

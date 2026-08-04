@@ -594,6 +594,17 @@ class RoomAgentBridgeTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as temp_dir:
             portal = RoomPortal(Path(temp_dir) / "portal", participant_id="codex")
             portal.prepare()
+            portal.ingest_frame(
+                {
+                    "participants": [
+                        {
+                            "participant_id": "sonnet",
+                            "participant_type": "agent",
+                            "display_name": "Sonnet",
+                        }
+                    ]
+                }
+            )
             client = FakeClient()
             runtime = RoomPortalResultRuntime(
                 portal,

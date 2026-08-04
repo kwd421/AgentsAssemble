@@ -6,6 +6,10 @@ export type MentionQuery = {
 export type Mentionable = {
   token: string;
   label: string;
+  avatarImage?: string;
+  detail?: string;
+  participantKind?: "human" | "agent";
+  providerKind?: string;
 };
 
 type MentionableInput = Mentionable | string;
@@ -20,7 +24,14 @@ function cleanMentionName(name: string) {
 function normalizedMentionable(value: MentionableInput): Mentionable | null {
   const token = cleanMentionName(typeof value === "string" ? value : value.token);
   const label = cleanMentionName(typeof value === "string" ? value : value.label) || token;
-  return token ? { token, label } : null;
+  if (!token) return null;
+  if (typeof value === "string") return { token, label };
+  return {
+    ...value,
+    token,
+    label,
+    detail: cleanMentionName(value.detail || "") || undefined,
+  };
 }
 
 export function mentionQueryAtCursor(message: string, cursor = message.length): MentionQuery | null {

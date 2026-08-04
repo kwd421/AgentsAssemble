@@ -25,8 +25,18 @@ ROOM_TOOL_SCHEMAS: tuple[dict[str, object], ...] = (
             "parameters": {
                 "type": "object",
                 "properties": {
-                    "content": {"type": "string"},
-                    "next_agent_id": {"type": "string"},
+                    "content": {
+                        "type": "string",
+                        "description": "The public message to post in the shared room.",
+                    },
+                    "next_agent_id": {
+                        "type": "string",
+                        "description": (
+                            "Optional floor handoff to one agent. Use only an exact agent id "
+                            "listed under Agent handles; omit it when replying to a human or "
+                            "when no specific agent should speak next."
+                        ),
+                    },
                 },
                 "required": ["content"],
                 "additionalProperties": False,
