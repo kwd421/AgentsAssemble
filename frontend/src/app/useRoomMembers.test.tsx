@@ -113,4 +113,30 @@ describe("useRoomMembers", () => {
 
     expect(hook.result.current.activeMembers.map((item) => item.display_name)).toEqual(["Live"]);
   });
+
+  it("does not resurrect a departed canonical participant from an older cached roster", async () => {
+    apiMocks.fetchRoomMembers.mockResolvedValue({
+      members: [member("agent-a", "Cached Agent")],
+    });
+    const hook = renderHook(
+      ({ canonicalParticipants, membershipRevision }) =>
+        useRoomMembers({
+          activeRoom: room,
+          canonicalParticipants,
+          membershipRevision,
+          sessionToken: "session-token",
+        }),
+      {
+        initialProps: {
+          canonicalParticipants: [member("agent-a", "Canonical Agent")],
+          membershipRevision: 0,
+        },
+      }
+    );
+    await waitFor(() => expect(hook.result.current.activeMembers).toHaveLength(1));
+
+    hook.rerender({ canonicalParticipants: [], membershipRevision: 1 });
+
+    await waitFor(() => expect(hook.result.current.activeMembers).toEqual([]));
+  });
 });

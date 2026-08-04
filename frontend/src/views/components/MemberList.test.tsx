@@ -79,6 +79,23 @@ describe("MemberList component wiring", () => {
     expect(within(dialog).queryByRole("button", { name: "세션 삭제" })).toBeNull();
   });
 
+  it("does not expose moderation actions when the room supplied no callable action", () => {
+    render(
+      <MemberList
+        agents={[AGENT]}
+        agentSessions={[SESSION]}
+        roomId="room-1"
+        roomName="Room One"
+        canModerate
+      />
+    );
+
+    fireEvent.contextMenu(screen.getByText("Agent One"));
+
+    expect(screen.queryByRole("menu")).toBeNull();
+    expect(screen.queryByRole("menuitem", { name: "내보내기" })).toBeNull();
+  });
+
   it("shows the active model controls in the member row", () => {
     render(
       <MemberList

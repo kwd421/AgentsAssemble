@@ -138,7 +138,12 @@ export default function MemberList({
   function handleMemberContextMenu(entry: MemberEntry, event: ReactMouseEvent<HTMLElement>) {
     // Host-only moderation: right-clicking a participant opens the mute menu.
     // Self and any participant without a room scope can't be muted.
-    if (!canModerate || entry.owner || !entry.meetingId) return;
+    if (
+      !canModerate ||
+      (!onParticipantKick && !onParticipantMute) ||
+      entry.owner ||
+      !entry.meetingId
+    ) return;
     event.preventDefault();
     setMemberMenu({ x: event.clientX, y: event.clientY, entry });
   }
@@ -328,27 +333,31 @@ export default function MemberList({
             style={{ top: memberMenu.y, left: memberMenu.x }}
           >
             <p className="dc-member-context-menu-title preserve-words">{memberMenu.entry.displayName}</p>
-            <button
-              type="button"
-              role="menuitem"
-              className="dc-member-context-menu-item"
-              disabled={muteBusy}
-              onClick={() => void handleToggleMute(memberMenu.entry)}
-            >
-              {memberMenu.entry.muted ? <Volume2 size={14} /> : <VolumeX size={14} />}
-              {memberMenu.entry.muted ? "뮤트 해제" : "뮤트"}
-            </button>
-            <button
-              type="button"
-              role="menuitem"
-              className="dc-member-context-menu-item"
-              data-variant="danger"
-              disabled={muteBusy}
-              onClick={() => void handleKick(memberMenu.entry)}
-            >
-              <UserMinus size={14} />
-              내보내기
-            </button>
+            {onParticipantMute && (
+              <button
+                type="button"
+                role="menuitem"
+                className="dc-member-context-menu-item"
+                disabled={muteBusy}
+                onClick={() => void handleToggleMute(memberMenu.entry)}
+              >
+                {memberMenu.entry.muted ? <Volume2 size={14} /> : <VolumeX size={14} />}
+                {memberMenu.entry.muted ? "뮤트 해제" : "뮤트"}
+              </button>
+            )}
+            {onParticipantKick && (
+              <button
+                type="button"
+                role="menuitem"
+                className="dc-member-context-menu-item"
+                data-variant="danger"
+                disabled={muteBusy}
+                onClick={() => void handleKick(memberMenu.entry)}
+              >
+                <UserMinus size={14} />
+                내보내기
+              </button>
+            )}
           </div>
         </>
       )}

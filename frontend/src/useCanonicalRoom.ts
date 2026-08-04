@@ -538,9 +538,26 @@ export function useCanonicalRoom(options: UseCanonicalRoomOptions) {
   const sendParticipantKick = useCallback(
     async (participantId: string) => {
       if (!socket) throw new Error("방 연결이 준비되지 않았습니다.");
-      await socket.command("participant.kick", { participant_id: participantId });
+      const ack = await socket.command("participant.kick", { participant_id: participantId });
+      const participant = ack.result?.participant as RoomMember | undefined;
+      if (
+        participant?.participant_id !== participantId ||
+        participant.status !== "kicked"
+      ) {
+        throw new RoomSocketSayError(
+          "서버가 추방 완료 상태를 확인해 주지 않았습니다. 방 상태를 다시 동기화합니다.",
+          "invalid_kick_ack"
+        );
+      }
+      setParticipantsByRoom((previous) => ({
+        ...previous,
+        [roomId]: (previous[roomId] || []).filter(
+          (current) => current.participant_id !== participantId
+        ),
+      }));
+      setMembershipRevision((previous) => previous + 1);
     },
-    [socket]
+    [roomId, socket]
   );
 
   const sendParticipantMute = useCallback(

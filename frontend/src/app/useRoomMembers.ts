@@ -18,7 +18,9 @@ export function useRoomMembers({
   enabled = true,
 }: UseRoomMembersOptions) {
   const [membersByRoom, setMembersByRoom] = useState<Record<string, RoomMember[]>>({});
+  const [departedIdsByRoom, setDepartedIdsByRoom] = useState<Record<string, string[]>>({});
   const requestEpochsRef = useRef<Record<string, number>>({});
+  const previousCanonicalIdsRef = useRef<Record<string, Set<string>>>({});
   const activeRoomKey = roomSettingsKey(activeRoom);
   const activeMeetingId = activeRoom.meetingId;
 
@@ -57,15 +59,42 @@ export function useRoomMembers({
     refresh();
   }, [membershipRevision, refresh]);
 
+  useEffect(() => {
+    const currentIds = new Set(
+      canonicalParticipants.map((participant) => participant.participant_id)
+    );
+    const previousIds = previousCanonicalIdsRef.current[activeRoomKey] || new Set<string>();
+    previousCanonicalIdsRef.current[activeRoomKey] = currentIds;
+    setDepartedIdsByRoom((previous) => {
+      const departed = new Set(previous[activeRoomKey] || []);
+      previousIds.forEach((participantId) => {
+        if (!currentIds.has(participantId)) departed.add(participantId);
+      });
+      currentIds.forEach((participantId) => departed.delete(participantId));
+      const nextIds = [...departed];
+      const priorIds = previous[activeRoomKey] || [];
+      if (
+        nextIds.length === priorIds.length &&
+        nextIds.every((participantId, index) => participantId === priorIds[index])
+      ) {
+        return previous;
+      }
+      return { ...previous, [activeRoomKey]: nextIds };
+    });
+  }, [activeRoomKey, canonicalParticipants]);
+
   const activeMembers = useMemo(() => {
+    const departedIds = new Set(departedIdsByRoom[activeRoomKey] || []);
     const byId = new Map(
-      (membersByRoom[activeRoomKey] || []).map((member) => [member.participant_id, member])
+      (membersByRoom[activeRoomKey] || [])
+        .filter((member) => !departedIds.has(member.participant_id))
+        .map((member) => [member.participant_id, member])
     );
     canonicalParticipants.forEach((participant) => {
       byId.set(participant.participant_id, participant);
     });
     return [...byId.values()];
-  }, [activeRoomKey, canonicalParticipants, membersByRoom]);
+  }, [activeRoomKey, canonicalParticipants, departedIdsByRoom, membersByRoom]);
 
   return {
     activeMembers,

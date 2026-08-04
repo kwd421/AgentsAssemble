@@ -469,6 +469,71 @@ describe("useCanonicalRoom", () => {
     }
   );
 
+  it("removes a kicked participant from browser state when the command ACK arrives without its broadcast", async () => {
+    let handlers: RoomSocketHandlers | undefined;
+    const command = vi.fn(async (action: string) => ({
+      op: "ack",
+      request_id: "kick-1",
+      accepted: true,
+      action,
+      result: {
+        participant: {
+          meeting_id: "general",
+          participant_id: "codex",
+          display_name: "Codex",
+          role: "agent",
+          participant_type: "local",
+          provider_kind: "codex_live_session",
+          connection_kind: "native_cli_bridge",
+          status: "kicked",
+          source: "agent_session",
+          created_at: "",
+          updated_at: "",
+        },
+      },
+    }) satisfies RoomCommandAck);
+    const openSocket = vi.fn((_auth, _streams, nextHandlers: RoomSocketHandlers) => {
+      handlers = nextHandlers;
+      return {
+        close: vi.fn(),
+        ready: () => true,
+        command,
+        say: vi.fn(),
+        historyBefore: vi.fn(),
+      } satisfies RoomSocketHandle;
+    });
+    const { result } = renderHook(() =>
+      useCanonicalRoom({
+        roomId: "general",
+        auth: { kind: "host", meetingId: "general" },
+        openSocket,
+      })
+    );
+    await waitFor(() => expect(openSocket).toHaveBeenCalledOnce());
+    const initial = snapshot([]);
+    initial.participants = [
+      {
+        meeting_id: "general",
+        participant_id: "codex",
+        display_name: "Codex",
+        role: "agent",
+        participant_type: "local",
+        provider_kind: "codex_live_session",
+        connection_kind: "native_cli_bridge",
+        status: "joined",
+        source: "agent_session",
+        created_at: "",
+        updated_at: "",
+      },
+    ];
+    act(() => handlers?.onRoomSnapshot?.(initial));
+
+    await act(async () => result.current.sendParticipantKick("codex"));
+
+    expect(command).toHaveBeenCalledWith("participant.kick", { participant_id: "codex" });
+    expect(result.current.participants).toEqual([]);
+  });
+
   it("preserves session provider branding when a participant snapshot omits it", async () => {
     let handlers: RoomSocketHandlers | undefined;
     const openSocket = vi.fn((_auth, _streams, nextHandlers: RoomSocketHandlers) => {
