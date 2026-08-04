@@ -7,6 +7,7 @@ import json
 import re
 from dataclasses import dataclass
 from decimal import Decimal, InvalidOperation
+from urllib.error import HTTPError
 from urllib.parse import urlsplit, urlunsplit
 from urllib.request import Request, urlopen
 
@@ -14,6 +15,7 @@ from agentsassemble.providers.openai_compatible import (
     OpenAICompatibleApiRuntime,
     UrlOpen,
 )
+from agentsassemble.providers.provider_errors import provider_http_error
 from agentsassemble.providers.room_portal import RoomPortal
 from agentsassemble.room.text import clean_room_text
 
@@ -156,6 +158,7 @@ REMOTE_OPENAI_PROFILES = (
                 pricing="free",
             ),
         ),
+        discovery_path="/models",
         max_output_tokens=4096,
     ),
     RemoteOpenAIProfile(
@@ -244,8 +247,11 @@ def discover_remote_openai_models(
         headers=headers,
         method="GET",
     )
-    with opener(request, timeout=max(1.0, float(timeout_seconds))) as response:
-        payload = json.load(response)
+    try:
+        with opener(request, timeout=max(1.0, float(timeout_seconds))) as response:
+            payload = json.load(response)
+    except HTTPError as error:
+        raise provider_http_error(error, provider_name=profile.display_name) from error
     entries = payload.get("data") if isinstance(payload, dict) else None
     if not isinstance(entries, list):
         raise ValueError(f"{profile.display_name} returned an invalid model catalog.")
@@ -366,6 +372,28 @@ def remote_openai_catalog_payload(
         "custom_endpoint": profile.custom_endpoint,
         "custom_model": profile.custom_endpoint,
     }
+
+
+def remote_openai_discovery_failure_payload(
+    profile: RemoteOpenAIProfile,
+    error: BaseException,
+) -> dict[str, object]:
+    """Project a protocol discovery failure without leaking provider details."""
+
+    error_code = clean_room_text(getattr(error, "code", ""), limit=64)
+    if error_code:
+        message = str(error)
+    else:
+        error_code = "model_discovery_failed"
+        message = (
+            f"{profile.display_name} 모델 목록을 불러오지 못했습니다 "
+            f"({type(error).__name__})."
+        )
+    return remote_openai_catalog_payload(
+        profile,
+        discovery_error=message,
+        discovery_error_code=error_code,
+    )
 
 
 class RemoteOpenAICompatibleRuntime(OpenAICompatibleApiRuntime):

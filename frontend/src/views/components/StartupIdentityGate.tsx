@@ -3,7 +3,10 @@ import { ArrowRight, LoaderCircle, UserRound } from "lucide-react";
 
 import { fetchAccountStatus } from "../../api/identity";
 import { saveUserProfile } from "../../api/room";
-import { rememberGuestProfile } from "../../lib/deviceIdentity";
+import {
+  rememberGuestProfile,
+  rememberStartupIdentitySelection,
+} from "../../lib/deviceIdentity";
 import { DEFAULT_USER_PROFILE } from "../../lib/userProfileModel";
 import GoogleAccountSettings from "./GoogleAccountSettings";
 
@@ -24,6 +27,7 @@ export default function StartupIdentityGate({
       .then((account) => {
         if (!active) return;
         if (account.account) {
+          rememberStartupIdentitySelection();
           onComplete();
           return;
         }
@@ -58,6 +62,22 @@ export default function StartupIdentityGate({
     onComplete();
   }
 
+  if (checking) {
+    return (
+      <div className="fixed inset-0 z-[400] grid place-items-center bg-[#101114] p-5">
+        <main
+          className="grid w-full max-w-[360px] place-items-center gap-3 rounded-xl bg-[#202126] p-6 shadow-2xl"
+          aria-label="앱 시작 준비"
+        >
+          <LoaderCircle size={22} className="animate-spin text-[#8d96ff]" />
+          <p role="status" className="text-[12px] font-bold text-text-muted">
+            저장된 사용자 확인 중
+          </p>
+        </main>
+      </div>
+    );
+  }
+
   return (
     <div className="fixed inset-0 z-[400] grid place-items-center overflow-y-auto bg-[#101114] p-5">
       <main
@@ -74,15 +94,13 @@ export default function StartupIdentityGate({
           </p>
         </header>
 
-        {checking ? (
-          <p className="flex items-center gap-2 rounded-lg bg-[#2b2d31] px-4 py-4 text-[12px] font-bold text-text-muted">
-            <LoaderCircle size={16} className="animate-spin" /> 저장된 계정 확인 중
-          </p>
-        ) : (
-          <>
+        <>
             <GoogleAccountSettings
               identity={{ deviceToken }}
-              onAccountConnected={onComplete}
+              onAccountConnected={() => {
+                rememberStartupIdentitySelection();
+                onComplete();
+              }}
             />
             <div className="flex items-center gap-3 text-[10px] font-black uppercase tracking-wider text-text-muted">
               <span className="h-px flex-1 bg-white/10" /> 또는 <span className="h-px flex-1 bg-white/10" />
@@ -123,7 +141,6 @@ export default function StartupIdentityGate({
               </button>
             </section>
           </>
-        )}
       </main>
     </div>
   );

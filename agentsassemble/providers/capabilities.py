@@ -29,6 +29,7 @@ from agentsassemble.providers.remote_openai import (
     discover_remote_openai_models,
     normalize_custom_openai_endpoint,
     remote_openai_catalog_payload,
+    remote_openai_discovery_failure_payload,
     remote_openai_profiles,
 )
 from agentsassemble.providers.secrets import PROVIDER_SECRETS
@@ -802,14 +803,7 @@ class ProviderCapabilityCatalog:
                 self._secret_resolver(profile.provider_id),
             )
         except Exception as error:
-            return remote_openai_catalog_payload(
-                profile,
-                discovery_error=(
-                    f"{profile.display_name} 모델 목록을 불러오지 못했습니다 "
-                    f"({type(error).__name__})."
-                ),
-                discovery_error_code="model_discovery_failed",
-            )
+            return remote_openai_discovery_failure_payload(profile, error)
         if not models:
             return remote_openai_catalog_payload(
                 profile,

@@ -1,12 +1,12 @@
 {
  "readme": "AgentsAssemble codebase map. Regenerate with `make codebase-map`; verify committed outputs with `make codebase-map-verify`. modules[] columns: name, path, package, domain, classification, migration_status, lines, docstring, imports[], imported_by[] (indexes into modules), classes[[name, [[base, defining_module], ...]]] (best-effort, top-level classes only). frontend[] columns: path, group, lines, doc, imports[], imported_by[] (indexes into frontend). package_edges go importer -> dependency with module-import counts; `points` is the precomputed polyline for that edge and `intra_cycle` marks imports whose endpoints share one cycle group. graph{} holds the layered package drawing: layers[] top-to-bottom (each with members[] package ids, member_count, and the dominant domain), (a package sits below everything importing it), clusters[] are mutually dependent packages (import cycles at package level) drawn as one labelled block, plus width/height of the drawing. health{} ranks findings for a reader who has to act: cycles[] (mutually dependent packages, with the lines they hold), leaning_on_retiring[] (current modules importing legacy/compatibility modules - the reason legacy cannot be deleted), highest_leverage_migrations[] (retiring modules with the most current importers), unreferenced_shims[] (compatibility modules with no importer in agentsassemble/ and no reference in tests/; callers outside this repository are not visible, so verify before deleting), and hotspots[] (largest modules). health.scope states exactly what was measured. class_graph{} is the UML generalization DAG over base classes that resolve inside the repo: edges go base -> subclass, so a subclass always sits below the class it extends. Coordinates in graph and class_graph are laid out with a Sugiyama pipeline (cycle condensation, Coffman-Graham layering, dummy-node edge routing, median/transpose crossing reduction) and are deterministic.",
- "generated_at": "2026-08-04T11:49:31Z",
- "fingerprint": "86a16691b457739a",
+ "generated_at": "2026-08-04T17:03:57Z",
+ "fingerprint": "888aae66e83a1ce9",
  "stats": {
   "backend_modules": 850,
-  "backend_lines": 145049,
+  "backend_lines": 145075,
   "frontend_files": 209,
-  "frontend_lines": 48755,
+  "frontend_lines": 48816,
   "packages": 30,
   "import_cycles": 0,
   "classifications": {
@@ -124,7 +124,7 @@
    "kind": "backend",
    "doc": "Provider runtime contracts and implementations.",
    "files": 112,
-   "lines": 29048,
+   "lines": 29074,
    "domains": {
     "providers": 112
    },
@@ -509,7 +509,7 @@
    "kind": "frontend",
    "doc": "Frontend entry files (App, main, API client, styles) living directly under src/.",
    "files": 13,
-   "lines": 12849,
+   "lines": 12853,
    "domains": {},
    "classes": {},
    "x": 102.0,
@@ -557,7 +557,7 @@
    "kind": "frontend",
    "doc": "Shared utilities and presentation helpers.",
    "files": 56,
-   "lines": 5870,
+   "lines": 5894,
    "domains": {},
    "classes": {},
    "x": 786.0,
@@ -589,7 +589,7 @@
    "kind": "frontend",
    "doc": "Top-level room views rendered by the shell.",
    "files": 109,
-   "lines": 22118,
+   "lines": 22151,
    "domains": {},
    "classes": {},
    "x": 558.0,
@@ -4160,7 +4160,7 @@
      "web"
     ],
     "internal_edges": 92,
-    "lines": 141597,
+    "lines": 141623,
     "heaviest": "legacy"
    },
    {
@@ -4173,7 +4173,7 @@
      "fe:views"
     ],
     "internal_edges": 17,
-    "lines": 48755,
+    "lines": 48816,
     "heaviest": "fe:views"
    }
   ],
@@ -4290,7 +4290,7 @@
    },
    {
     "module": "agentsassemble.providers.remote_openai",
-    "lines": 615,
+    "lines": 643,
     "count": 1,
     "targets": [
      "agentsassemble.providers.openai_compatible"
@@ -4551,7 +4551,7 @@
    },
    {
     "module": "agentsassemble.providers.capabilities",
-    "lines": 1600,
+    "lines": 1594,
     "cls": "current",
     "imported_by": 5
    },
@@ -17619,7 +17619,7 @@
    "providers",
    "current",
    "in-target-package",
-   1600,
+   1594,
    "Provider option discovery, catalog caching, and selection validation.",
    [
     596,
@@ -19046,14 +19046,15 @@
    "providers",
    "current",
    "in-target-package",
-   123,
+   127,
    "Public provider-failure categories derived only from explicit provider errors.",
    [
     732
    ],
    [
     581,
-    640
+    640,
+    651
    ],
    [
     [
@@ -19157,10 +19158,11 @@
    "providers",
    "current",
    "in-target-package",
-   615,
+   643,
    "Declarative remote OpenAI-compatible providers and their room runtime.",
    [
     640,
+    647,
     654,
     732
    ],
@@ -24331,7 +24333,7 @@
   [
    "frontend/src/App.tsx",
    "(src root)",
-   2067,
+   2071,
    "",
    [
     1,
@@ -25100,7 +25102,7 @@
   [
    "frontend/src/lib/deviceIdentity.ts",
    "lib",
-   93,
+   117,
    "",
    [],
    [
@@ -26894,7 +26896,7 @@
   [
    "frontend/src/views/components/StartupIdentityGate.test.tsx",
    "views",
-   61,
+   77,
    "",
    [
     5,
@@ -26907,7 +26909,7 @@
   [
    "frontend/src/views/components/StartupIdentityGate.tsx",
    "views",
-   130,
+   147,
    "",
    [
     5,
@@ -27412,19 +27414,19 @@
    "name": "agentsassemble",
    "note": "Backend package (Python)",
    "files": 850,
-   "lines": 145049
+   "lines": 145075
   },
   {
    "name": "frontend/src",
    "note": "React room client (TS/TSX)",
    "files": 209,
-   "lines": 48755
+   "lines": 48816
   },
   {
    "name": "tests",
    "note": "Backend test suite",
    "files": 381,
-   "lines": 150253
+   "lines": 150319
   },
   {
    "name": "scripts",

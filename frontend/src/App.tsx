@@ -95,7 +95,11 @@ import {
 } from "./lib/agentActivityPreferences";
 import { remoteClientPacketPreview } from "./lib/roomInviteCopy";
 import { GUEST_SESSION_EXPIRED_MESSAGE } from "./lib/apiErrors";
-import { getOrCreateDeviceToken, loadRememberedGuestProfile } from "./lib/deviceIdentity";
+import {
+  getOrCreateDeviceToken,
+  hasStartupIdentitySelection,
+  loadRememberedGuestProfile,
+} from "./lib/deviceIdentity";
 import { consumeGuestRecoveryRequestFromUrl } from "./lib/guestRecovery";
 import { consumeOperatorPairingTokenFromUrl } from "./lib/roomGuestSession";
 import { roomPostingState } from "./lib/roomGuestPosting";
@@ -319,7 +323,7 @@ export default function App() {
   );
   const [deviceToken] = useState(getOrCreateDeviceToken);
   const [startupIdentityReady, setStartupIdentityReady] = useState(
-    () => Boolean(loadRememberedGuestProfile())
+    () => hasStartupIdentitySelection() || Boolean(loadRememberedGuestProfile())
   );
   const completeStartupIdentity = useCallback(() => setStartupIdentityReady(true), []);
   const guestInvite = startupRoute.guestInvite;

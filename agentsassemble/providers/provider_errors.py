@@ -34,6 +34,8 @@ _EXHAUSTED_MESSAGES = (
     "quota exceeded",
     "quota exhausted",
     "usage limit reached",
+    "remainquota = 0",
+    "额度已用尽",
 )
 _RATE_LIMIT_MESSAGES = (
     "rate limit",
@@ -76,6 +78,8 @@ def provider_http_error(error: HTTPError, *, provider_name: str) -> ProviderTurn
     if code == "provider_turn_failed" and error.code == 429:
         code = "provider_rate_limited"
     public_message = clean_room_text(provider_message, limit=1000)
+    if code == "quota_exhausted":
+        public_message = f"{provider_name} usage quota is exhausted."
     if not public_message:
         public_message = f"{provider_name} request failed with HTTP {error.code}."
     return ProviderTurnError(public_message, code=code)

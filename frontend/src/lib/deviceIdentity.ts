@@ -10,6 +10,7 @@
 const DEVICE_TOKEN_STORAGE_KEY = "agentsassemble.deviceToken.v1";
 const CLIENT_ID_STORAGE_KEY = "agentsassemble.clientId.v1";
 const GUEST_PROFILE_STORAGE_KEY = "agentsassemble.guestProfile.v1";
+const STARTUP_IDENTITY_STORAGE_KEY = "agentsassemble.startupIdentity.v1";
 
 export type RememberedGuestProfile = {
   displayName: string;
@@ -79,8 +80,31 @@ export function rememberGuestProfile(profile: RememberedGuestProfile) {
         avatarImage: profile.avatarImage || "",
       })
     );
+    rememberStartupIdentitySelection();
   } catch {
     // Best-effort: the join itself still works without remembering.
+  }
+}
+
+/** Remember that this browser already chose either a guest or linked identity.
+ *
+ * The marker is intentionally independent of the guest profile: linking a
+ * public account retires the guest data, but the device must still open local
+ * rooms while the account server is temporarily unreachable.
+ */
+export function rememberStartupIdentitySelection() {
+  try {
+    window.localStorage.setItem(STARTUP_IDENTITY_STORAGE_KEY, "selected");
+  } catch {
+    // Restricted webviews fall back to the server check on the next launch.
+  }
+}
+
+export function hasStartupIdentitySelection(): boolean {
+  try {
+    return window.localStorage.getItem(STARTUP_IDENTITY_STORAGE_KEY) === "selected";
+  } catch {
+    return false;
   }
 }
 

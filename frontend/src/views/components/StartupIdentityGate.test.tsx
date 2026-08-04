@@ -4,12 +4,18 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 
 import { fetchAccountStatus } from "../../api/identity";
 import { saveUserProfile } from "../../api/room";
-import { rememberGuestProfile } from "../../lib/deviceIdentity";
+import {
+  rememberGuestProfile,
+  rememberStartupIdentitySelection,
+} from "../../lib/deviceIdentity";
 import StartupIdentityGate from "./StartupIdentityGate";
 
 vi.mock("../../api/identity", () => ({ fetchAccountStatus: vi.fn() }));
 vi.mock("../../api/room", () => ({ saveUserProfile: vi.fn() }));
-vi.mock("../../lib/deviceIdentity", () => ({ rememberGuestProfile: vi.fn() }));
+vi.mock("../../lib/deviceIdentity", () => ({
+  rememberGuestProfile: vi.fn(),
+  rememberStartupIdentitySelection: vi.fn(),
+}));
 vi.mock("./GoogleAccountSettings", () => ({
   default: () => <section aria-label="공개 계정 연결" />,
 }));
@@ -20,6 +26,15 @@ afterEach(() => {
 });
 
 describe("StartupIdentityGate", () => {
+  it("does not show identity choices while an existing account is still being checked", () => {
+    vi.mocked(fetchAccountStatus).mockReturnValue(new Promise(() => undefined));
+
+    render(<StartupIdentityGate deviceToken="device-1" onComplete={vi.fn()} />);
+
+    expect(screen.queryByRole("main", { name: "시작 로그인" })).toBeNull();
+    expect(screen.getByRole("status")).toBeTruthy();
+  });
+
   it("keeps the product gated until a local guest identity is persisted", async () => {
     vi.mocked(fetchAccountStatus).mockResolvedValue({
       account: null,
@@ -56,6 +71,7 @@ describe("StartupIdentityGate", () => {
     render(<StartupIdentityGate deviceToken="device-1" onComplete={onComplete} />);
 
     await vi.waitFor(() => expect(onComplete).toHaveBeenCalledOnce());
+    expect(rememberStartupIdentitySelection).toHaveBeenCalledOnce();
     expect(screen.queryByRole("textbox", { name: "표시 이름" })).toBeNull();
   });
 });
