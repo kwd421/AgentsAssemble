@@ -465,6 +465,15 @@ establish. Model controls with more than one option provide text search across
 the provider model ID, label, family, and description. The `Free` filter is
 offered only when the authoritative catalog marks at least one option as
 zero-price or free-tier; the UI does not infer free status from a model name.
+Every Subscription provider has an explicit model-catalog provenance policy in
+`providers/catalog_provenance.py`. Codex uses its bundled registry, Claude uses
+its embedded registry, and the other managed CLIs use their own reported
+catalogs. Mixed outputs are narrowed at the adapter boundary: Grok models
+registered in the user's local config are excluded, and OpenCode exposes only
+its managed `opencode` and `opencode-go` namespaces. Ollama's installed model
+inventory intentionally includes both local and cloud execution locations. A
+new Subscription provider without an explicit provenance policy fails closed
+instead of silently treating every discovered identifier as a native model.
 DeepSeek and Cerebras are API providers. Ollama connects only to its
 fixed loopback OpenAI-compatible endpoint; Ollama cloud models are presented
 under Subscription while models stored and executed on the host are presented

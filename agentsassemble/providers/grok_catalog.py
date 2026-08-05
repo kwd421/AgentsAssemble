@@ -6,6 +6,10 @@ import tomllib
 from pathlib import Path
 import re
 
+from agentsassemble.providers.catalog_provenance import (
+    filter_subscription_model_ids,
+)
+
 
 class GrokCatalogConfigError(RuntimeError):
     """Raised when Grok's custom-model registry cannot be classified safely."""
@@ -45,7 +49,11 @@ def classify_grok_models(
     """Separate CLI-native model IDs from user-registered custom models."""
 
     discovered = re.findall(r"(?:\*|-)[ \t]+([A-Za-z0-9._-]+)", output)
-    models = list(dict.fromkeys(model for model in discovered if model not in custom_model_ids))
+    models = filter_subscription_model_ids(
+        "grok",
+        discovered,
+        registered_model_ids=custom_model_ids,
+    )
     if not models:
         return [], ""
     default_match = re.search(r"Default model:\s*([A-Za-z0-9._-]+)", output)

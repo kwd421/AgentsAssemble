@@ -16,6 +16,9 @@ from agentsassemble.providers.claude_catalog import (
     discover_claude_model_ids,
     discover_claude_xhigh_model_ids,
 )
+from agentsassemble.providers.catalog_provenance import (
+    annotate_subscription_catalog_provenance,
+)
 from agentsassemble.providers.catalog_revision import catalog_revision
 from agentsassemble.providers.grok_catalog import classify_grok_models, discover_grok_custom_model_ids
 from agentsassemble.providers.launch_specs import (
@@ -24,6 +27,7 @@ from agentsassemble.providers.launch_specs import (
     split_cursor_model,
 )
 from agentsassemble.providers.native_harness_catalog import add_native_harness_catalog_controls
+from agentsassemble.providers.opencode_catalog import opencode_model_options
 from agentsassemble.providers.process_environment import sanitized_provider_environment
 from agentsassemble.providers.remote_openai import (
     RemoteOpenAIProfile,
@@ -393,6 +397,7 @@ class ProviderCapabilityCatalog:
         payload.append(self._ollama_payload())
         payload.append(self._lmstudio_payload())
         payload = add_native_harness_catalog_controls(payload, resolver=self._resolver)
+        payload = annotate_subscription_catalog_provenance(payload)
         payload = [
             self._preserve_last_verified_provider(
                 provider,
@@ -627,7 +632,7 @@ class ProviderCapabilityCatalog:
                     [str(resolved), "models", "--verbose"],
                     8.0,
                 )
-                model_options = _opencode_model_options(output)
+                model_options = opencode_model_options(output)
                 if model_options:
                     controls = _opencode_controls(model_options)
                     status = "ready"
@@ -1309,68 +1314,6 @@ def _cursor_controls(output: str) -> list[dict[str, object]]:
         )
     controls.append(_permission_control("cursor"))
     return controls
-
-
-def _opencode_model_options(output: str) -> list[dict[str, object]]:
-    pattern = re.compile(r"(?m)^\s*([A-Za-z0-9._-]+/[A-Za-z0-9._:/-]+)\s*$")
-    matches = list(pattern.finditer(output))
-    options: list[dict[str, object]] = []
-    seen: set[str] = set()
-    for index, match in enumerate(matches):
-        value = match.group(1)
-        if value in seen:
-            continue
-        seen.add(value)
-        block_end = matches[index + 1].start() if index + 1 < len(matches) else len(output)
-        metadata_block = output[match.end() : block_end].strip()
-        discovered: dict[str, object] = {}
-        if metadata_block.startswith("{"):
-            try:
-                parsed = json.loads(metadata_block)
-                if isinstance(parsed, dict):
-                    discovered = parsed
-            except json.JSONDecodeError:
-                discovered = {}
-        provider_id, model_id = value.split("/", 1)
-        label = str(discovered.get("name") or "").strip() or _provider_model_label(model_id)
-        pricing = _opencode_pricing(discovered.get("cost"))
-        if pricing == "free":
-            label = re.sub(r"\s+Free$", "", label, flags=re.IGNORECASE)
-        metadata: dict[str, object] = {
-            "group": _opencode_provider_group(provider_id),
-            "provider_id": provider_id,
-        }
-        family = str(discovered.get("family") or "").strip()
-        if family:
-            metadata["family"] = family
-        if pricing:
-            metadata["pricing"] = pricing
-        options.append(_model_option(value, label, **metadata))
-    return options
-
-
-def _opencode_provider_group(provider_id: str) -> str:
-    return {
-        "opencode": "Zen",
-        "opencode-go": "Go",
-    }.get(provider_id.casefold(), _provider_model_label(provider_id))
-
-
-def _opencode_pricing(value: object) -> str:
-    if not isinstance(value, dict):
-        return ""
-    input_cost = value.get("input")
-    output_cost = value.get("output")
-    if (
-        isinstance(input_cost, (int, float))
-        and not isinstance(input_cost, bool)
-        and isinstance(output_cost, (int, float))
-        and not isinstance(output_cost, bool)
-        and float(input_cost) == 0.0
-        and float(output_cost) == 0.0
-    ):
-        return "free"
-    return ""
 
 
 def _opencode_controls(model_options: list[dict[str, object]]) -> list[dict[str, object]]:
