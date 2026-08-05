@@ -90,6 +90,7 @@ class WindowsConPtyRuntime:
         self._last_error = ""
         self._startup_drained = False
         self._startup_input_sent = False
+        self._last_turn_truncated_terminal_bytes = 0
 
     def start(self) -> dict[str, object]:
         with self._lock:
@@ -140,6 +141,7 @@ class WindowsConPtyRuntime:
             self._turn_start = len(self._output)
             process = self.process
         self._message_source.begin_turn(str(text or ""))
+        self._last_turn_truncated_terminal_bytes = 0
         if self._terminal_interaction_policy is not None:
             self._terminal_interaction_policy.begin_turn()
         self._room_observation_active = room_observation
@@ -171,7 +173,10 @@ class WindowsConPtyRuntime:
                         if self.process is process and self._alive():
                             process.write(interaction.decode("utf-8", errors="strict"))
             if len(response) > self.max_output_bytes:
-                raise ValueError(f"ConPTY output exceeded {self.max_output_bytes} bytes.")
+                if not getattr(self._message_source, "strict", False):
+                    raise ValueError(f"ConPTY output exceeded {self.max_output_bytes} bytes.")
+                self._last_turn_truncated_terminal_bytes = len(response) - self.max_output_bytes
+                response = response[-self.max_output_bytes :]
             quiet = bool(response and time.monotonic() - last_read_at >= self.idle_quiet_seconds)
             snapshot = self._message_source.poll(response, quiet=quiet)
             drain_activities = getattr(self._message_source, "drain_activities", None)
@@ -277,6 +282,7 @@ class WindowsConPtyRuntime:
                 "startup_ready_configured": bool(self.startup_ready_contains),
                 "terminal_byte_count": len(self._output),
                 "terminal_tail": bytes(self._output[-16_000:]).decode("utf-8", errors="replace"),
+                "last_turn_truncated_terminal_bytes": self._last_turn_truncated_terminal_bytes,
                 **self.profile_settings,
                 **self._message_source.describe(),
                 **(

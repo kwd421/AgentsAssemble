@@ -76,7 +76,12 @@ class _FakeConPtyProcess:
 
 
 class WindowsConPtyProgressTimeoutTests(unittest.TestCase):
-    def _runtime(self, chunks: list[tuple[float, str]]) -> WindowsConPtyRuntime:
+    def _runtime(
+        self,
+        chunks: list[tuple[float, str]],
+        *,
+        max_output_bytes: int = 256_000,
+    ) -> WindowsConPtyRuntime:
         process = _FakeConPtyProcess(chunks)
         return WindowsConPtyRuntime(
             "windows-agent",
@@ -84,7 +89,23 @@ class WindowsConPtyProgressTimeoutTests(unittest.TestCase):
             idle_quiet_seconds=0.01,
             message_source=_TranscriptSource(),
             process_factory=lambda *_args, **_kwargs: process,
+            max_output_bytes=max_output_bytes,
         )
+
+    def test_strict_transcript_turn_survives_bounded_conpty_noise(self):
+        runtime = self._runtime(
+            [(0.01, "x" * 5000), (0.01, "answer:done\n")],
+            max_output_bytes=1024,
+        )
+        try:
+            runtime.send("work")
+            result = runtime.read_output(timeout_seconds=1)
+            health = runtime.health()
+        finally:
+            runtime.stop()
+
+        self.assertEqual(result["content"], "answer:done")
+        self.assertGreater(health["last_turn_truncated_terminal_bytes"], 0)
 
     def test_structured_progress_extends_the_conpty_inactivity_window(self):
         runtime = self._runtime(

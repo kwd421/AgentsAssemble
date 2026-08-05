@@ -168,6 +168,7 @@ class LiveCliRuntime:
         self._startup_input_sent = False
         self._terminal_byte_count = 0
         self._terminal_tail = bytearray()
+        self._last_turn_truncated_terminal_bytes = 0
 
     def start(self) -> dict[str, object]:
         with self._lock:
@@ -223,6 +224,7 @@ class LiveCliRuntime:
             self._needs_terminal_settle = False
             self._terminal_byte_count = 0
             self._terminal_tail = bytearray()
+            self._last_turn_truncated_terminal_bytes = 0
             return self.health()
 
     def deliver(self, events: list[dict[str, object]]) -> None:
@@ -281,6 +283,7 @@ class LiveCliRuntime:
         progress = ProviderTurnProgress(timeout_seconds)
         chunks: list[bytes] = []
         total_bytes = 0
+        retained_bytes = 0
         last_read_at: float | None = None
         last_visible_content = ""
         final_snapshot = LiveCliMessageSnapshot()
@@ -367,6 +370,21 @@ class LiveCliRuntime:
                 continue
             chunks.append(chunk)
             total_bytes += len(chunk)
+            retained_bytes += len(chunk)
+            if retained_bytes > self.max_output_bytes:
+                if not getattr(self._message_source, "strict", False):
+                    raise ValueError(f"Live CLI output exceeded {self.max_output_bytes} bytes.")
+                overflow = retained_bytes - self.max_output_bytes
+                while overflow > 0:
+                    if len(chunks[0]) <= overflow:
+                        removed = len(chunks.pop(0))
+                        overflow -= removed
+                        retained_bytes -= removed
+                    else:
+                        chunks[0] = chunks[0][overflow:]
+                        retained_bytes -= overflow
+                        overflow = 0
+                self._last_turn_truncated_terminal_bytes = total_bytes - retained_bytes
             self._record_terminal_bytes(chunk)
             self._respond_to_terminal_interaction(fd, b"".join(chunks))
             last_read_at = time.monotonic()
@@ -388,8 +406,6 @@ class LiveCliRuntime:
                 self._needs_terminal_settle = True
                 self._room_observation_active = False
                 return self._output_message_from_snapshot(final_snapshot)
-            if total_bytes > self.max_output_bytes:
-                raise ValueError(f"Live CLI output exceeded {self.max_output_bytes} bytes.")
 
     def read_available(self, *, timeout_seconds: float = 0.0) -> dict[str, object]:
         process, fd = self._state_snapshot()
@@ -482,6 +498,7 @@ class LiveCliRuntime:
             "parent_agent_session_env_removed": sorted(PARENT_AGENT_SESSION_ENV_KEYS),
             "terminal_byte_count": terminal_byte_count,
             "terminal_tail": terminal_tail,
+            "last_turn_truncated_terminal_bytes": self._last_turn_truncated_terminal_bytes,
             **self._message_source.describe(),
             **(
                 self._terminal_interaction_policy.describe()

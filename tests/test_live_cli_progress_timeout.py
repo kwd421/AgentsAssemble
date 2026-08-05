@@ -54,6 +54,57 @@ class CompletedAnswerMessageSource:
 
 class LiveCliProgressTimeoutTests(unittest.TestCase):
     @unittest.skipUnless(live_cli_supported(), "requires POSIX PTY support")
+    def test_strict_transcript_turn_survives_bounded_terminal_noise(self):
+        script = "\n".join(
+            [
+                "import sys",
+                "for line in sys.stdin:",
+                "    if line.strip():",
+                "        print('x' * 5000, flush=True)",
+                "        print('answer:done', flush=True)",
+            ]
+        )
+        runtime = LiveCliRuntime(
+            "noisy-transcript",
+            [sys.executable, "-u", "-c", script],
+            idle_quiet_seconds=0.02,
+            max_output_bytes=1024,
+            message_source=CompletedAnswerMessageSource(),
+        )
+        try:
+            runtime.send("work")
+            output = runtime.read_output(timeout_seconds=1)
+            health = runtime.health()
+        finally:
+            runtime.stop()
+
+        self.assertEqual(output["content"], "answer:done")
+        self.assertGreater(health["last_turn_truncated_terminal_bytes"], 0)
+
+    @unittest.skipUnless(live_cli_supported(), "requires POSIX PTY support")
+    def test_terminal_canonical_output_still_fails_when_capture_is_oversized(self):
+        script = "\n".join(
+            [
+                "import sys",
+                "for line in sys.stdin:",
+                "    if line.strip():",
+                "        print('x' * 5000, flush=True)",
+            ]
+        )
+        runtime = LiveCliRuntime(
+            "noisy-terminal",
+            [sys.executable, "-u", "-c", script],
+            idle_quiet_seconds=0.02,
+            max_output_bytes=1024,
+        )
+        try:
+            runtime.send("work")
+            with self.assertRaises(ValueError):
+                runtime.read_output(timeout_seconds=1)
+        finally:
+            runtime.stop()
+
+    @unittest.skipUnless(live_cli_supported(), "requires POSIX PTY support")
     def test_active_turn_progress_extends_timeout_window(self):
         script = "\n".join(
             [
