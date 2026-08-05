@@ -243,28 +243,6 @@ def run_room_command(args: argparse.Namespace, *, runtime: RoomCliRuntime) -> in
             )
         return 0 if payload.get("status") in {"ok", "skipped", "not_run"} else 1
 
-    if args.room_command == "turn":
-        payload = {
-            "room_id": args.room_id,
-            "agent_id": args.agent,
-            "session_id": args.session or args.agent,
-            "instruction": args.instruction,
-            "dry_run": bool(args.dry_run),
-        }
-        response = runtime.request_json(
-            runtime.server_url(args.server, "/api/agent-sessions/turn"),
-            method="POST",
-            payload=payload,
-        )
-        if args.as_json:
-            print(json.dumps(response, ensure_ascii=False, indent=2))
-        else:
-            print(
-                f"ran Agent Session turn {response.get('turn_id') or ''} in {args.room_id}: "
-                f"{response.get('turn_status') or response.get('status')}"
-            )
-        return 0
-
     if args.room_command == "leave":
         payload = {"room_id": args.room_id, "participant_id": args.agent}
         response = runtime.request_json(

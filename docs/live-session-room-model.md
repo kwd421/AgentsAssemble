@@ -182,8 +182,9 @@ ordered Agent Session turns. If informal chat is reintroduced later, official
 meeting turns must still be typed separately so a side comment cannot silently
 become evidence or a decision.
 
-An Agent Session turn is the active runtime path. The host calls
-`POST /api/agent-sessions/turn` or `assemble room turn`; the server separates
+Historical design note: the host once called `POST /api/agent-sessions/turn`
+or `assemble room turn`. Both direct one-shot surfaces are now retired; the
+canonical server assigns resident Agent Bridge turns over WebSocket. The server separates
 RoomStore state from provider-visible input. RoomStore owns UI, audit, SSE,
 media manifests, recovery, cursors, and diagnostics. Provider prompt text is
 conversation input: bootstrap rules once, the current instruction, a short

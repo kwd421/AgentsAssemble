@@ -2,8 +2,13 @@ import argparse
 import unittest
 from unittest.mock import patch
 from io import StringIO
+from pathlib import Path
 
-from agentsassemble.cli import build_parser, main, run_room_command
+from agentsassemble.cli import build_parser, main
+from agentsassemble.application.cli.room_commands import (
+    RoomCliRuntime,
+    run_room_command,
+)
 from agentsassemble.agent_sessions import (
     DEFAULT_ROOM_CONTEXT_CHARS,
     DEFAULT_ROOM_CONTEXT_MESSAGES,
@@ -19,6 +24,31 @@ from agentsassemble.room_context import (
 
 
 class AgentSessionCliTests(unittest.TestCase):
+    def _runtime(
+        self,
+        *,
+        request_json=None,
+        run_codex_smoke=None,
+        run_native_smoke=None,
+    ) -> RoomCliRuntime:
+        def unexpected(*args, **kwargs):
+            raise AssertionError(f"unexpected runtime call: {args!r} {kwargs!r}")
+
+        return RoomCliRuntime(
+            request_json=request_json or unexpected,
+            server_url=lambda server, path: f"{server.rstrip('/')}{path}",
+            clean_text=lambda value, limit=0: str(value or "")[:limit or None],
+            run_codex_smoke=run_codex_smoke or unexpected,
+            run_native_smoke=run_native_smoke or unexpected,
+            codex_smoke_commands={
+                "codex-app-server-same-profile",
+                "codex-app-server-profile-isolation",
+                "codex-app-server-restart-recovery",
+                "codex-app-server-stderr-backpressure",
+            },
+            default_live_cli_smoke_config=Path("configs/live-cli-providers.example.json"),
+        )
+
     def test_agent_session_refactor_preserves_public_context_and_process_names(self):
         self.assertIs(ProcessFactory, RuntimeProcessFactory)
         self.assertEqual(DEFAULT_ROOM_CONTEXT_CHARS, ContextChars)
@@ -49,16 +79,15 @@ class AgentSessionCliTests(unittest.TestCase):
 
     def test_live_agent_flow_without_internal_flag_is_disabled_before_http(self):
         stderr = StringIO()
-        with patch("sys.stderr", stderr), patch("agentsassemble.cli._request_json") as request_json:
+        with patch("sys.stderr", stderr):
             exit_code = main(["live-agent", "flow", "--meeting-id", "m1", "--topic", "t"])
 
         self.assertEqual(exit_code, 2)
         self.assertIn("legacy/internal", stderr.getvalue())
-        request_json.assert_not_called()
 
     def test_live_agent_session_resume_without_internal_flag_is_disabled(self):
         stderr = StringIO()
-        with patch("sys.stderr", stderr), patch("agentsassemble.cli._request_json") as request_json:
+        with patch("sys.stderr", stderr):
             exit_code = main(
                 [
                     "live-agent",
@@ -72,7 +101,6 @@ class AgentSessionCliTests(unittest.TestCase):
 
         self.assertEqual(exit_code, 2)
         self.assertIn("legacy/internal", stderr.getvalue())
-        request_json.assert_not_called()
 
     def test_room_resume_uses_agent_session_resume_endpoint(self):
         args = build_parser().parse_args(
@@ -100,15 +128,20 @@ class AgentSessionCliTests(unittest.TestCase):
             ]
         )
 
-        with patch("agentsassemble.cli._request_json") as request_json, patch("builtins.print"):
-            request_json.return_value = {"status": "resumed", "participant": {"participant_id": "agent-1"}}
-            exit_code = run_room_command(args)
+        calls = []
+
+        def request_json(*call_args, **call_kwargs):
+            calls.append((call_args, call_kwargs))
+            return {"status": "resumed", "participant": {"participant_id": "agent-1"}}
+
+        with patch("sys.stdout", StringIO()):
+            exit_code = run_room_command(args, runtime=self._runtime(request_json=request_json))
 
         self.assertEqual(exit_code, 0)
-        self.assertEqual(request_json.call_args.args[0], "http://127.0.0.1:8765/api/agent-sessions/resume")
-        self.assertEqual(request_json.call_args.kwargs["method"], "POST")
+        self.assertEqual(calls[0][0][0], "http://127.0.0.1:8765/api/agent-sessions/resume")
+        self.assertEqual(calls[0][1]["method"], "POST")
         self.assertEqual(
-            request_json.call_args.kwargs["payload"],
+            calls[0][1]["payload"],
             {
                 "room_id": "room-a",
                 "agent_id": "agent-1",
@@ -137,51 +170,21 @@ class AgentSessionCliTests(unittest.TestCase):
             ]
         )
 
-        with patch("agentsassemble.cli._request_json") as request_json, patch("builtins.print"):
-            request_json.return_value = {
+        calls = []
+
+        def request_json(*call_args, **call_kwargs):
+            calls.append((call_args, call_kwargs))
+            return {
                 "state_status": "resumed",
                 "process_status": "not_started",
                 "participant": {"participant_id": "agent-1"},
             }
-            exit_code = run_room_command(args)
+
+        with patch("sys.stdout", StringIO()):
+            exit_code = run_room_command(args, runtime=self._runtime(request_json=request_json))
 
         self.assertEqual(exit_code, 0)
-        self.assertEqual(request_json.call_args.kwargs["payload"]["provider_kind"], "codex_live_session")
-
-    def test_room_turn_uses_agent_session_turn_endpoint(self):
-        args = build_parser().parse_args(
-            [
-                "room",
-                "turn",
-                "room-a",
-                "--agent",
-                "agent-1",
-                "--session",
-                "session-1",
-                "--server",
-                "http://127.0.0.1:8765",
-                "--json",
-                "Answer from room context.",
-            ]
-        )
-
-        with patch("agentsassemble.cli._request_json") as request_json, patch("builtins.print"):
-            request_json.return_value = {"status": "finished", "turn_status": "finished", "turn_id": "turn-1"}
-            exit_code = run_room_command(args)
-
-        self.assertEqual(exit_code, 0)
-        self.assertEqual(request_json.call_args.args[0], "http://127.0.0.1:8765/api/agent-sessions/turn")
-        self.assertEqual(request_json.call_args.kwargs["method"], "POST")
-        self.assertEqual(
-            request_json.call_args.kwargs["payload"],
-            {
-                "room_id": "room-a",
-                "agent_id": "agent-1",
-                "session_id": "session-1",
-                "instruction": "Answer from room context.",
-                "dry_run": False,
-            },
-        )
+        self.assertEqual(calls[0][1]["payload"]["provider_kind"], "codex_live_session")
 
     def test_room_leave_uses_persisted_participant_endpoint(self):
         args = argparse.Namespace(
@@ -192,15 +195,20 @@ class AgentSessionCliTests(unittest.TestCase):
             as_json=True,
         )
 
-        with patch("agentsassemble.cli._request_json") as request_json, patch("builtins.print"):
-            request_json.return_value = {"status": "left"}
-            exit_code = run_room_command(args)
+        calls = []
+
+        def request_json(*call_args, **call_kwargs):
+            calls.append((call_args, call_kwargs))
+            return {"status": "left"}
+
+        with patch("sys.stdout", StringIO()):
+            exit_code = run_room_command(args, runtime=self._runtime(request_json=request_json))
 
         self.assertEqual(exit_code, 0)
-        self.assertEqual(request_json.call_args.args[0], "http://127.0.0.1:8765/api/room-participants/leave")
-        self.assertEqual(request_json.call_args.kwargs["method"], "POST")
+        self.assertEqual(calls[0][0][0], "http://127.0.0.1:8765/api/room-participants/leave")
+        self.assertEqual(calls[0][1]["method"], "POST")
         self.assertEqual(
-            request_json.call_args.kwargs["payload"],
+            calls[0][1]["payload"],
             {"room_id": "room-a", "participant_id": "agent-1"},
         )
 
@@ -215,11 +223,10 @@ class AgentSessionCliTests(unittest.TestCase):
             with self.subTest(smoke_name=smoke_name):
                 args = parser.parse_args(["room", "smoke", smoke_name, "--json"])
                 stdout = StringIO()
-                with patch("sys.stdout", stdout), patch("agentsassemble.cli.run_codex_app_server_smoke") as smoke_runner:
-                    exit_code = run_room_command(args)
+                with patch("sys.stdout", stdout):
+                    exit_code = run_room_command(args, runtime=self._runtime())
 
                 self.assertEqual(exit_code, 0)
-                smoke_runner.assert_not_called()
                 self.assertIn('"status": "skipped"', stdout.getvalue())
 
     def test_room_smoke_profile_matrix_dispatches_approved_runner(self):
@@ -233,17 +240,28 @@ class AgentSessionCliTests(unittest.TestCase):
             ]
         )
 
-        stdout = StringIO()
-        with patch("sys.stdout", stdout), patch("agentsassemble.cli.run_codex_app_server_smoke") as smoke_runner:
-            smoke_runner.return_value = {
+        calls = []
+
+        def smoke_runner(*call_args, **call_kwargs):
+            calls.append((call_args, call_kwargs))
+            return {
                 "status": "ok",
                 "smoke": "codex-app-server-same-profile",
                 "metrics": {"runtime_profile_key": ["profile-a"]},
             }
-            exit_code = run_room_command(args)
+
+        stdout = StringIO()
+        with patch("sys.stdout", stdout):
+            exit_code = run_room_command(
+                args,
+                runtime=self._runtime(run_codex_smoke=smoke_runner),
+            )
 
         self.assertEqual(exit_code, 0)
-        smoke_runner.assert_called_once_with("codex-app-server-same-profile", approve_real_provider=True)
+        self.assertEqual(
+            calls,
+            [(('codex-app-server-same-profile',), {"approve_real_provider": True})],
+        )
         self.assertIn('"status": "ok"', stdout.getvalue())
 
     def test_room_smoke_legacy_approved_stub_does_not_dispatch_app_server_runner(self):
@@ -258,11 +276,10 @@ class AgentSessionCliTests(unittest.TestCase):
         )
 
         stdout = StringIO()
-        with patch("sys.stdout", stdout), patch("agentsassemble.cli.run_codex_app_server_smoke") as smoke_runner:
-            exit_code = run_room_command(args)
+        with patch("sys.stdout", stdout):
+            exit_code = run_room_command(args, runtime=self._runtime())
 
         self.assertEqual(exit_code, 0)
-        smoke_runner.assert_not_called()
         self.assertIn('"status": "not_run"', stdout.getvalue())
 
     def test_room_smoke_live_cli_dispatches_command_config_harness(self):
@@ -289,26 +306,37 @@ class AgentSessionCliTests(unittest.TestCase):
             ]
         )
 
-        stdout = StringIO()
-        with patch("sys.stdout", stdout), patch("agentsassemble.cli.run_room_native_cli_smoke") as smoke_runner:
-            smoke_runner.return_value = {
+        calls = []
+
+        def smoke_runner(*call_args, **call_kwargs):
+            calls.append((call_args, call_kwargs))
+            return {
                 "status": "ok",
                 "providers": [{"agent_id": "codex", "status": "ok"}],
             }
-            exit_code = run_room_command(args)
+
+        stdout = StringIO()
+        with patch("sys.stdout", stdout):
+            exit_code = run_room_command(
+                args,
+                runtime=self._runtime(run_native_smoke=smoke_runner),
+            )
 
         self.assertEqual(exit_code, 0)
-        smoke_runner.assert_called_once_with(
-            config_path="configs/live-cli-providers.example.json",
-            providers=["codex", "grok"],
-            approve_real_provider=True,
-            timeout_seconds=120.0,
-            latency_samples=10,
-            agent_conversation=True,
-            conversation_seconds=300.0,
-            conversation_topic="haunted station",
-            verify_controls=True,
-            observe_gui_port=8765,
+        self.assertEqual(
+            calls[0][1],
+            {
+                "config_path": "configs/live-cli-providers.example.json",
+                "providers": ["codex", "grok"],
+                "approve_real_provider": True,
+                "timeout_seconds": 120.0,
+                "latency_samples": 10,
+                "agent_conversation": True,
+                "conversation_seconds": 300.0,
+                "conversation_topic": "haunted station",
+                "verify_controls": True,
+                "observe_gui_port": 8765,
+            },
         )
         self.assertIn('"status": "ok"', stdout.getvalue())
 
@@ -317,9 +345,17 @@ class AgentSessionCliTests(unittest.TestCase):
             ["room", "smoke", "--providers", "grok", "--approve-real-provider", "--json"]
         )
 
-        with patch("sys.stdout", StringIO()), patch("agentsassemble.cli.run_room_native_cli_smoke") as smoke_runner:
-            smoke_runner.return_value = {"status": "error", "smoke": "room-native-cli", "providers": []}
-            exit_code = run_room_command(args)
+        with patch("sys.stdout", StringIO()):
+            exit_code = run_room_command(
+                args,
+                runtime=self._runtime(
+                    run_native_smoke=lambda **kwargs: {
+                        "status": "error",
+                        "smoke": "room-native-cli",
+                        "providers": [],
+                    }
+                ),
+            )
 
         self.assertEqual(exit_code, 1)
 

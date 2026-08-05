@@ -8,8 +8,6 @@ from agentsassemble.application.agent_sessions import (
     AgentSessionProcessService,
     create_agent_session_payload,
     resume_agent_session_payload,
-    run_agent_session_turn_payload,
-    run_next_agent_session_turn_payload,
 )
 from agentsassemble.web.router import RequestContext, Router
 
@@ -19,11 +17,8 @@ def register_agent_session_routes(
     *,
     agent_session_control_allowed: Callable[[RequestContext], bool],
     process_command_runner: Callable[[list[str]], dict[str, object]],
-    turn_adapter: Callable[..., object],
-    turn_command_runner: Callable[..., object],
-    turn_command_streamer: Callable[..., object],
 ) -> None:
-    """Register Agent Session creation, resume, and turn controls."""
+    """Register Agent Session creation and resume controls."""
 
     def _agent_session_process_service(
         ctx: RequestContext,
@@ -80,76 +75,6 @@ def register_agent_session_routes(
                         "created_by": payload.get("created_by") or operator_user_id,
                     },
                     process_service=_agent_session_process_service(ctx, payload),
-                    repository=ctx.deps.rooms,
-                )
-            )
-        except ValueError as error:
-            ctx.send_error(HTTPStatus.BAD_REQUEST, str(error))
-
-    @router.post("/api/agent-sessions/turn")
-    def agent_sessions_turn(ctx: RequestContext) -> None:
-        payload = ctx.read_json_body()
-        if payload is None:
-            return
-        if not agent_session_control_allowed(ctx):
-            ctx.send_error(
-                HTTPStatus.FORBIDDEN,
-                "Agent Session turn requires local operator or host authorization",
-            )
-            return
-        try:
-            ctx.send_json(
-                run_agent_session_turn_payload(
-                    ctx.deps.output_root,
-                    payload,
-                    turn_adapter=None
-                    if bool(payload.get("dry_run"))
-                    or payload.get("runtime_mode")
-                    in {"exec_jsonl_fallback", "exec_plain_fallback"}
-                    else turn_adapter,
-                    turn_command_runner=None
-                    if bool(payload.get("dry_run"))
-                    or payload.get("runtime_mode") != "exec_plain_fallback"
-                    else turn_command_runner,
-                    turn_command_streamer=None
-                    if bool(payload.get("dry_run"))
-                    or payload.get("runtime_mode") not in {"exec_jsonl_fallback"}
-                    else turn_command_streamer,
-                    repository=ctx.deps.rooms,
-                )
-            )
-        except ValueError as error:
-            ctx.send_error(HTTPStatus.BAD_REQUEST, str(error))
-
-    @router.post("/api/agent-sessions/next-turn")
-    def agent_sessions_next_turn(ctx: RequestContext) -> None:
-        payload = ctx.read_json_body()
-        if payload is None:
-            return
-        if not agent_session_control_allowed(ctx):
-            ctx.send_error(
-                HTTPStatus.FORBIDDEN,
-                "Agent Session turn requires local operator or host authorization",
-            )
-            return
-        try:
-            ctx.send_json(
-                run_next_agent_session_turn_payload(
-                    ctx.deps.output_root,
-                    payload,
-                    turn_adapter=None
-                    if bool(payload.get("dry_run"))
-                    or payload.get("runtime_mode")
-                    in {"exec_jsonl_fallback", "exec_plain_fallback"}
-                    else turn_adapter,
-                    turn_command_runner=None
-                    if bool(payload.get("dry_run"))
-                    or payload.get("runtime_mode") != "exec_plain_fallback"
-                    else turn_command_runner,
-                    turn_command_streamer=None
-                    if bool(payload.get("dry_run"))
-                    or payload.get("runtime_mode") not in {"exec_jsonl_fallback"}
-                    else turn_command_streamer,
                     repository=ctx.deps.rooms,
                 )
             )

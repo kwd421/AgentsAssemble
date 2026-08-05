@@ -119,9 +119,9 @@ surface rather than silently counted as React parity.
 | `/api/rooms/state` | GET | exact | `-` | no | RoomStore state projection endpoint; not wrapped by React preview yet. |
 | `/api/rooms/close` | POST | exact | `-` | no | RoomStore close endpoint; not wrapped by React preview yet. |
 | `/api/agent-sessions` | POST | exact | `-` | no | Legacy HTTP compatibility endpoint. React Add Agent now sends canonical `agent.create` over the ticket-authenticated room WebSocket. |
-| `/api/agent-sessions/next-turn` | POST | exact | `runNextAgentSessionTurn()` | yes | React Agent Session call control asks the ordered RoomTurnScheduler to pick the next active Agent Session from the latest public room message. |
+| `/api/agent-sessions/next-turn` | POST | exact | `-` | no | Retired tombstone returns `410 legacy_route_retired`; the canonical room scheduler assigns resident Agent Bridge turns over WebSocket. |
 | `/api/agent-sessions/resume` | POST | exact | `resumeAgentSession()` | yes | React member detail panel attaches canonical Agent Session state and reports process status separately; process launch remains explicit. |
-| `/api/agent-sessions/turn` | POST | exact | `runAgentSessionTurn()` | yes | Host/operator Agent Session turn execution endpoint; active room results are consumed through RoomStore SSE after the direct operator call. |
+| `/api/agent-sessions/turn` | POST | exact | `-` | no | Retired tombstone returns `410 legacy_route_retired`; canonical Agent Bridge turns reuse the resident runtime over WebSocket. |
 | `/api/live-agent-discovery` | POST | exact | `-` | no | Vanilla/admin/operator endpoint; not wrapped by React preview yet. |
 | `/api/live-agent-flow` | GET | exact | `fetchLiveAgentFlow()` | yes | React Play Mode status surface. |
 | `/api/live-agent-flow/start` | POST | exact | `startFlow()` | yes | React Play Mode start control; does not start providers. |
@@ -236,9 +236,15 @@ surface rather than silently counted as React parity.
 | `/api/provider-credentials/deepseek` | GET | exact | `fetchProviderCredentialStatus()` | yes | Returns only configured/source metadata; never returns the credential value. |
 | `/api/provider-credentials/deepseek` | POST | exact | `setProviderCredential()` | yes | Stores a DeepSeek key in the host secure store; the input is cleared by React after submission. |
 | `/api/provider-credentials/deepseek` | DELETE | exact | `deleteProviderCredential()` | yes | Deletes the DeepSeek key from the host secure store; the response never returns the credential value. |
+| `/api/provider-credentials/llmgateway` | GET | exact | `fetchProviderCredentialStatus()` | yes | Returns only configured/source metadata for the LLM Gateway key; never returns the credential value. |
+| `/api/provider-credentials/llmgateway` | POST | exact | `setProviderCredential()` | yes | Stores an LLM Gateway key in the host secure store; the input is cleared by React after submission. |
+| `/api/provider-credentials/llmgateway` | DELETE | exact | `deleteProviderCredential()` | yes | Deletes the LLM Gateway key from the host secure store; the response never returns the credential value. |
 | `/api/provider-credentials/openrouter` | GET | exact | `fetchProviderCredentialStatus()` | yes | Returns only configured/source metadata; never returns the credential value. |
 | `/api/provider-credentials/openrouter` | POST | exact | `setProviderCredential()` | yes | Stores an OpenRouter key in the host secure store; the input is cleared by React after submission. |
 | `/api/provider-credentials/openrouter` | DELETE | exact | `deleteProviderCredential()` | yes | Deletes the OpenRouter key from the host secure store; the response never returns the credential value. |
+| `/api/provider-credentials/tokenrouter` | GET | exact | `fetchProviderCredentialStatus()` | yes | Returns only configured/source metadata for the TokenRouter key; never returns the credential value. |
+| `/api/provider-credentials/tokenrouter` | POST | exact | `setProviderCredential()` | yes | Stores a TokenRouter key in the host secure store; the input is cleared by React after submission. |
+| `/api/provider-credentials/tokenrouter` | DELETE | exact | `deleteProviderCredential()` | yes | Deletes the TokenRouter key from the host secure store; the response never returns the credential value. |
 | `/api/provider-credentials/vercel` | GET | exact | `fetchProviderCredentialStatus()` | yes | Returns only configured/source metadata; never returns the credential value. |
 | `/api/provider-credentials/vercel` | POST | exact | `setProviderCredential()` | yes | Stores a Vercel AI Gateway key in the host secure store; the input is cleared by React after submission. |
 | `/api/provider-credentials/vercel` | DELETE | exact | `deleteProviderCredential()` | yes | Deletes the Vercel AI Gateway key from the host secure store; the response never returns the credential value. |

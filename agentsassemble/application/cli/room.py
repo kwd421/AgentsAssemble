@@ -150,14 +150,6 @@ def register_room_parsers(subparsers: argparse._SubParsersAction) -> None:
         room_join.add_argument("--dry-run", action="store_true", help="Return the launch plan without starting the provider.")
         room_join.add_argument("--json", action="store_true", dest="as_json")
 
-    room_turn = room_subparsers.add_parser("turn", parents=[room_server], help="Run one Agent Session turn from room state.")
-    room_turn.add_argument("room_id")
-    room_turn.add_argument("--agent", required=True)
-    room_turn.add_argument("--session", default="")
-    room_turn.add_argument("--dry-run", action="store_true", help="Build the turn packet without running the provider.")
-    room_turn.add_argument("--json", action="store_true", dest="as_json")
-    room_turn.add_argument("instruction")
-
     room_smoke = room_subparsers.add_parser("smoke", help="Run opt-in Agent Session or live CLI smoke checks.")
     room_smoke.add_argument("--providers", default="", help="Comma-separated live CLI provider ids to smoke, such as codex,grok.")
     room_smoke.add_argument("--config", default=str(DEFAULT_LIVE_CLI_SMOKE_CONFIG), help="Live CLI provider smoke config JSON.")

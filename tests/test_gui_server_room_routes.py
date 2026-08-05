@@ -107,24 +107,6 @@ def _legacy_facade_route_dependencies(root: Path) -> GuiDeps:
 
 
 class GuiServerRoomRouteTests(unittest.TestCase):
-
-    def test_legacy_app_server_adapter_rejects_non_codex_provider(self):
-        from agentsassemble.legacy.meeting.http import room_composition
-
-        with patch.object(
-            room_composition._CODEX_APP_SERVER_RUNTIMES,
-            "send_turn",
-        ) as send_turn:
-            with self.assertRaisesRegex(ValueError, "only supports Codex"):
-                list(
-                    room_composition._local_agent_session_turn_adapter(
-                        {"provider_kind": "grok"},
-                        {"provider_input": "hello"},
-                    )
-                )
-
-        send_turn.assert_not_called()
-
     def test_room_invite_creation_requires_an_existing_canonical_room(self):
         reset_room_invite_state()
         with tempfile.TemporaryDirectory() as temp_dir:
@@ -785,174 +767,47 @@ class GuiServerRoomRouteTests(unittest.TestCase):
             self.assertNotIn("--last", calls[0])
 
 
-    def test_agent_session_http_turn_requires_authorized_runner(self):
+    def test_agent_session_http_turn_is_retired_without_running_a_provider(self):
         reset_room_invite_state()
         reset_room_users_state()
         with tempfile.TemporaryDirectory() as temp_dir:
             root = Path(temp_dir)
-            _dispatch_room_route(
-                root,
-                path="/api/agent-sessions/resume",
-                method="POST",
-                payload={
-                    "room_id": "session-room",
-                    "agent_id": "agent-1",
-                    "session_id": "session-1",
-                    "provider_kind": "codex_live_session",
-                },
-            )
-            denied = _dispatch_room_route(
+            store = RoomStore(root)
+            store.create_room("session-room")
+            baseline = list(store.read_events("session-room"))
+            turned = _dispatch_room_route(
                 root,
                 path="/api/agent-sessions/turn",
                 method="POST",
                 payload={
                     "room_id": "session-room",
                     "agent_id": "agent-1",
-                    "session_id": "session-1",
-                    "instruction": "Answer.",
+                    "instruction": "Answer now.",
+                    "runtime_mode": "exec_jsonl_fallback",
                 },
-                loopback=False,
             )
 
-            self.assertEqual(
-                denied.sent_error,
-                (HTTPStatus.FORBIDDEN, "Agent Session turn requires local operator or host authorization"),
-            )
-            self.assertNotIn("message_final", [event["type"] for event in RoomStore(root).read_events("session-room")])
+            self.assertEqual(turned.sent_error[0], HTTPStatus.GONE)
+            self.assertEqual(turned.sent_error_code, "legacy_route_retired")
+            self.assertEqual(store.read_events("session-room"), baseline)
 
-
-    def test_agent_session_http_turn_uses_fake_runner_and_appends_room_events(self):
-        reset_room_invite_state()
-        reset_room_users_state()
-        packets: list[dict[str, object]] = []
-
-        def fake_turn_command_streamer(command, prompt, timeout_seconds):
-            packets.append({"command": command, "prompt": prompt, "timeout_seconds": timeout_seconds})
-            yield {"type": "message_delta", "content": "Answer "}
-            yield {"type": "message_final", "content": "Answer from fake runner"}
-
+    def test_agent_session_http_next_turn_is_retired_without_assigning_a_turn(self):
         with tempfile.TemporaryDirectory() as temp_dir:
             root = Path(temp_dir)
             store = RoomStore(root)
             store.create_room("session-room")
-            cursor = store.read_events("session-room")[-1]["id"]
-            store.append_event("session-room", "message_final", actor_id="human-1", content="Question")
-            _dispatch_room_route(
+            baseline = list(store.read_events("session-room"))
+
+            response = _dispatch_room_route(
                 root,
-                path="/api/agent-sessions/resume",
+                path="/api/agent-sessions/next-turn",
                 method="POST",
-                payload={
-                    "room_id": "session-room",
-                    "agent_id": "agent-1",
-                    "session_id": "session-1",
-                    "provider_kind": "codex_live_session",
-                },
+                payload={"room_id": "session-room"},
             )
 
-            with patch(
-                "agentsassemble.legacy.meeting.http.room_composition._local_agent_session_turn_command_streamer",
-                side_effect=fake_turn_command_streamer,
-            ):
-                turned = _dispatch_room_route(
-                    root,
-                    path="/api/agent-sessions/turn",
-                    method="POST",
-                    payload={
-                        "room_id": "session-room",
-                        "agent_id": "agent-1",
-                        "session_id": "session-1",
-                        "instruction": "Answer now.",
-                        "runtime_mode": "exec_jsonl_fallback",
-                    },
-                ).sent_json
-
-            self.assertEqual(turned["turn_status"], "finished")
-            self.assertEqual(packets[0]["command"][-1], "-")
-            self.assertIn("[Your turn]\nAnswer now.", packets[0]["prompt"])
-            self.assertNotIn('"session_id"', packets[0]["prompt"])
-            event_types = [event["type"] for event in RoomStore(root).read_events("session-room")]
-            self.assertIn("turn_started", event_types)
-            self.assertIn("message_delta", event_types)
-            self.assertIn("message_final", event_types)
-            self.assertIn("turn_finished", event_types)
-            frames = "".join(room_sse_frames_after_cursor(root, "session-room", cursor=cursor))
-            self.assertIn("event: turn_started", frames)
-            self.assertIn("event: message_final", frames)
-            self.assertIn("Answer from fake runner", frames)
-
-
-    def test_agent_session_http_next_turn_uses_latest_room_message_and_ordered_agent(self):
-        reset_room_invite_state()
-        reset_room_users_state()
-        packets: list[dict[str, object]] = []
-
-        def fake_turn_command_streamer(command, prompt, timeout_seconds):
-            packets.append({"command": command, "prompt": prompt, "timeout_seconds": timeout_seconds})
-            yield {"type": "message_final", "content": "Ordered reply"}
-
-        with tempfile.TemporaryDirectory() as temp_dir:
-            root = Path(temp_dir)
-            store = RoomStore(root)
-            store.create_room("session-room")
-            first_message = store.append_event("session-room", "message_final", actor_id="human-1", content="첫 질문")
-            _dispatch_room_route(
-                root,
-                path="/api/agent-sessions",
-                method="POST",
-                payload={
-                    "room_id": "session-room",
-                    "agent_id": "agent-a",
-                    "display_name": "Agent A",
-                    "provider_kind": "codex_live_session",
-                },
-            )
-            _dispatch_room_route(
-                root,
-                path="/api/agent-sessions",
-                method="POST",
-                payload={
-                    "room_id": "session-room",
-                    "agent_id": "agent-b",
-                    "display_name": "Agent B",
-                    "provider_kind": "codex_live_session",
-                },
-            )
-
-            with patch(
-                "agentsassemble.legacy.meeting.http.room_composition._local_agent_session_turn_command_streamer",
-                side_effect=fake_turn_command_streamer,
-            ):
-                first = _dispatch_room_route(
-                    root,
-                    path="/api/agent-sessions/next-turn",
-                    method="POST",
-                    payload={
-                        "room_id": "session-room",
-                        "trigger_event_id": first_message["id"],
-                        "runtime_mode": "exec_jsonl_fallback",
-                    },
-                ).sent_json
-                second_message = store.append_event("session-room", "message_final", actor_id="human-1", content="둘째 질문")
-                second = _dispatch_room_route(
-                    root,
-                    path="/api/agent-sessions/next-turn",
-                    method="POST",
-                    payload={
-                        "room_id": "session-room",
-                        "trigger_event_id": second_message["id"],
-                        "runtime_mode": "exec_jsonl_fallback",
-                    },
-                ).sent_json
-
-            self.assertEqual(first["participant_id"], "agent-a")
-            self.assertEqual(second["participant_id"], "agent-b")
-            self.assertIn("[Your turn]\nRespond to the latest room message.", packets[0]["prompt"])
-            self.assertNotIn('"session_id"', packets[0]["prompt"])
-            self.assertIn("첫 질문", packets[0]["prompt"])
-            event_types = [event["type"] for event in RoomStore(root).read_events("session-room")]
-            self.assertIn("turn_queued", event_types)
-            self.assertIn("turn_assigned", event_types)
-            self.assertIn("turn_finished", event_types)
+            self.assertEqual(response.sent_error[0], HTTPStatus.GONE)
+            self.assertEqual(response.sent_error_code, "legacy_route_retired")
+            self.assertEqual(store.read_events("session-room"), baseline)
 
 
     def test_legacy_lobby_message_does_not_start_a_canonical_provider_turn(self):

@@ -18,11 +18,7 @@ from agentsassemble.application.agent_sessions import (
     room_action_payload,
     room_lifecycle_payload,
     room_status_payload,
-    run_agent_session_turn_payload,
-    run_next_agent_session_turn_payload,
 )
-from agentsassemble.providers.codex_app_server import CodexAppServerRuntimeManager
-from agentsassemble.providers.codex_app_server import clean_agent_session_provider_kind
 from agentsassemble.web.routes.agent_sessions import register_agent_session_routes
 from agentsassemble.web.routes.room_invite import register_invite_admission_routes
 from agentsassemble.legacy.meeting.http.room_lifecycle_compat import register_legacy_room_ensure_route
@@ -97,9 +93,6 @@ from agentsassemble.room.voice_presence import (
 # above directly instead of treating this coordinator as a service catalog.
 
 
-_CODEX_APP_SERVER_RUNTIMES = CodexAppServerRuntimeManager()
-
-
 def _speech_rejection_status(category: str) -> HTTPStatus:
     if category == "rate_limited":
         return HTTPStatus.TOO_MANY_REQUESTS
@@ -121,40 +114,6 @@ def _local_agent_session_command_runner(command: list[str]) -> dict[str, object]
     return {"returncode": 0, "pid": process.pid}
 
 
-def _local_agent_session_turn_command_runner(
-    command: list[str],
-    prompt: str,
-    timeout_seconds: float,
-) -> subprocess.CompletedProcess[str]:
-    return subprocess.run(
-        [str(part) for part in command],
-        input=prompt,
-        text=True,
-        capture_output=True,
-        timeout=timeout_seconds,
-        check=False,
-    )
-
-
-def _local_agent_session_turn_command_streamer(
-    command: list[str],
-    prompt: str,
-    timeout_seconds: float,
-):
-    from agentsassemble.application.agent_sessions import _default_agent_turn_jsonl_streamer
-
-    yield from _default_agent_turn_jsonl_streamer(command, prompt, timeout_seconds)
-
-
-def _local_agent_session_turn_adapter(session: dict[str, object], packet: dict[str, object]):
-    provider_kind = clean_agent_session_provider_kind(session.get("provider_kind"))
-    if provider_kind not in {"", "codex_live_session"}:
-        raise ValueError(
-            "The legacy Agent Session app-server adapter only supports Codex sessions."
-        )
-    yield from _CODEX_APP_SERVER_RUNTIMES.send_turn(session, packet)
-
-
 def _agent_session_control_allowed(ctx: RequestContext) -> bool:
     has_host_token = bool(ctx.provided_host_token())
     return ctx.uses_loopback_host() or (has_host_token and ctx.is_host()) or ctx.is_operator_session()
@@ -165,9 +124,6 @@ class RoomRouteAdapters:
     agent_session_control_allowed: Callable[[RequestContext], bool]
     speech_rejection_status: Callable[[str], HTTPStatus]
     process_command_runner: Callable[..., object]
-    turn_adapter: Callable[..., object]
-    turn_command_runner: Callable[..., object]
-    turn_command_streamer: Callable[..., object]
 
 
 def _default_room_route_adapters() -> RoomRouteAdapters:
@@ -175,9 +131,6 @@ def _default_room_route_adapters() -> RoomRouteAdapters:
         agent_session_control_allowed=_agent_session_control_allowed,
         speech_rejection_status=_speech_rejection_status,
         process_command_runner=_local_agent_session_command_runner,
-        turn_adapter=_local_agent_session_turn_adapter,
-        turn_command_runner=_local_agent_session_turn_command_runner,
-        turn_command_streamer=_local_agent_session_turn_command_streamer,
     )
 
 
@@ -194,9 +147,6 @@ def register_room_routes(
         router,
         agent_session_control_allowed=resolved.agent_session_control_allowed,
         process_command_runner=resolved.process_command_runner,
-        turn_adapter=resolved.turn_adapter,
-        turn_command_runner=resolved.turn_command_runner,
-        turn_command_streamer=resolved.turn_command_streamer,
     )
     register_legacy_room_ensure_route(router)
     register_room_lifecycle_routes(router)

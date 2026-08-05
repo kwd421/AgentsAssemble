@@ -1,12 +1,12 @@
 {
  "readme": "AgentsAssemble codebase map. Regenerate with `make codebase-map`; verify committed outputs with `make codebase-map-verify`. modules[] columns: name, path, package, domain, classification, migration_status, lines, docstring, imports[], imported_by[] (indexes into modules), classes[[name, [[base, defining_module], ...]]] (best-effort, top-level classes only). frontend[] columns: path, group, lines, doc, imports[], imported_by[] (indexes into frontend). package_edges go importer -> dependency with module-import counts; `points` is the precomputed polyline for that edge and `intra_cycle` marks imports whose endpoints share one cycle group. graph{} holds the layered package drawing: layers[] top-to-bottom (each with members[] package ids, member_count, and the dominant domain), (a package sits below everything importing it), clusters[] are mutually dependent packages (import cycles at package level) drawn as one labelled block, plus width/height of the drawing. health{} ranks findings for a reader who has to act: cycles[] (mutually dependent packages, with the lines they hold), leaning_on_retiring[] (current modules importing legacy/compatibility modules - the reason legacy cannot be deleted), highest_leverage_migrations[] (retiring modules with the most current importers), unreferenced_shims[] (compatibility modules with no importer in agentsassemble/ and no reference in tests/; callers outside this repository are not visible, so verify before deleting), and hotspots[] (largest modules). health.scope states exactly what was measured. class_graph{} is the UML generalization DAG over base classes that resolve inside the repo: edges go base -> subclass, so a subclass always sits below the class it extends. Coordinates in graph and class_graph are laid out with a Sugiyama pipeline (cycle condensation, Coffman-Graham layering, dummy-node edge routing, median/transpose crossing reduction) and are deterministic.",
- "generated_at": "2026-08-05T05:41:11Z",
- "fingerprint": "5f33c1b87d00ad80",
+ "generated_at": "2026-08-05T06:03:57Z",
+ "fingerprint": "537acd3d6137571d",
  "stats": {
   "backend_modules": 860,
-  "backend_lines": 146487,
+  "backend_lines": 146346,
   "frontend_files": 211,
-  "frontend_lines": 49245,
+  "frontend_lines": 49207,
   "packages": 30,
   "import_cycles": 0,
   "classifications": {
@@ -22,7 +22,7 @@
    "kind": "backend",
    "doc": "HTTP and WebSocket transport boundaries for the current GUI.",
    "files": 33,
-   "lines": 5537,
+   "lines": 5476,
    "domains": {
     "web": 33
    },
@@ -42,7 +42,7 @@
    "kind": "backend",
    "doc": "Application composition and cross-domain transaction contracts.",
    "files": 36,
-   "lines": 8685,
+   "lines": 8655,
    "domains": {
     "application": 36
    },
@@ -265,7 +265,7 @@
    "kind": "backend",
    "doc": "Compatibility adapters for product paths that have not been retired yet.",
    "files": 181,
-   "lines": 47103,
+   "lines": 47053,
    "domains": {
     "legacy": 181
    },
@@ -525,7 +525,7 @@
    "kind": "frontend",
    "doc": "Room protocol client: HTTP calls, WebSocket wiring, DTO mapping.",
    "files": 9,
-   "lines": 1935,
+   "lines": 1897,
    "domains": {},
    "classes": {},
    "x": 330.0,
@@ -1457,7 +1457,7 @@
   {
    "from": "legacy",
    "to": "providers",
-   "count": 40,
+   "count": 39,
    "points": [
     [
      770.0,
@@ -4136,7 +4136,7 @@
  "health": {
   "scope": "Imports are counted inside agentsassemble/ only; test references are counted separately from tests/. Callers outside this repository are not visible to the generator.",
   "totals": {
-   "retiring_lines": 58150,
+   "retiring_lines": 58100,
    "current_to_retiring_imports": 109,
    "unreferenced_shim_lines": 2014,
    "test_only_shims": 196
@@ -4160,7 +4160,7 @@
      "web"
     ],
     "internal_edges": 92,
-    "lines": 143039,
+    "lines": 142898,
     "heaviest": "legacy"
    },
    {
@@ -4173,7 +4173,7 @@
      "fe:views"
     ],
     "internal_edges": 17,
-    "lines": 49245,
+    "lines": 49207,
     "heaviest": "fe:views"
    }
   ],
@@ -4571,7 +4571,7 @@
     "module": "agentsassemble.providers.codex_app_server",
     "lines": 1423,
     "cls": "current",
-    "imported_by": 10
+    "imported_by": 9
    },
    {
     "module": "agentsassemble.providers.room_portal",
@@ -5812,7 +5812,7 @@
    "application",
    "current",
    "in-target-package",
-   233,
+   225,
    "Room command parser registrations.",
    [
     43,
@@ -5832,7 +5832,7 @@
    "application",
    "current",
    "in-target-package",
-   281,
+   259,
    "Execution for current room and Agent Session CLI commands.",
    [
     18,
@@ -12401,7 +12401,7 @@
    "legacy",
    "legacy",
    "in-target-package",
-   208,
+   158,
    "Public coordinator and local runtime adapters for room HTTP routes.",
    [
     14,
@@ -12415,7 +12415,6 @@
     339,
     340,
     510,
-    607,
     705,
     717,
     738,
@@ -17966,7 +17965,6 @@
     40,
     95,
     111,
-    338,
     608,
     615
    ],
@@ -24012,7 +24010,7 @@
    "web",
    "current",
    "in-target-package",
-   157,
+   82,
    "Agent Session and provider-turn HTTP routes for canonical rooms.",
    [
     33,
@@ -24257,7 +24255,7 @@
    "web",
    "current",
    "in-target-package",
-   71,
+   85,
    "Explicit tombstones for legacy HTTP operations replaced by room commands.",
    [
     832
@@ -24806,7 +24804,7 @@
   [
    "frontend/src/api/agentSessions.ts",
    "api",
-   210,
+   172,
    "",
    [
     4,
@@ -27721,19 +27719,19 @@
    "name": "agentsassemble",
    "note": "Backend package (Python)",
    "files": 860,
-   "lines": 146487
+   "lines": 146346
   },
   {
    "name": "frontend/src",
    "note": "React room client (TS/TSX)",
    "files": 211,
-   "lines": 49245
+   "lines": 49207
   },
   {
    "name": "tests",
    "note": "Backend test suite",
    "files": 389,
-   "lines": 151976
+   "lines": 151887
   },
   {
    "name": "scripts",
@@ -27745,7 +27743,7 @@
    "name": "docs",
    "note": "Product and architecture docs",
    "files": 85,
-   "lines": 31056
+   "lines": 31063
   },
   {
    "name": "configs",

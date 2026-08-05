@@ -56,6 +56,7 @@ from agentsassemble.gui import (
     send_lobby_message_to_remote_bridge,
 )
 from agentsassemble.legacy.meeting.http.room_composition import register_room_routes
+from agentsassemble.web.routes.retired import register_retired_legacy_routes
 from agentsassemble.web.routes.room_creation import register_room_creation_routes
 from agentsassemble.web.routes.room_settings import register_room_settings_routes
 from agentsassemble.web.router import GuiDeps, RequestContext, Router
@@ -171,6 +172,7 @@ def _dispatch_room_route(
     )
     router = Router()
     register_room_routes(router)
+    register_retired_legacy_routes(router)
     register_room_creation_routes(router)
     register_room_settings_routes(router)
     ctx = RequestContext(

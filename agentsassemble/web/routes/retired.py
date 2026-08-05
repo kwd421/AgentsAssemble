@@ -67,5 +67,19 @@ def register_retired_legacy_routes(router: Router) -> None:
             ),
         )
 
+    @router.post("/api/agent-sessions/turn")
+    def retired_agent_session_turn(ctx: RequestContext) -> None:
+        _send_retired(
+            ctx,
+            replacement="server-assigned Agent Bridge turns over the canonical room WebSocket",
+        )
+
+    @router.post("/api/agent-sessions/next-turn")
+    def retired_agent_session_next_turn(ctx: RequestContext) -> None:
+        _send_retired(
+            ctx,
+            replacement="server-assigned Agent Bridge turns over the canonical room WebSocket",
+        )
+
 
 __all__ = ["register_retired_legacy_routes"]
