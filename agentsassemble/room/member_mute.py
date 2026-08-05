@@ -56,6 +56,35 @@ class RoomMemberMuteService:
             "member": compatibility_member,
         }
 
+    @staticmethod
+    def planned_compatibility_member(
+        current: dict[str, object] | None,
+        *,
+        room_id: str,
+        participant_id: str,
+        muted: bool,
+    ) -> dict[str, object]:
+        """Describe the compatibility-roster write before the canonical commit."""
+
+        if current:
+            return {**current, "muted": muted}
+        return {
+            "meeting_id": room_id,
+            "participant_id": participant_id,
+            "display_name": participant_id,
+            "role": "agent",
+            "participant_type": "unknown",
+            "provider_kind": "",
+            "connection_kind": "",
+            "status": "",
+            "muted": muted,
+            "is_host": False,
+            "source": "moderation",
+            "created_at": "",
+            "updated_at": "",
+            "last_seen_at": "",
+        }
+
     def apply_after_commit(
         self,
         room_id: str,

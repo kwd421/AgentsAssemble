@@ -607,6 +607,7 @@ export default function App() {
   const sendAgentConfigure = canonicalRoom.sendAgentConfigure;
   const sendParticipantKick = canonicalRoom.sendParticipantKick;
   const sendParticipantMute = canonicalRoom.sendParticipantMute;
+  const sendParticipantRole = canonicalRoom.sendParticipantRole;
   const loadProviderUsage = useCallback(async (session: RoomAgentSession) => {
     if (guestLocked) return;
     const target = providerUsageTarget(session);
@@ -1249,8 +1250,8 @@ export default function App() {
     };
   }, []);
 
-  function updateMemberRole(memberId: string, role: RoomMember["role"]) {
-    roomSettings.updateMemberRole(activeRoom, activeRoomMembers, memberId, role);
+  async function updateMemberRole(memberId: string, role: RoomMember["role"]) {
+    await sendParticipantRole(memberId, role);
   }
 
   function updateChannelSetting(channelId: string, updates: Partial<ChannelSettings>) {

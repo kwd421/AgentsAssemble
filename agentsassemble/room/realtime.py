@@ -80,6 +80,7 @@ from agentsassemble.room.moderation import (
 from agentsassemble.room.attachments import FileAttachmentStore
 from agentsassemble.room.messages import RoomMessageService
 from agentsassemble.room.member_mute import RoomMemberMuteService
+from agentsassemble.room.member_roles import update_member_role_in_unit
 from agentsassemble.room.participant_kick import RoomParticipantKickService
 from agentsassemble.room.participant_leave import RoomParticipantLeaveService
 from agentsassemble.room.projection import (
@@ -802,7 +803,7 @@ class RoomRealtimeController:
             with self._lock:
                 participant_id = self._payload_agent_id(payload)
                 muted = bool(payload.get("muted", True))
-                compatibility_member = _planned_muted_member(
+                compatibility_member = self._member_mute.planned_compatibility_member(
                     identity_store_for_output_root(self.output_root).get_membership(room_id, participant_id),
                     room_id=room_id,
                     participant_id=participant_id,
@@ -823,6 +824,17 @@ class RoomRealtimeController:
                 )
                 self._apply_mute_after_commit(room_id, participant_id, muted)
                 return ack
+        if action == "participant.role.update":
+            self._require_capability(identity, "room.manage")
+            with self._lock:
+                return self._execute_durable_command(
+                    identity,
+                    room_id,
+                    request_id,
+                    action,
+                    payload,
+                    lambda unit: update_member_role_in_unit(payload, unit=unit),
+                )
         if action == "participant.leave":
             self._require_capability(identity, "participant.leave")
             with self._lock:
@@ -1776,33 +1788,6 @@ class RoomRealtimeController:
     def _require_bridge(identity: dict[str, object]) -> None:
         if identity.get("client_type") != "agent_bridge":
             raise RoomCommandRejected("This command is reserved for an Agent Bridge.", code="permission_denied")
-
-def _planned_muted_member(
-    current: dict[str, object] | None,
-    *,
-    room_id: str,
-    participant_id: str,
-    muted: bool,
-) -> dict[str, object]:
-    if current:
-        return {**current, "muted": muted}
-    return {
-        "meeting_id": room_id,
-        "participant_id": participant_id,
-        "display_name": participant_id,
-        "role": "agent",
-        "participant_type": "unknown",
-        "provider_kind": "",
-        "connection_kind": "",
-        "status": "",
-        "muted": muted,
-        "is_host": False,
-        "source": "moderation",
-        "created_at": "",
-        "updated_at": "",
-        "last_seen_at": "",
-    }
-
 
 def _command_principal(identity: dict[str, object]) -> str:
     client_type = clean_lobby_text(identity.get("client_type"), limit=64) or "unknown"

@@ -23,6 +23,7 @@ ROOM_COMMAND_ACTIONS = frozenset(
         "agent.interrupt",
         "participant.kick",
         "participant.mute",
+        "participant.role.update",
         "participant.leave",
         "bridge.ready",
         "bridge.health",

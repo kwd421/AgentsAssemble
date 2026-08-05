@@ -67,7 +67,7 @@ export default function MemberList({
   roomId: string;
   roomName: string;
   roleOverrides?: Record<string, string>;
-  onRoleChange?: (memberId: string, role: RoleId) => void;
+  onRoleChange?: (memberId: string, role: RoleId) => void | Promise<void>;
   canEditRoles?: boolean;
   processGroups?: LiveAgentProcessGroup[];
   onSessionActionComplete?: () => void;
@@ -98,6 +98,7 @@ export default function MemberList({
   const [collapsedGroups, setCollapsedGroups] = useState<Record<string, boolean>>({});
   const [memberMenu, setMemberMenu] = useState<{ x: number; y: number; entry: MemberEntry } | null>(null);
   const [muteBusy, setMuteBusy] = useState(false);
+  const [roleChangeError, setRoleChangeError] = useState("");
   const [agentProfileSettings, setAgentProfileSettings] = useState<Record<string, AgentProfileSettings>>(
     () => loadAgentProfileSettings()
   );
@@ -180,9 +181,16 @@ export default function MemberList({
     }
   }
 
-  function handleRoleChange(memberId: string, role: RoleId) {
+  async function handleRoleChange(memberId: string, role: RoleId) {
     if (onRoleChange) {
-      onRoleChange(memberId, role);
+      setRoleChangeError("");
+      try {
+        await onRoleChange(memberId, role);
+      } catch (error) {
+        setRoleChangeError(
+          error instanceof Error ? error.message : "역할을 변경하지 못했습니다."
+        );
+      }
       return;
     }
     setLocalRoleOverrides((previous) => {
@@ -229,6 +237,11 @@ export default function MemberList({
           <Search size={15} aria-hidden />
         </label>
       </div>
+      )}
+      {roleChangeError && (
+        <p className="dc-room-play-error mx-2 mt-2 preserve-words" role="alert">
+          {roleChangeError}
+        </p>
       )}
       <div className="min-h-0 flex-1 overflow-y-auto px-2 py-3 chat-scroll">
         {agents.length === 0 && members.length === 0 && (

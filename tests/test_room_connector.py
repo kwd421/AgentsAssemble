@@ -62,6 +62,86 @@ class RoomConnectorTests(unittest.TestCase):
                     return
         self.fail(f"host command {request_id} was not acknowledged")
 
+    def _wait_for_ack(self, client, request_id: str) -> dict[str, object]:
+        for _ in range(20):
+            for message in client.receive():
+                if message.get("request_id") == request_id:
+                    return message
+        self.fail(f"command {request_id} was not acknowledged")
+
+    def test_host_role_change_is_durable_idempotent_and_visible_to_another_client(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            base, store = self._start_server(Path(temp_dir))
+            store.upsert_participant(
+                "room-a",
+                {
+                    "participant_id": "agent-one",
+                    "display_name": "Agent One",
+                    "participant_type": "agent",
+                    "role": "agent",
+                    "status": "joined",
+                },
+            )
+            host = self._host_client(base)
+            observer = self._host_client(base)
+            host.set_receive_timeout(0.25)
+            observer.set_receive_timeout(0.25)
+            self.addCleanup(host.close)
+            self.addCleanup(observer.close)
+
+            host.command(
+                "participant.role.update",
+                {"participant_id": "agent-one", "role": "reviewer"},
+                request_id="role-change-1",
+            )
+            ack = self._wait_for_ack(host, "role-change-1")
+
+            self.assertEqual(ack["op"], "ack")
+            self.assertEqual(ack["result"]["participant"]["role"], "reviewer")
+            self.assertEqual(store.participant("room-a", "agent-one")["role"], "reviewer")
+
+            observed: list[dict[str, object]] = []
+            for _ in range(20):
+                for message in observer.receive():
+                    if message.get("op") == "event":
+                        observed.extend(message.get("events", []))
+                if any(
+                    message.get("type") == "participant_updated"
+                    and message.get("participant_id") == "agent-one"
+                    and message.get("role") == "reviewer"
+                    for message in observed
+                ):
+                    break
+            self.assertTrue(
+                any(
+                    message.get("type") == "participant_updated"
+                    and message.get("participant_id") == "agent-one"
+                    and message.get("role") == "reviewer"
+                    for message in observed
+                )
+            )
+
+            host.command(
+                "participant.role.update",
+                {"participant_id": "agent-one", "role": "reviewer"},
+                request_id="role-change-1",
+            )
+            repeated = self._wait_for_ack(host, "role-change-1")
+            self.assertTrue(repeated["deduplicated"])
+            self.assertEqual(
+                len(
+                    [
+                        event
+                        for event in store.read_events(
+                            "room-a",
+                            event_types=("participant_updated",),
+                        )
+                        if event.get("participant_id") == "agent-one"
+                    ]
+                ),
+                1,
+            )
+
     def test_link_join_waits_for_new_event_and_publishes_canonically(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:
             base, store = self._start_server(Path(temp_dir))

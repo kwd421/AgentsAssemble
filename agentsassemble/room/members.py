@@ -7,6 +7,7 @@ from pathlib import Path
 from typing import Any
 
 from agentsassemble.application.agent_sessions import merge_room_store_members
+from agentsassemble.room.command_uow import RoomCommandUnitOfWork
 from agentsassemble.room.text import clean_room_text as clean_lobby_text
 from agentsassemble.persistence.local.identity.registry import (
     identity_store_for_output_root,
@@ -109,6 +110,32 @@ def set_canonical_room_member_role(
             role=canonical_role,
         )
     return member
+
+
+def set_canonical_room_member_role_in_unit(
+    unit: RoomCommandUnitOfWork,
+    *,
+    participant_id: object,
+    role: object,
+) -> dict[str, object]:
+    """Update one participant role inside the caller's canonical command UOW."""
+
+    member_id = clean_lobby_text(participant_id, limit=128)
+    requested_role = clean_lobby_text(role, limit=32)
+    canonical_role = _canonical_room_member_role(requested_role)
+    if not member_id:
+        raise ValueError("participant_id is required")
+    if not _room_member_role_is_supported(requested_role):
+        raise ValueError(f"Unsupported room member role: {role}")
+    if not unit.participant(member_id):
+        raise ValueError(f"Room participant does not exist: {member_id}")
+    member = unit.update_participant_fields(member_id, role=canonical_role)
+    event = unit.append_event(
+        "participant_updated",
+        participant_id=member_id,
+        role=canonical_role,
+    )
+    return {"participant": member, "event": event}
 
 
 def _canonical_room_member_role(value: object) -> str:

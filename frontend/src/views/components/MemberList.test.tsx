@@ -122,6 +122,32 @@ describe("MemberList component wiring", () => {
     expect(memberRow?.getAttribute("data-ultra")).toBe("true");
   });
 
+  it("keeps a failed canonical role change visible instead of silently diverging", async () => {
+    const onRoleChange = vi.fn().mockRejectedValue(
+      new Error("canonical role update rejected")
+    );
+    render(
+      <MemberList
+        agents={[AGENT]}
+        roomId="room-1"
+        roomName="Room One"
+        canEditRoles
+        onRoleChange={onRoleChange}
+      />
+    );
+
+    fireEvent.change(screen.getByRole("combobox", { name: "Agent One 역할" }), {
+      target: { value: "reviewer" },
+    });
+
+    await waitFor(() =>
+      expect(screen.getByRole("alert").textContent).toContain(
+        "canonical role update rejected"
+      )
+    );
+    expect(onRoleChange).toHaveBeenCalledWith("agent-1", "reviewer");
+  });
+
   it("keeps a session-only member open and retryable when moderation fails", async () => {
     const onParticipantKick = vi.fn().mockRejectedValue(
       new Error("moderation service unavailable")

@@ -568,6 +568,40 @@ export function useCanonicalRoom(options: UseCanonicalRoomOptions) {
     [socket]
   );
 
+  const sendParticipantRole = useCallback(
+    async (participantId: string, role: RoomMember["role"]) => {
+      if (!socket) throw new Error("방 연결이 준비되지 않았습니다.");
+      const ack = await socket.command("participant.role.update", {
+        participant_id: participantId,
+        role,
+      });
+      const participant = ack.result?.participant as RoomMember | undefined;
+      const event = ack.result?.event as RoomEvent | undefined;
+      if (
+        participant?.participant_id !== participantId ||
+        participant.role !== role ||
+        event?.type !== "participant_updated" ||
+        event.participant_id !== participantId ||
+        event.role !== role
+      ) {
+        const error = new RoomSocketSayError(
+          "서버의 역할 변경 ACK와 canonical event가 일치하지 않습니다.",
+          "participant_role_ack_invalid"
+        );
+        setLastError(error);
+        callbacksRef.current.onError?.(error);
+        socket.resync?.();
+        throw error;
+      }
+      setParticipantsByRoom((previous) => ({
+        ...previous,
+        [roomId]: upsertRoomParticipants(previous[roomId] || [], [participant], roomId),
+      }));
+      setMembershipRevision((previous) => previous + 1);
+    },
+    [roomId, socket]
+  );
+
   const sendRoomSettingsUpdate = useCallback(
     async (updates: RoomGlobalSettingsUpdate): Promise<RoomGlobalSettings> => {
       if (!socket) throw new Error("방 연결이 준비되지 않았습니다.");
@@ -723,6 +757,7 @@ export function useCanonicalRoom(options: UseCanonicalRoomOptions) {
     sendAgentConfigure,
     sendParticipantKick,
     sendParticipantMute,
+    sendParticipantRole,
     sendRoomSettingsUpdate,
     sendProviderRequestResolution,
   };
