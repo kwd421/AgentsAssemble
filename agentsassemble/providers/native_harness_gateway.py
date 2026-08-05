@@ -19,6 +19,9 @@ from agentsassemble.providers.native_harness_protocol import (
     chat_response_to_responses_events,
     responses_request_to_chat,
 )
+from agentsassemble.providers.turn_progress import (
+    DEFAULT_PROVIDER_INACTIVITY_TIMEOUT_SECONDS,
+)
 from agentsassemble.room.text import clean_room_text
 
 
@@ -45,7 +48,7 @@ class NativeModelGateway:
         variant: str = "",
         max_output_tokens: int = 0,
         request_headers: tuple[tuple[str, str], ...] = (),
-        request_timeout_seconds: float = 600.0,
+        request_timeout_seconds: float = DEFAULT_PROVIDER_INACTIVITY_TIMEOUT_SECONDS,
         context_contract_bytes: int = 256_000,
     ) -> None:
         self.upstream_base_url = str(upstream_base_url or "").rstrip("/")
