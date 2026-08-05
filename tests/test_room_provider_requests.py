@@ -6,12 +6,14 @@ import time
 import unittest
 from pathlib import Path
 
+from agentsassemble.providers.agent_bridge import RoomAgentBridge
 from agentsassemble.providers.launch_specs import NativeCliProviderSpec
 from agentsassemble.providers.provider_requests import BridgeProviderRequestRouter
 from agentsassemble.room.errors import RoomCommandRejected
 from agentsassemble.room.event_broker import RoomEventBroker
 from agentsassemble.room.realtime import RoomRealtimeController
 from agentsassemble.room.snapshots import ROOM_SNAPSHOT_EVENT_LIMIT
+from tests.test_room_agent_bridge import FakeRuntime, _wait_for
 from tests.room_realtime_test_support import memory_room_access_services
 
 
@@ -43,7 +45,62 @@ class RecordingBroker(RoomEventBroker):
         if not self.has_bridge(room_id, participant_id):
             return False
         self.bridge_messages.append(dict(message))
+        super().direct_to_bridge(room_id, participant_id, message)
         return True
+
+
+class ControllerBridgeClient:
+    def __init__(
+        self,
+        controller: RoomRealtimeController,
+        identity: dict[str, object],
+    ) -> None:
+        self.controller = controller
+        self.identity = dict(identity)
+        self.channel = controller.connect(self.identity)
+        self._responses: list[dict[str, object]] = []
+        self.closed = False
+        self._lock = threading.Lock()
+
+    def receive(self) -> list[dict[str, object]]:
+        with self._lock:
+            responses = list(self._responses)
+            self._responses.clear()
+        return [*responses, *self.channel.drain()]
+
+    def command(
+        self,
+        action: str,
+        payload: dict[str, object] | None = None,
+        *,
+        request_id: str = "",
+    ) -> str:
+        try:
+            response = self.controller.handle_command(
+                self.identity,
+                {
+                    "op": "command",
+                    "request_id": request_id,
+                    "action": action,
+                    "payload": dict(payload or {}),
+                },
+            )
+        except RoomCommandRejected as error:
+            response = {
+                "op": "error",
+                "request_id": request_id,
+                "code": error.code,
+                "message": str(error),
+            }
+        with self._lock:
+            self._responses.append(response)
+        return request_id
+
+    def close(self) -> None:
+        if self.closed:
+            return
+        self.closed = True
+        self.controller.disconnect(self.channel)
 
 
 class RoomProviderRequestTests(unittest.TestCase):
@@ -344,6 +401,71 @@ class RoomProviderRequestTests(unittest.TestCase):
             == provider_request_id
         ]
         self.assertEqual(resolved[-1]["provider_request"]["status"], "resolved")
+
+    def test_resolution_delivered_to_replacement_bridge_fails_durable_request(self) -> None:
+        old_channel = self.controller.connect(dict(self.bridge))
+        self.controller.handle_command(
+            old_channel.identity,
+            {
+                "op": "command",
+                "request_id": "old-bridge-ready",
+                "action": "bridge.ready",
+                "payload": FakeRuntime().health() | {"running": True},
+            },
+        )
+        self.command(
+            old_channel.identity,
+            "open-before-lease-change",
+            "provider.request.open",
+            {
+                "provider_request_id": "request-from-old-bridge-lease",
+                "request_kind": "permission",
+                "response_kind": "option",
+                "title": "파일 변경",
+                "options": [
+                    {"id": "allow-once", "label": "이번만 허용", "kind": "allow_once"},
+                    {"id": "reject-once", "label": "거절", "kind": "reject_once"},
+                ],
+            },
+        )
+
+        replacement_client = ControllerBridgeClient(self.controller, self.bridge)
+        replacement_bridge = RoomAgentBridge(
+            replacement_client,
+            FakeRuntime(),
+            room_id="general",
+            participant_id="grok",
+            session_id="grok",
+            receive_sleep_seconds=0.005,
+        )
+        bridge_thread = threading.Thread(target=replacement_bridge.run, daemon=True)
+        bridge_thread.start()
+        _wait_for(lambda: old_channel.closed)
+
+        self.command(
+            HOST,
+            "resolve-after-lease-change",
+            "provider.request.resolve",
+            {
+                "provider_request_id": "request-from-old-bridge-lease",
+                "option_id": "allow-once",
+            },
+        )
+
+        _wait_for(lambda: not self.controller.snapshot(HOST)["provider_requests"])
+        resolved = [
+            event
+            for event in self.controller.snapshot(HOST)["events"]
+            if event["type"] == "provider_request_resolved"
+            and event.get("provider_request", {}).get("provider_request_id")
+            == "request-from-old-bridge-lease"
+        ]
+        self.assertEqual(resolved[-1]["provider_request"]["status"], "failed")
+        self.assertTrue(bridge_thread.is_alive())
+
+        replacement_client.channel.send({"op": "agent.control", "action": "stop"})
+        bridge_thread.join(timeout=2)
+        self.assertFalse(bridge_thread.is_alive())
 
 
 if __name__ == "__main__":

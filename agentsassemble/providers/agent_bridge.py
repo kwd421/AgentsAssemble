@@ -236,6 +236,14 @@ class RoomAgentBridge:
             return
         if op == "provider.request.resolve":
             if not self._provider_requests.resolve(message):
+                try:
+                    self._provider_requests.close_unmatched(message)
+                except (BridgeReportRejected, BridgeReportTimeout) as error:
+                    print(
+                        f"Agent Bridge could not close an unmatched provider request: {error.code}",
+                        file=sys.stderr,
+                        flush=True,
+                    )
                 self._fail_protocol(
                     BridgeProtocolError(
                         "Provider request resolution did not match a pending request.",

@@ -105,6 +105,18 @@ class BridgeProviderRequestRouter:
             pending.event.set()
         return True
 
+    def close_unmatched(self, message: dict[str, object]) -> None:
+        request_id = clean_room_text(message.get("provider_request_id"), limit=128)
+        if not request_id:
+            return
+        self._report(
+            "provider.request.closed",
+            {
+                "provider_request_id": request_id,
+                "status": "failed",
+            },
+        )
+
 
 def _default_resolution(request: dict[str, object]) -> dict[str, object]:
     for option in list(request.get("options") or []):
