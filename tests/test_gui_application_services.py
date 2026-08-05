@@ -136,7 +136,8 @@ class _RealtimeController:
     def __init__(self, events: list[str]) -> None:
         self.events = events
 
-    def close(self) -> None:
+    def close(self, *, preserve_provider_runtimes: bool = False) -> None:
+        del preserve_provider_runtimes
         self.events.append("realtime.close")
 
 

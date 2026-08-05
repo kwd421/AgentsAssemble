@@ -27,6 +27,7 @@ DYNAMIC_ROUTE_HELPERS = {
 }
 EXPECTED_DYNAMIC_ROUTES = {
     ("GET", "/api/attachments/{attachment_id}"),
+    ("GET", "/api/personas/{persona_id}/thumbnail"),
     ("GET", "/api/meetings/{meeting_id}"),
     ("GET", "/api/meetings/{meeting_id}/events"),
     ("GET", "/api/meetings/{meeting_id}/lifecycle"),
