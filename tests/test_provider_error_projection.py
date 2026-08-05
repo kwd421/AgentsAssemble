@@ -17,7 +17,23 @@ from tests.test_room_realtime import (
 
 
 class ProviderErrorProjectionTests(unittest.TestCase):
-    def test_quota_failure_survives_the_bridge_room_and_public_session_boundary(self) -> None:
+    def test_public_provider_failures_survive_the_bridge_room_and_session_boundary(self) -> None:
+        for index, error_code in enumerate(
+            (
+                "quota_exhausted",
+                "provider_rate_limited",
+                "api_context_budget_exceeded",
+                "api_context_checkpoint_missing",
+                "api_context_checkpoint_invalid",
+                "api_context_workspace_drift",
+                "api_context_recovery_blocked",
+                "provider_context_exceeded",
+            )
+        ):
+            with self.subTest(error_code=error_code):
+                self._assert_failure_survives(error_code, index=index)
+
+    def _assert_failure_survives(self, error_code: str, *, index: int) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:
             root = Path(temp_dir)
             controller = RoomRealtimeController(
@@ -59,7 +75,7 @@ class ProviderErrorProjectionTests(unittest.TestCase):
                     HOST,
                     {
                         "op": "command",
-                        "request_id": "send-provider-work",
+                        "request_id": f"send-provider-work-{index}",
                         "action": "message.send",
                         "payload": {
                             "content": "check the remaining quota",
@@ -77,12 +93,12 @@ class ProviderErrorProjectionTests(unittest.TestCase):
                     bridge_identity,
                     {
                         "op": "command",
-                        "request_id": "report-quota-failure",
+                        "request_id": f"report-provider-failure-{index}",
                         "action": "turn.failed",
                         "payload": {
                             "turn_id": assignment["turn_id"],
-                            "message": "Provider usage quota is exhausted.",
-                            "error_code": "quota_exhausted",
+                            "message": f"Provider failed with {error_code}.",
+                            "error_code": error_code,
                         },
                     },
                 )["result"]
@@ -93,10 +109,10 @@ class ProviderErrorProjectionTests(unittest.TestCase):
                     for session in controller.snapshot(HOST)["agent_sessions"]
                     if session["session_id"] == "codex"
                 )
-                self.assertEqual(stored["last_error_code"], "quota_exhausted")
-                self.assertEqual(result["agent_session"]["last_error_code"], "quota_exhausted")
-                self.assertEqual(public_session["last_error_code"], "quota_exhausted")
-                self.assertEqual(result["event"]["error_code"], "quota_exhausted")
+                self.assertEqual(stored["last_error_code"], error_code)
+                self.assertEqual(result["agent_session"]["last_error_code"], error_code)
+                self.assertEqual(public_session["last_error_code"], error_code)
+                self.assertEqual(result["event"]["error_code"], error_code)
             finally:
                 controller.close()
 

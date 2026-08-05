@@ -42,12 +42,24 @@ _RATE_LIMIT_MESSAGES = (
     "rate_limit",
     "too many requests",
 )
+_CONTEXT_LIMIT_MESSAGES = (
+    "context_length_exceeded",
+    "maximum context length",
+    "context window exceeded",
+    "prompt too long",
+)
 PUBLIC_PROVIDER_FAILURE_CODES = frozenset(
     {
         "adapter_contract_error",
-        "api_context_limit_exceeded",
-        "api_conversation_state_invalid",
+        "api_context_budget_exceeded",
+        "api_context_checkpoint_invalid",
+        "api_context_checkpoint_missing",
+        "api_context_protocol_invalid",
+        "api_context_recovery_blocked",
+        "api_context_reference_missing",
+        "api_context_workspace_drift",
         "empty_provider_final",
+        "provider_context_exceeded",
         "provider_model_mismatch",
         "provider_model_unobserved",
         "provider_rate_limited",
@@ -73,6 +85,8 @@ def provider_failure_code_from_text(value: object) -> str:
         return "quota_exhausted"
     if any(marker in text for marker in _RATE_LIMIT_MESSAGES):
         return "provider_rate_limited"
+    if any(marker in text for marker in _CONTEXT_LIMIT_MESSAGES):
+        return "provider_context_exceeded"
     return "provider_turn_failed"
 
 

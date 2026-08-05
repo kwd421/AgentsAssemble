@@ -6,6 +6,7 @@ import tempfile
 import time
 import unittest
 from pathlib import Path
+from urllib.error import HTTPError
 from urllib.request import Request
 
 from agentsassemble.providers.capabilities import ProviderCapabilityCatalog
@@ -47,6 +48,40 @@ class _SlowResponse:
 
 
 class RemoteOpenAIProviderTests(unittest.TestCase):
+    def test_provider_context_rejection_keeps_its_public_failure_code(self):
+        profile = remote_openai_profile("tokenrouter")
+        self.assertIsNotNone(profile)
+        payload = {
+            "error": {
+                "code": "context_length_exceeded",
+                "message": "This model's maximum context length was exceeded.",
+            }
+        }
+
+        def opener(request: Request, timeout: float):
+            del timeout
+            raise HTTPError(
+                request.full_url,
+                400,
+                "Bad Request",
+                {},
+                _Response(json.dumps(payload).encode()),
+            )
+
+        runtime = RemoteOpenAICompatibleRuntime(
+            "tokenrouter-context-error",
+            profile=profile,
+            api_key="test-key",
+            model="moonshotai/kimi-k3-free",
+            opener=opener,
+        )
+        runtime.send("too much context")
+
+        with self.assertRaisesRegex(RuntimeError, "maximum context length") as caught:
+            runtime.read_output(timeout_seconds=1)
+
+        self.assertEqual(caught.exception.code, "provider_context_exceeded")
+
     def test_stream_progress_extends_the_api_inactivity_window(self):
         profile = remote_openai_profile("tokenrouter")
         self.assertIsNotNone(profile)
