@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useState, type RefObject } from "react";
 import {
   updateLiveAgentSessionAgentOptions,
   uploadLobbyAttachment,
@@ -23,6 +23,7 @@ import "./AgentIdentitySettings.css";
 export default function AgentIdentitySettings({
   entry,
   agent,
+  avatarInputRef,
   roomSessionToken = "",
   processGroups,
   onSessionActionComplete,
@@ -31,6 +32,7 @@ export default function AgentIdentitySettings({
 }: {
   entry: MemberEntry;
   agent: NonNullable<MemberEntry["agent"]>;
+  avatarInputRef?: RefObject<HTMLInputElement | null>;
   roomSessionToken?: string;
   processGroups: LiveAgentProcessGroup[];
   onSessionActionComplete?: () => void;
@@ -41,7 +43,7 @@ export default function AgentIdentitySettings({
   ) => void | Promise<void>;
 }) {
   const [agentNameDraft, setAgentNameDraft] = useState(
-    entry.agentProfile?.displayName || entry.agentDisplayName || ""
+    entry.agentProfile?.displayName || entry.agentDisplayName || entry.displayName || ""
   );
   const [agentAvatarImage, setAgentAvatarImage] = useState(
     entry.agentProfile?.avatarImage || entry.avatarImage || ""
@@ -54,13 +56,16 @@ export default function AgentIdentitySettings({
   const [optionsStatus, setOptionsStatus] = useState("");
 
   useEffect(() => {
-    setAgentNameDraft(entry.agentProfile?.displayName || entry.agentDisplayName || "");
+    setAgentNameDraft(
+      entry.agentProfile?.displayName || entry.agentDisplayName || entry.displayName || ""
+    );
     setAgentAvatarImage(entry.agentProfile?.avatarImage || entry.avatarImage || "");
   }, [
     entry.agentDisplayName,
     entry.agentProfile?.avatarImage,
     entry.agentProfile?.displayName,
     entry.avatarImage,
+    entry.displayName,
   ]);
 
   useEffect(() => {
@@ -84,6 +89,24 @@ export default function AgentIdentitySettings({
     permissionDraft !== (agent.permission_option || "") ||
     fastModeDraft !== Boolean(agent.fast_mode);
 
+  async function persistAgentProfile(avatarImage: string) {
+    let nextProfiles: Record<string, AgentProfileSettings>;
+    if (entry.agentSession && onAgentConfigure) {
+      await onAgentConfigure(entry.agentSession, {
+        display_name: agentNameDraft,
+        avatar_image_url: avatarImage,
+      });
+      nextProfiles = removeAgentProfileSettings(agent.agent_id);
+    } else {
+      nextProfiles = saveAgentProfileSettings(agent.agent_id, {
+        displayName: agentNameDraft,
+        avatarImage,
+      });
+    }
+    onAgentProfileSettingsChange?.(nextProfiles);
+    onSessionActionComplete?.();
+  }
+
   async function handleAgentAvatarCropped(file: File) {
     setAgentProfileStatus("프로필 사진 저장 중...");
     try {
@@ -92,8 +115,9 @@ export default function AgentIdentitySettings({
         sessionToken: roomSessionToken,
       });
       setAgentAvatarImage(attachment.url);
+      await persistAgentProfile(attachment.url);
       setAgentProfileCropFile(null);
-      setAgentProfileStatus("프로필 사진 준비됨");
+      setAgentProfileStatus("프로필 사진 저장됨");
     } catch (error) {
       setAgentProfileStatus(error instanceof Error ? error.message : "프로필 사진 저장 실패");
     }
@@ -102,21 +126,7 @@ export default function AgentIdentitySettings({
   async function handleSaveAgentProfile() {
     setAgentProfileStatus("에이전트 프로필 저장 중...");
     try {
-      let nextProfiles: Record<string, AgentProfileSettings>;
-      if (entry.agentSession && onAgentConfigure) {
-        await onAgentConfigure(entry.agentSession, {
-          display_name: agentNameDraft,
-          avatar_image_url: agentAvatarImage,
-        });
-        nextProfiles = removeAgentProfileSettings(agent.agent_id);
-      } else {
-        nextProfiles = saveAgentProfileSettings(agent.agent_id, {
-          displayName: agentNameDraft,
-          avatarImage: agentAvatarImage,
-        });
-      }
-      onAgentProfileSettingsChange?.(nextProfiles);
-      onSessionActionComplete?.();
+      await persistAgentProfile(agentAvatarImage);
       setAgentProfileStatus("에이전트 프로필 저장됨");
     } catch (error) {
       setAgentProfileStatus(error instanceof Error ? error.message : "에이전트 프로필 저장 실패");
@@ -161,21 +171,19 @@ export default function AgentIdentitySettings({
               placeholder={agent.display_name || agent.agent_id}
             />
           </label>
+          <input
+            ref={avatarInputRef}
+            className="sr-only"
+            type="file"
+            aria-label="에이전트 프로필 사진 선택"
+            accept="image/*"
+            onChange={(event) => {
+              const file = event.currentTarget.files?.[0] || null;
+              if (file) setAgentProfileCropFile(file);
+              event.currentTarget.value = "";
+            }}
+          />
           <div className="dc-agent-profile-inline-actions">
-            <label className="dc-member-session-button">
-              사진 변경
-              <input
-                className="sr-only"
-                type="file"
-                aria-label="프로필 사진 편집"
-                accept="image/*"
-                onChange={(event) => {
-                  const file = event.currentTarget.files?.[0] || null;
-                  if (file) setAgentProfileCropFile(file);
-                  event.currentTarget.value = "";
-                }}
-              />
-            </label>
             <button type="button" className="dc-member-session-button" onClick={() => void handleSaveAgentProfile()}>
               프로필 저장
             </button>

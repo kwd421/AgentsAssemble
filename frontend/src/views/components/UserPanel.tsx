@@ -145,6 +145,14 @@ export default function UserPanel({
     setSettingsSection(section);
   }
 
+  function openAvatarEditor() {
+    setProfileOpen(false);
+    setSettingsOpen(false);
+    setAvatarCropFile(null);
+    setAvatarStatus("");
+    setAvatarEditorOpen(true);
+  }
+
   async function persistProfile(nextProfile: UserProfile): Promise<string> {
     setSaving(true);
     setProfileError("");
@@ -272,10 +280,7 @@ export default function UserPanel({
           <button
             type="button"
             className="dc-profile-avatar-wrap"
-            onClick={() => {
-              setAvatarEditorOpen(true);
-              setAvatarStatus("");
-            }}
+            onClick={openAvatarEditor}
             aria-label="프로필 사진 편집"
           >
             <span className="dc-profile-avatar" data-has-image={hasAvatarImage}>
@@ -441,6 +446,7 @@ export default function UserPanel({
             onDraftChange={setDraft}
             onReset={() => setDraft(profile)}
             onSave={() => void saveDraft()}
+            onEditAvatar={openAvatarEditor}
             profileIdentity={profileIdentity}
           />
         </section>

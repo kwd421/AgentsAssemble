@@ -166,6 +166,38 @@ class UserProfileRoomSyncTests(unittest.TestCase):
         self.assertEqual(loaded.sent_json["profile"]["custom_status"], "동기화됨")
         self.assertEqual(other_loaded.sent_json["profile"]["display_name"], "Other")
 
+    def test_profile_update_reaches_an_existing_room_without_a_membership_cache_row(self) -> None:
+        guest, token = self._guest("legacy", "Before")
+        self.rooms.ensure_room("room-existing")
+        self.rooms.upsert_participant(
+            "room-existing",
+            {
+                "participant_id": guest["participant_id"],
+                "display_name": "Before",
+                "participant_type": "human",
+                "status": "joined",
+            },
+        )
+
+        saved = self._dispatch(
+            "POST",
+            token=token,
+            payload={
+                "display_name": "After",
+                "avatar_image_url": "/api/attachments/profile_123?view=1",
+            },
+        )
+
+        self.assertIsNone(saved.sent_error)
+        participant = self.rooms.participant("room-existing", "guest-legacy")
+        self.assertEqual(participant["display_name"], "After")
+        self.assertEqual(
+            participant["avatar_image_url"],
+            "/api/attachments/profile_123?view=1",
+        )
+        event = self.rooms.read_events("room-existing", newest=True, limit=1)[0]
+        self.assertEqual(event["type"], "participant_updated")
+
     def test_remote_anonymous_profile_access_is_rejected(self) -> None:
         response = self._dispatch("GET")
 

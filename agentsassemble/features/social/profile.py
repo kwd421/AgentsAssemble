@@ -85,14 +85,18 @@ def update_user_profile(
         profile["created_at"] = profile["updated_at"]
     saved = identities.update_user_profile(user_id, public_user_profile(profile))
     public = public_user_profile(saved)
-    user = identities.get_user(user_id) or {}
-    _synchronize_room_participant_profile(
-        identities=identities,
-        rooms=rooms,
-        participant_id=str(user.get("participant_id") or ""),
-        display_name=str(public.get("display_name") or ""),
-        avatar_image_url=str(public.get("avatar_image_url") or ""),
-    )
+    if (
+        public.get("display_name") != current.get("display_name")
+        or public.get("avatar_image_url") != current.get("avatar_image_url")
+    ):
+        user = identities.get_user(user_id) or {}
+        _synchronize_room_participant_profile(
+            identities=identities,
+            rooms=rooms,
+            participant_id=str(user.get("participant_id") or ""),
+            display_name=str(public.get("display_name") or ""),
+            avatar_image_url=str(public.get("avatar_image_url") or ""),
+        )
     return {"profile": public}
 
 
@@ -220,6 +224,10 @@ def _synchronize_room_participant_profile(
                 "display_name": display_name,
             }
         )
+    for room in rooms.list_rooms():
+        room_id = str(room.get("room_id") or "")
+        if room_id and rooms.participant(room_id, participant_id):
+            room_ids.add(room_id)
     for room_id in room_ids:
         if not rooms.participant(room_id, participant_id):
             continue

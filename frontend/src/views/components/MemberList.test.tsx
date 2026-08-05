@@ -316,6 +316,12 @@ describe("MemberList component wiring", () => {
 
     fireEvent.click(screen.getByText("Agent One"));
     const dialog = screen.getByRole("dialog", { name: "Agent One" });
+    const avatarInput = within(dialog).getByLabelText("에이전트 프로필 사진 선택");
+    const avatarInputClick = vi.spyOn(avatarInput, "click");
+    fireEvent.click(
+      within(dialog).getByRole("button", { name: "Agent One 프로필 사진 편집" })
+    );
+    expect(avatarInputClick).toHaveBeenCalledOnce();
     expect((within(dialog).getByRole("textbox", { name: "표시 이름" }) as HTMLInputElement).value)
       .toBe("Makima");
     fireEvent.click(within(dialog).getByRole("button", { name: "프로필 저장" }));

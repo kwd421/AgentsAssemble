@@ -133,4 +133,26 @@ describe("UserPanel", () => {
       within(view.container).getByRole("button", { name: /Guest Joined/ })
     ).toBeTruthy();
   });
+
+  it("uses one profile-photo editor instead of exposing the stored attachment URL", async () => {
+    apiMocks.fetchUserProfile.mockResolvedValue(DEFAULT_USER_PROFILE);
+
+    const view = render(
+      <UserPanel
+        onlineCount={1}
+        agentCount={0}
+        hasBackendError={false}
+        profileIdentity={{ deviceToken: "device-token" }}
+      />
+    );
+
+    await waitFor(() => expect(apiMocks.fetchUserProfile).toHaveBeenCalled());
+    fireEvent.click(within(view.container).getByRole("button", { name: "사용자 설정" }));
+    fireEvent.click(within(view.container).getByRole("button", { name: /프로필/ }));
+
+    expect(within(view.container).queryByLabelText("아바타 이미지 URL")).toBeNull();
+    fireEvent.click(within(view.container).getByRole("button", { name: "프로필 사진 변경" }));
+    expect(within(view.container).getByRole("dialog", { name: "프로필 사진 수정" })).toBeTruthy();
+    expect(within(view.container).getByLabelText("이미지 선택")).toBeTruthy();
+  });
 });

@@ -1,12 +1,12 @@
 {
  "readme": "AgentsAssemble codebase map. Regenerate with `make codebase-map`; verify committed outputs with `make codebase-map-verify`. modules[] columns: name, path, package, domain, classification, migration_status, lines, docstring, imports[], imported_by[] (indexes into modules), classes[[name, [[base, defining_module], ...]]] (best-effort, top-level classes only). frontend[] columns: path, group, lines, doc, imports[], imported_by[] (indexes into frontend). package_edges go importer -> dependency with module-import counts; `points` is the precomputed polyline for that edge and `intra_cycle` marks imports whose endpoints share one cycle group. graph{} holds the layered package drawing: layers[] top-to-bottom (each with members[] package ids, member_count, and the dominant domain), (a package sits below everything importing it), clusters[] are mutually dependent packages (import cycles at package level) drawn as one labelled block, plus width/height of the drawing. health{} ranks findings for a reader who has to act: cycles[] (mutually dependent packages, with the lines they hold), leaning_on_retiring[] (current modules importing legacy/compatibility modules - the reason legacy cannot be deleted), highest_leverage_migrations[] (retiring modules with the most current importers), unreferenced_shims[] (compatibility modules with no importer in agentsassemble/ and no reference in tests/; callers outside this repository are not visible, so verify before deleting), and hotspots[] (largest modules). health.scope states exactly what was measured. class_graph{} is the UML generalization DAG over base classes that resolve inside the repo: edges go base -> subclass, so a subclass always sits below the class it extends. Coordinates in graph and class_graph are laid out with a Sugiyama pipeline (cycle condensation, Coffman-Graham layering, dummy-node edge routing, median/transpose crossing reduction) and are deterministic.",
- "generated_at": "2026-08-05T07:23:43Z",
- "fingerprint": "9340b95831aaf166",
+ "generated_at": "2026-08-05T13:11:58Z",
+ "fingerprint": "082d84c5c96695ba",
  "stats": {
   "backend_modules": 861,
-  "backend_lines": 146915,
+  "backend_lines": 146923,
   "frontend_files": 211,
-  "frontend_lines": 49207,
+  "frontend_lines": 49430,
   "packages": 30,
   "import_cycles": 0,
   "classifications": {
@@ -184,7 +184,7 @@
    "kind": "backend",
    "doc": "Optional product feature packages.",
    "files": 12,
-   "lines": 1772,
+   "lines": 1780,
    "domains": {
     "features": 12
    },
@@ -508,7 +508,7 @@
    "kind": "frontend",
    "doc": "Frontend entry files (App, main, API client, styles) living directly under src/.",
    "files": 14,
-   "lines": 13098,
+   "lines": 13140,
    "domains": {},
    "classes": {},
    "x": 102.0,
@@ -556,7 +556,7 @@
    "kind": "frontend",
    "doc": "Shared utilities and presentation helpers.",
    "files": 56,
-   "lines": 5894,
+   "lines": 5901,
    "domains": {},
    "classes": {},
    "x": 786.0,
@@ -588,7 +588,7 @@
    "kind": "frontend",
    "doc": "Top-level room views rendered by the shell.",
    "files": 110,
-   "lines": 22279,
+   "lines": 22453,
    "domains": {},
    "classes": {},
    "x": 558.0,
@@ -4159,7 +4159,7 @@
      "web"
     ],
     "internal_edges": 92,
-    "lines": 143467,
+    "lines": 143475,
     "heaviest": "legacy"
    },
    {
@@ -4172,7 +4172,7 @@
      "fe:views"
     ],
     "internal_edges": 17,
-    "lines": 49207,
+    "lines": 49430,
     "heaviest": "fe:views"
    }
   ],
@@ -7538,7 +7538,7 @@
    "features",
    "optional",
    "in-target-package",
-   238,
+   246,
    "Authenticated user-profile normalization and room synchronization.",
    [
     192,
@@ -25331,7 +25331,7 @@
   [
    "frontend/src/index.css",
    "(src root)",
-   7070,
+   7112,
    "",
    [],
    [
@@ -25877,7 +25877,7 @@
   [
    "frontend/src/lib/roomEventProjection.test.ts",
    "lib",
-   375,
+   376,
    "",
    [
     2,
@@ -25888,7 +25888,7 @@
   [
    "frontend/src/lib/roomEventProjection.ts",
    "lib",
-   234,
+   240,
    "",
    [
     2
@@ -26289,7 +26289,7 @@
   [
    "frontend/src/views/LobbyView.test.tsx",
    "views",
-   520,
+   548,
    "",
    [
     2,
@@ -26850,7 +26850,7 @@
   [
    "frontend/src/views/components/MemberList.test.tsx",
    "views",
-   334,
+   340,
    "",
    [
     2,
@@ -27308,7 +27308,7 @@
   [
    "frontend/src/views/components/UserPanel.test.tsx",
    "views",
-   136,
+   158,
    "",
    [
     2,
@@ -27320,7 +27320,7 @@
   [
    "frontend/src/views/components/UserPanel.tsx",
    "views",
-   514,
+   520,
    "",
    [
     2,
@@ -27337,7 +27337,7 @@
   [
    "frontend/src/views/components/UserSettingsPanel.css",
    "views",
-   189,
+   239,
    "",
    [],
    [
@@ -27347,7 +27347,7 @@
   [
    "frontend/src/views/components/UserSettingsPanel.tsx",
    "views",
-   226,
+   241,
    "",
    [
     2,
@@ -27444,7 +27444,7 @@
   [
    "frontend/src/views/components/member/AgentIdentitySettings.test.tsx",
    "views",
-   101,
+   128,
    "",
    [
     2,
@@ -27456,7 +27456,7 @@
   [
    "frontend/src/views/components/member/AgentIdentitySettings.tsx",
    "views",
-   243,
+   251,
    "",
    [
     2,
@@ -27491,7 +27491,7 @@
   [
    "frontend/src/views/components/member/MemberDetailModal.tsx",
    "views",
-   162,
+   180,
    "",
    [
     2,
@@ -27718,7 +27718,7 @@
   [
    "frontend/src/views/lobby/useLobbyHistory.ts",
    "views",
-   418,
+   412,
    "",
    [
     2,
@@ -27796,19 +27796,19 @@
    "name": "agentsassemble",
    "note": "Backend package (Python)",
    "files": 861,
-   "lines": 146915
+   "lines": 146923
   },
   {
    "name": "frontend/src",
    "note": "React room client (TS/TSX)",
    "files": 211,
-   "lines": 49207
+   "lines": 49430
   },
   {
    "name": "tests",
    "note": "Backend test suite",
    "files": 390,
-   "lines": 152403
+   "lines": 152435
   },
   {
    "name": "scripts",

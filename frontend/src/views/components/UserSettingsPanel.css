@@ -84,6 +84,56 @@
   gap: 9px;
 }
 
+.dc-user-settings-avatar-action {
+  display: grid;
+  grid-template-columns: 38px minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 10px;
+  border-radius: 7px;
+  background: #1e1f22;
+  padding: 9px;
+  color: var(--color-text-secondary);
+  text-align: left;
+}
+
+.dc-user-settings-avatar-action:hover,
+.dc-user-settings-avatar-action:focus-visible {
+  background: #2b2d31;
+  color: #fff;
+  outline: none;
+}
+
+.dc-user-settings-avatar-action > span:nth-child(2) {
+  display: grid;
+  gap: 2px;
+}
+
+.dc-user-settings-avatar-action strong {
+  color: var(--color-text-primary);
+  font-size: 12px;
+  font-weight: 900;
+}
+
+.dc-user-settings-avatar-action small {
+  color: var(--color-text-muted);
+  font-size: 10px;
+  font-weight: 750;
+}
+
+.dc-user-settings-avatar-preview {
+  display: grid;
+  width: 38px;
+  height: 38px;
+  place-items: center;
+  border-radius: 50%;
+  background: var(--profile-accent, var(--color-accent));
+  background-position: center;
+  background-size: cover;
+  color: #fff;
+  font-size: 11px;
+  font-weight: 950;
+}
+
 .dc-user-settings-grid label {
   display: grid;
   gap: 5px;

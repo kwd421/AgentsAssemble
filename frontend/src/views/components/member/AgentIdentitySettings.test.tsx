@@ -1,8 +1,9 @@
+import { createRef } from "react";
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { Bot } from "lucide-react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
-import type { LiveAgent } from "../../../api";
+import type { LiveAgent, RoomAgentSession } from "../../../api";
 import AgentIdentitySettings from "./AgentIdentitySettings";
 import type { MemberEntry } from "./memberTypes";
 
@@ -60,13 +61,29 @@ const ENTRY: MemberEntry = {
   icon: Bot,
 };
 
+const SESSION: RoomAgentSession = {
+  room_id: "room-a",
+  session_id: "agent-1",
+  participant_id: "agent-1",
+  display_name: "Agent One",
+  status: "stopped",
+  runtime_status: "stopped",
+  enabled: true,
+  provider_kind: "codex",
+  runtime_kind: "codex_app_server",
+  connection_kind: "agent_session",
+  model: "gpt-5.6-luna",
+};
+
 describe("AgentIdentitySettings", () => {
   beforeEach(() => {
     apiMocks.uploadLobbyAttachment.mockReset();
   });
 
-  it("forwards the admitted operator session when uploading an agent avatar", async () => {
+  it("opens the shared cropper from the visible avatar and saves the crop canonically", async () => {
     const avatarFile = new File(["avatar"], "avatar.png", { type: "image/png" });
+    const avatarInputRef = createRef<HTMLInputElement>();
+    const onAgentConfigure = vi.fn().mockResolvedValue(undefined);
     apiMocks.uploadLobbyAttachment.mockResolvedValue({
       id: "avatar-12345678",
       filename: "avatar.png",
@@ -78,15 +95,23 @@ describe("AgentIdentitySettings", () => {
     });
 
     render(
-      <AgentIdentitySettings
-        entry={ENTRY}
-        agent={AGENT}
-        roomSessionToken="paired-operator-session"
-        processGroups={[]}
-      />
+      <>
+        <button type="button" onClick={() => avatarInputRef.current?.click()}>
+          Agent One 프로필 사진 편집
+        </button>
+        <AgentIdentitySettings
+          entry={{ ...ENTRY, agentSession: SESSION }}
+          agent={AGENT}
+          avatarInputRef={avatarInputRef}
+          roomSessionToken="paired-operator-session"
+          processGroups={[]}
+          onAgentConfigure={onAgentConfigure}
+        />
+      </>
     );
 
-    fireEvent.change(screen.getByLabelText("프로필 사진 편집"), {
+    fireEvent.click(screen.getByRole("button", { name: "Agent One 프로필 사진 편집" }));
+    fireEvent.change(screen.getByLabelText("에이전트 프로필 사진 선택"), {
       target: { files: [avatarFile] },
     });
     fireEvent.click(screen.getByRole("button", { name: "테스트 이미지 적용" }));
@@ -97,5 +122,12 @@ describe("AgentIdentitySettings", () => {
         sessionToken: "paired-operator-session",
       })
     );
+    await waitFor(() =>
+      expect(onAgentConfigure).toHaveBeenCalledWith(SESSION, {
+        display_name: "Agent One",
+        avatar_image_url: "/api/attachments/avatar-12345678?view=1",
+      })
+    );
+    expect(screen.getByText("프로필 사진 저장됨")).toBeTruthy();
   });
 });

@@ -3661,6 +3661,48 @@ body[data-sidebar-resizing="true"] {
   color: var(--color-text-secondary);
 }
 
+.dc-member-detail-avatar-edit-button {
+  position: relative;
+  width: 48px;
+  height: 48px;
+  flex: 0 0 auto;
+  border: 0;
+  border-radius: 50%;
+  padding: 0;
+  background: transparent;
+  color: inherit;
+  overflow: hidden;
+}
+
+.dc-member-detail-avatar-edit-button:not(:disabled) {
+  cursor: pointer;
+}
+
+.dc-member-detail-avatar-edit-button:focus-visible {
+  outline: 2px solid var(--color-accent);
+  outline-offset: 3px;
+}
+
+.dc-member-detail-avatar-edit-overlay {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  place-content: center;
+  justify-items: center;
+  gap: 1px;
+  background: rgba(17, 18, 20, 0.74);
+  color: #fff;
+  font-size: 8px;
+  font-weight: 850;
+  opacity: 0;
+  transition: opacity 120ms ease;
+}
+
+.dc-member-detail-avatar-edit-button:hover .dc-member-detail-avatar-edit-overlay,
+.dc-member-detail-avatar-edit-button:focus-visible .dc-member-detail-avatar-edit-overlay {
+  opacity: 1;
+}
+
 .dc-member-detail-modal-avatar[data-role="director"] {
   background: rgba(240, 178, 50, 0.22);
   color: #f0b232;

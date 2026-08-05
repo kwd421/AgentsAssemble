@@ -4,7 +4,7 @@ Status: generated architecture inventory
 
 Generator: `python3 scripts/generate_package_map.py`
 
-Source fingerprint: `04ef5da31d01edbc`
+Source fingerprint: `30b52c46d3888c4b`
 
 This file describes current evidence and proposed ownership. It does not by
 itself authorize a module move or a product behavior change.
@@ -161,7 +161,7 @@ itself authorize a module move or a product behavior change.
 | `agentsassemble.features.social` | `agentsassemble/features/social/__init__.py` | 1 | features | optional | - | 0 | - | test-import:1 | `tests/test_feature_routes_package.py` | `features/social/` | in-target-package |
 | `agentsassemble.features.social.direct_messages` | `agentsassemble/features/social/direct_messages.py` | 303 | features | optional | `agentsassemble.features.social.friends`, `agentsassemble.legacy.meeting.core.events` | 5 | - | test-import:2 | `tests/test_feature_routes_package.py`, `tests/test_room_friends.py` | `features/social/` | in-target-package |
 | `agentsassemble.features.social.friends` | `agentsassemble/features/social/friends.py` | 289 | features | optional | `agentsassemble.legacy.meeting.core.events` | 4 | - | test-import:2 | `tests/test_feature_routes_package.py`, `tests/test_room_friends.py` | `features/social/` | in-target-package |
-| `agentsassemble.features.social.profile` | `agentsassemble/features/social/profile.py` | 238 | features | optional | `agentsassemble.identity.repository`, `agentsassemble.room.repository` | 2 | - | test-import:2 | `tests/test_feature_routes_package.py`, `tests/test_user_profile.py` | `features/social/` | in-target-package |
+| `agentsassemble.features.social.profile` | `agentsassemble/features/social/profile.py` | 246 | features | optional | `agentsassemble.identity.repository`, `agentsassemble.room.repository` | 2 | - | test-import:2 | `tests/test_feature_routes_package.py`, `tests/test_user_profile.py` | `features/social/` | in-target-package |
 | `agentsassemble.features.social.routes` | `agentsassemble/features/social/routes.py` | 141 | features | optional | `agentsassemble.features.social.direct_messages`, `agentsassemble.features.social.friends`, `agentsassemble.features.social.profile`, `agentsassemble.legacy.live_agent.state`, `agentsassemble.web.router` | 3 | - | test-import:3 | `tests/test_feature_routes_package.py`, `tests/test_gui_server_social_http.py`, `tests/test_user_profile_room_sync.py` | `features/social/` | in-target-package |
 | `agentsassemble.frontend_runtime` | `agentsassemble/frontend_runtime.py` | 18 | web | compatibility | `agentsassemble.web.frontend_runtime` | 0 | - | test-import:1 | `tests/test_web_transport_package.py` | `web/` | compatibility-shim |
 | `agentsassemble.grok_acp_runtime` | `agentsassemble/grok_acp_runtime.py` | 6 | providers | compatibility | `agentsassemble.providers.grok_acp` | 0 | - | test-import:1 | `tests/test_provider_package.py` | `providers/` | compatibility-shim |

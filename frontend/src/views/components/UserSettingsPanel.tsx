@@ -1,4 +1,4 @@
-import { Headphones, Mic, MicOff, Palette, UserCircle } from "lucide-react";
+import { Camera, Headphones, Mic, MicOff, Palette, UserCircle } from "lucide-react";
 
 import type { UserProfile, UserProfileIdentity } from "../../api";
 import GuestRecoverySettings from "./GuestRecoverySettings";
@@ -27,6 +27,7 @@ export default function UserSettingsPanel({
   onDraftChange,
   onReset,
   onSave,
+  onEditAvatar,
   profileIdentity,
 }: {
   draft: UserProfile;
@@ -37,6 +38,7 @@ export default function UserSettingsPanel({
   onDraftChange: (profile: UserProfile) => void;
   onReset: () => void;
   onSave: () => void;
+  onEditAvatar: () => void;
   profileIdentity?: UserProfileIdentity;
 }) {
   const sections = profileIdentity?.sessionToken
@@ -118,6 +120,30 @@ export default function UserSettingsPanel({
                 </div>
               </header>
               <div className="dc-user-settings-grid">
+                <button
+                  type="button"
+                  className="dc-user-settings-avatar-action"
+                  onClick={onEditAvatar}
+                  aria-label="프로필 사진 변경"
+                >
+                  <span
+                    className="dc-user-settings-avatar-preview"
+                    data-has-image={Boolean(draft.avatarImage)}
+                    style={
+                      draft.avatarImage
+                        ? { backgroundImage: `url(${draft.avatarImage})` }
+                        : undefined
+                    }
+                    aria-hidden
+                  >
+                    {draft.avatarImage ? null : draft.avatarLabel}
+                  </span>
+                  <span>
+                    <strong>프로필 사진 변경</strong>
+                    <small>이미지를 선택하고 표시 영역을 조정합니다.</small>
+                  </span>
+                  <Camera size={17} aria-hidden />
+                </button>
                 <label>
                   사용자 지정 상태
                   <input
@@ -150,17 +176,6 @@ export default function UserSettingsPanel({
                     value={draft.avatarLabel}
                     onChange={(event) => onDraftChange({ ...draft, avatarLabel: event.target.value })}
                     maxLength={2}
-                  />
-                </label>
-                <label>
-                  아바타 이미지 URL
-                  <input
-                    value={draft.avatarImage || ""}
-                    onChange={(event) =>
-                      onDraftChange({ ...draft, avatarImage: event.target.value || undefined })
-                    }
-                    placeholder="/api/attachments/<id>?view=1"
-                    maxLength={240}
                   />
                 </label>
                 <label>

@@ -1,4 +1,5 @@
-import { X } from "lucide-react";
+import { useRef } from "react";
+import { Camera, X } from "lucide-react";
 import type { LiveAgentProcessGroup, RoomAgentSession } from "../../../api";
 import type { AgentProfileSettings } from "../../../lib/agentProfileSettings";
 import AgentSessionDetails, {
@@ -47,6 +48,8 @@ export default function MemberDetailModal({
   activityVisible,
   onActivityVisibilityChange,
 }: MemberDetailModalProps) {
+  const agentAvatarInputRef = useRef<HTMLInputElement | null>(null);
+
   if (!entry.agent && entry.agentSession) {
     return (
       <div className="dc-modal-backdrop" role="presentation" onClick={onClose}>
@@ -105,17 +108,31 @@ export default function MemberDetailModal({
         onClick={(event) => event.stopPropagation()}
       >
         <header className="dc-member-detail-modal-head">
-          <span className="dc-member-detail-modal-avatar" data-role={entry.role}>
-            {entry.avatarImage ? (
-              <img className="dc-member-avatar-image" src={entry.avatarImage} alt="" />
-            ) : (
-              <ProviderLogo
-                providerKind={entry.providerKind}
-                size={48}
-                fallback={<DetailIcon size={22} />}
-              />
+          <button
+            type="button"
+            className="dc-member-detail-avatar-edit-button"
+            aria-label={`${entry.displayName} 프로필 사진 편집`}
+            disabled={!entry.ownedByViewer}
+            onClick={() => agentAvatarInputRef.current?.click()}
+          >
+            <span className="dc-member-detail-modal-avatar" data-role={entry.role}>
+              {entry.avatarImage ? (
+                <img className="dc-member-avatar-image" src={entry.avatarImage} alt="" />
+              ) : (
+                <ProviderLogo
+                  providerKind={entry.providerKind}
+                  size={48}
+                  fallback={<DetailIcon size={22} />}
+                />
+              )}
+            </span>
+            {entry.ownedByViewer && (
+              <span className="dc-member-detail-avatar-edit-overlay" aria-hidden>
+                <Camera size={17} />
+                <span>편집</span>
+              </span>
             )}
-          </span>
+          </button>
           <div className="min-w-0 flex-1">
             <h2 id="member-detail-title" className="truncate preserve-words">
               {entry.displayName}
@@ -129,6 +146,7 @@ export default function MemberDetailModal({
         <AgentIdentitySettings
           entry={entry}
           agent={agent}
+          avatarInputRef={agentAvatarInputRef}
           roomSessionToken={roomSessionToken}
           processGroups={processGroups}
           onSessionActionComplete={onSessionActionComplete}
