@@ -110,6 +110,7 @@ class ProviderRuntimeConfig:
     runtime_state_dir: str
     provider_endpoint: str
     provider_server_pid: int | None
+    resume_required: bool = False
     execution_harness: str = "builtin"
 
     @property
@@ -182,6 +183,11 @@ class ProviderRuntimeConfig:
             runtime_state_dir=_required_text(values, "runtime_state_dir", limit=1000),
             provider_endpoint=provider_endpoint,
             provider_server_pid=_required_optional_int(values, "provider_server_pid"),
+            resume_required=(
+                _required_bool(values, "resume_required")
+                if "resume_required" in values
+                else False
+            ),
         )
 
 
@@ -218,6 +224,13 @@ def _required_value(values: dict[str, object], key: str) -> object:
     if key not in values:
         raise ProviderRuntimeConfigError(f"Provider runtime config is missing {key}.")
     return values[key]
+
+
+def _required_bool(values: dict[str, object], key: str) -> bool:
+    value = _required_value(values, key)
+    if not isinstance(value, bool):
+        raise ProviderRuntimeConfigError(f"Provider runtime config {key} must be a boolean.")
+    return value
 
 
 def _required_text(

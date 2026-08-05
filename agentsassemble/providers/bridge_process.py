@@ -322,6 +322,9 @@ class NativeCliBridgeProcessManager:
             "credential_stdin": bool(credential),
             "provider_endpoint": provider_endpoint,
             "provider_server_pid": provider_server_pid,
+            "resume_required": bool(
+                session.get("recovery_required") or int(session.get("turn_count") or 0) > 0
+            ),
         }
         CanonicalBridgeLaunchConfig.parse_strict(config)
         config_path.write_text(json.dumps(config, ensure_ascii=False, indent=2, sort_keys=True) + "\n", encoding="utf-8")

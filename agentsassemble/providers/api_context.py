@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import copy
-import hashlib
 import json
 from dataclasses import dataclass
 
@@ -15,7 +14,7 @@ DEFAULT_API_CONTEXT_HYSTERESIS_BYTES = 32_768
 
 
 class ApiContextLimitError(RuntimeError):
-    code = "api_context_limit_exceeded"
+    code = "api_context_budget_exceeded"
 
     def __init__(self, *, encoded_bytes: int, hard_limit_bytes: int) -> None:
         super().__init__(
@@ -25,6 +24,14 @@ class ApiContextLimitError(RuntimeError):
         )
         self.encoded_bytes = encoded_bytes
         self.hard_limit_bytes = hard_limit_bytes
+
+
+class ApiContextProtocolError(RuntimeError):
+    code = "api_context_protocol_invalid"
+
+
+class ApiContextReferenceError(RuntimeError):
+    code = "api_context_reference_missing"
 
 
 @dataclass(frozen=True)
@@ -62,11 +69,14 @@ class ApiContextPolicy:
         payload: dict[str, object],
         *,
         delivered_tool_call_ids: set[str],
+        tool_result_references: dict[str, str] | None = None,
     ) -> ApiRequestView:
         request_payload = copy.deepcopy(payload)
         messages = request_payload.get("messages")
         if not isinstance(messages, list):
             messages = []
+        _validate_message_transactions(messages)
+        references = tool_result_references or {}
         size = self.encoded_size(request_payload)
         compacted: list[str] = []
         if size > self.hard_limit_bytes:
@@ -76,15 +86,13 @@ class ApiContextPolicy:
                 tool_call_id = str(message.get("tool_call_id") or "")
                 if not tool_call_id or tool_call_id not in delivered_tool_call_ids:
                     continue
-                content = str(message.get("content") or "")
-                message["content"] = json.dumps(
-                    {
-                        "agentsassemble": "delivered_tool_result_elided",
-                        "original_bytes": len(content.encode("utf-8")),
-                        "sha256": hashlib.sha256(content.encode("utf-8")).hexdigest(),
-                    },
-                    separators=(",", ":"),
-                )
+                marker = references.get(tool_call_id)
+                if not marker:
+                    raise ApiContextReferenceError(
+                        "A delivered tool result cannot be compacted because its private "
+                        "backing reference is missing."
+                    )
+                message["content"] = marker
                 compacted.append(tool_call_id)
                 size = self.encoded_size(request_payload)
                 if size <= self.target_bytes:
@@ -99,7 +107,7 @@ class ApiContextPolicy:
             for message in messages
             if isinstance(message, dict)
             and message.get("role") == "tool"
-            and str(message.get("tool_call_id") or "") not in compacted
+            and str(message.get("tool_call_id") or "") not in delivered_tool_call_ids
         )
         return ApiRequestView(
             payload=request_payload,
@@ -109,9 +117,42 @@ class ApiContextPolicy:
         )
 
 
+def _validate_message_transactions(messages: list[object]) -> None:
+    declared: set[str] = set()
+    unresolved: set[str] = set()
+    for message in messages:
+        if not isinstance(message, dict):
+            raise ApiContextProtocolError("API request contains an invalid message.")
+        role = message.get("role")
+        if role != "tool" and unresolved:
+            raise ApiContextProtocolError(
+                "API request contains an incomplete assistant/tool transaction."
+            )
+        if role == "assistant" and isinstance(message.get("tool_calls"), list):
+            for call in message["tool_calls"]:
+                tool_call_id = str(call.get("id") or "") if isinstance(call, dict) else ""
+                if not tool_call_id or tool_call_id in declared:
+                    raise ApiContextProtocolError(
+                        "API request contains an invalid assistant tool call."
+                    )
+                declared.add(tool_call_id)
+                unresolved.add(tool_call_id)
+        elif role == "tool":
+            tool_call_id = str(message.get("tool_call_id") or "")
+            if not tool_call_id or tool_call_id not in unresolved:
+                raise ApiContextProtocolError("API request contains an orphaned tool result.")
+            unresolved.remove(tool_call_id)
+    if unresolved:
+        raise ApiContextProtocolError(
+            "API request contains an incomplete assistant/tool transaction."
+        )
+
+
 __all__ = [
     "ApiContextLimitError",
     "ApiContextPolicy",
+    "ApiContextProtocolError",
+    "ApiContextReferenceError",
     "ApiRequestView",
     "DEFAULT_API_CONTEXT_CONTRACT_BYTES",
 ]

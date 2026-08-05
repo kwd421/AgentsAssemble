@@ -214,7 +214,7 @@ class NativeCliBridgeProcessManagerTests(unittest.TestCase):
             )
             launch = manager.start(
                 "general",
-                {"session_id": "codex"},
+                {"session_id": "codex", "turn_count": 2},
                 spec,
                 server_url="http://127.0.0.1:9999",
                 ticket_issuer=lambda identity: "secret-single-use-ticket",
@@ -247,6 +247,7 @@ class NativeCliBridgeProcessManagerTests(unittest.TestCase):
             self.assertEqual(config["runtime_state_dir"], str(Path(launch["config_path"]).parent / "provider-state"))
             self.assertEqual(config["runtime_kind"], spec.runtime_kind)
             self.assertEqual(config["context_contract_bytes"], 180_000)
+            self.assertTrue(config["resume_required"])
             self.assertEqual(Path(launch["config_path"]).parent.name, spec.runtime_profile_key())
             stopped = manager.stop("general", "codex", handle_id=launch["bridge_handle_id"])
 

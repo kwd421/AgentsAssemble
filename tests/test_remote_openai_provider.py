@@ -9,7 +9,8 @@ from pathlib import Path
 from urllib.request import Request
 
 from agentsassemble.providers.capabilities import ProviderCapabilityCatalog
-from agentsassemble.providers.api_context import ApiContextLimitError
+from agentsassemble.providers.api_context import ApiContextLimitError, ApiContextPolicy
+from agentsassemble.providers.api_session import ApiContextCheckpointMissing
 from agentsassemble.providers.remote_openai import (
     RemoteOpenAICompatibleRuntime,
     discover_remote_openai_models,
@@ -342,6 +343,7 @@ class RemoteOpenAIProviderTests(unittest.TestCase):
                 workspace=str(workspace),
                 permission_mode="workspace_write",
                 context_contract_bytes=180_000,
+                state_dir=str(workspace / "runtime-state"),
             )
             runtime.send("두 파일을 차례로 읽어 줘.")
 
@@ -349,12 +351,34 @@ class RemoteOpenAIProviderTests(unittest.TestCase):
                 timeout_seconds=2,
                 on_activity=activities.append,
             )
+            first_result = next(
+                message
+                for message in requests[2]["messages"]
+                if message.get("tool_call_id") == "call-first"
+            )
+            first_marker = json.loads(first_result["content"])
+            result_path = (
+                workspace
+                / "runtime-state"
+                / "api-context"
+                / "tool-results"
+                / f"{first_marker['sha256']}.json"
+            )
+            stored_result = json.loads(result_path.read_text(encoding="utf-8"))
+            resumed = RemoteOpenAICompatibleRuntime(
+                "tokenrouter-context",
+                profile=profile,
+                api_key="test-key",
+                model="moonshotai/kimi-k3-free",
+                opener=opener,
+                workspace=str(workspace),
+                permission_mode="workspace_write",
+                context_contract_bytes=180_000,
+                state_dir=str(workspace / "runtime-state"),
+            )
+            resumed.send("앞서 읽은 파일을 기억해?")
+            resumed_result = resumed.read_output(timeout_seconds=2)
 
-        first_result = next(
-            message
-            for message in requests[2]["messages"]
-            if message.get("tool_call_id") == "call-first"
-        )
         second_result = next(
             message
             for message in requests[2]["messages"]
@@ -362,6 +386,23 @@ class RemoteOpenAIProviderTests(unittest.TestCase):
         )
         self.assertNotIn("first-content", first_result["content"])
         self.assertIn("delivered_tool_result_elided", first_result["content"])
+        self.assertIn("first-content", stored_result["content"])
+        self.assertEqual(first_marker["ref"], f"aa-tool-result://sha256/{first_marker['sha256']}")
+        resumed_first_result = next(
+            message
+            for message in requests[3]["messages"]
+            if message.get("tool_call_id") == "call-first"
+        )
+        self.assertEqual(resumed_first_result["content"], first_result["content"])
+        self.assertNotIn("first-content", resumed_first_result["content"])
+        self.assertEqual(resumed_result["content"], "두 파일을 확인했습니다.")
+        self.assertTrue(
+            all(
+                len(json.dumps(request, ensure_ascii=False).encode("utf-8"))
+                <= ApiContextPolicy(180_000).hard_limit_bytes
+                for request in requests
+            )
+        )
         self.assertIn("second-content", second_result["content"])
         self.assertEqual(result["content"], "두 파일을 확인했습니다.")
         self.assertEqual(
@@ -462,6 +503,22 @@ class RemoteOpenAIProviderTests(unittest.TestCase):
         )
         self.assertEqual(result["content"], "이전 답변을 기억합니다.")
         self.assertTrue(resumed.health()["provider_session_reused"])
+
+    def test_api_recovery_refuses_to_silently_start_without_its_checkpoint(self):
+        profile = remote_openai_profile("tokenrouter")
+        self.assertIsNotNone(profile)
+        with tempfile.TemporaryDirectory() as temp_dir:
+            with self.assertRaises(ApiContextCheckpointMissing) as caught:
+                RemoteOpenAICompatibleRuntime(
+                    "tokenrouter-recovery",
+                    profile=profile,
+                    api_key="test-key",
+                    model="moonshotai/kimi-k3-free",
+                    state_dir=temp_dir,
+                    resume_required=True,
+                )
+
+        self.assertEqual(caught.exception.code, "api_context_checkpoint_missing")
 
     def test_api_work_harness_does_not_expose_workspace_tools_in_read_only_mode(self):
         profile = remote_openai_profile("tokenrouter")

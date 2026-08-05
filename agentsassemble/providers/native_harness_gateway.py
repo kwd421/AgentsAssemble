@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import os
+import tempfile
 import threading
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from urllib.error import HTTPError, URLError
@@ -11,6 +12,7 @@ from urllib.parse import urlsplit
 from urllib.request import Request, urlopen
 
 from agentsassemble.providers.api_context import ApiContextLimitError, ApiContextPolicy
+from agentsassemble.providers.api_session import ApiToolResultStore
 from agentsassemble.providers.native_harness_protocol import (
     anthropic_request_to_chat,
     approximate_anthropic_input_tokens,
@@ -50,6 +52,7 @@ class NativeModelGateway:
         request_headers: tuple[tuple[str, str], ...] = (),
         request_timeout_seconds: float = DEFAULT_PROVIDER_INACTIVITY_TIMEOUT_SECONDS,
         context_contract_bytes: int = 256_000,
+        state_dir: str = "",
     ) -> None:
         self.upstream_base_url = str(upstream_base_url or "").rstrip("/")
         self._upstream_api_key = str(upstream_api_key or "")
@@ -67,6 +70,15 @@ class NativeModelGateway:
         self._context_policy = ApiContextPolicy(context_contract_bytes)
         self._context_lock = threading.Lock()
         self._delivered_tool_call_ids: set[str] = set()
+        self._tool_result_references: dict[str, str] = {}
+        self._temporary_state = (
+            tempfile.TemporaryDirectory(prefix="agentsassemble-api-context-")
+            if not str(state_dir or "").strip()
+            else None
+        )
+        self._tool_result_store = ApiToolResultStore(
+            state_dir or self._temporary_state.name
+        )
         self._compacted_tool_result_count = 0
         self._last_request_context_bytes = 0
         self._server = _LoopbackServer(("127.0.0.1", 0), self._handler_type())
@@ -109,6 +121,9 @@ class NativeModelGateway:
     def stop(self, *, timeout_seconds: float = 3.0) -> None:
         if not self._running:
             self._upstream_api_key = ""
+            if self._temporary_state is not None:
+                self._temporary_state.cleanup()
+                self._temporary_state = None
             return
         self._running = False
         self._server.shutdown()
@@ -117,6 +132,9 @@ class NativeModelGateway:
             self._thread.join(timeout=max(0.1, float(timeout_seconds)))
             self._thread = None
         self._upstream_api_key = ""
+        if self._temporary_state is not None:
+            self._temporary_state.cleanup()
+            self._temporary_state = None
 
     @property
     def pid(self) -> int | None:
@@ -275,9 +293,20 @@ class NativeModelGateway:
 
     def _complete(self, payload: dict[str, object]) -> dict[str, object]:
         with self._context_lock:
+            messages = payload.get("messages")
+            if isinstance(messages, list):
+                for message in messages:
+                    if not isinstance(message, dict) or message.get("role") != "tool":
+                        continue
+                    tool_call_id = str(message.get("tool_call_id") or "")
+                    if tool_call_id and tool_call_id not in self._tool_result_references:
+                        self._tool_result_references[tool_call_id] = (
+                            self._tool_result_store.record(str(message.get("content") or ""))
+                        )
             request_view = self._context_policy.prepare(
                 payload,
                 delivered_tool_call_ids=set(self._delivered_tool_call_ids),
+                tool_result_references=dict(self._tool_result_references),
             )
             self._last_request_context_bytes = request_view.encoded_bytes
             self._compacted_tool_result_count += len(

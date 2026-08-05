@@ -37,6 +37,7 @@ class LocalOpenAICompatibleRuntime(OpenAICompatibleApiRuntime):
         workspace: str = "",
         permission_mode: str = "meeting_read_only",
         state_dir: str = "",
+        resume_required: bool = False,
     ) -> None:
         super().__init__(
             agent_id,
@@ -55,4 +56,5 @@ class LocalOpenAICompatibleRuntime(OpenAICompatibleApiRuntime):
             workspace=workspace,
             permission_mode=permission_mode,
             state_dir=state_dir,
+            resume_required=resume_required,
         )

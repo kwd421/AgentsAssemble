@@ -2,9 +2,7 @@ from __future__ import annotations
 
 import json
 import threading
-import time
 from collections.abc import Callable
-from dataclasses import dataclass
 from datetime import UTC, datetime
 from typing import IO
 from urllib.error import HTTPError
@@ -13,9 +11,14 @@ from urllib.request import Request, urlopen
 from agentsassemble.providers.api_context import (
     ApiContextLimitError,
     ApiContextPolicy,
+    ApiContextProtocolError,
+    ApiContextReferenceError,
     DEFAULT_API_CONTEXT_CONTRACT_BYTES,
 )
-from agentsassemble.providers.api_session import ApiConversationStore
+from agentsassemble.providers.api_session import (
+    ApiContextCheckpointMissing,
+    ApiConversationStore,
+)
 from agentsassemble.providers.api_work_tools import (
     ApiWorkHarness,
     parse_work_tool_arguments,
@@ -26,6 +29,13 @@ from agentsassemble.providers.openai_compatible_room_tools import (
     complete_tool_calls,
     execute_room_tool,
     room_tool_schemas,
+)
+from agentsassemble.providers.openai_compatible_transcript import (
+    OpenAIStreamRound,
+    aggregate_usage,
+    empty_round_message,
+    normalized_usage,
+    reasoning_activity_reporter,
 )
 from agentsassemble.providers.provider_requests import ProviderRequestHandler
 from agentsassemble.providers.turn_progress import ProviderTurnProgress
@@ -64,6 +74,7 @@ class OpenAICompatibleApiRuntime:
         permission_mode: str = "meeting_read_only",
         context_contract_bytes: int = DEFAULT_API_CONTEXT_CONTRACT_BYTES,
         state_dir: str = "",
+        resume_required: bool = False,
     ) -> None:
         if require_api_key and not str(api_key or "").strip():
             raise RuntimeError("credential_missing")
@@ -100,17 +111,30 @@ class OpenAICompatibleApiRuntime:
         self._conversation_store = (
             ApiConversationStore(
                 state_dir,
+                agent_id=self.agent_id,
                 provider_name=self.provider_name,
                 model=self.model,
             )
             if str(state_dir or "").strip()
             else None
         )
+        if resume_required and (
+            self._conversation_store is None or not self._conversation_store.exists
+        ):
+            raise ApiContextCheckpointMissing(
+                "This API Agent Session has prior turns but no recoverable checkpoint; "
+                "refusing to start a fresh conversation silently."
+            )
         if self._conversation_store is None:
             self._messages: list[dict[str, object]] = []
             delivered_tool_call_ids: set[str] = set()
+            tool_result_references: dict[str, str] = {}
         else:
-            self._messages, delivered_tool_call_ids = self._conversation_store.load()
+            (
+                self._messages,
+                delivered_tool_call_ids,
+                tool_result_references,
+            ) = self._conversation_store.load()
         self._pending = ""
         self._pending_room_observation = False
         self._running = False
@@ -121,6 +145,7 @@ class OpenAICompatibleApiRuntime:
         self._response: IO[bytes] | None = None
         self._context_policy = ApiContextPolicy(context_contract_bytes)
         self._delivered_tool_call_ids = delivered_tool_call_ids
+        self._tool_result_references = tool_result_references
         self._context_compaction_count = 0
 
     def set_request_handler(self, handler: ProviderRequestHandler) -> None:
@@ -193,7 +218,7 @@ class OpenAICompatibleApiRuntime:
                     on_delta=on_delta,
                     on_activity=on_activity,
                     on_reasoning=(
-                        _reasoning_activity_reporter(
+                        reasoning_activity_reporter(
                             on_activity,
                             activity_id=f"api-reasoning-{len(api_calls) + 1}",
                         )
@@ -209,7 +234,7 @@ class OpenAICompatibleApiRuntime:
                         content = "RoomPortal action completed."
                     elif not content:
                         raise RuntimeError(
-                            _empty_round_message(
+                            empty_round_message(
                                 self.provider_name,
                                 round_result,
                                 max_output_tokens=self._request_payload.get("max_tokens"),
@@ -247,13 +272,14 @@ class OpenAICompatibleApiRuntime:
                     assistant_message["reasoning_content"] = round_result.reasoning_content
                 messages.append(assistant_message)
                 for tool_call in round_result.tool_calls:
+                    tool_call_id = str(tool_call.get("id") or "")
                     function = tool_call.get("function")
                     tool_name = (
                         str(function.get("name") or "")
                         if isinstance(function, dict)
                         else ""
                     )
-                    activity_id = clean_room_text(tool_call.get("id"), limit=128)
+                    activity_id = clean_room_text(tool_call_id, limit=128)
                     activity_title, activity_detail = _tool_activity(
                         tool_call,
                         room_portal=self._room_portal if room_observation else None,
@@ -297,11 +323,18 @@ class OpenAICompatibleApiRuntime:
                     messages.append(
                         {
                             "role": "tool",
-                            "tool_call_id": str(tool_call.get("id") or ""),
+                            "tool_call_id": tool_call_id,
                             "name": executed_name,
                             "content": tool_result,
                         }
                     )
+                    if self._conversation_store is not None:
+                        self._tool_result_references[tool_call_id] = (
+                            self._conversation_store.record_tool_result(
+                                tool_call_id,
+                                tool_result,
+                            )
+                        )
                     if on_activity is not None:
                         on_activity({**activity_fields, "status": "completed"})
                     progress.record()
@@ -310,18 +343,26 @@ class OpenAICompatibleApiRuntime:
                         f"{self.provider_name} runtime timed out after {timeout_seconds} seconds."
                     )
             with self._lock:
-                self._messages = _bounded_messages(messages)
+                retained_messages = _bounded_messages(messages)
                 retained_tool_ids = {
                     str(message.get("tool_call_id") or "")
-                    for message in self._messages
+                    for message in retained_messages
                     if message.get("role") == "tool"
                 }
                 self._delivered_tool_call_ids.intersection_update(retained_tool_ids)
+                self._tool_result_references = {
+                    tool_call_id: marker
+                    for tool_call_id, marker in self._tool_result_references.items()
+                    if tool_call_id in retained_tool_ids
+                }
                 if self._conversation_store is not None:
-                    self._conversation_store.persist(
-                        self._messages,
+                    self._messages = self._conversation_store.persist(
+                        retained_messages,
                         self._delivered_tool_call_ids,
+                        self._tool_result_references,
                     )
+                else:
+                    self._messages = retained_messages
                 self._last_error = ""
             return {
                 "outcome": "message",
@@ -335,7 +376,7 @@ class OpenAICompatibleApiRuntime:
                     "observed_model_id": observed_model_id,
                     "room_tool_rounds": tool_rounds,
                     "api_calls": api_calls,
-                    "token_usage": _aggregate_usage(api_calls),
+                    "token_usage": aggregate_usage(api_calls),
                 },
             }
         except Exception as error:
@@ -362,7 +403,7 @@ class OpenAICompatibleApiRuntime:
         on_delta=None,
         on_reasoning=None,
         on_activity=None,
-    ) -> _StreamRound:
+    ) -> OpenAIStreamRound:
         payload: dict[str, object] = {
             "model": self.model,
             "messages": messages,
@@ -386,8 +427,9 @@ class OpenAICompatibleApiRuntime:
             request_view = self._context_policy.prepare(
                 payload,
                 delivered_tool_call_ids=self._delivered_tool_call_ids,
+                tool_result_references=self._tool_result_references,
             )
-        except ApiContextLimitError:
+        except (ApiContextLimitError, ApiContextProtocolError, ApiContextReferenceError):
             if compaction_started and on_activity is not None:
                 on_activity({"category": "compaction", "status": "failed"})
             raise
@@ -422,7 +464,6 @@ class OpenAICompatibleApiRuntime:
             raise provider_http_error(error, provider_name=self.provider_name) from error
         with self._lock:
             self._response = response
-            self._delivered_tool_call_ids.update(request_view.raw_tool_call_ids)
         progress.record()
         try:
             for raw_line in response:
@@ -447,7 +488,7 @@ class OpenAICompatibleApiRuntime:
                         or observed_model_id
                     )
                     if isinstance(chunk.get("usage"), dict):
-                        usage = _normalized_usage(chunk["usage"])
+                        usage = normalized_usage(chunk["usage"])
                 choices = chunk.get("choices") if isinstance(chunk, dict) else None
                 if isinstance(choices, list) and choices and isinstance(choices[0], dict):
                     # Why the round ended. Without it a response cut off at the
@@ -495,9 +536,11 @@ class OpenAICompatibleApiRuntime:
             except Exception:
                 pass
         reasoning_content = "".join(reasoning_parts)
+        with self._lock:
+            self._delivered_tool_call_ids.update(request_view.raw_tool_call_ids)
         if reasoning_content and on_reasoning is not None:
             on_reasoning("", True)
-        return _StreamRound(
+        return OpenAIStreamRound(
             content="".join(content_parts),
             reasoning_content=reasoning_content,
             finish_reason=finish_reason,
@@ -551,93 +594,6 @@ class OpenAICompatibleApiRuntime:
                 "context_hard_limit_bytes": self._context_policy.hard_limit_bytes,
                 "context_compaction_count": self._context_compaction_count,
             }
-
-
-@dataclass(frozen=True)
-class _StreamRound:
-    content: str
-    reasoning_content: str
-    tool_calls: list[dict[str, object]]
-    observed_model_id: str
-    usage: dict[str, object]
-    finish_reason: str = ""
-
-
-def _reasoning_activity_reporter(on_activity, *, activity_id: str):
-    """Coalesce provider reasoning deltas into bounded live activity updates."""
-
-    parts: list[str] = []
-    last_reported_chars = 0
-    last_reported_at = 0.0
-
-    def report(delta: str, completed: bool) -> None:
-        nonlocal last_reported_chars, last_reported_at
-        if delta:
-            parts.append(str(delta))
-        content = "".join(parts)
-        now = time.monotonic()
-        should_report = completed or (
-            len(content) - last_reported_chars >= 40
-            or now - last_reported_at >= 0.15
-        )
-        if not content or not should_report:
-            return
-        visible = content[-2000:]
-        on_activity(
-            {
-                "category": "reasoning",
-                "status": "completed" if completed else "running",
-                "activity_id": activity_id,
-                "activity_title": "생각",
-                "activity_detail": visible,
-                "content": visible,
-            }
-        )
-        last_reported_chars = len(content)
-        last_reported_at = now
-
-    return report
-
-
-def _empty_round_message(
-    provider_name: str,
-    round_result: "_StreamRound",
-    *,
-    max_output_tokens: object = None,
-) -> str:
-    """Say why the round produced no text, not merely that it did not.
-
-    A reasoning model can spend the whole output budget thinking and stop at the
-    ceiling before writing an answer; that arrives as finish_reason "length"
-    with reasoning present and content empty. Reporting it identically to a
-    genuinely empty response left the operator with nothing to act on.
-    """
-    if round_result.finish_reason == "length":
-        budget = ""
-        try:
-            limit = int(max_output_tokens or 0)
-        except (TypeError, ValueError):
-            limit = 0
-        if limit:
-            budget = f" (최대 응답 길이 {limit:,} 토큰)"
-        thought = (
-            "추론에만 쓰고 답변을 시작하지 못했습니다"
-            if round_result.reasoning_content
-            else "답변을 끝내지 못했습니다"
-        )
-        return (
-            f"{provider_name}이(가) 최대 응답 길이에 걸려 {thought}{budget}. "
-            "최대 응답 길이를 늘리거나 추론 강도를 낮추세요."
-        )
-    if round_result.reasoning_content:
-        return (
-            f"{provider_name}이(가) 추론만 남기고 답변 본문을 반환하지 않았습니다"
-            f" (종료 사유: {round_result.finish_reason or '없음'})."
-        )
-    return (
-        f"{provider_name} completed without a final message"
-        f" (finish_reason: {round_result.finish_reason or 'none'})."
-    )
 
 
 _WORK_TOOL_NAMES = frozenset(
@@ -743,43 +699,6 @@ def _bounded_messages(
     while len(turns) > 1 and (message_count() > 50 or encoded_size() > 64_000):
         turns.pop(0)
     return [message for turn in turns for message in turn]
-
-
-def _normalized_usage(value: dict[str, object]) -> dict[str, int]:
-    details = (
-        value.get("completion_tokens_details")
-        if isinstance(value.get("completion_tokens_details"), dict)
-        else {}
-    )
-    return {
-        "input_tokens": _usage_int(value.get("prompt_tokens")),
-        "output_tokens": _usage_int(value.get("completion_tokens")),
-        "total_tokens": _usage_int(value.get("total_tokens")),
-        "cache_hit_input_tokens": _usage_int(value.get("prompt_cache_hit_tokens")),
-        "cache_miss_input_tokens": _usage_int(value.get("prompt_cache_miss_tokens")),
-        "reasoning_tokens": _usage_int(details.get("reasoning_tokens")),
-    }
-
-
-def _aggregate_usage(api_calls: list[dict[str, object]]) -> dict[str, int]:
-    fields = (
-        "input_tokens",
-        "output_tokens",
-        "total_tokens",
-        "cache_hit_input_tokens",
-        "cache_miss_input_tokens",
-        "reasoning_tokens",
-    )
-    return {
-        field: sum(_usage_int(call.get(field)) for call in api_calls)
-        for field in fields
-    }
-
-
-def _usage_int(value: object) -> int:
-    if isinstance(value, bool) or not isinstance(value, int):
-        return 0
-    return max(0, value)
 
 
 def _now() -> str:

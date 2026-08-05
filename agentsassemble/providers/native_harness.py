@@ -129,6 +129,7 @@ def native_harness_runtime(
             max_output_tokens=max_output_tokens,
             request_headers=request_headers,
             context_contract_bytes=context_contract_bytes,
+            state_dir=runtime_state_dir,
         )
         harness_endpoint = gateway.endpoint
     if selected == "codex":

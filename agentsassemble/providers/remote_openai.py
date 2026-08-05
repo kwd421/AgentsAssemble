@@ -417,6 +417,7 @@ class RemoteOpenAICompatibleRuntime(OpenAICompatibleApiRuntime):
         permission_mode: str = "meeting_read_only",
         context_contract_bytes: int = 0,
         state_dir: str = "",
+        resume_required: bool = False,
     ) -> None:
         request_payload: dict[str, object] = {}
         include_reasoning = False
@@ -454,6 +455,7 @@ class RemoteOpenAICompatibleRuntime(OpenAICompatibleApiRuntime):
                 context_contract_bytes or DEFAULT_API_CONTEXT_CONTRACT_BYTES
             ),
             state_dir=state_dir,
+            resume_required=resume_required,
         )
 
 
