@@ -67,13 +67,6 @@ PROVIDER_CATALOG: dict[str, dict] = {
     },
 }
 
-# Ordered provider/model references retained for the optional API lane.
-FALLBACK_CHAIN: list[str] = [
-    "nvidia/minimaxai/minimax-m2",
-    "nvidia/meta/llama-3.3-70b-instruct",
-    "openrouter/meta-llama/llama-3.3-70b-instruct:free",
-]
-
 DEFAULT_CAPABILITY = {
     "text": True,
     "vision": False,
@@ -144,10 +137,6 @@ def resolve_api_key(provider_id: str) -> str:
     return os.environ.get(env_name, "").strip() if env_name else ""
 
 
-def fallback_models() -> list[tuple[str, str]]:
-    return [split_ref(ref) for ref in FALLBACK_CHAIN]
-
-
 def catalog_payload() -> dict:
     """Return catalog metadata without secret values."""
 
@@ -172,18 +161,13 @@ def catalog_payload() -> dict:
                 for model_id, model in (provider.get("models") or {}).items()
             },
         }
-    return {
-        "providers": providers,
-        "fallback_chain": list(FALLBACK_CHAIN),
-    }
+    return {"providers": providers}
 
 
 __all__ = [
     "DEFAULT_CAPABILITY",
-    "FALLBACK_CHAIN",
     "PROVIDER_CATALOG",
     "catalog_payload",
-    "fallback_models",
     "get_model",
     "get_provider",
     "list_providers",

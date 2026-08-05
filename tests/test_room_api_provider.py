@@ -112,37 +112,19 @@ class ErrorMappingTests(unittest.TestCase):
         self.assertEqual(ctx.exception.category, "bad_response")
 
 
-class FallbackChainTests(unittest.TestCase):
-    # the fallback chain spans nvidia + openrouter; give both keys so the
-    # auth gate passes and we exercise the actual rate-limit fall-through
-    ENV = {"NVIDIA_API_KEY": "nv-key", "OPENROUTER_API_KEY": "or-key"}
-
-    def test_rate_limit_falls_through_to_next(self):
+class ProviderSelectionTests(unittest.TestCase):
+    def test_automatic_fallback_is_rejected_before_contacting_a_provider(self):
         calls = []
 
         def post(url, body, headers, timeout):
-            calls.append(url)
-            if len(calls) == 1:
-                return 429, b'{"error":"slow down"}'
-            return 200, _ok_body("from fallback")
+            calls.append((url, body, headers, timeout))
+            return 200, _ok_body("unexpected")
 
-        with mock.patch.dict(os.environ, self.ENV):
-            reply = chat_completion_with_fallback(MSGS, http_post=post)
-        self.assertEqual(reply.text, "from fallback")
-        self.assertGreaterEqual(len(calls), 2)
+        with self.assertRaises(ApiProviderError) as ctx:
+            chat_completion_with_fallback(MSGS, http_post=post)
 
-    def test_auth_error_does_not_fall_through(self):
-        calls = []
-
-        def post(url, body, headers, timeout):
-            calls.append(url)
-            return 401, b'{"error":"bad key"}'
-
-        with mock.patch.dict(os.environ, self.ENV):
-            with self.assertRaises(ApiProviderError) as ctx:
-                chat_completion_with_fallback(MSGS, http_post=post)
-        self.assertEqual(ctx.exception.category, "auth")
-        self.assertEqual(len(calls), 1)  # fail fast, no pointless retry
+        self.assertEqual(ctx.exception.category, "config")
+        self.assertEqual(calls, [])
 
 
 class UsageRecordingTests(unittest.TestCase):

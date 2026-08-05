@@ -143,7 +143,6 @@ class ModelCatalogPayloadTests(unittest.TestCase):
         self.assertNotIn("nv-supersecret", blob)
         self.assertIn("nvidia", payload["providers"])
         self.assertTrue(payload["providers"]["nvidia"]["key_present"])
-        self.assertIn("fallback_chain", payload)
 
 
 class GroupConfigMappingTests(unittest.TestCase):

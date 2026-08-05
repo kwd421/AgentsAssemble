@@ -171,28 +171,21 @@ def chat_completion_with_fallback(
     timeout: int = 60,
     http_post=None,
 ) -> ApiReply:
-    """Try `primary` (provider, model), then walk the catalog fallback chain on
-    rate_limit / unavailable (cli-jaw pattern). auth/config/bad_response fail fast
-    — retrying the same broken config on the next provider helps no one."""
-    chain: list[tuple[str, str]] = []
-    if primary:
-        chain.append(primary)
-    for pair in catalog.fallback_models():
-        if pair not in chain:
-            chain.append(pair)
+    """Compatibility entry point that now fails closed without an explicit model."""
 
-    last_error: Exception | None = None
-    for provider_id, model_id in chain:
-        try:
-            return chat_completion(
-                provider_id, model_id, messages, timeout=timeout, http_post=http_post
-            )
-        except ApiProviderError as error:
-            last_error = error
-            if error.category in ("rate_limit", "unavailable"):
-                continue  # try the next engine
-            raise  # auth/config/bad_response — don't paper over with a fallback
-    raise last_error or ApiProviderError("No providers available.", category="unavailable")
+    if primary is None:
+        raise ApiProviderError(
+            "Automatic provider fallback is retired; select one provider and model.",
+            category="config",
+        )
+    provider_id, model_id = primary
+    return chat_completion(
+        provider_id,
+        model_id,
+        messages,
+        timeout=timeout,
+        http_post=http_post,
+    )
 
 
 def record_api_usage(

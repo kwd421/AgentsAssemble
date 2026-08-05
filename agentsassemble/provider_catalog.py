@@ -2,10 +2,8 @@
 
 from agentsassemble.providers.catalog import (
     DEFAULT_CAPABILITY,
-    FALLBACK_CHAIN,
     PROVIDER_CATALOG,
     catalog_payload,
-    fallback_models,
     get_model,
     get_provider,
     list_providers,
@@ -18,10 +16,8 @@ from agentsassemble.providers.catalog import (
 
 __all__ = [
     "DEFAULT_CAPABILITY",
-    "FALLBACK_CHAIN",
     "PROVIDER_CATALOG",
     "catalog_payload",
-    "fallback_models",
     "get_model",
     "get_provider",
     "list_providers",

@@ -1,10 +1,10 @@
 {
  "readme": "AgentsAssemble codebase map. Regenerate with `make codebase-map`; verify committed outputs with `make codebase-map-verify`. modules[] columns: name, path, package, domain, classification, migration_status, lines, docstring, imports[], imported_by[] (indexes into modules), classes[[name, [[base, defining_module], ...]]] (best-effort, top-level classes only). frontend[] columns: path, group, lines, doc, imports[], imported_by[] (indexes into frontend). package_edges go importer -> dependency with module-import counts; `points` is the precomputed polyline for that edge and `intra_cycle` marks imports whose endpoints share one cycle group. graph{} holds the layered package drawing: layers[] top-to-bottom (each with members[] package ids, member_count, and the dominant domain), (a package sits below everything importing it), clusters[] are mutually dependent packages (import cycles at package level) drawn as one labelled block, plus width/height of the drawing. health{} ranks findings for a reader who has to act: cycles[] (mutually dependent packages, with the lines they hold), leaning_on_retiring[] (current modules importing legacy/compatibility modules - the reason legacy cannot be deleted), highest_leverage_migrations[] (retiring modules with the most current importers), unreferenced_shims[] (compatibility modules with no importer in agentsassemble/ and no reference in tests/; callers outside this repository are not visible, so verify before deleting), and hotspots[] (largest modules). health.scope states exactly what was measured. class_graph{} is the UML generalization DAG over base classes that resolve inside the repo: edges go base -> subclass, so a subclass always sits below the class it extends. Coordinates in graph and class_graph are laid out with a Sugiyama pipeline (cycle condensation, Coffman-Graham layering, dummy-node edge routing, median/transpose crossing reduction) and are deterministic.",
- "generated_at": "2026-08-05T04:45:53Z",
- "fingerprint": "5c8a0c2839769c3a",
+ "generated_at": "2026-08-05T04:50:17Z",
+ "fingerprint": "e9caaf2c5602b211",
  "stats": {
   "backend_modules": 860,
-  "backend_lines": 146443,
+  "backend_lines": 146416,
   "frontend_files": 211,
   "frontend_lines": 49244,
   "packages": 30,
@@ -124,7 +124,7 @@
    "kind": "backend",
    "doc": "Provider runtime contracts and implementations.",
    "files": 121,
-   "lines": 30307,
+   "lines": 30284,
    "domains": {
     "providers": 121
    },
@@ -448,7 +448,7 @@
    "kind": "backend",
    "doc": "Flat root modules owned by the providers domain that have not been physically moved into the target package yet.",
    "files": 33,
-   "lines": 660,
+   "lines": 656,
    "domains": {
     "providers": 33
    },
@@ -4136,7 +4136,7 @@
  "health": {
   "scope": "Imports are counted inside agentsassemble/ only; test references are counted separately from tests/. Callers outside this repository are not visible to the generator.",
   "totals": {
-   "retiring_lines": 58154,
+   "retiring_lines": 58150,
    "current_to_retiring_imports": 109,
    "unreferenced_shim_lines": 2014,
    "test_only_shims": 196
@@ -4160,7 +4160,7 @@
      "web"
     ],
     "internal_edges": 92,
-    "lines": 142991,
+    "lines": 142968,
     "heaviest": "legacy"
    },
    {
@@ -16699,7 +16699,7 @@
    "providers",
    "compatibility",
    "compatibility-shim",
-   32,
+   28,
    "Compatibility exports for the optional API-provider model catalog.",
    [
     597
@@ -17365,7 +17365,7 @@
    "providers",
    "current",
    "in-target-package",
-   262,
+   255,
    "OpenAI-compatible chat adapter for the API-provider lane (master plan 1단계 B).",
    [
     570,
@@ -17724,7 +17724,7 @@
    "providers",
    "current",
    "in-target-package",
-   194,
+   178,
    "Static model catalog for the optional API-provider lane.",
    [],
    [
@@ -27717,7 +27717,7 @@
    "name": "agentsassemble",
    "note": "Backend package (Python)",
    "files": 860,
-   "lines": 146443
+   "lines": 146416
   },
   {
    "name": "frontend/src",
@@ -27729,7 +27729,7 @@
    "name": "tests",
    "note": "Backend test suite",
    "files": 386,
-   "lines": 151807
+   "lines": 151776
   },
   {
    "name": "scripts",

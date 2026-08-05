@@ -74,17 +74,6 @@ class KeyResolutionTests(unittest.TestCase):
         self.assertEqual(pc.resolve_api_key("lmstudio"), "")
 
 
-class FallbackChainTests(unittest.TestCase):
-    def test_fallback_models_are_resolvable(self):
-        pairs = pc.fallback_models()
-        self.assertGreater(len(pairs), 0)
-        for provider, model in pairs:
-            self.assertIsNotNone(
-                pc.get_model(provider, model),
-                f"fallback ref {provider}/{model} not in catalog",
-            )
-
-
 class PayloadSafetyTests(unittest.TestCase):
     def test_payload_never_leaks_key_values(self):
         with mock.patch.dict(os.environ, {"NVIDIA_API_KEY": "nv-supersecret"}):
@@ -97,7 +86,6 @@ class PayloadSafetyTests(unittest.TestCase):
     def test_payload_shape(self):
         payload = pc.catalog_payload()
         self.assertIn("providers", payload)
-        self.assertIn("fallback_chain", payload)
         nvidia = payload["providers"]["nvidia"]
         self.assertEqual(nvidia["base_url"], "https://integrate.api.nvidia.com/v1")
         model = nvidia["models"]["minimaxai/minimax-m2"]
