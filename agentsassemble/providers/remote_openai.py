@@ -192,6 +192,20 @@ def remote_openai_endpoint(provider_kind: object) -> str:
     return profile.base_url if profile is not None else ""
 
 
+def remote_openai_context_contract_bytes(
+    profile: RemoteOpenAIProfile | None,
+    model: object,
+    *,
+    fallback: int = 256_000,
+) -> int:
+    model_id = str(model or "")
+    if profile is not None:
+        for item in profile.static_models:
+            if item.model_id == model_id and item.context_length > 0:
+                return item.context_length
+    return max(65_536, int(fallback))
+
+
 def remote_openai_credential_ids() -> tuple[str, ...]:
     return tuple(profile.provider_id for profile in REMOTE_OPENAI_PROFILES)
 
@@ -429,14 +443,6 @@ class RemoteOpenAICompatibleRuntime(OpenAICompatibleApiRuntime):
                 "type": "disabled" if variant == "non_thinking" else "enabled"
             }
             include_reasoning = True
-        model_context = next(
-            (
-                item.context_length
-                for item in profile.static_models
-                if item.model_id == model and item.context_length > 0
-            ),
-            0,
-        )
         super().__init__(
             agent_id,
             api_key=api_key,
@@ -457,7 +463,10 @@ class RemoteOpenAICompatibleRuntime(OpenAICompatibleApiRuntime):
             room_portal=room_portal,
             workspace=workspace,
             permission_mode=permission_mode,
-            context_contract_bytes=context_contract_bytes or model_context or 256_000,
+            context_contract_bytes=(
+                context_contract_bytes
+                or remote_openai_context_contract_bytes(profile, model)
+            ),
             state_dir=state_dir,
         )
 

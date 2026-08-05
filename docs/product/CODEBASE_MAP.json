@@ -1,10 +1,10 @@
 {
  "readme": "AgentsAssemble codebase map. Regenerate with `make codebase-map`; verify committed outputs with `make codebase-map-verify`. modules[] columns: name, path, package, domain, classification, migration_status, lines, docstring, imports[], imported_by[] (indexes into modules), classes[[name, [[base, defining_module], ...]]] (best-effort, top-level classes only). frontend[] columns: path, group, lines, doc, imports[], imported_by[] (indexes into frontend). package_edges go importer -> dependency with module-import counts; `points` is the precomputed polyline for that edge and `intra_cycle` marks imports whose endpoints share one cycle group. graph{} holds the layered package drawing: layers[] top-to-bottom (each with members[] package ids, member_count, and the dominant domain), (a package sits below everything importing it), clusters[] are mutually dependent packages (import cycles at package level) drawn as one labelled block, plus width/height of the drawing. health{} ranks findings for a reader who has to act: cycles[] (mutually dependent packages, with the lines they hold), leaning_on_retiring[] (current modules importing legacy/compatibility modules - the reason legacy cannot be deleted), highest_leverage_migrations[] (retiring modules with the most current importers), unreferenced_shims[] (compatibility modules with no importer in agentsassemble/ and no reference in tests/; callers outside this repository are not visible, so verify before deleting), and hotspots[] (largest modules). health.scope states exactly what was measured. class_graph{} is the UML generalization DAG over base classes that resolve inside the repo: edges go base -> subclass, so a subclass always sits below the class it extends. Coordinates in graph and class_graph are laid out with a Sugiyama pipeline (cycle condensation, Coffman-Graham layering, dummy-node edge routing, median/transpose crossing reduction) and are deterministic.",
- "generated_at": "2026-08-05T04:40:34Z",
- "fingerprint": "6f11e23f001fe3c1",
+ "generated_at": "2026-08-05T04:45:53Z",
+ "fingerprint": "5c8a0c2839769c3a",
  "stats": {
   "backend_modules": 860,
-  "backend_lines": 146388,
+  "backend_lines": 146443,
   "frontend_files": 211,
   "frontend_lines": 49244,
   "packages": 30,
@@ -124,7 +124,7 @@
    "kind": "backend",
    "doc": "Provider runtime contracts and implementations.",
    "files": 121,
-   "lines": 30252,
+   "lines": 30307,
    "domains": {
     "providers": 121
    },
@@ -4160,7 +4160,7 @@
      "web"
     ],
     "internal_edges": 92,
-    "lines": 142936,
+    "lines": 142991,
     "heaviest": "legacy"
    },
    {
@@ -4290,7 +4290,7 @@
    },
    {
     "module": "agentsassemble.providers.remote_openai",
-    "lines": 655,
+    "lines": 664,
     "count": 1,
     "targets": [
      "agentsassemble.providers.openai_compatible"
@@ -17407,6 +17407,7 @@
    "Bounded request views for persistent OpenAI-compatible API sessions.",
    [],
    [
+    644,
     646
    ],
    [
@@ -18920,7 +18921,7 @@
    "providers",
    "current",
    "in-target-package",
-   205,
+   213,
    "Native coding-harness adapters for API and Local model providers.",
    [
     602,
@@ -18972,9 +18973,10 @@
    "providers",
    "current",
    "in-target-package",
-   343,
+   376,
    "Loopback model-wire adapter owned by one native Agent Session.",
    [
+    586,
     645,
     742
    ],
@@ -19370,7 +19372,7 @@
    "providers",
    "current",
    "in-target-package",
-   655,
+   664,
    "Declarative remote OpenAI-compatible providers and their room runtime.",
    [
     646,
@@ -19696,7 +19698,7 @@
    "providers",
    "current",
    "in-target-package",
-   261,
+   266,
    "",
    [
     583,
@@ -27715,7 +27717,7 @@
    "name": "agentsassemble",
    "note": "Backend package (Python)",
    "files": 860,
-   "lines": 146388
+   "lines": 146443
   },
   {
    "name": "frontend/src",
@@ -27727,7 +27729,7 @@
    "name": "tests",
    "note": "Backend test suite",
    "files": 386,
-   "lines": 151713
+   "lines": 151807
   },
   {
    "name": "scripts",

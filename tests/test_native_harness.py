@@ -115,6 +115,68 @@ class NativeHarnessCatalogTests(unittest.TestCase):
 
 
 class NativeHarnessGatewayTests(unittest.TestCase):
+    def test_codex_gateway_compacts_only_tool_results_delivered_before_this_request(self) -> None:
+        upstream_responses = [
+            {
+                "id": "chat-first",
+                "choices": [
+                    {
+                        "message": {"role": "assistant", "content": "continue"},
+                        "finish_reason": "stop",
+                    }
+                ],
+            },
+            {
+                "id": "chat-second",
+                "choices": [
+                    {
+                        "message": {"role": "assistant", "content": "finished"},
+                        "finish_reason": "stop",
+                    }
+                ],
+            },
+        ]
+        first_output = "a" * 9_000
+        second_output = "b" * 9_000
+        with _UpstreamServer(upstream_responses) as upstream:
+            gateway = NativeModelGateway(
+                upstream_base_url=upstream.endpoint,
+                upstream_api_key="secret",
+                model="deepseek-test",
+                provider_kind="deepseek_api",
+                context_contract_bytes=65_536,
+            )
+            gateway.start()
+            try:
+                _post(
+                    f"{gateway.endpoint}/responses",
+                    _codex_tool_history([("call-1", first_output)]),
+                )
+                _post(
+                    f"{gateway.endpoint}/responses",
+                    _codex_tool_history(
+                        [("call-1", first_output), ("call-2", second_output)]
+                    ),
+                )
+                health = gateway.health()
+            finally:
+                gateway.stop()
+
+        second_messages = upstream.requests[1]["messages"]
+        first_result = next(
+            message
+            for message in second_messages
+            if message.get("tool_call_id") == "call-1"
+        )
+        latest_result = next(
+            message
+            for message in second_messages
+            if message.get("tool_call_id") == "call-2"
+        )
+        self.assertIn("delivered_tool_result_elided", first_result["content"])
+        self.assertEqual(latest_result["content"], second_output)
+        self.assertEqual(health["compacted_tool_result_count"], 1)
+
     def test_claude_api_harness_routes_a_native_permission_through_the_room(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:
             root = Path(temp_dir)
@@ -384,6 +446,38 @@ def _post(url: str, payload: dict[str, object]) -> str:
     )
     with urlopen(request, timeout=5.0) as response:
         return response.read().decode("utf-8")
+
+
+def _codex_tool_history(results: list[tuple[str, str]]) -> dict[str, object]:
+    items: list[dict[str, object]] = [
+        {
+            "type": "message",
+            "role": "user",
+            "content": [{"type": "input_text", "text": "Inspect the files."}],
+        }
+    ]
+    for index, (call_id, output) in enumerate(results, start=1):
+        items.extend(
+            [
+                {
+                    "type": "function_call",
+                    "call_id": call_id,
+                    "name": "read_file",
+                    "arguments": json.dumps({"path": f"file-{index}.txt"}),
+                },
+                {
+                    "type": "function_call_output",
+                    "call_id": call_id,
+                    "output": output,
+                },
+            ]
+        )
+    return {
+        "model": "deepseek-test",
+        "instructions": "Inspect files and report the result.",
+        "input": items,
+        "stream": True,
+    }
 
 
 def _post_json(url: str, payload: dict[str, object]) -> dict[str, object]:

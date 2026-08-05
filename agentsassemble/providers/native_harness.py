@@ -84,6 +84,12 @@ class NativeHarnessRuntime:
             "harness_gateway_request_count": gateway_health.get("request_count", 0),
             "harness_gateway_last_request": gateway_health.get("last_request_kind", ""),
             "harness_gateway_last_error": gateway_health.get("last_error", ""),
+            "harness_gateway_compacted_tool_result_count": gateway_health.get(
+                "compacted_tool_result_count", 0
+            ),
+            "harness_gateway_last_request_context_bytes": gateway_health.get(
+                "last_request_context_bytes", 0
+            ),
         }
 
 
@@ -105,6 +111,7 @@ def native_harness_runtime(
     request_headers: tuple[tuple[str, str], ...] = (),
     variant: str = "",
     max_output_tokens: int = 0,
+    context_contract_bytes: int = 256_000,
 ):
     selected = clean_room_text(harness, limit=32)
     if selected not in {"codex", "claude"}:
@@ -121,6 +128,7 @@ def native_harness_runtime(
             variant=variant,
             max_output_tokens=max_output_tokens,
             request_headers=request_headers,
+            context_contract_bytes=context_contract_bytes,
         )
         harness_endpoint = gateway.endpoint
     if selected == "codex":

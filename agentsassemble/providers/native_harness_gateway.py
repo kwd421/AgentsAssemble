@@ -10,6 +10,7 @@ from urllib.error import HTTPError, URLError
 from urllib.parse import urlsplit
 from urllib.request import Request, urlopen
 
+from agentsassemble.providers.api_context import ApiContextLimitError, ApiContextPolicy
 from agentsassemble.providers.native_harness_protocol import (
     anthropic_request_to_chat,
     approximate_anthropic_input_tokens,
@@ -45,6 +46,7 @@ class NativeModelGateway:
         max_output_tokens: int = 0,
         request_headers: tuple[tuple[str, str], ...] = (),
         request_timeout_seconds: float = 600.0,
+        context_contract_bytes: int = 256_000,
     ) -> None:
         self.upstream_base_url = str(upstream_base_url or "").rstrip("/")
         self._upstream_api_key = str(upstream_api_key or "")
@@ -59,6 +61,11 @@ class NativeModelGateway:
             if str(name).strip() and str(value).strip()
         )
         self.request_timeout_seconds = max(1.0, float(request_timeout_seconds))
+        self._context_policy = ApiContextPolicy(context_contract_bytes)
+        self._context_lock = threading.Lock()
+        self._delivered_tool_call_ids: set[str] = set()
+        self._compacted_tool_result_count = 0
+        self._last_request_context_bytes = 0
         self._server = _LoopbackServer(("127.0.0.1", 0), self._handler_type())
         self._thread: threading.Thread | None = None
         self._running = False
@@ -118,6 +125,8 @@ class NativeModelGateway:
             "request_count": self._request_count,
             "last_request_kind": self._last_request_kind,
             "last_error": self._last_error,
+            "compacted_tool_result_count": self._compacted_tool_result_count,
+            "last_request_context_bytes": self._last_request_context_bytes,
         }
 
     def _handle_get(self, handler: BaseHTTPRequestHandler) -> None:
@@ -218,6 +227,19 @@ class NativeModelGateway:
                     },
                 },
             )
+        except ApiContextLimitError as error:
+            self._last_error = str(error)
+            _write_json(
+                handler,
+                413,
+                {
+                    "type": "error",
+                    "error": {
+                        "type": error.code,
+                        "message": str(error),
+                    },
+                },
+            )
         except Exception as error:
             self._last_error = str(error) or type(error).__name__
             _write_json(
@@ -249,6 +271,15 @@ class NativeModelGateway:
         return {}
 
     def _complete(self, payload: dict[str, object]) -> dict[str, object]:
+        with self._context_lock:
+            request_view = self._context_policy.prepare(
+                payload,
+                delivered_tool_call_ids=set(self._delivered_tool_call_ids),
+            )
+            self._last_request_context_bytes = request_view.encoded_bytes
+            self._compacted_tool_result_count += len(
+                request_view.compacted_tool_call_ids
+            )
         headers = {
             "Content-Type": "application/json",
             "Accept": "application/json",
@@ -259,7 +290,7 @@ class NativeModelGateway:
             headers["Authorization"] = f"Bearer {self._upstream_api_key}"
         request = Request(
             f"{self.upstream_base_url}/chat/completions",
-            data=json.dumps(payload, ensure_ascii=False).encode("utf-8"),
+            data=json.dumps(request_view.payload, ensure_ascii=False).encode("utf-8"),
             headers=headers,
             method="POST",
         )
@@ -274,6 +305,8 @@ class NativeModelGateway:
         decoded = json.loads(body.decode("utf-8"))
         if not isinstance(decoded, dict):
             raise NativeModelGatewayError("Upstream response must be a JSON object.")
+        with self._context_lock:
+            self._delivered_tool_call_ids.update(request_view.raw_tool_call_ids)
         return decoded
 
 

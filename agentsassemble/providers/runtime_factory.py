@@ -15,6 +15,7 @@ from agentsassemble.providers.native_harness import native_harness_runtime
 from agentsassemble.providers.opencode import OpenCodeRuntime
 from agentsassemble.providers.remote_openai import (
     RemoteOpenAICompatibleRuntime,
+    remote_openai_context_contract_bytes,
     remote_openai_profile,
 )
 from agentsassemble.providers.runtime_config import ProviderRuntimeConfig
@@ -103,6 +104,10 @@ def runtime_from_config(
             ),
             variant=config.variant,
             max_output_tokens=config.max_output_tokens,
+            context_contract_bytes=remote_openai_context_contract_bytes(
+                remote_profile,
+                config.model,
+            ),
         )
     if key == ("codex_live_session", "pty"):
         return CodexAppServerLiveRuntime(
