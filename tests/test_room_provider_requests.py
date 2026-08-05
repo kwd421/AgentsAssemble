@@ -58,6 +58,7 @@ class RoomProviderRequestTests(unittest.TestCase):
             broker=self.broker,
             reconcile_startup_sessions=False,
         )
+        self.host_channel = self.controller.connect(HOST)
         self.controller.create_provider_session(
             "general",
             NativeCliProviderSpec(
