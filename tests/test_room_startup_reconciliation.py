@@ -67,6 +67,12 @@ class RoomStartupSessionReconcilerTests(unittest.TestCase):
                 "bridge_handle_id": "lost-handle",
                 "active_turn_id": "turn-1",
                 "turn_phase": "streaming",
+                "pending_provider_request": {
+                    "provider_request_id": "approval-before-restart",
+                    "participant_id": "codex",
+                    "owner_id": "operator-local",
+                    "status": "open",
+                },
             },
         )
 
@@ -79,6 +85,7 @@ class RoomStartupSessionReconcilerTests(unittest.TestCase):
         self.assertEqual(session["inflight_event_ids"], [])
         self.assertEqual(session["bridge_handle_id"], "")
         self.assertEqual(session["active_turn_id"], "")
+        self.assertEqual(session["pending_provider_request"], {})
         self.assertTrue(session["recovery_required"])
         self.assertEqual(
             self.store.participant("general", "codex")["status"],
@@ -88,6 +95,13 @@ class RoomStartupSessionReconcilerTests(unittest.TestCase):
             self.attention_resets,
             [("general", "codex", ["event-1", "event-2", "event-3"])],
         )
+        failed = next(
+            event
+            for event in self.store.read_events("general")
+            if event["type"] == "provider_request_resolved"
+        )
+        self.assertEqual(failed["provider_request"]["status"], "failed")
+        self.assertEqual(failed["reason_code"], "provider_request_server_restarted")
 
     def test_stopped_session_is_left_unchanged(self) -> None:
         self.store.upsert_session(

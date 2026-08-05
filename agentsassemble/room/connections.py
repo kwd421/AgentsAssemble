@@ -10,6 +10,7 @@ from agentsassemble.room.text import clean_room_text
 EnsureRoom = Callable[[str], dict[str, object]]
 EnsureExternalBridgeSession = Callable[[str, dict[str, object]], None]
 SessionCallback = Callable[[str, dict[str, object]], object]
+PendingProviderRequestFailure = Callable[..., bool]
 
 
 class AttentionReset(Protocol):
@@ -34,6 +35,7 @@ class RoomConnectionService:
         ensure_external_bridge_session: EnsureExternalBridgeSession,
         reconcile_session_attention: AttentionReset,
         publish_session_state: SessionCallback,
+        fail_pending_provider_request: PendingProviderRequestFailure,
     ) -> None:
         self.store = store
         self.broker = broker
@@ -41,6 +43,7 @@ class RoomConnectionService:
         self._ensure_external_bridge_session = ensure_external_bridge_session
         self._reconcile_session_attention = reconcile_session_attention
         self._publish_session_state = publish_session_state
+        self._fail_pending_provider_request = fail_pending_provider_request
 
     def connect(self, identity: dict[str, object]) -> RoomSocketChannel:
         room_id = clean_room_text(identity.get("meeting_id"), 128)
@@ -87,6 +90,12 @@ class RoomConnectionService:
             128,
         )
         session = self.store.session(room_id, session_id)
+        if session:
+            self._fail_pending_provider_request(
+                room_id,
+                session_id,
+                reason_code="provider_request_bridge_disconnected",
+            )
         if (
             not session
             or session.get("runtime_status") in {"stopping", "stopped"}
@@ -147,6 +156,7 @@ __all__ = [
     "AttentionReset",
     "EnsureExternalBridgeSession",
     "EnsureRoom",
+    "PendingProviderRequestFailure",
     "RoomConnectionService",
     "SessionCallback",
 ]

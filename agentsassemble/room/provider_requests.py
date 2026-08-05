@@ -17,7 +17,6 @@ from agentsassemble.room.text import clean_room_text
 
 
 BridgeSession = Callable[[dict[str, object], str], tuple[str, dict[str, object]]]
-RoomOwnerCheck = Callable[[dict[str, object], str], bool]
 DurableCommand = Callable[[Callable[[RoomCommandUnitOfWork], dict[str, object]]], dict[str, object]]
 PROVIDER_REQUEST_ACTIONS = frozenset(
     {"provider.request.open", "provider.request.resolve", "provider.request.closed"}
@@ -33,13 +32,11 @@ class RoomProviderRequestService:
         store: RoomRepository,
         broker: RoomEventBroker,
         bridge_session: BridgeSession,
-        is_room_owner: RoomOwnerCheck,
         lock: threading.RLock,
     ) -> None:
         self.store = store
         self.broker = broker
         self._bridge_session = bridge_session
-        self._is_room_owner = is_room_owner
         self._lock = lock
 
     def handle_command(
@@ -227,28 +224,17 @@ class RoomProviderRequestService:
         }
 
     def mark_delivery_failed(self, room_id: str, request_id: str) -> None:
-        with self.store.transaction(room_id) as transaction:
-            for session in self.store.sessions(room_id):
-                pending = session.get("pending_provider_request")
-                if not isinstance(pending, dict) or pending.get("provider_request_id") != request_id:
-                    continue
-                transaction.update_session_fields(
-                    clean_room_text(session.get("session_id"), limit=128),
-                    pending_provider_request={},
-                )
-                transaction.append_event(
-                    "provider_request_resolved",
-                    participant_id=clean_room_text(pending.get("participant_id"), limit=128),
-                    session_id=clean_room_text(session.get("session_id"), limit=128),
-                    owner_id=clean_room_text(pending.get("owner_id"), limit=128),
-                    audience="owner",
-                    provider_request={
-                        "provider_request_id": request_id,
-                        "status": "failed",
-                    },
-                    reason_code="provider_request_bridge_unavailable",
-                )
-                return
+        for session in self.store.sessions(room_id):
+            pending = session.get("pending_provider_request")
+            if not isinstance(pending, dict) or pending.get("provider_request_id") != request_id:
+                continue
+            fail_pending_provider_request(
+                self.store,
+                room_id,
+                clean_room_text(session.get("session_id"), limit=128),
+                reason_code="provider_request_bridge_unavailable",
+            )
+            return
 
     def _pending_request(
         self,
@@ -295,7 +281,7 @@ class RoomProviderRequestService:
             clean_room_text(identity.get("user_id"), limit=128),
             clean_room_text(identity.get("session_id"), limit=128),
         }
-        if owner_id not in principals and not self._is_room_owner(identity, room_id):
+        if owner_id not in principals:
             raise RoomCommandRejected(
                 "Only this Agent Session's owner may resolve its provider request.",
                 code="permission_denied",
@@ -319,4 +305,50 @@ class RoomProviderRequestService:
             raise RoomCommandRejected(str(error), code=error.code) from error
 
 
-__all__ = ["PROVIDER_REQUEST_ACTIONS", "RoomProviderRequestService"]
+def fail_pending_provider_request(
+    store: RoomRepository,
+    room_id: str,
+    session_id: str,
+    *,
+    reason_code: str,
+) -> bool:
+    """Fail one durable request after its bridge-side responder is gone."""
+
+    clean_session_id = clean_room_text(session_id, limit=128)
+    if not clean_session_id:
+        return False
+    with store.transaction(room_id) as transaction:
+        session = transaction.session(clean_session_id)
+        pending = session.get("pending_provider_request")
+        if not isinstance(pending, dict) or not pending:
+            return False
+        request_id = clean_room_text(
+            pending.get("provider_request_id"),
+            limit=128,
+        )
+        transaction.update_session_fields(
+            clean_session_id,
+            pending_provider_request={},
+        )
+        transaction.append_event(
+            "provider_request_resolved",
+            participant_id=clean_room_text(
+                pending.get("participant_id") or session.get("participant_id"),
+                limit=128,
+            ),
+            session_id=clean_session_id,
+            owner_id=clean_room_text(pending.get("owner_id"), limit=128),
+            audience="owner",
+            provider_request={
+                "provider_request_id": request_id,
+                "status": "failed",
+            },
+            reason_code=clean_room_text(reason_code, limit=128),
+        )
+        return True
+
+__all__ = [
+    "PROVIDER_REQUEST_ACTIONS",
+    "RoomProviderRequestService",
+    "fail_pending_provider_request",
+]

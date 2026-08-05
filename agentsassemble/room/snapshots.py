@@ -115,7 +115,6 @@ class RoomSnapshotService:
         provider_requests = [] if bridge else _pending_provider_requests(
             stored_sessions,
             identity,
-            can_manage_room=bool(capabilities.get("room.manage")),
         )
         sessions = [public_session(session) for session in stored_sessions]
         public_events = [public_event_for_identity(event, identity) for event in events]
@@ -227,8 +226,6 @@ class RoomSnapshotService:
 def _pending_provider_requests(
     sessions: list[dict[str, object]],
     identity: dict[str, object],
-    *,
-    can_manage_room: bool,
 ) -> list[dict[str, object]]:
     principals = {
         clean_room_text(identity.get("agent_id"), 128),
@@ -242,7 +239,7 @@ def _pending_provider_requests(
         if not isinstance(pending, dict) or not pending:
             continue
         owner_id = clean_room_text(pending.get("owner_id"), 128)
-        if not can_manage_room and owner_id not in principals:
+        if owner_id not in principals:
             continue
         request = {
             key: value

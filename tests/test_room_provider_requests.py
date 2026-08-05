@@ -210,6 +210,55 @@ class RoomProviderRequestTests(unittest.TestCase):
             "provider-request-old",
         )
 
+    def test_room_operator_cannot_see_or_resolve_another_users_private_request(self) -> None:
+        self.controller.store.update_participant_fields(
+            "general",
+            "grok",
+            owner_id="guest-owner",
+            created_by="guest-owner",
+        )
+        self.command(
+            self.bridge,
+            "open-private-request",
+            "provider.request.open",
+            {
+                "provider_request_id": "private-request",
+                "request_kind": "permission",
+                "response_kind": "option",
+                "title": "비공개 파일 변경 승인",
+                "options": [
+                    {"id": "accept", "label": "이번만 허용", "kind": "allow_once"},
+                    {"id": "decline", "label": "거절", "kind": "decline"},
+                ],
+            },
+        )
+
+        self.assertEqual(self.controller.snapshot(HOST)["provider_requests"], [])
+        with self.assertRaises(RoomCommandRejected) as denied:
+            self.command(
+                HOST,
+                "resolve-private-request-as-host",
+                "provider.request.resolve",
+                {
+                    "provider_request_id": "private-request",
+                    "option_id": "accept",
+                },
+            )
+        self.assertEqual(denied.exception.code, "permission_denied")
+
+        owner = {
+            **HOST,
+            "agent_id": "guest-owner",
+            "user_id": "guest-owner",
+            "operator": False,
+        }
+        self.assertEqual(
+            self.controller.snapshot(owner)["provider_requests"][0][
+                "provider_request_id"
+            ],
+            "private-request",
+        )
+
 
 if __name__ == "__main__":
     unittest.main()

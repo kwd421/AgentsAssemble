@@ -7,6 +7,7 @@ from pathlib import Path
 from agentsassemble.persistence.local.room.repository import RoomStore
 from agentsassemble.room.connections import RoomConnectionService
 from agentsassemble.room.event_broker import RoomEventBroker
+from agentsassemble.room.provider_requests import fail_pending_provider_request
 from agentsassemble.web.routes.runtime import rolling_restart_blockers
 
 
@@ -30,6 +31,14 @@ class RoomConnectionServiceTests(unittest.TestCase):
             },
             publish_session_state=lambda room_id, session: self.published_sessions.append(
                 (room_id, dict(session))
+            ),
+            fail_pending_provider_request=lambda room_id, session_id, *, reason_code: (
+                fail_pending_provider_request(
+                    self.store,
+                    room_id,
+                    session_id,
+                    reason_code=reason_code,
+                )
             ),
         )
 
@@ -110,6 +119,12 @@ class RoomConnectionServiceTests(unittest.TestCase):
                 "input_up_to_seq": 4,
                 "inflight_event_ids": ["event-active"],
                 "pending_event_ids": ["event-pending"],
+                "pending_provider_request": {
+                    "provider_request_id": "approval-1",
+                    "participant_id": "bridge",
+                    "owner_id": "operator-local",
+                    "status": "open",
+                },
             },
         )
         identity = {
@@ -137,6 +152,7 @@ class RoomConnectionServiceTests(unittest.TestCase):
             session["pending_event_ids"],
             ["event-active", "event-pending"],
         )
+        self.assertEqual(session["pending_provider_request"], {})
         self.assertEqual(rolling_restart_blockers(self.store), [])
         self.assertEqual(
             self.store.participant("general", "bridge")["status"],
@@ -146,6 +162,16 @@ class RoomConnectionServiceTests(unittest.TestCase):
         self.assertIn(
             "session_detached",
             [event["type"] for event in self.store.read_events("general")],
+        )
+        failed = next(
+            event
+            for event in self.store.read_events("general")
+            if event["type"] == "provider_request_resolved"
+        )
+        self.assertEqual(failed["provider_request"]["status"], "failed")
+        self.assertEqual(
+            failed["reason_code"],
+            "provider_request_bridge_disconnected",
         )
 
 

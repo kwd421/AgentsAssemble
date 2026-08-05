@@ -93,6 +93,7 @@ from agentsassemble.room.provider_sessions import RoomProviderSessionService
 from agentsassemble.room.provider_requests import (
     PROVIDER_REQUEST_ACTIONS,
     RoomProviderRequestService,
+    fail_pending_provider_request,
 )
 from agentsassemble.providers.sync_cursor import (
     ProviderSyncCursorParityError,
@@ -240,6 +241,14 @@ class RoomRealtimeController:
             ensure_external_bridge_session=self._provider_sessions.ensure_external_bridge_session,
             reconcile_session_attention=self._turn_coordinator.reconcile_session_attention,
             publish_session_state=self._publish_session_state,
+            fail_pending_provider_request=lambda room_id, session_id, *, reason_code: (
+                fail_pending_provider_request(
+                    self.store,
+                    room_id,
+                    session_id,
+                    reason_code=reason_code,
+                )
+            ),
         )
         self._bridge_reports = RoomBridgeReportService(
             store=self.store,
@@ -464,7 +473,6 @@ class RoomRealtimeController:
             store=self.store,
             broker=self.broker,
             bridge_session=self._turn_coordinator.bridge_session,
-            is_room_owner=self._is_room_owner,
             lock=self._lock,
         )
         self.last_cleanup_report = CleanupReport("room_realtime_controller")

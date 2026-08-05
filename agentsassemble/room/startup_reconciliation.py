@@ -3,6 +3,7 @@ from __future__ import annotations
 from typing import Callable
 
 from agentsassemble.room.repository import RoomRepository
+from agentsassemble.room.provider_requests import fail_pending_provider_request
 from agentsassemble.room.text import clean_room_text
 from agentsassemble.room.turn_coordinator import dedupe_event_ids
 
@@ -31,6 +32,12 @@ class RoomStartupSessionReconciler:
             if not room_id:
                 continue
             for session in self.store.sessions(room_id):
+                fail_pending_provider_request(
+                    self.store,
+                    room_id,
+                    clean_room_text(session.get("session_id"), 128),
+                    reason_code="provider_request_server_restarted",
+                )
                 if session.get("runtime_status") not in ACTIVE_RUNTIME_STATES:
                     continue
                 self._reconcile_session(room_id, session)
