@@ -192,6 +192,12 @@ class RoomConnectorTests(unittest.TestCase):
             published = connector.say("connector reply")
             self.assertEqual(published["event"]["content"], "connector reply")
             self.assertEqual(published["event"]["actor_id"], "external-agent")
+            self.assertEqual(
+                published["event"]["participant_type"],
+                store.participant("room-a", "external-agent")["participant_type"],
+            )
+            self.assertNotEqual(published["event"]["participant_type"], "human")
+            self.assertEqual(published["event"]["actor_type"], "agent")
 
             poll = connector.create_vote(
                 "Which route?",

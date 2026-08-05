@@ -14,6 +14,7 @@ from agentsassemble.room.system_results import (
     RoomSystemResultError,
     prepare_room_system_result,
 )
+from agentsassemble.room.speech import ActorIdentity
 from agentsassemble.room.text import clean_room_text
 from agentsassemble.room.tool_authorization import require_room_random_tools
 from agentsassemble.room.turn_coordinator import room_message_text
@@ -71,6 +72,15 @@ class RoomMessageService:
             clean_room_text(participant.get("display_name"), 64)
             or clean_room_text(identity.get("display_name"), 64)
             or participant_id
+        )
+        actor = ActorIdentity(
+            agent_id=participant_id,
+            display_name=display_name,
+            participant_type=(
+                clean_room_text(participant.get("participant_type"), 32)
+                or clean_room_text(identity.get("participant_type"), 32)
+                or "human"
+            ),
         )
         vote_duration_seconds: int | None = None
         vote_deadline_at = ""
@@ -137,9 +147,9 @@ class RoomMessageService:
         event = unit.append_event(
             "message_final",
             participant_id=participant_id,
-            participant_type="human",
+            participant_type=actor.participant_type,
             actor_id=participant_id,
-            actor_type="human",
+            actor_type=actor.actor_type,
             display_name=display_name,
             content=content,
             message_kind=kind,
