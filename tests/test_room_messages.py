@@ -207,6 +207,23 @@ class RoomMessageServiceTests(unittest.TestCase):
 
         self.assertEqual(raised.exception.code, "session_revoked")
 
+    def test_unregistered_identity_cannot_append_an_anonymous_message(self) -> None:
+        self.identity = {
+            "agent_id": "not-joined",
+            "display_name": "Not Joined",
+        }
+
+        with self.assertRaises(RoomCommandRejected) as raised:
+            self._send({"request_id": "unregistered", "content": "blocked"})
+
+        self.assertEqual(raised.exception.code, "session_revoked")
+        self.assertFalse(
+            any(
+                event.get("type") == "message_final"
+                for event in self.store.read_events("general")
+            )
+        )
+
     def test_compatibility_mute_is_used_only_when_canonical_field_is_absent(self) -> None:
         unit = _UnitWithoutCanonicalMute()
 

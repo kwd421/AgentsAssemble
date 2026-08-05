@@ -239,7 +239,7 @@ class RoomMessageService:
     ) -> dict[str, object]:
         participant_id = clean_room_text(identity.get("agent_id"), 128)
         participant = unit.participant(participant_id)
-        if participant.get("status") in {"kicked", "left"}:
+        if not participant or participant.get("status") in {"kicked", "left"}:
             raise RoomCommandRejected(
                 "This participant is no longer in the room.",
                 code="session_revoked",

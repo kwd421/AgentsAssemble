@@ -275,6 +275,7 @@ class RoomRealtimeControllerTests(RoomToolModeRealtimeContract, unittest.TestCas
             provider_catalog=self.provider_catalog,
             external_stop_timeout_seconds=0.2,
         )
+        self.host_channel = self.controller.connect(HOST)
 
     def tearDown(self):
         self.controller.close()
