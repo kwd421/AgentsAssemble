@@ -157,7 +157,13 @@ export function projectRoomEventsToTimeline(
         flow_meeting_id: event.room_id,
         flow_id: key,
         target_agent_id: String(event.target_agent_id || existing?.target_agent_id || "") || undefined,
-        vote_id: String(event.vote_id || existing?.vote_id || "") || undefined,
+        vote_id:
+          String(
+            event.vote_id ||
+              (messageKind === "vote" && event.type === "message_final" ? event.id : "") ||
+              existing?.vote_id ||
+              ""
+          ) || undefined,
         vote_question: String(event.vote_question || existing?.vote_question || "") || undefined,
         vote_options: Array.isArray(event.vote_options)
           ? event.vote_options.map(String)

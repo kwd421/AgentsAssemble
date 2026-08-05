@@ -82,14 +82,14 @@ describe("projectRoomEventsToTimeline", () => {
     expect(projectRoomEventProgress(event({ type: "message_final", turn_id: "turn-1" }))).toBeNull();
   });
 
-  it("keeps canonical vote fields on the projected poll card event", () => {
+  it("keeps the canonical poll id when a provider turn groups the visible card", () => {
     const timeline = projectRoomEventsToTimeline([
       event({
         id: "vote-1",
+        turn_id: "turn-provider-1",
         actor: { participant_id: "operator-local", participant_type: "human" },
         content: "",
         message_kind: "vote",
-        vote_id: "vote-1",
         vote_question: "어느 길로 갈까?",
         vote_options: ["북쪽", "남쪽"],
         vote_duration_seconds: 900,
@@ -99,6 +99,7 @@ describe("projectRoomEventsToTimeline", () => {
 
     expect(timeline).toEqual([
       expect.objectContaining({
+        id: "turn-provider-1",
         kind: "vote",
         vote_id: "vote-1",
         vote_question: "어느 길로 갈까?",
