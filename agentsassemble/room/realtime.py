@@ -192,8 +192,9 @@ class RoomRealtimeController:
             default_room_id=self.default_room_id,
         )
         self._event_listener_removers: dict[str, Callable[[], None]] = {}
-        self._provider_catalog_remove = self.provider_catalog.subscribe(self._on_provider_catalog_update)
         self._closed = False
+        self._provider_catalog_remove = self.provider_catalog.subscribe(self._on_provider_catalog_update)
+        self.provider_catalog.snapshot()
         self._provider_sessions = RoomProviderSessionService(
             store=self.store,
             broker=self.broker,

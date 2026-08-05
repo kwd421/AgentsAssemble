@@ -1,10 +1,10 @@
 {
  "readme": "AgentsAssemble codebase map. Regenerate with `make codebase-map`; verify committed outputs with `make codebase-map-verify`. modules[] columns: name, path, package, domain, classification, migration_status, lines, docstring, imports[], imported_by[] (indexes into modules), classes[[name, [[base, defining_module], ...]]] (best-effort, top-level classes only). frontend[] columns: path, group, lines, doc, imports[], imported_by[] (indexes into frontend). package_edges go importer -> dependency with module-import counts; `points` is the precomputed polyline for that edge and `intra_cycle` marks imports whose endpoints share one cycle group. graph{} holds the layered package drawing: layers[] top-to-bottom (each with members[] package ids, member_count, and the dominant domain), (a package sits below everything importing it), clusters[] are mutually dependent packages (import cycles at package level) drawn as one labelled block, plus width/height of the drawing. health{} ranks findings for a reader who has to act: cycles[] (mutually dependent packages, with the lines they hold), leaning_on_retiring[] (current modules importing legacy/compatibility modules - the reason legacy cannot be deleted), highest_leverage_migrations[] (retiring modules with the most current importers), unreferenced_shims[] (compatibility modules with no importer in agentsassemble/ and no reference in tests/; callers outside this repository are not visible, so verify before deleting), and hotspots[] (largest modules). health.scope states exactly what was measured. class_graph{} is the UML generalization DAG over base classes that resolve inside the repo: edges go base -> subclass, so a subclass always sits below the class it extends. Coordinates in graph and class_graph are laid out with a Sugiyama pipeline (cycle condensation, Coffman-Graham layering, dummy-node edge routing, median/transpose crossing reduction) and are deterministic.",
- "generated_at": "2026-08-05T02:57:31Z",
- "fingerprint": "67adbc109d768312",
+ "generated_at": "2026-08-05T03:58:30Z",
+ "fingerprint": "947503abc213bb3d",
  "stats": {
   "backend_modules": 857,
-  "backend_lines": 145867,
+  "backend_lines": 145902,
   "frontend_files": 211,
   "frontend_lines": 49244,
   "packages": 30,
@@ -63,7 +63,7 @@
    "kind": "backend",
    "doc": "Current room domain contracts and behavior.",
    "files": 56,
-   "lines": 14900,
+   "lines": 14901,
    "domains": {
     "room": 56
    },
@@ -124,7 +124,7 @@
    "kind": "backend",
    "doc": "Provider runtime contracts and implementations.",
    "files": 118,
-   "lines": 29732,
+   "lines": 29766,
    "domains": {
     "providers": 118
    },
@@ -4160,7 +4160,7 @@
      "web"
     ],
     "internal_edges": 92,
-    "lines": 142415,
+    "lines": 142450,
     "heaviest": "legacy"
    },
    {
@@ -4545,7 +4545,7 @@
    },
    {
     "module": "agentsassemble.room.realtime",
-    "lines": 1859,
+    "lines": 1860,
     "cls": "current",
     "imported_by": 7
    },
@@ -19863,7 +19863,7 @@
    "providers",
    "current",
    "in-target-package",
-   215,
+   249,
    "",
    [
     602,
@@ -21477,7 +21477,7 @@
    "room",
    "current",
    "in-target-package",
-   1859,
+   1860,
    "",
    [
     15,
@@ -27618,7 +27618,7 @@
    "name": "agentsassemble",
    "note": "Backend package (Python)",
    "files": 857,
-   "lines": 145867
+   "lines": 145902
   },
   {
    "name": "frontend/src",
@@ -27629,8 +27629,8 @@
   {
    "name": "tests",
    "note": "Backend test suite",
-   "files": 384,
-   "lines": 150967
+   "files": 385,
+   "lines": 151158
   },
   {
    "name": "scripts",
