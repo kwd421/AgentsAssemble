@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 import os
 import sys
+import time
 from pathlib import Path
 from uuid import uuid4
 
@@ -145,6 +146,24 @@ for line in sys.stdin:
                         "update": {
                             "sessionUpdate": "agent_message_chunk",
                             "content": {"type": "text", "text": str(index)},
+                        },
+                    },
+                }
+            )
+        send({"jsonrpc": "2.0", "id": request_id, "result": {"stopReason": "end_turn"}})
+        continue
+    if text == "slow-structured-progress":
+        for piece in ("slow ", "but ", "active"):
+            time.sleep(0.12)
+            send(
+                {
+                    "jsonrpc": "2.0",
+                    "method": "session/update",
+                    "params": {
+                        "sessionId": session_id,
+                        "update": {
+                            "sessionUpdate": "agent_message_chunk",
+                            "content": {"type": "text", "text": piece},
                         },
                     },
                 }

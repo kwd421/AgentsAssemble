@@ -72,12 +72,13 @@ class GrokAcpTurnProjectionMixin:
         *,
         on_delta: Callable[[str], None] | None,
         on_activity: Callable[[dict[str, object]], None] | None,
-    ) -> None:
+    ) -> int:
+        progress_events = 0
         while True:
             try:
                 message = self._notifications.get_nowait()
             except queue.Empty:
-                return
+                return progress_events
             if message.get("_eof"):
                 raise RuntimeError(
                     "Grok ACP runtime exited before turn completion."
@@ -96,6 +97,7 @@ class GrokAcpTurnProjectionMixin:
                     ):
                         yolo = session.get("yolo")
                         if isinstance(yolo, bool):
+                            progress_events += 1
                             self._yolo_mode = yolo
                             if yolo:
                                 raise RuntimeError(
@@ -111,6 +113,8 @@ class GrokAcpTurnProjectionMixin:
                 else {}
             )
             update_type = str(update.get("sessionUpdate") or "")
+            if update_type:
+                progress_events += 1
             if update_type == "agent_thought_chunk":
                 content = (
                     update.get("content")

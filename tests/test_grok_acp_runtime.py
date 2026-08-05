@@ -335,6 +335,17 @@ class GrokAcpRuntimeTests(unittest.TestCase):
 
         self.assertEqual(getattr(raised.exception, "code", ""), "empty_provider_final")
 
+    def test_structured_progress_extends_the_inactivity_timeout(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            runtime = self.make_runtime(Path(temp_dir))
+            try:
+                runtime.send("slow-structured-progress")
+                output = runtime.read_output(timeout_seconds=0.2)
+            finally:
+                runtime.stop()
+
+        self.assertEqual(output["content"], "slow but active")
+
     def test_empty_room_observation_is_a_decline_not_a_session_error(self):
         with tempfile.TemporaryDirectory() as temp_dir:
             runtime = self.make_runtime(Path(temp_dir))

@@ -22,6 +22,11 @@ from agentsassemble.providers.codex_model_provider import (
     codex_model_provider_command_args,
 )
 from agentsassemble.providers.provider_requests import ProviderRequestHandler
+from agentsassemble.providers.turn_progress import (
+    DEFAULT_PROVIDER_INACTIVITY_TIMEOUT_SECONDS,
+    ProviderTurnProgress,
+    run_during_provider_wait,
+)
 from agentsassemble.room.projection import (
     safe_activity_detail,
     safe_activity_display_detail,
@@ -31,7 +36,7 @@ from agentsassemble.room.text import clean_room_text
 AgentTurnChunk = dict[str, object]
 ProcessFactory = Callable[[], object]
 DynamicToolHandler = Callable[[str, object], dict[str, object]]
-DEFAULT_AGENT_TURN_TIMEOUT_SECONDS = 600.0
+DEFAULT_AGENT_TURN_TIMEOUT_SECONDS = DEFAULT_PROVIDER_INACTIVITY_TIMEOUT_SECONDS
 CODEX_APP_SERVER_STDERR_TAIL_LINES = 50
 CODEX_APP_SERVER_STDERR_TAIL_CHARS = 16000
 CODEX_APP_SERVER_METHOD_TAIL_LENGTH = 50
@@ -221,9 +226,9 @@ class CodexAppServerRuntime:
             **_codex_app_server_turn_start_settings(self.profile_settings),
         }
         timeout_seconds = _agent_turn_timeout_seconds(packet.get("timeout_seconds"))
-        timeout_deadline = started + timeout_seconds
+        progress = ProviderTurnProgress(timeout_seconds)
         try:
-            turn_response = self._send_request("turn/start", turn_params, timeout_deadline=timeout_deadline)
+            turn_response = self._send_request("turn/start", turn_params, timeout_deadline=progress.deadline)
         except Exception as error:
             self._handle_process_failure(error)
             yield {
@@ -231,6 +236,7 @@ class CodexAppServerRuntime:
                 "diagnostics": self._error_diagnostics(error, status="turn_start_failed", recovery_required=bool(thread_id)),
             }
             return
+        progress.record()
         provider_turn_id = clean_provider_session_id(
             _nested_get(turn_response, "result.turn.id")
             or _nested_get(turn_response, "result.turnId")
@@ -254,7 +260,7 @@ class CodexAppServerRuntime:
             messages = self._read_messages_until_turn_done(
                 thread_id=thread_id,
                 turn_id=provider_turn_id,
-                timeout_deadline=timeout_deadline,
+                progress=progress,
             )
             for message in messages:
                 method = clean_room_text(message.get("method"), limit=128)
@@ -678,7 +684,7 @@ class CodexAppServerRuntime:
         *,
         thread_id: str = "",
         turn_id: str = "",
-        timeout_deadline: float | None = None,
+        progress: ProviderTurnProgress,
     ) -> Iterable[dict[str, object]]:
         agent_message_completed = False
         thread_idle_after_agent_message = False
@@ -687,8 +693,11 @@ class CodexAppServerRuntime:
             try:
                 message = self._pop_matching_pending_message(thread_id=thread_id, turn_id=turn_id)
                 if message is None:
-                    read_deadline = _earlier_deadline(timeout_deadline, inferred_completion_deadline)
-                    message = self._read_protocol_message(timeout_deadline=read_deadline)
+                    read_deadline = _earlier_deadline(progress.deadline, inferred_completion_deadline)
+                    message = self._read_protocol_message(
+                        timeout_deadline=read_deadline,
+                        progress=progress,
+                    )
                     if not self._message_matches_active_turn(message, thread_id=thread_id, turn_id=turn_id):
                         self._buffer_unmatched_notification(message)
                         continue
@@ -712,6 +721,7 @@ class CodexAppServerRuntime:
                     }
                     return
                 raise
+            progress.record()
             yield message
             method = clean_room_text(message.get("method"), limit=128)
             if method in {"turn/completed", "turn/error", "error"}:
@@ -783,18 +793,20 @@ class CodexAppServerRuntime:
         self,
         *,
         timeout_deadline: float | None = None,
+        progress: ProviderTurnProgress | None = None,
     ) -> dict[str, object]:
         while True:
             message = self._read_json_line(timeout_deadline=timeout_deadline)
             method = clean_room_text(message.get("method"), limit=128)
             if method == "item/tool/call" and "id" in message:
-                self._handle_dynamic_tool_request(message)
+                run_during_provider_wait(progress, lambda: self._handle_dynamic_tool_request(message))
                 continue
             if method in CODEX_PROVIDER_REQUEST_METHODS and "id" in message:
-                handle_codex_provider_request(
-                    message,
-                    handler=self.provider_request_handler,
-                    write_json=self._write_json,
+                run_during_provider_wait(
+                    progress,
+                    lambda: handle_codex_provider_request(
+                        message, handler=self.provider_request_handler, write_json=self._write_json
+                    ),
                 )
                 continue
             if method == "mcpServer/elicitation/request" and "id" in message:

@@ -22,6 +22,7 @@ from agentsassemble.providers.openai_compatible_room_tools import (
     room_tool_schemas,
 )
 from agentsassemble.providers.provider_requests import ProviderRequestHandler
+from agentsassemble.providers.turn_progress import ProviderTurnProgress
 from agentsassemble.providers.room_portal import RoomPortal
 from agentsassemble.providers.provider_errors import provider_http_error
 from agentsassemble.room.text import clean_room_text
@@ -153,7 +154,7 @@ class OpenAICompatibleApiRuntime:
             messages = [*self._messages, {"role": "user", "content": prompt}]
         if not prompt:
             raise RuntimeError(f"{self.provider_name} runtime has no pending turn.")
-        deadline = time.monotonic() + max(1.0, float(timeout_seconds))
+        progress = ProviderTurnProgress(timeout_seconds)
         tool_rounds = 0
         room_action_completed = False
         observed_model_id = ""
@@ -163,7 +164,8 @@ class OpenAICompatibleApiRuntime:
                 round_result = self._stream_round(
                     messages,
                     room_observation=room_observation,
-                    timeout_seconds=max(1.0, deadline - time.monotonic()),
+                    timeout_seconds=max(1.0, progress.remaining()),
+                    progress=progress,
                     on_delta=on_delta,
                     on_reasoning=(
                         _reasoning_activity_reporter(
@@ -277,7 +279,8 @@ class OpenAICompatibleApiRuntime:
                     )
                     if on_activity is not None:
                         on_activity({**activity_fields, "status": "completed"})
-                if time.monotonic() >= deadline:
+                    progress.record()
+                if progress.expired():
                     raise TimeoutError(
                         f"{self.provider_name} runtime timed out after {timeout_seconds} seconds."
                     )
@@ -319,6 +322,7 @@ class OpenAICompatibleApiRuntime:
         *,
         room_observation: bool,
         timeout_seconds: float,
+        progress: ProviderTurnProgress,
         on_delta=None,
         on_reasoning=None,
     ) -> _StreamRound:
@@ -364,12 +368,12 @@ class OpenAICompatibleApiRuntime:
             raise provider_http_error(error, provider_name=self.provider_name) from error
         with self._lock:
             self._response = response
-        stream_deadline = time.monotonic() + max(0.0, float(timeout_seconds))
+        progress.record()
         try:
             for raw_line in response:
                 if self._interrupted.is_set():
                     raise RuntimeError(f"{self.provider_name} turn interrupted.")
-                if time.monotonic() >= stream_deadline:
+                if progress.expired():
                     raise TimeoutError(
                         f"{self.provider_name} runtime timed out after "
                         f"{timeout_seconds:g} seconds."
@@ -379,6 +383,7 @@ class OpenAICompatibleApiRuntime:
                     continue
                 data = line[5:].strip()
                 if data == "[DONE]":
+                    progress.record()
                     break
                 chunk = json.loads(data)
                 if isinstance(chunk, dict):
@@ -422,7 +427,10 @@ class OpenAICompatibleApiRuntime:
                     reasoning_parts.append(reasoning)
                     if on_reasoning is not None:
                         on_reasoning(reasoning, False)
-                accumulate_streaming_tool_calls(tool_calls, delta.get("tool_calls"))
+                raw_tool_calls = delta.get("tool_calls")
+                accumulate_streaming_tool_calls(tool_calls, raw_tool_calls)
+                if text or reasoning or raw_tool_calls or finish_reason or usage:
+                    progress.record()
         finally:
             with self._lock:
                 if self._response is response:

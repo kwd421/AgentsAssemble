@@ -31,6 +31,10 @@ from agentsassemble.providers.grok_acp.turns import GrokAcpTurnProjectionMixin
 from agentsassemble.providers.grok_acp.transport import GrokAcpTransportMixin
 from agentsassemble.providers.room_portal_mcp import room_portal_mcp_settings
 from agentsassemble.providers.runtime_contracts import AdapterContractError
+from agentsassemble.providers.turn_progress import (
+    ProviderTurnProgress,
+    run_during_provider_wait,
+)
 from agentsassemble.room.text import clean_room_text
 
 if TYPE_CHECKING:
@@ -121,6 +125,7 @@ class GrokAcpRuntime(GrokAcpTransportMixin, GrokAcpTurnProjectionMixin):
         self._active_thought_text = ""
         self._last_emitted_thought_text = ""
         self._tool_activity_state: dict[str, tuple[str, str]] = {}
+        self._active_turn_progress: ProviderTurnProgress | None = None
         self._stderr_byte_count = 0
         self._stderr_line_count = 0
         self._stderr_warning_count = 0
@@ -321,17 +326,20 @@ class GrokAcpRuntime(GrokAcpTransportMixin, GrokAcpTurnProjectionMixin):
         if active is None:
             raise RuntimeError("Grok ACP runtime has no active turn.")
         request_id, response_queue = active
-        deadline = time.monotonic() + max(0.1, float(timeout_seconds))
+        progress = ProviderTurnProgress(timeout_seconds)
+        with self._lock:
+            self._active_turn_progress = progress
         content_parts: list[str] = []
         response: dict[str, object] | None = None
         try:
-            while time.monotonic() < deadline:
-                self._consume_notifications(
+            while not progress.expired():
+                if self._consume_notifications(
                     session_id,
                     content_parts,
                     on_delta=on_delta,
                     on_activity=on_activity,
-                )
+                ):
+                    progress.record()
                 self._raise_if_notifications_dropped(notification_drop_start)
                 try:
                     response = response_queue.get(timeout=0.05)
@@ -340,12 +348,13 @@ class GrokAcpRuntime(GrokAcpTransportMixin, GrokAcpTurnProjectionMixin):
                 if response is None:
                     self._raise_if_exited()
                     continue
-                self._consume_notifications(
+                if self._consume_notifications(
                     session_id,
                     content_parts,
                     on_delta=on_delta,
                     on_activity=on_activity,
-                )
+                ):
+                    progress.record()
                 self._raise_if_notifications_dropped(notification_drop_start)
                 if response.get("_eof"):
                     raise RuntimeError("Grok ACP runtime exited before turn completion.")
@@ -399,6 +408,8 @@ class GrokAcpRuntime(GrokAcpTransportMixin, GrokAcpTurnProjectionMixin):
                 self._active_thought_text = ""
                 self._last_emitted_thought_text = ""
                 self._tool_activity_state.clear()
+                if self._active_turn_progress is progress:
+                    self._active_turn_progress = None
                 self._pending.pop(request_id, None)
 
     def interrupt(self) -> None:
@@ -530,10 +541,15 @@ class GrokAcpRuntime(GrokAcpTransportMixin, GrokAcpTurnProjectionMixin):
             allow_option_id = _permission_option_id(params, "allow_once")
         allow_request = bool(allow_option_id)
         if not allow_request:
-            allowed, selected_id = handle_permission_request(
-                message,
-                handler=self._provider_request_handler,
-                send_json=self._send_json,
+            with self._lock:
+                progress = self._active_turn_progress
+            allowed, selected_id = run_during_provider_wait(
+                progress,
+                lambda: handle_permission_request(
+                    message,
+                    handler=self._provider_request_handler,
+                    send_json=self._send_json,
+                ),
             )
             with self._lock:
                 self._permission_request_count += 1

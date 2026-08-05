@@ -3,6 +3,7 @@ from __future__ import annotations
 import io
 import json
 import tempfile
+import time
 import unittest
 from pathlib import Path
 from urllib.request import Request
@@ -26,7 +27,61 @@ class _Response(io.BytesIO):
         self.close()
 
 
+class _SlowResponse:
+    def __init__(self, lines: list[bytes], *, delay_seconds: float) -> None:
+        self._lines = iter(lines)
+        self._delay_seconds = delay_seconds
+
+    def __iter__(self):
+        return self
+
+    def __next__(self) -> bytes:
+        line = next(self._lines)
+        time.sleep(self._delay_seconds)
+        return line
+
+    def close(self) -> None:
+        return
+
+
 class RemoteOpenAIProviderTests(unittest.TestCase):
+    def test_stream_progress_extends_the_api_inactivity_window(self):
+        profile = remote_openai_profile("tokenrouter")
+        self.assertIsNotNone(profile)
+        chunks = [
+            {
+                "model": "moonshotai/kimi-k3-free",
+                "choices": [{"delta": {"content": part}}],
+            }
+            for part in ("계", "속 ", "진", "행")
+        ]
+
+        def opener(_request: Request, timeout: float):
+            del timeout
+            return _SlowResponse(
+                [
+                    *[
+                        f"data: {json.dumps(chunk, ensure_ascii=False)}\n\n".encode()
+                        for chunk in chunks
+                    ],
+                    b"data: [DONE]\n\n",
+                ],
+                delay_seconds=0.12,
+            )
+
+        runtime = RemoteOpenAICompatibleRuntime(
+            "tokenrouter-progress",
+            profile=profile,
+            api_key="test-key",
+            model="moonshotai/kimi-k3-free",
+            opener=opener,
+        )
+        runtime.send("진행해 줘.")
+
+        result = runtime.read_output(timeout_seconds=0.2)
+
+        self.assertEqual(result["content"], "계속 진행")
+
     def test_gateway_discovery_admits_only_text_models_with_room_tools(self):
         profile = remote_openai_profile("openrouter")
         self.assertIsNotNone(profile)

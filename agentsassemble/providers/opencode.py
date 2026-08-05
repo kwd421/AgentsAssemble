@@ -16,6 +16,10 @@ from agentsassemble.providers.opencode_provider_requests import (
 )
 from agentsassemble.providers.opencode_server import OpenCodeServerProcess
 from agentsassemble.providers.provider_requests import ProviderRequestHandler
+from agentsassemble.providers.turn_progress import (
+    ProviderTurnProgress,
+    run_during_provider_wait,
+)
 from agentsassemble.providers.room_portal import RoomPortal
 from agentsassemble.providers.room_portal_mcp import room_portal_mcp_settings
 from agentsassemble.room.projection import (
@@ -116,7 +120,7 @@ class OpenCodeRuntime:
             session_id = self._session_id
         if not prompt or not session_id:
             raise RuntimeError("OpenCode runtime has no pending turn.")
-        deadline = time.monotonic() + max(1.0, float(timeout_seconds))
+        progress = ProviderTurnProgress(timeout_seconds)
         assistant_message_ids: set[str] = set()
         ignored_assistant_message_ids: set[str] = set()
         part_types: dict[str, str] = {}
@@ -132,12 +136,7 @@ class OpenCodeRuntime:
         provider_error = ""
 
         def handle_provider_request(callback: Callable[[], None]) -> None:
-            nonlocal deadline
-            started = time.monotonic()
-            try:
-                callback()
-            finally:
-                deadline += time.monotonic() - started
+            run_during_provider_wait(progress, callback)
 
         def emit_reasoning(part_id: str, delta: str = "", *, completed: bool = False) -> None:
             if on_activity is None:
@@ -248,7 +247,7 @@ class OpenCodeRuntime:
             for raw_line in event_response:
                 if self._interrupted.is_set():
                     raise RuntimeError("OpenCode turn interrupted.")
-                if time.monotonic() >= deadline:
+                if progress.expired():
                     raise TimeoutError(f"OpenCode runtime timed out after {timeout_seconds} seconds.")
                 event = _sse_event(raw_line)
                 if not event:
@@ -258,6 +257,7 @@ class OpenCodeRuntime:
                 if str(properties.get("sessionID") or "") != session_id:
                     continue
                 if event_type == "session.compacted":
+                    progress.record()
                     if on_activity is not None:
                         on_activity({"category": "compaction", "status": "completed"})
                     continue
@@ -288,9 +288,11 @@ class OpenCodeRuntime:
                     )
                     continue
                 if event_type == "session.error":
+                    progress.record()
                     provider_error = opencode_error_message(properties.get("error"))
                     continue
                 if event_type == "message.updated":
+                    progress.record()
                     info = properties.get("info") if isinstance(properties.get("info"), dict) else {}
                     message_id = str(info.get("id") or "")
                     if str(info.get("role") or "") == "assistant" and message_id:
@@ -327,6 +329,7 @@ class OpenCodeRuntime:
                                 emit_text_part(message_id, part_id)
                     continue
                 if event_type == "message.part.updated":
+                    progress.record()
                     part = properties.get("part") if isinstance(properties.get("part"), dict) else {}
                     message_id = str(part.get("messageID") or properties.get("messageID") or "")
                     part_id = str(part.get("id") or properties.get("partID") or "")
@@ -356,6 +359,7 @@ class OpenCodeRuntime:
                     delta = str(properties.get("delta") or "")
                     if not delta or not part_id:
                         continue
+                    progress.record()
                     if message_id in assistant_message_ids and part_types.get(part_id) == "reasoning":
                         active_reasoning_ids.add(part_id)
                         emit_reasoning(part_id, delta)
@@ -367,10 +371,11 @@ class OpenCodeRuntime:
                         buffered_deltas.setdefault((message_id, part_id), []).append(delta)
                     continue
                 if event_type == "session.idle":
+                    progress.record()
                     current_final = self._assistant_text_for_parent(
                         session_id,
                         request_message_id,
-                        timeout_seconds=max(1.0, deadline - time.monotonic()),
+                        timeout_seconds=max(1.0, progress.remaining()),
                     )
                     if not assistant_message_ids and not current_final:
                         if provider_error:
@@ -382,7 +387,7 @@ class OpenCodeRuntime:
             final = current_final or self._assistant_text_for_parent(
                 session_id,
                 request_message_id,
-                timeout_seconds=max(1.0, deadline - time.monotonic()),
+                timeout_seconds=max(1.0, progress.remaining()),
             )
             content = final or emitted.strip()
             if not content:

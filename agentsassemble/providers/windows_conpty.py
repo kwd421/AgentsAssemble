@@ -17,6 +17,7 @@ from agentsassemble.providers.live_cli_transcripts import (
 )
 from agentsassemble.providers.process_environment import sanitized_provider_environment
 from agentsassemble.providers.terminal_interactions import TerminalInteractionPolicy
+from agentsassemble.providers.turn_progress import ProviderTurnProgress
 from agentsassemble.room.text import clean_room_text
 
 
@@ -155,10 +156,9 @@ class WindowsConPtyRuntime:
         on_delta: Callable[[str], None] | None = None,
         on_activity: Callable[[dict[str, object]], None] | None = None,
     ) -> dict[str, object]:
-        del on_activity
-        deadline = time.monotonic() + max(0.1, float(timeout_seconds))
+        progress = ProviderTurnProgress(timeout_seconds)
         previous = ""
-        while time.monotonic() < deadline:
+        while not progress.expired():
             with self._lock:
                 response = bytes(self._output[self._turn_start :])
                 last_read_at = self._last_read_at
@@ -174,12 +174,22 @@ class WindowsConPtyRuntime:
                 raise ValueError(f"ConPTY output exceeded {self.max_output_bytes} bytes.")
             quiet = bool(response and time.monotonic() - last_read_at >= self.idle_quiet_seconds)
             snapshot = self._message_source.poll(response, quiet=quiet)
+            drain_activities = getattr(self._message_source, "drain_activities", None)
+            if callable(drain_activities):
+                for activity in drain_activities():
+                    if not isinstance(activity, dict):
+                        continue
+                    progress.record()
+                    if on_activity is not None:
+                        on_activity(activity)
             if snapshot.error:
                 raise RuntimeError(snapshot.error)
             if snapshot.content:
                 delta = snapshot.content[len(previous) :] if snapshot.content.startswith(previous) else snapshot.content
                 if delta and on_delta is not None:
                     on_delta(delta)
+                if delta:
+                    progress.record()
                 previous = snapshot.content
             if snapshot.complete:
                 self._room_observation_active = False

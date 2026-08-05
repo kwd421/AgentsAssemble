@@ -1827,7 +1827,8 @@ class AgentSessionRoomStoreTests(unittest.TestCase):
                 time.sleep(0.05)
                 return {"result": {"turn": {"id": f"turn-{params.get('threadId')}"}}}
 
-            def _read_messages_until_turn_done(self, *, thread_id="", turn_id="", timeout_deadline=None):
+            def _read_messages_until_turn_done(self, *, thread_id="", turn_id="", progress=None):
+                del progress
                 try:
                     time.sleep(0.05)
                     yield {"method": "turn/completed", "params": {"threadId": self.starts[-1], "turnId": f"turn-{self.starts[-1]}"}}

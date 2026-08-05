@@ -30,6 +30,7 @@ from agentsassemble.providers.live_cli_transcripts import (
 )
 from agentsassemble.providers.process_environment import sanitized_provider_environment
 from agentsassemble.providers.terminal_interactions import TerminalInteractionPolicy
+from agentsassemble.providers.turn_progress import ProviderTurnProgress
 from agentsassemble.room.text import clean_room_text
 
 try:
@@ -277,8 +278,7 @@ class LiveCliRuntime:
     ) -> dict[str, object]:
         process, fd = self._state_snapshot()
         quiet = self.idle_quiet_seconds
-        progress_timeout = max(0.0, float(timeout_seconds))
-        deadline = time.monotonic() + progress_timeout
+        progress = ProviderTurnProgress(timeout_seconds)
         chunks: list[bytes] = []
         total_bytes = 0
         last_read_at: float | None = None
@@ -286,8 +286,7 @@ class LiveCliRuntime:
         final_snapshot = LiveCliMessageSnapshot()
 
         def record_progress() -> None:
-            nonlocal deadline
-            deadline = time.monotonic() + progress_timeout
+            progress.record()
 
         def forward_delta(delta: str) -> None:
             if str(delta or ""):
@@ -305,14 +304,14 @@ class LiveCliRuntime:
             self._message_turn_started = True
         while True:
             now = time.monotonic()
-            if now >= deadline:
+            if progress.expired():
                 self._invalidate_timed_out_turn()
                 raise TimeoutError(
                     f"Live CLI runtime made no progress for {timeout_seconds} seconds."
                 )
-            wait_until = deadline
+            wait_until = progress.deadline
             if chunks and last_read_at is not None:
-                wait_until = min(deadline, last_read_at + quiet)
+                wait_until = min(progress.deadline, last_read_at + quiet)
             readable = _select_readable(fd, min(0.1, max(0.0, wait_until - now)))
             chunk = b""
             empty_read = False

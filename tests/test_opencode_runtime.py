@@ -1,5 +1,6 @@
 import json
 import tempfile
+import time
 import unittest
 from pathlib import Path
 
@@ -26,6 +27,88 @@ def _event(event_type, properties):
 
 
 class OpenCodeRuntimeTests(unittest.TestCase):
+    def test_structured_progress_extends_the_inactivity_timeout(self):
+        session_id = "session-1"
+        state = {"request_message_id": ""}
+
+        class SlowStructuredStream:
+            def __iter__(self):
+                message_id = "assistant-slow"
+                events = [
+                    _event(
+                        "message.updated",
+                        {
+                            "sessionID": session_id,
+                            "info": {
+                                "id": message_id,
+                                "parentID": state["request_message_id"],
+                                "role": "assistant",
+                            },
+                        },
+                    ),
+                    _event(
+                        "message.part.updated",
+                        {
+                            "sessionID": session_id,
+                            "part": {"id": "text-slow", "messageID": message_id, "type": "text"},
+                        },
+                    ),
+                    _event(
+                        "message.part.delta",
+                        {
+                            "sessionID": session_id,
+                            "messageID": message_id,
+                            "partID": "text-slow",
+                            "field": "text",
+                            "delta": "done",
+                        },
+                    ),
+                    _event("session.idle", {"sessionID": session_id}),
+                ]
+                for event in events:
+                    time.sleep(0.6)
+                    yield event
+
+            def close(self):
+                return None
+
+        def opener(request, timeout):
+            del timeout
+            if "/event?" in request.full_url:
+                return SlowStructuredStream()
+            if "/prompt_async?" in request.full_url:
+                state["request_message_id"] = json.loads(request.data.decode("utf-8"))["messageID"]
+                return _Response(payload={})
+            if "/message?" in request.full_url:
+                return _Response(
+                    payload=[
+                        {
+                            "info": {
+                                "id": "assistant-slow",
+                                "parentID": state["request_message_id"],
+                                "role": "assistant",
+                            },
+                            "parts": [{"type": "text", "text": "done"}],
+                        }
+                    ]
+                )
+            raise AssertionError(request.full_url)
+
+        with tempfile.TemporaryDirectory() as temp_dir:
+            runtime = OpenCodeRuntime(
+                "opencode",
+                endpoint="http://127.0.0.1:1",
+                workspace="/tmp",
+                state_dir=Path(temp_dir),
+                opener=opener,
+            )
+            runtime._session_id = session_id
+            runtime._running = True
+            runtime.send("slow turn")
+            result = runtime.read_output(timeout_seconds=1.0)
+
+        self.assertEqual(result["content"], "done")
+
     def test_routes_structured_permission_request_and_sends_exact_reply(self):
         session_id = "session-1"
         state = {"request_message_id": "", "reply": None}

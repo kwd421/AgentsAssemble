@@ -8,6 +8,9 @@ from dataclasses import dataclass, field
 from pathlib import Path
 
 from agentsassemble.persona_cards.selection import add_persona_runtime_profile
+from agentsassemble.providers.turn_progress import (
+    DEFAULT_PROVIDER_INACTIVITY_TIMEOUT_SECONDS,
+)
 from agentsassemble.room.text import clean_room_text
 
 
@@ -47,7 +50,7 @@ class NativeCliProviderSpec:
     startup_accept_keys: str = "\r"
     startup_ready_contains: str = ""
     startup_input: str = ""
-    turn_timeout_seconds: float = 180.0
+    turn_timeout_seconds: float = DEFAULT_PROVIDER_INACTIVITY_TIMEOUT_SECONDS
 
     def normalized_provider_kind(self) -> str:
         return clean_room_text(self.provider_kind, limit=64) or f"{self.agent_id}_live_session"
