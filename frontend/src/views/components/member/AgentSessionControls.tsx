@@ -97,7 +97,10 @@ export default function AgentSessionControls({
   const selfRelaunchArgv = agentRelaunchArguments(agent);
   const isAgentOnline = isActivePresence(agent.status);
   const selfManaged = Boolean(
-    entry.ownedByViewer && !processGroup && (selfRelaunchPid > 0 || selfRelaunchArgv.length > 0)
+    !canonicalRoomAgent &&
+      entry.ownedByViewer &&
+      !processGroup &&
+      (selfRelaunchPid > 0 || selfRelaunchArgv.length > 0)
   );
   const canSelfStop = Boolean(selfManaged && isAgentOnline && selfRelaunchPid > 0);
   const canSelfResume = Boolean(selfManaged && !isAgentOnline && selfRelaunchArgv.length > 0);
@@ -369,11 +372,15 @@ export default function AgentSessionControls({
               ? "추방하면 실행 중인 CLI를 중지하고 이 방의 참가자와 라우팅에서 제거합니다."
               : "추방은 이 방에서만 제거하고, 삭제는 저장된 레거시 세션 설정까지 제거합니다."}
           </p>
-          {!hasResumeControl && !hasStopControl && !canSelfStop && !canSelfResume && (
+          {!canonicalRoomAgent &&
+            !hasResumeControl &&
+            !hasStopControl &&
+            !canSelfStop &&
+            !canSelfResume && (
             <p className="dc-member-detail-note preserve-words">
               이 세션은 서버가 직접 실행하는 프로세스도 아니고, 자기 실행 정보(pid/재실행 명령)도 등록하지 않아 여기서 멈추거나 재개할 수 없습니다.
             </p>
-          )}
+            )}
           {(canSelfStop || canSelfResume) && (
             <p className="dc-member-detail-note preserve-words">
               터미널에서 직접 띄운 내 에이전트입니다. STOP은 그 프로세스를 실제로 종료하고, RESUME은 서버 백그라운드로 다시 띄웁니다.

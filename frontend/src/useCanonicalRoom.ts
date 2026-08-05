@@ -497,7 +497,7 @@ export function useCanonicalRoom(options: UseCanonicalRoomOptions) {
 
   const sendAgentControl = useCallback(
     async (session: RoomAgentSession, action: "start" | "pause" | "stop" | "resume" | "interrupt") => {
-      if (!socket) return;
+      if (!socket) throw new Error("방 연결이 준비되지 않았습니다.");
       await socket.command(`agent.${action}`, { agent_id: session.participant_id });
     },
     [socket]

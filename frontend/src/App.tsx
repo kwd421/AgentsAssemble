@@ -1907,6 +1907,7 @@ export default function App() {
           }
           agentSessions={activeRoomAgentSessions}
           availableProviders={canonicalRoom.availableProviders}
+          capabilities={activeRoomCapabilities}
           onAgentControl={sendAgentControl}
           onAgentConfigure={sendAgentConfigure}
           agentActivityVisibility={agentActivityVisibility}

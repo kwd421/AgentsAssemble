@@ -96,6 +96,18 @@ function snapshot(
 }
 
 describe("useCanonicalRoom", () => {
+  it("rejects lifecycle commands when the canonical room socket is unavailable", async () => {
+    const { result } = renderHook(() =>
+      useCanonicalRoom({
+        roomId: "general",
+      })
+    );
+
+    await expect(result.current.sendAgentControl(session(), "stop")).rejects.toThrow(
+      "방 연결이 준비되지 않았습니다."
+    );
+  });
+
   it("projects canonical settings from snapshots, events, and update ACKs", async () => {
     let handlers: RoomSocketHandlers | undefined;
     const updatedEvent = {

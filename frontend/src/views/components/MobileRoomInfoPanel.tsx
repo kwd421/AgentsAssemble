@@ -316,6 +316,7 @@ export default function MobileRoomInfoPanel({
   initialMode = "info",
   agentSessions = [],
   availableProviders = [],
+  capabilities = {},
   onAgentControl,
   onAgentConfigure,
   agentActivityVisibility = {},
@@ -337,6 +338,7 @@ export default function MobileRoomInfoPanel({
   initialMode?: MobilePanelMode;
   agentSessions?: RoomAgentSession[];
   availableProviders?: NativeCliProviderAvailability[];
+  capabilities?: Record<string, boolean>;
   onAgentControl?: (
     session: RoomAgentSession,
     action: AgentSessionControlAction
@@ -479,8 +481,8 @@ export default function MobileRoomInfoPanel({
               provider={availableProviders.find(
                 (provider) => provider.provider_kind === selectedAgentSession.provider_kind
               )}
-              onControl={onAgentControl}
-              onConfigure={onAgentConfigure}
+              onControl={capabilities["agent.control"] ? onAgentControl : undefined}
+              onConfigure={capabilities["agent.control"] ? onAgentConfigure : undefined}
               activityVisible={agentActivityVisibility[selectedAgentSession.participant_id] === true}
               onActivityVisibilityChange={onAgentActivityVisibilityChange}
             />
