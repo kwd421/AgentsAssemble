@@ -42,7 +42,7 @@ class _FakeClaudeTerminalRuntime:
         self.running = False
 
     def health(self) -> dict[str, object]:
-        return {"running": self.running}
+        return {"running": self.running, "runtime_kind": "live_cli"}
 
 
 class _UpstreamServer:
@@ -204,6 +204,7 @@ class NativeHarnessGatewayTests(unittest.TestCase):
                 runtime = native_harness_runtime(
                     agent_id="deepseek-with-claude",
                     harness="claude",
+                    runtime_kind="api",
                     provider_kind="deepseek_api",
                     provider_endpoint="https://api.example.test/v1",
                     credential="secret",
@@ -224,6 +225,7 @@ class NativeHarnessGatewayTests(unittest.TestCase):
 
                 runtime.set_request_handler(allow_once)
                 health = runtime.start()
+                self.assertEqual(health["runtime_kind"], "api")
                 settings_path = Path(str(health["provider_request_settings_path"]))
                 settings = json.loads(settings_path.read_text(encoding="utf-8"))
                 endpoint = settings["hooks"]["PermissionRequest"][0]["hooks"][0]["url"]
@@ -428,6 +430,7 @@ class NativeHarnessGatewayTests(unittest.TestCase):
         runtime = NativeHarnessRuntime(
             _FailingDelegate(),
             harness="codex",
+            runtime_kind="api",
             gateway=gateway,
         )
 

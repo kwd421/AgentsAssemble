@@ -88,6 +88,7 @@ def runtime_from_config(
         return native_harness_runtime(
             agent_id=config.participant_id,
             harness=config.execution_harness,
+            runtime_kind=config.runtime_kind,
             provider_kind=config.provider_kind,
             provider_endpoint=config.provider_endpoint,
             credential=credential,

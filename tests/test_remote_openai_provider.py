@@ -229,7 +229,9 @@ class RemoteOpenAIProviderTests(unittest.TestCase):
                     "publish_message",
                     {"content": "공용 어댑터 발언"},
                 )
-            return _content_response("openai/gpt-oss-20b:free", "published")
+            raise AssertionError(
+                "The provider was called again after its public room action."
+            )
 
         with tempfile.TemporaryDirectory() as temp_dir:
             portal = RoomPortal(Path(temp_dir), participant_id="openrouter-agent")
@@ -264,8 +266,7 @@ class RemoteOpenAIProviderTests(unittest.TestCase):
 
         self.assertEqual(publication, "공용 어댑터 발언")
         self.assertEqual(result["metadata"]["room_tool_rounds"], 2)
-        self.assertEqual(result["metadata"]["observed_model_id"], "openai/gpt-oss-20b:free")
-        self.assertEqual(len(requests), 3)
+        self.assertEqual(len(requests), 2)
         self.assertTrue(all(request["max_tokens"] == 8192 for request in requests))
         self.assertNotIn("secret-never-reported", json.dumps(result))
         self.assertNotIn("secret-never-reported", json.dumps(runtime.health()))

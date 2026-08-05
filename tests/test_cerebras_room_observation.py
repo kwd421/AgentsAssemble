@@ -68,21 +68,13 @@ class CerebrasRoomObservationTests(unittest.TestCase):
                     },
                 },
             ),
-            _stream(
-                {
-                    "model": "gpt-oss-120b",
-                    "choices": [
-                        {
-                            "delta": {"content": "done"},
-                            "finish_reason": "stop",
-                        }
-                    ],
-                }
-            ),
         ]
+        request_count = 0
 
         def cloudflare_guarded_opener(request, timeout: float):
+            nonlocal request_count
             del timeout
+            request_count += 1
             if request.get_header("User-agent") != "AgentsAssemble/1.0":
                 raise HTTPError(request.full_url, 403, "Forbidden", {}, None)
             return responses.pop(0)
@@ -128,7 +120,8 @@ class CerebrasRoomObservationTests(unittest.TestCase):
             results = portal.observation_results("cerebras-turn")
             publication = portal.consume_publication("cerebras-turn")
 
-        self.assertEqual(result["content"], "done")
+        self.assertEqual(result["content"], "RoomPortal action completed.")
+        self.assertEqual(request_count, 1)
         self.assertEqual(receipt, 5)
         self.assertEqual(publication, "CEREBRAS_ROOM_OK")
         self.assertEqual(

@@ -115,18 +115,6 @@ class DeepSeekRoomObservationTests(unittest.TestCase):
                 },
                 _usage_chunk(input_tokens=120, output_tokens=20),
             ),
-            _stream(
-                {
-                    "model": "deepseek-v4-flash",
-                    "choices": [
-                        {
-                            "delta": {"content": "done"},
-                            "finish_reason": "stop",
-                        }
-                    ],
-                },
-                _usage_chunk(input_tokens=180, output_tokens=10),
-            ),
         ]
         request_bodies: list[dict[str, object]] = []
         activities: list[dict[str, object]] = []
@@ -176,19 +164,19 @@ class DeepSeekRoomObservationTests(unittest.TestCase):
             random_results = portal.observation_results("deepseek-turn")
             publication = portal.consume_publication_result("deepseek-turn")
 
-        self.assertEqual(result["content"], "done")
+        self.assertEqual(result["content"], "RoomPortal action completed.")
         self.assertEqual(
             result["metadata"]["token_usage"],
             {
-                "input_tokens": 300,
-                "output_tokens": 30,
-                "total_tokens": 330,
-                "cache_hit_input_tokens": 150,
-                "cache_miss_input_tokens": 150,
-                "reasoning_tokens": 15,
+                "input_tokens": 120,
+                "output_tokens": 20,
+                "total_tokens": 140,
+                "cache_hit_input_tokens": 60,
+                "cache_miss_input_tokens": 60,
+                "reasoning_tokens": 10,
             },
         )
-        self.assertEqual(len(result["metadata"]["api_calls"]), 2)
+        self.assertEqual(len(result["metadata"]["api_calls"]), 1)
         self.assertEqual(receipt, 7)
         self.assertEqual(publication.content, "DEEPSEEK_ROOM_OK")
         self.assertEqual(publication.target_agent_id, "")
@@ -201,7 +189,7 @@ class DeepSeekRoomObservationTests(unittest.TestCase):
         self.assertTrue(request_bodies[0]["tools"])
         self.assertEqual(request_bodies[0]["tool_choice"], "auto")
         self.assertEqual(request_bodies[0]["stream_options"], {"include_usage": True})
-        self.assertEqual(request_bodies[1]["messages"][-1]["role"], "tool")
+        self.assertEqual(len(request_bodies), 1)
 
     def test_chat_turn_can_inspect_participants_and_stage_a_structured_vote(self):
         responses = [

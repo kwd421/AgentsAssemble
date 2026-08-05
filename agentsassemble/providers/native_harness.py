@@ -24,9 +24,17 @@ class NativeHarnessUnavailable(RuntimeError):
 class NativeHarnessRuntime:
     """Keep gateway and native harness lifetime aligned with one room runtime."""
 
-    def __init__(self, delegate, *, harness: str, gateway: NativeModelGateway | None) -> None:
+    def __init__(
+        self,
+        delegate,
+        *,
+        harness: str,
+        runtime_kind: str,
+        gateway: NativeModelGateway | None,
+    ) -> None:
         self.delegate = delegate
         self.harness = harness
+        self.runtime_kind = runtime_kind
         self.gateway = gateway
 
     def set_request_handler(self, handler) -> None:
@@ -78,6 +86,10 @@ class NativeHarnessRuntime:
         gateway_health = self.gateway.health() if self.gateway else {}
         return {
             **dict(details),
+            # The wrapper owns the provider profile identity. The delegate's
+            # live_cli kind describes its transport implementation, not the
+            # API runtime exposed to the canonical bridge.
+            "runtime_kind": self.runtime_kind,
             "execution_harness": self.harness,
             "harness_gateway": "internal" if self.gateway else "direct",
             "harness_gateway_pid": self.gateway.pid if self.gateway else None,
@@ -97,6 +109,7 @@ def native_harness_runtime(
     *,
     agent_id: str,
     harness: str,
+    runtime_kind: str,
     provider_kind: str,
     provider_endpoint: str,
     credential: str,
@@ -196,7 +209,12 @@ def native_harness_runtime(
                 "permission_mode": permission_mode,
             },
         )
-    return NativeHarnessRuntime(delegate, harness=selected, gateway=gateway)
+    return NativeHarnessRuntime(
+        delegate,
+        harness=selected,
+        runtime_kind=runtime_kind,
+        gateway=gateway,
+    )
 
 
 def _supports_direct_harness(provider_kind: str, harness: str) -> bool:

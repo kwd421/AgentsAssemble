@@ -269,10 +269,11 @@ class OpenAICompatibleApiRuntime:
                     raise RuntimeError(
                         f"{self.provider_name} exceeded the bounded tool-call rounds."
                     )
+                tool_calls = list(round_result.tool_calls)
                 assistant_message: dict[str, object] = {
                     "role": "assistant",
                     "content": round_result.content or None,
-                    "tool_calls": round_result.tool_calls,
+                    "tool_calls": tool_calls,
                 }
                 if (
                     self._include_reasoning_in_messages
@@ -280,14 +281,9 @@ class OpenAICompatibleApiRuntime:
                 ):
                     assistant_message["reasoning_content"] = round_result.reasoning_content
                 messages.append(assistant_message)
-                for tool_call in round_result.tool_calls:
+                for tool_call in tool_calls:
                     tool_call_id = str(tool_call.get("id") or "")
-                    function = tool_call.get("function")
-                    tool_name = (
-                        str(function.get("name") or "")
-                        if isinstance(function, dict)
-                        else ""
-                    )
+                    tool_name = _tool_call_name(tool_call)
                     activity_id = clean_room_text(tool_call_id, limit=128)
                     activity_title, activity_detail = _tool_activity(
                         tool_call,
@@ -339,12 +335,7 @@ class OpenAICompatibleApiRuntime:
                         if on_activity is not None:
                             on_activity({**activity_fields, "status": "failed"})
                         raise
-                    if executed_name in {
-                        "publish_message",
-                        "decline_to_speak",
-                        "create_vote",
-                        "cast_vote",
-                    }:
+                    if executed_name in _TERMINAL_ROOM_TOOLS:
                         room_action_completed = True
                     messages.append(
                         {
@@ -364,6 +355,9 @@ class OpenAICompatibleApiRuntime:
                     if on_activity is not None:
                         on_activity({**activity_fields, "status": "completed"})
                     progress.record()
+                if room_action_completed:
+                    content = "RoomPortal action completed."
+                    break
                 if progress.expired():
                     raise TimeoutError(
                         f"{self.provider_name} runtime timed out after {timeout_seconds} seconds."
@@ -633,9 +627,20 @@ _WORK_TOOL_NAMES = frozenset(
     }
 )
 
+_TERMINAL_ROOM_TOOLS = frozenset(
+    {"publish_message", "decline_to_speak", "create_vote", "cast_vote"}
+)
+
 
 def _work_tool_names() -> frozenset[str]:
     return _WORK_TOOL_NAMES
+
+
+def _tool_call_name(tool_call: dict[str, object]) -> str:
+    function = tool_call.get("function")
+    if not isinstance(function, dict):
+        return ""
+    return str(function.get("name") or "")
 
 
 def _tool_title(tool_name: object) -> str:
