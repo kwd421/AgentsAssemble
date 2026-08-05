@@ -55,7 +55,7 @@ def grok_tool_activity(update: dict[str, object]) -> tuple[str, str, str]:
         if isinstance(candidate, str) and candidate.strip():
             detail_value = candidate
             break
-    activity_title = label or name or title or "Tool"
+    activity_title = label or name or title
     detail = detail_value or title
     return (
         category_source,
@@ -147,25 +147,15 @@ class GrokAcpTurnProjectionMixin:
                         update.get("toolCallId") or update.get("tool_call_id"),
                         limit=128,
                     )
-                    if self._should_emit_tool_activity(
+                    activity = self._merge_tool_activity(
                         tool_call_id,
                         status=status,
+                        category_source=category_source,
+                        title=activity_title,
                         detail=detail,
-                    ):
-                        on_activity(
-                            {
-                                "category": tool_category(category_source),
-                                "status": status,
-                                "activity_id": tool_call_id,
-                                "activity_title": activity_title,
-                                "activity_detail": detail,
-                                "content": (
-                                    f"{activity_title}: {detail}"
-                                    if detail
-                                    else activity_title
-                                ),
-                            }
-                        )
+                    )
+                    if activity is not None:
+                        on_activity(activity)
                 continue
             if update_type != "agent_message_chunk":
                 continue
@@ -227,22 +217,43 @@ class GrokAcpTurnProjectionMixin:
                 }
             )
 
-    def _should_emit_tool_activity(
+    def _merge_tool_activity(
         self,
         tool_call_id: str,
         *,
         status: str,
+        category_source: str,
+        title: str,
         detail: str,
-    ) -> bool:
-        if not tool_call_id:
-            return True
+    ) -> dict[str, str] | None:
         with self._lock:
-            previous = self._tool_activity_state.get(tool_call_id)
-            current = (status, detail)
-            if previous == current:
-                return False
-            self._tool_activity_state[tool_call_id] = current
-        return True
+            previous = self._tool_activity_state.get(tool_call_id, {})
+            category = (
+                tool_category(category_source)
+                if category_source
+                else previous.get("category") or "tool"
+            )
+            resolved_title = title or previous.get("activity_title") or "Tool"
+            resolved_detail = detail or previous.get("activity_detail") or ""
+            current = {
+                "category": category,
+                "status": status,
+                "activity_title": resolved_title,
+                "activity_detail": resolved_detail,
+            }
+            if tool_call_id and previous == current:
+                return None
+            if tool_call_id:
+                self._tool_activity_state[tool_call_id] = current
+        return {
+            **current,
+            "activity_id": tool_call_id,
+            "content": (
+                f"{resolved_title}: {resolved_detail}"
+                if resolved_detail
+                else resolved_title
+            ),
+        }
 
 
 __all__ = [

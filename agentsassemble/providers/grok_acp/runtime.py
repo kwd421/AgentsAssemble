@@ -124,7 +124,7 @@ class GrokAcpRuntime(GrokAcpTransportMixin, GrokAcpTurnProjectionMixin):
         ] = {}
         self._active_thought_text = ""
         self._last_emitted_thought_text = ""
-        self._tool_activity_state: dict[str, tuple[str, str]] = {}
+        self._tool_activity_state: dict[str, dict[str, str]] = {}
         self._active_turn_progress: ProviderTurnProgress | None = None
         self._stderr_byte_count = 0
         self._stderr_line_count = 0

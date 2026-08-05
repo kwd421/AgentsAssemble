@@ -204,14 +204,6 @@ class GrokAcpRuntimeTests(unittest.TestCase):
                     "sessionUpdate": "tool_call_update",
                     "toolCallId": "tool-command",
                     "status": "completed",
-                    "title": "Execute command",
-                    "_meta": {
-                        "x.ai/tool": {
-                            "name": "run_terminal_command",
-                            "label": "Run Command",
-                        }
-                    },
-                    "rawInput": {"command": "pwd"},
                     "rawOutput": {"content": "must stay private"},
                 },
                 {
