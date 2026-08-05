@@ -28,6 +28,7 @@ class ProviderErrorProjectionTests(unittest.TestCase):
                 provider_catalog=_test_provider_catalog(),
             )
             try:
+                controller.connect(HOST)
                 controller.handle_command(
                     HOST,
                     {
