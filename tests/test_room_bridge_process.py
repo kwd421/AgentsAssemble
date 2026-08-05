@@ -208,7 +208,10 @@ class NativeCliBridgeProcessManagerTests(unittest.TestCase):
                 popen_factory=popen,
                 executable_resolver=lambda executable: f"/resolved/{executable}",
             )
-            spec = _spec(command=("codex", "--sandbox", "read-only"))
+            spec = _spec(
+                command=("codex", "--sandbox", "read-only"),
+                context_contract_bytes=180_000,
+            )
             launch = manager.start(
                 "general",
                 {"session_id": "codex"},
@@ -243,6 +246,7 @@ class NativeCliBridgeProcessManagerTests(unittest.TestCase):
             self.assertEqual(config["runtime_profile_key"], spec.runtime_profile_key())
             self.assertEqual(config["runtime_state_dir"], str(Path(launch["config_path"]).parent / "provider-state"))
             self.assertEqual(config["runtime_kind"], spec.runtime_kind)
+            self.assertEqual(config["context_contract_bytes"], 180_000)
             self.assertEqual(Path(launch["config_path"]).parent.name, spec.runtime_profile_key())
             stopped = manager.stop("general", "codex", handle_id=launch["bridge_handle_id"])
 

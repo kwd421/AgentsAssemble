@@ -308,6 +308,11 @@ class ProviderCapabilityCatalog:
             execution_harness=resolved_values["execution_harness"] or "builtin",
             permission_mode=resolved_values["permission_mode"],
             max_output_tokens=int(resolved_values["max_output_tokens"] or 0),
+            context_contract_bytes=(
+                int(metadata.get("context_length") or 0)
+                if isinstance(metadata.get("context_length"), int)
+                else 0
+            ),
             provider_endpoint=provider_endpoint,
         )
 

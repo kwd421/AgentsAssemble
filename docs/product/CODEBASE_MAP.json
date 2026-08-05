@@ -1,12 +1,12 @@
 {
  "readme": "AgentsAssemble codebase map. Regenerate with `make codebase-map`; verify committed outputs with `make codebase-map-verify`. modules[] columns: name, path, package, domain, classification, migration_status, lines, docstring, imports[], imported_by[] (indexes into modules), classes[[name, [[base, defining_module], ...]]] (best-effort, top-level classes only). frontend[] columns: path, group, lines, doc, imports[], imported_by[] (indexes into frontend). package_edges go importer -> dependency with module-import counts; `points` is the precomputed polyline for that edge and `intra_cycle` marks imports whose endpoints share one cycle group. graph{} holds the layered package drawing: layers[] top-to-bottom (each with members[] package ids, member_count, and the dominant domain), (a package sits below everything importing it), clusters[] are mutually dependent packages (import cycles at package level) drawn as one labelled block, plus width/height of the drawing. health{} ranks findings for a reader who has to act: cycles[] (mutually dependent packages, with the lines they hold), leaning_on_retiring[] (current modules importing legacy/compatibility modules - the reason legacy cannot be deleted), highest_leverage_migrations[] (retiring modules with the most current importers), unreferenced_shims[] (compatibility modules with no importer in agentsassemble/ and no reference in tests/; callers outside this repository are not visible, so verify before deleting), and hotspots[] (largest modules). health.scope states exactly what was measured. class_graph{} is the UML generalization DAG over base classes that resolve inside the repo: edges go base -> subclass, so a subclass always sits below the class it extends. Coordinates in graph and class_graph are laid out with a Sugiyama pipeline (cycle condensation, Coffman-Graham layering, dummy-node edge routing, median/transpose crossing reduction) and are deterministic.",
- "generated_at": "2026-08-05T05:26:48Z",
- "fingerprint": "ffde6b839e093f09",
+ "generated_at": "2026-08-05T05:41:11Z",
+ "fingerprint": "5f33c1b87d00ad80",
  "stats": {
   "backend_modules": 860,
-  "backend_lines": 146445,
+  "backend_lines": 146487,
   "frontend_files": 211,
-  "frontend_lines": 49244,
+  "frontend_lines": 49245,
   "packages": 30,
   "import_cycles": 0,
   "classifications": {
@@ -63,7 +63,7 @@
    "kind": "backend",
    "doc": "Current room domain contracts and behavior.",
    "files": 56,
-   "lines": 14895,
+   "lines": 14901,
    "domains": {
     "room": 56
    },
@@ -124,7 +124,7 @@
    "kind": "backend",
    "doc": "Provider runtime contracts and implementations.",
    "files": 121,
-   "lines": 30319,
+   "lines": 30355,
    "domains": {
     "providers": 121
    },
@@ -525,7 +525,7 @@
    "kind": "frontend",
    "doc": "Room protocol client: HTTP calls, WebSocket wiring, DTO mapping.",
    "files": 9,
-   "lines": 1934,
+   "lines": 1935,
    "domains": {},
    "classes": {},
    "x": 330.0,
@@ -4160,7 +4160,7 @@
      "web"
     ],
     "internal_edges": 92,
-    "lines": 142997,
+    "lines": 143039,
     "heaviest": "legacy"
    },
    {
@@ -4173,7 +4173,7 @@
      "fe:views"
     ],
     "internal_edges": 17,
-    "lines": 49244,
+    "lines": 49245,
     "heaviest": "fe:views"
    }
   ],
@@ -4557,7 +4557,7 @@
    },
    {
     "module": "agentsassemble.providers.capabilities",
-    "lines": 1541,
+    "lines": 1546,
     "cls": "current",
     "imported_by": 5
    },
@@ -17523,7 +17523,7 @@
    "providers",
    "current",
    "in-target-package",
-   636,
+   637,
    "Server-owned provider Agent Bridge process lifecycle.",
    [
     109,
@@ -17679,7 +17679,7 @@
    "providers",
    "current",
    "in-target-package",
-   1541,
+   1546,
    "Provider option discovery, catalog caching, and selection validation.",
    [
     598,
@@ -18601,7 +18601,7 @@
    "providers",
    "current",
    "in-target-package",
-   94,
+   97,
    "Immutable provider launch profile and its stable runtime identity.",
    [
     541,
@@ -18625,7 +18625,7 @@
    "providers",
    "current",
    "in-target-package",
-   1074,
+   1089,
    "Provider launch specifications, command construction, and profile validation.",
    [
     541,
@@ -19602,7 +19602,7 @@
    "providers",
    "current",
    "in-target-package",
-   306,
+   316,
    "",
    [
     659,
@@ -19700,7 +19700,7 @@
    "providers",
    "current",
    "in-target-package",
-   266,
+   267,
    "",
    [
     583,
@@ -19825,7 +19825,7 @@
    "providers",
    "current",
    "in-target-package",
-   27,
+   28,
    "Provider catalog selection contracts shared with room services.",
    [],
    [
@@ -20467,7 +20467,7 @@
    "room",
    "current",
    "in-target-package",
-   192,
+   193,
    "",
    [
     537,
@@ -20588,7 +20588,7 @@
    "room",
    "current",
    "in-target-package",
-   236,
+   237,
    "",
    [
     537,
@@ -20666,7 +20666,7 @@
    "room",
    "current",
    "in-target-package",
-   252,
+   253,
    "",
    [
     633,
@@ -21392,7 +21392,7 @@
    "room",
    "current",
    "in-target-package",
-   531,
+   533,
    "",
    [
     633,
@@ -22295,7 +22295,7 @@
    "room",
    "current",
    "in-target-package",
-   92,
+   93,
    "Shared room event, participant, session, command, and turn shapes.",
    [
     727
@@ -24806,7 +24806,7 @@
   [
    "frontend/src/api/agentSessions.ts",
    "api",
-   209,
+   210,
    "",
    [
     4,
@@ -27721,19 +27721,19 @@
    "name": "agentsassemble",
    "note": "Backend package (Python)",
    "files": 860,
-   "lines": 146445
+   "lines": 146487
   },
   {
    "name": "frontend/src",
    "note": "React room client (TS/TSX)",
    "files": 211,
-   "lines": 49244
+   "lines": 49245
   },
   {
    "name": "tests",
    "note": "Backend test suite",
-   "files": 388,
-   "lines": 151927
+   "files": 389,
+   "lines": 151976
   },
   {
    "name": "scripts",

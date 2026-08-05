@@ -32,6 +32,7 @@ class NativeCliProviderSpec:
     execution_harness: str = "builtin"
     permission_mode: str = "meeting_read_only"
     max_output_tokens: int = 0
+    context_contract_bytes: int = 0
     provider_endpoint: str = ""
     persona_card_id: str = ""
     persona_card_summary: dict[str, object] = field(default_factory=dict)
@@ -84,6 +85,8 @@ class NativeCliProviderSpec:
         }
         if self.provider_endpoint:
             values["provider_endpoint"] = self.provider_endpoint
+        if self.context_contract_bytes:
+            values["context_contract_bytes"] = self.context_contract_bytes
         if self.execution_harness != "builtin":
             values["execution_harness"] = self.execution_harness
         add_persona_runtime_profile(values, self.persona_card_id)

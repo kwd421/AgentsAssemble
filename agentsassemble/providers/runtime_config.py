@@ -29,6 +29,7 @@ class ProviderRuntimeProfile:
     permission_mode: str
     transport: str
     max_output_tokens: int = 0
+    context_contract_bytes: int = 0
     execution_harness: str = "builtin"
 
     @classmethod
@@ -57,6 +58,11 @@ class ProviderRuntimeProfile:
                 if "max_output_tokens" in values
                 else 0
             ),
+            context_contract_bytes=(
+                _required_int(values, "context_contract_bytes", minimum=0)
+                if "context_contract_bytes" in values
+                else 0
+            ),
         )
 
     def report_fields(self) -> dict[str, object]:
@@ -70,6 +76,7 @@ class ProviderRuntimeProfile:
             "execution_harness": self.execution_harness,
             "permission_mode": self.permission_mode,
             "max_output_tokens": self.max_output_tokens,
+            "context_contract_bytes": self.context_contract_bytes,
         }
 
 
@@ -86,6 +93,7 @@ class ProviderRuntimeConfig:
     variant: str
     permission_mode: str
     max_output_tokens: int
+    context_contract_bytes: int
     transport: str
     quiet_seconds: float
     input_mode: str
@@ -116,6 +124,7 @@ class ProviderRuntimeConfig:
             execution_harness=self.execution_harness,
             permission_mode=self.permission_mode,
             max_output_tokens=self.max_output_tokens,
+            context_contract_bytes=self.context_contract_bytes,
             transport=self.transport,
         )
 
@@ -150,6 +159,7 @@ class ProviderRuntimeConfig:
             execution_harness=profile.execution_harness,
             permission_mode=profile.permission_mode,
             max_output_tokens=profile.max_output_tokens,
+            context_contract_bytes=profile.context_contract_bytes,
             transport=profile.transport,
             quiet_seconds=_required_float(values, "quiet_seconds", minimum=0.001),
             input_mode=_required_text(values, "input_mode", limit=64),

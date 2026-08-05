@@ -104,9 +104,9 @@ def runtime_from_config(
             ),
             variant=config.variant,
             max_output_tokens=config.max_output_tokens,
-            context_contract_bytes=remote_openai_context_contract_bytes(
-                remote_profile,
-                config.model,
+            context_contract_bytes=(
+                config.context_contract_bytes
+                or remote_openai_context_contract_bytes(remote_profile, config.model)
             ),
         )
     if key == ("codex_live_session", "pty"):
@@ -136,6 +136,7 @@ def runtime_from_config(
             workspace=config.cwd,
             permission_mode=config.permission_mode,
             state_dir=config.runtime_state_dir,
+            context_contract_bytes=config.context_contract_bytes,
         )
     if key == ("ollama_api", "http"):
         return LocalOpenAICompatibleRuntime(

@@ -302,6 +302,7 @@ class NativeCliBridgeProcessManager:
             "execution_harness": spec.execution_harness,
             "permission_mode": spec.permission_mode,
             "max_output_tokens": spec.max_output_tokens,
+            "context_contract_bytes": spec.context_contract_bytes,
             "transport": spec.transport,
             "quiet_seconds": spec.quiet_seconds,
             "input_mode": spec.input_mode,

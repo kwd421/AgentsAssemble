@@ -67,6 +67,7 @@ class RoomAgentCreationServiceTests(unittest.TestCase):
             variant=default.variant,
             permission_mode=default.permission_mode,
             max_output_tokens=8192,
+            context_contract_bytes=1_000_000,
         )
         self.catalog = _Catalog(self.selection)
         self.created_specs: list[tuple[str, NativeCliProviderSpec]] = []
@@ -148,6 +149,7 @@ class RoomAgentCreationServiceTests(unittest.TestCase):
         self.assertEqual(spec.display_name, "Luna")
         self.assertEqual(spec.model, self.selection.model)
         self.assertEqual(spec.max_output_tokens, 8192)
+        self.assertEqual(spec.context_contract_bytes, 1_000_000)
         self.assertEqual(result["participant"]["display_name"], "Luna")
         self.assertEqual(result["start"]["status"], "starting")
         self.assertEqual(

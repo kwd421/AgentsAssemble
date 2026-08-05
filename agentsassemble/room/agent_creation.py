@@ -128,6 +128,7 @@ class RoomAgentCreationService:
                     "execution_harness": selection.execution_harness,
                     "permission_mode": selection.permission_mode,
                     "max_output_tokens": selection.max_output_tokens,
+                    "context_contract_bytes": selection.context_contract_bytes,
                     "provider_endpoint": selection.provider_endpoint,
                     "persona_card_id": persona_card.get("id", ""),
                     "persona_card": persona_card,

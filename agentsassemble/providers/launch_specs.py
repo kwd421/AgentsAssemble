@@ -93,6 +93,7 @@ class NativeCliProviderDefinition:
         execution_harness: str = "",
         permission_mode: str = "",
         max_output_tokens: int = 0,
+        context_contract_bytes: int = 0,
         provider_endpoint: str = "",
         persona_card_id: str = "",
         persona_card_summary: dict[str, object] | None = None,
@@ -136,6 +137,7 @@ class NativeCliProviderDefinition:
             raise ValueError(
                 f"Provider {self.provider_id} maximum output tokens cannot be negative."
             )
+        selected_context_contract_bytes = max(0, int(context_contract_bytes or 0))
         selected_kind = clean_room_text(model_selection_kind, limit=16)
         selected_catalog_revision = clean_room_text(catalog_revision, limit=128)
         if self.provider_id == "cursor" and selected_model == "auto":
@@ -186,6 +188,7 @@ class NativeCliProviderDefinition:
             execution_harness=selected_execution_harness,
             permission_mode=selected_permission,
             max_output_tokens=selected_max_output_tokens,
+            context_contract_bytes=selected_context_contract_bytes,
             provider_endpoint=clean_room_text(provider_endpoint, limit=1000),
             persona_card_id=clean_room_text(persona_card_id, limit=80),
             persona_card_summary=dict(persona_card_summary or {}),
@@ -311,6 +314,10 @@ def native_cli_provider_spec_from_stored_session_strict(
         max_output_tokens=_nonnegative_int(
             session.get("max_output_tokens"),
             field="max_output_tokens",
+        ),
+        context_contract_bytes=_nonnegative_int(
+            session.get("context_contract_bytes"),
+            field="context_contract_bytes",
         ),
         provider_endpoint=clean_room_text(
             session.get("provider_endpoint"),
@@ -891,6 +898,10 @@ def native_cli_provider_spec_from_payload(payload: dict[str, object]) -> NativeC
             payload.get("max_output_tokens"),
             field="max_output_tokens",
         ),
+        context_contract_bytes=_nonnegative_int(
+            payload.get("context_contract_bytes"),
+            field="context_contract_bytes",
+        ),
         provider_endpoint=clean_room_text(
             payload.get("provider_endpoint"),
             limit=1000,
@@ -971,6 +982,10 @@ def native_cli_provider_spec_from_config(
         max_output_tokens=_nonnegative_int(
             payload.get("max_output_tokens"),
             field="max_output_tokens",
+        ),
+        context_contract_bytes=_nonnegative_int(
+            payload.get("context_contract_bytes"),
+            field="context_contract_bytes",
         ),
         provider_endpoint=clean_room_text(
             payload.get("provider_endpoint"),

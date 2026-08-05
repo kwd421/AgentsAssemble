@@ -23,5 +23,6 @@ class ValidatedProviderSelection:
     variant: str
     permission_mode: str
     max_output_tokens: int = 0
+    context_contract_bytes: int = 0
     provider_endpoint: str = ""
     execution_harness: str = "builtin"

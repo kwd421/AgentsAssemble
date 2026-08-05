@@ -146,6 +146,7 @@ class RoomBridgeReportService:
                 "execution_harness": profile.execution_harness,
                 "permission_mode": profile.permission_mode,
                 "max_output_tokens": profile.max_output_tokens,
+                "context_contract_bytes": profile.context_contract_bytes,
                 "runtime_kind": profile.runtime_kind,
                 "transport": profile.transport,
                 "runtime_profile_key": external_runtime_profile_key(profile),
