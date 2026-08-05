@@ -2267,6 +2267,7 @@ class AgentSessionRoomStoreTests(unittest.TestCase):
                         '{"jsonrpc":"2.0","id":2,"result":{"thread":{"id":"thread-2"}}}\n',
                         '{"jsonrpc":"2.0","id":3,"result":{"turn":{"id":"turn-a"}}}\n',
                         '{"jsonrpc":"2.0","id":44,"method":"item/commandExecution/requestApproval","params":{"threadId":"thread-2","turnId":"turn-a","itemId":"command-1","startedAtMs":1,"command":"python3 -m unittest"}}\n',
+                        '{"jsonrpc":"2.0","id":45,"method":"item/tool/requestUserInput","params":{"threadId":"thread-2","turnId":"turn-a","itemId":"question-1","questions":[{"id":"next-step","header":"다음 작업","question":"무엇을 할까요?","options":[{"label":"빌드","description":"구조 검증"}],"isOther":false}]}}\n',
                         '{"jsonrpc":"2.0","method":"turn/error","params":{"message":"contextWindowExceeded"}}\n',
                     ]
                 )
@@ -2275,7 +2276,10 @@ class AgentSessionRoomStoreTests(unittest.TestCase):
 
         def handle(request, respond):
             requests.append(request)
-            respond({"option_id": "decline"})
+            if request["response_kind"] == "answers":
+                respond({"answers": {"next-step": ["빌드"]}})
+            else:
+                respond({"option_id": "decline"})
 
         runtime = CodexAppServerRuntime(
             process_factory=FakeProcess,
@@ -2288,6 +2292,22 @@ class AgentSessionRoomStoreTests(unittest.TestCase):
         self.assertIn(
             {"jsonrpc": "2.0", "id": 44, "result": {"decision": "decline"}},
             responses,
+        )
+        self.assertIn(
+            {
+                "jsonrpc": "2.0",
+                "id": 45,
+                "result": {
+                    "answers": {
+                        "next-step": {"answers": ["빌드"]},
+                    }
+                },
+            },
+            responses,
+        )
+        self.assertEqual(
+            [request["request_kind"] for request in requests],
+            ["permission", "user_input"],
         )
         self.assertEqual(chunks[-1]["type"], "error")
 

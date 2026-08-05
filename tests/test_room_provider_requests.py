@@ -1,10 +1,13 @@
 from __future__ import annotations
 
 import tempfile
+import threading
+import time
 import unittest
 from pathlib import Path
 
 from agentsassemble.providers.launch_specs import NativeCliProviderSpec
+from agentsassemble.providers.provider_requests import BridgeProviderRequestRouter
 from agentsassemble.room.errors import RoomCommandRejected
 from agentsassemble.room.event_broker import RoomEventBroker
 from agentsassemble.room.realtime import RoomRealtimeController
@@ -258,6 +261,88 @@ class RoomProviderRequestTests(unittest.TestCase):
             ],
             "private-request",
         )
+
+    def test_blocking_provider_request_round_trips_through_durable_room_state(self) -> None:
+        report_count = 0
+
+        def report(action: str, payload: dict[str, object]) -> dict[str, object]:
+            nonlocal report_count
+            report_count += 1
+            return self.command(
+                self.bridge,
+                f"provider-report-{report_count}",
+                action,
+                payload,
+            )
+
+        router = BridgeProviderRequestRouter(
+            report=report,
+            stopping=threading.Event(),
+        )
+        provider_resolution: list[dict[str, object]] = []
+        worker = threading.Thread(
+            target=router.handle,
+            args=(
+                {
+                    "request_kind": "user_input",
+                    "response_kind": "answers",
+                    "title": "검증 선택",
+                    "questions": [
+                        {
+                            "id": "checks",
+                            "header": "검증",
+                            "question": "어떤 검증을 실행할까요?",
+                            "options": [
+                                {
+                                    "id": "build",
+                                    "label": "빌드",
+                                    "kind": "answer",
+                                }
+                            ],
+                            "multiple": False,
+                            "is_other": False,
+                        }
+                    ],
+                    "timeout_seconds": 15,
+                },
+                provider_resolution.append,
+            ),
+            daemon=True,
+        )
+        worker.start()
+        deadline = time.monotonic() + 2
+        pending: list[dict[str, object]] = []
+        while time.monotonic() < deadline:
+            pending = self.controller.snapshot(HOST)["provider_requests"]
+            if pending:
+                break
+            time.sleep(0.01)
+        self.assertEqual(len(pending), 1)
+        provider_request_id = str(pending[0]["provider_request_id"])
+
+        self.command(
+            HOST,
+            "resolve-blocking-provider-request",
+            "provider.request.resolve",
+            {
+                "provider_request_id": provider_request_id,
+                "answers": {"checks": ["빌드"]},
+            },
+        )
+        self.assertTrue(router.resolve(self.broker.bridge_messages[-1]))
+        worker.join(timeout=2)
+
+        self.assertFalse(worker.is_alive())
+        self.assertEqual(provider_resolution, [{"answers": {"checks": ["빌드"]}}])
+        self.assertEqual(self.controller.snapshot(HOST)["provider_requests"], [])
+        resolved = [
+            event
+            for event in self.controller.snapshot(HOST)["events"]
+            if event["type"] == "provider_request_resolved"
+            and event.get("provider_request", {}).get("provider_request_id")
+            == provider_request_id
+        ]
+        self.assertEqual(resolved[-1]["provider_request"]["status"], "resolved")
 
 
 if __name__ == "__main__":

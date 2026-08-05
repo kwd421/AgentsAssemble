@@ -56,20 +56,22 @@ class AntigravityRoomPortalInteraction:
 
     def response_for(self, output: bytes) -> bytes:
         command = _latest_permission_command(output)
-        if not command or command in self._handled_commands:
+        if not command:
             return b""
-        if not is_safe_room_portal_command(command):
-            if self._defer_external_permissions:
-                with self._decision_lock:
-                    decision = self._external_decisions.pop(command, None)
-                if decision is None:
-                    return b""
+        if self._defer_external_permissions:
+            decision = self._take_external_decision(command)
+            if decision is not None:
                 self._handled_commands.add(command)
                 if decision:
                     self._approval_count += 1
                     return b"\x1b[B\r"
                 self._rejection_count += 1
                 return b"\r"
+        if command in self._handled_commands:
+            return b""
+        if not is_safe_room_portal_command(command):
+            if self._defer_external_permissions:
+                return b""
             self._handled_commands.add(command)
             self._rejection_count += 1
             raise AdapterContractError(
@@ -82,6 +84,19 @@ class AntigravityRoomPortalInteraction:
         # truncated permission card. Antigravity still asks again when shell
         # control tokens extend the approved command prefix.
         return b"\x1b[B\r"
+
+    def _take_external_decision(self, rendered_command: str) -> bool | None:
+        with self._decision_lock:
+            if rendered_command in self._external_decisions:
+                return self._external_decisions.pop(rendered_command)
+            for approved_command, decision in self._external_decisions.items():
+                if _matches_visually_wrapped_command(
+                    approved_command,
+                    rendered_command,
+                ):
+                    del self._external_decisions[approved_command]
+                    return decision
+        return None
 
     def describe(self) -> dict[str, object]:
         return {
@@ -101,6 +116,25 @@ def _latest_permission_command(output: bytes) -> str:
             return command
         return " ".join(command.split())
     return ""
+
+
+def _matches_visually_wrapped_command(
+    approved_command: str,
+    rendered_command: str,
+) -> bool:
+    """Match PTY line wrapping without accepting a multiline approved command."""
+
+    if "\r" in approved_command or "\n" in approved_command:
+        return False
+    rendered_lines = [line.strip() for line in rendered_command.splitlines()]
+    rendered_lines = [line for line in rendered_lines if line]
+    if len(rendered_lines) < 2:
+        return False
+    approved = approved_command.strip()
+    return approved in {
+        "".join(rendered_lines),
+        " ".join(rendered_lines),
+    }
 
 
 def is_safe_room_portal_command(command: str) -> bool:

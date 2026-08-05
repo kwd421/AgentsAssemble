@@ -100,13 +100,17 @@ class AntigravityProviderHookTests(unittest.TestCase):
                     "command"
                 ]
 
+                approved_command = (
+                    "touch /tmp/agentsassemble-provider-request-smoke-20260805 "
+                    "&& unlink /tmp/agentsassemble-provider-request-smoke-20260805"
+                )
                 permission = subprocess.run(
                     command,
                     input=json.dumps(
                         {
                             "toolCall": {
                                 "name": "run_command",
-                                "args": {"CommandLine": "git status", "Cwd": temp_dir},
+                                "args": {"CommandLine": approved_command, "Cwd": temp_dir},
                             },
                             "conversationId": "agy-conversation",
                         }
@@ -121,11 +125,35 @@ class AntigravityProviderHookTests(unittest.TestCase):
                 terminal_prompt = b"\n".join(
                     [
                         b"Requesting permission for:",
-                        b"   git status",
+                        b"   touch /tmp/agentsassemble-provider-request-smoke-20260805 &&",
+                        b"   unlink /tmp/agentsassemble-provider-request-smoke-20260805",
                         b"Do you want to proceed?",
                     ]
                 )
                 terminal_response = terminal_policy.response_for(terminal_prompt)
+                retry_permission = subprocess.run(
+                    command,
+                    input=json.dumps(
+                        {
+                            "toolCall": {
+                                "name": "run_command",
+                                "args": {
+                                    "BypassSandbox": True,
+                                    "CommandLine": approved_command,
+                                    "Cwd": temp_dir,
+                                },
+                            },
+                            "conversationId": "agy-conversation",
+                        }
+                    ),
+                    text=True,
+                    shell=True,
+                    capture_output=True,
+                    env={**os.environ, **runtime_environment},
+                    timeout=5,
+                    check=True,
+                )
+                retry_terminal_response = terminal_policy.response_for(terminal_prompt)
                 question = subprocess.run(
                     command,
                     input=json.dumps(
@@ -159,11 +187,16 @@ class AntigravityProviderHookTests(unittest.TestCase):
 
         self.assertEqual(json.loads(permission.stdout)["decision"], "allow")
         self.assertEqual(terminal_response, b"\x1b[B\r")
+        self.assertEqual(json.loads(retry_permission.stdout)["decision"], "allow")
+        self.assertEqual(retry_terminal_response, b"\x1b[B\r")
         question_result = json.loads(question.stdout)
         self.assertEqual(question_result["decision"], "deny")
         self.assertIn("둘째 안", question_result["reason"])
-        self.assertEqual([request["request_kind"] for request in requests], ["permission", "user_input"])
-        self.assertEqual(requests[1]["questions"][0]["options"][1]["label"], "둘째 안")
+        self.assertEqual(
+            [request["request_kind"] for request in requests],
+            ["permission", "permission", "user_input"],
+        )
+        self.assertEqual(requests[2]["questions"][0]["options"][1]["label"], "둘째 안")
 
     def test_room_portal_command_is_allowed_without_opening_a_room_request(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:
