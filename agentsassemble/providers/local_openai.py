@@ -36,6 +36,7 @@ class LocalOpenAICompatibleRuntime(OpenAICompatibleApiRuntime):
         room_portal: RoomPortal | None = None,
         workspace: str = "",
         permission_mode: str = "meeting_read_only",
+        state_dir: str = "",
     ) -> None:
         super().__init__(
             agent_id,
@@ -53,4 +54,5 @@ class LocalOpenAICompatibleRuntime(OpenAICompatibleApiRuntime):
             room_portal=room_portal,
             workspace=workspace,
             permission_mode=permission_mode,
+            state_dir=state_dir,
         )

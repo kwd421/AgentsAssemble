@@ -130,6 +130,7 @@ def runtime_from_config(
             room_portal=room_portal,
             workspace=config.cwd,
             permission_mode=config.permission_mode,
+            state_dir=config.runtime_state_dir,
         )
     if key == ("ollama_api", "http"):
         return LocalOpenAICompatibleRuntime(
@@ -141,6 +142,7 @@ def runtime_from_config(
             room_portal=room_portal,
             workspace=config.cwd,
             permission_mode=config.permission_mode,
+            state_dir=config.runtime_state_dir,
         )
     if key == ("lmstudio_api", "http"):
         return LocalOpenAICompatibleRuntime(
@@ -152,6 +154,7 @@ def runtime_from_config(
             room_portal=room_portal,
             workspace=config.cwd,
             permission_mode=config.permission_mode,
+            state_dir=config.runtime_state_dir,
         )
     if key == ("opencode_server", "http"):
         return OpenCodeRuntime(

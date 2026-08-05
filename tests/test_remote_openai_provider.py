@@ -418,6 +418,51 @@ class RemoteOpenAIProviderTests(unittest.TestCase):
             ["started", "failed"],
         )
 
+    def test_api_conversation_resumes_from_the_private_runtime_state(self):
+        profile = remote_openai_profile("tokenrouter")
+        self.assertIsNotNone(profile)
+        requests: list[dict[str, object]] = []
+
+        def opener(request: Request, timeout: float):
+            del timeout
+            payload = json.loads(request.data)
+            requests.append(payload)
+            return _content_response(
+                "moonshotai/kimi-k3-free",
+                "첫 답변" if len(requests) == 1 else "이전 답변을 기억합니다.",
+            )
+
+        with tempfile.TemporaryDirectory() as temp_dir:
+            first = RemoteOpenAICompatibleRuntime(
+                "tokenrouter-resume",
+                profile=profile,
+                api_key="test-key",
+                model="moonshotai/kimi-k3-free",
+                opener=opener,
+                state_dir=temp_dir,
+            )
+            first.send("첫 질문")
+            first.read_output(timeout_seconds=2)
+
+            resumed = RemoteOpenAICompatibleRuntime(
+                "tokenrouter-resume",
+                profile=profile,
+                api_key="test-key",
+                model="moonshotai/kimi-k3-free",
+                opener=opener,
+                state_dir=temp_dir,
+            )
+            resumed.send("앞 답변을 기억해?")
+            result = resumed.read_output(timeout_seconds=2)
+
+        second_messages = requests[1]["messages"]
+        self.assertIn(
+            {"role": "assistant", "content": "첫 답변"},
+            second_messages,
+        )
+        self.assertEqual(result["content"], "이전 답변을 기억합니다.")
+        self.assertTrue(resumed.health()["provider_session_reused"])
+
     def test_api_work_harness_does_not_expose_workspace_tools_in_read_only_mode(self):
         profile = remote_openai_profile("tokenrouter")
         self.assertIsNotNone(profile)

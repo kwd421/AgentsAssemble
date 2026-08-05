@@ -415,6 +415,7 @@ class RemoteOpenAICompatibleRuntime(OpenAICompatibleApiRuntime):
         workspace: str = "",
         permission_mode: str = "meeting_read_only",
         context_contract_bytes: int = 0,
+        state_dir: str = "",
     ) -> None:
         request_payload: dict[str, object] = {}
         include_reasoning = False
@@ -457,6 +458,7 @@ class RemoteOpenAICompatibleRuntime(OpenAICompatibleApiRuntime):
             workspace=workspace,
             permission_mode=permission_mode,
             context_contract_bytes=context_contract_bytes or model_context or 256_000,
+            state_dir=state_dir,
         )
 
 

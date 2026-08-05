@@ -15,6 +15,7 @@ from agentsassemble.providers.api_context import (
     ApiContextPolicy,
     DEFAULT_API_CONTEXT_CONTRACT_BYTES,
 )
+from agentsassemble.providers.api_session import ApiConversationStore
 from agentsassemble.providers.api_work_tools import (
     ApiWorkHarness,
     parse_work_tool_arguments,
@@ -62,6 +63,7 @@ class OpenAICompatibleApiRuntime:
         workspace: str = "",
         permission_mode: str = "meeting_read_only",
         context_contract_bytes: int = DEFAULT_API_CONTEXT_CONTRACT_BYTES,
+        state_dir: str = "",
     ) -> None:
         if require_api_key and not str(api_key or "").strip():
             raise RuntimeError("credential_missing")
@@ -95,7 +97,20 @@ class OpenAICompatibleApiRuntime:
             workspace or ".",
             permission_mode=self.permission_mode,
         )
-        self._messages: list[dict[str, object]] = []
+        self._conversation_store = (
+            ApiConversationStore(
+                state_dir,
+                provider_name=self.provider_name,
+                model=self.model,
+            )
+            if str(state_dir or "").strip()
+            else None
+        )
+        if self._conversation_store is None:
+            self._messages: list[dict[str, object]] = []
+            delivered_tool_call_ids: set[str] = set()
+        else:
+            self._messages, delivered_tool_call_ids = self._conversation_store.load()
         self._pending = ""
         self._pending_room_observation = False
         self._running = False
@@ -105,7 +120,7 @@ class OpenAICompatibleApiRuntime:
         self._lock = threading.RLock()
         self._response: IO[bytes] | None = None
         self._context_policy = ApiContextPolicy(context_contract_bytes)
-        self._delivered_tool_call_ids: set[str] = set()
+        self._delivered_tool_call_ids = delivered_tool_call_ids
         self._context_compaction_count = 0
 
     def set_request_handler(self, handler: ProviderRequestHandler) -> None:
@@ -296,6 +311,17 @@ class OpenAICompatibleApiRuntime:
                     )
             with self._lock:
                 self._messages = _bounded_messages(messages)
+                retained_tool_ids = {
+                    str(message.get("tool_call_id") or "")
+                    for message in self._messages
+                    if message.get("role") == "tool"
+                }
+                self._delivered_tool_call_ids.intersection_update(retained_tool_ids)
+                if self._conversation_store is not None:
+                    self._conversation_store.persist(
+                        self._messages,
+                        self._delivered_tool_call_ids,
+                    )
                 self._last_error = ""
             return {
                 "outcome": "message",
