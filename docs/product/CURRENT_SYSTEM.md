@@ -554,6 +554,14 @@ UI; other participants receive a sequence-preserving hidden event. The built-in
 API work harness uses only `allow_once` or deny for each filesystem mutation or
 command. Public room role or ordinary facilitator status does not grant
 permission to approve filesystem, command, network, or full-access actions.
+Codex app-server and OpenCode translate their structured native request events.
+Antigravity and interactive Claude Code use authenticated loopback hook brokers;
+Claude receives a session-only `0600` settings file because its `--safe-mode`
+would disable the hooks being installed. The shared Claude command policy keeps
+that isolation and hook configuration identical for Subscription and native
+API/Local harness sessions while retaining their intentional permission-mode
+mapping. Grok ACP currently exposes native permission requests but no generic
+user-choice request event, so the UI must not claim that Grok supports choices.
 
 API-provider credentials are server-owned and read from the OS keyring (or the
 provider's explicit process environment fallback), then sent to the bridge

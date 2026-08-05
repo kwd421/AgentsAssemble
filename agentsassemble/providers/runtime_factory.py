@@ -5,6 +5,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING
 
 from agentsassemble.providers.antigravity_hooks import AntigravityHookRuntime
+from agentsassemble.providers.claude_hooks import ClaudeHookRuntime
 from agentsassemble.providers.codex_app_server_live import CodexAppServerLiveRuntime
 from agentsassemble.providers.cursor_room_portal import CursorRoomPortalRuntime
 from agentsassemble.providers.grok_acp import GrokAcpRuntime
@@ -195,6 +196,10 @@ def runtime_from_config(
         ("antigravity_live_session", "pty"),
         ("antigravity_live_session", "conpty"),
     }
+    claude_runtime = key in {
+        ("claude_code", "pty"),
+        ("claude_code", "conpty"),
+    }
     runtime_kwargs = {
         "env": environment,
         "idle_quiet_seconds": config.quiet_seconds,
@@ -227,6 +232,15 @@ def runtime_from_config(
             config.participant_id,
             list(config.command),
             cwd=config.cwd,
+            terminal_runtime_factory=runtime_class,
+            **runtime_kwargs,
+        )
+    if claude_runtime:
+        return ClaudeHookRuntime(
+            config.participant_id,
+            list(config.command),
+            cwd=config.cwd,
+            state_dir=config.runtime_state_dir,
             terminal_runtime_factory=runtime_class,
             **runtime_kwargs,
         )

@@ -8,6 +8,7 @@ from pathlib import Path
 from typing import Callable
 
 from agentsassemble.persona_cards.selection import persona_spec_kwargs, validate_persona_spec
+from agentsassemble.providers.claude_command import claude_interactive_command
 from agentsassemble.providers.launch_profile import NativeCliProviderSpec
 from agentsassemble.providers.remote_openai import remote_openai_profiles
 from agentsassemble.room.text import clean_room_text
@@ -513,29 +514,13 @@ def _claude_command(
     _variant: str,
     permission_mode: str,
 ) -> tuple[str, ...]:
-    if not model:
-        raise ValueError("Claude model is required.")
-    command = [
-        "claude",
-        "--model",
-        model,
-    ]
-    if effort:
-        command.extend(("--effort", effort))
-    if permission_mode == "workspace_write":
-        command.extend(("--permission-mode", "acceptEdits"))
-    else:
-        command.extend(
-            (
-                "--permission-mode",
-                "dontAsk",
-                "--tools",
-                "Bash",
-                "--allowedTools",
-                "Bash(agentsassemble-room *)",
-            )
-        )
-    command.append("--safe-mode")
+    command = claude_interactive_command(
+        executable="claude",
+        model=model,
+        reasoning_effort=effort,
+        permission_mode=permission_mode,
+        workspace_write_mode="acceptEdits",
+    )
     del service_tier  # Fast is applied as the interactive /fast startup command by the bridge runtime.
     return tuple(command)
 

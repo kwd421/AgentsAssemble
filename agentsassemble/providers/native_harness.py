@@ -8,6 +8,8 @@ from __future__ import annotations
 
 import shutil
 
+from agentsassemble.providers.claude_command import claude_interactive_command
+from agentsassemble.providers.claude_hooks import ClaudeHookRuntime
 from agentsassemble.providers.codex_app_server_live import CodexAppServerLiveRuntime
 from agentsassemble.providers.live_cli import LiveCliRuntime
 from agentsassemble.providers.native_harness_gateway import NativeModelGateway
@@ -104,7 +106,6 @@ def native_harness_runtime(
     variant: str = "",
     max_output_tokens: int = 0,
 ):
-    del runtime_state_dir
     selected = clean_room_text(harness, limit=32)
     if selected not in {"codex", "claude"}:
         raise NativeHarnessUnavailable(f"Unsupported native harness: {selected}")
@@ -159,27 +160,19 @@ def native_harness_runtime(
                 "CLAUDE_CODE_ENABLE_GATEWAY_MODEL_DISCOVERY": "1",
             }
         )
-        command = [executable, "--model", model]
-        if reasoning_effort:
-            command.extend(("--effort", reasoning_effort))
-        if permission_mode == "workspace_write":
-            command.extend(("--permission-mode", "auto"))
-        else:
-            command.extend(
-                (
-                    "--permission-mode",
-                    "dontAsk",
-                    "--tools",
-                    "Bash",
-                    "--allowedTools",
-                    "Bash(agentsassemble-room *)",
-                )
-            )
-        command.append("--safe-mode")
-        delegate = LiveCliRuntime(
+        command = claude_interactive_command(
+            executable=executable,
+            model=model,
+            reasoning_effort=reasoning_effort,
+            permission_mode=permission_mode,
+            workspace_write_mode="auto",
+        )
+        delegate = ClaudeHookRuntime(
             agent_id,
             command,
             cwd=workspace,
+            state_dir=runtime_state_dir,
+            terminal_runtime_factory=LiveCliRuntime,
             env=claude_env,
             input_mode="bracketed_paste",
             submit_newline="\r",

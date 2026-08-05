@@ -38,14 +38,19 @@ class NativeCliProviderCatalogTests(unittest.TestCase):
         permission_index = specs["claude"].command.index("--permission-mode")
         self.assertEqual(specs["claude"].command[permission_index + 1], "dontAsk")
         tools_index = specs["claude"].command.index("--tools")
-        self.assertEqual(specs["claude"].command[tools_index + 1], "Bash")
+        self.assertEqual(
+            specs["claude"].command[tools_index + 1],
+            "Bash,AskUserQuestion",
+        )
         allowed_index = specs["claude"].command.index("--allowedTools")
         self.assertEqual(
             specs["claude"].command[allowed_index + 1],
-            "Bash(agentsassemble-room *)",
+            "Bash(agentsassemble-room *),AskUserQuestion",
         )
         self.assertNotIn("--dangerously-skip-permissions", specs["claude"].command)
-        self.assertIn("--safe-mode", specs["claude"].command)
+        self.assertNotIn("--safe-mode", specs["claude"].command)
+        source_index = specs["claude"].command.index("--setting-sources")
+        self.assertEqual(specs["claude"].command[source_index + 1], "")
 
     def test_cursor_splits_effort_and_fast_out_of_the_model_slug(self):
         cases = {

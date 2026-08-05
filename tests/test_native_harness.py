@@ -1,13 +1,17 @@
 from __future__ import annotations
 
 import json
+import tempfile
 import threading
 import unittest
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+from pathlib import Path
+from unittest.mock import patch
 from urllib.request import Request, urlopen
 
 from agentsassemble.providers.capabilities import ProviderCapabilityCatalog
 from agentsassemble.providers.native_harness import NativeHarnessRuntime
+from agentsassemble.providers.native_harness import native_harness_runtime
 from agentsassemble.providers.native_harness_gateway import NativeModelGateway
 
 
@@ -20,6 +24,25 @@ class _FailingDelegate:
 
     def stop(self, *, timeout_seconds: float = 2.0) -> None:
         del timeout_seconds
+
+
+class _FakeClaudeTerminalRuntime:
+    def __init__(self, agent_id: str, command: list[str], **kwargs: object) -> None:
+        self.agent_id = agent_id
+        self.command = list(command)
+        self.environment = dict(kwargs.get("env") or {})
+        self.running = False
+
+    def start(self) -> dict[str, object]:
+        self.running = True
+        return self.health()
+
+    def stop(self, *, timeout_seconds: float = 2.0) -> None:
+        del timeout_seconds
+        self.running = False
+
+    def health(self) -> dict[str, object]:
+        return {"running": self.running}
 
 
 class _UpstreamServer:
@@ -92,6 +115,74 @@ class NativeHarnessCatalogTests(unittest.TestCase):
 
 
 class NativeHarnessGatewayTests(unittest.TestCase):
+    def test_claude_api_harness_routes_a_native_permission_through_the_room(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            terminals: list[_FakeClaudeTerminalRuntime] = []
+
+            def terminal_runtime(
+                agent_id: str,
+                command: list[str],
+                **kwargs: object,
+            ) -> _FakeClaudeTerminalRuntime:
+                terminal = _FakeClaudeTerminalRuntime(agent_id, command, **kwargs)
+                terminals.append(terminal)
+                return terminal
+
+            with (
+                patch(
+                    "agentsassemble.providers.native_harness.shutil.which",
+                    return_value="/fake/claude",
+                ),
+                patch(
+                    "agentsassemble.providers.native_harness.LiveCliRuntime",
+                    new=terminal_runtime,
+                ),
+            ):
+                runtime = native_harness_runtime(
+                    agent_id="deepseek-with-claude",
+                    harness="claude",
+                    provider_kind="deepseek_api",
+                    provider_endpoint="https://api.example.test/v1",
+                    credential="secret",
+                    model="deepseek-test",
+                    reasoning_effort="low",
+                    permission_mode="workspace_write",
+                    service_tier="default",
+                    workspace=str(root / "workspace"),
+                    runtime_state_dir=str(root / "provider-state"),
+                    environment={},
+                    room_portal=None,
+                )
+                requests: list[dict[str, object]] = []
+
+                def allow_once(request: dict[str, object], respond) -> None:
+                    requests.append(request)
+                    respond({"option_id": "allow-once"})
+
+                runtime.set_request_handler(allow_once)
+                health = runtime.start()
+                settings_path = Path(str(health["provider_request_settings_path"]))
+                settings = json.loads(settings_path.read_text(encoding="utf-8"))
+                endpoint = settings["hooks"]["PermissionRequest"][0]["hooks"][0]["url"]
+                token = terminals[0].environment["AGENTSASSEMBLE_CLAUDE_HOOK_TOKEN"]
+                try:
+                    result = _post_authenticated_json(
+                        endpoint,
+                        token,
+                        {
+                            "hook_event_name": "PermissionRequest",
+                            "tool_name": "Bash",
+                            "tool_input": {"command": "git status --short"},
+                        },
+                    )
+                finally:
+                    runtime.stop()
+
+        self.assertEqual(result["hookSpecificOutput"]["decision"]["behavior"], "allow")
+        self.assertEqual(requests[0]["request_kind"], "permission")
+        self.assertFalse(settings_path.exists())
+
     def test_codex_responses_request_round_trips_a_native_tool_call(self) -> None:
         upstream_response = {
             "id": "chat-1",
@@ -297,6 +388,24 @@ def _post(url: str, payload: dict[str, object]) -> str:
 
 def _post_json(url: str, payload: dict[str, object]) -> dict[str, object]:
     return json.loads(_post(url, payload))
+
+
+def _post_authenticated_json(
+    url: str,
+    token: str,
+    payload: dict[str, object],
+) -> dict[str, object]:
+    request = Request(
+        url,
+        data=json.dumps(payload).encode("utf-8"),
+        headers={
+            "Authorization": f"Bearer {token}",
+            "Content-Type": "application/json",
+        },
+        method="POST",
+    )
+    with urlopen(request, timeout=5.0) as response:
+        return json.loads(response.read().decode("utf-8"))
 
 
 def _sse_events(body: str) -> list[dict[str, object]]:
