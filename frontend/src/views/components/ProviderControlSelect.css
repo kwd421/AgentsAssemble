@@ -3,7 +3,7 @@
   position: fixed;
   z-index: 220;
   display: grid;
-  min-width: min(280px, calc(100vw - 16px));
+  min-width: 0;
   max-width: calc(100vw - 16px);
   max-height: calc(100vh - 16px);
   overflow: hidden;
