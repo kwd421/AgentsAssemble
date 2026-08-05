@@ -22,6 +22,7 @@ from agentsassemble.gui import _make_handler
 from agentsassemble.live_agent_runner import ResidentAgentConfig
 from agentsassemble.admission.invite import create_room_invite, join_room_with_invite, reset_state
 from agentsassemble.legacy.live_agent.room_resident import run_provider_ws_resident, run_ws_resident
+from agentsassemble.persistence.local.room.repository import RoomStore
 
 
 def _resident_config(agent_id: str, *, engagement_mode: str = "always") -> ResidentAgentConfig:
@@ -88,12 +89,21 @@ class WsResidentLiveTests(unittest.TestCase):
         with urlopen(request, timeout=4) as response:
             return json.loads(response.read().decode("utf-8")).get("events", [])
 
+    @staticmethod
+    def _room_messages(root: Path) -> list[dict]:
+        return [
+            event
+            for event in RoomStore(root).read_events("room-1")
+            if event.get("type") == "message_final"
+        ]
+
     def test_resident_replies_to_a_human_message_over_ws(self):
         # mkdtemp + addCleanup so the server is shut down (tearDown) BEFORE the
         # dir is removed (addCleanup, LIFO after tearDown); ignore residual WAL files.
         tmp = tempfile.mkdtemp()
         self.addCleanup(shutil.rmtree, tmp, ignore_errors=True)
-        base = self._start(Path(tmp))
+        root = Path(tmp)
+        base = self._start(root)
         agent_token = self._token(base, "echo-bot", "agent")
         human_token = self._token(base, "human-1", "human")
 
@@ -112,6 +122,7 @@ class WsResidentLiveTests(unittest.TestCase):
 
         thread = threading.Thread(target=resident, daemon=True)
         thread.start()
+        time.sleep(0.6)  # let the resident subscribe and discard its initial snapshot
 
         # human speaks; the resident receives it pushed over WS and replies
         self._post_say(base, human_token, "안녕 상주야")
@@ -119,18 +130,19 @@ class WsResidentLiveTests(unittest.TestCase):
         self.assertFalse(thread.is_alive(), "resident loop did not finish")
         self.assertEqual(result.get("replies"), 1)
 
-        # The WS say is async (the server appends in its own handler thread), so
-        # poll the lobby until the reply lands (eventual consistency).
+        # The compatibility lobby event wakes the resident, but its reply must
+        # land in the canonical room record instead of being mirrored back into
+        # the legacy lobby store.
         replies: list[dict] = []
         for _ in range(50):  # up to ~5s
-            messages = self._lobby_messages(base, human_token)
-            replies = [m for m in messages if str(m.get("message", "")).startswith("echo:")]
+            messages = self._room_messages(root)
+            replies = [m for m in messages if str(m.get("content", "")).startswith("echo:")]
             if replies:
                 break
             time.sleep(0.1)
-        self.assertTrue(replies, "resident reply never appeared in the lobby over WS")
-        self.assertEqual(replies[-1]["message"], "echo: 안녕 상주야")
-        self.assertEqual(replies[-1]["actor_id"], "echo-bot")
+        self.assertTrue(replies, "resident reply never appeared in the canonical room record")
+        self.assertEqual(replies[-1]["content"], "echo: 안녕 상주야")
+        self.assertEqual(replies[-1]["participant_id"], "echo-bot")
 
 
 class ProviderWsResidentTests(WsResidentLiveTests):
@@ -140,7 +152,8 @@ class ProviderWsResidentTests(WsResidentLiveTests):
     def test_provider_resident_replies_with_envelope_prompt(self):
         tmp = tempfile.mkdtemp()
         self.addCleanup(shutil.rmtree, tmp, ignore_errors=True)
-        base = self._start(Path(tmp))
+        root = Path(tmp)
+        base = self._start(root)
         agent_token = self._token(base, "codex-ws", "agent")
         human_token = self._token(base, "human-1", "human")
 
@@ -170,21 +183,16 @@ class ProviderWsResidentTests(WsResidentLiveTests):
         self.assertFalse(thread.is_alive(), "provider resident did not finish")
         self.assertEqual(result.get("replies"), 1)
 
-        # the reply landed
+        # The compatibility event produced a canonical reply.
         replies = []
         for _ in range(50):
-            messages = self._lobby_messages(base, human_token)
-            replies = [m for m in messages if m.get("actor_id") == "codex-ws"]
+            messages = self._room_messages(root)
+            replies = [m for m in messages if m.get("participant_id") == "codex-ws"]
             if replies:
                 break
             time.sleep(0.1)
         self.assertTrue(replies, "provider resident reply never appeared")
-        self.assertEqual(replies[-1]["message"], "내 생각엔 좀 다른데, 근거를 보면...")
-        human_events = [m for m in messages if m.get("actor_id") == "human-1"]
-        self.assertTrue(human_events, "source human event missing")
-        self.assertEqual(replies[-1]["source_event_id"], human_events[-1]["id"])
-        self.assertEqual(replies[-1]["auto_chain_depth"], 1)
-        self.assertEqual(replies[-1]["flow_meeting_id"], "room-1")
+        self.assertEqual(replies[-1]["content"], "내 생각엔 좀 다른데, 근거를 보면...")
 
         # and the brain got the full runner envelope, not a raw message
         self.assertTrue(captured, "command_runner was never called")

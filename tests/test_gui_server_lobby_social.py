@@ -1555,8 +1555,15 @@ class GuiServerLobbySocialTests(unittest.TestCase):
             server = ThreadingHTTPServer(("127.0.0.1", 0), _make_handler(root))
             thread = threading.Thread(target=server.serve_forever, daemon=True)
             thread.start()
+            profile_headers = {"X-Device-Token": "local-profile-test-device"}
             try:
-                with urlopen(f"http://127.0.0.1:{server.server_port}/api/user-profile", timeout=4) as response:
+                with urlopen(
+                    Request(
+                        f"http://127.0.0.1:{server.server_port}/api/user-profile",
+                        headers=profile_headers,
+                    ),
+                    timeout=4,
+                ) as response:
                     initial_payload = json.loads(response.read().decode("utf-8"))
                 request = Request(
                     f"http://127.0.0.1:{server.server_port}/api/user-profile",
@@ -1574,12 +1581,18 @@ class GuiServerLobbySocialTests(unittest.TestCase):
                             "deafened": True,
                         }
                     ).encode("utf-8"),
-                    headers={"Content-Type": "application/json"},
+                    headers={**profile_headers, "Content-Type": "application/json"},
                     method="POST",
                 )
                 with urlopen(request, timeout=4) as response:
                     saved_payload = json.loads(response.read().decode("utf-8"))
-                with urlopen(f"http://127.0.0.1:{server.server_port}/api/user-profile", timeout=4) as response:
+                with urlopen(
+                    Request(
+                        f"http://127.0.0.1:{server.server_port}/api/user-profile",
+                        headers=profile_headers,
+                    ),
+                    timeout=4,
+                ) as response:
                     loaded_payload = json.loads(response.read().decode("utf-8"))
             finally:
                 server.shutdown()
