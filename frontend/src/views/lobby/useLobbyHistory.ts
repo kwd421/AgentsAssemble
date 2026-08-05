@@ -275,13 +275,7 @@ export function useLobbyHistory({
       const element = scrollRef.current;
       if (!element) return;
       historyReadyRef.current = true;
-      const renderedMessageCount =
-        element.querySelectorAll("[data-room-event-id]").length;
-      if (
-        element.scrollTop <= HISTORY_TOP_THRESHOLD ||
-        renderedMessageCount < INITIAL_HISTORY_MESSAGE_TARGET ||
-        element.scrollHeight <= element.clientHeight + HISTORY_TOP_THRESHOLD
-      ) {
+      if (element.scrollHeight <= element.clientHeight + HISTORY_TOP_THRESHOLD) {
         loadOlderHistory(element.scrollTop);
       }
     }, 50);

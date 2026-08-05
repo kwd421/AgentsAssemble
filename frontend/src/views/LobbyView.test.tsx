@@ -422,11 +422,11 @@ describe("LobbyView history loading", () => {
     expect(await screen.findByText("initial message 0")).toBeTruthy();
   });
 
-  it("loads older messages when the feed is already at the top", async () => {
+  it("loads one older page for one top-scroll interaction without draining the history", async () => {
     const loadCanonicalHistory = vi.fn().mockResolvedValue({
       loadedCount: 10,
       oldestSeq: 1,
-      hasMoreBefore: false,
+      hasMoreBefore: true,
     });
     const messages: LobbyEvent[] = Array.from({ length: 30 }, (_, index) => ({
       id: `message-${index}`,
@@ -439,7 +439,7 @@ describe("LobbyView history loading", () => {
       flow_meeting_id: "room-a",
       flow_action: "message_final",
     }));
-    const { container } = render(
+    const view = render(
       <LobbyView
         activeRoom={room}
         agents={[]}
@@ -449,15 +449,43 @@ describe("LobbyView history loading", () => {
         loadCanonicalHistory={loadCanonicalHistory}
       />
     );
+    const { container } = view;
     const feed = container.querySelector<HTMLDivElement>(".chat-scroll");
     expect(feed).toBeTruthy();
     Object.defineProperties(feed!, {
       clientHeight: { configurable: true, value: 600 },
       scrollHeight: { configurable: true, value: 2_000 },
-      scrollTop: { configurable: true, writable: true, value: 0 },
+      scrollTop: { configurable: true, writable: true, value: 500 },
     });
 
-    await waitFor(() => expect(loadCanonicalHistory).toHaveBeenCalledWith(31));
+    await new Promise((resolve) => window.setTimeout(resolve, 75));
+    expect(loadCanonicalHistory).not.toHaveBeenCalled();
+
+    feed!.scrollTop = 0;
+    fireEvent.scroll(feed!);
+    await waitFor(() => expect(loadCanonicalHistory).toHaveBeenCalledTimes(1));
+    expect(loadCanonicalHistory).toHaveBeenLastCalledWith(31);
+
+    view.rerender(
+      <LobbyView
+        activeRoom={room}
+        agents={[]}
+        canonicalEvents={[
+          ...Array.from({ length: 10 }, (_, index) => ({
+            ...messages[0],
+            id: `older-message-${index}`,
+            message: `older message ${index}`,
+          })),
+          ...messages,
+        ]}
+        canonicalOldestSeq={21}
+        canonicalHasMoreHistory
+        loadCanonicalHistory={loadCanonicalHistory}
+      />
+    );
+
+    await new Promise((resolve) => window.setTimeout(resolve, 100));
+    expect(loadCanonicalHistory).toHaveBeenCalledTimes(1);
   });
 
   it("starts the new room backfill while the previous room request is still pending", async () => {
