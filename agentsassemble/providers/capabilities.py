@@ -17,6 +17,7 @@ from agentsassemble.providers.claude_catalog import (
     discover_claude_xhigh_model_ids,
 )
 from agentsassemble.providers.catalog_revision import catalog_revision
+from agentsassemble.providers.grok_catalog import classify_grok_models, discover_grok_custom_model_ids
 from agentsassemble.providers.launch_specs import (
     NATIVE_CLI_PROVIDER_CATALOG,
     native_cli_provider_definition,
@@ -78,6 +79,7 @@ class ProviderCapabilityCatalog:
             )
         ),
         secret_resolver: SecretResolver = lambda _provider_id: "",
+        grok_custom_model_discovery: Callable[[], set[str]] = discover_grok_custom_model_ids,
         ttl_seconds: float = DEFAULT_CATALOG_TTL_SECONDS,
     ) -> None:
         self._runner = runner or _run_probe
@@ -86,6 +88,7 @@ class ProviderCapabilityCatalog:
         self._claude_xhigh_model_discovery = claude_xhigh_model_discovery
         self._remote_model_discovery = remote_model_discovery
         self._secret_resolver = secret_resolver
+        self._grok_custom_model_discovery = grok_custom_model_discovery
         self._ttl_seconds = max(1.0, float(ttl_seconds))
         self._lock = threading.RLock()
         self._cached_at = 0.0
@@ -540,7 +543,7 @@ class ProviderCapabilityCatalog:
             return _antigravity_controls(output)
         if provider_id == "grok":
             output = self._model_probe(provider_id, [executable, "models"], 5.0)
-            return _grok_controls(output)
+            return _grok_controls(output, self._grok_custom_model_discovery())
         if provider_id == "claude":
             help_output = self._model_probe(provider_id, [executable, "--help"], 5.0)
             try:
@@ -1170,10 +1173,11 @@ def _provider_model_label(value: str) -> str:
     return " ".join(labels)
 
 
-def _grok_controls(output: str) -> list[dict[str, object]]:
-    models = re.findall(r"(?:\*|-)[ \t]+([A-Za-z0-9._-]+)", output)
-    default_match = re.search(r"Default model:\s*([A-Za-z0-9._-]+)", output)
-    models = _unique(models)
+def _grok_controls(output: str, custom_model_ids: set[str]) -> list[dict[str, object]]:
+    models, default_model = classify_grok_models(
+        output,
+        custom_model_ids=custom_model_ids,
+    )
     if not models:
         return []
     return [
@@ -1181,7 +1185,7 @@ def _grok_controls(output: str) -> list[dict[str, object]]:
             "model",
             "모델",
             [_model_option(value, relation_scope="global") for value in models],
-            default_match.group(1) if default_match else models[0],
+            default_model,
         ),
         _control("reasoning_effort", "추론 강도", [_option(value) for value in ("low", "medium", "high")], "medium"),
         _permission_control("grok"),
