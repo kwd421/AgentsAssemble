@@ -16,6 +16,15 @@ from agentsassemble.providers.api_work_tool_schemas import work_tool_schemas
 from agentsassemble.providers.provider_requests import ProviderRequestHandler
 
 
+SIDE_EFFECT_WORK_TOOLS = frozenset(
+    {"write_workspace_file", "replace_workspace_text", "run_workspace_command"}
+)
+
+
+class ApiWorkApprovalDenied(PermissionError):
+    """A workspace side effect stopped before execution because approval failed."""
+
+
 class ApiWorkHarness:
     """Execute bounded work tools inside one canonical workspace root."""
 
@@ -171,7 +180,9 @@ class ApiWorkHarness:
 
     def _approve(self, title: str, description: str) -> None:
         if self.request_handler is None:
-            raise PermissionError("No owner approval channel is connected for this work action.")
+            raise ApiWorkApprovalDenied(
+                "No owner approval channel is connected for this work action."
+            )
         resolution: dict[str, object] = {}
         self.request_handler(
             {
@@ -198,7 +209,9 @@ class ApiWorkHarness:
             lambda value: resolution.update(value),
         )
         if resolution.get("option_id") != "allow_once":
-            raise PermissionError("The workspace action was not approved by the owner.")
+            raise ApiWorkApprovalDenied(
+                "The workspace action was not approved by the owner."
+            )
 
     def _path(
         self,
@@ -284,7 +297,9 @@ def _command_environment() -> dict[str, str]:
 
 
 __all__ = [
+    "ApiWorkApprovalDenied",
     "ApiWorkHarness",
+    "SIDE_EFFECT_WORK_TOOLS",
     "parse_work_tool_arguments",
     "work_tool_schemas",
 ]

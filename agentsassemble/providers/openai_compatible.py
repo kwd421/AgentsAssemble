@@ -20,7 +20,9 @@ from agentsassemble.providers.api_session import (
     ApiConversationStore,
 )
 from agentsassemble.providers.api_work_tools import (
+    ApiWorkApprovalDenied,
     ApiWorkHarness,
+    SIDE_EFFECT_WORK_TOOLS,
     parse_work_tool_arguments,
     work_tool_schemas,
 )
@@ -38,7 +40,10 @@ from agentsassemble.providers.openai_compatible_transcript import (
     reasoning_activity_reporter,
 )
 from agentsassemble.providers.provider_requests import ProviderRequestHandler
-from agentsassemble.providers.turn_progress import ProviderTurnProgress
+from agentsassemble.providers.turn_progress import (
+    ProviderTurnProgress,
+    run_during_provider_wait,
+)
 from agentsassemble.providers.room_portal import RoomPortal
 from agentsassemble.providers.provider_errors import provider_http_error
 from agentsassemble.room.text import clean_room_text
@@ -114,6 +119,8 @@ class OpenAICompatibleApiRuntime:
                 agent_id=self.agent_id,
                 provider_name=self.provider_name,
                 model=self.model,
+                workspace=self._work_harness.workspace,
+                permission_mode=self.permission_mode,
             )
             if str(state_dir or "").strip()
             else None
@@ -203,6 +210,8 @@ class OpenAICompatibleApiRuntime:
             messages = [*self._messages, {"role": "user", "content": prompt}]
         if not prompt:
             raise RuntimeError(f"{self.provider_name} runtime has no pending turn.")
+        if self._conversation_store is not None:
+            self._conversation_store.assert_turn_start_safe()
         progress = ProviderTurnProgress(timeout_seconds)
         tool_rounds = 0
         room_action_completed = False
@@ -296,10 +305,27 @@ class OpenAICompatibleApiRuntime:
                     try:
                         if tool_name in _work_tool_names():
                             executed_name, arguments = parse_work_tool_arguments(tool_call)
-                            tool_result = json.dumps(
-                                self._work_harness.execute(executed_name, arguments),
-                                ensure_ascii=False,
-                            )
+                            side_effect = executed_name in SIDE_EFFECT_WORK_TOOLS
+                            if side_effect and self._conversation_store is not None:
+                                self._conversation_store.begin_side_effect(
+                                    tool_call_id,
+                                    executed_name,
+                                )
+                            try:
+                                execute = lambda: self._work_harness.execute(
+                                    executed_name,
+                                    arguments,
+                                )
+                                result = (
+                                    run_during_provider_wait(progress, execute)
+                                    if side_effect
+                                    else execute()
+                                )
+                            except ApiWorkApprovalDenied:
+                                if side_effect and self._conversation_store is not None:
+                                    self._conversation_store.clear_side_effect()
+                                raise
+                            tool_result = json.dumps(result, ensure_ascii=False)
                         elif room_observation and self._room_portal is not None:
                             executed_name, tool_result = execute_room_tool(
                                 self._room_portal,

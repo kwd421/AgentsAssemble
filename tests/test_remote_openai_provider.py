@@ -2,6 +2,8 @@ from __future__ import annotations
 
 import io
 import json
+import os
+import subprocess
 import tempfile
 import time
 import unittest
@@ -361,12 +363,15 @@ class RemoteOpenAIProviderTests(unittest.TestCase):
             return _content_response("moonshotai/kimi-k3-free", "두 파일을 확인했습니다.")
 
         with tempfile.TemporaryDirectory() as temp_dir:
-            workspace = Path(temp_dir)
-            (workspace / "first.txt").write_text(
-                "first-content\n" + ("a" * 70_000), encoding="utf-8"
-            )
-            (workspace / "second.txt").write_text(
-                "second-content\n" + ("b" * 70_000), encoding="utf-8"
+            root = Path(temp_dir)
+            workspace = root / "workspace"
+            state_dir = root / "runtime-state"
+            _initialize_git_workspace(
+                workspace,
+                {
+                    "first.txt": "first-content\n" + ("a" * 70_000),
+                    "second.txt": "second-content\n" + ("b" * 70_000),
+                },
             )
             activities: list[dict[str, object]] = []
             runtime = RemoteOpenAICompatibleRuntime(
@@ -378,7 +383,7 @@ class RemoteOpenAIProviderTests(unittest.TestCase):
                 workspace=str(workspace),
                 permission_mode="workspace_write",
                 context_contract_bytes=180_000,
-                state_dir=str(workspace / "runtime-state"),
+                state_dir=str(state_dir),
             )
             runtime.send("두 파일을 차례로 읽어 줘.")
 
@@ -393,8 +398,7 @@ class RemoteOpenAIProviderTests(unittest.TestCase):
             )
             first_marker = json.loads(first_result["content"])
             result_path = (
-                workspace
-                / "runtime-state"
+                state_dir
                 / "api-context"
                 / "tool-results"
                 / f"{first_marker['sha256']}.json"
@@ -409,7 +413,8 @@ class RemoteOpenAIProviderTests(unittest.TestCase):
                 workspace=str(workspace),
                 permission_mode="workspace_write",
                 context_contract_bytes=180_000,
-                state_dir=str(workspace / "runtime-state"),
+                state_dir=str(state_dir),
+                resume_required=True,
             )
             resumed.send("앞서 읽은 파일을 기억해?")
             resumed_result = resumed.read_output(timeout_seconds=2)
@@ -686,6 +691,42 @@ def _content_response(model: str, content: str) -> _Response:
         "usage": {"prompt_tokens": 10, "completion_tokens": 2},
     }
     return _Response(f"data: {json.dumps(chunk)}\n\ndata: [DONE]\n\n".encode())
+
+
+def _initialize_git_workspace(workspace: Path, files: dict[str, str]) -> None:
+    workspace.mkdir(parents=True)
+    for relative, content in files.items():
+        path = workspace / relative
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(content, encoding="utf-8")
+    environment = {
+        **os.environ,
+        "GIT_AUTHOR_NAME": "AgentsAssemble Test",
+        "GIT_AUTHOR_EMAIL": "tests@agentsassemble.invalid",
+        "GIT_COMMITTER_NAME": "AgentsAssemble Test",
+        "GIT_COMMITTER_EMAIL": "tests@agentsassemble.invalid",
+    }
+    subprocess.run(
+        ["git", "init", "--quiet"],
+        cwd=workspace,
+        env=environment,
+        check=True,
+        capture_output=True,
+    )
+    subprocess.run(
+        ["git", "add", "."],
+        cwd=workspace,
+        env=environment,
+        check=True,
+        capture_output=True,
+    )
+    subprocess.run(
+        ["git", "commit", "--quiet", "-m", "test fixture"],
+        cwd=workspace,
+        env=environment,
+        check=True,
+        capture_output=True,
+    )
 
 
 if __name__ == "__main__":

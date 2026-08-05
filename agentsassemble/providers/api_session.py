@@ -6,6 +6,7 @@ import hashlib
 import json
 import os
 from pathlib import Path
+import subprocess
 
 
 class ApiConversationStateError(RuntimeError):
@@ -14,6 +15,14 @@ class ApiConversationStateError(RuntimeError):
 
 class ApiContextCheckpointMissing(RuntimeError):
     code = "api_context_checkpoint_missing"
+
+
+class ApiContextWorkspaceDrift(RuntimeError):
+    code = "api_context_workspace_drift"
+
+
+class ApiContextRecoveryBlocked(RuntimeError):
+    code = "api_context_recovery_blocked"
 
 
 class ApiToolResultStore:
@@ -85,11 +94,15 @@ class ApiConversationStore:
         agent_id: str,
         provider_name: str,
         model: str,
+        workspace: str | Path,
+        permission_mode: str,
     ) -> None:
         self.state_dir = Path(state_dir).expanduser().resolve()
         self.agent_id = agent_id
         self.provider_name = provider_name
         self.model = model
+        self.workspace = Path(workspace).expanduser().resolve()
+        self.workspace_write = permission_mode == "workspace_write"
         self.tool_results = ApiToolResultStore(self.state_dir)
 
     @property
@@ -98,10 +111,17 @@ class ApiConversationStore:
 
     @property
     def path(self) -> Path:
-        identity = hashlib.sha256(
+        return self.root / "checkpoints" / f"{self._identity}.json"
+
+    @property
+    def recovery_barrier_path(self) -> Path:
+        return self.root / "recovery-barriers" / f"{self._identity}.json"
+
+    @property
+    def _identity(self) -> str:
+        return hashlib.sha256(
             f"{self.agent_id}\0{self.provider_name}\0{self.model}".encode("utf-8")
         ).hexdigest()[:24]
-        return self.root / "checkpoints" / f"{identity}.json"
 
     @property
     def exists(self) -> bool:
@@ -110,6 +130,7 @@ class ApiConversationStore:
     def load(
         self,
     ) -> tuple[list[dict[str, object]], set[str], dict[str, str]]:
+        self.assert_turn_start_safe()
         if not self.path.exists():
             return [], set(), {}
         try:
@@ -120,7 +141,7 @@ class ApiConversationStore:
             ) from error
         if (
             not isinstance(payload, dict)
-            or payload.get("version") != 2
+            or payload.get("version") != 3
             or payload.get("agent_id") != self.agent_id
             or payload.get("provider_name") != self.provider_name
             or payload.get("model") != self.model
@@ -128,6 +149,7 @@ class ApiConversationStore:
             raise ApiConversationStateError(
                 "Saved API checkpoint does not match this Agent Session, provider, and model."
             )
+        self._validate_workspace_fingerprint(payload.get("workspace_fingerprint"))
         messages = payload.get("messages")
         delivered = payload.get("delivered_tool_call_ids")
         references = payload.get("tool_result_references")
@@ -171,6 +193,36 @@ class ApiConversationStore:
                 )
         return validated, delivered_ids, markers
 
+    def assert_turn_start_safe(self) -> None:
+        if self.workspace_write and self.recovery_barrier_path.exists():
+            raise ApiContextRecoveryBlocked(
+                "The previous API turn ended while a workspace side effect was pending; "
+                "automatic recovery is blocked."
+            )
+
+    def begin_side_effect(self, tool_call_id: str, tool_name: str) -> None:
+        if not self.workspace_write:
+            return
+        _atomic_json_write(
+            self.recovery_barrier_path,
+            {
+                "version": 1,
+                "agent_id": self.agent_id,
+                "provider_name": self.provider_name,
+                "model": self.model,
+                "workspace": str(self.workspace),
+                "tool_call_id": str(tool_call_id),
+                "tool_name": str(tool_name),
+            },
+        )
+
+    def clear_side_effect(self) -> None:
+        try:
+            self.recovery_barrier_path.unlink()
+        except FileNotFoundError:
+            return
+        _fsync_directory(self.recovery_barrier_path.parent)
+
     def record_tool_result(self, tool_call_id: str, content: str) -> str:
         del tool_call_id
         return self.tool_results.record(content)
@@ -197,10 +249,11 @@ class ApiConversationStore:
             self._validate_marker(marker)
             message["content"] = marker
         payload = {
-            "version": 2,
+            "version": 3,
             "agent_id": self.agent_id,
             "provider_name": self.provider_name,
             "model": self.model,
+            "workspace_fingerprint": self._workspace_fingerprint(),
             "messages": checkpoint_messages,
             "delivered_tool_call_ids": sorted(delivered_tool_call_ids),
             "tool_result_references": {
@@ -209,14 +262,46 @@ class ApiConversationStore:
             },
         }
         _atomic_json_write(self.path, payload)
+        self.clear_side_effect()
         return checkpoint_messages
 
     def _validate_marker(self, marker: str) -> None:
         self.tool_results.validate(marker)
 
+    def _workspace_fingerprint(self) -> dict[str, object]:
+        if not self.workspace_write:
+            return {"kind": "not_required"}
+        try:
+            return _git_workspace_fingerprint(self.workspace, self.state_dir)
+        except (OSError, subprocess.SubprocessError, ValueError):
+            return {
+                "kind": "unverifiable",
+                "workspace": str(self.workspace),
+            }
+
+    def _validate_workspace_fingerprint(self, value: object) -> None:
+        if not self.workspace_write:
+            return
+        if not isinstance(value, dict) or value.get("kind") != "git":
+            raise ApiContextRecoveryBlocked(
+                "This writable API workspace has no verifiable Git checkpoint; "
+                "automatic recovery is blocked."
+            )
+        try:
+            current = _git_workspace_fingerprint(self.workspace, self.state_dir)
+        except (OSError, subprocess.SubprocessError, ValueError) as error:
+            raise ApiContextRecoveryBlocked(
+                "The writable API workspace can no longer be verified for recovery."
+            ) from error
+        if current != value:
+            raise ApiContextWorkspaceDrift(
+                "The API workspace changed after the last ready checkpoint; "
+                "refusing to resume automatically."
+            )
+
 
 def _atomic_json_write(path: Path, payload: dict[str, object]) -> None:
-    path.parent.mkdir(parents=True, exist_ok=True)
+    _ensure_private_directory(path.parent)
     try:
         path.parent.chmod(0o700)
     except OSError:
@@ -232,14 +317,105 @@ def _atomic_json_write(path: Path, payload: dict[str, object]) -> None:
     except OSError:
         pass
     os.replace(temporary, path)
+    _fsync_directory(path.parent)
+
+
+def _fsync_directory(path: Path) -> None:
     try:
-        directory_fd = os.open(path.parent, os.O_RDONLY)
+        directory_fd = os.open(path, os.O_RDONLY)
     except OSError:
         return
     try:
         os.fsync(directory_fd)
     finally:
         os.close(directory_fd)
+
+
+def _git_workspace_fingerprint(workspace: Path, state_dir: Path) -> dict[str, object]:
+    repository_root = Path(
+        _git_output(workspace, "rev-parse", "--show-toplevel").decode().strip()
+    ).resolve()
+    workspace.relative_to(repository_root)
+    head = _git_output(repository_root, "rev-parse", "--verify", "HEAD").decode().strip()
+    workspace_scope = workspace.relative_to(repository_root).as_posix() or "."
+    pathspecs = [workspace_scope]
+    try:
+        state_dir.relative_to(workspace)
+    except ValueError:
+        state_scope = ""
+    else:
+        state_scope = state_dir.relative_to(repository_root).as_posix()
+        if state_dir == workspace:
+            raise ValueError("API runtime state cannot own the whole workspace.")
+    if state_scope:
+        pathspecs.append(f":(exclude){state_scope}/**")
+    status = _git_output(
+        repository_root,
+        "status",
+        "--porcelain=v1",
+        "-z",
+        "--untracked-files=all",
+        "--",
+        *pathspecs,
+    )
+    difference = _git_output(
+        repository_root,
+        "diff",
+        "--binary",
+        "--no-ext-diff",
+        "--no-textconv",
+        "HEAD",
+        "--",
+        *pathspecs,
+    )
+    untracked = _git_output(
+        repository_root,
+        "ls-files",
+        "--others",
+        "--exclude-standard",
+        "-z",
+        "--",
+        *pathspecs,
+    )
+    digest = hashlib.sha256()
+    for label, content in ((b"status", status), (b"diff", difference)):
+        digest.update(label + b"\0" + content + b"\0")
+    for raw_path in sorted(part for part in untracked.split(b"\0") if part):
+        relative = raw_path.decode("utf-8", errors="surrogateescape")
+        path = repository_root / relative
+        digest.update(b"untracked\0" + raw_path + b"\0")
+        if path.is_symlink():
+            digest.update(os.readlink(path).encode("utf-8", errors="surrogateescape"))
+        else:
+            digest.update(path.read_bytes())
+        digest.update(b"\0")
+    return {
+        "kind": "git",
+        "workspace": str(workspace),
+        "repository_root": str(repository_root),
+        "head": head,
+        "state_sha256": digest.hexdigest(),
+    }
+
+
+def _git_output(cwd: Path, *arguments: str) -> bytes:
+    completed = subprocess.run(
+        ["git", *arguments],
+        cwd=cwd,
+        stdin=subprocess.DEVNULL,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        timeout=10,
+        check=False,
+    )
+    if completed.returncode != 0:
+        raise subprocess.CalledProcessError(
+            completed.returncode,
+            completed.args,
+            output=completed.stdout,
+            stderr=completed.stderr,
+        )
+    return completed.stdout
 
 
 def _ensure_private_directory(path: Path) -> None:
@@ -294,6 +470,8 @@ def _validated_messages(values: list[object]) -> list[dict[str, object]]:
 
 __all__ = [
     "ApiContextCheckpointMissing",
+    "ApiContextRecoveryBlocked",
+    "ApiContextWorkspaceDrift",
     "ApiConversationStateError",
     "ApiConversationStore",
     "ApiToolResultStore",
