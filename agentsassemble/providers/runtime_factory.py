@@ -5,6 +5,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING
 
 from agentsassemble.providers.antigravity_hooks import AntigravityHookRuntime
+from agentsassemble.providers.api_context import DEFAULT_API_CONTEXT_CONTRACT_BYTES
 from agentsassemble.providers.claude_hooks import ClaudeHookRuntime
 from agentsassemble.providers.codex_app_server_live import CodexAppServerLiveRuntime
 from agentsassemble.providers.cursor_room_portal import CursorRoomPortalRuntime
@@ -15,7 +16,6 @@ from agentsassemble.providers.native_harness import native_harness_runtime
 from agentsassemble.providers.opencode import OpenCodeRuntime
 from agentsassemble.providers.remote_openai import (
     RemoteOpenAICompatibleRuntime,
-    remote_openai_context_contract_bytes,
     remote_openai_profile,
 )
 from agentsassemble.providers.runtime_config import ProviderRuntimeConfig
@@ -106,7 +106,7 @@ def runtime_from_config(
             max_output_tokens=config.max_output_tokens,
             context_contract_bytes=(
                 config.context_contract_bytes
-                or remote_openai_context_contract_bytes(remote_profile, config.model)
+                or DEFAULT_API_CONTEXT_CONTRACT_BYTES
             ),
         )
     if key == ("codex_live_session", "pty"):

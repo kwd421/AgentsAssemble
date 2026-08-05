@@ -11,6 +11,7 @@ from urllib.error import HTTPError
 from urllib.parse import urlsplit, urlunsplit
 from urllib.request import Request, urlopen
 
+from agentsassemble.providers.api_context import DEFAULT_API_CONTEXT_CONTRACT_BYTES
 from agentsassemble.providers.openai_compatible import (
     OpenAICompatibleApiRuntime,
     UrlOpen,
@@ -190,20 +191,6 @@ def remote_openai_profile(value: object) -> RemoteOpenAIProfile | None:
 def remote_openai_endpoint(provider_kind: object) -> str:
     profile = remote_openai_profile(provider_kind)
     return profile.base_url if profile is not None else ""
-
-
-def remote_openai_context_contract_bytes(
-    profile: RemoteOpenAIProfile | None,
-    model: object,
-    *,
-    fallback: int = 256_000,
-) -> int:
-    model_id = str(model or "")
-    if profile is not None:
-        for item in profile.static_models:
-            if item.model_id == model_id and item.context_length > 0:
-                return item.context_length
-    return max(65_536, int(fallback))
 
 
 def remote_openai_credential_ids() -> tuple[str, ...]:
@@ -464,8 +451,7 @@ class RemoteOpenAICompatibleRuntime(OpenAICompatibleApiRuntime):
             workspace=workspace,
             permission_mode=permission_mode,
             context_contract_bytes=(
-                context_contract_bytes
-                or remote_openai_context_contract_bytes(profile, model)
+                context_contract_bytes or DEFAULT_API_CONTEXT_CONTRACT_BYTES
             ),
             state_dir=state_dir,
         )

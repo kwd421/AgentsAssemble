@@ -173,15 +173,6 @@ class RemoteOpenAIProviderTests(unittest.TestCase):
                 )
                 self.assertEqual(selection.model, profile.default_model)
                 self.assertEqual(selection.reasoning_effort, profile.default_reasoning_effort)
-                selected_model = next(
-                    model
-                    for model in profile.static_models
-                    if model.model_id == selection.model
-                )
-                self.assertEqual(
-                    selection.context_contract_bytes,
-                    selected_model.context_length,
-                )
 
     def test_openrouter_runtime_reads_and_publishes_through_room_tools(self):
         profile = remote_openai_profile("openrouter")
