@@ -503,6 +503,8 @@ class PackageMapTests(unittest.TestCase):
             "agentsassemble.providers.live_cli_output",
             "agentsassemble.providers.live_cli_transcripts",
             "agentsassemble.providers.model_verification",
+            "agentsassemble.providers.openai_compatible",
+            "agentsassemble.providers.openai_compatible_room_tools",
             "agentsassemble.providers.opencode",
             "agentsassemble.providers.process_environment",
             "agentsassemble.providers.resident_config",

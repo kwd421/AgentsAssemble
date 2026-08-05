@@ -1,7 +1,7 @@
 {
  "readme": "AgentsAssemble codebase map. Regenerate with `make codebase-map`; verify committed outputs with `make codebase-map-verify`. modules[] columns: name, path, package, domain, classification, migration_status, lines, docstring, imports[], imported_by[] (indexes into modules), classes[[name, [[base, defining_module], ...]]] (best-effort, top-level classes only). frontend[] columns: path, group, lines, doc, imports[], imported_by[] (indexes into frontend). package_edges go importer -> dependency with module-import counts; `points` is the precomputed polyline for that edge and `intra_cycle` marks imports whose endpoints share one cycle group. graph{} holds the layered package drawing: layers[] top-to-bottom (each with members[] package ids, member_count, and the dominant domain), (a package sits below everything importing it), clusters[] are mutually dependent packages (import cycles at package level) drawn as one labelled block, plus width/height of the drawing. health{} ranks findings for a reader who has to act: cycles[] (mutually dependent packages, with the lines they hold), leaning_on_retiring[] (current modules importing legacy/compatibility modules - the reason legacy cannot be deleted), highest_leverage_migrations[] (retiring modules with the most current importers), unreferenced_shims[] (compatibility modules with no importer in agentsassemble/ and no reference in tests/; callers outside this repository are not visible, so verify before deleting), and hotspots[] (largest modules). health.scope states exactly what was measured. class_graph{} is the UML generalization DAG over base classes that resolve inside the repo: edges go base -> subclass, so a subclass always sits below the class it extends. Coordinates in graph and class_graph are laid out with a Sugiyama pipeline (cycle condensation, Coffman-Graham layering, dummy-node edge routing, median/transpose crossing reduction) and are deterministic.",
- "generated_at": "2026-08-05T06:03:57Z",
- "fingerprint": "537acd3d6137571d",
+ "generated_at": "2026-08-05T06:18:23Z",
+ "fingerprint": "2b6210d1bff3deed",
  "stats": {
   "backend_modules": 860,
   "backend_lines": 146346,
@@ -10,8 +10,8 @@
   "packages": 30,
   "import_cycles": 0,
   "classifications": {
-   "compatibility": 299,
-   "current": 364,
+   "compatibility": 297,
+   "current": 366,
    "legacy": 185,
    "optional": 12
   }
@@ -129,8 +129,7 @@
     "providers": 121
    },
    "classes": {
-    "compatibility": 2,
-    "current": 119
+    "current": 121
    },
    "x": 1246.0,
    "y": 298.0,
@@ -3375,7 +3374,7 @@
     "id": "agentsassemble.providers.openai_compatible::OpenAICompatibleApiRuntime",
     "name": "OpenAICompatibleApiRuntime",
     "module": "agentsassemble.providers.openai_compatible",
-    "cls": "compatibility",
+    "cls": "current",
     "x": 367.0,
     "y": 820.0,
     "w": 210,
@@ -4136,8 +4135,8 @@
  "health": {
   "scope": "Imports are counted inside agentsassemble/ only; test references are counted separately from tests/. Callers outside this repository are not visible to the generator.",
   "totals": {
-   "retiring_lines": 58100,
-   "current_to_retiring_imports": 109,
+   "retiring_lines": 57006,
+   "current_to_retiring_imports": 105,
    "unreferenced_shim_lines": 2014,
    "test_only_shims": 196
   },
@@ -4265,35 +4264,35 @@
     ]
    },
    {
-    "module": "agentsassemble.providers.cerebras",
-    "lines": 39,
+    "module": "agentsassemble.room_attention",
+    "lines": 179,
     "count": 1,
     "targets": [
-     "agentsassemble.providers.openai_compatible"
+     "agentsassemble.legacy.meeting.core.events"
     ]
    },
    {
-    "module": "agentsassemble.providers.deepseek",
-    "lines": 44,
+    "module": "agentsassemble.room_attention_coordinator",
+    "lines": 139,
     "count": 1,
     "targets": [
-     "agentsassemble.providers.openai_compatible"
+     "agentsassemble.legacy.meeting.core.events"
     ]
    },
    {
-    "module": "agentsassemble.providers.local_openai",
-    "lines": 58,
+    "module": "agentsassemble.room_attention_policy",
+    "lines": 277,
     "count": 1,
     "targets": [
-     "agentsassemble.providers.openai_compatible"
+     "agentsassemble.legacy.meeting.core.events"
     ]
    },
    {
-    "module": "agentsassemble.providers.remote_openai",
-    "lines": 664,
+    "module": "agentsassemble.room_attention_reconciliation",
+    "lines": 493,
     "count": 1,
     "targets": [
-     "agentsassemble.providers.openai_compatible"
+     "agentsassemble.legacy.meeting.core.events"
     ]
    }
   ],
@@ -4313,18 +4312,6 @@
      "agentsassemble.room_attention_reconciliation",
      "agentsassemble.room_routing",
      "agentsassemble.room_turn_attention"
-    ]
-   },
-   {
-    "module": "agentsassemble.providers.openai_compatible",
-    "cls": "compatibility",
-    "lines": 786,
-    "count": 4,
-    "importers": [
-     "agentsassemble.providers.cerebras",
-     "agentsassemble.providers.deepseek",
-     "agentsassemble.providers.local_openai",
-     "agentsassemble.providers.remote_openai"
     ]
    },
    {
@@ -4417,6 +4404,15 @@
     "module": "agentsassemble.legacy.gui_lobby",
     "cls": "legacy",
     "lines": 94,
+    "count": 1,
+    "importers": [
+     "agentsassemble.gui"
+    ]
+   },
+   {
+    "module": "agentsassemble.legacy.gui_payload",
+    "cls": "legacy",
+    "lines": 105,
     "count": 1,
     "importers": [
      "agentsassemble.gui"
@@ -19036,8 +19032,8 @@
    "agentsassemble/providers/openai_compatible.py",
    "providers",
    "providers",
-   "compatibility",
-   "compatibility-shim",
+   "current",
+   "in-target-package",
    786,
    "",
    [
@@ -19073,8 +19069,8 @@
    "agentsassemble/providers/openai_compatible_room_tools.py",
    "providers",
    "providers",
-   "compatibility",
-   "compatibility-shim",
+   "current",
+   "in-target-package",
    308,
    "Room tool schemas and execution for OpenAI-compatible chat APIs.",
    [
@@ -27731,13 +27727,13 @@
    "name": "tests",
    "note": "Backend test suite",
    "files": 389,
-   "lines": 151887
+   "lines": 151891
   },
   {
    "name": "scripts",
    "note": "Repo automation scripts",
    "files": 8,
-   "lines": 7114
+   "lines": 7118
   },
   {
    "name": "docs",

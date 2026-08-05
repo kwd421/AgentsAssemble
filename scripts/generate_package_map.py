@@ -318,7 +318,11 @@ def _classification(module: ModuleSource) -> str:
     docstring = ast.get_docstring(module.tree) or ""
     if docstring.startswith("Compatibility export"):
         return "compatibility"
-    if "compat" in stem or "compatibility" in stem:
+    if (
+        stem in {"compat", "compatibility"}
+        or stem.startswith(("compat_", "compatibility_"))
+        or stem.endswith(("_compat", "_compatibility"))
+    ):
         return "compatibility"
     if "legacy" in relative_parts[1:-1] or stem.startswith("legacy_"):
         return "legacy"

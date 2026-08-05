@@ -4,7 +4,7 @@ Status: generated architecture inventory
 
 Generator: `python3 scripts/generate_package_map.py`
 
-Source fingerprint: `143c876bd81f2c3e`
+Source fingerprint: `80a13cac440c4573`
 
 This file describes current evidence and proposed ownership. It does not by
 itself authorize a module move or a product behavior change.
@@ -14,7 +14,7 @@ itself authorize a module move or a product behavior change.
 - Python modules: 860
 - Top-level package modules: 302
 - Domains: admission=33, application=133, diagnostics=27, features=19, identity=13, legacy=226, persistence=73, providers=166, room=96, web=74
-- Classifications: compatibility=299, current=364, legacy=185, optional=12
+- Classifications: compatibility=297, current=366, legacy=185, optional=12
 
 ## Classification Rules
 
@@ -676,8 +676,8 @@ itself authorize a module move or a product behavior change.
 | `agentsassemble.providers.native_harness_catalog` | `agentsassemble/providers/native_harness_catalog.py` | 93 | providers | current | - | 1 | - | - | - | `providers/` | in-target-package |
 | `agentsassemble.providers.native_harness_gateway` | `agentsassemble/providers/native_harness_gateway.py` | 379 | providers | current | `agentsassemble.providers.api_context`, `agentsassemble.providers.native_harness_protocol`, `agentsassemble.providers.turn_progress`, `agentsassemble.room.text` | 1 | - | test-import:1 | `tests/test_native_harness.py` | `providers/` | in-target-package |
 | `agentsassemble.providers.native_harness_protocol` | `agentsassemble/providers/native_harness_protocol.py` | 650 | providers | current | - | 1 | - | - | - | `providers/` | in-target-package |
-| `agentsassemble.providers.openai_compatible` | `agentsassemble/providers/openai_compatible.py` | 786 | providers | compatibility | `agentsassemble.providers.api_context`, `agentsassemble.providers.api_session`, `agentsassemble.providers.api_work_tools`, `agentsassemble.providers.openai_compatible_room_tools`, `agentsassemble.providers.provider_errors`, `agentsassemble.providers.provider_requests`, `agentsassemble.providers.room_portal`, `agentsassemble.providers.turn_progress`, +1 | 4 | `call:frozenset@643` | - | - | `providers/` | compatibility-shim |
-| `agentsassemble.providers.openai_compatible_room_tools` | `agentsassemble/providers/openai_compatible_room_tools.py` | 308 | providers | compatibility | `agentsassemble.providers.room_portal` | 1 | - | - | - | `providers/` | compatibility-shim |
+| `agentsassemble.providers.openai_compatible` | `agentsassemble/providers/openai_compatible.py` | 786 | providers | current | `agentsassemble.providers.api_context`, `agentsassemble.providers.api_session`, `agentsassemble.providers.api_work_tools`, `agentsassemble.providers.openai_compatible_room_tools`, `agentsassemble.providers.provider_errors`, `agentsassemble.providers.provider_requests`, `agentsassemble.providers.room_portal`, `agentsassemble.providers.turn_progress`, +1 | 4 | `call:frozenset@643` | - | - | `providers/` | in-target-package |
+| `agentsassemble.providers.openai_compatible_room_tools` | `agentsassemble/providers/openai_compatible_room_tools.py` | 308 | providers | current | `agentsassemble.providers.room_portal` | 1 | - | - | - | `providers/` | in-target-package |
 | `agentsassemble.providers.opencode` | `agentsassemble/providers/opencode.py` | 711 | providers | current | `agentsassemble.providers.opencode_provider_requests`, `agentsassemble.providers.opencode_server`, `agentsassemble.providers.provider_requests`, `agentsassemble.providers.room_portal`, `agentsassemble.providers.room_portal_mcp`, `agentsassemble.providers.turn_progress`, `agentsassemble.room.projection`, `agentsassemble.room.text` | 4 | - | test-import:2 | `tests/test_opencode_runtime.py`, `tests/test_provider_package.py` | `providers/` | in-target-package |
 | `agentsassemble.providers.opencode_catalog` | `agentsassemble/providers/opencode_catalog.py` | 103 | providers | current | `agentsassemble.providers.catalog_provenance` | 1 | - | - | - | `providers/` | in-target-package |
 | `agentsassemble.providers.opencode_provider_requests` | `agentsassemble/providers/opencode_provider_requests.py` | 198 | providers | current | `agentsassemble.providers.provider_requests`, `agentsassemble.room.projection`, `agentsassemble.room.text` | 1 | - | - | - | `providers/` | in-target-package |
