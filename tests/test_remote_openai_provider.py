@@ -9,6 +9,7 @@ from pathlib import Path
 from urllib.request import Request
 
 from agentsassemble.providers.capabilities import ProviderCapabilityCatalog
+from agentsassemble.providers.api_context import ApiContextLimitError
 from agentsassemble.providers.remote_openai import (
     RemoteOpenAICompatibleRuntime,
     discover_remote_openai_models,
@@ -294,6 +295,129 @@ class RemoteOpenAIProviderTests(unittest.TestCase):
         self.assertIn("read_workspace_file", first_tools)
         self.assertIn("replace_workspace_text", first_tools)
 
+    def test_delivered_tool_results_are_compacted_before_the_next_api_request(self):
+        profile = remote_openai_profile("tokenrouter")
+        self.assertIsNotNone(profile)
+        requests: list[dict[str, object]] = []
+
+        def opener(request: Request, timeout: float):
+            del timeout
+            payload = json.loads(request.data)
+            requests.append(payload)
+            if len(requests) == 1:
+                return _tool_call_response(
+                    "call-first",
+                    "read_workspace_file",
+                    {"path": "first.txt"},
+                )
+            if len(requests) == 2:
+                first_result = next(
+                    message
+                    for message in payload["messages"]
+                    if message.get("tool_call_id") == "call-first"
+                )
+                self.assertIn("first-content", first_result["content"])
+                return _tool_call_response(
+                    "call-second",
+                    "read_workspace_file",
+                    {"path": "second.txt"},
+                )
+            return _content_response("moonshotai/kimi-k3-free", "두 파일을 확인했습니다.")
+
+        with tempfile.TemporaryDirectory() as temp_dir:
+            workspace = Path(temp_dir)
+            (workspace / "first.txt").write_text(
+                "first-content\n" + ("a" * 70_000), encoding="utf-8"
+            )
+            (workspace / "second.txt").write_text(
+                "second-content\n" + ("b" * 70_000), encoding="utf-8"
+            )
+            activities: list[dict[str, object]] = []
+            runtime = RemoteOpenAICompatibleRuntime(
+                "tokenrouter-context",
+                profile=profile,
+                api_key="test-key",
+                model="moonshotai/kimi-k3-free",
+                opener=opener,
+                workspace=str(workspace),
+                permission_mode="workspace_write",
+                context_contract_bytes=180_000,
+            )
+            runtime.send("두 파일을 차례로 읽어 줘.")
+
+            result = runtime.read_output(
+                timeout_seconds=2,
+                on_activity=activities.append,
+            )
+
+        first_result = next(
+            message
+            for message in requests[2]["messages"]
+            if message.get("tool_call_id") == "call-first"
+        )
+        second_result = next(
+            message
+            for message in requests[2]["messages"]
+            if message.get("tool_call_id") == "call-second"
+        )
+        self.assertNotIn("first-content", first_result["content"])
+        self.assertIn("delivered_tool_result_elided", first_result["content"])
+        self.assertIn("second-content", second_result["content"])
+        self.assertEqual(result["content"], "두 파일을 확인했습니다.")
+        self.assertEqual(
+            [
+                activity["status"]
+                for activity in activities
+                if activity.get("category") == "compaction"
+            ],
+            ["started", "completed"],
+        )
+
+    def test_unseen_tool_results_fail_closed_before_an_oversized_api_request(self):
+        profile = remote_openai_profile("tokenrouter")
+        self.assertIsNotNone(profile)
+        requests: list[dict[str, object]] = []
+
+        def opener(request: Request, timeout: float):
+            del timeout
+            requests.append(json.loads(request.data))
+            return _tool_calls_response(
+                [
+                    ("call-first", "read_workspace_file", {"path": "first.txt"}),
+                    ("call-second", "read_workspace_file", {"path": "second.txt"}),
+                ]
+            )
+
+        with tempfile.TemporaryDirectory() as temp_dir:
+            workspace = Path(temp_dir)
+            (workspace / "first.txt").write_text("a" * 70_000, encoding="utf-8")
+            (workspace / "second.txt").write_text("b" * 70_000, encoding="utf-8")
+            activities: list[dict[str, object]] = []
+            runtime = RemoteOpenAICompatibleRuntime(
+                "tokenrouter-context",
+                profile=profile,
+                api_key="test-key",
+                model="moonshotai/kimi-k3-free",
+                opener=opener,
+                workspace=str(workspace),
+                permission_mode="workspace_write",
+                context_contract_bytes=180_000,
+            )
+            runtime.send("두 파일을 동시에 읽어 줘.")
+
+            with self.assertRaises(ApiContextLimitError):
+                runtime.read_output(timeout_seconds=2, on_activity=activities.append)
+
+        self.assertEqual(len(requests), 1)
+        self.assertEqual(
+            [
+                activity["status"]
+                for activity in activities
+                if activity.get("category") == "compaction"
+            ],
+            ["started", "failed"],
+        )
+
     def test_api_work_harness_does_not_expose_workspace_tools_in_read_only_mode(self):
         profile = remote_openai_profile("tokenrouter")
         self.assertIsNotNone(profile)
@@ -384,6 +508,32 @@ def _tool_call_response(
                                 "arguments": json.dumps(arguments, ensure_ascii=False),
                             },
                         }
+                    ]
+                }
+            }
+        ]
+    }
+    return _Response(f"data: {json.dumps(chunk, ensure_ascii=False)}\n\ndata: [DONE]\n\n".encode())
+
+
+def _tool_calls_response(
+    calls: list[tuple[str, str, dict[str, object]]],
+) -> _Response:
+    chunk = {
+        "choices": [
+            {
+                "delta": {
+                    "tool_calls": [
+                        {
+                            "index": index,
+                            "id": call_id,
+                            "type": "function",
+                            "function": {
+                                "name": name,
+                                "arguments": json.dumps(arguments, ensure_ascii=False),
+                            },
+                        }
+                        for index, (call_id, name, arguments) in enumerate(calls)
                     ]
                 }
             }

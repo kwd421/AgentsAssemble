@@ -10,6 +10,11 @@ from typing import IO
 from urllib.error import HTTPError
 from urllib.request import Request, urlopen
 
+from agentsassemble.providers.api_context import (
+    ApiContextLimitError,
+    ApiContextPolicy,
+    DEFAULT_API_CONTEXT_CONTRACT_BYTES,
+)
 from agentsassemble.providers.api_work_tools import (
     ApiWorkHarness,
     parse_work_tool_arguments,
@@ -56,6 +61,7 @@ class OpenAICompatibleApiRuntime:
         room_portal: RoomPortal | None = None,
         workspace: str = "",
         permission_mode: str = "meeting_read_only",
+        context_contract_bytes: int = DEFAULT_API_CONTEXT_CONTRACT_BYTES,
     ) -> None:
         if require_api_key and not str(api_key or "").strip():
             raise RuntimeError("credential_missing")
@@ -98,6 +104,9 @@ class OpenAICompatibleApiRuntime:
         self._interrupted = threading.Event()
         self._lock = threading.RLock()
         self._response: IO[bytes] | None = None
+        self._context_policy = ApiContextPolicy(context_contract_bytes)
+        self._delivered_tool_call_ids: set[str] = set()
+        self._context_compaction_count = 0
 
     def set_request_handler(self, handler: ProviderRequestHandler) -> None:
         self._work_harness.request_handler = handler
@@ -167,6 +176,7 @@ class OpenAICompatibleApiRuntime:
                     timeout_seconds=max(1.0, progress.remaining()),
                     progress=progress,
                     on_delta=on_delta,
+                    on_activity=on_activity,
                     on_reasoning=(
                         _reasoning_activity_reporter(
                             on_activity,
@@ -325,6 +335,7 @@ class OpenAICompatibleApiRuntime:
         progress: ProviderTurnProgress,
         on_delta=None,
         on_reasoning=None,
+        on_activity=None,
     ) -> _StreamRound:
         payload: dict[str, object] = {
             "model": self.model,
@@ -341,6 +352,23 @@ class OpenAICompatibleApiRuntime:
         if tools:
             payload["tools"] = list(tools)
             payload["tool_choice"] = "auto"
+        initial_size = self._context_policy.encoded_size(payload)
+        compaction_started = initial_size > self._context_policy.hard_limit_bytes
+        if compaction_started and on_activity is not None:
+            on_activity({"category": "compaction", "status": "started"})
+        try:
+            request_view = self._context_policy.prepare(
+                payload,
+                delivered_tool_call_ids=self._delivered_tool_call_ids,
+            )
+        except ApiContextLimitError:
+            if compaction_started and on_activity is not None:
+                on_activity({"category": "compaction", "status": "failed"})
+            raise
+        if request_view.compacted_tool_call_ids:
+            self._context_compaction_count += 1
+            if on_activity is not None:
+                on_activity({"category": "compaction", "status": "completed"})
         headers = {
             "Content-Type": "application/json",
             "Accept": "text/event-stream",
@@ -351,7 +379,7 @@ class OpenAICompatibleApiRuntime:
             headers["Authorization"] = f"Bearer {self._api_key}"
         request = Request(
             f"{self.base_url}/chat/completions",
-            data=json.dumps(payload, ensure_ascii=False).encode("utf-8"),
+            data=json.dumps(request_view.payload, ensure_ascii=False).encode("utf-8"),
             headers=headers,
             method="POST",
         )
@@ -368,6 +396,7 @@ class OpenAICompatibleApiRuntime:
             raise provider_http_error(error, provider_name=self.provider_name) from error
         with self._lock:
             self._response = response
+            self._delivered_tool_call_ids.update(request_view.raw_tool_call_ids)
         progress.record()
         try:
             for raw_line in response:
@@ -493,6 +522,8 @@ class OpenAICompatibleApiRuntime:
                 "permission_mode": self.permission_mode,
                 "work_harness": self._work_harness.enabled,
                 "workspace": str(self._work_harness.workspace) if self._work_harness.enabled else "",
+                "context_hard_limit_bytes": self._context_policy.hard_limit_bytes,
+                "context_compaction_count": self._context_compaction_count,
             }
 
 

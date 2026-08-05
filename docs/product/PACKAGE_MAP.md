@@ -4,17 +4,17 @@ Status: generated architecture inventory
 
 Generator: `python3 scripts/generate_package_map.py`
 
-Source fingerprint: `b927aa7245da9112`
+Source fingerprint: `10de57920f3a2de2`
 
 This file describes current evidence and proposed ownership. It does not by
 itself authorize a module move or a product behavior change.
 
 ## Summary
 
-- Python modules: 858
+- Python modules: 859
 - Top-level package modules: 302
-- Domains: admission=33, application=133, diagnostics=27, features=19, identity=13, legacy=226, persistence=73, providers=164, room=96, web=74
-- Classifications: compatibility=299, current=362, legacy=185, optional=12
+- Domains: admission=33, application=133, diagnostics=27, features=19, identity=13, legacy=226, persistence=73, providers=165, room=96, web=74
+- Classifications: compatibility=299, current=363, legacy=185, optional=12
 
 ## Classification Rules
 
@@ -616,6 +616,7 @@ itself authorize a module move or a product behavior change.
 | `agentsassemble.providers.antigravity_hooks` | `agentsassemble/providers/antigravity_hooks.py` | 373 | providers | current | `agentsassemble.providers.provider_hook_broker`, `agentsassemble.providers.provider_requests`, `agentsassemble.providers.terminal_interactions`, `agentsassemble.room.text` | 1 | `call:RLock@270`, `call:object@272` | test-import:1 | `tests/test_antigravity_provider_hooks.py` | `providers/` | in-target-package |
 | `agentsassemble.providers.antigravity_resident` | `agentsassemble/providers/antigravity_resident.py` | 423 | providers | current | `agentsassemble.providers.auth`, `agentsassemble.providers.resident_config` | 5 | `call:compile@17`, `call:compile@18`, `call:compile@19`, `call:provider_login_required_message@27` | test-import:4 | `tests/test_antigravity_resident.py`, `tests/test_live_agent_continuity_proof.py`, `tests/test_live_agent_runner.py`, `+1` | `providers/` | in-target-package |
 | `agentsassemble.providers.api` | `agentsassemble/providers/api.py` | 262 | providers | current | `agentsassemble.providers`, `agentsassemble.providers.catalog` | 3 | - | test-import:2 | `tests/test_provider_package.py`, `tests/test_room_api_provider.py` | `providers/` | in-target-package |
+| `agentsassemble.providers.api_context` | `agentsassemble/providers/api_context.py` | 117 | providers | current | - | 1 | - | test-import:1 | `tests/test_remote_openai_provider.py` | `providers/` | in-target-package |
 | `agentsassemble.providers.api_work_tool_schemas` | `agentsassemble/providers/api_work_tool_schemas.py` | 126 | providers | current | - | 1 | - | - | - | `providers/` | in-target-package |
 | `agentsassemble.providers.api_work_tools` | `agentsassemble/providers/api_work_tools.py` | 290 | providers | current | `agentsassemble.providers.api_work_tool_schemas`, `agentsassemble.providers.provider_requests` | 1 | - | - | - | `providers/` | in-target-package |
 | `agentsassemble.providers.auth` | `agentsassemble/providers/auth.py` | 29 | providers | current | - | 5 | - | test-import:2 | `tests/test_provider_auth.py`, `tests/test_provider_package.py` | `providers/` | in-target-package |
@@ -674,7 +675,7 @@ itself authorize a module move or a product behavior change.
 | `agentsassemble.providers.native_harness_catalog` | `agentsassemble/providers/native_harness_catalog.py` | 93 | providers | current | - | 1 | - | - | - | `providers/` | in-target-package |
 | `agentsassemble.providers.native_harness_gateway` | `agentsassemble/providers/native_harness_gateway.py` | 343 | providers | current | `agentsassemble.providers.native_harness_protocol`, `agentsassemble.room.text` | 1 | - | test-import:1 | `tests/test_native_harness.py` | `providers/` | in-target-package |
 | `agentsassemble.providers.native_harness_protocol` | `agentsassemble/providers/native_harness_protocol.py` | 650 | providers | current | - | 1 | - | - | - | `providers/` | in-target-package |
-| `agentsassemble.providers.openai_compatible` | `agentsassemble/providers/openai_compatible.py` | 729 | providers | compatibility | `agentsassemble.providers.api_work_tools`, `agentsassemble.providers.openai_compatible_room_tools`, `agentsassemble.providers.provider_errors`, `agentsassemble.providers.provider_requests`, `agentsassemble.providers.room_portal`, `agentsassemble.providers.turn_progress`, `agentsassemble.room.text` | 4 | `call:frozenset@586` | - | - | `providers/` | compatibility-shim |
+| `agentsassemble.providers.openai_compatible` | `agentsassemble/providers/openai_compatible.py` | 760 | providers | compatibility | `agentsassemble.providers.api_context`, `agentsassemble.providers.api_work_tools`, `agentsassemble.providers.openai_compatible_room_tools`, `agentsassemble.providers.provider_errors`, `agentsassemble.providers.provider_requests`, `agentsassemble.providers.room_portal`, `agentsassemble.providers.turn_progress`, `agentsassemble.room.text` | 4 | `call:frozenset@617` | - | - | `providers/` | compatibility-shim |
 | `agentsassemble.providers.openai_compatible_room_tools` | `agentsassemble/providers/openai_compatible_room_tools.py` | 308 | providers | compatibility | `agentsassemble.providers.room_portal` | 1 | - | - | - | `providers/` | compatibility-shim |
 | `agentsassemble.providers.opencode` | `agentsassemble/providers/opencode.py` | 711 | providers | current | `agentsassemble.providers.opencode_provider_requests`, `agentsassemble.providers.opencode_server`, `agentsassemble.providers.provider_requests`, `agentsassemble.providers.room_portal`, `agentsassemble.providers.room_portal_mcp`, `agentsassemble.providers.turn_progress`, `agentsassemble.room.projection`, `agentsassemble.room.text` | 4 | - | test-import:2 | `tests/test_opencode_runtime.py`, `tests/test_provider_package.py` | `providers/` | in-target-package |
 | `agentsassemble.providers.opencode_catalog` | `agentsassemble/providers/opencode_catalog.py` | 103 | providers | current | `agentsassemble.providers.catalog_provenance` | 1 | - | - | - | `providers/` | in-target-package |
@@ -687,7 +688,7 @@ itself authorize a module move or a product behavior change.
 | `agentsassemble.providers.provider_requests` | `agentsassemble/providers/provider_requests.py` | 151 | providers | current | `agentsassemble.room.text` | 12 | - | test-import:1 | `tests/test_room_provider_requests.py` | `providers/` | in-target-package |
 | `agentsassemble.providers.provider_usage` | `agentsassemble/providers/provider_usage.py` | 90 | providers | current | `agentsassemble.providers.claude_usage`, `agentsassemble.providers.codex_usage`, `agentsassemble.providers.deepseek_usage`, `agentsassemble.providers.terminal_usage`, `agentsassemble.providers.usage_contract` | 2 | - | test-import:1 | `tests/test_provider_usage_registry.py` | `providers/` | in-target-package |
 | `agentsassemble.providers.remote_bridge_config` | `agentsassemble/providers/remote_bridge_config.py` | 68 | providers | current | - | 6 | - | - | - | `providers/` | in-target-package |
-| `agentsassemble.providers.remote_openai` | `agentsassemble/providers/remote_openai.py` | 643 | providers | current | `agentsassemble.providers.openai_compatible`, `agentsassemble.providers.provider_errors`, `agentsassemble.providers.room_portal`, `agentsassemble.room.text` | 8 | - | test-import:3 | `tests/test_cerebras_model_catalog.py`, `tests/test_remote_openai_provider.py`, `tests/test_tokenrouter_provider.py` | `providers/` | in-target-package |
+| `agentsassemble.providers.remote_openai` | `agentsassemble/providers/remote_openai.py` | 653 | providers | current | `agentsassemble.providers.openai_compatible`, `agentsassemble.providers.provider_errors`, `agentsassemble.providers.room_portal`, `agentsassemble.room.text` | 8 | - | test-import:3 | `tests/test_cerebras_model_catalog.py`, `tests/test_remote_openai_provider.py`, `tests/test_tokenrouter_provider.py` | `providers/` | in-target-package |
 | `agentsassemble.providers.resident_config` | `agentsassemble/providers/resident_config.py` | 24 | providers | current | - | 6 | - | - | - | `providers/` | in-target-package |
 | `agentsassemble.providers.room_connector_mcp` | `agentsassemble/providers/room_connector_mcp.py` | 120 | providers | current | `agentsassemble.application.room_connector` | 1 | - | - | - | `providers/` | in-target-package |
 | `agentsassemble.providers.room_portal` | `agentsassemble/providers/room_portal.py` | 1198 | providers | current | `agentsassemble.providers.room_portal_collaboration`, `agentsassemble.providers.room_portal_helper`, `agentsassemble.providers.room_random`, `agentsassemble.providers.runtime_contracts`, `agentsassemble.room.system_results`, `agentsassemble.room.text`, `agentsassemble.room.tool_modes` | 16 | `call:compile@51`, `call:compile@52`, `call:room_session_orientation@192` | test-import:10 | `tests/test_cerebras_room_observation.py`, `tests/test_deepseek_room_observation.py`, `tests/test_grok_acp_runtime.py`, `+7` | `providers/` | in-target-package |

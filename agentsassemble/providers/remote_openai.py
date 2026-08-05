@@ -414,6 +414,7 @@ class RemoteOpenAICompatibleRuntime(OpenAICompatibleApiRuntime):
         room_portal: RoomPortal | None = None,
         workspace: str = "",
         permission_mode: str = "meeting_read_only",
+        context_contract_bytes: int = 0,
     ) -> None:
         request_payload: dict[str, object] = {}
         include_reasoning = False
@@ -427,6 +428,14 @@ class RemoteOpenAICompatibleRuntime(OpenAICompatibleApiRuntime):
                 "type": "disabled" if variant == "non_thinking" else "enabled"
             }
             include_reasoning = True
+        model_context = next(
+            (
+                item.context_length
+                for item in profile.static_models
+                if item.model_id == model and item.context_length > 0
+            ),
+            0,
+        )
         super().__init__(
             agent_id,
             api_key=api_key,
@@ -447,6 +456,7 @@ class RemoteOpenAICompatibleRuntime(OpenAICompatibleApiRuntime):
             room_portal=room_portal,
             workspace=workspace,
             permission_mode=permission_mode,
+            context_contract_bytes=context_contract_bytes or model_context or 256_000,
         )
 
 
