@@ -42,6 +42,20 @@ _RATE_LIMIT_MESSAGES = (
     "rate_limit",
     "too many requests",
 )
+PUBLIC_PROVIDER_FAILURE_CODES = frozenset(
+    {
+        "adapter_contract_error",
+        "api_context_limit_exceeded",
+        "api_conversation_state_invalid",
+        "empty_provider_final",
+        "provider_model_mismatch",
+        "provider_model_unobserved",
+        "provider_rate_limited",
+        "provider_turn_failed",
+        "quota_exhausted",
+        "room_observation_unconfirmed",
+    }
+)
 
 
 def provider_failure_code(error: BaseException) -> str:
@@ -60,6 +74,15 @@ def provider_failure_code_from_text(value: object) -> str:
     if any(marker in text for marker in _RATE_LIMIT_MESSAGES):
         return "provider_rate_limited"
     return "provider_turn_failed"
+
+
+def public_provider_failure_code(value: object, *, interrupted: bool = False) -> str:
+    """Keep one public provider taxonomy across bridge and room state."""
+
+    code = clean_room_text(value, limit=64)
+    if code in PUBLIC_PROVIDER_FAILURE_CODES:
+        return code
+    return "interrupted" if interrupted else "provider_turn_failed"
 
 
 def provider_http_error(error: HTTPError, *, provider_name: str) -> ProviderTurnError:
@@ -120,8 +143,10 @@ def _provider_error_fields(payload: object) -> tuple[str, str]:
 
 
 __all__ = [
+    "PUBLIC_PROVIDER_FAILURE_CODES",
     "ProviderTurnError",
     "provider_failure_code",
     "provider_failure_code_from_text",
     "provider_http_error",
+    "public_provider_failure_code",
 ]

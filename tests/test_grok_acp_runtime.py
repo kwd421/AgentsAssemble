@@ -1,3 +1,4 @@
+import json
 import os
 import sys
 import tempfile
@@ -457,7 +458,7 @@ class GrokAcpRuntimeTests(unittest.TestCase):
         self.assertEqual(recalled["content"], "recalled restart-marker-413")
         self.assertEqual(state_mode, 0o600)
 
-    def test_failed_session_load_starts_fresh_and_reports_recovery_loss(self):
+    def test_failed_session_load_blocks_existing_session_without_creating_a_replacement(self):
         with tempfile.TemporaryDirectory() as temp_dir:
             root = Path(temp_dir)
             first_runtime = self.make_runtime(root)
@@ -465,6 +466,8 @@ class GrokAcpRuntimeTests(unittest.TestCase):
                 first_runtime.start()
             finally:
                 first_runtime.stop()
+            provider_state_path = root / "grok-home" / "fake-provider-sessions.json"
+            provider_sessions_before = json.loads(provider_state_path.read_text(encoding="utf-8"))
 
             second_runtime = GrokAcpRuntime(
                 "grok",
@@ -476,14 +479,13 @@ class GrokAcpRuntimeTests(unittest.TestCase):
                 startup_timeout_seconds=5,
             )
             try:
-                health = second_runtime.start()
+                with self.assertRaisesRegex(RuntimeError, "stored session is unavailable"):
+                    second_runtime.start()
             finally:
                 second_runtime.stop()
+            provider_sessions_after = json.loads(provider_state_path.read_text(encoding="utf-8"))
 
-        self.assertFalse(health["provider_session_reused"])
-        self.assertTrue(health["provider_session_resume_failed"])
-        self.assertIn("stored session is unavailable", health["provider_session_resume_error"])
-        self.assertEqual(health["last_error"], "")
+        self.assertEqual(provider_sessions_after, provider_sessions_before)
 
 
 if __name__ == "__main__":

@@ -239,6 +239,11 @@ class GrokAcpRuntime(GrokAcpTransportMixin, GrokAcpTurnProjectionMixin):
             )
             self._supports_load_session = bool(capabilities.get("loadSession", False))
             session_id = self._resume_provider_session()
+            if self._provider_session_resume_failed:
+                raise RuntimeError(
+                    self._provider_session_resume_error
+                    or "Grok ACP could not resume the stored provider session."
+                )
             if not session_id:
                 created = self._request(
                     "session/new",

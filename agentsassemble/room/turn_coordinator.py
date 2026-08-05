@@ -18,6 +18,7 @@ from agentsassemble.providers.model_verification import (
     model_observation_matches,
     model_verification_status,
 )
+from agentsassemble.providers.provider_errors import public_provider_failure_code
 from agentsassemble.providers.runtime_contracts import (
     AMBIENT_OBSERVATION,
     AUTOMATIC_FINAL,
@@ -1615,18 +1616,9 @@ class RoomTurnCoordinator:
         agent_id, session = self.active_bridge_turn(identity, room_id, payload)
         require_active_turn_phase(session)
         interrupted = clean_lobby_text(payload.get("status"), limit=32) == "interrupted"
-        requested_error_code = clean_lobby_text(payload.get("error_code"), limit=64)
-        error_code = (
-            requested_error_code
-            if requested_error_code
-            in {
-                "adapter_contract_error",
-                "empty_provider_final",
-                "provider_model_mismatch",
-                "provider_model_unobserved",
-                "room_observation_unconfirmed",
-            }
-            else ("interrupted" if interrupted else "provider_turn_failed")
+        error_code = public_provider_failure_code(
+            payload.get("error_code"),
+            interrupted=interrupted,
         )
         content = (
             clean_lobby_text(payload.get("message") or payload.get("content"), limit=4000)
@@ -1724,6 +1716,7 @@ class RoomTurnCoordinator:
                 recovery_required=not interrupted,
                 recovery_attempt_count=recovery_attempt_count + (1 if automatic_recovery else 0),
                 last_error=content,
+                last_error_code=error_code,
                 **runtime_diagnostic_fields(diagnostics),
             )
         self._publish_session_state(room_id, updated)
@@ -1813,6 +1806,7 @@ class RoomTurnCoordinator:
             "turn_count": int(session.get("turn_count") or 0) + 1,
             "latency": latency,
             "last_error": "",
+            "last_error_code": "",
             **runtime_diagnostic_fields(diagnostics),
             **dict(extra_session_updates or {}),
         }

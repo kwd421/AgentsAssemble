@@ -897,6 +897,8 @@ class RoomAgentBridge:
 
     def _fail_protocol(self, error: BridgeProtocolError) -> None:
         print(f"Agent Bridge protocol error: {error.code}", file=sys.stderr, flush=True)
+        if not error.fatal:
+            return
         self._stop.set()
         self.client.close()
 

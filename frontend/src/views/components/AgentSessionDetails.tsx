@@ -56,11 +56,11 @@ function providerSessionContinuity(session: RoomAgentSession) {
     session.provider_session_reused ||
     session.provider_session_resume_failed;
   if (!structuredSession) return "";
+  if (session.provider_session_resume_failed) return "provider session 재개 실패";
   if (!session.provider_session_active && session.provider_session_load_supported) {
     return "provider session 재개 대기";
   }
   if (!session.provider_session_active) return "provider session 비활성";
-  if (session.provider_session_resume_failed) return "provider session 새로 시작됨";
   if (session.provider_session_reused) return "provider session 이어짐";
   return "provider session 활성";
 }
