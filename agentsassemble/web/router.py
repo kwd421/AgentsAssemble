@@ -207,6 +207,7 @@ class RequestContext:
     def is_local_operator(self) -> bool:
         return (
             _is_loopback_host(self.handler.server.server_address[0])
+            and self.peer_is_loopback()
             and self.uses_loopback_host()
             and _origin_is_loopback_or_empty(self.headers.get("Origin"))
         )

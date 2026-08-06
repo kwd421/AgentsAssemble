@@ -667,7 +667,7 @@ class PublicInviteHttpTests(unittest.TestCase):
                     server.shutdown()
                     server.server_close()
 
-    def test_public_guest_invite_allows_null_origin_only_on_guest_routes(self):
+    def test_public_guest_invite_rejects_opaque_null_origin(self):
         with tempfile.TemporaryDirectory() as temp_dir:
             root = Path(temp_dir) / "room"
             RoomStore(root).create_room("friend-room", label="Friend room")
@@ -699,51 +699,25 @@ class PublicInviteHttpTests(unittest.TestCase):
                     },
                     method="OPTIONS",
                 )
-                with urlopen(preflight, timeout=4) as response:
-                    self.assertEqual(response.status, 204)
-                    self.assertEqual(response.headers.get("Access-Control-Allow-Origin"), "null")
-                    self.assertIn("POST", response.headers.get("Access-Control-Allow-Methods", ""))
+                with self.assertRaises(HTTPError) as blocked_preflight:
+                    urlopen(preflight, timeout=4)
+                self.addCleanup(blocked_preflight.exception.close)
+                self.assertEqual(blocked_preflight.exception.code, 403)
 
-                with urlopen(
-                    _json_request(
-                        f"{base}/api/room-invite/join",
-                        {
-                            "invite_token": invite["invite_token"],
-                            "request_id": str(uuid4()),
-                        },
-                        null_origin_headers,
-                    ),
-                    timeout=4,
-                ) as response:
-                    session_payload = json.loads(response.read().decode("utf-8"))
-                    self.assertEqual(response.headers.get("Access-Control-Allow-Origin"), "null")
-                self.assertEqual(session_payload["status"], "admitted")
-
-                ticket, response_headers = self._ws_ticket(
-                    base,
-                    str(session_payload["session_token"]),
-                    null_origin_headers,
-                )
-                self.assertTrue(ticket.startswith("wst_"))
-                self.assertEqual(response_headers.get("Access-Control-Allow-Origin"), "null")
-
-                with self.assertRaises(HTTPError) as blocked_operator_route:
-                    urlopen(Request(f"{base}/api/lobby", headers=null_origin_headers), timeout=4)
-                self.addCleanup(blocked_operator_route.exception.close)
-                self.assertEqual(blocked_operator_route.exception.code, 403)
-
-                blocked_preflight = Request(
-                    f"{base}/api/lobby",
-                    headers={
-                        **null_origin_headers,
-                        "Access-Control-Request-Method": "GET",
-                    },
-                    method="OPTIONS",
-                )
-                with self.assertRaises(HTTPError) as blocked_preflight_context:
-                    urlopen(blocked_preflight, timeout=4)
-                self.addCleanup(blocked_preflight_context.exception.close)
-                self.assertEqual(blocked_preflight_context.exception.code, 403)
+                with self.assertRaises(HTTPError) as blocked_join:
+                    urlopen(
+                        _json_request(
+                            f"{base}/api/room-invite/join",
+                            {
+                                "invite_token": invite["invite_token"],
+                                "request_id": str(uuid4()),
+                            },
+                            null_origin_headers,
+                        ),
+                        timeout=4,
+                    )
+                self.addCleanup(blocked_join.exception.close)
+                self.assertEqual(blocked_join.exception.code, 403)
             finally:
                 server.shutdown()
                 server.server_close()

@@ -56,6 +56,13 @@ def _rewrite_react_app_index(html: str) -> str:
 class GuiResponseMethods:
     """Transport-only response methods mixed into the request handler."""
 
+    def end_headers(self) -> None:
+        # These are response-level browser boundaries, so they must also cover
+        # framework errors and routes that do not use the JSON helpers below.
+        self.send_header("X-Frame-Options", "DENY")
+        self.send_header("Content-Security-Policy", "frame-ancestors 'none'")
+        super().end_headers()
+
     def handle(self) -> None:
         try:
             super().handle()

@@ -82,8 +82,6 @@ def make_gui_http_handler(
                 method = str(self.headers.get("Access-Control-Request-Method") or "").upper()
             if not method or not _public_invite_route_allowed(path, method):
                 return ""
-            if origin == "null":
-                return "null"
             if _origin_matches_public_url(
                 origin,
                 public_url=services.public_invite.public_url(),

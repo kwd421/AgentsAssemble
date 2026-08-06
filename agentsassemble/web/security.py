@@ -161,6 +161,4 @@ def _request_trusted(
         return True
     if host_is_loopback:
         return _origin_is_trusted(origin_text)
-    if origin_text == "null":
-        return True
     return _origin_matches_public_url(origin_text, public_url=public_url)

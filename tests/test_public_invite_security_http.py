@@ -6,7 +6,9 @@ import threading
 import unittest
 from http.server import ThreadingHTTPServer
 from pathlib import Path
+from types import SimpleNamespace
 from urllib.error import HTTPError
+from urllib.parse import urlparse
 from urllib.request import Request, urlopen
 from uuid import uuid4
 
@@ -17,6 +19,7 @@ from agentsassemble.admission.invite import (
 )
 from agentsassemble.gui import _make_handler
 from agentsassemble.persistence.local.room.repository import RoomStore
+from agentsassemble.web.router import GuiDeps, RequestContext
 
 
 def _json_request(
@@ -43,6 +46,49 @@ class PublicInviteSecurityHttpTests(unittest.TestCase):
         server = ThreadingHTTPServer(("127.0.0.1", 0), _make_handler(root))
         threading.Thread(target=server.serve_forever, daemon=True).start()
         return server
+
+    def test_external_peer_cannot_claim_local_operator_trust_with_spoofed_headers(self):
+        handler = SimpleNamespace(
+            headers={
+                "Host": "127.0.0.1:8765",
+                "Origin": "http://127.0.0.1:8765",
+            },
+            server=SimpleNamespace(server_address=("127.0.0.1", 8765)),
+            client_address=("198.51.100.17", 43123),
+        )
+        context = RequestContext(
+            handler,
+            GuiDeps(output_root=Path(".")),
+            urlparse("/api/provider-credentials/deepseek"),
+            {},
+        )
+
+        self.assertFalse(context.is_local_operator())
+
+    def test_http_responses_deny_embedding_in_an_external_frame(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir) / "room"
+            RoomStore(root).create_room("friend-room", label="Friend room")
+            set_runtime_host_token("host-secret")
+            server = self._start_server(root)
+            try:
+                base = f"http://127.0.0.1:{server.server_port}"
+                with urlopen(
+                    _json_request(
+                        f"{base}/api/host/claim",
+                        {"device_token": "operator-device-token"},
+                        {"X-Host-Token": "host-secret"},
+                    ),
+                    timeout=4,
+                ) as response:
+                    self.assertEqual(response.headers.get("X-Frame-Options"), "DENY")
+                    self.assertIn(
+                        "frame-ancestors 'none'",
+                        response.headers.get("Content-Security-Policy", ""),
+                    )
+            finally:
+                server.shutdown()
+                server.server_close()
 
     def test_guest_companion_cannot_replace_operator_identity_or_gain_moderation(self):
         with tempfile.TemporaryDirectory() as temp_dir:
