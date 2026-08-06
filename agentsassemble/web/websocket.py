@@ -3,15 +3,18 @@ from __future__ import annotations
 
 import json
 import select
+import time
 from collections.abc import Callable
 from http import HTTPStatus
 from typing import Any
 
 from agentsassemble.web.websocket_codec import (
+    CLOSE_POLICY_VIOLATION,
     MessageAssembler,
     WebSocketProtocolError,
     compute_accept_key,
     encode_close,
+    encode_ping,
     encode_text,
     is_websocket_upgrade,
 )
@@ -21,8 +24,14 @@ from agentsassemble.web.room_session import (
     WS_SESSION_TOKEN_KEY,
     WS_TICKET_TTL_SECONDS,
     WsRoomSession,
+    WsTicketLimitError,
     host_browser_ws_session,
 )
+from agentsassemble.room.event_broker import RoomConnectionLimitError
+
+WS_APPLICATION_HANDSHAKE_TIMEOUT_SECONDS = 10.0
+WS_HEARTBEAT_INTERVAL_SECONDS = 30.0
+WS_CLIENT_IDLE_TIMEOUT_SECONDS = 300.0
 
 
 def register_ws_ticket_route(
@@ -57,7 +66,11 @@ def register_ws_ticket_route(
                     user.get("display_name") or session.get("display_name") or ""
                 ),
             }
-        ticket = ws_ticket_store.issue(session, session_token=session_token)
+        try:
+            ticket = ws_ticket_store.issue(session, session_token=session_token)
+        except WsTicketLimitError as error:
+            ctx.send_error(HTTPStatus.TOO_MANY_REQUESTS, str(error))
+            return
         ctx.send_json({"ticket": ticket, "ttl_seconds": WS_TICKET_TTL_SECONDS})
 
 
@@ -93,16 +106,26 @@ def handle_ws_upgrade(
         "operator": bool(session.get("operator")),
         "session_id": str(session.get("session_id") or session.get("agent_id") or ""),
         "provider_kind": str(session.get("provider_kind") or ""),
+        "principal_user_id": str(session.get("principal_user_id") or ""),
     }
-    handler.close_connection = True
-    handler.send_response(HTTPStatus.SWITCHING_PROTOCOLS)
-    handler.send_header("Upgrade", "websocket")
-    handler.send_header("Connection", "Upgrade")
-    handler.send_header("Sec-WebSocket-Accept", compute_accept_key(key))
-    handler.end_headers()
-    handler.wfile.flush()
-    sock = handler.connection
     channel = None
+    try:
+        channel = room_realtime_controller.connect(identity)
+    except RoomConnectionLimitError as error:
+        handler._send_error(HTTPStatus.TOO_MANY_REQUESTS, str(error))
+        return
+    sock = handler.connection
+    try:
+        handler.close_connection = True
+        handler.send_response(HTTPStatus.SWITCHING_PROTOCOLS)
+        handler.send_header("Upgrade", "websocket")
+        handler.send_header("Connection", "Upgrade")
+        handler.send_header("Sec-WebSocket-Accept", compute_accept_key(key))
+        handler.end_headers()
+        handler.wfile.flush()
+    except BaseException:
+        room_realtime_controller.disconnect(channel)
+        raise
 
     def _send_all(frames: list[bytes]) -> bool:
         # Processed room side effects must survive a peer closing during send.
@@ -114,17 +137,33 @@ def handle_ws_upgrade(
         return True
 
     try:
-        channel = room_realtime_controller.connect(identity)
         ws = WsRoomSession(
             identity=identity,
             deps=ws_room_deps_factory(channel, handler),
             session_token=session_token,
         )
         assembler = MessageAssembler()
+        opened_at = time.monotonic()
+        last_client_activity_at = opened_at
+        next_heartbeat_at = opened_at + WS_HEARTBEAT_INTERVAL_SECONDS
         while not ws.closed:
             if channel.closed:
                 break
-            ready, _, _ = select.select([sock, channel], [], [], SSE_EVENT_POLL_INTERVAL_SECONDS)
+            now = time.monotonic()
+            deadline = (
+                opened_at + WS_APPLICATION_HANDSHAKE_TIMEOUT_SECONDS
+                if not ws.handshake_complete
+                else last_client_activity_at + WS_CLIENT_IDLE_TIMEOUT_SECONDS
+            )
+            wait_seconds = max(
+                0.0,
+                min(
+                    SSE_EVENT_POLL_INTERVAL_SECONDS,
+                    deadline - now,
+                    next_heartbeat_at - now,
+                ),
+            )
+            ready, _, _ = select.select([sock, channel], [], [], wait_seconds)
             if sock in ready:
                 data = sock.recv(65536)
                 if not data:
@@ -133,7 +172,10 @@ def handle_ws_upgrade(
                 # Handle every received frame before sending so a final say is appended
                 # even when the client closes immediately afterward.
                 outbound: list[bytes] = []
-                for opcode, payload in assembler.messages():
+                messages = list(assembler.messages())
+                if messages:
+                    last_client_activity_at = time.monotonic()
+                for opcode, payload in messages:
                     outbound.extend(ws.handle_frame(opcode, payload))
                 if not _send_all(outbound):
                     break
@@ -143,6 +185,17 @@ def handle_ws_upgrade(
                     break
             if not _send_all(ws.poll()):
                 break
+            now = time.monotonic()
+            if not ws.handshake_complete and now >= opened_at + WS_APPLICATION_HANDSHAKE_TIMEOUT_SECONDS:
+                _send_all([encode_close(CLOSE_POLICY_VIOLATION, "room subscription required")])
+                break
+            if ws.handshake_complete and now >= last_client_activity_at + WS_CLIENT_IDLE_TIMEOUT_SECONDS:
+                _send_all([encode_close(CLOSE_POLICY_VIOLATION, "room socket idle timeout")])
+                break
+            if now >= next_heartbeat_at:
+                if not _send_all([encode_ping(b"aa")]):
+                    break
+                next_heartbeat_at = now + WS_HEARTBEAT_INTERVAL_SECONDS
     except WebSocketProtocolError as error:
         try:
             sock.sendall(encode_close(error.close_code))

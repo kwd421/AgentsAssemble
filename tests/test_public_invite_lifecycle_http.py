@@ -301,3 +301,41 @@ class PublicInviteLifecycleHttpTests(unittest.TestCase):
                 if path.is_file()
             )
         )
+
+    def test_recovery_rate_limit_keeps_distinct_forwarded_clients_independent(self) -> None:
+        endpoint = f"{self.base}/api/identity/recovery-code/redeem"
+        payload = {
+            "recovery_code": "invalid-recovery-code",
+            "room_id": "friend-room",
+            "device_token": "replacement-device",
+            "client_id": "replacement-client",
+        }
+        for _ in range(8):
+            with self.assertRaises(HTTPError) as rejected:
+                urlopen(
+                    _json_request(
+                        endpoint,
+                        payload,
+                        {**self.public_headers, "X-Forwarded-For": "198.51.100.10"},
+                    ),
+                    timeout=4,
+                )
+            rejected.exception.close()
+            self.assertEqual(rejected.exception.code, 403)
+
+        with self.assertRaises(HTTPError) as other_client:
+            urlopen(
+                _json_request(
+                    endpoint,
+                    {
+                        **payload,
+                        "recovery_code": "different-invalid-recovery-code",
+                        "client_id": "other-client",
+                    },
+                    {**self.public_headers, "X-Forwarded-For": "198.51.100.11"},
+                ),
+                timeout=4,
+            )
+        other_client.exception.close()
+
+        self.assertEqual(other_client.exception.code, 403)

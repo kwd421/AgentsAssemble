@@ -10,6 +10,7 @@ sockets, not just future HTTP requests.
 """
 from __future__ import annotations
 
+import hashlib
 import json
 import secrets
 import threading
@@ -35,6 +36,8 @@ from agentsassemble.web.websocket_codec import (
 )
 
 WS_TICKET_TTL_SECONDS = 30.0
+WS_MAX_PENDING_TICKETS_TOTAL = 2048
+WS_MAX_PENDING_TICKETS_PER_SESSION = 8
 WS_STREAMS = ("lobby", "roster", "side_chat", "room_events")
 WS_DEFAULT_STREAMS = ("lobby", "roster", "side_chat")
 WS_SESSION_TOKEN_KEY = "_ws_session_token"
@@ -71,19 +74,38 @@ class WsTicketStore:
     So: client GETs a ticket over authenticated HTTP, then opens `/ws?ticket=...`.
     The ticket is consumed once at handshake."""
 
-    def __init__(self, *, ttl_seconds: float = WS_TICKET_TTL_SECONDS, now_fn: Callable[[], float] = time.monotonic) -> None:
+    def __init__(
+        self,
+        *,
+        ttl_seconds: float = WS_TICKET_TTL_SECONDS,
+        max_pending_total: int = WS_MAX_PENDING_TICKETS_TOTAL,
+        max_pending_per_session: int = WS_MAX_PENDING_TICKETS_PER_SESSION,
+        now_fn: Callable[[], float] = time.monotonic,
+    ) -> None:
         self._ttl = float(ttl_seconds)
+        self._max_pending_total = max(1, int(max_pending_total))
+        self._max_pending_per_session = max(1, int(max_pending_per_session))
         self._now = now_fn
-        self._tickets: dict[str, tuple[dict, str, float]] = {}
+        self._tickets: dict[str, tuple[dict, str, str, float]] = {}
         self._lock = threading.Lock()
 
     def issue(self, session: dict, *, session_token: str = "") -> str:
         with self._lock:
             self._prune()
+            subject = _ticket_subject(session, session_token=session_token)
+            if len(self._tickets) >= self._max_pending_total:
+                raise WsTicketLimitError("too many pending WebSocket tickets")
+            subject_count = sum(
+                1 for _session, _token, entry_subject, _expires_at in self._tickets.values()
+                if entry_subject == subject
+            )
+            if subject_count >= self._max_pending_per_session:
+                raise WsTicketLimitError("too many pending WebSocket tickets for this session")
             ticket = "wst_" + secrets.token_urlsafe(24)
             self._tickets[ticket] = (
                 dict(session),
                 str(session_token or ""),
+                subject,
                 self._now() + self._ttl,
             )
             return ticket
@@ -94,7 +116,7 @@ class WsTicketStore:
             entry = self._tickets.pop(str(ticket or ""), None)
             if entry is None:
                 return None
-            session, session_token, expires_at = entry
+            session, session_token, _subject, expires_at = entry
             if self._now() > expires_at:
                 return None
             if session_token:
@@ -103,9 +125,24 @@ class WsTicketStore:
 
     def _prune(self) -> None:
         now = self._now()
-        expired = [t for t, (_, _, exp) in self._tickets.items() if now > exp]
+        expired = [t for t, (_, _, _, exp) in self._tickets.items() if now > exp]
         for t in expired:
             self._tickets.pop(t, None)
+
+
+class WsTicketLimitError(RuntimeError):
+    """The bounded pending ticket pool cannot accept another ticket."""
+
+
+def _ticket_subject(session: dict, *, session_token: str) -> str:
+    token = str(session_token or "")
+    if token:
+        return "token:" + hashlib.sha256(token.encode("utf-8")).hexdigest()
+    stable_identity = "\0".join(
+        str(session.get(key) or "")
+        for key in ("principal_user_id", "meeting_id", "session_id", "agent_id")
+    )
+    return "identity:" + hashlib.sha256(stable_identity.encode("utf-8")).hexdigest()
 
 
 @dataclass
@@ -139,6 +176,7 @@ class WsRoomSession:
     _cursors: dict = field(default_factory=dict)
     _roster_sig: str = ""
     _room_after_seq: int = 0
+    handshake_complete: bool = False
     closed: bool = False
 
     @property
@@ -202,6 +240,7 @@ class WsRoomSession:
         requested = msg.get("streams") or list(WS_DEFAULT_STREAMS)
         streams = [s for s in requested if s in WS_STREAMS]
         self.subscribed = set(streams)
+        self.handshake_complete = True
         self._room_after_seq = _safe_nonnegative_int(msg.get("resume_from_seq"))
         for stream in streams:
             resume = str(msg.get("resume_from_id") or "") if stream in {"lobby", "side_chat"} else ""

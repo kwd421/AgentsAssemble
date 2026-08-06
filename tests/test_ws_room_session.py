@@ -3,6 +3,7 @@ import struct
 import threading
 import unittest
 
+import agentsassemble.web.room_session as room_session_module
 from agentsassemble.web.websocket_codec import OP_CLOSE, OP_PING, OP_PONG, OP_TEXT
 from agentsassemble.web.room_session import (
     WS_SESSION_REVOKED_CATEGORY,
@@ -66,6 +67,19 @@ class TicketStoreTests(unittest.TestCase):
 
     def test_unknown_ticket_is_none(self):
         self.assertIsNone(WsTicketStore().consume("wst_nope"))
+
+    def test_pending_ticket_limit_rejects_unconsumed_ticket_flood_per_session(self):
+        store = WsTicketStore(max_pending_per_session=2, max_pending_total=4)
+        session = {"agent_id": "guest-1", "meeting_id": "room-1"}
+        first_ticket = store.issue(session, session_token="session-secret")
+        store.issue(session, session_token="session-secret")
+
+        with self.assertRaises(room_session_module.WsTicketLimitError):
+            store.issue(session, session_token="session-secret")
+
+        consumed = store.consume(first_ticket)
+        self.assertEqual(consumed["agent_id"], "guest-1")
+        self.assertTrue(store.issue(session, session_token="session-secret").startswith("wst_"))
 
     def test_concurrent_prune_and_consume_preserve_single_use_without_runtime_error(self):
         class InterleavingClock:

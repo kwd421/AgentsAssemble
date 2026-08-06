@@ -15,6 +15,7 @@ import threading
 import unittest
 from http.server import ThreadingHTTPServer
 from pathlib import Path
+from unittest.mock import patch
 from urllib.error import HTTPError
 from urllib.request import Request, urlopen
 
@@ -194,6 +195,27 @@ class WsEndpointTests(unittest.TestCase):
                     self.assertEqual(msg["streams"], ["lobby"])
                 finally:
                     sock.close()
+            finally:
+                self._stop_server(server)
+
+    def test_upgraded_socket_that_never_subscribes_is_closed_after_handshake_deadline(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            server = self._start_server(Path(tmp))
+            try:
+                host, port = server.server_address
+                base = f"http://{host}:{port}"
+                ticket = self._ws_ticket(base, self._session_token(base))
+                with patch(
+                    "agentsassemble.web.websocket.WS_APPLICATION_HANDSHAKE_TIMEOUT_SECONDS",
+                    0.05,
+                    create=True,
+                ):
+                    sock = self._handshake(host, port, ticket)
+                    try:
+                        sock.settimeout(0.5)
+                        self.assertTrue(sock.recv(4096))
+                    finally:
+                        sock.close()
             finally:
                 self._stop_server(server)
 

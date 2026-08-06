@@ -9,6 +9,12 @@ from agentsassemble.room.projection import public_event_for_identity
 from agentsassemble.room.text import clean_room_text as clean_lobby_text
 
 ROOM_EVENT_STREAM = "room_events"
+ROOM_MAX_SOCKET_CONNECTIONS = 512
+ROOM_MAX_SOCKET_CONNECTIONS_PER_SESSION = 8
+
+
+class RoomConnectionLimitError(RuntimeError):
+    """The bounded room socket pool cannot accept another connection."""
 
 
 class RoomSocketChannel:
@@ -122,16 +128,33 @@ class RoomSocketChannel:
 class RoomEventBroker:
     """Non-blocking fanout for canonical room events and targeted bridge turns."""
 
-    def __init__(self) -> None:
+    def __init__(
+        self,
+        *,
+        max_connections: int = ROOM_MAX_SOCKET_CONNECTIONS,
+        max_connections_per_session: int = ROOM_MAX_SOCKET_CONNECTIONS_PER_SESSION,
+    ) -> None:
         self._lock = threading.RLock()
         self._channels: dict[str, RoomSocketChannel] = {}
         self._active_bridges: dict[tuple[str, str], tuple[str, int]] = {}
+        self._max_connections = max(1, int(max_connections))
+        self._max_connections_per_session = max(1, int(max_connections_per_session))
 
     def connect(self, identity: dict[str, object]) -> RoomSocketChannel:
-        channel = RoomSocketChannel(identity)
-        channel.identity["connection_id"] = channel.connection_id
-        identity["connection_id"] = channel.connection_id
         with self._lock:
+            if len(self._channels) >= self._max_connections:
+                raise RoomConnectionLimitError("room WebSocket capacity reached")
+            subject = _connection_subject(identity)
+            subject_connections = sum(
+                1
+                for existing in self._channels.values()
+                if _connection_subject(existing.identity) == subject
+            )
+            if subject_connections >= self._max_connections_per_session:
+                raise RoomConnectionLimitError("room WebSocket session capacity reached")
+            channel = RoomSocketChannel(identity)
+            channel.identity["connection_id"] = channel.connection_id
+            identity["connection_id"] = channel.connection_id
             self._channels[channel.connection_id] = channel
         return channel
 
@@ -268,5 +291,17 @@ def _contains_message_delta(message: dict[str, object]) -> bool:
 __all__ = [
     "ROOM_EVENT_STREAM",
     "RoomEventBroker",
+    "RoomConnectionLimitError",
     "RoomSocketChannel",
 ]
+
+
+def _connection_subject(identity: dict[str, object]) -> tuple[str, str]:
+    room_id = clean_lobby_text(identity.get("meeting_id"), limit=128)
+    session_id = clean_lobby_text(
+        identity.get("session_id")
+        or identity.get("principal_user_id")
+        or identity.get("agent_id"),
+        limit=128,
+    )
+    return room_id, session_id

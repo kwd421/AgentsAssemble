@@ -1,5 +1,6 @@
 import unittest
 
+import agentsassemble.room.event_broker as event_broker_module
 from agentsassemble.room.event_broker import RoomEventBroker, RoomSocketChannel
 
 
@@ -12,6 +13,24 @@ def _event_message(event_type: str, sequence: int) -> dict[str, object]:
 
 
 class RoomSocketChannelBackpressureTests(unittest.TestCase):
+    def test_connection_limit_rejects_a_second_live_socket_for_same_session(self):
+        broker = RoomEventBroker(max_connections=4, max_connections_per_session=1)
+        first = broker.connect(
+            {"meeting_id": "general", "session_id": "session-a", "agent_id": "guest-a"}
+        )
+
+        with self.assertRaises(event_broker_module.RoomConnectionLimitError):
+            broker.connect(
+                {"meeting_id": "general", "session_id": "session-a", "agent_id": "guest-a"}
+            )
+
+        broker.disconnect(first)
+        replacement = broker.connect(
+            {"meeting_id": "general", "session_id": "session-a", "agent_id": "guest-a"}
+        )
+        self.assertFalse(replacement.closed)
+        broker.close()
+
     def test_final_event_evicts_an_older_delta_first(self):
         channel = RoomSocketChannel({"meeting_id": "general"}, max_messages=10)
         for sequence in range(10):

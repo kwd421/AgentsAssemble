@@ -1,6 +1,8 @@
 """HTTP boundary for issuing and redeeming guest recovery codes."""
 from __future__ import annotations
 
+import hashlib
+import ipaddress
 import threading
 import time
 from collections import defaultdict, deque
@@ -12,15 +14,31 @@ from agentsassemble.web.router import RequestContext, Router
 
 
 class _RecoveryAttemptLimiter:
-    def __init__(self, *, attempts: int = 8, window_seconds: float = 60.0) -> None:
+    def __init__(
+        self,
+        *,
+        attempts: int = 8,
+        window_seconds: float = 60.0,
+        max_keys: int = 4096,
+    ) -> None:
         self._attempts = attempts
         self._window_seconds = window_seconds
+        self._max_keys = max(1, int(max_keys))
         self._seen: dict[str, deque[float]] = defaultdict(deque)
         self._lock = threading.Lock()
 
     def allows(self, key: str) -> bool:
         now = time.monotonic()
         with self._lock:
+            if key not in self._seen and len(self._seen) >= self._max_keys:
+                for known_key in list(self._seen):
+                    seen = self._seen[known_key]
+                    while seen and seen[0] <= now - self._window_seconds:
+                        seen.popleft()
+                    if not seen:
+                        self._seen.pop(known_key, None)
+                if len(self._seen) >= self._max_keys:
+                    return False
             seen = self._seen[key]
             while seen and seen[0] <= now - self._window_seconds:
                 seen.popleft()
@@ -31,7 +49,8 @@ class _RecoveryAttemptLimiter:
 
 
 def register_identity_recovery_routes(router: Router) -> None:
-    limiter = _RecoveryAttemptLimiter()
+    network_limiter = _RecoveryAttemptLimiter()
+    credential_limiter = _RecoveryAttemptLimiter()
 
     def recovery(ctx: RequestContext) -> GuestIdentityRecoveryService:
         return GuestIdentityRecoveryService(
@@ -71,13 +90,15 @@ def register_identity_recovery_routes(router: Router) -> None:
         if not ctx.uses_loopback_host() and str(ctx.headers.get("X-Forwarded-Proto") or "").lower() != "https":
             ctx.send_error(HTTPStatus.FORBIDDEN, "HTTPS is required for identity recovery")
             return
-        client_address = getattr(ctx.handler, "client_address", ())
-        peer = str(client_address[0] if isinstance(client_address, tuple) and client_address else "unknown")
-        if not limiter.allows(peer):
-            ctx.send_error(HTTPStatus.TOO_MANY_REQUESTS, "too many recovery attempts")
-            return
         payload = ctx.read_json_body()
         if payload is None:
+            return
+        network_key = _recovery_network_key(ctx)
+        credential_key = hashlib.sha256(
+            str(payload.get("recovery_code") or "").encode("utf-8")
+        ).hexdigest()
+        if not network_limiter.allows(network_key) or not credential_limiter.allows(credential_key):
+            ctx.send_error(HTTPStatus.TOO_MANY_REQUESTS, "too many recovery attempts")
             return
         try:
             result = recovery(ctx).redeem(
@@ -94,6 +115,29 @@ def register_identity_recovery_routes(router: Router) -> None:
             ctx.send_error(HTTPStatus.FORBIDDEN, reason, code=reason)
             return
         ctx.send_json(result)
+
+
+def _recovery_network_key(ctx: RequestContext) -> str:
+    client_address = getattr(ctx.handler, "client_address", ())
+    peer = str(client_address[0] if isinstance(client_address, tuple) and client_address else "unknown")
+    if (
+        ctx.peer_is_loopback()
+        and not ctx.uses_loopback_host()
+        and str(ctx.headers.get("X-Forwarded-Proto") or "").strip().lower() == "https"
+    ):
+        candidates = [
+            str(ctx.headers.get("CF-Connecting-IP") or "").strip(),
+            str(ctx.headers.get("X-Forwarded-For") or "").split(",", 1)[0].strip(),
+        ]
+        for candidate in candidates:
+            try:
+                return str(ipaddress.ip_address(candidate))
+            except ValueError:
+                continue
+    try:
+        return str(ipaddress.ip_address(peer))
+    except ValueError:
+        return "unknown"
 
 
 __all__ = ["register_identity_recovery_routes"]
