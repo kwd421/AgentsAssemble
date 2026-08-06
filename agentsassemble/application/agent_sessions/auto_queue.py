@@ -6,8 +6,8 @@ from collections import deque
 import threading
 from typing import Callable, cast
 
+from agentsassemble.diagnostics.sensitive_text import redact_persisted_diagnostic_text
 from agentsassemble.room.repository import RoomRepository
-from agentsassemble.room.text import clean_room_text
 
 
 AGENT_SESSION_AUTO_TURN_QUEUE_LIMIT = 20
@@ -28,14 +28,15 @@ def run_agent_session_auto_turn_job(job: dict[str, object]) -> dict[str, object]
     try:
         return cast(AutoTurnExecutor, executor)()
     except Exception as error:  # pragma: no cover - defensive for background worker
+        safe_error = redact_persisted_diagnostic_text(error, limit=1000) or "Agent turn failed."
         repository.append_event(
             room_id,
             "error",
             actor_id="agent_session_auto_turn",
-            content=clean_room_text(str(error), limit=1000),
+            content=safe_error,
             trigger_event_id=job.get("trigger_event_id", ""),
         )
-        return {"status": "error", "turn_status": "error", "message": str(error)}
+        return {"status": "error", "turn_status": "error", "message": safe_error}
 
 
 def queue_agent_session_auto_turn_job(job: dict[str, object]) -> dict[str, object]:

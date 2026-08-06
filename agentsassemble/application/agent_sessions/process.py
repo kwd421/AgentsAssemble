@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from typing import Callable
 
+from agentsassemble.diagnostics.sensitive_text import redact_persisted_diagnostic_text
 from agentsassemble.providers.codex_app_server import (
     clean_agent_session_provider_kind,
     clean_provider_session_id,
@@ -127,7 +128,13 @@ def agent_session_process_result(
     try:
         result = command_runner([str(part) for part in command])
     except Exception as error:  # pragma: no cover - injected launchers own their exceptions
-        diagnostics.append({"setting": "launch", "status": "failed", "message": str(error)})
+        diagnostics.append(
+            {
+                "setting": "launch",
+                "status": "failed",
+                "message": redact_persisted_diagnostic_text(error, limit=1000),
+            }
+        )
         return {"process_status": "failed", "launch_plan": launch_plan, "diagnostics": diagnostics}
     returncode = getattr(result, "returncode", None)
     if isinstance(result, dict):

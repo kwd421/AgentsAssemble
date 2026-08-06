@@ -9,6 +9,7 @@ from agentsassemble.room.bridge_stop_confirmation import (
     ExternalBridgeStopCoordinator,
 )
 from agentsassemble.diagnostics.cleanup import CleanupReport
+from agentsassemble.diagnostics.sensitive_text import redact_persisted_diagnostic_text
 from agentsassemble.providers.launch_specs import NativeCliProviderSpec
 from agentsassemble.room.errors import RoomCommandRejected
 from agentsassemble.room.event_broker import RoomEventBroker
@@ -207,13 +208,14 @@ class RoomAgentLifecycle:
         except Exception as error:
             if not automatic_recovery:
                 self._launch_contexts.pop(launch_key, None)
+            safe_error = redact_persisted_diagnostic_text(error, limit=4000) or "Provider launch failed."
             self.store.update_session_fields(
                 room_id,
                 agent_id,
                 status="unavailable",
                 enabled=False,
                 runtime_status="error",
-                last_error=str(error),
+                last_error=safe_error,
                 lifecycle_intent_action="",
                 lifecycle_intent_id="",
                 lifecycle_intent_status="",
@@ -223,10 +225,10 @@ class RoomAgentLifecycle:
                 "error",
                 participant_id=agent_id,
                 session_id=agent_id,
-                content=str(error),
+                content=safe_error,
                 error_code="runtime_start_failed",
             )
-            raise RoomCommandRejected(str(error), code="runtime_start_failed") from error
+            raise RoomCommandRejected(safe_error, code="runtime_start_failed") from error
         updated = self.store.update_session_fields(
             room_id,
             agent_id,
@@ -529,7 +531,10 @@ class RoomAgentLifecycle:
                 handle_id=owned_handle_id,
             )
         except Exception as error:
-            message = clean_lobby_text(error, limit=1000) or "Server-owned provider shutdown failed."
+            message = (
+                redact_persisted_diagnostic_text(error, limit=1000)
+                or "Server-owned provider shutdown failed."
+            )
             self._mark_stop_unconfirmed(
                 room_id,
                 agent_id,
@@ -619,7 +624,7 @@ class RoomAgentLifecycle:
                 recovery_required=True,
                 recovery_attempt_count=recovery_attempt_count + (1 if automatic_recovery else 0),
                 last_error=message,
-                stderr_tail=clean_lobby_text(stderr_tail, limit=16000),
+            stderr_tail=redact_persisted_diagnostic_text(stderr_tail, limit=16000),
             )
             participant_id = clean_lobby_text(session.get("participant_id"), limit=128)
             if participant_id and self.store.participant(room_id, participant_id):
@@ -631,7 +636,7 @@ class RoomAgentLifecycle:
                 session_id=session_id,
                 content=message,
                 error_code="bridge_process_exited",
-                stderr_tail_present=bool(clean_lobby_text(stderr_tail, limit=16000)),
+                stderr_tail_present=bool(redact_persisted_diagnostic_text(stderr_tail, limit=16000)),
                 recovery_required=True,
                 automatic_recovery_scheduled=automatic_recovery,
             )
@@ -871,7 +876,10 @@ class RoomAgentLifecycle:
                         status="error",
                         runtime_status="error",
                         recovery_required=True,
-                        last_error=clean_lobby_text(error, limit=4000) or "Automatic recovery failed.",
+                        last_error=(
+                            redact_persisted_diagnostic_text(error, limit=4000)
+                            or "Automatic recovery failed."
+                        ),
                     )
                     self._publish_session_state(room_id, updated)
 

@@ -12,6 +12,7 @@ import threading
 import time
 from typing import Callable, Iterable
 
+from agentsassemble.diagnostics.sensitive_text import redact_persisted_diagnostic_value
 from agentsassemble.providers.turn_input import agent_turn_prompt
 from agentsassemble.providers.process_environment import sanitized_provider_environment
 from agentsassemble.providers.codex_provider_requests import (
@@ -1197,7 +1198,8 @@ def _diagnostic_items(state: dict[str, object]) -> list[dict[str, str]]:
     for key, value in state.items():
         if value in (None, "", [], {}):
             continue
-        items.append({"setting": str(key), "status": str(value), "message": str(value)})
+        safe_value = redact_persisted_diagnostic_value(value)
+        items.append({"setting": str(key), "status": str(safe_value), "message": str(safe_value)})
     return items
 
 

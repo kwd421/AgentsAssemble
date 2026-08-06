@@ -3,6 +3,7 @@ from __future__ import annotations
 import hashlib
 import re
 
+from agentsassemble.diagnostics.sensitive_text import redact_persisted_diagnostic_text
 from agentsassemble.room.text import clean_room_text as clean_lobby_text
 from agentsassemble.room.types import RoomEvent
 
@@ -330,19 +331,25 @@ def runtime_diagnostic_fields(diagnostics: object) -> dict[str, object]:
     values = diagnostics if isinstance(diagnostics, dict) else {}
     return {
         "terminal_byte_count": int(values.get("terminal_byte_count") or 0),
-        "terminal_tail": str(values.get("terminal_tail") or "")[-16000:],
+        "terminal_tail": redact_persisted_diagnostic_text(
+            values.get("terminal_tail"),
+            limit=16000,
+        ),
         "stderr_drained": bool(values.get("stderr_drained", False)),
         "stderr_byte_count": int(values.get("stderr_byte_count") or 0),
         "stderr_line_count": int(values.get("stderr_line_count") or 0),
         "stderr_warning_count": int(values.get("stderr_warning_count") or 0),
-        "stderr_tail": str(values.get("stderr_tail") or "")[-16000:],
+        "stderr_tail": redact_persisted_diagnostic_text(
+            values.get("stderr_tail"),
+            limit=16000,
+        ),
         "stderr_tail_truncated": bool(values.get("stderr_tail_truncated", False)),
         "stderr_last_line_at": clean_lobby_text(values.get("stderr_last_line_at"), limit=128),
         "provider_session_active": bool(values.get("provider_session_active", False)),
         "provider_session_load_supported": bool(values.get("provider_session_load_supported", False)),
         "provider_session_reused": bool(values.get("provider_session_reused", False)),
         "provider_session_resume_failed": bool(values.get("provider_session_resume_failed", False)),
-        "provider_session_resume_error": clean_lobby_text(
+        "provider_session_resume_error": redact_persisted_diagnostic_text(
             values.get("provider_session_resume_error"),
             limit=1000,
         ),

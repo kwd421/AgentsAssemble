@@ -2844,15 +2844,40 @@ class AgentSessionRoomStoreTests(unittest.TestCase):
 
         store = RoomStore(self.output_root)
         store.append_event("room-a", "message_final", participant_id="human", content="new human update")
+        diagnostic_secret = "agent-turn-diagnostic-secret"
+        opaque_token = "opaque-provider-token"
         failed = run_agent_session_turn_payload(
             self.output_root,
             {"room_id": "room-a", "agent_id": "agent-a", "session_id": "session-a", "instruction": "Fail."},
-            turn_runner=lambda packet: [{"type": "error", "diagnostics": [{"setting": "x", "status": "failed", "message": "boom"}]}],
+            turn_runner=lambda packet: [
+                {
+                    "type": "error",
+                    "diagnostics": [
+                        {
+                            "setting": "stderr",
+                            "status": "failed",
+                            "message": f"api_key={diagnostic_secret}",
+                            "credential_details": {"token": opaque_token},
+                        }
+                    ],
+                }
+            ],
         )
 
         self.assertEqual(failed["turn_status"], "error")
         self.assertEqual(RoomStore(self.output_root).session("room-a", "session-a").get("last_provider_sync_event_id"), cursor_after_success)
         self.assertEqual(RoomStore(self.output_root).session("room-a", "session-a").get("last_provider_sync_seq"), cursor_seq_after_success)
+        durable_state = json.dumps(
+            {
+                "session": RoomStore(self.output_root).session("room-a", "session-a"),
+                "events": RoomStore(self.output_root).read_events("room-a"),
+            },
+            ensure_ascii=False,
+        )
+        self.assertNotIn(diagnostic_secret, durable_state)
+        self.assertNotIn(opaque_token, durable_state)
+        self.assertNotIn(diagnostic_secret, json.dumps(failed, ensure_ascii=False))
+        self.assertNotIn(opaque_token, json.dumps(failed, ensure_ascii=False))
 
     def test_normal_provider_input_omits_summary_but_recovery_includes_it(self):
         normal = build_provider_turn_input(instruction="Answer.", room_delta="")

@@ -9,6 +9,7 @@ import subprocess
 import time
 from typing import Callable, Iterable
 
+from agentsassemble.diagnostics.sensitive_text import redact_persisted_diagnostic_text
 from agentsassemble.application.agent_sessions.process import build_agent_session_launch_plan
 from agentsassemble.providers.codex_app_server import (
     DEFAULT_AGENT_TURN_TIMEOUT_SECONDS,
@@ -68,7 +69,13 @@ def agent_session_codex_jsonl_turn_runner(
             except json.JSONDecodeError:
                 yield {
                     "type": "diagnostics",
-                    "diagnostics": [{"setting": "jsonl", "status": "malformed", "message": clean_lobby_text(line, limit=500)}],
+                    "diagnostics": [
+                        {
+                            "setting": "jsonl",
+                            "status": "malformed",
+                            "message": redact_persisted_diagnostic_text(line, limit=500),
+                        }
+                    ],
                 }
                 continue
             event_type = clean_lobby_text(item.get("type") or item.get("event") or item.get("kind"), limit=128)
@@ -84,7 +91,10 @@ def agent_session_codex_jsonl_turn_runner(
                         {
                             "setting": "codex_jsonl",
                             "status": "failed",
-                            "message": clean_lobby_text(item.get("message") or item.get("error") or str(item), limit=1000),
+                        "message": redact_persisted_diagnostic_text(
+                            item.get("message") or item.get("error") or str(item),
+                            limit=1000,
+                        ),
                         }
                     ],
                 }
@@ -176,7 +186,13 @@ def agent_session_command_turn_runner(
         except Exception as error:  # pragma: no cover - defensive for injected runners
             yield {
                 "type": "error",
-                "diagnostics": [{"setting": "turn_command", "status": "failed", "message": str(error)}],
+                "diagnostics": [
+                    {
+                        "setting": "turn_command",
+                        "status": "failed",
+                        "message": redact_persisted_diagnostic_text(error, limit=1000),
+                    }
+                ],
             }
             return
         if completed.returncode != 0:
@@ -366,7 +382,10 @@ def _default_agent_turn_jsonl_streamer(
                 streams.remove(stream)
                 continue
             if stream is process.stderr:
-                stderr_tail = [*stderr_tail, clean_lobby_text(line, limit=500)][-8:]
+                stderr_tail = [
+                    *stderr_tail,
+                    redact_persisted_diagnostic_text(line, limit=500),
+                ][-8:]
                 chunk = _stderr_progress_chunk(line)
                 if chunk is not None:
                     yield chunk
@@ -380,7 +399,11 @@ def _default_agent_turn_jsonl_streamer(
                 "status": "failed",
                 "message": f"provider command exited {returncode}",
             },
-            {"setting": "stderr_tail", "status": "captured", "message": "\n".join(stderr_tail)},
+            {
+                "setting": "stderr_tail",
+                "status": "captured",
+                "message": redact_persisted_diagnostic_text("\n".join(stderr_tail), limit=4000),
+            },
         ]
         if _context_error_detected(diagnostics):
             diagnostics.append({"setting": "context_error_detected", "status": "true", "message": "true"})
@@ -390,7 +413,7 @@ def _default_agent_turn_jsonl_streamer(
 
 
 def _stderr_progress_chunk(line: str) -> AgentTurnChunk | None:
-    safe = clean_lobby_text(line, limit=1000)
+    safe = redact_persisted_diagnostic_text(line, limit=1000)
     lower = safe.lower()
     if not safe:
         return None
@@ -400,7 +423,7 @@ def _stderr_progress_chunk(line: str) -> AgentTurnChunk | None:
 
 
 def _stderr_diagnostics(stderr: str | None) -> list[dict[str, str]]:
-    safe = clean_lobby_text(stderr, limit=1000)
+    safe = redact_persisted_diagnostic_text(stderr, limit=1000)
     if not safe:
         return []
     return [{"setting": "stderr", "status": "captured", "message": safe}]

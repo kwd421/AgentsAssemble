@@ -118,12 +118,14 @@ class RoomProjectionTests(unittest.TestCase):
         self.assertNotIn("legacy_source_path", projected)
 
     def test_runtime_diagnostics_store_bounded_tails_but_public_projection_omits_them(self):
+        stderr_secret = "diagnostic-stderr-secret"
+        terminal_secret = "diagnostic-terminal-secret"
         raw = {
             "stderr_drained": True,
             "stderr_byte_count": 70001,
             "stderr_warning_count": 4,
-            "stderr_tail": "s" * 20000,
-            "terminal_tail": "t" * 20000,
+            "stderr_tail": "s" * 20000 + f"\nAuthorization: Bearer {stderr_secret}",
+            "terminal_tail": "t" * 20000 + f"\napi_key={terminal_secret}",
             "provider_session_reused": True,
             "message_source": "provider_protocol",
         }
@@ -133,6 +135,8 @@ class RoomProjectionTests(unittest.TestCase):
 
         self.assertEqual(len(stored["stderr_tail"]), 16000)
         self.assertEqual(len(stored["terminal_tail"]), 16000)
+        self.assertNotIn(stderr_secret, stored["stderr_tail"])
+        self.assertNotIn(terminal_secret, stored["terminal_tail"])
         self.assertEqual(public["stderr_byte_count"], 70001)
         self.assertEqual(public["stderr_warning_count"], 4)
         self.assertTrue(public["provider_session_reused"])

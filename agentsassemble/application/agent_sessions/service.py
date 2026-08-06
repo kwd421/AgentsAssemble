@@ -14,6 +14,7 @@ from agentsassemble.providers.codex_app_server import (
     clean_provider_session_id,
 )
 from agentsassemble.room.repository import RoomRepository
+from agentsassemble.diagnostics.sensitive_text import redact_persisted_diagnostic_value
 from agentsassemble.room.text import clean_room_text as clean_lobby_text
 
 
@@ -118,7 +119,9 @@ def resume_agent_session(
             "workspace": clean_lobby_text(payload.get("workspace") or payload.get("cwd"), limit=300),
             "codex_home": clean_lobby_text(payload.get("codex_home") or payload.get("config_profile"), limit=200),
             "runtime_sharing_policy": clean_codex_app_server_runtime_sharing_policy(payload.get("runtime_sharing_policy") or previous_session.get("runtime_sharing_policy")),
-            "diagnostics": payload.get("diagnostics") if isinstance(payload.get("diagnostics"), list) else [],
+            "diagnostics": redact_persisted_diagnostic_value(
+                payload.get("diagnostics") if isinstance(payload.get("diagnostics"), list) else []
+            ),
         },
     )
     if participant_created or previous_participant.get("status") != "joined":
@@ -220,7 +223,9 @@ def create_agent_session(
             "codex_home": clean_lobby_text(payload.get("codex_home") or payload.get("config_profile"), limit=200),
             "runtime_sharing_policy": runtime_sharing_policy,
             "share_activity": bool(payload.get("share_activity", False)),
-            "diagnostics": payload.get("diagnostics") if isinstance(payload.get("diagnostics"), list) else [],
+            "diagnostics": redact_persisted_diagnostic_value(
+                payload.get("diagnostics") if isinstance(payload.get("diagnostics"), list) else []
+            ),
         },
     )
     if participant_created or previous_participant.get("status") != "joined":

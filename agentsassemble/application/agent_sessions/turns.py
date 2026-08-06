@@ -9,6 +9,7 @@ import time
 from typing import Iterable
 from uuid import uuid4
 
+from agentsassemble.diagnostics.sensitive_text import redact_persisted_diagnostic_value
 from agentsassemble.application.agent_sessions.compatibility import (
     ensure_legacy_agent_session,
 )
@@ -259,7 +260,10 @@ def run_agent_session_turn_payload(
             if event_type == "message_final":
                 runtime_state["message_final_chars"] = len(content)
             _merge_runtime_diagnostics(runtime_state, chunk)
-            diagnostics = chunk.get("diagnostics") if isinstance(chunk.get("diagnostics"), list) else []
+            raw_diagnostics = chunk.get("diagnostics") if isinstance(chunk.get("diagnostics"), list) else []
+            diagnostics = redact_persisted_diagnostic_value(raw_diagnostics)
+            if not isinstance(diagnostics, list):
+                diagnostics = []
             appended.append(
                 store.append_event(
                     room_id,
@@ -298,7 +302,11 @@ def run_agent_session_turn_payload(
                     "diagnostics": [*_diagnostic_items(runtime_state), *diagnostics],
                 }
     except Exception as error:  # pragma: no cover - defensive for injected runners
-        diagnostics = [{"setting": "turn_runner", "status": "failed", "message": str(error)}]
+        diagnostics = redact_persisted_diagnostic_value(
+            [{"setting": "turn_runner", "status": "failed", "message": str(error)}]
+        )
+        if not isinstance(diagnostics, list):
+            diagnostics = []
         runtime_state["context_error_detected"] = _context_error_detected(diagnostics)
         if runtime_state.get("runtime_mode") == "app_server" or runtime_state["context_error_detected"]:
             runtime_state["recovery_required"] = True
@@ -450,7 +458,7 @@ def _merge_runtime_diagnostics(state: dict[str, object], chunk: dict[str, object
         "stderr_warning_count",
     ):
         if key in chunk:
-            state[key] = chunk[key]
+            state[key] = redact_persisted_diagnostic_value(chunk[key])
     usage = chunk.get("usage")
     if isinstance(usage, dict):
         for key in ("input_tokens", "cached_input_tokens", "output_tokens", "reasoning_output_tokens"):

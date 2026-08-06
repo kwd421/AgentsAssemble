@@ -4,6 +4,7 @@ import hashlib
 import json
 from typing import Callable
 
+from agentsassemble.diagnostics.sensitive_text import redact_persisted_diagnostic_text
 from agentsassemble.providers.launch_specs import (
     EXTERNAL_AGENT_PROVIDER_KIND,
     native_cli_provider_definition,
@@ -200,11 +201,19 @@ class RoomBridgeReportService:
             health = ProviderRuntimeHealth.parse(payload)
         except AdapterContractError as error:
             raise RoomCommandRejected(str(error), code="adapter_health_invalid") from error
-        fields: dict[str, object] = {
-            key: payload[key]
-            for key in ("resolved_executable", "last_error", "returncode")
-            if key in payload
-        }
+        fields: dict[str, object] = {}
+        if "resolved_executable" in payload:
+            fields["resolved_executable"] = clean_room_text(
+                payload.get("resolved_executable"),
+                1000,
+            )
+        if "last_error" in payload:
+            fields["last_error"] = redact_persisted_diagnostic_text(
+                payload.get("last_error"),
+                limit=4000,
+            )
+        if "returncode" in payload:
+            fields["returncode"] = safe_int_or_none(payload.get("returncode"))
         fields.update(
             running=health.running,
             pty=health.pty,
