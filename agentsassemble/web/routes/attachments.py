@@ -3,13 +3,13 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from http import HTTPStatus
-import secrets
 
 from agentsassemble.room.attachments import (
     AttachmentError,
     INLINE_SAFE_IMAGE_TYPES,
     MAX_ATTACHMENT_BYTES,
     normalize_content_type,
+    PUBLIC_ATTACHMENT_PURPOSES,
     sanitize_attachment_filename,
 )
 from agentsassemble.room.text import clean_room_text
@@ -60,6 +60,11 @@ def register_attachment_routes(router: Router) -> None:
             **payload,
             "room_id": authority.room_id,
             "meeting_id": "",
+            "purpose": (
+                _PROFILE_AVATAR_PURPOSE
+                if authority.profile_avatar
+                else clean_room_text(payload.get("purpose"), limit=32)
+            ),
         }
         try:
             attachment = ctx.deps.media.store(stored_payload)
@@ -202,13 +207,7 @@ def _authorize_download(
     if _has_operator_authority(ctx):
         return True
 
-    expected_access = str(metadata.get("access_token") or "").strip()
-    provided_access = str((ctx.query.get("access") or [""])[0]).strip()
-    if (
-        expected_access
-        and provided_access
-        and secrets.compare_digest(expected_access, provided_access)
-    ):
+    if clean_room_text(metadata.get("purpose"), limit=32) in PUBLIC_ATTACHMENT_PURPOSES:
         return True
 
     session = ctx.session()

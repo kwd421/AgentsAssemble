@@ -352,6 +352,7 @@ export function LobbyMessageRow({
   voteCard,
   showHeader = true,
   mentionLabels,
+  roomSessionToken = "",
 }: {
   event: LobbyEvent;
   providerKind?: string;
@@ -360,6 +361,7 @@ export function LobbyMessageRow({
   voteCard?: ReactNode;
   showHeader?: boolean;
   mentionLabels: MentionLabels;
+  roomSessionToken?: string;
 }) {
   const systemLike =
     event.kind === "system" || event.kind === "flow_event" || event.kind === "vote_cast";
@@ -417,7 +419,7 @@ export function LobbyMessageRow({
             <DiscordText text={event.message || ""} mentionLabels={mentionLabels} />
           </div>
         )}
-        <LobbyAttachments attachments={event.attachments} />
+        <LobbyAttachments attachments={event.attachments} sessionToken={roomSessionToken} />
         {threadSummary && onOpenSideThread && (
           <button
             type="button"

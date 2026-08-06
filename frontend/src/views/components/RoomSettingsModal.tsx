@@ -123,6 +123,7 @@ export default function RoomSettingsModal({
     try {
       const attachment = await uploadLobbyAttachment(file, {
         roomId: room.meetingId,
+        purpose: "room_appearance",
       });
       await onAppearanceChange({
         bannerImage: attachment.url,
@@ -142,6 +143,7 @@ export default function RoomSettingsModal({
     try {
       const attachment = await uploadLobbyAttachment(file, {
         roomId: room.meetingId,
+        purpose: "room_appearance",
       });
       await onAppearanceChange({ iconImage: attachment.url });
       setUploadStatus("채팅방 아이콘 저장됨");

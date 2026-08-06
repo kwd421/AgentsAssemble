@@ -113,7 +113,7 @@ def _image_payload(**updates: object) -> dict[str, object]:
 
 
 class AttachmentAuthorizationTests(unittest.TestCase):
-    def test_download_requires_room_authority_or_the_issued_attachment_capability(self):
+    def test_private_room_attachment_download_requires_current_room_authority(self):
         with tempfile.TemporaryDirectory() as temp_dir:
             root = Path(temp_dir)
             deps = _attachment_dependencies(root)
@@ -158,7 +158,7 @@ class AttachmentAuthorizationTests(unittest.TestCase):
                 f"/api/attachments/{attachment['id']}?view=1",
                 headers={"Authorization": f"Bearer {same_room_token}"},
             )
-            capability = _dispatch_attachment_download(
+            stale_public_url = _dispatch_attachment_download(
                 deps,
                 str(attachment["url"]),
             )
@@ -172,7 +172,10 @@ class AttachmentAuthorizationTests(unittest.TestCase):
                 (HTTPStatus.FORBIDDEN, "attachment is not part of this session room"),
             )
             self.assertEqual(same_room.sent_attachment[0], b"image-bytes")
-            self.assertEqual(capability.sent_attachment[0], b"image-bytes")
+            self.assertEqual(
+                stale_public_url.sent_error,
+                (HTTPStatus.UNAUTHORIZED, "attachment access is required"),
+            )
 
     def test_oversized_public_request_is_rejected_before_body_read(self):
         with tempfile.TemporaryDirectory() as temp_dir:
@@ -374,6 +377,10 @@ class AttachmentAuthorizationTests(unittest.TestCase):
             attachment = accepted.sent_json["attachment"]
             metadata = read_attachment_metadata(root, str(attachment["id"]))
             self.assertEqual(metadata["room_id"], "room-a")
+            public_avatar = _dispatch_attachment_download(
+                deps,
+                str(attachment["url"]),
+            )
             self.assertNotIn("room_media", accepted.sent_json)
             self.assertNotIn(
                 "media_attached",
@@ -387,6 +394,7 @@ class AttachmentAuthorizationTests(unittest.TestCase):
                 ),
             )
             self.assertEqual(len(list((root / "attachments").iterdir())), 1)
+            self.assertEqual(public_avatar.sent_attachment[0], b"image-bytes")
 
     def test_agent_bridge_invite_cannot_authorize_prejoin_profile_upload(self):
         with tempfile.TemporaryDirectory() as temp_dir:

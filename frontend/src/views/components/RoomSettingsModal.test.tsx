@@ -98,6 +98,7 @@ describe("RoomSettingsModal conversation mode", () => {
 
     expect(apiMocks.uploadLobbyAttachment).toHaveBeenCalledWith(file, {
       roomId: "general",
+      purpose: "room_appearance",
     });
     expect(onAppearanceChange).toHaveBeenCalledWith({
       bannerImage: "/api/attachments/banner-asset?view=1",

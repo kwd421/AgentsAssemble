@@ -5,7 +5,6 @@ import binascii
 import json
 import mimetypes
 import re
-import secrets
 import shutil
 from dataclasses import dataclass
 from datetime import UTC, datetime
@@ -22,6 +21,7 @@ ATTACHMENT_ID_PATTERN = re.compile(r"^[A-Za-z0-9_-]{8,64}$")
 # types must never be classified as is_image so the UI does not preview them and
 # the server does not serve them inline.
 INLINE_SAFE_IMAGE_TYPES = {"image/png", "image/jpeg", "image/gif", "image/webp"}
+PUBLIC_ATTACHMENT_PURPOSES = {"profile_avatar", "room_appearance"}
 
 
 class AttachmentError(ValueError):
@@ -87,9 +87,7 @@ def store_uploaded_attachment(output_root: Path, payload: dict[str, object]) -> 
         "is_image": content_type in INLINE_SAFE_IMAGE_TYPES,
         "created_at": datetime.now(UTC).isoformat(),
         "room_id": room_id,
-        # The opaque id locates storage; this independent secret authorizes
-        # browser image/download requests that cannot attach a Bearer header.
-        "access_token": secrets.token_urlsafe(32),
+        "purpose": normalize_attachment_purpose(payload.get("purpose")),
     }
     (directory / "metadata.json").write_text(json.dumps(metadata, ensure_ascii=False, sort_keys=True), encoding="utf-8")
     return public_attachment_metadata(metadata)
@@ -171,16 +169,14 @@ def public_attachment_metadata(metadata: dict[str, object]) -> dict[str, object]
     content_type = normalize_content_type(metadata.get("content_type"), filename)
     size = normalize_size(metadata.get("size"))
     is_image = content_type in INLINE_SAFE_IMAGE_TYPES
-    access_token = str(metadata.get("access_token") or "").strip()
-    access_query = f"&access={quote(access_token)}" if access_token else ""
     return {
         "id": attachment_id,
         "filename": filename,
         "content_type": content_type,
         "size": size,
         "is_image": is_image,
-        "url": f"/api/attachments/{attachment_id}?view=1{access_query}",
-        "download_url": f"/api/attachments/{attachment_id}?download=1{access_query}",
+        "url": f"/api/attachments/{attachment_id}?view=1",
+        "download_url": f"/api/attachments/{attachment_id}?download=1",
     }
 
 
@@ -267,3 +263,10 @@ def normalize_size(value: object) -> int:
     except (TypeError, ValueError):
         return 0
     return max(0, min(size, MAX_ATTACHMENT_BYTES))
+
+
+def normalize_attachment_purpose(value: object) -> str:
+    purpose = clean_room_text(value, limit=32)
+    if purpose in PUBLIC_ATTACHMENT_PURPOSES:
+        return purpose
+    return "room_attachment"

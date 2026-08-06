@@ -24,7 +24,7 @@ export type LobbyAttachmentUploadOptions = {
   roomId?: string;
   sessionToken?: string;
   inviteToken?: string;
-  purpose?: "room_attachment" | "profile_avatar";
+  purpose?: "room_attachment" | "profile_avatar" | "room_appearance";
 };
 
 export interface LobbyEvent {
