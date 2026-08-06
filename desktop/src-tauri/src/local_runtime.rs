@@ -31,16 +31,6 @@ pub struct LocalRuntime {
 impl LocalRuntime {
     pub fn ensure_running(&self, app: &AppHandle) -> Result<Url, String> {
         let server = normalized_server_url(DEFAULT_LOCAL_SERVER_URL)?;
-        if agentsassemble_server_is_ready(&server) {
-            return Ok(server);
-        }
-        if tcp_endpoint_is_reachable(&server) {
-            return Err(
-                "Port 8765 is in use by something other than AgentsAssemble. Close it or choose another server."
-                    .to_owned(),
-            );
-        }
-
         let data_root = app
             .path()
             .app_local_data_dir()
@@ -48,11 +38,24 @@ impl LocalRuntime {
         let runtime_root = data_root.join("local-runtime");
         fs::create_dir_all(&runtime_root)
             .map_err(|error| format!("cannot create local runtime directory: {error}"))?;
+        let stderr_path = runtime_root.join("server.stderr.log");
+
+        if self.owned_server_is_ready(&server)? {
+            return Ok(server);
+        }
+        if self.owned_child_is_running()? {
+            return self.wait_until_ready(&server, &stderr_path);
+        }
+        if tcp_endpoint_is_reachable(&server) {
+            return Err(
+                "Port 8765 is already in use. The desktop app only reuses a local server process that it started itself. Close the other process or choose another server."
+                    .to_owned(),
+            );
+        }
 
         let (mut command, description) = local_server_command(app, &runtime_root)?;
         configure_process_group(&mut command);
         let stdout_path = runtime_root.join("server.stdout.log");
-        let stderr_path = runtime_root.join("server.stderr.log");
         command.stdout(Stdio::from(create_log(&stdout_path)?));
         command.stderr(Stdio::from(create_log(&stderr_path)?));
         let child = command
@@ -60,10 +63,14 @@ impl LocalRuntime {
             .map_err(|error| format!("cannot start {description}: {error}"))?;
         *self.child.lock().expect("local runtime lock") = Some(child);
 
+        self.wait_until_ready(&server, &stderr_path)
+    }
+
+    fn wait_until_ready(&self, server: &Url, stderr_path: &Path) -> Result<Url, String> {
         let deadline = Instant::now() + STARTUP_TIMEOUT;
         while Instant::now() < deadline {
-            if agentsassemble_server_is_ready(&server) {
-                return Ok(server);
+            if agentsassemble_server_is_ready(server) {
+                return Ok(server.clone());
             }
             let status = {
                 let mut owned_child = self.child.lock().expect("local runtime lock");
@@ -91,6 +98,26 @@ impl LocalRuntime {
             "The local runtime did not become ready within 45 seconds. Details: {}",
             stderr_path.display()
         ))
+    }
+
+    fn owned_child_is_running(&self) -> Result<bool, String> {
+        let mut owned_child = self.child.lock().expect("local runtime lock");
+        let Some(child) = owned_child.as_mut() else {
+            return Ok(false);
+        };
+        if child
+            .try_wait()
+            .map_err(|error| format!("cannot inspect local runtime: {error}"))?
+            .is_none()
+        {
+            return Ok(true);
+        }
+        owned_child.take();
+        Ok(false)
+    }
+
+    fn owned_server_is_ready(&self, server: &Url) -> Result<bool, String> {
+        Ok(self.owned_child_is_running()? && agentsassemble_server_is_ready(server))
     }
 
     pub fn stop(&self) {
@@ -211,6 +238,43 @@ fn terminate_process_tree(child: &mut Child) {
         }
     }
     let _ = child.wait();
+}
+
+#[cfg(test)]
+mod tests {
+    use std::{
+        io::{Read, Write},
+        net::TcpListener,
+        thread,
+    };
+
+    use super::*;
+
+    #[test]
+    fn compatible_lookalike_server_is_not_reused_without_an_owned_process() {
+        let listener = TcpListener::bind("127.0.0.1:0").expect("bind fake server");
+        let address = listener.local_addr().expect("fake server address");
+        let fake = thread::spawn(move || {
+            let (mut stream, _) = listener.accept().expect("accept readiness probe");
+            let mut request = [0_u8; 1024];
+            let _ = stream.read(&mut request);
+            let body = r#"{"protocol_version":1,"frontend_version":"fake"}"#;
+            write!(
+                stream,
+                "HTTP/1.1 200 OK\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{}",
+                body.len(),
+                body
+            )
+            .expect("write fake readiness response");
+        });
+        let server = Url::parse(&format!("http://{address}/")).expect("server URL");
+
+        assert!(agentsassemble_server_is_ready(&server));
+        fake.join().expect("fake server thread");
+        assert!(!LocalRuntime::default()
+            .owned_server_is_ready(&server)
+            .expect("ownership decision"));
+    }
 }
 
 #[cfg(windows)]
