@@ -12,6 +12,17 @@ from agentsassemble.persistence.local.room.repository import RoomStore
 
 class RuntimeDiagnosticPersistenceTests(unittest.TestCase):
     def test_failed_agent_turn_redacts_nested_provider_credentials_before_persistence(self):
+        jwt = (
+            "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9."
+            "eyJzdWIiOiJkaWFnbm9zdGljLXVzZXIifQ."
+            "m7p4g8h2k6n9q3s5v1x8z0a2c4e6g8i0"
+        )
+        pem_secret = "diagnostic-private-key-material"
+        cookie_secret = "diagnostic-session-cookie"
+        refresh_cookie_secret = "diagnostic-refresh-cookie"
+        google_key = "AIza" + "A1b2C3d4E5f6G7h8I9j0K1l2M3n4O5p6Q7r"
+        aws_key = "AKIA" + "A1B2C3D4E5F6G7H8"
+        slack_key = "xoxb-12345678901234567890"
         with tempfile.TemporaryDirectory() as temp_dir:
             output_root = Path(temp_dir)
             store = RoomStore(output_root)
@@ -41,7 +52,16 @@ class RuntimeDiagnosticPersistenceTests(unittest.TestCase):
                             {
                                 "setting": "stderr",
                                 "status": "failed",
-                                "message": "api_key=agent-turn-diagnostic-secret",
+                                "message": (
+                                    "api_key=agent-turn-diagnostic-secret\n"
+                                    f"opaque JWT {jwt}\n"
+                                    "-----BEGIN PRIVATE KEY-----\n"
+                                    f"{pem_secret}\n"
+                                    "-----END PRIVATE KEY-----\n"
+                                    f"Cookie: session={cookie_secret}; theme=dark\n"
+                                    f"Set-Cookie: refresh={refresh_cookie_secret}; HttpOnly; Secure\n"
+                                    f"bare credentials {google_key} {aws_key} {slack_key}"
+                                ),
                                 "credential_details": {
                                     "token": "opaque-provider-token"
                                 },
@@ -60,7 +80,17 @@ class RuntimeDiagnosticPersistenceTests(unittest.TestCase):
             )
             response = json.dumps(failed, ensure_ascii=False)
 
-        for secret in ("agent-turn-diagnostic-secret", "opaque-provider-token"):
+        for secret in (
+            "agent-turn-diagnostic-secret",
+            "opaque-provider-token",
+            jwt,
+            pem_secret,
+            cookie_secret,
+            refresh_cookie_secret,
+            google_key,
+            aws_key,
+            slack_key,
+        ):
             self.assertNotIn(secret, durable_state)
             self.assertNotIn(secret, response)
 

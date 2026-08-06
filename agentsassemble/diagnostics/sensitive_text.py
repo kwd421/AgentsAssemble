@@ -24,6 +24,23 @@ _SENSITIVE_OPTION = re.compile(
     """
 )
 _BEARER_VALUE = re.compile(r"(?i)\bbearer\s+\S+")
+_SENSITIVE_HTTP_HEADER = re.compile(
+    r"""(?imx)
+    (?P<prefix>^|[\s;,])
+    (?P<name>authorization|proxy-authorization|cookie|set-cookie|x-api-key|x-auth-token)
+    \s*:\s*[^\r\n]*
+    """
+)
+_PEM_PRIVATE_KEY = re.compile(
+    r"""(?isx)
+    -----BEGIN\s+(?P<label>(?:[A-Z0-9]+\s+)*PRIVATE\s+KEY)-----
+    .*?
+    (?:-----END\s+(?P=label)-----|\Z)
+    """
+)
+_JWT_VALUE = re.compile(
+    r"(?<![A-Za-z0-9_-])eyJ[A-Za-z0-9_-]{8,}(?:\.[A-Za-z0-9_-]{8,}){1,4}(?![A-Za-z0-9_-])"
+)
 _BASIC_AUTH_OPTION = re.compile(
     r"""(?ix)(?P<prefix>^|\s)-u\s+(?:"[^"]*"|'[^']*'|[^\s,;]+)"""
 )
@@ -31,7 +48,12 @@ _URL_USERINFO = re.compile(
     r"""(?ix)\b(?P<scheme>[a-z][a-z0-9+.-]*://)[^/\s:@]+:[^/\s@]+@"""
 )
 _SECRET_PREFIX = re.compile(
-    r"\b(?:sk|aai1|ghp|github_pat|llmgtwy|vck|csk)[-_.][A-Za-z0-9._-]{6,}\b",
+    r"""(?ix)\b(?:
+    (?:sk|aai1|ghp|github_pat|llmgtwy|vck|csk|hf|glpat|npm|dop_v1)[-_.][A-Za-z0-9._-]{6,}
+    |AIza[A-Za-z0-9_-]{20,}
+    |(?:AKIA|ASIA)[A-Z0-9]{16}
+    |xox[baprs]-[A-Za-z0-9-]{10,}
+    )\b""",
     re.IGNORECASE,
 )
 _UNIX_PATH = re.compile(
@@ -105,6 +127,16 @@ def redact_persisted_diagnostic_text(value: object, *, limit: int = 16_000) -> s
     text = str(value or "").replace("\x00", "").strip()
     if not text:
         return ""
+    # Redact multi-line/key-shaped structures before taking the diagnostic
+    # tail. Otherwise a large PEM block or HTTP header could be truncated
+    # between its label and secret, leaving the persisted suffix recognizable
+    # but no longer matchable.
+    text = _PEM_PRIVATE_KEY.sub("[redacted private key]", text)
+    text = _SENSITIVE_HTTP_HEADER.sub(
+        lambda match: f"{match.group('prefix')}{match.group('name')}: [redacted]",
+        text,
+    )
+    text = _JWT_VALUE.sub("[redacted JWT]", text)
     # Only the tail is diagnostically useful. Keep a larger pre-redaction
     # window so a credential assignment crossing the final limit is still
     # removed before the persisted tail is selected.
