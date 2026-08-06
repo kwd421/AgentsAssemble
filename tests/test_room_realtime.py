@@ -3720,13 +3720,7 @@ class RoomRealtimeControllerTests(RoomToolModeRealtimeContract, unittest.TestCas
         )
         self.controller.broker.disconnect(first_channel)
 
-        stderr_secret = "bridge-stderr-secret"
-        self.controller.bridge_process_exited(
-            "general",
-            "codex",
-            17,
-            f"fatal provider stderr Authorization: Bearer {stderr_secret}",
-        )
+        self.controller.bridge_process_exited("general", "codex", 17, "fatal provider stderr Authorization: Bearer bridge-stderr-secret")
         recovering = self.controller.store.session("general", "codex")
 
         self.assertEqual(self.recovery_scheduler.delays, [1.0])
@@ -3735,8 +3729,7 @@ class RoomRealtimeControllerTests(RoomToolModeRealtimeContract, unittest.TestCas
         self.assertTrue(recovering["recovery_required"])
         self.assertFalse(recovering["provider_session_active"])
         self.assertIn(first_assignment["source_event_id"], recovering["pending_event_ids"])
-        self.assertIn("fatal provider stderr", recovering["stderr_tail"])
-        self.assertNotIn(stderr_secret, recovering["stderr_tail"])
+        self.assertEqual(recovering["stderr_tail"], "fatal provider stderr [redacted] [redacted]")
         crash_error = next(
             event
             for event in reversed(self.controller.store.read_events("general"))

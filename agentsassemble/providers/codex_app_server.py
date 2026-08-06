@@ -1196,10 +1196,9 @@ def _earlier_deadline(*deadlines: float | None) -> float | None:
 def _diagnostic_items(state: dict[str, object]) -> list[dict[str, str]]:
     items: list[dict[str, str]] = []
     for key, value in state.items():
-        if value in (None, "", [], {}):
-            continue
-        safe_value = redact_persisted_diagnostic_value(value)
-        items.append({"setting": str(key), "status": str(safe_value), "message": str(safe_value)})
+        if value not in (None, "", [], {}):
+            safe_value = redact_persisted_diagnostic_value(value)
+            items.append({"setting": str(key), "status": str(safe_value), "message": str(safe_value)})
     return items
 
 
