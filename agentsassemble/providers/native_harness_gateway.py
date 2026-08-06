@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import os
+import secrets
 import tempfile
 import threading
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
@@ -30,6 +31,13 @@ from agentsassemble.room.text import clean_room_text
 
 class NativeModelGatewayError(RuntimeError):
     pass
+
+
+class _GatewayRequestError(RuntimeError):
+    def __init__(self, status: int, message: str) -> None:
+        super().__init__(message)
+        self.status = int(status)
+        self.message = message
 
 
 class _LoopbackServer(ThreadingHTTPServer):
@@ -69,6 +77,11 @@ class NativeModelGateway:
         )
         self.request_timeout_seconds = max(1.0, float(request_timeout_seconds))
         self._context_policy = ApiContextPolicy(context_contract_bytes)
+        self._maximum_request_bytes = min(
+            8 * 1024 * 1024,
+            max(1024 * 1024, int(context_contract_bytes) * 2),
+        )
+        self._access_token = secrets.token_urlsafe(32)
         self._context_lock = threading.Lock()
         self._delivered_tool_call_ids: set[str] = set()
         self._tool_result_references: dict[str, str] = {}
@@ -89,7 +102,7 @@ class NativeModelGateway:
         self._last_request_kind = ""
         self._last_error = ""
         host, port = self._server.server_address[:2]
-        self.endpoint = f"http://{host}:{port}/v1"
+        self.endpoint = f"http://{host}:{port}/{self._access_token}/v1"
 
     def _handler_type(self):
         gateway = self
@@ -152,7 +165,9 @@ class NativeModelGateway:
         }
 
     def _handle_get(self, handler: BaseHTTPRequestHandler) -> None:
-        request_path = urlsplit(handler.path).path.rstrip("/")
+        request_path = self._authorized_request_path(handler)
+        if request_path is None:
+            return
         if request_path == "/healthz":
             _write_json(handler, 200, {"status": "ok"})
             return
@@ -182,8 +197,13 @@ class NativeModelGateway:
 
     def _handle_post(self, handler: BaseHTTPRequestHandler) -> None:
         try:
-            request = _read_json(handler)
-            request_path = urlsplit(handler.path).path.rstrip("/")
+            request_path = self._authorized_request_path(handler)
+            if request_path is None:
+                return
+            request = _read_json(
+                handler,
+                maximum_bytes=self._maximum_request_bytes,
+            )
             if request_path in {"/v1/responses", "/responses"}:
                 self._record_request("responses")
                 payload = responses_request_to_chat(
@@ -236,6 +256,13 @@ class NativeModelGateway:
                 )
                 return
             _write_json(handler, 404, {"error": {"message": "Not found."}})
+        except _GatewayRequestError as error:
+            self._last_error = error.message
+            _write_json(
+                handler,
+                error.status,
+                {"error": {"type": "invalid_request", "message": error.message}},
+            )
         except _UpstreamHttpError as error:
             self._last_error = error.message
             _write_json(
@@ -275,6 +302,24 @@ class NativeModelGateway:
                     },
                 },
             )
+
+    def _authorized_request_path(
+        self,
+        handler: BaseHTTPRequestHandler,
+    ) -> str | None:
+        request_path = urlsplit(handler.path).path.rstrip("/")
+        prefix, separator, remainder = request_path.lstrip("/").partition("/")
+        if not (
+            separator
+            and secrets.compare_digest(prefix, self._access_token)
+        ):
+            _write_json(
+                handler,
+                401,
+                {"error": {"type": "unauthorized", "message": "Unauthorized."}},
+            )
+            return None
+        return f"/{remainder}".rstrip("/")
 
     def _record_request(self, request_kind: str) -> None:
         self._request_count += 1
@@ -369,11 +414,19 @@ def _upstream_error_message(body: str) -> str:
     return body[:2000] or "Upstream request failed."
 
 
-def _read_json(handler: BaseHTTPRequestHandler) -> dict[str, object]:
+def _read_json(
+    handler: BaseHTTPRequestHandler,
+    *,
+    maximum_bytes: int,
+) -> dict[str, object]:
     try:
         length = int(handler.headers.get("Content-Length") or 0)
     except ValueError as error:
-        raise ValueError("Invalid Content-Length.") from error
+        raise _GatewayRequestError(400, "Invalid Content-Length.") from error
+    if length < 0:
+        raise _GatewayRequestError(400, "Invalid Content-Length.")
+    if length > maximum_bytes:
+        raise _GatewayRequestError(413, "Gateway request body is too large.")
     payload = json.loads(handler.rfile.read(length or 0) or b"{}")
     if not isinstance(payload, dict):
         raise ValueError("Request body must be a JSON object.")

@@ -9,6 +9,8 @@ from __future__ import annotations
 
 import json
 import os
+import signal
+import stat
 import subprocess
 from pathlib import Path
 
@@ -123,8 +125,7 @@ class ApiWorkHarness:
             raise ValueError("write_workspace_file content exceeds 1 MB.")
         relative = path.relative_to(self.workspace).as_posix()
         self._approve("파일 쓰기 승인", f"{relative} 파일을 생성하거나 덮어씁니다.")
-        path.parent.mkdir(parents=True, exist_ok=True)
-        path.write_text(content, encoding="utf-8")
+        _secure_write_text(self.workspace, Path(relative), content)
         return {"path": relative, "bytes_written": len(content.encode("utf-8"))}
 
     def _replace_text(self, arguments: dict[str, object]) -> dict[str, object]:
@@ -142,7 +143,12 @@ class ApiWorkHarness:
             )
         relative = path.relative_to(self.workspace).as_posix()
         self._approve("파일 수정 승인", f"{relative}에서 정확히 {expected}곳을 바꿉니다.")
-        path.write_text(content.replace(old_text, new_text), encoding="utf-8")
+        _secure_replace_text(
+            self.workspace,
+            Path(relative),
+            expected_content=content,
+            replacement=content.replace(old_text, new_text),
+        )
         return {"path": relative, "replacements": expected}
 
     def _run_command(self, arguments: dict[str, object]) -> dict[str, object]:
@@ -159,14 +165,14 @@ class ApiWorkHarness:
             "명령 실행 승인",
             f"{cwd.relative_to(self.workspace).as_posix() or '.'}에서 실행:\n{shown[:900]}",
         )
-        completed = subprocess.run(
+        # Approval can remain open for minutes. Re-resolve the directory after
+        # it closes so a swapped symlink cannot redirect the command cwd.
+        cwd = self._path(cwd.relative_to(self.workspace), directory=True)
+        completed = _run_bounded_command(
             argv,
             cwd=cwd,
             env=_command_environment(),
-            capture_output=True,
-            text=True,
             timeout=timeout,
-            check=False,
         )
         stdout = completed.stdout or ""
         stderr = completed.stderr or ""
@@ -294,6 +300,214 @@ def _bounded_int(value: object, default: int, *, minimum: int, maximum: int) -> 
 def _command_environment() -> dict[str, str]:
     allowed = ("PATH", "LANG", "LC_ALL", "TERM", "TMPDIR", "SYSTEMROOT", "WINDIR", "COMSPEC", "PATHEXT")
     return {key: os.environ[key] for key in allowed if os.environ.get(key)}
+
+
+def _secure_write_text(workspace: Path, relative: Path, content: str) -> None:
+    if not _supports_directory_descriptors():
+        target = _validated_fallback_target(
+            workspace,
+            relative,
+            create_directories=True,
+        )
+        target.write_text(content, encoding="utf-8")
+        return
+    parent_fd, filename = _open_workspace_parent(
+        workspace,
+        relative,
+        create_directories=True,
+    )
+    try:
+        flags = os.O_WRONLY | os.O_CREAT | os.O_TRUNC
+        if hasattr(os, "O_NOFOLLOW"):
+            flags |= os.O_NOFOLLOW
+        descriptor = os.open(filename, flags, 0o600, dir_fd=parent_fd)
+        try:
+            file_stat = os.fstat(descriptor)
+            if not stat.S_ISREG(file_stat.st_mode):
+                raise ValueError("Workspace write target must be a regular file.")
+            with os.fdopen(descriptor, "w", encoding="utf-8", closefd=False) as stream:
+                stream.write(content)
+        finally:
+            os.close(descriptor)
+    finally:
+        os.close(parent_fd)
+
+
+def _secure_replace_text(
+    workspace: Path,
+    relative: Path,
+    *,
+    expected_content: str,
+    replacement: str,
+) -> None:
+    if not _supports_directory_descriptors():
+        target = _validated_fallback_target(
+            workspace,
+            relative,
+            create_directories=False,
+        )
+        current = target.read_text(encoding="utf-8")
+        if current != expected_content:
+            raise RuntimeError(
+                "Workspace file changed while approval was pending; file was not changed."
+            )
+        target.write_text(replacement, encoding="utf-8")
+        return
+    parent_fd, filename = _open_workspace_parent(
+        workspace,
+        relative,
+        create_directories=False,
+    )
+    try:
+        flags = os.O_RDWR
+        if hasattr(os, "O_NOFOLLOW"):
+            flags |= os.O_NOFOLLOW
+        descriptor = os.open(filename, flags, dir_fd=parent_fd)
+        try:
+            file_stat = os.fstat(descriptor)
+            if not stat.S_ISREG(file_stat.st_mode):
+                raise ValueError("Workspace replacement target must be a regular file.")
+            with os.fdopen(descriptor, "r+", encoding="utf-8", closefd=False) as stream:
+                current = stream.read()
+                if current != expected_content:
+                    raise RuntimeError(
+                        "Workspace file changed while approval was pending; file was not changed."
+                    )
+                stream.seek(0)
+                stream.write(replacement)
+                stream.truncate()
+        finally:
+            os.close(descriptor)
+    finally:
+        os.close(parent_fd)
+
+
+def _open_workspace_parent(
+    workspace: Path,
+    relative: Path,
+    *,
+    create_directories: bool,
+) -> tuple[int, str]:
+    parts = tuple(relative.parts)
+    if not parts or any(part in {"", ".", ".."} for part in parts):
+        raise ValueError("Workspace tool path is invalid.")
+    if any(part in {".git", ".hg", ".svn"} for part in parts):
+        raise ValueError("Workspace tools cannot access repository control directories.")
+    directory_flags = os.O_RDONLY
+    if hasattr(os, "O_DIRECTORY"):
+        directory_flags |= os.O_DIRECTORY
+    if hasattr(os, "O_NOFOLLOW"):
+        directory_flags |= os.O_NOFOLLOW
+    descriptor = os.open(workspace, directory_flags)
+    try:
+        for part in parts[:-1]:
+            try:
+                child = os.open(part, directory_flags, dir_fd=descriptor)
+            except FileNotFoundError:
+                if not create_directories:
+                    raise
+                os.mkdir(part, mode=0o700, dir_fd=descriptor)
+                child = os.open(part, directory_flags, dir_fd=descriptor)
+            os.close(descriptor)
+            descriptor = child
+        return descriptor, parts[-1]
+    except Exception:
+        os.close(descriptor)
+        raise
+
+
+def _supports_directory_descriptors() -> bool:
+    return os.open in os.supports_dir_fd and os.mkdir in os.supports_dir_fd
+
+
+def _validated_fallback_target(
+    workspace: Path,
+    relative: Path,
+    *,
+    create_directories: bool,
+) -> Path:
+    """Windows fallback where openat-style directory handles are unavailable."""
+
+    parts = tuple(relative.parts)
+    if not parts or any(part in {"", ".", ".."} for part in parts):
+        raise ValueError("Workspace tool path is invalid.")
+    if any(part in {".git", ".hg", ".svn"} for part in parts):
+        raise ValueError("Workspace tools cannot access repository control directories.")
+    root = workspace.resolve(strict=True)
+    parent = root
+    for part in parts[:-1]:
+        candidate = parent / part
+        if os.path.lexists(candidate):
+            if candidate.is_symlink() or not candidate.is_dir():
+                raise ValueError("Workspace path contains an unsafe directory.")
+        elif create_directories:
+            candidate.mkdir(mode=0o700)
+        else:
+            raise FileNotFoundError(candidate)
+        parent = candidate
+    target = parent / parts[-1]
+    if os.path.lexists(target) and target.is_symlink():
+        raise ValueError("Workspace path contains an unsafe symbolic link.")
+    resolved = target.resolve(strict=False)
+    if resolved != root and root not in resolved.parents:
+        raise ValueError("Workspace tool path escapes the selected workspace.")
+    return resolved
+
+
+def _run_bounded_command(
+    argv: list[str],
+    *,
+    cwd: Path,
+    env: dict[str, str],
+    timeout: int,
+) -> subprocess.CompletedProcess[str]:
+    supports_process_groups = hasattr(os, "killpg") and hasattr(os, "setsid")
+    creation_flags = 0
+    if os.name == "nt":
+        creation_flags = getattr(subprocess, "CREATE_NEW_PROCESS_GROUP", 0)
+    process = subprocess.Popen(
+        argv,
+        cwd=cwd,
+        env=env,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        text=True,
+        start_new_session=supports_process_groups,
+        creationflags=creation_flags,
+    )
+    try:
+        stdout, stderr = process.communicate(timeout=timeout)
+    except subprocess.TimeoutExpired as error:
+        _terminate_process_tree(process, process_group=supports_process_groups)
+        process.communicate()
+        raise TimeoutError(
+            f"Workspace command exceeded its {timeout}-second limit."
+        ) from error
+    return subprocess.CompletedProcess(argv, process.returncode, stdout, stderr)
+
+
+def _terminate_process_tree(
+    process: subprocess.Popen[str],
+    *,
+    process_group: bool,
+) -> None:
+    if process.poll() is not None:
+        return
+    if process_group:
+        try:
+            os.killpg(process.pid, signal.SIGKILL)
+            return
+        except ProcessLookupError:
+            return
+    if os.name == "nt":
+        subprocess.run(
+            ["taskkill", "/PID", str(process.pid), "/T", "/F"],
+            capture_output=True,
+            check=False,
+            timeout=5,
+        )
+        return
+    process.kill()
 
 
 __all__ = [

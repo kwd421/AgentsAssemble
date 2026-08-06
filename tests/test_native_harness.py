@@ -4,9 +4,12 @@ import json
 import tempfile
 import threading
 import unittest
+from http.client import HTTPConnection
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from unittest.mock import patch
+from urllib.error import HTTPError
+from urllib.parse import urlsplit
 from urllib.request import Request, urlopen
 
 from agentsassemble.providers.capabilities import ProviderCapabilityCatalog
@@ -115,6 +118,52 @@ class NativeHarnessCatalogTests(unittest.TestCase):
 
 
 class NativeHarnessGatewayTests(unittest.TestCase):
+    def test_loopback_gateway_rejects_callers_without_its_process_capability(self) -> None:
+        with _UpstreamServer([]) as upstream:
+            gateway = NativeModelGateway(
+                upstream_base_url=upstream.endpoint,
+                upstream_api_key="billable-secret",
+                model="deepseek-test",
+                provider_kind="deepseek_api",
+            )
+            gateway.start()
+            origin = urlsplit(gateway.endpoint)
+            unauthenticated_url = f"{origin.scheme}://{origin.netloc}/v1/models"
+            try:
+                with self.assertRaises(HTTPError) as caught:
+                    urlopen(unauthenticated_url, timeout=5.0)
+            finally:
+                gateway.stop()
+
+        self.assertEqual(caught.exception.code, 401)
+        self.assertEqual(upstream.requests, [])
+
+    def test_loopback_gateway_rejects_an_oversized_body_before_upstream_spend(self) -> None:
+        with _UpstreamServer([]) as upstream:
+            gateway = NativeModelGateway(
+                upstream_base_url=upstream.endpoint,
+                upstream_api_key="billable-secret",
+                model="deepseek-test",
+                provider_kind="deepseek_api",
+                context_contract_bytes=65_536,
+            )
+            gateway.start()
+            endpoint = urlsplit(gateway.endpoint)
+            connection = HTTPConnection(endpoint.hostname, endpoint.port, timeout=5.0)
+            try:
+                connection.putrequest("POST", f"{endpoint.path}/responses")
+                connection.putheader("Content-Type", "application/json")
+                connection.putheader("Content-Length", "1100000")
+                connection.endheaders()
+                response = connection.getresponse()
+                response.read()
+            finally:
+                connection.close()
+                gateway.stop()
+
+        self.assertEqual(response.status, 413)
+        self.assertEqual(upstream.requests, [])
+
     def test_codex_gateway_compacts_only_tool_results_delivered_before_this_request(self) -> None:
         upstream_responses = [
             {
