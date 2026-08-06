@@ -18,6 +18,7 @@ from agentsassemble.persistence.local.room.repository import RoomStore
 from agentsassemble.room.attachments import (
     FileAttachmentStore,
     read_attachment_metadata,
+    store_uploaded_attachment,
 )
 from agentsassemble.web.router import GuiDeps, RequestContext, Router
 from agentsassemble.web.routes.attachments import register_attachment_routes
@@ -74,6 +75,34 @@ def _dispatch_attachment_upload(
     return handler
 
 
+def _dispatch_attachment_download(
+    deps: GuiDeps,
+    path: str,
+    *,
+    headers: dict[str, str] | None = None,
+    loopback: bool = False,
+) -> _RoomsRouteHandler:
+    handler = _RoomsRouteHandler(
+        path=path,
+        method="GET",
+        headers=headers,
+        loopback=loopback,
+    )
+    handler.sent_attachment = None
+
+    def capture_attachment(file_path, metadata, *, inline):
+        handler.sent_attachment = (file_path.read_bytes(), metadata, inline)
+
+    handler._send_attachment_file = capture_attachment
+    router = Router()
+    register_attachment_routes(router)
+    parsed = urlparse(path)
+    context = RequestContext(handler, deps, parsed, parse_qs(parsed.query))
+    if not router.dispatch("GET", context):
+        raise AssertionError("attachment route was not handled")
+    return handler
+
+
 def _image_payload(**updates: object) -> dict[str, object]:
     return {
         "filename": "avatar.png",
@@ -84,6 +113,67 @@ def _image_payload(**updates: object) -> dict[str, object]:
 
 
 class AttachmentAuthorizationTests(unittest.TestCase):
+    def test_download_requires_room_authority_or_the_issued_attachment_capability(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            deps = _attachment_dependencies(root)
+            deps.rooms.create_room("room-a")
+            deps.rooms.create_room("room-b")
+            attachment = store_uploaded_attachment(
+                root,
+                _image_payload(room_id="room-a"),
+            )
+            other_room_token, _session = deps.sessions.issue(
+                {
+                    "agent_id": "guest-b",
+                    "display_name": "Guest B",
+                    "meeting_id": "room-b",
+                    "invite_scope": "room",
+                    "participant_type": "human",
+                    "client_type": "browser",
+                }
+            )
+            same_room_token, _session = deps.sessions.issue(
+                {
+                    "agent_id": "guest-a",
+                    "display_name": "Guest A",
+                    "meeting_id": "room-a",
+                    "invite_scope": "room",
+                    "participant_type": "human",
+                    "client_type": "browser",
+                }
+            )
+
+            anonymous = _dispatch_attachment_download(
+                deps,
+                f"/api/attachments/{attachment['id']}?view=1",
+            )
+            wrong_room = _dispatch_attachment_download(
+                deps,
+                f"/api/attachments/{attachment['id']}?view=1",
+                headers={"Authorization": f"Bearer {other_room_token}"},
+            )
+            same_room = _dispatch_attachment_download(
+                deps,
+                f"/api/attachments/{attachment['id']}?view=1",
+                headers={"Authorization": f"Bearer {same_room_token}"},
+            )
+            capability = _dispatch_attachment_download(
+                deps,
+                str(attachment["url"]),
+            )
+
+            self.assertEqual(
+                anonymous.sent_error,
+                (HTTPStatus.UNAUTHORIZED, "attachment access is required"),
+            )
+            self.assertEqual(
+                wrong_room.sent_error,
+                (HTTPStatus.FORBIDDEN, "attachment is not part of this session room"),
+            )
+            self.assertEqual(same_room.sent_attachment[0], b"image-bytes")
+            self.assertEqual(capability.sent_attachment[0], b"image-bytes")
+
     def test_oversized_public_request_is_rejected_before_body_read(self):
         with tempfile.TemporaryDirectory() as temp_dir:
             root = Path(temp_dir)

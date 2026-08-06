@@ -5,6 +5,7 @@ import binascii
 import json
 import mimetypes
 import re
+import secrets
 import shutil
 from dataclasses import dataclass
 from datetime import UTC, datetime
@@ -55,6 +56,9 @@ class FileAttachmentStore:
     def read_file(self, attachment_id: str) -> tuple[dict[str, object], Path]:
         return read_attachment_file(self.output_root, attachment_id)
 
+    def read_metadata(self, attachment_id: str) -> dict[str, object]:
+        return read_attachment_metadata(self.output_root, attachment_id)
+
     def delete(self, attachment_id: str) -> bool:
         return delete_attachment(self.output_root, attachment_id)
 
@@ -83,6 +87,9 @@ def store_uploaded_attachment(output_root: Path, payload: dict[str, object]) -> 
         "is_image": content_type in INLINE_SAFE_IMAGE_TYPES,
         "created_at": datetime.now(UTC).isoformat(),
         "room_id": room_id,
+        # The opaque id locates storage; this independent secret authorizes
+        # browser image/download requests that cannot attach a Bearer header.
+        "access_token": secrets.token_urlsafe(32),
     }
     (directory / "metadata.json").write_text(json.dumps(metadata, ensure_ascii=False, sort_keys=True), encoding="utf-8")
     return public_attachment_metadata(metadata)
@@ -164,14 +171,16 @@ def public_attachment_metadata(metadata: dict[str, object]) -> dict[str, object]
     content_type = normalize_content_type(metadata.get("content_type"), filename)
     size = normalize_size(metadata.get("size"))
     is_image = content_type in INLINE_SAFE_IMAGE_TYPES
+    access_token = str(metadata.get("access_token") or "").strip()
+    access_query = f"&access={quote(access_token)}" if access_token else ""
     return {
         "id": attachment_id,
         "filename": filename,
         "content_type": content_type,
         "size": size,
         "is_image": is_image,
-        "url": f"/api/attachments/{attachment_id}?view=1",
-        "download_url": f"/api/attachments/{attachment_id}?download=1",
+        "url": f"/api/attachments/{attachment_id}?view=1{access_query}",
+        "download_url": f"/api/attachments/{attachment_id}?download=1{access_query}",
     }
 
 

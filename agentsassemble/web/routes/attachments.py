@@ -3,6 +3,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from http import HTTPStatus
+import secrets
 
 from agentsassemble.room.attachments import (
     AttachmentError,
@@ -31,9 +32,12 @@ def register_attachment_routes(router: Router) -> None:
     @router.get_dynamic("/api/attachments/{attachment_id}")
     def download_attachment(ctx: RequestContext, params: dict[str, str]) -> None:
         try:
+            private_metadata = ctx.deps.media.read_metadata(params["attachment_id"])
             metadata, file_path = ctx.deps.media.read_file(params["attachment_id"])
         except AttachmentError as error:
             ctx.send_error(HTTPStatus.NOT_FOUND, str(error))
+            return
+        if not _authorize_download(ctx, private_metadata):
             return
         inline = metadata.get("is_image") is True and "view" in ctx.query and "download" not in ctx.query
         ctx.send_attachment_file(file_path, metadata, inline=inline)
@@ -189,6 +193,37 @@ def _has_operator_authority(ctx: RequestContext) -> bool:
     if ctx.is_local_operator() or ctx.is_operator_session():
         return True
     return bool(ctx.deps.public_invite.host_token() and ctx.is_host())
+
+
+def _authorize_download(
+    ctx: RequestContext,
+    metadata: dict[str, object],
+) -> bool:
+    if _has_operator_authority(ctx):
+        return True
+
+    expected_access = str(metadata.get("access_token") or "").strip()
+    provided_access = str((ctx.query.get("access") or [""])[0]).strip()
+    if (
+        expected_access
+        and provided_access
+        and secrets.compare_digest(expected_access, provided_access)
+    ):
+        return True
+
+    session = ctx.session()
+    if session is None:
+        ctx.send_error(HTTPStatus.UNAUTHORIZED, "attachment access is required")
+        return False
+    attachment_room_id = clean_room_text(metadata.get("room_id"), limit=128)
+    session_room_id = clean_room_text(session.get("meeting_id"), limit=128)
+    if attachment_room_id and session_room_id == attachment_room_id:
+        return True
+    ctx.send_error(
+        HTTPStatus.FORBIDDEN,
+        "attachment is not part of this session room",
+    )
+    return False
 
 
 def _require_existing_room(ctx: RequestContext, room_id: str) -> bool:
