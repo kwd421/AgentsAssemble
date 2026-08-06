@@ -271,6 +271,101 @@ class RoomParticipantLeaveServiceTests(unittest.TestCase):
             [("general", "member-agent"), ("general", "member")],
         )
 
+    def test_failed_owned_agent_shutdown_is_durable_and_retried_after_restart(self) -> None:
+        self.store.upsert_participant(
+            "general",
+            {
+                "participant_id": "member-agent",
+                "display_name": "Member Agent",
+                "participant_type": "agent",
+                "role": "agent",
+                "owner_id": "member",
+                "status": "left",
+            },
+        )
+        self.store.upsert_session(
+            "general",
+            {
+                "session_id": "member-agent",
+                "participant_id": "member-agent",
+                "runtime_status": "idle",
+                "enabled": True,
+            },
+        )
+        attempts = 0
+
+        def fail_once(
+            room_id: str,
+            participant_id: str,
+            operation_id: str,
+        ) -> None:
+            nonlocal attempts
+            attempts += 1
+            if attempts == 1:
+                raise RoomCommandRejected(
+                    "Provider shutdown was not confirmed.",
+                    code="runtime_stop_unconfirmed",
+                )
+
+        service = RoomParticipantLeaveService(
+            store=self.store,
+            remove_membership=lambda room_id, participant_id: None,
+            leave_all_voice=lambda room_id, participant_id: None,
+            revoke_participant_sessions=lambda room_id, participant_id: None,
+            disconnect_participant=lambda room_id, participant_id: None,
+            stop_agent=fail_once,
+            remove_provider=lambda room_id, participant_id: (
+                self.provider_removals.append((room_id, participant_id))
+            ),
+            schedule_cleanup=lambda delay, callback: (
+                self.scheduled_cleanup.append((delay, callback))
+            ),
+        )
+
+        service.apply_after_commit(
+            "general",
+            "member",
+            owned_agent_ids=("member-agent",),
+            operation_id="leave-operation",
+        )
+
+        pending = self.store.participant("general", "member-agent")
+        self.assertTrue(pending["moderation_cleanup_pending"])
+        self.assertIn(
+            "runtime_stop_unconfirmed",
+            pending["moderation_cleanup_warning"],
+        )
+        self.assertEqual(self.provider_removals, [])
+
+        # Simulate restart: scheduled callbacks disappear and a new service
+        # reconstructs the durable cleanup work from room state.
+        self.scheduled_cleanup.clear()
+        restarted = RoomParticipantLeaveService(
+            store=self.store,
+            remove_membership=lambda room_id, participant_id: None,
+            leave_all_voice=lambda room_id, participant_id: None,
+            revoke_participant_sessions=lambda room_id, participant_id: None,
+            disconnect_participant=lambda room_id, participant_id: None,
+            stop_agent=fail_once,
+            remove_provider=lambda room_id, participant_id: (
+                self.provider_removals.append((room_id, participant_id))
+            ),
+            schedule_cleanup=lambda delay, callback: (
+                self.scheduled_cleanup.append((delay, callback))
+            ),
+        )
+        restarted.reconcile_pending()
+        self.assertEqual(len(self.scheduled_cleanup), 1)
+
+        self.scheduled_cleanup.pop()[1]()
+
+        recovered = self.store.participant("general", "member-agent")
+        self.assertFalse(recovered["moderation_cleanup_pending"])
+        self.assertEqual(
+            self.provider_removals,
+            [("general", "member-agent")],
+        )
+
 
 if __name__ == "__main__":
     unittest.main()

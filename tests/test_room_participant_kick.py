@@ -41,6 +41,7 @@ class RoomParticipantKickServiceTests(unittest.TestCase):
         self.membership_removals: list[tuple[str, str]] = []
         self.voice_leaves: list[tuple[str, str]] = []
         self.provider_removals: list[tuple[str, str]] = []
+        self.scheduled_cleanup: list[Callable[[], None]] = []
         self.service = self._service()
 
     def tearDown(self) -> None:
@@ -68,6 +69,9 @@ class RoomParticipantKickServiceTests(unittest.TestCase):
             ),
             remove_provider=lambda room_id, participant_id: (
                 self.provider_removals.append((room_id, participant_id))
+            ),
+            schedule_cleanup=lambda _delay, callback: self.scheduled_cleanup.append(
+                callback
             ),
         )
 
@@ -175,6 +179,57 @@ class RoomParticipantKickServiceTests(unittest.TestCase):
         self.assertEqual(cleanup["revoked_sessions"], 2)
         self.assertTrue(cleanup["removed_member"])
         self.assertEqual(self.revocations, [("general", "codex")])
+
+    def test_failed_provider_stop_is_durable_and_retried_after_kick(self) -> None:
+        stop_attempts = 0
+
+        def fail_once(
+            room_id: str,
+            participant_id: str,
+            operation_id: str,
+        ) -> None:
+            nonlocal stop_attempts
+            stop_attempts += 1
+            self.stops.append((room_id, participant_id, operation_id))
+            if stop_attempts == 1:
+                raise RoomCommandRejected(
+                    "stop was not confirmed",
+                    code="external_stop_unconfirmed",
+                )
+
+        self.service = self._service(stop_agent=fail_once)
+        participant = self.service.prepare_intent(
+            "general",
+            "codex",
+            operation_id="kick-1",
+        )
+        cleanup = self.service.apply_effects(
+            "general",
+            participant,
+            operation_id="kick-1",
+        )
+        self._finalize(cleanup)
+        self.service.apply_after_commit(
+            "general",
+            self.store.participant("general", "codex"),
+        )
+
+        pending = self.store.participant("general", "codex")
+        self.assertEqual(pending["status"], "kicked")
+        self.assertTrue(pending["moderation_cleanup_pending"])
+        self.assertEqual(self.provider_removals, [])
+        self.assertEqual(len(self.scheduled_cleanup), 1)
+
+        self.scheduled_cleanup.clear()
+        self.service = self._service(stop_agent=fail_once)
+        self.service.reconcile_pending()
+        self.assertEqual(len(self.scheduled_cleanup), 1)
+        self.scheduled_cleanup.pop(0)()
+
+        completed = self.store.participant("general", "codex")
+        self.assertFalse(completed["moderation_cleanup_pending"])
+        self.assertEqual(self.provider_removals, [("general", "codex")])
+        self.assertEqual(stop_attempts, 2)
 
     def test_provider_backed_participant_is_stopped_after_its_display_role_changes(self) -> None:
         self.store.update_participant_fields(

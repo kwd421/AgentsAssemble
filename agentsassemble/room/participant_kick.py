@@ -4,6 +4,10 @@ from typing import Callable
 
 from agentsassemble.room.command_uow import RoomCommandUnitOfWork
 from agentsassemble.room.errors import RoomCommandRejected
+from agentsassemble.room.provider_cleanup_policy import (
+    MAX_PROVIDER_CLEANUP_ATTEMPTS,
+    provider_cleanup_delay_seconds,
+)
 from agentsassemble.room.projection import public_participant
 from agentsassemble.room.repository import RoomRepository
 from agentsassemble.room.text import clean_room_text
@@ -12,6 +16,7 @@ from agentsassemble.room.text import clean_room_text
 AgentStopper = Callable[[str, str, str], object]
 ParticipantCleanup = Callable[[str, str], object]
 ProviderRemover = Callable[[str, str], None]
+CleanupScheduler = Callable[[float, Callable[[], None]], object]
 
 
 class RoomParticipantKickService:
@@ -27,6 +32,7 @@ class RoomParticipantKickService:
         remove_membership: ParticipantCleanup,
         leave_all_voice: ParticipantCleanup,
         remove_provider: ProviderRemover,
+        schedule_cleanup: CleanupScheduler,
     ) -> None:
         self.store = store
         self._stop_agent = stop_agent
@@ -35,6 +41,7 @@ class RoomParticipantKickService:
         self._remove_membership = remove_membership
         self._leave_all_voice = leave_all_voice
         self._remove_provider = remove_provider
+        self._schedule_cleanup = schedule_cleanup
 
     def prepare_intent(
         self,
@@ -182,6 +189,12 @@ class RoomParticipantKickService:
             moderation_intent_cleanup_warning="",
             moderation_intent_removed_member=False,
             moderation_intent_revoked_sessions=0,
+            moderation_cleanup_pending=bool(cleanup.get("cleanup_warning")),
+            moderation_cleanup_warning=clean_room_text(
+                cleanup.get("cleanup_warning"),
+                1200,
+            ),
+            moderation_cleanup_attempt_count=0,
         )
         unit.append_event(
             "participant_kicked",
@@ -201,9 +214,120 @@ class RoomParticipantKickService:
             participant.get("participant_id"),
             128,
         )
+        stored = self.store.participant(room_id, participant_id)
         if not self._provider_session(room_id, participant_id):
+            self._clear_pending_cleanup(room_id, participant_id)
+            return
+        if stored.get("moderation_cleanup_pending"):
+            self._schedule_provider_cleanup(room_id, participant_id, attempt=1)
             return
         self._remove_provider(room_id, participant_id)
+
+    def reconcile_pending(self) -> None:
+        """Resume durable provider cleanup after a server restart."""
+        for room in self.store.list_rooms(include_archived=False):
+            room_id = clean_room_text(room.get("room_id"), 128)
+            if not room_id:
+                continue
+            for participant in self.store.participants(room_id):
+                participant_id = clean_room_text(
+                    participant.get("participant_id"),
+                    128,
+                )
+                if (
+                    participant_id
+                    and participant.get("status") == "kicked"
+                    and participant.get("moderation_cleanup_pending")
+                ):
+                    attempt = max(
+                        1,
+                        int(
+                            participant.get("moderation_cleanup_attempt_count")
+                            or 0
+                        )
+                        + 1,
+                    )
+                    if attempt <= MAX_PROVIDER_CLEANUP_ATTEMPTS:
+                        self._schedule_provider_cleanup(
+                            room_id,
+                            participant_id,
+                            attempt=attempt,
+                        )
+
+    def _schedule_provider_cleanup(
+        self,
+        room_id: str,
+        participant_id: str,
+        *,
+        attempt: int,
+    ) -> None:
+        self._schedule_cleanup(
+            provider_cleanup_delay_seconds(attempt),
+            lambda: self._retry_provider_cleanup(
+                room_id,
+                participant_id,
+                attempt=attempt,
+            ),
+        )
+
+    def _retry_provider_cleanup(
+        self,
+        room_id: str,
+        participant_id: str,
+        *,
+        attempt: int,
+    ) -> None:
+        participant = self.store.participant(room_id, participant_id)
+        if (
+            not participant
+            or participant.get("status") != "kicked"
+            or not participant.get("moderation_cleanup_pending")
+        ):
+            return
+        session = self._provider_session(room_id, participant_id)
+        if session and session.get("runtime_status") not in {"stopped", "available"}:
+            try:
+                self._stop_agent(
+                    room_id,
+                    participant_id,
+                    f"kick-cleanup:{participant_id}:{attempt}",
+                )
+            except RoomCommandRejected as error:
+                warning = f"{error.code}: {error}"
+                self.store.update_participant_fields(
+                    room_id,
+                    participant_id,
+                    moderation_cleanup_pending=True,
+                    moderation_cleanup_warning=warning,
+                    moderation_cleanup_attempt_count=attempt,
+                )
+                if session:
+                    self.store.update_session_fields(
+                        room_id,
+                        participant_id,
+                        enabled=False,
+                        last_error=warning,
+                    )
+                if attempt < MAX_PROVIDER_CLEANUP_ATTEMPTS:
+                    self._schedule_provider_cleanup(
+                        room_id,
+                        participant_id,
+                        attempt=attempt + 1,
+                    )
+                return
+        self._remove_provider(room_id, participant_id)
+        self._clear_pending_cleanup(room_id, participant_id)
+
+    def _clear_pending_cleanup(self, room_id: str, participant_id: str) -> None:
+        if not self.store.participant(room_id, participant_id):
+            return
+        self.store.update_participant_fields(
+            room_id,
+            participant_id,
+            moderation_cleanup_pending=False,
+            moderation_cleanup_warning="",
+            moderation_cleanup_attempt_count=0,
+        )
 
     def _provider_session(
         self,
@@ -238,6 +362,7 @@ def _cleanup_from_participant(
 
 __all__ = [
     "AgentStopper",
+    "CleanupScheduler",
     "ParticipantCleanup",
     "ProviderRemover",
     "RoomParticipantKickService",

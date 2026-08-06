@@ -159,6 +159,9 @@ _PRIVATE_PARTICIPANT_FIELDS = frozenset(
         "moderation_intent_cleanup_warning",
         "moderation_intent_removed_member",
         "moderation_intent_revoked_sessions",
+        "moderation_cleanup_pending",
+        "moderation_cleanup_warning",
+        "moderation_cleanup_attempt_count",
     }
 )
 

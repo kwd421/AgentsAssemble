@@ -4,6 +4,10 @@ from collections.abc import Callable, Iterable
 
 from agentsassemble.room.command_uow import RoomCommandUnitOfWork
 from agentsassemble.room.errors import RoomCommandRejected
+from agentsassemble.room.provider_cleanup_policy import (
+    MAX_PROVIDER_CLEANUP_ATTEMPTS,
+    provider_cleanup_delay_seconds,
+)
 from agentsassemble.room.repository import RoomRepository
 from agentsassemble.room.text import clean_room_text
 
@@ -165,22 +169,27 @@ class RoomParticipantLeaveService:
                         f"{operation_id}:owned-agent:{agent_id}",
                     )
                 except Exception as error:
-                    current = self.store.session(room_id, agent_id)
-                    if current:
-                        self.store.update_session_fields(
-                            room_id,
-                            agent_id,
-                            enabled=False,
-                            last_error=(
-                                clean_room_text(error, limit=1000)
-                                or "Agent shutdown failed while its owner left the room."
-                            ),
-                        )
+                    self._record_provider_cleanup_failure(
+                        room_id,
+                        agent_id,
+                        error=error,
+                        attempt=1,
+                    )
             self._revoke_participant_sessions(room_id, agent_id)
             self._disconnect_participant(room_id, agent_id)
             self._remove_membership(room_id, agent_id)
             self._leave_all_voice(room_id, agent_id)
-            self._remove_provider(room_id, agent_id)
+            if self.store.participant(room_id, agent_id).get(
+                "moderation_cleanup_pending"
+            ):
+                self._schedule_provider_cleanup(
+                    room_id,
+                    agent_id,
+                    attempt=2,
+                )
+            else:
+                self._remove_provider(room_id, agent_id)
+                self._clear_pending_cleanup(room_id, agent_id)
             if self.store.participant(room_id, agent_id):
                 self.store.update_participant_fields(
                     room_id,
@@ -195,6 +204,138 @@ class RoomParticipantLeaveService:
             self._revoke_participant_sessions(room_id, participant_id)
 
         self._schedule_cleanup(0.1, revoke_sessions)
+
+    def reconcile_pending(self) -> None:
+        """Resume durable owned-agent cleanup after a server restart."""
+        for room in self.store.list_rooms(include_archived=False):
+            room_id = clean_room_text(room.get("room_id"), limit=128)
+            if not room_id:
+                continue
+            for participant in self.store.participants(room_id):
+                participant_id = clean_room_text(
+                    participant.get("participant_id"),
+                    limit=128,
+                )
+                if (
+                    not participant_id
+                    or participant.get("status") != "left"
+                    or not participant.get("moderation_cleanup_pending")
+                ):
+                    continue
+                attempt = max(
+                    1,
+                    int(participant.get("moderation_cleanup_attempt_count") or 0)
+                    + 1,
+                )
+                if attempt <= MAX_PROVIDER_CLEANUP_ATTEMPTS:
+                    self._schedule_provider_cleanup(
+                        room_id,
+                        participant_id,
+                        attempt=attempt,
+                    )
+
+    def _schedule_provider_cleanup(
+        self,
+        room_id: str,
+        participant_id: str,
+        *,
+        attempt: int,
+    ) -> None:
+        self._schedule_cleanup(
+            provider_cleanup_delay_seconds(attempt),
+            lambda: self._retry_provider_cleanup(
+                room_id,
+                participant_id,
+                attempt=attempt,
+            ),
+        )
+
+    def _retry_provider_cleanup(
+        self,
+        room_id: str,
+        participant_id: str,
+        *,
+        attempt: int,
+    ) -> None:
+        participant = self.store.participant(room_id, participant_id)
+        if (
+            not participant
+            or participant.get("status") != "left"
+            or not participant.get("moderation_cleanup_pending")
+        ):
+            return
+        session = self.store.session(room_id, participant_id)
+        if session and session.get("runtime_status") not in {
+            "stopped",
+            "available",
+        }:
+            try:
+                self._stop_agent(
+                    room_id,
+                    participant_id,
+                    f"leave-cleanup:{participant_id}:{attempt}",
+                )
+            except Exception as error:
+                self._record_provider_cleanup_failure(
+                    room_id,
+                    participant_id,
+                    error=error,
+                    attempt=attempt,
+                )
+                if attempt < MAX_PROVIDER_CLEANUP_ATTEMPTS:
+                    self._schedule_provider_cleanup(
+                        room_id,
+                        participant_id,
+                        attempt=attempt + 1,
+                    )
+                return
+        self._remove_provider(room_id, participant_id)
+        self._clear_pending_cleanup(room_id, participant_id)
+
+    def _record_provider_cleanup_failure(
+        self,
+        room_id: str,
+        participant_id: str,
+        *,
+        error: Exception,
+        attempt: int,
+    ) -> None:
+        error_code = clean_room_text(getattr(error, "code", ""), limit=64)
+        message = (
+            clean_room_text(error, limit=1000)
+            or "Agent shutdown failed while its owner left the room."
+        )
+        warning = f"{error_code}: {message}" if error_code else message
+        if self.store.participant(room_id, participant_id):
+            self.store.update_participant_fields(
+                room_id,
+                participant_id,
+                moderation_cleanup_pending=True,
+                moderation_cleanup_warning=warning,
+                moderation_cleanup_attempt_count=attempt,
+            )
+        if self.store.session(room_id, participant_id):
+            self.store.update_session_fields(
+                room_id,
+                participant_id,
+                enabled=False,
+                last_error=warning,
+            )
+
+    def _clear_pending_cleanup(
+        self,
+        room_id: str,
+        participant_id: str,
+    ) -> None:
+        if not self.store.participant(room_id, participant_id):
+            return
+        self.store.update_participant_fields(
+            room_id,
+            participant_id,
+            moderation_cleanup_pending=False,
+            moderation_cleanup_warning="",
+            moderation_cleanup_attempt_count=0,
+        )
 
 
 __all__ = [

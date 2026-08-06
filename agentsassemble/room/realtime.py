@@ -383,6 +383,7 @@ class RoomRealtimeController:
                 participant_id,
             ),
             remove_provider=self._provider_registry.remove,
+            schedule_cleanup=recovery_scheduler_impl,
         )
         self._deleted_room_cleanup = RoomDeletedCleanupService(
             store=self.store,
@@ -484,6 +485,8 @@ class RoomRealtimeController:
         self.last_cleanup_report = CleanupReport("room_realtime_controller")
         self.ensure_room(self.default_room_id)
         self._provider_sessions.restore_server_owned_providers()
+        self._participant_leave.reconcile_pending()
+        self._participant_kick.reconcile_pending()
         for agent_id, spec in default_providers.items():
             if self.store.session(self.default_room_id, agent_id) or self.store.participant(
                 self.default_room_id, agent_id
