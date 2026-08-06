@@ -23,11 +23,15 @@ from agentsassemble.persona_cards.models import (
 from agentsassemble.persona_cards.assets import (
     DEFAULT_PERSONA_ROOT,
     MAX_CARD_TEXT_CHUNK_BYTES,
+    MAX_CHARX_CARD_BYTES,
+    MAX_CHARX_MODULE_BYTES,
     MAX_CHARX_TOTAL_ASSET_BYTES,
     MAX_DATA_URI_BYTES,
     PNG_SIGNATURE,
     charx_embedded_assets,
+    read_charx_member,
     referenced_charx_asset_paths,
+    validate_charx_archive,
     write_asset_payload,
     write_imported_card,
 )
@@ -125,10 +129,14 @@ def import_charx_persona(
     preserve_source: bool = True,
 ) -> PersonaImportReport:
     with zipfile.ZipFile(path) as archive:
-        try:
-            card_payload = json.loads(archive.read("card.json").decode("utf-8"))
-        except KeyError as error:
-            raise ValueError("CHARX file must contain card.json at the root.") from error
+        validate_charx_archive(Path(path), archive)
+        card_payload = json.loads(
+            read_charx_member(
+                archive,
+                "card.json",
+                max_bytes=MAX_CHARX_CARD_BYTES,
+            ).decode("utf-8")
+        )
         if not isinstance(card_payload, dict):
             raise ValueError("CHARX card.json must contain a JSON object.")
         asset_specs = _ccv3_asset_specs(card_payload)
@@ -286,7 +294,14 @@ def _charx_module_payload(archive: zipfile.ZipFile) -> RisuModulePayload | None:
     if "module.risum" not in archive.namelist():
         return None
     try:
-        return read_risum_module_bytes(archive.read("module.risum"), source_path="module.risum")
+        return read_risum_module_bytes(
+            read_charx_member(
+                archive,
+                "module.risum",
+                max_bytes=MAX_CHARX_MODULE_BYTES,
+            ),
+            source_path="module.risum",
+        )
     except Exception:
         return None
 

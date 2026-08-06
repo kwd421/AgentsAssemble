@@ -280,6 +280,42 @@ class RisuModulePersonaTests(unittest.TestCase):
         self.assertEqual(loaded.ignored_features["remote_asset_uri"], 1)
         self.assertNotIn("example.com/private", json.dumps(report.to_safe_dict(), ensure_ascii=False))
 
+    def test_import_charx_rejects_a_high_ratio_archive_before_extracting_assets(self):
+        card = _sample_ccv3_card()
+        card["data"]["assets"] = [
+            {
+                "type": "emotion",
+                "uri": "embeded://assets/repeated.bin",
+                "name": "repeated",
+                "ext": "bin",
+            }
+        ]
+        with tempfile.TemporaryDirectory() as temp_dir:
+            temp = Path(temp_dir)
+            charx = temp / "compressed-bomb.charx"
+            with zipfile.ZipFile(charx, "w", compression=zipfile.ZIP_DEFLATED) as archive:
+                archive.writestr("card.json", json.dumps(card, ensure_ascii=False))
+                archive.writestr("assets/repeated.bin", b"A" * (6 * 1024 * 1024))
+
+            with self.assertRaisesRegex(ValueError, "compression ratio"):
+                import_charx_persona(charx, output_root=temp / "out")
+
+            self.assertFalse((temp / "out" / "personas").exists())
+
+    def test_import_charx_rejects_excessive_archive_entries_before_import(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            temp = Path(temp_dir)
+            charx = temp / "entry-flood.charx"
+            with zipfile.ZipFile(charx, "w") as archive:
+                archive.writestr("card.json", json.dumps(_sample_ccv3_card(), ensure_ascii=False))
+                for index in range(600):
+                    archive.writestr(f"unused/{index}.txt", b"")
+
+            with self.assertRaisesRegex(ValueError, "too many entries"):
+                import_charx_persona(charx, output_root=temp / "out")
+
+            self.assertFalse((temp / "out" / "personas").exists())
+
     def test_import_charx_preserves_embedded_module_ignored_features_and_lore_override(self):
         card = _sample_ccv3_card()
         card["data"]["extensions"]["risuai"] = {}
@@ -379,6 +415,19 @@ class RisuModulePersonaTests(unittest.TestCase):
         self.assertEqual(parsed.module["name"], "Yanagi Persona Module")
         self.assertEqual(parsed.module["lorebook"][1]["content"], "NSFW_MARKER must remain exactly as imported.")
         self.assertEqual(parsed.asset_payloads, [b"\x89PNG\r\n\x1a\navatar"])
+
+    def test_read_risum_module_rejects_an_asset_record_flood(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            temp = Path(temp_dir)
+            rpack_map = _identity_rpack_map(temp / "rpack_map.bin")
+            risum = _write_fake_risum(
+                temp / "record-flood.risum",
+                _sample_risu_module(),
+                assets=[b""] * 300,
+            )
+
+            with self.assertRaisesRegex(ValueError, "too many asset records"):
+                read_risum_module(risum, rpack_map_path=rpack_map)
 
     def test_persona_card_from_risu_module_preserves_content_but_marks_unsafe_features_ignored(self):
         card = persona_card_from_risu_module(_sample_risu_module(), source_name="persona.risum")

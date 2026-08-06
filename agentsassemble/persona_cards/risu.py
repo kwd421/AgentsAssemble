@@ -25,9 +25,15 @@ RISU_MODULE_MAGIC = 111
 RISU_MODULE_VERSION = 0
 RISU_ASSET_MARKER = 1
 RISU_EOF_MARKER = 0
+MAX_RISUM_FILE_BYTES = 16 * 1024 * 1024
+MAX_RISUM_MAIN_BYTES = 5 * 1024 * 1024
+MAX_RISUM_ASSET_BYTES = 8 * 1024 * 1024
+MAX_RISUM_ASSET_COUNT = 256
 
 
 def read_risum_module(path: Path, *, rpack_map_path: Path | None = None) -> RisuModulePayload:
+    if Path(path).stat().st_size > MAX_RISUM_FILE_BYTES:
+        raise ValueError("Risu module file is too large.")
     data = Path(path).read_bytes()
     return read_risum_module_bytes(data, rpack_map_path=rpack_map_path, source_path=str(path))
 
@@ -38,6 +44,8 @@ def read_risum_module_bytes(
     rpack_map_path: Path | None = None,
     source_path: str = "",
 ) -> RisuModulePayload:
+    if len(data) > MAX_RISUM_FILE_BYTES:
+        raise ValueError("Risu module file is too large.")
     if len(data) < 6:
         raise ValueError("Risu module file is too small.")
     if data[0] != RISU_MODULE_MAGIC:
@@ -47,6 +55,8 @@ def read_risum_module_bytes(
     rpack_map = _load_rpack_map(rpack_map_path)
     offset = 2
     main_length = _read_uint32(data, offset)
+    if main_length > MAX_RISUM_MAIN_BYTES:
+        raise ValueError("Risu module payload exceeds the safe size limit.")
     offset += 4
     main_encoded = _slice_record(data, offset, main_length, "main module payload")
     offset += main_length
@@ -58,6 +68,7 @@ def read_risum_module_bytes(
         raise ValueError("Risu module payload must contain a module object.")
 
     assets: list[bytes] = []
+    total_asset_bytes = 0
     while offset < len(data):
         marker = data[offset]
         offset += 1
@@ -65,7 +76,12 @@ def read_risum_module_bytes(
             break
         if marker != RISU_ASSET_MARKER:
             raise ValueError(f"Unsupported Risu module record marker: {marker}")
+        if len(assets) >= MAX_RISUM_ASSET_COUNT:
+            raise ValueError("Risu module contains too many asset records.")
         asset_length = _read_uint32(data, offset)
+        total_asset_bytes += asset_length
+        if total_asset_bytes > MAX_RISUM_ASSET_BYTES:
+            raise ValueError("Risu module assets exceed the safe size limit.")
         offset += 4
         asset_encoded = _slice_record(data, offset, asset_length, "asset payload")
         offset += asset_length

@@ -19,6 +19,63 @@ PNG_SIGNATURE = b"\x89PNG\r\n\x1a\n"
 MAX_CARD_TEXT_CHUNK_BYTES = 5 * 1024 * 1024
 MAX_DATA_URI_BYTES = 50 * 1024 * 1024
 MAX_CHARX_TOTAL_ASSET_BYTES = 60 * 1024 * 1024
+MAX_CHARX_ARCHIVE_BYTES = 64 * 1024 * 1024
+MAX_CHARX_ENTRY_COUNT = 512
+MAX_CHARX_TOTAL_UNCOMPRESSED_BYTES = 80 * 1024 * 1024
+MAX_CHARX_COMPRESSION_RATIO = 200
+MAX_CHARX_CARD_BYTES = 5 * 1024 * 1024
+MAX_CHARX_MODULE_BYTES = 10 * 1024 * 1024
+
+
+def validate_charx_archive(path: Path, archive: zipfile.ZipFile) -> None:
+    if Path(path).stat().st_size > MAX_CHARX_ARCHIVE_BYTES:
+        raise ValueError("CHARX archive is too large.")
+    entries = archive.infolist()
+    if len(entries) > MAX_CHARX_ENTRY_COUNT:
+        raise ValueError("CHARX archive contains too many entries.")
+
+    names: set[str] = set()
+    total_uncompressed = 0
+    for info in entries:
+        name = info.filename
+        normalized_name = name[:-1] if name.endswith("/") else name
+        if not safe_embedded_path(normalized_name):
+            raise ValueError("CHARX archive contains an unsafe entry path.")
+        if name in names:
+            raise ValueError("CHARX archive contains duplicate entries.")
+        names.add(name)
+        if info.flag_bits & 0x1:
+            raise ValueError("Encrypted CHARX archive entries are not supported.")
+        total_uncompressed += max(0, info.file_size)
+        if total_uncompressed > MAX_CHARX_TOTAL_UNCOMPRESSED_BYTES:
+            raise ValueError("CHARX archive expands beyond the safe size limit.")
+        if info.file_size and (
+            info.compress_size <= 0
+            or info.file_size > info.compress_size * MAX_CHARX_COMPRESSION_RATIO
+        ):
+            raise ValueError("CHARX archive entry exceeds the safe compression ratio.")
+
+    if "card.json" not in names:
+        raise ValueError("CHARX file must contain card.json at the root.")
+
+
+def read_charx_member(
+    archive: zipfile.ZipFile,
+    name: str,
+    *,
+    max_bytes: int,
+) -> bytes:
+    try:
+        info = archive.getinfo(name)
+    except KeyError as error:
+        raise ValueError(f"CHARX archive does not contain {name}.") from error
+    if info.file_size > max_bytes:
+        raise ValueError(f"CHARX {name} exceeds the safe size limit.")
+    with archive.open(info, "r") as source:
+        payload = source.read(max_bytes + 1)
+    if len(payload) > max_bytes or len(payload) != info.file_size:
+        raise ValueError(f"CHARX {name} exceeds the safe size limit.")
+    return payload
 
 
 def charx_embedded_assets(
@@ -39,7 +96,11 @@ def charx_embedded_assets(
         if total + info.file_size > MAX_CHARX_TOTAL_ASSET_BYTES:
             continue
         total += info.file_size
-        assets[safe_name] = archive.read(info)
+        assets[safe_name] = read_charx_member(
+            archive,
+            name,
+            max_bytes=MAX_DATA_URI_BYTES,
+        )
     return assets
 
 
