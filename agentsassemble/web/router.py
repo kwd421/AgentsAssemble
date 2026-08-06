@@ -333,19 +333,13 @@ class RequestContext:
         return True
 
     def is_operator_session(self) -> bool:
-        """True when the caller's invite session belongs to the operator account.
-
-        This is what lets the host moderate from the public URL: their device
-        token resolves to the operator user, so their guest session carries
-        host-grade privileges without the raw host token leaving the machine.
-        """
+        """True only for a session issued to the immutable operator principal."""
         session = self.session()
-        return bool(
-            session
-            and self.deps.identities.participant_is_operator(
-                str(session.get("agent_id") or "")
-            )
-        )
+        if not session or not session.get("principal_is_operator"):
+            return False
+        principal_user_id = str(session.get("principal_user_id") or "")
+        user = self.deps.identities.get_user(principal_user_id)
+        return bool(user and user.get("is_operator"))
 
     def require_moderator(self) -> bool:
         """Gate moderation endpoints for the local operator or remote operator."""
@@ -367,9 +361,7 @@ class RequestContext:
 
         session = self.session()
         if session is not None:
-            participant_id = str(session.get("agent_id") or "")
-            user = self.deps.identities.user_for_participant(participant_id)
-            return str((user or {}).get("user_id") or "")
+            return str(session.get("principal_user_id") or "")
 
         device_token = str(self.headers.get("X-Device-Token") or "").strip()
         auth_key = device_auth_key(device_token)
@@ -387,8 +379,11 @@ class RequestContext:
 
         session = self.session()
         if session is not None:
-            return self.deps.identities.user_for_participant(
-                str(session.get("agent_id") or "")
+            principal_user_id = str(session.get("principal_user_id") or "")
+            return (
+                self.deps.identities.get_user(principal_user_id)
+                if principal_user_id
+                else None
             )
 
         device_token = str(self.headers.get("X-Device-Token") or "").strip()

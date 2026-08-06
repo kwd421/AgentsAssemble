@@ -656,7 +656,11 @@ class PublicInviteHttpTests(unittest.TestCase):
                     ) as response:
                         companion = json.loads(response.read().decode("utf-8"))
                     self.assertEqual(companion["meeting_id"], "friend-room")
-                    self.assertEqual(companion["agent_id"], "friend-ai")
+                    self.assertNotEqual(companion["agent_id"], "friend-ai")
+                    self.assertEqual(
+                        companion["remote_client_packet"]["agent"]["agent_id"],
+                        companion["agent_id"],
+                    )
                     self.assertNotIn("env", companion["remote_client_packet"])
                     self.assertFalse(companion["remote_client_packet"]["safety"]["contains_invite_token"])
                 finally:

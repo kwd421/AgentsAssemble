@@ -79,12 +79,7 @@ def register_invite_admission_routes(router: Router) -> None:
         try:
             client_type = str(payload.get("client_type") or "browser")
             request_session = ctx.session()
-            creator_participant_id = str((request_session or {}).get("agent_id") or "")
-            creator_user = (
-                ctx.deps.identities.user_for_participant(creator_participant_id)
-                if creator_participant_id
-                else None
-            )
+            creator_user = ctx.authenticated_user() if request_session else None
             created_by_user_id = str(
                 (creator_user or {}).get("user_id")
                 or ctx.deps.identities.operator_user_id()
@@ -229,20 +224,14 @@ def register_invite_admission_routes(router: Router) -> None:
             invite = ctx.deps.invites.create(
                 room_url=ctx.local_server_url(),
                 meeting_id=str(session.get("meeting_id") or ""),
-                agent_id=str(payload.get("agent_id") or ""),
+                agent_id=f"companion-{uuid4().hex[:16]}",
                 display_name=str(payload.get("display_name") or ""),
                 ttl_seconds=min(int(payload.get("ttl_seconds") or 600), 3600),
                 invite_scope="room",
                 participant_type="remote",
                 max_uses=1,
                 created_by_user_id=str(
-                    (
-                        ctx.deps.identities.user_for_participant(
-                            str(session.get("agent_id") or "")
-                        )
-                        or {}
-                    ).get("user_id")
-                    or ""
+                    (ctx.authenticated_user() or {}).get("user_id") or ""
                 ),
             )
         except (ValueError, TypeError) as error:

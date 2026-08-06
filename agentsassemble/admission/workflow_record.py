@@ -48,6 +48,10 @@ def validate_admission_workflow_record(
         "connection_kind": clean_room_text(source.get("connection_kind"), limit=64),
         "stable_identity": bool(source.get("stable_identity")),
         "operator": bool(source.get("operator")),
+        "principal_user_id": clean_room_text(
+            source.get("principal_user_id"),
+            limit=128,
+        ),
         "session_joined_at": clean_room_text(
             source.get("session_joined_at"),
             limit=64,

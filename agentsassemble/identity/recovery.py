@@ -98,6 +98,8 @@ class GuestIdentityRecoveryService:
                 "client_type": "browser",
                 "client_id": clean_room_text(client_id, limit=128),
                 "provider_kind": str(membership.get("provider_kind") or "manual"),
+                "principal_user_id": str(consumed_user.get("user_id") or ""),
+                "principal_is_operator": bool(consumed_user.get("is_operator")),
                 "connection_kind": str(membership.get("connection_kind") or "browser"),
             }
         )

@@ -583,7 +583,13 @@ def _clean_session_record(value: object) -> dict[str, object]:
         "client_type": clean_lobby_text(source.get("client_type"), limit=32) or "browser",
         "provider_kind": clean_lobby_text(source.get("provider_kind"), limit=64) or "manual",
         "owner_id": clean_lobby_text(source.get("owner_id"), limit=128),
+        "principal_user_id": clean_lobby_text(
+            source.get("principal_user_id"),
+            limit=128,
+        ),
+        "principal_is_operator": bool(source.get("principal_is_operator")),
         "connection_kind": clean_lobby_text(source.get("connection_kind"), limit=64),
+        "client_id": clean_lobby_text(source.get("client_id"), limit=128),
         "joined_at": clean_lobby_text(source.get("joined_at"), limit=64),
         "expires_at": clean_lobby_text(source.get("expires_at"), limit=64),
     }

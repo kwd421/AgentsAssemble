@@ -302,6 +302,8 @@ class OperatorPairingService:
             "client_type": "browser",
             "provider_kind": "manual",
             "owner_id": LOCAL_OPERATOR_USER_ID,
+            "principal_user_id": LOCAL_OPERATOR_USER_ID,
+            "principal_is_operator": True,
             "connection_kind": NATIVE_REMOTE_ROOM_CLIENT_KIND,
         }
 

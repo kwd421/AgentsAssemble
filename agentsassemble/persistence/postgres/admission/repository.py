@@ -228,8 +228,9 @@ class PostgresInviteSessionRepository:
                 """INSERT INTO room_access_sessions(
                        token_fingerprint, room_id, participant_id, display_name,
                        invite_scope, participant_type, client_type, provider_kind,
-                       owner_id, connection_kind, joined_at, expires_at
-                   ) VALUES(%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+                       owner_id, principal_user_id, principal_is_operator,
+                       connection_kind, joined_at, expires_at
+                   ) VALUES(%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
                    ON CONFLICT(room_id, participant_id) DO UPDATE SET
                        token_fingerprint = excluded.token_fingerprint,
                        display_name = excluded.display_name,
@@ -238,6 +239,8 @@ class PostgresInviteSessionRepository:
                        client_type = excluded.client_type,
                        provider_kind = excluded.provider_kind,
                        owner_id = excluded.owner_id,
+                       principal_user_id = excluded.principal_user_id,
+                       principal_is_operator = excluded.principal_is_operator,
                        connection_kind = excluded.connection_kind,
                        joined_at = excluded.joined_at,
                        expires_at = excluded.expires_at""",
@@ -542,6 +545,8 @@ def _session_parameters(
         clean_room_text(record.get("client_type"), limit=32) or "browser",
         clean_room_text(record.get("provider_kind"), limit=64) or "manual",
         clean_room_text(record.get("owner_id"), limit=128),
+        clean_room_text(record.get("principal_user_id"), limit=128),
+        bool(record.get("principal_is_operator")),
         clean_room_text(record.get("connection_kind"), limit=64),
         _as_datetime(record.get("joined_at")),
         _as_datetime(record.get("expires_at")),
@@ -596,6 +601,8 @@ def _session_from_row(row: dict[str, object]) -> dict[str, object]:
         "client_type": str(row["client_type"] or "browser"),
         "provider_kind": str(row["provider_kind"] or "manual"),
         "owner_id": str(row["owner_id"] or ""),
+        "principal_user_id": str(row["principal_user_id"] or ""),
+        "principal_is_operator": bool(row["principal_is_operator"]),
         "connection_kind": str(row["connection_kind"] or ""),
         "joined_at": _isoformat(row["joined_at"]),
         "expires_at": _isoformat(row["expires_at"]),

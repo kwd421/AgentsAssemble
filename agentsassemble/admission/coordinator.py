@@ -257,6 +257,20 @@ class RoomAdmissionCoordinator:
                 participant_type=participant_type,
             )
 
+        if self._participant_identity_conflicts(workflow, prepared):
+            self._invites.update_admission_workflow(
+                workflow_id,
+                {
+                    **self._phase_updates("failed_terminal"),
+                    "resume_phase": "identity_resolved",
+                    "failure_code": "participant_identity_conflict",
+                },
+            )
+            return {
+                "status": "rejected",
+                "reason": "participant_identity_conflict",
+            }
+
         if not workflow.get("invite_consumed"):
             consume_error, workflow = self._invites.consume_for_admission(
                 workflow_id,
@@ -362,6 +376,10 @@ class RoomAdmissionCoordinator:
                 "connection_kind": connection_kind,
                 "stable_identity": stable_user is not None,
                 "operator": bool(stable_user and stable_user.get("is_operator")),
+                "principal_user_id": clean_lobby_text(
+                    (stable_user or {}).get("user_id"),
+                    limit=128,
+                ),
             },
         )
 
@@ -406,6 +424,43 @@ class RoomAdmissionCoordinator:
                 "is_host": False,
                 "source": "room_invite",
             }
+        )
+
+    def _participant_identity_conflicts(
+        self,
+        workflow: dict[str, object],
+        prepared: PreparedInviteAdmission,
+    ) -> bool:
+        """Reject an invite that would take over another durable principal.
+
+        Participant IDs are presentation/routing identities, never proof of
+        authentication. A stable device may resume its own bound participant,
+        and an owner may replace its own non-human agent. Every other existing
+        user or room participant is a collision that must fail before the
+        invite is consumed or a bearer session is issued.
+        """
+
+        participant_id = clean_lobby_text(
+            workflow.get("participant_id"),
+            limit=128,
+        )
+        principal_user_id = clean_lobby_text(
+            workflow.get("principal_user_id"),
+            limit=128,
+        )
+        bound_user = self._identities.user_for_participant(participant_id)
+        if bound_user is not None:
+            return str(bound_user.get("user_id") or "") != principal_user_id
+
+        existing = self._rooms.participant(prepared.meeting_id, participant_id)
+        if not existing:
+            return False
+        participant_type = str(workflow.get("participant_type") or "human")
+        existing_owner_id = clean_lobby_text(existing.get("owner_id"), limit=128)
+        return not (
+            participant_type != "human"
+            and existing_owner_id
+            and existing_owner_id == prepared.created_by_user_id
         )
 
     def _completed_result(self, workflow: dict[str, object]) -> dict[str, object]:
@@ -591,6 +646,8 @@ def _session_record(workflow: dict[str, object]) -> dict[str, object]:
         "client_type": str(workflow.get("client_type") or "browser"),
         "provider_kind": str(workflow.get("provider_kind") or "manual"),
         "owner_id": str(workflow.get("owner_id") or ""),
+        "principal_user_id": str(workflow.get("principal_user_id") or ""),
+        "principal_is_operator": bool(workflow.get("operator")),
         "connection_kind": str(workflow.get("connection_kind") or ""),
         "client_id": str(workflow.get("client_id") or ""),
     }
