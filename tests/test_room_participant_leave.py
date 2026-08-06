@@ -133,6 +133,7 @@ class RoomParticipantLeaveServiceTests(unittest.TestCase):
         self.assertEqual(raised.exception.code, "not_found")
 
     def test_post_commit_cleanup_revokes_access_after_ack_delay(self) -> None:
+        self._update_in_unit()
         self.service.apply_after_commit("general", "member")
 
         self.assertEqual(
@@ -153,6 +154,54 @@ class RoomParticipantLeaveServiceTests(unittest.TestCase):
         self.assertEqual(
             self.session_revocations,
             [("general", "member")],
+        )
+
+    def test_restart_reconciles_leave_access_revocation_lost_before_callback(self) -> None:
+        self._update_in_unit()
+
+        participant = self.store.participant("general", "member")
+        self.assertTrue(participant["access_cleanup_pending"])
+
+        # Simulate a restart after the leave ACK was committed but before the
+        # delayed revocation callback ran.  The replacement must rebuild the
+        # access cleanup from durable room state rather than trusting the lost
+        # in-memory callback.
+        restarted = RoomParticipantLeaveService(
+            store=self.store,
+            remove_membership=lambda room_id, participant_id: (
+                self.membership_removals.append((room_id, participant_id))
+            ),
+            leave_all_voice=lambda room_id, participant_id: (
+                self.voice_leaves.append((room_id, participant_id))
+            ),
+            revoke_participant_sessions=lambda room_id, participant_id: (
+                self.session_revocations.append((room_id, participant_id))
+            ),
+            disconnect_participant=lambda room_id, participant_id: (
+                self.disconnections.append((room_id, participant_id))
+            ),
+            stop_agent=lambda room_id, participant_id, operation_id: None,
+            remove_provider=lambda room_id, participant_id: None,
+            schedule_cleanup=lambda delay, callback: (
+                self.scheduled_cleanup.append((delay, callback))
+            ),
+        )
+
+        restarted.reconcile_pending()
+
+        self.assertEqual(len(self.scheduled_cleanup), 1)
+        delay, callback = self.scheduled_cleanup.pop()
+        self.assertEqual(delay, 0.1)
+        callback()
+
+        self.assertEqual(self.session_revocations, [("general", "member")])
+        self.assertEqual(self.disconnections, [("general", "member")])
+        self.assertEqual(self.membership_removals, [("general", "member")])
+        self.assertEqual(self.voice_leaves, [("general", "member")])
+        self.assertFalse(
+            self.store.participant("general", "member")[
+                "access_cleanup_pending"
+            ]
         )
 
     def test_owner_leave_marks_owned_agents_left_in_the_same_transaction(self) -> None:
@@ -225,6 +274,7 @@ class RoomParticipantLeaveServiceTests(unittest.TestCase):
                 "role": "agent",
                 "owner_id": "member",
                 "status": "left",
+                "access_cleanup_pending": True,
             },
         )
         self.store.upsert_session(

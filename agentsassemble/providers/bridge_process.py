@@ -16,6 +16,7 @@ from typing import Callable, Mapping
 from uuid import uuid4
 
 from agentsassemble.diagnostics.cleanup import CleanupReport
+from agentsassemble.diagnostics.sensitive_text import redact_persisted_diagnostic_text
 from agentsassemble.providers.launch_specs import (
     NativeCliProviderSpec,
     validate_native_cli_provider_spec,
@@ -590,9 +591,10 @@ class NativeCliBridgeProcessManager:
 
     def _persist_stderr_snapshot(self, handle: _BridgeHandle) -> None:
         with handle.stderr_lock:
-            tail = bytes(handle.stderr_tail)
+            tail = bytes(handle.stderr_tail).decode("utf-8", errors="replace")
+        persisted = redact_persisted_diagnostic_text(tail, limit=16_000)
         try:
-            handle.stderr_path.write_bytes(tail)
+            handle.stderr_path.write_text(persisted, encoding="utf-8")
             handle.stderr_path.chmod(0o600)
         except OSError:
             pass

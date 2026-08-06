@@ -109,6 +109,9 @@ class RoomParticipantLeaveService:
         updated = unit.update_participant_fields(
             participant_id,
             status="left",
+            access_cleanup_pending=True,
+            access_cleanup_warning="",
+            access_cleanup_attempt_count=0,
         )
         event = unit.append_event(
             "participant_left",
@@ -128,7 +131,13 @@ class RoomParticipantLeaveService:
                 or agent.get("status") in {"left", "kicked"}
             ):
                 continue
-            unit.update_participant_fields(agent_id, status="left")
+            unit.update_participant_fields(
+                agent_id,
+                status="left",
+                access_cleanup_pending=True,
+                access_cleanup_warning="",
+                access_cleanup_attempt_count=0,
+            )
             unit.append_event(
                 "participant_left",
                 participant_id=agent_id,
@@ -175,10 +184,12 @@ class RoomParticipantLeaveService:
                         error=error,
                         attempt=1,
                     )
-            self._revoke_participant_sessions(room_id, agent_id)
-            self._disconnect_participant(room_id, agent_id)
-            self._remove_membership(room_id, agent_id)
-            self._leave_all_voice(room_id, agent_id)
+            self._run_access_cleanup(
+                room_id,
+                agent_id,
+                attempt=1,
+                include_membership=True,
+            )
             if self.store.participant(room_id, agent_id).get(
                 "moderation_cleanup_pending"
             ):
@@ -199,11 +210,13 @@ class RoomParticipantLeaveService:
 
         self._remove_membership(room_id, participant_id)
         self._leave_all_voice(room_id, participant_id)
-
-        def revoke_sessions() -> None:
-            self._revoke_participant_sessions(room_id, participant_id)
-
-        self._schedule_cleanup(0.1, revoke_sessions)
+        self._schedule_access_cleanup(
+            room_id,
+            participant_id,
+            attempt=1,
+            delay=0.1,
+            include_membership=False,
+        )
 
     def reconcile_pending(self) -> None:
         """Resume durable owned-agent cleanup after a server restart."""
@@ -216,23 +229,114 @@ class RoomParticipantLeaveService:
                     participant.get("participant_id"),
                     limit=128,
                 )
-                if (
-                    not participant_id
-                    or participant.get("status") != "left"
-                    or not participant.get("moderation_cleanup_pending")
-                ):
+                if not participant_id or participant.get("status") != "left":
                     continue
-                attempt = max(
-                    1,
-                    int(participant.get("moderation_cleanup_attempt_count") or 0)
-                    + 1,
-                )
-                if attempt <= MAX_PROVIDER_CLEANUP_ATTEMPTS:
-                    self._schedule_provider_cleanup(
-                        room_id,
-                        participant_id,
-                        attempt=attempt,
+                if participant.get("access_cleanup_pending"):
+                    access_attempt = max(
+                        1,
+                        int(participant.get("access_cleanup_attempt_count") or 0)
+                        + 1,
                     )
+                    if access_attempt <= MAX_PROVIDER_CLEANUP_ATTEMPTS:
+                        self._schedule_access_cleanup(
+                            room_id,
+                            participant_id,
+                            attempt=access_attempt,
+                            delay=0.1,
+                            include_membership=True,
+                        )
+                if participant.get("moderation_cleanup_pending"):
+                    provider_attempt = max(
+                        1,
+                        int(
+                            participant.get("moderation_cleanup_attempt_count")
+                            or 0
+                        )
+                        + 1,
+                    )
+                    if provider_attempt <= MAX_PROVIDER_CLEANUP_ATTEMPTS:
+                        self._schedule_provider_cleanup(
+                            room_id,
+                            participant_id,
+                            attempt=provider_attempt,
+                        )
+
+    def _schedule_access_cleanup(
+        self,
+        room_id: str,
+        participant_id: str,
+        *,
+        attempt: int,
+        delay: float,
+        include_membership: bool,
+    ) -> None:
+        self._schedule_cleanup(
+            delay,
+            lambda: self._run_access_cleanup(
+                room_id,
+                participant_id,
+                attempt=attempt,
+                include_membership=include_membership,
+            ),
+        )
+
+    def _run_access_cleanup(
+        self,
+        room_id: str,
+        participant_id: str,
+        *,
+        attempt: int,
+        include_membership: bool,
+    ) -> None:
+        participant = self.store.participant(room_id, participant_id)
+        if (
+            not participant
+            or participant.get("status") != "left"
+            or not participant.get("access_cleanup_pending")
+        ):
+            return
+        operations: list[tuple[str, ParticipantCleanup]] = [
+            ("session revocation", self._revoke_participant_sessions),
+            ("socket disconnect", self._disconnect_participant),
+        ]
+        if include_membership:
+            operations.extend(
+                [
+                    ("membership removal", self._remove_membership),
+                    ("voice leave", self._leave_all_voice),
+                ]
+            )
+        failures: list[str] = []
+        for label, operation in operations:
+            try:
+                operation(room_id, participant_id)
+            except Exception as error:
+                message = clean_room_text(error, limit=500) or error.__class__.__name__
+                failures.append(f"{label}: {message}")
+        if not failures:
+            self.store.update_participant_fields(
+                room_id,
+                participant_id,
+                access_cleanup_pending=False,
+                access_cleanup_warning="",
+                access_cleanup_attempt_count=0,
+            )
+            return
+        self.store.update_participant_fields(
+            room_id,
+            participant_id,
+            access_cleanup_pending=True,
+            access_cleanup_warning="; ".join(failures),
+            access_cleanup_attempt_count=attempt,
+        )
+        if attempt < MAX_PROVIDER_CLEANUP_ATTEMPTS:
+            self._schedule_access_cleanup(
+                room_id,
+                participant_id,
+                attempt=attempt + 1,
+                delay=provider_cleanup_delay_seconds(attempt + 1),
+                include_membership=True,
+            )
 
     def _schedule_provider_cleanup(
         self,

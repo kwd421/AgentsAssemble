@@ -25,9 +25,14 @@ from agentsassemble.admission.invite import (
     join_room_with_invite,
     reset_state,
 )
+from agentsassemble.room.event_broker import RoomEventBroker
 from agentsassemble.web.websocket import handle_ws_upgrade
 from agentsassemble.web.websocket_codec import OP_TEXT, compute_accept_key
-from agentsassemble.web.room_session import WS_SESSION_REVOKED_CATEGORY, WsTicketStore
+from agentsassemble.web.room_session import (
+    WS_SESSION_REVOKED_CATEGORY,
+    WsRoomDeps,
+    WsTicketStore,
+)
 
 
 def _client_text_frame(text: str) -> bytes:
@@ -316,6 +321,117 @@ class WsEndpointTests(unittest.TestCase):
                     sock.close()
             finally:
                 self._stop_server(server)
+
+    def test_revoked_socket_cannot_receive_an_already_queued_room_event(self):
+        server_sock, client_sock = socket.socketpair()
+        broker = RoomEventBroker()
+        active = {"value": True}
+
+        class Handler:
+            headers = {
+                "Upgrade": "websocket",
+                "Connection": "Upgrade",
+                "Sec-WebSocket-Key": base64.b64encode(
+                    b"0123456789abcdef"
+                ).decode("ascii"),
+            }
+            connection = server_sock
+            wfile = io.BytesIO()
+            close_connection = False
+
+            def send_response(self, _status):
+                return None
+
+            def send_header(self, _name, _value):
+                return None
+
+            def end_headers(self):
+                return None
+
+        class Controller:
+            def connect(self, identity):
+                return broker.connect(identity)
+
+            def disconnect(self, channel):
+                broker.disconnect(channel)
+
+        tickets = WsTicketStore()
+        ticket = tickets.issue(
+            {
+                "agent_id": "guest-1",
+                "meeting_id": "room-1",
+                "client_type": "browser",
+            },
+            session_token="revocable-bearer",
+        )
+
+        def deps(channel, _handler):
+            return WsRoomDeps(
+                read_lobby_after=lambda _room, _cursor: ([], ""),
+                read_roster=lambda _room: ([], ""),
+                read_side_chat_after=lambda _room, _cursor: ([], ""),
+                set_thinking=lambda _identity, _on: None,
+                is_session_active=lambda _token: active["value"],
+                room_snapshot=lambda _identity, _after_seq: {
+                    "room": {"room_id": "room-1"},
+                    "events": [],
+                },
+                on_subscribe=lambda _identity, streams, _after_seq: (
+                    channel.subscribe(streams)
+                ),
+            )
+
+        with patch(
+            "agentsassemble.web.websocket.SSE_EVENT_POLL_INTERVAL_SECONDS",
+            10.0,
+        ):
+            worker = threading.Thread(
+                target=handle_ws_upgrade,
+                args=(Handler(), {"ticket": [ticket]}),
+                kwargs={
+                    "ws_ticket_store": tickets,
+                    "room_realtime_controller": Controller(),
+                    "ws_room_deps_factory": deps,
+                },
+                daemon=True,
+            )
+            worker.start()
+            try:
+                client_sock.sendall(
+                    _client_text_frame(
+                        json.dumps(
+                            {
+                                "op": "subscribe",
+                                "streams": ["room_events"],
+                                "resume_from_seq": 0,
+                            }
+                        )
+                    )
+                )
+                self.assertEqual(_recv_server_text(client_sock)["op"], "subscribed")
+                self.assertEqual(_recv_server_text(client_sock)["op"], "snapshot")
+
+                active["value"] = False
+                broker.broadcast_event(
+                    {
+                        "room_id": "room-1",
+                        "type": "message",
+                        "seq": 1,
+                        "content": "must not reach a revoked bearer",
+                    }
+                )
+
+                first_after_revoke = _recv_server_text(client_sock)
+                self.assertEqual(first_after_revoke["op"], "error")
+                self.assertEqual(
+                    first_after_revoke["category"],
+                    WS_SESSION_REVOKED_CATEGORY,
+                )
+            finally:
+                client_sock.close()
+                server_sock.close()
+                broker.close()
+                worker.join(timeout=2)
 
     def _host_ws_ticket(self, base: str, meeting_id: str) -> str:
         req = Request(

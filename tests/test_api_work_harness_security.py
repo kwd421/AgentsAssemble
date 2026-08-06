@@ -27,6 +27,38 @@ class _Response(io.BytesIO):
 
 
 class ApiWorkHarnessSecurityTests(unittest.TestCase):
+    def test_command_exceeding_output_budget_is_stopped_before_timeout(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            workspace = Path(temp_dir)
+            harness = ApiWorkHarness(
+                workspace,
+                permission_mode="workspace_write",
+                request_handler=lambda _request, respond: respond(
+                    {"option_id": "allow_once"}
+                ),
+            )
+            started = time.monotonic()
+
+            with self.assertRaisesRegex(RuntimeError, "output limit"):
+                harness.execute(
+                    "run_workspace_command",
+                    {
+                        "command": [
+                            sys.executable,
+                            "-c",
+                            (
+                                "import sys, time; "
+                                "sys.stdout.write('x' * 2000000); "
+                                "sys.stdout.flush(); "
+                                "time.sleep(30)"
+                            ),
+                        ],
+                        "timeout_seconds": 8,
+                    },
+                )
+
+            self.assertLess(time.monotonic() - started, 4.0)
+
     def test_approved_write_cannot_follow_a_directory_replaced_by_a_symlink(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:
             root = Path(temp_dir)

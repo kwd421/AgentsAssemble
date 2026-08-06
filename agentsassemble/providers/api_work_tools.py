@@ -13,6 +13,7 @@ import signal
 import stat
 import subprocess
 import threading
+import time
 from collections.abc import Callable
 from pathlib import Path
 
@@ -24,6 +25,10 @@ SIDE_EFFECT_WORK_TOOLS = frozenset(
     {"write_workspace_file", "replace_workspace_text", "run_workspace_command"}
 )
 _POST_TERMINATION_DRAIN_SECONDS = 2.0
+_COMMAND_OUTPUT_LIMIT_BYTES = 1_000_000
+_COMMAND_OUTPUT_READ_SIZE = 64 * 1024
+_COMMAND_POLL_INTERVAL_SECONDS = 0.02
+_COMMAND_READER_JOIN_SECONDS = 1.0
 
 
 class ApiWorkApprovalDenied(PermissionError):
@@ -46,7 +51,7 @@ class ApiWorkHarness:
         self.request_handler = request_handler
         self._interrupt_requested = interrupt_requested or (lambda: False)
         self._process_lock = threading.RLock()
-        self._active_process: subprocess.Popen[str] | None = None
+        self._active_process: subprocess.Popen[bytes] | subprocess.Popen[str] | None = None
         self._active_process_group = False
         self._command_interrupted = threading.Event()
 
@@ -213,7 +218,7 @@ class ApiWorkHarness:
 
     def _track_active_process(
         self,
-        process: subprocess.Popen[str],
+        process: subprocess.Popen[bytes] | subprocess.Popen[str],
         process_group: bool,
     ) -> None:
         with self._process_lock:
@@ -224,7 +229,10 @@ class ApiWorkHarness:
             self._active_process = process
             self._active_process_group = process_group
 
-    def _clear_active_process(self, process: subprocess.Popen[str]) -> None:
+    def _clear_active_process(
+        self,
+        process: subprocess.Popen[bytes] | subprocess.Popen[str],
+    ) -> None:
         with self._process_lock:
             if self._active_process is process:
                 self._active_process = None
@@ -510,8 +518,8 @@ def _run_bounded_command(
     cwd: Path,
     env: dict[str, str],
     timeout: int,
-    on_started: Callable[[subprocess.Popen[str], bool], None],
-    on_finished: Callable[[subprocess.Popen[str]], None],
+    on_started: Callable[[subprocess.Popen[bytes], bool], None],
+    on_finished: Callable[[subprocess.Popen[bytes]], None],
     interrupted: Callable[[], bool],
 ) -> subprocess.CompletedProcess[str]:
     supports_process_groups = hasattr(os, "killpg") and hasattr(os, "setsid")
@@ -524,7 +532,6 @@ def _run_bounded_command(
         env=env,
         stdout=subprocess.PIPE,
         stderr=subprocess.PIPE,
-        text=True,
         start_new_session=supports_process_groups,
         creationflags=creation_flags,
     )
@@ -534,23 +541,153 @@ def _run_bounded_command(
         _terminate_process_tree(process, process_group=supports_process_groups)
         _drain_after_termination(process)
         raise
+    output = _BoundedCommandOutput(_COMMAND_OUTPUT_LIMIT_BYTES)
+    readers = [
+        threading.Thread(
+            target=_read_command_stream,
+            args=(process.stdout, output, "stdout"),
+            name="ApiWorkStdout",
+            daemon=True,
+        ),
+        threading.Thread(
+            target=_read_command_stream,
+            args=(process.stderr, output, "stderr"),
+            name="ApiWorkStderr",
+            daemon=True,
+        ),
+    ]
+    for reader in readers:
+        reader.start()
     try:
-        try:
-            stdout, stderr = process.communicate(timeout=timeout)
-        except subprocess.TimeoutExpired as error:
-            _terminate_process_tree(process, process_group=supports_process_groups)
-            _drain_after_termination(process)
-            raise TimeoutError(
-                f"Workspace command exceeded its {timeout}-second limit."
-            ) from error
+        deadline = time.monotonic() + timeout
+        while process.poll() is None:
+            if interrupted():
+                _terminate_process_tree(
+                    process,
+                    process_group=supports_process_groups,
+                )
+                _wait_for_process_exit(process)
+                raise RuntimeError("API workspace command was interrupted.")
+            if output.limit_exceeded.is_set():
+                _terminate_process_tree(
+                    process,
+                    process_group=supports_process_groups,
+                )
+                _wait_for_process_exit(process)
+                raise RuntimeError(
+                    "Workspace command exceeded its output limit."
+                )
+            remaining = deadline - time.monotonic()
+            if remaining <= 0:
+                _terminate_process_tree(
+                    process,
+                    process_group=supports_process_groups,
+                )
+                _wait_for_process_exit(process)
+                raise TimeoutError(
+                    f"Workspace command exceeded its {timeout}-second limit."
+                )
+            try:
+                process.wait(
+                    timeout=min(_COMMAND_POLL_INTERVAL_SECONDS, remaining)
+                )
+            except subprocess.TimeoutExpired:
+                pass
+        _finish_command_readers(process, readers)
+        if output.limit_exceeded.is_set():
+            raise RuntimeError("Workspace command exceeded its output limit.")
         if interrupted():
             raise RuntimeError("API workspace command was interrupted.")
-        return subprocess.CompletedProcess(argv, process.returncode, stdout, stderr)
+        stdout, stderr = output.text()
+        return subprocess.CompletedProcess(
+            argv,
+            int(process.returncode or 0),
+            stdout,
+            stderr,
+        )
     finally:
+        _finish_command_readers(process, readers)
         on_finished(process)
 
 
-def _drain_after_termination(process: subprocess.Popen[str]) -> None:
+class _BoundedCommandOutput:
+    """Capture subprocess pipes without allowing them to grow memory forever."""
+
+    def __init__(self, limit_bytes: int) -> None:
+        self.limit_bytes = max(1, int(limit_bytes))
+        self.limit_exceeded = threading.Event()
+        self._lock = threading.Lock()
+        self._stdout = bytearray()
+        self._stderr = bytearray()
+        self._stored_bytes = 0
+
+    def append(self, stream_name: str, chunk: bytes) -> None:
+        with self._lock:
+            remaining = self.limit_bytes - self._stored_bytes
+            if remaining <= 0:
+                self.limit_exceeded.set()
+                return
+            selected = chunk[:remaining]
+            target = self._stdout if stream_name == "stdout" else self._stderr
+            target.extend(selected)
+            self._stored_bytes += len(selected)
+            if len(selected) != len(chunk):
+                self.limit_exceeded.set()
+
+    def text(self) -> tuple[str, str]:
+        with self._lock:
+            return (
+                bytes(self._stdout).decode("utf-8", errors="replace"),
+                bytes(self._stderr).decode("utf-8", errors="replace"),
+            )
+
+
+def _read_command_stream(
+    stream: object,
+    output: _BoundedCommandOutput,
+    stream_name: str,
+) -> None:
+    if stream is None:
+        return
+    try:
+        while True:
+            chunk = stream.read(_COMMAND_OUTPUT_READ_SIZE)
+            if not chunk:
+                return
+            output.append(stream_name, chunk)
+            if output.limit_exceeded.is_set():
+                return
+    except (OSError, ValueError):
+        return
+    finally:
+        try:
+            stream.close()
+        except OSError:
+            pass
+
+
+def _finish_command_readers(
+    process: subprocess.Popen[bytes],
+    readers: list[threading.Thread],
+) -> None:
+    del process
+    deadline = time.monotonic() + _COMMAND_READER_JOIN_SECONDS
+    for reader in readers:
+        reader.join(timeout=max(0.0, deadline - time.monotonic()))
+
+
+def _wait_for_process_exit(
+    process: subprocess.Popen[bytes] | subprocess.Popen[str],
+) -> None:
+    try:
+        process.wait(timeout=0.5)
+    except subprocess.TimeoutExpired:
+        pass
+
+
+def _drain_after_termination(
+    process: subprocess.Popen[bytes] | subprocess.Popen[str],
+) -> None:
     try:
         process.communicate(timeout=_POST_TERMINATION_DRAIN_SECONDS)
         return
@@ -573,7 +710,7 @@ def _drain_after_termination(process: subprocess.Popen[str]) -> None:
 
 
 def _terminate_process_tree(
-    process: subprocess.Popen[str],
+    process: subprocess.Popen[bytes] | subprocess.Popen[str],
     *,
     process_group: bool,
 ) -> None:

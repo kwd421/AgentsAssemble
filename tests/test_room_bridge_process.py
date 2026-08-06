@@ -378,6 +378,40 @@ class NativeCliBridgeProcessManagerTests(unittest.TestCase):
         self.assertLessEqual(len(persisted), 16_000)
         self.assertIn(b"WARN bridge diagnostic 1199", persisted)
 
+    def test_bridge_stderr_redacts_credentials_before_persisting(self):
+        secret = "sk-test-bridge-secret-1234567890"
+        stderr = (
+            f"Authorization: Bearer {secret}\n"
+            "WARN provider connection failed safely\n"
+        ).encode()
+        with tempfile.TemporaryDirectory() as temp_dir:
+            popen = FakePopenFactory()
+            popen.process = FakeProcess(stderr_bytes=stderr)
+            manager = NativeCliBridgeProcessManager(
+                Path(temp_dir),
+                popen_factory=popen,
+                executable_resolver=lambda executable: f"/resolved/{executable}",
+            )
+            launch = manager.start(
+                "general",
+                {"session_id": "codex"},
+                _spec(),
+                server_url="http://127.0.0.1:9999",
+                ticket_issuer=lambda identity: "ticket",
+            )
+            deadline = time.monotonic() + 2
+            while (
+                manager.health("general", "codex").get("stderr_line_count") != 2
+                and time.monotonic() < deadline
+            ):
+                time.sleep(0.01)
+            manager.stop("general", "codex", handle_id=launch["bridge_handle_id"])
+            persisted = Path(launch["stderr_path"]).read_text(encoding="utf-8")
+
+        self.assertNotIn(secret, persisted)
+        self.assertIn("[redacted]", persisted)
+        self.assertIn("provider connection failed safely", persisted)
+
     def test_close_continues_after_failure_and_reports_owned_orphan(self):
         with tempfile.TemporaryDirectory() as temp_dir:
             root = Path(temp_dir)

@@ -183,12 +183,18 @@ def handle_ws_upgrade(
                     outbound.extend(ws.handle_frame(opcode, payload))
                 if not _send_all(outbound):
                     break
+            polled = ws.poll()
+            if not _send_all(polled):
+                break
+            if ws.closed:
+                break
             if channel in ready:
-                pushed = [encode_text(json.dumps(message, ensure_ascii=False)) for message in channel.drain()]
+                pushed = [
+                    encode_text(json.dumps(message, ensure_ascii=False))
+                    for message in channel.drain()
+                ]
                 if not _send_all(pushed):
                     break
-            if not _send_all(ws.poll()):
-                break
             now = time.monotonic()
             if not ws.handshake_complete and now >= opened_at + WS_APPLICATION_HANDSHAKE_TIMEOUT_SECONDS:
                 _send_all([encode_close(CLOSE_POLICY_VIOLATION, "room subscription required")])

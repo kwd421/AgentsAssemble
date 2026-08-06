@@ -231,12 +231,7 @@ def register_invite_admission_routes(router: Router) -> None:
                 code="companion_owner_required",
             )
             return
-        principal_user_id = str(
-            session.get("principal_user_id")
-            or session.get("session_id")
-            or session.get("agent_id")
-            or ""
-        ).strip()
+        principal_user_id = str(session.get("principal_user_id") or "").strip()
         if not principal_user_id:
             ctx.send_error(
                 HTTPStatus.FORBIDDEN,

@@ -162,6 +162,9 @@ _PRIVATE_PARTICIPANT_FIELDS = frozenset(
         "moderation_cleanup_pending",
         "moderation_cleanup_warning",
         "moderation_cleanup_attempt_count",
+        "access_cleanup_pending",
+        "access_cleanup_warning",
+        "access_cleanup_attempt_count",
     }
 )
 

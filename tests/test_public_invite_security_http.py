@@ -285,6 +285,68 @@ class PublicInviteSecurityHttpTests(unittest.TestCase):
         self.assertEqual(companion_limit_error.exception.code, 429)
         self.assertEqual(limit_payload.get("code"), "companion_limit_reached")
 
+    def test_reusable_invite_without_stable_identity_cannot_partition_companion_quota(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir) / "room"
+            RoomStore(root).create_room("friend-room", label="Friend room")
+            set_runtime_host_token("host-secret")
+            set_runtime_public_url("https://shared-room.example.com")
+            server = self._start_server(root)
+            try:
+                base = f"http://127.0.0.1:{server.server_port}"
+                public_headers = {
+                    "Host": "shared-room.example.com",
+                    "Origin": "https://shared-room.example.com",
+                }
+                with urlopen(
+                    _json_request(
+                        f"{base}/api/room-invite/create",
+                        {
+                            "meeting_id": "friend-room",
+                            "display_name": "Reusable guest",
+                            "max_uses": 0,
+                        },
+                        {"X-Host-Token": "host-secret"},
+                    ),
+                    timeout=4,
+                ) as response:
+                    invite = json.loads(response.read().decode("utf-8"))
+                with urlopen(
+                    _json_request(
+                        f"{base}/api/room-invite/join",
+                        {
+                            "invite_token": invite["invite_token"],
+                            "request_id": str(uuid4()),
+                        },
+                        public_headers,
+                    ),
+                    timeout=4,
+                ) as response:
+                    unstable_guest = json.loads(response.read().decode("utf-8"))
+
+                with self.assertRaises(HTTPError) as rejected:
+                    urlopen(
+                        _json_request(
+                            f"{base}/api/room-invite/companion",
+                            {"display_name": "Quota partition"},
+                            {
+                                **public_headers,
+                                "Authorization": (
+                                    f"Bearer {unstable_guest['session_token']}"
+                                ),
+                            },
+                        ),
+                        timeout=4,
+                    )
+                payload = json.loads(rejected.exception.read().decode("utf-8"))
+                rejected.exception.close()
+            finally:
+                server.shutdown()
+                server.server_close()
+
+        self.assertEqual(rejected.exception.code, HTTPStatus.FORBIDDEN)
+        self.assertEqual(payload.get("code"), "companion_owner_required")
+
     def test_http_kick_revokes_the_live_session_and_disconnects_its_room_socket(self):
         with tempfile.TemporaryDirectory() as temp_dir:
             root = Path(temp_dir) / "room"
