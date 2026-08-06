@@ -13,6 +13,7 @@ from urllib.request import Request, urlopen
 
 from agentsassemble.providers.api_context import ApiContextLimitError, ApiContextPolicy
 from agentsassemble.providers.api_session import ApiToolResultStore
+from agentsassemble.providers.remote_http import safe_remote_urlopen
 from agentsassemble.providers.native_harness_protocol import (
     anthropic_request_to_chat,
     approximate_anthropic_input_tokens,
@@ -327,7 +328,12 @@ class NativeModelGateway:
             method="POST",
         )
         try:
-            with urlopen(request, timeout=self.request_timeout_seconds) as response:
+            opener = (
+                safe_remote_urlopen
+                if urlsplit(request.full_url).scheme.casefold() == "https"
+                else urlopen
+            )
+            with opener(request, timeout=self.request_timeout_seconds) as response:
                 body = response.read()
         except HTTPError as error:
             body = error.read().decode("utf-8", errors="replace")

@@ -6,7 +6,7 @@ from collections.abc import Callable
 from datetime import UTC, datetime
 from typing import IO
 from urllib.error import HTTPError
-from urllib.request import Request, urlopen
+from urllib.request import Request
 
 from agentsassemble.providers.api_context import (
     ApiContextLimitError,
@@ -40,6 +40,7 @@ from agentsassemble.providers.openai_compatible_transcript import (
     reasoning_activity_reporter,
 )
 from agentsassemble.providers.provider_requests import ProviderRequestHandler
+from agentsassemble.providers.remote_http import safe_remote_urlopen
 from agentsassemble.providers.turn_progress import (
     ProviderTurnProgress,
     run_during_provider_wait,
@@ -73,7 +74,7 @@ class OpenAICompatibleApiRuntime:
         request_headers: dict[str, str] | None = None,
         require_api_key: bool = True,
         transport: str = "https_sse",
-        opener: UrlOpen = urlopen,
+        opener: UrlOpen = safe_remote_urlopen,
         room_portal: RoomPortal | None = None,
         workspace: str = "",
         permission_mode: str = "meeting_read_only",

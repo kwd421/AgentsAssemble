@@ -1,11 +1,10 @@
 from __future__ import annotations
 
-from urllib.request import urlopen
-
 from agentsassemble.providers.openai_compatible import (
     OpenAICompatibleApiRuntime,
     UrlOpen,
 )
+from agentsassemble.providers.remote_http import safe_remote_urlopen
 from agentsassemble.providers.room_portal import RoomPortal
 
 
@@ -20,7 +19,7 @@ class CerebrasApiRuntime(OpenAICompatibleApiRuntime):
         model: str = "gpt-oss-120b",
         reasoning_effort: str = "low",
         base_url: str = "https://api.cerebras.ai/v1",
-        opener: UrlOpen = urlopen,
+        opener: UrlOpen = safe_remote_urlopen,
         room_portal: RoomPortal | None = None,
     ) -> None:
         super().__init__(

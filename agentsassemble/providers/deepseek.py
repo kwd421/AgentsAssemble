@@ -1,11 +1,10 @@
 from __future__ import annotations
 
-from urllib.request import urlopen
-
 from agentsassemble.providers.openai_compatible import (
     OpenAICompatibleApiRuntime,
     UrlOpen,
 )
+from agentsassemble.providers.remote_http import safe_remote_urlopen
 from agentsassemble.providers.room_portal import RoomPortal
 
 
@@ -21,7 +20,7 @@ class DeepSeekApiRuntime(OpenAICompatibleApiRuntime):
         reasoning_effort: str = "high",
         thinking: bool = True,
         base_url: str = "https://api.deepseek.com",
-        opener: UrlOpen = urlopen,
+        opener: UrlOpen = safe_remote_urlopen,
         room_portal: RoomPortal | None = None,
     ) -> None:
         super().__init__(

@@ -9,7 +9,7 @@ from dataclasses import dataclass
 from decimal import Decimal, InvalidOperation
 from urllib.error import HTTPError
 from urllib.parse import urlsplit, urlunsplit
-from urllib.request import Request, urlopen
+from urllib.request import Request
 
 from agentsassemble.providers.api_context import DEFAULT_API_CONTEXT_CONTRACT_BYTES
 from agentsassemble.providers.openai_compatible import (
@@ -17,6 +17,7 @@ from agentsassemble.providers.openai_compatible import (
     UrlOpen,
 )
 from agentsassemble.providers.provider_errors import provider_http_error
+from agentsassemble.providers.remote_http import safe_remote_urlopen
 from agentsassemble.providers.room_portal import RoomPortal
 from agentsassemble.room.text import clean_room_text
 
@@ -231,7 +232,7 @@ def discover_remote_openai_models(
     *,
     api_key: str = "",
     timeout_seconds: float = 8.0,
-    opener: UrlOpen = urlopen,
+    opener: UrlOpen = safe_remote_urlopen,
 ) -> list[dict[str, object]]:
     """Read a gateway's public model catalog and retain room-tool-capable text models."""
 
@@ -411,7 +412,7 @@ class RemoteOpenAICompatibleRuntime(OpenAICompatibleApiRuntime):
         variant: str = "",
         max_output_tokens: int = 0,
         base_url: str = "",
-        opener: UrlOpen = urlopen,
+        opener: UrlOpen = safe_remote_urlopen,
         room_portal: RoomPortal | None = None,
         workspace: str = "",
         permission_mode: str = "meeting_read_only",
