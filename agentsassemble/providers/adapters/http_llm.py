@@ -2,12 +2,12 @@ from __future__ import annotations
 
 import json
 import os
-import urllib.parse
 import urllib.request
 from typing import Any, Callable
 
 from agentsassemble.providers.adapters.base import ProviderAdapter
 from agentsassemble.models import ProviderConfig, ResearchDepth, ResearchSteering, Role
+from agentsassemble.providers.remote_http import safe_loopback_urlopen, safe_remote_urlopen
 from agentsassemble.providers.speech_policy import ROUND_RESPONSE_SCHEMA, ROUND_SPEECH_POLICY
 
 
@@ -169,7 +169,12 @@ class OpenAICompatibleChatAdapter(HttpLlmAdapter):
 
 
 class LocalOpenAICompatibleAdapter(OpenAICompatibleChatAdapter):
-    pass
+    def __init__(
+        self,
+        provider: ProviderConfig,
+        requester: JsonRequester | None = None,
+    ) -> None:
+        super().__init__(provider, requester=requester or request_local_json)
 
 
 class GrokChatAdapter(OpenAICompatibleChatAdapter):
@@ -208,10 +213,12 @@ class GeminiGenerateContentAdapter(HttpLlmAdapter):
         model = self.provider.default_model or self.default_model
         key = require_auth_ref(self.provider.auth_ref, self.provider.id)
         endpoint = self.provider.endpoint or f"https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent"
-        separator = "&" if "?" in endpoint else "?"
         response = self.requester(
-            f"{endpoint}{separator}key={urllib.parse.quote(key)}",
-            {"Content-Type": "application/json"},
+            endpoint,
+            {
+                "Content-Type": "application/json",
+                "x-goog-api-key": key,
+            },
             {
                 "systemInstruction": {"parts": [{"text": system}]},
                 "contents": [{"role": "user", "parts": [{"text": prompt}]}],
@@ -230,7 +237,20 @@ def request_json(
     data = json.dumps(payload, ensure_ascii=False).encode("utf-8")
     request = urllib.request.Request(url, data=data, headers=headers, method="POST")
     open_kwargs = {} if timeout_seconds is None else {"timeout": timeout_seconds}
-    with urllib.request.urlopen(request, **open_kwargs) as response:
+    with safe_remote_urlopen(request, **open_kwargs) as response:
+        return json.loads(response.read().decode("utf-8"))
+
+
+def request_local_json(
+    url: str,
+    headers: dict[str, str],
+    payload: dict[str, Any],
+    timeout_seconds: int | None,
+) -> dict[str, Any]:
+    data = json.dumps(payload, ensure_ascii=False).encode("utf-8")
+    request = urllib.request.Request(url, data=data, headers=headers, method="POST")
+    open_kwargs = {} if timeout_seconds is None else {"timeout": timeout_seconds}
+    with safe_loopback_urlopen(request, **open_kwargs) as response:
         return json.loads(response.read().decode("utf-8"))
 
 

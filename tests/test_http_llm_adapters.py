@@ -1,4 +1,7 @@
+import json
+import threading
 import unittest
+from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
 from agentsassemble.providers.adapters.http_llm import (
     AnthropicMessagesAdapter,
@@ -6,6 +9,7 @@ from agentsassemble.providers.adapters.http_llm import (
     GrokChatAdapter,
     LocalOpenAICompatibleAdapter,
 )
+from agentsassemble.providers.remote_http import RemoteEndpointBlocked
 from agentsassemble.models import ProviderConfig, Role
 
 
@@ -27,6 +31,61 @@ class FakeRequester:
 
 
 class HttpLlmAdapterTests(unittest.TestCase):
+    def test_remote_anthropic_adapter_never_sends_credentials_to_loopback_http(self):
+        received: list[dict[str, object]] = []
+
+        class CaptureHandler(BaseHTTPRequestHandler):
+            def do_POST(self):
+                length = int(self.headers.get("Content-Length") or 0)
+                received.append(
+                    {
+                        "api_key": self.headers.get("x-api-key"),
+                        "body": self.rfile.read(length),
+                    }
+                )
+                body = json.dumps(
+                    {"content": [{"type": "text", "text": "captured"}]}
+                ).encode("utf-8")
+                self.send_response(200)
+                self.send_header("Content-Type", "application/json")
+                self.send_header("Content-Length", str(len(body)))
+                self.end_headers()
+                self.wfile.write(body)
+
+            def log_message(self, _format, *_args):
+                return
+
+        server = ThreadingHTTPServer(("127.0.0.1", 0), CaptureHandler)
+        thread = threading.Thread(target=server.serve_forever, daemon=True)
+        thread.start()
+        try:
+            adapter = AnthropicMessagesAdapter(
+                ProviderConfig(
+                    id="malicious-anthropic",
+                    kind="anthropic",
+                    display_name="Malicious Anthropic",
+                    default_model="claude-test",
+                    endpoint=f"http://127.0.0.1:{server.server_port}/messages",
+                    auth_ref="literal:must-not-leave-process",
+                )
+            )
+            role = Role("architect", "아키텍트", "Architecture", "design alternatives")
+
+            with self.assertRaises(RemoteEndpointBlocked):
+                adapter.run_research(
+                    role,
+                    {"role_id": role.id},
+                    "질문",
+                    _Depth(),
+                    _Steering(),
+                )
+        finally:
+            server.shutdown()
+            server.server_close()
+            thread.join(timeout=2)
+
+        self.assertEqual(received, [])
+
     def test_local_openai_compatible_round_uses_chat_completions(self):
         requester = FakeRequester(
             {
@@ -128,7 +187,9 @@ class HttpLlmAdapterTests(unittest.TestCase):
 
         synthesis = adapter.synthesize({"role_id": "moderator"}, "질문", {"rounds": []})
 
-        self.assertIn("models/gemini-2.5-pro:generateContent?key=gemini-key", requester.calls[0]["url"])
+        self.assertIn("models/gemini-2.5-pro:generateContent", requester.calls[0]["url"])
+        self.assertNotIn("gemini-key", requester.calls[0]["url"])
+        self.assertEqual(requester.calls[0]["headers"]["x-goog-api-key"], "gemini-key")
         self.assertIn("contents", requester.calls[0]["payload"])
         self.assertEqual(synthesis["summary"], "제미나이 종합")
         self.assertEqual(synthesis["provider"]["kind"], "gemini")

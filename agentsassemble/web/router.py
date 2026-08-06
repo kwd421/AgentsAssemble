@@ -47,6 +47,17 @@ from agentsassemble.web.security import (
 
 MAX_JSON_BODY_BYTES = 16 * 1024 * 1024
 
+_PROXY_PROVENANCE_HEADERS = (
+    "CF-Connecting-IP",
+    "CF-Ray",
+    "Forwarded",
+    "Via",
+    "X-Forwarded-For",
+    "X-Forwarded-Host",
+    "X-Forwarded-Proto",
+    "X-Real-IP",
+)
+
 
 @dataclass
 class GuiDeps:
@@ -204,12 +215,16 @@ class RequestContext:
         peer_host = client_address[0] if isinstance(client_address, tuple) and client_address else ""
         return _is_loopback_host(peer_host)
 
+    def has_proxy_provenance(self) -> bool:
+        return any(str(self.headers.get(name) or "").strip() for name in _PROXY_PROVENANCE_HEADERS)
+
     def is_local_operator(self) -> bool:
         return (
             _is_loopback_host(self.handler.server.server_address[0])
             and self.peer_is_loopback()
             and self.uses_loopback_host()
             and _origin_is_loopback_or_empty(self.headers.get("Origin"))
+            and not self.has_proxy_provenance()
         )
 
     def send_json(self, payload: dict[str, object]) -> None:

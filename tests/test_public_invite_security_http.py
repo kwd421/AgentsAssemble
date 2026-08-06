@@ -4,6 +4,7 @@ import json
 import tempfile
 import threading
 import unittest
+from http import HTTPStatus
 from http.server import ThreadingHTTPServer
 from pathlib import Path
 from types import SimpleNamespace
@@ -64,6 +65,30 @@ class PublicInviteSecurityHttpTests(unittest.TestCase):
         )
 
         self.assertFalse(context.is_local_operator())
+
+    def test_forwarded_loopback_request_cannot_bootstrap_a_host_token(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            server = self._start_server(Path(temp_dir) / "room")
+            try:
+                request = _json_request(
+                    f"http://127.0.0.1:{server.server_port}/api/public-invite/host-token",
+                    {},
+                    {
+                        "Host": f"127.0.0.1:{server.server_port}",
+                        "X-Forwarded-For": "203.0.113.40",
+                        "X-Forwarded-Proto": "https",
+                    },
+                )
+                with self.assertRaises(HTTPError) as rejected:
+                    urlopen(request, timeout=4)
+                payload = json.loads(rejected.exception.read().decode("utf-8"))
+                rejected.exception.close()
+            finally:
+                server.shutdown()
+                server.server_close()
+
+        self.assertEqual(rejected.exception.code, HTTPStatus.FORBIDDEN)
+        self.assertEqual(payload.get("code"), "local_operator_required")
 
     def test_http_responses_deny_embedding_in_an_external_frame(self):
         with tempfile.TemporaryDirectory() as temp_dir:

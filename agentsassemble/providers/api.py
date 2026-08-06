@@ -20,7 +20,7 @@ import urllib.request
 from dataclasses import dataclass
 
 from agentsassemble.providers import catalog
-from agentsassemble.providers.remote_http import safe_remote_urlopen
+from agentsassemble.providers.remote_http import safe_loopback_urlopen, safe_remote_urlopen
 
 # ~4 chars per token is the rough OpenAI-family heuristic; only used when the
 # provider omits a usage block (estimated=True is set so the books stay honest).
@@ -61,7 +61,7 @@ def _estimate_tokens(text: str) -> int:
 
 def _default_http_post(url: str, body: bytes, headers: dict[str, str], timeout: int) -> tuple[int, bytes]:
     request = urllib.request.Request(url, data=body, headers=headers, method="POST")
-    opener = safe_remote_urlopen if url.lower().startswith("https://") else urllib.request.urlopen
+    opener = safe_remote_urlopen if url.lower().startswith("https://") else safe_loopback_urlopen
     try:
         with opener(request, timeout=timeout) as response:
             return response.status, response.read()

@@ -7,6 +7,8 @@ from urllib.request import Request
 
 from agentsassemble.providers.remote_http import (
     RemoteEndpointBlocked,
+    RemoteResponseTooLarge,
+    safe_loopback_urlopen,
     safe_remote_urlopen,
 )
 
@@ -115,6 +117,58 @@ class RemoteHttpSecurityTests(unittest.TestCase):
         self.assertEqual(len(connection.requests), 1)
         self.assertEqual(connection.requests[0][3]["Authorization"], "Bearer private-secret")
         self.assertTrue(connection.closed)
+
+    def test_success_body_cannot_exceed_the_shared_response_budget(self) -> None:
+        response = _Response(
+            status=200,
+            body=b"oversized",
+            headers={"Content-Length": "33554433"},
+        )
+        connection = _Connection(peer_host="93.184.216.34", response=response)
+
+        with self.assertRaises(RemoteResponseTooLarge):
+            safe_remote_urlopen(
+                Request("https://api.example.com/v1/chat/completions"),
+                resolver=_public_resolver,
+                connection_factory=lambda *_args, **_kwargs: connection,
+            )
+
+        self.assertTrue(connection.closed)
+
+    def test_streaming_line_cannot_exceed_the_shared_line_budget(self) -> None:
+        response = _Response(status=200, body=b"x" * (8 * 1_048_576 + 1))
+        connection = _Connection(peer_host="93.184.216.34", response=response)
+        managed = safe_remote_urlopen(
+            Request("https://api.example.com/v1/chat/completions"),
+            resolver=_public_resolver,
+            connection_factory=lambda *_args, **_kwargs: connection,
+        )
+        self.addCleanup(managed.close)
+
+        with self.assertRaises(RemoteResponseTooLarge):
+            managed.readline()
+
+        self.assertTrue(connection.closed)
+
+    def test_local_transport_rejects_a_non_loopback_dns_answer_before_write(self) -> None:
+        connections: list[_Connection] = []
+
+        def connection_factory(*_args, **_kwargs):
+            connection = _Connection(peer_host="93.184.216.34", response=_Response(status=200))
+            connections.append(connection)
+            return connection
+
+        with self.assertRaises(RemoteEndpointBlocked):
+            safe_loopback_urlopen(
+                Request(
+                    "http://local-provider.example/v1/chat/completions",
+                    headers={"Authorization": "Bearer local-secret"},
+                ),
+                resolver=_public_resolver,
+                connection_factory=connection_factory,
+            )
+
+        self.assertEqual(connections, [])
 
 
 if __name__ == "__main__":

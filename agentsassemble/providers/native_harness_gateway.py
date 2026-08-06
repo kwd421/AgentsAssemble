@@ -10,11 +10,11 @@ import threading
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from urllib.error import HTTPError, URLError
 from urllib.parse import urlsplit
-from urllib.request import Request, urlopen
+from urllib.request import Request
 
 from agentsassemble.providers.api_context import ApiContextLimitError, ApiContextPolicy
 from agentsassemble.providers.api_session import ApiToolResultStore
-from agentsassemble.providers.remote_http import safe_remote_urlopen
+from agentsassemble.providers.remote_http import safe_loopback_urlopen, safe_remote_urlopen
 from agentsassemble.providers.native_harness_protocol import (
     anthropic_request_to_chat,
     approximate_anthropic_input_tokens,
@@ -376,7 +376,7 @@ class NativeModelGateway:
             opener = (
                 safe_remote_urlopen
                 if urlsplit(request.full_url).scheme.casefold() == "https"
-                else urlopen
+                else safe_loopback_urlopen
             )
             with opener(request, timeout=self.request_timeout_seconds) as response:
                 body = response.read()

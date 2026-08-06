@@ -9,8 +9,9 @@ from collections.abc import Callable
 from datetime import UTC, datetime
 from decimal import Decimal, InvalidOperation
 from urllib.error import HTTPError, URLError
-from urllib.request import Request, urlopen
+from urllib.request import Request
 
+from agentsassemble.providers.remote_http import safe_remote_urlopen
 from agentsassemble.providers.usage_contract import ProviderUsageUnavailable
 from agentsassemble.providers.secrets import PROVIDER_SECRETS
 
@@ -67,7 +68,7 @@ def fetch_deepseek_balance(api_key: str) -> dict[str, object]:
         },
     )
     try:
-        with urlopen(request, timeout=10.0) as response:
+        with safe_remote_urlopen(request, timeout=10.0) as response:
             payload = json.loads(response.read())
     except HTTPError as error:
         if error.code in {401, 403}:

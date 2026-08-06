@@ -73,6 +73,7 @@ def register_public_invite_admin_routes(
             ctx.send_error(
                 HTTPStatus.FORBIDDEN,
                 "host token can only be generated from the local operator UI",
+                code="local_operator_required",
             )
             return
         if runtime.public_url():
