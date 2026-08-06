@@ -110,9 +110,11 @@ class OpenAICompatibleApiRuntime:
         self._opener = opener
         self._room_portal = room_portal
         self.permission_mode = clean_room_text(permission_mode, limit=64) or "meeting_read_only"
+        self._interrupted = threading.Event()
         self._work_harness = ApiWorkHarness(
             workspace or ".",
             permission_mode=self.permission_mode,
+            interrupt_requested=self._interrupted.is_set,
         )
         self._conversation_store = (
             ApiConversationStore(
@@ -148,7 +150,6 @@ class OpenAICompatibleApiRuntime:
         self._running = False
         self._started_at = ""
         self._last_error = ""
-        self._interrupted = threading.Event()
         self._lock = threading.RLock()
         self._response: IO[bytes] | None = None
         self._context_policy = ApiContextPolicy(context_contract_bytes)
@@ -576,6 +577,7 @@ class OpenAICompatibleApiRuntime:
 
     def interrupt(self) -> None:
         self._interrupted.set()
+        self._work_harness.interrupt()
         with self._lock:
             response = self._response
         if response is not None:

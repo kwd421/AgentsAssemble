@@ -12,6 +12,8 @@ import os
 import signal
 import stat
 import subprocess
+import threading
+from collections.abc import Callable
 from pathlib import Path
 
 from agentsassemble.providers.api_work_tool_schemas import work_tool_schemas
@@ -21,6 +23,7 @@ from agentsassemble.providers.provider_requests import ProviderRequestHandler
 SIDE_EFFECT_WORK_TOOLS = frozenset(
     {"write_workspace_file", "replace_workspace_text", "run_workspace_command"}
 )
+_POST_TERMINATION_DRAIN_SECONDS = 2.0
 
 
 class ApiWorkApprovalDenied(PermissionError):
@@ -36,10 +39,16 @@ class ApiWorkHarness:
         *,
         permission_mode: str,
         request_handler: ProviderRequestHandler | None = None,
+        interrupt_requested: Callable[[], bool] | None = None,
     ) -> None:
         self.workspace = Path(workspace).expanduser().resolve()
         self.permission_mode = str(permission_mode or "meeting_read_only")
         self.request_handler = request_handler
+        self._interrupt_requested = interrupt_requested or (lambda: False)
+        self._process_lock = threading.RLock()
+        self._active_process: subprocess.Popen[str] | None = None
+        self._active_process_group = False
+        self._command_interrupted = threading.Event()
 
     @property
     def enabled(self) -> bool:
@@ -48,6 +57,7 @@ class ApiWorkHarness:
     def execute(self, name: str, arguments: dict[str, object]) -> object:
         if not self.enabled:
             raise RuntimeError("The API work harness is not enabled for this Agent Session.")
+        self._raise_if_interrupted()
         if name == "list_workspace_files":
             return self._list_files(arguments)
         if name == "read_workspace_file":
@@ -173,6 +183,12 @@ class ApiWorkHarness:
             cwd=cwd,
             env=_command_environment(),
             timeout=timeout,
+            on_started=self._track_active_process,
+            on_finished=self._clear_active_process,
+            interrupted=lambda: (
+                self._command_interrupted.is_set()
+                or self._interrupt_requested()
+            ),
         )
         stdout = completed.stdout or ""
         stderr = completed.stderr or ""
@@ -183,6 +199,40 @@ class ApiWorkHarness:
             "stdout_truncated": len(stdout) > 20_000,
             "stderr_truncated": len(stderr) > 20_000,
         }
+
+    def interrupt(self) -> bool:
+        """Terminate the currently running workspace command, if any."""
+        with self._process_lock:
+            process = self._active_process
+            process_group = self._active_process_group
+            if process is None:
+                return False
+            self._command_interrupted.set()
+        _terminate_process_tree(process, process_group=process_group)
+        return True
+
+    def _track_active_process(
+        self,
+        process: subprocess.Popen[str],
+        process_group: bool,
+    ) -> None:
+        with self._process_lock:
+            if self._active_process is not None:
+                raise RuntimeError("An API workspace command is already running.")
+            self._raise_if_interrupted()
+            self._command_interrupted.clear()
+            self._active_process = process
+            self._active_process_group = process_group
+
+    def _clear_active_process(self, process: subprocess.Popen[str]) -> None:
+        with self._process_lock:
+            if self._active_process is process:
+                self._active_process = None
+                self._active_process_group = False
+
+    def _raise_if_interrupted(self) -> None:
+        if self._interrupt_requested():
+            raise RuntimeError("API workspace action was interrupted.")
 
     def _approve(self, title: str, description: str) -> None:
         if self.request_handler is None:
@@ -460,6 +510,9 @@ def _run_bounded_command(
     cwd: Path,
     env: dict[str, str],
     timeout: int,
+    on_started: Callable[[subprocess.Popen[str], bool], None],
+    on_finished: Callable[[subprocess.Popen[str]], None],
+    interrupted: Callable[[], bool],
 ) -> subprocess.CompletedProcess[str]:
     supports_process_groups = hasattr(os, "killpg") and hasattr(os, "setsid")
     creation_flags = 0
@@ -476,14 +529,47 @@ def _run_bounded_command(
         creationflags=creation_flags,
     )
     try:
-        stdout, stderr = process.communicate(timeout=timeout)
-    except subprocess.TimeoutExpired as error:
+        on_started(process, supports_process_groups)
+    except Exception:
         _terminate_process_tree(process, process_group=supports_process_groups)
-        process.communicate()
-        raise TimeoutError(
-            f"Workspace command exceeded its {timeout}-second limit."
-        ) from error
-    return subprocess.CompletedProcess(argv, process.returncode, stdout, stderr)
+        _drain_after_termination(process)
+        raise
+    try:
+        try:
+            stdout, stderr = process.communicate(timeout=timeout)
+        except subprocess.TimeoutExpired as error:
+            _terminate_process_tree(process, process_group=supports_process_groups)
+            _drain_after_termination(process)
+            raise TimeoutError(
+                f"Workspace command exceeded its {timeout}-second limit."
+            ) from error
+        if interrupted():
+            raise RuntimeError("API workspace command was interrupted.")
+        return subprocess.CompletedProcess(argv, process.returncode, stdout, stderr)
+    finally:
+        on_finished(process)
+
+
+def _drain_after_termination(process: subprocess.Popen[str]) -> None:
+    try:
+        process.communicate(timeout=_POST_TERMINATION_DRAIN_SECONDS)
+        return
+    except subprocess.TimeoutExpired:
+        pass
+    for stream in (process.stdout, process.stderr):
+        if stream is not None:
+            try:
+                stream.close()
+            except OSError:
+                pass
+    try:
+        process.kill()
+    except ProcessLookupError:
+        pass
+    try:
+        process.wait(timeout=0.5)
+    except subprocess.TimeoutExpired:
+        pass
 
 
 def _terminate_process_tree(
@@ -500,12 +586,17 @@ def _terminate_process_tree(
         except ProcessLookupError:
             return
     if os.name == "nt":
-        subprocess.run(
-            ["taskkill", "/PID", str(process.pid), "/T", "/F"],
-            capture_output=True,
-            check=False,
-            timeout=5,
-        )
+        try:
+            subprocess.run(
+                ["taskkill", "/PID", str(process.pid), "/T", "/F"],
+                capture_output=True,
+                check=False,
+                timeout=5,
+            )
+        except subprocess.TimeoutExpired:
+            pass
+        if process.poll() is None:
+            process.kill()
         return
     process.kill()
 
