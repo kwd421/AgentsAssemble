@@ -4,11 +4,11 @@ Status: generated architecture report
 
 Generator: `python3 scripts/check_package_architecture.py --write-shim-report`
 
-Source fingerprint: `05a27c747d3f8a9f`
+Source fingerprint: `5ce77c5ce35641dc`
 
 - Tracked shims: 281
-- Zero code callers: 88
-- Blocked by code callers: 193
+- Zero code callers: 89
+- Blocked by code callers: 192
 - Unexpected callers: 0
 
 Generated package-map and retirement-report references are excluded from
@@ -37,6 +37,7 @@ permission to delete it; its compatibility window and export policy still apply.
 - `evidence.py` -> `agentsassemble.legacy.meeting.support.evidence`; docs: `docs/research-log.md`; gate: No direct imports or patches use agentsassemble.evidence for one compatibility window.
 - `gui_legacy_codex_session_http.py` -> `agentsassemble.legacy.live_agent.http.codex_session`; docs: none; gate: No direct imports use agentsassemble.gui_legacy_codex_session_http for one compatibility window.
 - `gui_live_agent_flow_http.py` -> `agentsassemble.legacy.live_agent.http.flow`; docs: none; gate: No direct imports use agentsassemble.gui_live_agent_flow_http for one compatibility window.
+- `gui_room_http.py` -> `agentsassemble.legacy.meeting.http.room_composition`; docs: `docs/server-governed-speech-matrix.md`; gate: No direct imports or patches use agentsassemble.gui_room_http for one compatibility window.
 - `gui_room_lifecycle_http.py` -> `agentsassemble.legacy.meeting.http.room_lifecycle_compat`; docs: none; gate: No direct imports use agentsassemble.gui_room_lifecycle_http for one compatibility window.
 - `gui_room_moderation_media_http.py` -> `agentsassemble.legacy.meeting.http.room_moderation_media`; docs: none; gate: No direct imports use agentsassemble.gui_room_moderation_media_http for one compatibility window.
 - `legacy_room_migration.py` -> `agentsassemble.legacy.room.migration`; docs: none; gate: No direct imports or patches use agentsassemble.legacy_room_migration for one compatibility window.
@@ -174,7 +175,6 @@ permission to delete it; its compatibility window and export policy still apply.
 - `gui_response.py`; callers: `tests/test_web_transport_package.py`; docs: none
 - `gui_retired_http.py`; callers: `tests/test_web_routes_package.py`; docs: none
 - `gui_room_agent_http.py`; callers: `tests/test_web_routes_package.py`; docs: none
-- `gui_room_http.py`; callers: `tests/test_gui_server_room_routes.py`; docs: `docs/server-governed-speech-matrix.md`
 - `gui_room_invite_http.py`; callers: `tests/test_web_routes_package.py`; docs: none
 - `gui_room_settings_http.py`; callers: `tests/test_web_routes_package.py`; docs: none
 - `gui_router.py`; callers: `tests/test_web_transport_package.py`; docs: none

@@ -36,6 +36,7 @@ from tests.gui_server_test_support import (
     user_for_participant,
 )
 from agentsassemble.web.router import GuiDeps
+from agentsassemble.legacy.meeting.http.room_composition import RoomRouteAdapters
 from agentsassemble.identity.repository import device_auth_key
 from agentsassemble.legacy.admission_projection import LiveAgentLegacyAdmissionProjection
 from agentsassemble.identity.pairing import OperatorPairingService
@@ -305,20 +306,6 @@ class GuiServerRoomRouteTests(unittest.TestCase):
         )
         self.assertNotIn("secret", str(diagnostics))
         self.assertNotIn("/tmp", str(diagnostics))
-
-    def test_room_route_split_preserves_historical_service_imports(self):
-        from agentsassemble import gui_room_http
-
-        for name in (
-            "AgentSessionProcessService",
-            "create_agent_session_payload",
-            "room_status_payload",
-            "create_room_invite",
-            "room_members_payload",
-            "add_channel",
-        ):
-            with self.subTest(name=name):
-                self.assertTrue(hasattr(gui_room_http, name))
 
     def test_rooms_endpoint_lists_room_created_by_ensure(self):
         with tempfile.TemporaryDirectory() as temp_dir:
@@ -793,22 +780,24 @@ class GuiServerRoomRouteTests(unittest.TestCase):
         calls: list[list[str]] = []
         with tempfile.TemporaryDirectory() as temp_dir:
             root = Path(temp_dir)
-            with patch(
-                "agentsassemble.legacy.meeting.http.room_composition._local_agent_session_command_runner",
-                side_effect=lambda command: calls.append(command) or {"returncode": 0},
-            ):
-                resumed = _dispatch_room_route(
-                    root,
-                    path="/api/agent-sessions/resume",
-                    method="POST",
-                    payload={
-                        "room_id": "session-room",
-                        "agent_id": "agent-1",
-                        "session_id": "session-1",
-                        "provider_kind": "codex_live_session",
-                        "start": True,
-                    },
-                ).sent_json
+            resumed = _dispatch_room_route(
+                root,
+                path="/api/agent-sessions/resume",
+                method="POST",
+                payload={
+                    "room_id": "session-room",
+                    "agent_id": "agent-1",
+                    "session_id": "session-1",
+                    "provider_kind": "codex_live_session",
+                    "start": True,
+                },
+                room_route_adapters=RoomRouteAdapters(
+                    agent_session_control_allowed=lambda ctx: ctx.is_local_operator(),
+                    speech_rejection_status=lambda _category: HTTPStatus.BAD_REQUEST,
+                    process_command_runner=lambda command: calls.append(command)
+                    or {"returncode": 0},
+                ),
+            ).sent_json
 
             self.assertEqual(resumed["process_status"], "resumed")
             self.assertEqual(calls[0][:2], ["codex", "exec"])

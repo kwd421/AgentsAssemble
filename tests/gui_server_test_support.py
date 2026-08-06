@@ -55,7 +55,10 @@ from agentsassemble.gui import (
     _attach_session_auto_rounds_if_requested,
     send_lobby_message_to_remote_bridge,
 )
-from agentsassemble.legacy.meeting.http.room_composition import register_room_routes
+from agentsassemble.legacy.meeting.http.room_composition import (
+    RoomRouteAdapters,
+    register_room_routes,
+)
 from agentsassemble.web.routes.retired import register_retired_legacy_routes
 from agentsassemble.web.routes.room_creation import register_room_creation_routes
 from agentsassemble.web.routes.room_settings import register_room_settings_routes
@@ -166,6 +169,7 @@ def _dispatch_room_route(
     headers: dict[str, str] | None = None,
     loopback: bool = True,
     deps: GuiDeps | None = None,
+    room_route_adapters: RoomRouteAdapters | None = None,
 ) -> _RoomsRouteHandler:
     parsed = urlparse(path)
     handler = _RoomsRouteHandler(
@@ -176,7 +180,7 @@ def _dispatch_room_route(
         loopback=loopback,
     )
     router = Router()
-    register_room_routes(router)
+    register_room_routes(router, adapters=room_route_adapters)
     register_retired_legacy_routes(router)
     register_room_creation_routes(router)
     register_room_settings_routes(router)
