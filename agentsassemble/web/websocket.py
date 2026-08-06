@@ -96,6 +96,8 @@ def handle_ws_upgrade(
     if not key:
         handler._send_error(HTTPStatus.BAD_REQUEST, "missing Sec-WebSocket-Key")
         return
+    principal_user_id = str(session.get("principal_user_id") or "")
+    principal_is_operator = bool(session.get("principal_is_operator"))
     identity = {
         "agent_id": str(session.get("agent_id") or ""),
         "display_name": str(session.get("display_name") or ""),
@@ -103,10 +105,12 @@ def handle_ws_upgrade(
         "client_type": str(session.get("client_type") or session.get("connection_kind") or "browser"),
         "invite_scope": str(session.get("invite_scope") or "read_write"),
         "meeting_id": str(session.get("meeting_id") or ""),
-        "operator": bool(session.get("operator")),
+        "operator": principal_is_operator,
+        "principal_is_operator": principal_is_operator,
         "session_id": str(session.get("session_id") or session.get("agent_id") or ""),
         "provider_kind": str(session.get("provider_kind") or ""),
-        "principal_user_id": str(session.get("principal_user_id") or ""),
+        "principal_user_id": principal_user_id,
+        "user_id": principal_user_id,
     }
     channel = None
     try:

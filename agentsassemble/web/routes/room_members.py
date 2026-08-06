@@ -2,8 +2,9 @@
 from __future__ import annotations
 
 from http import HTTPStatus
+from uuid import uuid4
 
-from agentsassemble.room.moderation import set_room_member_muted
+from agentsassemble.room.errors import RoomCommandRejected
 from agentsassemble.room.members import (
     room_members_payload,
     set_canonical_room_member_role,
@@ -101,22 +102,34 @@ def register_room_member_routes(router: Router) -> None:
         payload = ctx.read_json_body()
         if payload is None:
             return
-        try:
-            member = set_room_member_muted(
-                ctx.deps.output_root,
-                meeting_id=str(payload.get("meeting_id") or ""),
-                participant_id=str(payload.get("participant_id") or ""),
-                muted=bool(payload.get("muted", True)),
-            )
-        except ValueError as error:
-            ctx.send_error(HTTPStatus.BAD_REQUEST, str(error))
+        meeting_id = str(payload.get("meeting_id") or payload.get("room_id") or "")
+        identity = ctx.room_command_identity(meeting_id)
+        if identity is None:
             return
+        try:
+            ack = ctx.deps.handle_room_command(
+                identity,
+                {
+                    "request_id": str(uuid4()),
+                    "action": "participant.mute",
+                    "payload": payload,
+                },
+            )
+        except RoomCommandRejected as error:
+            status = (
+                HTTPStatus.FORBIDDEN
+                if error.code == "permission_denied"
+                else HTTPStatus.CONFLICT
+            )
+            ctx.send_error(status, str(error), code=error.code)
+            return
+        member = dict((ack.get("result") or {}).get("member") or {})
         ctx.send_json(
             {
                 "member": member,
                 **room_members_response(
                     ctx,
-                    str(member.get("meeting_id") or ""),
+                    str(member.get("meeting_id") or member.get("room_id") or meeting_id),
                 ),
             }
         )

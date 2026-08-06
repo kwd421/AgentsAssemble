@@ -2,8 +2,10 @@
 from __future__ import annotations
 
 from http import HTTPStatus
+from uuid import uuid4
 
 from agentsassemble.application.agent_sessions import room_action_payload, room_lifecycle_payload
+from agentsassemble.room.errors import RoomCommandRejected
 from agentsassemble.room.text import clean_room_text
 from agentsassemble.web.router import RequestContext, Router
 
@@ -17,8 +19,6 @@ def register_room_lifecycle_routes(router: Router) -> None:
         return ctx.require_moderator()
 
     def _leave_allowed(ctx: RequestContext, payload: dict[str, object]) -> bool:
-        if ctx.is_local_operator() or ctx.is_host() or ctx.is_operator_session():
-            return True
         session = ctx.session()
         if not session:
             return False
@@ -52,6 +52,38 @@ def register_room_lifecycle_routes(router: Router) -> None:
             ctx.send_error(
                 HTTPStatus.FORBIDDEN,
                 "participant session token required",
+            )
+            return
+        if action in {"kick", "leave"}:
+            room_id = clean_room_text(
+                payload.get("room_id") or payload.get("meeting_id"),
+                limit=128,
+            )
+            identity = ctx.room_command_identity(room_id)
+            if identity is None:
+                return
+            try:
+                ack = ctx.deps.handle_room_command(
+                    identity,
+                    {
+                        "request_id": str(uuid4()),
+                        "action": f"participant.{action}",
+                        "payload": payload,
+                    },
+                )
+            except RoomCommandRejected as error:
+                status = (
+                    HTTPStatus.FORBIDDEN
+                    if error.code == "permission_denied"
+                    else HTTPStatus.CONFLICT
+                )
+                ctx.send_error(status, str(error), code=error.code)
+                return
+            ctx.send_json(
+                {
+                    "status": "kicked" if action == "kick" else "left",
+                    **dict(ack.get("result") or {}),
+                }
             )
             return
         try:

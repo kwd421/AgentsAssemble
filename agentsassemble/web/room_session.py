@@ -21,6 +21,7 @@ from typing import Callable
 from agentsassemble.identity.repository import (
     LOCAL_OPERATOR_DISPLAY_NAME_DEFAULT,
     LOCAL_OPERATOR_PARTICIPANT_ID,
+    LOCAL_OPERATOR_USER_ID,
 )
 from agentsassemble.web.websocket_codec import (
     CLOSE_NORMAL,
@@ -63,6 +64,8 @@ def host_browser_ws_session(meeting_id: str) -> dict[str, object]:
         "invite_scope": "read_write",
         "meeting_id": clean_meeting_id,
         "operator": True,
+        "principal_is_operator": True,
+        "principal_user_id": LOCAL_OPERATOR_USER_ID,
     }
 
 

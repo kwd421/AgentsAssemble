@@ -4,6 +4,7 @@ import hashlib
 import re
 
 from agentsassemble.diagnostics.sensitive_text import redact_persisted_diagnostic_text
+from agentsassemble.room.identity import room_identity_principals
 from agentsassemble.room.text import clean_room_text as clean_lobby_text
 from agentsassemble.room.types import RoomEvent
 
@@ -197,12 +198,7 @@ def public_event_for_identity(
         return projected
     participant_id = clean_lobby_text(projected.get("participant_id"), limit=128)
     owner_id = clean_lobby_text(projected.get("owner_id"), limit=128)
-    principals = {
-        clean_lobby_text(identity.get("agent_id"), limit=128),
-        clean_lobby_text(identity.get("user_id"), limit=128),
-        clean_lobby_text(identity.get("session_id"), limit=128),
-    }
-    principals.discard("")
+    principals = room_identity_principals(identity)
     if participant_id in principals or owner_id in principals:
         return {
             key: value

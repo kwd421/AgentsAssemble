@@ -10,6 +10,7 @@ from agentsassemble.room.projection import (
 )
 from agentsassemble.room.repository import RoomRepository
 from agentsassemble.room.global_settings import public_room_global_settings
+from agentsassemble.room.identity import room_identity_principals
 from agentsassemble.room.text import clean_room_text
 
 
@@ -227,12 +228,7 @@ def _pending_provider_requests(
     sessions: list[dict[str, object]],
     identity: dict[str, object],
 ) -> list[dict[str, object]]:
-    principals = {
-        clean_room_text(identity.get("agent_id"), 128),
-        clean_room_text(identity.get("user_id"), 128),
-        clean_room_text(identity.get("session_id"), 128),
-    }
-    principals.discard("")
+    principals = room_identity_principals(identity)
     visible: list[dict[str, object]] = []
     for session in sessions:
         pending = session.get("pending_provider_request")

@@ -10,8 +10,12 @@ from agentsassemble.admission.projection import LegacyAdmissionParticipant
 from agentsassemble.admission.lan_invite import NATIVE_REMOTE_ROOM_CLIENT_KIND
 from agentsassemble.identity.pairing import normalize_pairing_origin
 from agentsassemble.admission.coordinator import AdmissionIdempotencyConflict
+from agentsassemble.admission.invite_service import CompanionLimitReached
 from agentsassemble.application.stable_entry import stable_entry_url
 from agentsassemble.room.errors import RoomCommandRejected
+
+
+MAX_COMPANIONS_PER_OWNER_PER_ROOM = 8
 
 
 def register_invite_admission_routes(router: Router) -> None:
@@ -217,23 +221,49 @@ def register_invite_admission_routes(router: Router) -> None:
         session = ctx.require_posting_session("create companion invites")
         if session is None:
             return
+        if (
+            str(session.get("participant_type") or "human") != "human"
+            or str(session.get("client_type") or "browser") != "browser"
+        ):
+            ctx.send_error(
+                HTTPStatus.FORBIDDEN,
+                "only a human room session may create companion invites",
+                code="companion_owner_required",
+            )
+            return
+        principal_user_id = str(
+            session.get("principal_user_id")
+            or session.get("session_id")
+            or session.get("agent_id")
+            or ""
+        ).strip()
+        if not principal_user_id:
+            ctx.send_error(
+                HTTPStatus.FORBIDDEN,
+                "a stable room identity is required to create companion invites",
+                code="companion_owner_required",
+            )
+            return
         payload = ctx.read_json_body()
         if payload is None:
             return
         try:
-            invite = ctx.deps.invites.create(
+            invite = ctx.deps.invites.create_companion(
                 room_url=ctx.local_server_url(),
                 meeting_id=str(session.get("meeting_id") or ""),
                 agent_id=f"companion-{uuid4().hex[:16]}",
                 display_name=str(payload.get("display_name") or ""),
                 ttl_seconds=min(int(payload.get("ttl_seconds") or 600), 3600),
-                invite_scope="room",
-                participant_type="remote",
-                max_uses=1,
-                created_by_user_id=str(
-                    (ctx.authenticated_user() or {}).get("user_id") or ""
-                ),
+                created_by_user_id=principal_user_id,
+                limit=MAX_COMPANIONS_PER_OWNER_PER_ROOM,
             )
+        except CompanionLimitReached as error:
+            ctx.send_error(
+                HTTPStatus.TOO_MANY_REQUESTS,
+                str(error),
+                code="companion_limit_reached",
+            )
+            return
         except (ValueError, TypeError) as error:
             ctx.send_error(HTTPStatus.BAD_REQUEST, str(error))
             return

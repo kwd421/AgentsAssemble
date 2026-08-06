@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
+from agentsassemble.room.identity import room_identity_is_operator
 from agentsassemble.room.text import clean_room_text as clean_lobby_text
 
 ROOM_COMMAND_ACTIONS = frozenset(
@@ -70,7 +71,7 @@ def parse_room_command(message: dict[str, object]) -> ParsedRoomCommand:
 
 
 def capabilities_for_identity(identity: dict[str, object]) -> dict[str, bool]:
-    operator = bool(identity.get("operator"))
+    operator = room_identity_is_operator(identity)
     bridge = identity.get("client_type") == "agent_bridge"
     read_write = str(identity.get("invite_scope") or "read_write") != "read_only"
     return {

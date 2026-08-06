@@ -33,6 +33,11 @@ from agentsassemble.room.commands import (
     capabilities_for_identity,
     parse_room_command,
 )
+from agentsassemble.room.identity import (
+    room_identity_command_principal,
+    room_identity_is_operator,
+    room_identity_principals,
+)
 from agentsassemble.room.command_uow import (
     RoomCommandIdempotencyConflict,
     RoomCommandUnitOfWork,
@@ -661,7 +666,7 @@ class RoomRealtimeController:
                 )
                 if prior_ack:
                     return prior_ack
-                principal_id = _command_principal(identity)
+                principal_id = room_identity_command_principal(identity)
                 return self._delete_room(
                     identity,
                     room_id,
@@ -858,7 +863,7 @@ class RoomRealtimeController:
                 is_owner = self._is_room_owner(identity, room_id)
                 operation_id = _external_effect_operation_id(
                     room_id,
-                    _command_principal(identity),
+                    room_identity_command_principal(identity),
                     request_id,
                     action,
                 )
@@ -898,7 +903,7 @@ class RoomRealtimeController:
                 participant_id = self._payload_agent_id(payload)
                 operation_id = _external_effect_operation_id(
                     room_id,
-                    _command_principal(identity),
+                    room_identity_command_principal(identity),
                     request_id,
                     action,
                 )
@@ -998,7 +1003,7 @@ class RoomRealtimeController:
             )
             if prior_ack:
                 return prior_ack
-            principal_id = _command_principal(identity)
+            principal_id = room_identity_command_principal(identity)
             payload_hash = command_payload_hash(payload)
             result = self._execute_action(
                 identity,
@@ -1044,7 +1049,7 @@ class RoomRealtimeController:
             with RoomCommandUnitOfWork(
                 self.store,
                 room_id=room_id,
-                principal_id=_command_principal(identity),
+                principal_id=room_identity_command_principal(identity),
                 request_id=request_id,
                 action=action,
                 payload=payload,
@@ -1070,7 +1075,7 @@ class RoomRealtimeController:
     ) -> dict[str, object]:
         prior = self.store.command_record(
             room_id,
-            _command_principal(identity),
+            room_identity_command_principal(identity),
             request_id,
         )
         if not prior:
@@ -1424,7 +1429,7 @@ class RoomRealtimeController:
     ) -> dict[str, object]:
         return self._room_deletion.resume(
             room_id,
-            principal_id=_command_principal(identity),
+            principal_id=room_identity_command_principal(identity),
             request_id=request_id,
             payload_hash=command_payload_hash(payload),
             tombstone=tombstone,
@@ -1455,11 +1460,14 @@ class RoomRealtimeController:
         room = store.get_room(room_id) or {}
         owner_id = clean_lobby_text(room.get("owner_id"), limit=128)
         participant_id = clean_lobby_text(identity.get("agent_id"), limit=128)
+        principals = room_identity_principals(identity)
         user = store.user_for_participant(participant_id) or {}
         user_id = clean_lobby_text(user.get("user_id"), limit=128)
+        if user_id:
+            principals.add(user_id)
         if owner_id:
-            return owner_id in {participant_id, user_id}
-        return bool(identity.get("operator"))
+            return owner_id in principals
+        return room_identity_is_operator(identity)
 
     def _bridge_ready(self, identity: dict[str, object], room_id: str, payload: dict[str, object]) -> dict[str, object]:
         return self._bridge_reports.ready(identity, room_id, payload)
@@ -1797,15 +1805,6 @@ class RoomRealtimeController:
     def _require_bridge(identity: dict[str, object]) -> None:
         if identity.get("client_type") != "agent_bridge":
             raise RoomCommandRejected("This command is reserved for an Agent Bridge.", code="permission_denied")
-
-def _command_principal(identity: dict[str, object]) -> str:
-    client_type = clean_lobby_text(identity.get("client_type"), limit=64) or "unknown"
-    principal = clean_lobby_text(
-        identity.get("session_id") or identity.get("user_id") or identity.get("agent_id"),
-        limit=128,
-    )
-    return f"{client_type}:{principal or 'anonymous'}"
-
 
 def _external_effect_operation_id(
     room_id: str,

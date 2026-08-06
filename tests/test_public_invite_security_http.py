@@ -20,6 +20,7 @@ from agentsassemble.admission.invite import (
 )
 from agentsassemble.gui import _make_handler
 from agentsassemble.persistence.local.room.repository import RoomStore
+from agentsassemble.web.room_client import connect_room_ws
 from agentsassemble.web.router import GuiDeps, RequestContext
 
 
@@ -214,6 +215,53 @@ class PublicInviteSecurityHttpTests(unittest.TestCase):
                 ) as response:
                     companion = json.loads(response.read().decode("utf-8"))
 
+                with self.assertRaises(HTTPError) as recursive_invite_error:
+                    urlopen(
+                        _json_request(
+                            f"{base}/api/room-invite/companion",
+                            {"display_name": "Recursive companion"},
+                            {
+                                **public_headers,
+                                "Authorization": f"Bearer {companion['session_token']}",
+                            },
+                        ),
+                        timeout=4,
+                    )
+                recursive_payload = json.loads(
+                    recursive_invite_error.exception.read().decode("utf-8")
+                )
+                recursive_invite_error.exception.close()
+
+                for index in range(7):
+                    with urlopen(
+                        _json_request(
+                            f"{base}/api/room-invite/companion",
+                            {"display_name": f"Bounded companion {index}"},
+                            {
+                                **public_headers,
+                                "Authorization": f"Bearer {guest['session_token']}",
+                            },
+                        ),
+                        timeout=4,
+                    ):
+                        pass
+                with self.assertRaises(HTTPError) as companion_limit_error:
+                    urlopen(
+                        _json_request(
+                            f"{base}/api/room-invite/companion",
+                            {"display_name": "One companion too many"},
+                            {
+                                **public_headers,
+                                "Authorization": f"Bearer {guest['session_token']}",
+                            },
+                        ),
+                        timeout=4,
+                    )
+                limit_payload = json.loads(
+                    companion_limit_error.exception.read().decode("utf-8")
+                )
+                companion_limit_error.exception.close()
+
                 with self.assertRaises(HTTPError) as moderation_error:
                     urlopen(
                         Request(
@@ -232,6 +280,102 @@ class PublicInviteSecurityHttpTests(unittest.TestCase):
 
         self.assertNotEqual(companion["agent_id"], "operator-local")
         self.assertEqual(moderation_error.exception.code, 403)
+        self.assertEqual(recursive_invite_error.exception.code, 403)
+        self.assertEqual(recursive_payload.get("code"), "companion_owner_required")
+        self.assertEqual(companion_limit_error.exception.code, 429)
+        self.assertEqual(limit_payload.get("code"), "companion_limit_reached")
+
+    def test_http_kick_revokes_the_live_session_and_disconnects_its_room_socket(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir) / "room"
+            store = RoomStore(root)
+            store.create_room("friend-room", label="Friend room")
+            store.close()
+            set_runtime_host_token("host-secret")
+            set_runtime_public_url("https://shared-room.example.com")
+            server = self._start_server(root)
+            room_client = None
+            try:
+                base = f"http://127.0.0.1:{server.server_port}"
+                public_headers = {
+                    "Host": "shared-room.example.com",
+                    "Origin": "https://shared-room.example.com",
+                }
+                with urlopen(
+                    _json_request(
+                        f"{base}/api/room-invite/create",
+                        {"meeting_id": "friend-room", "display_name": "Friend"},
+                        {"X-Host-Token": "host-secret"},
+                    ),
+                    timeout=4,
+                ) as response:
+                    invite = json.loads(response.read().decode("utf-8"))
+                with urlopen(
+                    _json_request(
+                        f"{base}/api/room-invite/join",
+                        {
+                            "invite_token": invite["invite_token"],
+                            "request_id": str(uuid4()),
+                        },
+                        public_headers,
+                    ),
+                    timeout=4,
+                ) as response:
+                    guest = json.loads(response.read().decode("utf-8"))
+
+                room_client = connect_room_ws(
+                    base,
+                    str(guest["session_token"]),
+                    ["room_events"],
+                    timeout=2,
+                )
+                room_client.set_receive_timeout(0.25)
+                with urlopen(
+                    _json_request(
+                        f"{base}/api/room-participants/kick",
+                        {
+                            "room_id": "friend-room",
+                            "participant_id": guest["agent_id"],
+                        },
+                        {"X-Host-Token": "host-secret"},
+                    ),
+                    timeout=4,
+                ) as response:
+                    kicked = json.loads(response.read().decode("utf-8"))
+
+                with self.assertRaises(HTTPError) as revoked_ticket:
+                    urlopen(
+                        _json_request(
+                            f"{base}/api/ws-ticket",
+                            {},
+                            {
+                                **public_headers,
+                                "Authorization": f"Bearer {guest['session_token']}",
+                            },
+                        ),
+                        timeout=4,
+                    )
+                revoked_ticket.exception.close()
+                for _ in range(20):
+                    room_client.receive()
+                    if room_client.closed:
+                        break
+            finally:
+                if room_client is not None:
+                    room_client.close()
+                server.shutdown()
+                server.server_close()
+
+            persisted = RoomStore(root)
+            try:
+                participant = persisted.participant("friend-room", str(guest["agent_id"]))
+            finally:
+                persisted.close()
+
+        self.assertEqual(kicked["status"], "kicked")
+        self.assertEqual(participant["status"], "kicked")
+        self.assertEqual(revoked_ticket.exception.code, HTTPStatus.UNAUTHORIZED)
+        self.assertTrue(room_client.closed)
 
     def test_invite_admission_rejects_an_existing_identity_owned_by_another_principal(self):
         with tempfile.TemporaryDirectory() as temp_dir:

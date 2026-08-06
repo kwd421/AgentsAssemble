@@ -6,6 +6,7 @@ import threading
 from agentsassemble.room.command_uow import RoomCommandUnitOfWork
 from agentsassemble.room.errors import RoomCommandRejected
 from agentsassemble.room.event_broker import RoomEventBroker
+from agentsassemble.room.identity import room_identity_principals
 from agentsassemble.room.provider_request_contract import (
     PROVIDER_REQUEST_TERMINAL_STATUSES,
     ProviderRequestValidationError,
@@ -276,11 +277,7 @@ class RoomProviderRequestService:
             participant.get("owner_id") or pending.get("owner_id"),
             limit=128,
         )
-        principals = {
-            clean_room_text(identity.get("agent_id"), limit=128),
-            clean_room_text(identity.get("user_id"), limit=128),
-            clean_room_text(identity.get("session_id"), limit=128),
-        }
+        principals = room_identity_principals(identity)
         if owner_id not in principals:
             raise RoomCommandRejected(
                 "Only this Agent Session's owner may resolve its provider request.",

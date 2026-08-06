@@ -32,6 +32,8 @@ from agentsassemble.admission.session_service import RoomSessionService
 from agentsassemble.room.attachments import FileAttachmentStore
 from agentsassemble.identity.pairing import OperatorPairingService
 from agentsassemble.identity.repository import (
+    LOCAL_OPERATOR_DISPLAY_NAME_DEFAULT,
+    LOCAL_OPERATOR_PARTICIPANT_ID,
     IdentityBackend,
     LOCAL_OPERATOR_USER_ID,
     device_auth_key,
@@ -417,6 +419,50 @@ class RequestContext:
         if not auth_key:
             return None
         return self.deps.identities.user_for_credential(auth_key)
+
+    def room_command_identity(self, room_id: object) -> dict[str, object] | None:
+        """Project verified HTTP authority into the canonical room command identity."""
+
+        clean_room_id = str(room_id or "").strip()
+        session = self.session()
+        if session is not None:
+            principal_user_id = str(session.get("principal_user_id") or "")
+            principal_is_operator = self.is_operator_session()
+            return {
+                "agent_id": str(session.get("agent_id") or ""),
+                "display_name": str(session.get("display_name") or ""),
+                "participant_type": str(session.get("participant_type") or "human"),
+                "client_type": str(session.get("client_type") or "browser"),
+                "invite_scope": str(session.get("invite_scope") or "room"),
+                "meeting_id": str(session.get("meeting_id") or ""),
+                "operator": principal_is_operator,
+                "principal_is_operator": principal_is_operator,
+                "session_id": str(session.get("session_id") or session.get("agent_id") or ""),
+                "provider_kind": str(session.get("provider_kind") or ""),
+                "principal_user_id": principal_user_id,
+                "user_id": principal_user_id,
+            }
+        if not (self.is_local_operator() or self.is_host()):
+            self.send_error(HTTPStatus.UNAUTHORIZED, "room command authority required")
+            return None
+        user = self.authenticated_user() or {}
+        principal_user_id = str(user.get("user_id") or LOCAL_OPERATOR_USER_ID)
+        return {
+            "agent_id": LOCAL_OPERATOR_PARTICIPANT_ID,
+            "display_name": str(
+                user.get("display_name") or LOCAL_OPERATOR_DISPLAY_NAME_DEFAULT
+            ),
+            "participant_type": "human",
+            "client_type": "browser",
+            "invite_scope": "room",
+            "meeting_id": clean_room_id,
+            "operator": True,
+            "principal_is_operator": True,
+            "session_id": LOCAL_OPERATOR_PARTICIPANT_ID,
+            "provider_kind": "manual",
+            "principal_user_id": principal_user_id,
+            "user_id": principal_user_id,
+        }
 
     def require_session(self) -> dict[str, object] | None:
         """Gate a guest endpoint; sends 401 when no valid session token."""

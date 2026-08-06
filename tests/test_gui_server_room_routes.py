@@ -537,20 +537,11 @@ class GuiServerRoomRouteTests(unittest.TestCase):
                 payload={"room_id": "session-room", "agent_id": "agent-1", "session_id": "session-1"},
             ).sent_json
             members = _dispatch_room_route(root, path="/api/room-members?meeting_id=session-room").sent_json
-            left = _dispatch_room_route(
-                root,
-                path="/api/room-participants/leave",
-                method="POST",
-                payload={"room_id": "session-room", "participant_id": "agent-1"},
-            ).sent_json
-            after_leave = _dispatch_room_route(root, path="/api/room-members?meeting_id=session-room").sent_json
 
             self.assertEqual(resumed["status"], "resumed")
             self.assertEqual(len(members["members"]), 1)
             self.assertEqual(members["members"][0]["participant_id"], "agent-1")
             self.assertEqual(members["members"][0]["source"], "agent_session")
-            self.assertEqual(left["status"], "left")
-            self.assertEqual(after_leave["members"], [])
 
 
     def test_agent_session_create_endpoint_feeds_room_members_from_canonical_state(self):

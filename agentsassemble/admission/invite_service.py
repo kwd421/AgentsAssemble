@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import hashlib
 import secrets
+import threading
 from collections.abc import Callable
 from dataclasses import dataclass
 from datetime import UTC, datetime
@@ -66,6 +67,7 @@ class InviteApplicationService:
         self._repository = repository
         self._public_url = public_url or (lambda: "")
         self._now = now or (lambda: datetime.now(UTC))
+        self._companion_lock = threading.RLock()
 
     def signing_secret(self) -> str:
         return self._repository.signing_secret()
@@ -106,6 +108,83 @@ class InviteApplicationService:
             provider_kind=provider_kind,
             created_by_user_id=created_by_user_id,
         )
+
+    def create_companion(
+        self,
+        *,
+        room_url: str,
+        meeting_id: str,
+        agent_id: str,
+        display_name: str,
+        ttl_seconds: int,
+        created_by_user_id: str,
+        limit: int,
+    ) -> dict[str, object]:
+        """Atomically enforce one owner's bounded companion population."""
+
+        clean_room_id = clean_lobby_text(meeting_id, limit=128)
+        clean_owner_id = clean_lobby_text(created_by_user_id, limit=128)
+        if not clean_room_id or not clean_owner_id:
+            raise ValueError("a stable companion owner is required")
+        with self._companion_lock:
+            if self._owned_companion_count(clean_room_id, clean_owner_id) >= limit:
+                raise CompanionLimitReached(limit)
+            return self.create(
+                room_url=room_url,
+                meeting_id=clean_room_id,
+                agent_id=agent_id,
+                display_name=display_name,
+                ttl_seconds=ttl_seconds,
+                invite_scope="room",
+                participant_type="remote",
+                max_uses=1,
+                created_by_user_id=clean_owner_id,
+            )
+
+    def _owned_companion_count(self, room_id: str, owner_id: str) -> int:
+        now = self._now()
+        active = 0
+        active_participant_ids: set[str] = set()
+        for _fingerprint, session in self._repository.list_sessions():
+            if clean_lobby_text(session.get("meeting_id"), limit=128) != room_id:
+                continue
+            if clean_lobby_text(session.get("owner_id"), limit=128) != owner_id:
+                continue
+            if normalize_invite_participant_type(session.get("participant_type")) == "human":
+                continue
+            try:
+                if datetime.fromisoformat(str(session.get("expires_at") or "")) <= now:
+                    continue
+            except ValueError:
+                continue
+            active += 1
+            participant_id = clean_lobby_text(session.get("agent_id"), limit=128)
+            if participant_id:
+                active_participant_ids.add(participant_id)
+
+        pending = 0
+        for invite in self._repository.list_invites():
+            if clean_lobby_text(invite.get("meeting_id"), limit=128) != room_id:
+                continue
+            if clean_lobby_text(invite.get("created_by_user_id"), limit=128) != owner_id:
+                continue
+            if normalize_invite_participant_type(invite.get("participant_type")) == "human":
+                continue
+            if clean_lobby_text(invite.get("agent_id"), limit=128) in active_participant_ids:
+                continue
+            if bool(invite.get("revoked")):
+                continue
+            try:
+                if datetime.fromisoformat(str(invite.get("expires_at") or "")) <= now:
+                    continue
+            except ValueError:
+                continue
+            max_uses = max(0, int(invite.get("max_uses") or 0))
+            use_count = max(0, int(invite.get("use_count") or 0))
+            if max_uses and use_count >= max_uses:
+                continue
+            pending += 1
+        return active + pending
 
     def inspect(self, token: str, *, meeting_id: str = "") -> dict[str, object]:
         prepared = self.prepare_admission(token, meeting_id=meeting_id)
@@ -214,6 +293,14 @@ class InviteApplicationService:
 
     def pending(self) -> list[dict[str, object]]:
         return pending_invites_summary(self._repository, now=self._now())
+
+
+class CompanionLimitReached(ValueError):
+    """Raised when an owner has filled the room's companion allowance."""
+
+    def __init__(self, limit: int) -> None:
+        super().__init__(f"companion limit reached ({limit})")
+        self.limit = int(limit)
 
 
 def normalize_invite_scope(value: object) -> str:
