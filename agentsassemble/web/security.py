@@ -59,6 +59,32 @@ def _origin_is_loopback_or_empty(origin: object) -> bool:
     return not origin_text or _origin_is_trusted(origin_text)
 
 
+def _request_uses_trusted_public_https_proxy(
+    *,
+    peer_host: object,
+    host_header: object,
+    forwarded_proto: object,
+    public_url: str,
+) -> bool:
+    """Accept proxy HTTPS claims only from the configured loopback ingress.
+
+    The GUI server itself speaks HTTP.  A public HTTPS request is therefore
+    trustworthy only when a loopback reverse proxy delivered it for the exact
+    configured public host.  A remote peer cannot turn itself into HTTPS by
+    supplying ``X-Forwarded-Proto``.
+    """
+    parsed_public_url = urlparse(str(public_url or "").strip())
+    public_hostname = (parsed_public_url.hostname or "").lower()
+    request_hostname, _ = _split_authority_host_port(str(host_header or ""))
+    return (
+        parsed_public_url.scheme.lower() == "https"
+        and bool(public_hostname)
+        and _is_loopback_host(peer_host)
+        and request_hostname == public_hostname
+        and str(forwarded_proto or "").strip().lower() == "https"
+    )
+
+
 def _public_invite_route_allowed(path: str, method: str) -> bool:
     method = method.upper()
     if method == "GET":
@@ -105,6 +131,7 @@ def _public_invite_route_allowed(path: str, method: str) -> bool:
             "/api/room-invite/leave",
             "/api/user-profile",
             "/api/account/google",
+            "/api/account/google/challenge",
             "/api/account/google/handoff/start",
             "/api/account/google/handoff/configure",
             "/api/account/google/handoff/complete",

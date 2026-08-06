@@ -8,6 +8,7 @@ from agentsassemble.identity.accounts import AccountLinkConflict
 from agentsassemble.identity.google import GoogleAccountLoginService, GoogleLoginRejected
 from agentsassemble.identity.repository import device_auth_key
 from agentsassemble.web.router import RequestContext, Router
+from agentsassemble.web.security import _request_uses_trusted_public_https_proxy
 
 
 def register_account_routes(
@@ -55,6 +56,22 @@ def register_account_routes(
             return
         ctx.send_json(result)
 
+    @router.post("/api/account/google/challenge")
+    def start_google_account_login(ctx: RequestContext) -> None:
+        if not _account_login_transport_allowed(ctx):
+            return
+        try:
+            result = google.start_direct_login(
+                current_user=ctx.authenticated_user(),
+                device_auth_key=device_auth_key(
+                    str(ctx.headers.get("X-Device-Token") or "")
+                ),
+            )
+        except GoogleLoginRejected as error:
+            ctx.send_error(HTTPStatus.FORBIDDEN, str(error), code=error.code)
+            return
+        ctx.send_json(result)
+
     @router.delete("/api/account/google")
     def disconnect_google_account(ctx: RequestContext) -> None:
         if not _account_login_transport_allowed(ctx):
@@ -93,6 +110,8 @@ def register_account_routes(
 
     @router.post("/api/account/google/handoff/configure")
     def configure_google_account_handoff(ctx: RequestContext) -> None:
+        if not _account_login_transport_allowed(ctx):
+            return
         payload = ctx.read_json_body()
         if payload is None:
             return
@@ -135,7 +154,17 @@ def register_account_routes(
 
 def _account_login_transport_allowed(ctx: RequestContext) -> bool:
     local_request = ctx.is_local_operator() and ctx.peer_is_loopback()
-    if local_request or str(ctx.headers.get("X-Forwarded-Proto") or "").lower() == "https":
+    if local_request:
+        return True
+    client_address = getattr(ctx.handler, "client_address", ())
+    peer_host = client_address[0] if isinstance(client_address, tuple) and client_address else ""
+    public_https_request = _request_uses_trusted_public_https_proxy(
+        peer_host=peer_host,
+        host_header=ctx.headers.get("Host"),
+        forwarded_proto=ctx.headers.get("X-Forwarded-Proto"),
+        public_url=ctx.deps.invites.public_url(),
+    )
+    if public_https_request:
         return True
     ctx.send_error(HTTPStatus.FORBIDDEN, "HTTPS is required for account login")
     return False

@@ -9,8 +9,12 @@ from collections import defaultdict, deque
 from http import HTTPStatus
 from urllib.parse import quote, urlencode
 
-from agentsassemble.identity.recovery import GuestIdentityRecoveryService
+from agentsassemble.identity.recovery import (
+    GuestIdentityRecoveryService,
+    normalize_recovery_code,
+)
 from agentsassemble.web.router import RequestContext, Router
+from agentsassemble.web.security import _request_uses_trusted_public_https_proxy
 
 
 class _RecoveryAttemptLimiter:
@@ -49,8 +53,9 @@ class _RecoveryAttemptLimiter:
 
 
 def register_identity_recovery_routes(router: Router) -> None:
-    network_limiter = _RecoveryAttemptLimiter()
-    credential_limiter = _RecoveryAttemptLimiter()
+    global_limiter = _RecoveryAttemptLimiter(attempts=256, max_keys=1)
+    network_limiter = _RecoveryAttemptLimiter(attempts=16, max_keys=512)
+    credential_limiter = _RecoveryAttemptLimiter(attempts=8, max_keys=512)
 
     def recovery(ctx: RequestContext) -> GuestIdentityRecoveryService:
         return GuestIdentityRecoveryService(
@@ -87,17 +92,22 @@ def register_identity_recovery_routes(router: Router) -> None:
 
     @router.post("/api/identity/recovery-code/redeem")
     def redeem_recovery_code(ctx: RequestContext) -> None:
-        if not ctx.is_local_operator() and str(ctx.headers.get("X-Forwarded-Proto") or "").lower() != "https":
+        if not _recovery_transport_is_secure(ctx):
             ctx.send_error(HTTPStatus.FORBIDDEN, "HTTPS is required for identity recovery")
             return
         payload = ctx.read_json_body()
         if payload is None:
             return
         network_key = _recovery_network_key(ctx)
-        credential_key = hashlib.sha256(
-            str(payload.get("recovery_code") or "").encode("utf-8")
-        ).hexdigest()
-        if not network_limiter.allows(network_key) or not credential_limiter.allows(credential_key):
+        raw_code = str(payload.get("recovery_code") or "")
+        normalized_code = normalize_recovery_code(raw_code)
+        credential_material = normalized_code or raw_code.strip().upper()[:256]
+        credential_key = hashlib.sha256(credential_material.encode("utf-8")).hexdigest()
+        if (
+            not global_limiter.allows("all")
+            or not network_limiter.allows(network_key)
+            or not credential_limiter.allows(credential_key)
+        ):
             ctx.send_error(HTTPStatus.TOO_MANY_REQUESTS, "too many recovery attempts")
             return
         try:
@@ -120,24 +130,31 @@ def register_identity_recovery_routes(router: Router) -> None:
 def _recovery_network_key(ctx: RequestContext) -> str:
     client_address = getattr(ctx.handler, "client_address", ())
     peer = str(client_address[0] if isinstance(client_address, tuple) and client_address else "unknown")
-    if (
-        ctx.peer_is_loopback()
-        and not ctx.uses_loopback_host()
-        and str(ctx.headers.get("X-Forwarded-Proto") or "").strip().lower() == "https"
-    ):
-        candidates = [
-            str(ctx.headers.get("CF-Connecting-IP") or "").strip(),
-            str(ctx.headers.get("X-Forwarded-For") or "").split(",", 1)[0].strip(),
-        ]
-        for candidate in candidates:
-            try:
-                return str(ipaddress.ip_address(candidate))
-            except ValueError:
-                continue
+    if _recovery_uses_trusted_public_proxy(ctx):
+        candidate = str(ctx.headers.get("CF-Connecting-IP") or "").strip()
+        try:
+            return str(ipaddress.ip_address(candidate))
+        except ValueError:
+            pass
     try:
         return str(ipaddress.ip_address(peer))
     except ValueError:
         return "unknown"
+
+
+def _recovery_transport_is_secure(ctx: RequestContext) -> bool:
+    return ctx.is_local_operator() or _recovery_uses_trusted_public_proxy(ctx)
+
+
+def _recovery_uses_trusted_public_proxy(ctx: RequestContext) -> bool:
+    client_address = getattr(ctx.handler, "client_address", ())
+    peer_host = client_address[0] if isinstance(client_address, tuple) and client_address else ""
+    return _request_uses_trusted_public_https_proxy(
+        peer_host=peer_host,
+        host_header=ctx.headers.get("Host"),
+        forwarded_proto=ctx.headers.get("X-Forwarded-Proto"),
+        public_url=ctx.deps.invites.public_url(),
+    )
 
 
 __all__ = ["register_identity_recovery_routes"]

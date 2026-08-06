@@ -90,6 +90,7 @@ surface rather than silently counted as React parity.
 | --- | --- | --- | --- | --- | --- |
 | `/api/account` | GET | exact | `fetchAccountStatus()` | yes | Returns the authenticated server user's public account projection and a one-use Google login challenge when configured; never returns a raw external subject or token. |
 | `/api/account/google` | POST | exact | `connectGoogleAccount()` | yes | Verifies a Google ID token and one-use nonce before explicitly linking the current server identity; remote mutation requires HTTPS. |
+| `/api/account/google/challenge` | POST | exact | `startGoogleAccountLogin()` | yes | Explicitly allocates a bounded one-use Google login nonce when the account UI starts a login; status reads do not consume login capacity. |
 | `/api/account/google` | DELETE | exact | `disconnectGoogleAccount()` | yes | Removes the current server user's public Google link and cached Google profile fields while retaining the local profile, rooms, and durable device credential; remote mutation requires HTTPS. |
 | `/api/account/google/handoff/start` | POST | exact | `startGoogleAccountHandoff()` | yes | Creates a short-lived one-use system-browser handoff for the authenticated desktop identity. |
 | `/api/account/google/handoff/configure` | POST | exact | `configureGoogleAccountHandoff()` | yes | Resolves a valid handoff into the bounded Google client ID, nonce, and remaining lifetime used by the browser page. |

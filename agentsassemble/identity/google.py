@@ -14,7 +14,10 @@ from urllib.parse import urlencode
 from uuid import uuid4
 
 from agentsassemble.identity.accounts import AccountLinkConflict, external_account_identity
-from agentsassemble.identity.google_handoff import GoogleLoginHandoffStore
+from agentsassemble.identity.google_handoff import (
+    GoogleLoginHandoffCapacityExceeded,
+    GoogleLoginHandoffStore,
+)
 from agentsassemble.identity.repository import IdentityBackend
 
 
@@ -84,11 +87,17 @@ class GoogleLoginChallengeStore:
         nonce = secrets.token_urlsafe(32)
         with self._lock:
             self._prune(now)
-            while len(self._challenges) >= self._maximum:
-                oldest = min(self._challenges, key=lambda item: self._challenges[item].expires_at)
-                self._challenges.pop(oldest, None)
+            if len(self._challenges) >= self._maximum:
+                raise GoogleLoginRejected(
+                    "Google login capacity is temporarily exhausted.",
+                    code="google_login_capacity_exceeded",
+                )
             self._challenges[nonce] = _Challenge(expires_at=now + self._ttl_seconds)
         return nonce
+
+    def discard(self, nonce: str) -> None:
+        with self._lock:
+            self._challenges.pop(str(nonce or "").strip(), None)
 
     def consume(self, nonce: str) -> bool:
         clean_nonce = str(nonce or "").strip()
@@ -146,9 +155,30 @@ class GoogleAccountLoginService:
             "google": {
                 "enabled": enabled,
                 "client_id": self.client_id if enabled else "",
-                "nonce": self._challenges.issue() if enabled else "",
                 "unavailable_reason": "" if enabled else "google_client_id_missing",
             },
+        }
+
+    def start_direct_login(
+        self,
+        *,
+        current_user: dict[str, object] | None,
+        device_auth_key: str,
+    ) -> dict[str, object]:
+        if not self.client_id:
+            raise GoogleLoginRejected(
+                "Google login is not configured on this server.",
+                code="google_login_not_configured",
+            )
+        if not str((current_user or {}).get("user_id") or "").strip() and not device_auth_key:
+            raise GoogleLoginRejected(
+                "A signed-in server identity or durable device identity is required to start Google login.",
+                code="device_identity_required",
+            )
+        return {
+            "status": "ready",
+            "client_id": self.client_id,
+            "nonce": self._challenges.issue(),
         }
 
     def start_handoff(
@@ -170,12 +200,19 @@ class GoogleAccountLoginService:
                 code="device_identity_required",
             )
         nonce = self._challenges.issue()
-        token = self._handoffs.issue(
-            user_id=user_id,
-            device_auth_key=device_auth_key,
-            nonce=nonce,
-            discard_guest_on_account_switch=discard_guest_on_account_switch,
-        )
+        try:
+            token = self._handoffs.issue(
+                user_id=user_id,
+                device_auth_key=device_auth_key,
+                nonce=nonce,
+                discard_guest_on_account_switch=discard_guest_on_account_switch,
+            )
+        except GoogleLoginHandoffCapacityExceeded as error:
+            self._challenges.discard(nonce)
+            raise GoogleLoginRejected(
+                "Google login capacity is temporarily exhausted.",
+                code="google_login_capacity_exceeded",
+            ) from error
         return {
             "status": "ready",
             "handoff_url": f"/#{urlencode({'google_handoff': token})}",

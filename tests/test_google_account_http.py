@@ -14,7 +14,11 @@ from urllib.error import HTTPError
 from urllib.request import Request, urlopen
 
 from agentsassemble.identity.accounts import external_account_identity
-from agentsassemble.identity.google import GoogleAccountLoginService
+from agentsassemble.identity.google import (
+    GoogleAccountLoginService,
+    GoogleLoginChallengeStore,
+)
+from agentsassemble.identity.google_handoff import GoogleLoginHandoffStore
 from agentsassemble.identity.repository import device_auth_key
 from agentsassemble.gui import _make_handler
 from agentsassemble.persistence.local.identity.repository import IdentityStore
@@ -184,9 +188,17 @@ class GoogleAccountHttpTests(unittest.TestCase):
             try:
                 base = f"http://127.0.0.1:{server.server_port}"
                 headers = {"X-Device-Token": "account-composed-device-token"}
-                with urlopen(Request(f"{base}/api/account", headers=headers), timeout=4) as response:
-                    config = json.loads(response.read().decode())
-                verifier.nonce = str(config["google"]["nonce"])
+                with urlopen(
+                    Request(
+                        f"{base}/api/account/google/challenge",
+                        data=b"{}",
+                        headers={**headers, "Content-Type": "application/json"},
+                        method="POST",
+                    ),
+                    timeout=4,
+                ) as response:
+                    challenge = json.loads(response.read().decode())
+                verifier.nonce = str(challenge["nonce"])
                 body = json.dumps(
                     {"credential": "google-id-token", "nonce": verifier.nonce}
                 ).encode()
@@ -232,10 +244,15 @@ class GoogleAccountHttpTests(unittest.TestCase):
             )
             router = Router()
             register_account_routes(router, google=service)
-            deps = GuiDeps(output_root=Path(temp_dir), identity_backend=identities)
+            deps = GuiDeps(
+                output_root=Path(temp_dir),
+                identity_backend=identities,
+                invite_application=SimpleNamespace(
+                    public_url=lambda: "https://rooms.example.invalid"
+                ),
+            )
 
-            config = self._dispatch(router, deps, "/api/account", "GET")
-            verifier.nonce = str(config.sent_json["google"]["nonce"])
+            verifier.nonce = self._start_direct_login(router, deps)
             linked = self._dispatch(
                 router,
                 deps,
@@ -300,18 +317,24 @@ class GoogleAccountHttpTests(unittest.TestCase):
             )
             router = Router()
             register_account_routes(router, google=service)
-            deps = GuiDeps(output_root=Path(temp_dir), identity_backend=identities)
+            deps = GuiDeps(
+                output_root=Path(temp_dir),
+                identity_backend=identities,
+                invite_application=SimpleNamespace(
+                    public_url=lambda: "https://rooms.example.invalid"
+                ),
+            )
 
-            config = self._dispatch(router, deps, "/api/account", "GET")
-            verifier.nonce = str(config.sent_json["google"]["nonce"])
+            verifier.nonce = self._start_direct_login(router, deps)
             response = self._dispatch(
                 router,
                 deps,
                 "/api/account/google",
                 "POST",
                 body={"credential": "google-id-token", "nonce": verifier.nonce},
-                host="127.0.0.1:8765",
+                host="rooms.example.invalid",
                 peer_host="203.0.113.10",
+                forwarded_proto="https",
             )
             linked = self._dispatch(
                 router,
@@ -325,8 +348,9 @@ class GoogleAccountHttpTests(unittest.TestCase):
                 deps,
                 "/api/account/google",
                 "DELETE",
-                host="127.0.0.1:8765",
+                host="rooms.example.invalid",
                 peer_host="203.0.113.10",
+                forwarded_proto="https",
             )
             status = self._dispatch(router, deps, "/api/account", "GET")
 
@@ -345,10 +369,15 @@ class GoogleAccountHttpTests(unittest.TestCase):
             )
             router = Router()
             register_account_routes(router, google=service)
-            deps = GuiDeps(output_root=Path(temp_dir), identity_backend=identities)
+            deps = GuiDeps(
+                output_root=Path(temp_dir),
+                identity_backend=identities,
+                invite_application=SimpleNamespace(
+                    public_url=lambda: "https://rooms.example.invalid"
+                ),
+            )
 
-            initial = self._dispatch(router, deps, "/api/account", "GET")
-            verifier.nonce = str(initial.sent_json["google"]["nonce"])
+            verifier.nonce = self._start_direct_login(router, deps)
             linked = self._dispatch(
                 router,
                 deps,
@@ -359,7 +388,7 @@ class GoogleAccountHttpTests(unittest.TestCase):
 
             remote = {
                 "host": "rooms.example.invalid",
-                "peer_host": "203.0.113.10",
+                "peer_host": "127.0.0.1",
                 "device_token": "fresh-remote-device-token",
                 "forwarded_proto": "https",
             }
@@ -423,6 +452,9 @@ class GoogleAccountHttpTests(unittest.TestCase):
             deps = GuiDeps(
                 output_root=Path(temp_dir),
                 identity_backend=identities,
+                invite_application=SimpleNamespace(
+                    public_url=lambda: "https://rooms.example.invalid"
+                ),
                 room_sessions=SimpleNamespace(
                     active_summary=lambda: [],
                     revoke_participant=lambda room_id, participant_id: revoked_sessions.append(
@@ -436,20 +468,17 @@ class GoogleAccountHttpTests(unittest.TestCase):
             )
             remote = {
                 "host": "rooms.example.invalid",
-                "peer_host": "203.0.113.10",
+                "peer_host": "127.0.0.1",
                 "forwarded_proto": "https",
             }
 
             original_device = "existing-account-device-token"
-            original_config = self._dispatch(
+            verifier.nonce = self._start_direct_login(
                 router,
                 deps,
-                "/api/account",
-                "GET",
                 device_token=original_device,
                 **remote,
             )
-            verifier.nonce = str(original_config.sent_json["google"]["nonce"])
             existing_account = self._dispatch(
                 router,
                 deps,
@@ -487,15 +516,12 @@ class GoogleAccountHttpTests(unittest.TestCase):
                 }
             )
 
-            unconfirmed_config = self._dispatch(
+            verifier.nonce = self._start_direct_login(
                 router,
                 deps,
-                "/api/account",
-                "GET",
                 device_token=guest_device,
                 **remote,
             )
-            verifier.nonce = str(unconfirmed_config.sent_json["google"]["nonce"])
             unconfirmed = self._dispatch(
                 router,
                 deps,
@@ -508,15 +534,12 @@ class GoogleAccountHttpTests(unittest.TestCase):
             self.assertEqual(unconfirmed.sent_error[0], HTTPStatus.CONFLICT)
             self.assertIsNotNone(identities.get_user(str(guest["user_id"])))
 
-            confirmed_config = self._dispatch(
+            verifier.nonce = self._start_direct_login(
                 router,
                 deps,
-                "/api/account",
-                "GET",
                 device_token=guest_device,
                 **remote,
             )
-            verifier.nonce = str(confirmed_config.sent_json["google"]["nonce"])
             confirmed = self._dispatch(
                 router,
                 deps,
@@ -556,6 +579,108 @@ class GoogleAccountHttpTests(unittest.TestCase):
                 revoked_sessions,
                 [("guest-room", str(guest["participant_id"]))],
             )
+
+    def test_status_reads_do_not_consume_login_capacity(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            identities = IdentityStore(Path(temp_dir) / "identity.db")
+            challenges = GoogleLoginChallengeStore(maximum=1)
+            verifier = _Verifier()
+            service = GoogleAccountLoginService(
+                client_id="google-client.apps.googleusercontent.com",
+                verifier=verifier,
+                challenges=challenges,
+            )
+            router = Router()
+            register_account_routes(router, google=service)
+            deps = GuiDeps(output_root=Path(temp_dir), identity_backend=identities)
+
+            for _ in range(3):
+                status = self._dispatch(router, deps, "/api/account", "GET")
+                self.assertNotIn("nonce", status.sent_json["google"])
+            first_nonce = self._start_direct_login(router, deps)
+            rejected = self._dispatch(
+                router,
+                deps,
+                "/api/account/google/challenge",
+                "POST",
+            )
+            verifier.nonce = first_nonce
+            connected = self._dispatch(
+                router,
+                deps,
+                "/api/account/google",
+                "POST",
+                body={"credential": "google-id-token", "nonce": first_nonce},
+            )
+
+        self.assertTrue(first_nonce)
+        self.assertEqual(rejected.sent_error[0], HTTPStatus.FORBIDDEN)
+        self.assertEqual(rejected.sent_error[2], "google_login_capacity_exceeded")
+        self.assertEqual(connected.sent_json["status"], "connected")
+
+    def test_full_handoff_pool_preserves_the_existing_login(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            identities = IdentityStore(Path(temp_dir) / "identity.db")
+            verifier = _Verifier()
+            service = GoogleAccountLoginService(
+                client_id="google-client.apps.googleusercontent.com",
+                verifier=verifier,
+                handoffs=GoogleLoginHandoffStore(maximum=1),
+            )
+            router = Router()
+            register_account_routes(router, google=service)
+            deps = GuiDeps(output_root=Path(temp_dir), identity_backend=identities)
+
+            first = self._dispatch(
+                router,
+                deps,
+                "/api/account/google/handoff/start",
+                "POST",
+                body={},
+            )
+            first_token = parse_qs(
+                urlparse(first.sent_json["handoff_url"]).fragment
+            )["google_handoff"][0]
+            rejected = self._dispatch(
+                router,
+                deps,
+                "/api/account/google/handoff/start",
+                "POST",
+                body={},
+            )
+            configured = self._dispatch(
+                router,
+                deps,
+                "/api/account/google/handoff/configure",
+                "POST",
+                body={"token": first_token},
+            )
+            verifier.nonce = str(configured.sent_json["nonce"])
+            connected = self._dispatch(
+                router,
+                deps,
+                "/api/account/google/handoff/complete",
+                "POST",
+                body={"token": first_token, "credential": "google-id-token"},
+            )
+
+        self.assertEqual(rejected.sent_error[2], "google_login_capacity_exceeded")
+        self.assertEqual(connected.sent_json["status"], "connected")
+
+    def _start_direct_login(
+        self,
+        router: Router,
+        deps: GuiDeps,
+        **request: object,
+    ) -> str:
+        response = self._dispatch(
+            router,
+            deps,
+            "/api/account/google/challenge",
+            "POST",
+            **request,
+        )
+        return str(response.sent_json["nonce"])
 
     def _dispatch(
         self,

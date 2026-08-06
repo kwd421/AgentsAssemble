@@ -5,8 +5,10 @@ import {
   connectGoogleAccount,
   disconnectGoogleAccount,
   fetchAccountStatus,
+  startGoogleAccountLogin,
   startGoogleAccountHandoff,
   type AccountStatusResponse,
+  type GoogleAccountChallengeResponse,
 } from "../../api/identity";
 import type { UserProfileIdentity } from "../../api/room";
 import { isDesktopWebview, openDesktopGoogleLogin } from "../../lib/desktopBridge";
@@ -38,6 +40,7 @@ export default function GoogleAccountSettings({
   const [error, setError] = useState("");
   const [connecting, setConnecting] = useState(false);
   const [desktopWaiting, setDesktopWaiting] = useState(false);
+  const [challenge, setChallenge] = useState<GoogleAccountChallengeResponse | null>(null);
   const [disconnecting, setDisconnecting] = useState(false);
   const desktopLoginExpiresAt = useRef(0);
   const buttonRef = useRef<HTMLDivElement>(null);
@@ -57,7 +60,22 @@ export default function GoogleAccountSettings({
   }, [identity.deviceToken, identity.sessionToken]);
 
   useEffect(() => {
-    if (!status?.google.enabled || status.account || !buttonRef.current || isDesktopWebview()) return;
+    if (!status?.google.enabled || status.account || isDesktopWebview() || challenge) return;
+    let active = true;
+    startGoogleAccountLogin(identity)
+      .then((next) => {
+        if (active) setChallenge(next);
+      })
+      .catch((reason: Error) => {
+        if (active) setError(reason.message || "Google 로그인을 준비하지 못했습니다.");
+      });
+    return () => {
+      active = false;
+    };
+  }, [challenge, identity.deviceToken, identity.sessionToken, status?.account, status?.google.enabled]);
+
+  useEffect(() => {
+    if (!challenge || status?.account || !buttonRef.current || isDesktopWebview()) return;
     let active = true;
     const target = buttonRef.current;
     loadGoogleIdentityScript()
@@ -67,8 +85,8 @@ export default function GoogleAccountSettings({
         if (!api) throw new Error("Google 로그인 모듈을 사용할 수 없습니다.");
         target.replaceChildren();
         api.initialize({
-          client_id: status.google.client_id,
-          nonce: status.google.nonce,
+          client_id: challenge.client_id,
+          nonce: challenge.nonce,
           callback: (response) => {
             const credential = String(response.credential || "").trim();
             if (!credential) {
@@ -80,7 +98,7 @@ export default function GoogleAccountSettings({
             setError("");
             void connectGoogleAccount({
               credential,
-              nonce: status.google.nonce,
+              nonce: challenge.nonce,
               discardGuestOnAccountSwitch: true,
               identity,
             })
@@ -98,6 +116,7 @@ export default function GoogleAccountSettings({
               .catch(async (reason: Error) => {
                 if (!active) return;
                 setError(reason.message || "Google 계정을 연결하지 못했습니다.");
+                setChallenge(null);
                 const refreshed = await fetchAccountStatus(identity).catch(() => null);
                 if (active && refreshed) setStatus(refreshed);
               })
@@ -124,7 +143,7 @@ export default function GoogleAccountSettings({
       googleIdentityApi()?.cancel();
       target.replaceChildren();
     };
-  }, [identity.deviceToken, identity.sessionToken, status?.account, status?.google.client_id, status?.google.enabled, status?.google.nonce]);
+  }, [challenge, identity.deviceToken, identity.sessionToken, status?.account]);
 
   useEffect(() => {
     if (!desktopWaiting || status?.account) return;
@@ -184,6 +203,7 @@ export default function GoogleAccountSettings({
     try {
       await disconnectGoogleAccount(identity);
       setStatus((current) => (current ? { ...current, account: null } : current));
+      setChallenge(null);
       setDesktopWaiting(false);
       setConnecting(false);
     } catch (reason) {

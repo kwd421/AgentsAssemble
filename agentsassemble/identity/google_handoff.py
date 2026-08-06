@@ -37,12 +37,10 @@ class GoogleLoginHandoffStore:
         token = secrets.token_urlsafe(32)
         with self._lock:
             self._prune(now)
-            while len(self._handoffs) >= self._maximum:
-                oldest = min(
-                    self._handoffs,
-                    key=lambda item: self._handoffs[item].expires_at,
+            if len(self._handoffs) >= self._maximum:
+                raise GoogleLoginHandoffCapacityExceeded(
+                    "Google login handoff capacity is temporarily exhausted."
                 )
-                self._handoffs.pop(oldest, None)
             self._handoffs[token] = GoogleLoginHandoff(
                 user_id=user_id,
                 device_auth_key=device_auth_key,
@@ -78,4 +76,12 @@ class GoogleLoginHandoffStore:
             self._handoffs.pop(token, None)
 
 
-__all__ = ["GoogleLoginHandoff", "GoogleLoginHandoffStore"]
+class GoogleLoginHandoffCapacityExceeded(RuntimeError):
+    """The bounded handoff pool is full of still-valid user requests."""
+
+
+__all__ = [
+    "GoogleLoginHandoff",
+    "GoogleLoginHandoffCapacityExceeded",
+    "GoogleLoginHandoffStore",
+]

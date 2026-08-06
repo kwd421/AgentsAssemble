@@ -20,9 +20,14 @@ export type AccountStatusResponse = {
   google: {
     enabled: boolean;
     client_id: string;
-    nonce: string;
     unavailable_reason: string;
   };
+};
+
+export type GoogleAccountChallengeResponse = {
+  status: "ready";
+  client_id: string;
+  nonce: string;
 };
 
 export type GoogleAccountConnectResponse = {
@@ -74,6 +79,16 @@ export function connectGoogleAccount({
       nonce,
       discard_guest_on_account_switch: discardGuestOnAccountSwitch,
     },
+    identity
+  );
+}
+
+export function startGoogleAccountLogin(
+  identity: UserProfileIdentity = {}
+): Promise<GoogleAccountChallengeResponse> {
+  return postJsonWithIdentity<GoogleAccountChallengeResponse>(
+    "/api/account/google/challenge",
+    {},
     identity
   );
 }

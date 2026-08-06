@@ -4,6 +4,7 @@ import json
 import tempfile
 import threading
 import unittest
+from http import HTTPStatus
 from http.server import ThreadingHTTPServer
 from pathlib import Path
 from urllib.error import HTTPError
@@ -316,7 +317,7 @@ class PublicInviteLifecycleHttpTests(unittest.TestCase):
                     _json_request(
                         endpoint,
                         payload,
-                        {**self.public_headers, "X-Forwarded-For": "198.51.100.10"},
+                        {**self.public_headers, "CF-Connecting-IP": "198.51.100.10"},
                     ),
                     timeout=4,
                 )
@@ -332,10 +333,77 @@ class PublicInviteLifecycleHttpTests(unittest.TestCase):
                         "recovery_code": "different-invalid-recovery-code",
                         "client_id": "other-client",
                     },
-                    {**self.public_headers, "X-Forwarded-For": "198.51.100.11"},
+                    {**self.public_headers, "CF-Connecting-IP": "198.51.100.11"},
                 ),
                 timeout=4,
             )
         other_client.exception.close()
 
         self.assertEqual(other_client.exception.code, 403)
+
+    def test_recovery_rejects_forged_forwarding_headers_as_one_network(self) -> None:
+        endpoint = f"{self.base}/api/identity/recovery-code/redeem"
+        statuses: list[int] = []
+        for index in range(20):
+            with self.assertRaises(HTTPError) as rejected:
+                urlopen(
+                    _json_request(
+                        endpoint,
+                        {
+                            "recovery_code": f"invalid-network-code-{index}",
+                            "room_id": "friend-room",
+                            "device_token": "forged-network-device",
+                            "client_id": f"forged-network-client-{index}",
+                        },
+                        {
+                            **self.public_headers,
+                            "X-Forwarded-For": f"198.51.100.{index + 30}",
+                        },
+                    ),
+                    timeout=4,
+                )
+            statuses.append(rejected.exception.code)
+            rejected.exception.close()
+            if statuses[-1] == HTTPStatus.TOO_MANY_REQUESTS:
+                break
+
+        self.assertIn(HTTPStatus.TOO_MANY_REQUESTS, statuses)
+
+    def test_recovery_code_aliases_share_one_attempt_budget(self) -> None:
+        endpoint = f"{self.base}/api/identity/recovery-code/redeem"
+        normalized = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789"
+        aliases = [
+            normalized.lower(),
+            f"{normalized[:4]}-{normalized[4:]}",
+            f"{normalized[:8]} {normalized[8:]}",
+            f"{normalized[:12]}-{normalized[12:]}",
+            f"{normalized[:16]} {normalized[16:]}",
+            f"{normalized[:20]}-{normalized[20:]}",
+            f"{normalized[:24]} {normalized[24:]}",
+            f"{normalized[:28]}-{normalized[28:]}",
+            f" {normalized.lower()} ",
+        ]
+        statuses: list[int] = []
+        for index, alias in enumerate(aliases):
+            with self.assertRaises(HTTPError) as rejected:
+                urlopen(
+                    _json_request(
+                        endpoint,
+                        {
+                            "recovery_code": alias,
+                            "room_id": "friend-room",
+                            "device_token": "alias-device",
+                            "client_id": f"alias-client-{index}",
+                        },
+                        {
+                            **self.public_headers,
+                            "CF-Connecting-IP": f"203.0.113.{index + 40}",
+                        },
+                    ),
+                    timeout=4,
+                )
+            statuses.append(rejected.exception.code)
+            rejected.exception.close()
+
+        self.assertEqual(statuses[:8], [HTTPStatus.FORBIDDEN] * 8)
+        self.assertEqual(statuses[8], HTTPStatus.TOO_MANY_REQUESTS)

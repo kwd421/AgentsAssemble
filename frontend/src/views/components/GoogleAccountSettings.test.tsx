@@ -13,9 +13,13 @@ describe("GoogleAccountSettings", () => {
       google: {
         enabled: true,
         client_id: "client.apps.googleusercontent.com",
-        nonce: "nonce-1",
         unavailable_reason: "",
       },
+    });
+    vi.spyOn(identityApi, "startGoogleAccountLogin").mockResolvedValue({
+      status: "ready",
+      client_id: "client.apps.googleusercontent.com",
+      nonce: "nonce-1",
     });
     vi.spyOn(identityApi, "connectGoogleAccount").mockResolvedValue({
       status: "connected",
@@ -114,7 +118,6 @@ describe("GoogleAccountSettings", () => {
         google: {
           enabled: true,
           client_id: "client.apps.googleusercontent.com",
-          nonce: "nonce-1",
           unavailable_reason: "",
         },
       })
@@ -129,7 +132,6 @@ describe("GoogleAccountSettings", () => {
         google: {
           enabled: true,
           client_id: "client.apps.googleusercontent.com",
-          nonce: "nonce-2",
           unavailable_reason: "",
         },
       });
@@ -166,7 +168,6 @@ describe("GoogleAccountSettings", () => {
       google: {
         enabled: true,
         client_id: "client.apps.googleusercontent.com",
-        nonce: "nonce-connected",
         unavailable_reason: "",
       },
     });

@@ -38,7 +38,7 @@ describe("StartupIdentityGate", () => {
   it("keeps the product gated until a local guest identity is persisted", async () => {
     vi.mocked(fetchAccountStatus).mockResolvedValue({
       account: null,
-      google: { enabled: false, client_id: "", nonce: "", unavailable_reason: "" },
+      google: { enabled: false, client_id: "", unavailable_reason: "" },
     });
     vi.mocked(saveUserProfile).mockResolvedValue({} as never);
     const onComplete = vi.fn();
@@ -64,7 +64,7 @@ describe("StartupIdentityGate", () => {
         email: "linked@example.test",
         avatar_image_url: "",
       },
-      google: { enabled: true, client_id: "client", nonce: "nonce", unavailable_reason: "" },
+      google: { enabled: true, client_id: "client", unavailable_reason: "" },
     });
     const onComplete = vi.fn();
 
