@@ -11,6 +11,7 @@ from __future__ import annotations
 import io
 import socket
 import ssl
+import time
 from collections.abc import Callable
 from http.client import HTTPConnection, HTTPSConnection, HTTPResponse
 from ipaddress import ip_address
@@ -22,6 +23,7 @@ from urllib.request import Request
 _MAX_ERROR_BODY_BYTES = 1_048_576
 MAX_REMOTE_RESPONSE_BYTES = 32 * 1_048_576
 MAX_REMOTE_RESPONSE_LINE_BYTES = 8 * 1_048_576
+_RESPONSE_READ_CHUNK_BYTES = 64 * 1024
 
 
 class RemoteEndpointBlocked(ValueError):
@@ -75,12 +77,17 @@ class _ManagedResponse:
         *,
         maximum_bytes: int = MAX_REMOTE_RESPONSE_BYTES,
         maximum_line_bytes: int = MAX_REMOTE_RESPONSE_LINE_BYTES,
+        absolute_deadline: float,
+        monotonic: Callable[[], float] = time.monotonic,
     ) -> None:
         self._response = response
         self._connection = connection
         self._maximum_bytes = max(1, int(maximum_bytes))
         self._maximum_line_bytes = max(1, int(maximum_line_bytes))
+        self._absolute_deadline = float(absolute_deadline)
+        self._monotonic = monotonic
         self._consumed_bytes = 0
+        self._read_buffer = bytearray()
         content_length = _content_length(response)
         if content_length is not None and content_length > self._maximum_bytes:
             self.close()
@@ -111,23 +118,85 @@ class _ManagedResponse:
             self._connection.close()
 
     def read(self, size: int = -1) -> bytes:
+        self._assert_before_deadline()
         remaining = self._maximum_bytes - self._consumed_bytes
         requested = remaining + 1 if size is None or size < 0 else min(int(size), remaining + 1)
-        return self._record(self._response.read(requested))
+        if requested <= 0:
+            return b""
+        chunks: list[bytes] = []
+        buffered = self._take_buffer(requested)
+        if buffered:
+            chunks.append(buffered)
+        collected = len(buffered)
+        while collected < requested:
+            chunk = self._read_once(
+                min(_RESPONSE_READ_CHUNK_BYTES, requested - collected)
+            )
+            if not chunk:
+                break
+            chunks.append(chunk)
+            collected += len(chunk)
+        return self._record(b"".join(chunks))
 
     def read1(self, size: int = -1) -> bytes:
         return self.read(size)
 
     def readline(self, size: int = -1) -> bytes:
+        self._assert_before_deadline()
         remaining = self._maximum_bytes - self._consumed_bytes
-        requested = min(remaining + 1, self._maximum_line_bytes + 1)
+        limit = min(remaining + 1, self._maximum_line_bytes + 1)
         if size is not None and size >= 0:
-            requested = min(requested, int(size))
-        line = self._response.readline(requested)
+            limit = min(limit, int(size))
+        if limit <= 0:
+            return b""
+        while True:
+            newline_index = self._read_buffer.find(b"\n", 0, limit)
+            if newline_index >= 0:
+                line = self._take_buffer(newline_index + 1)
+                break
+            if len(self._read_buffer) >= limit:
+                line = self._take_buffer(limit)
+                break
+            chunk = self._read_once(
+                min(
+                    _RESPONSE_READ_CHUNK_BYTES,
+                    limit - len(self._read_buffer),
+                )
+            )
+            if not chunk:
+                line = self._take_buffer(min(limit, len(self._read_buffer)))
+                break
+            self._read_buffer.extend(chunk)
         if len(line) > self._maximum_line_bytes:
             self.close()
             raise RemoteResponseTooLarge("Remote provider response line is too large.")
         return self._record(line)
+
+    def _take_buffer(self, size: int) -> bytes:
+        selected = bytes(self._read_buffer[:size])
+        del self._read_buffer[:size]
+        return selected
+
+    def _read_once(self, size: int) -> bytes:
+        remaining_seconds = self._remaining_seconds()
+        sock = getattr(self._connection, "sock", None)
+        settimeout = getattr(sock, "settimeout", None)
+        if callable(settimeout):
+            settimeout(max(0.001, remaining_seconds))
+        read1 = getattr(self._response, "read1", None)
+        data = read1(size) if callable(read1) else self._response.read(size)
+        self._assert_before_deadline()
+        return data
+
+    def _remaining_seconds(self) -> float:
+        remaining = self._absolute_deadline - self._monotonic()
+        if remaining <= 0:
+            self.close()
+            raise TimeoutError("Remote provider response exceeded its absolute deadline.")
+        return remaining
+
+    def _assert_before_deadline(self) -> None:
+        self._remaining_seconds()
 
     def _record(self, data: bytes) -> bytes:
         self._consumed_bytes += len(data)
@@ -234,6 +303,7 @@ def safe_remote_urlopen(
     *,
     resolver: Callable[..., list[tuple[object, ...]]] = socket.getaddrinfo,
     connection_factory: Callable[..., HTTPSConnection] = _PinnedHTTPSConnection,
+    monotonic: Callable[[], float] = time.monotonic,
 ):
     """Open one credentialed remote HTTPS request without redirects or DNS races."""
 
@@ -254,6 +324,7 @@ def safe_remote_urlopen(
         connection_factory=connection_factory,
         peer_allowed=lambda peer, approved: peer.is_global and str(peer) == approved,
         invalid_peer_message="Remote provider connected to an address that was not approved.",
+        monotonic=monotonic,
     )
 
 
@@ -263,6 +334,7 @@ def safe_loopback_urlopen(
     *,
     resolver: Callable[..., list[tuple[object, ...]]] = socket.getaddrinfo,
     connection_factory: Callable[..., HTTPConnection] | None = None,
+    monotonic: Callable[[], float] = time.monotonic,
 ):
     """Open one explicit local-provider HTTP request without redirects or proxies."""
 
@@ -284,6 +356,7 @@ def safe_loopback_urlopen(
         connection_factory=factory,
         peer_allowed=lambda peer, approved: peer.is_loopback and str(peer) == approved,
         invalid_peer_message="Local provider connected outside the approved loopback address.",
+        monotonic=monotonic,
     )
 
 
@@ -319,15 +392,20 @@ def _open_pinned(
     connection_factory: Callable[..., HTTPConnection],
     peer_allowed: Callable[[Any, str], bool],
     invalid_peer_message: str,
+    monotonic: Callable[[], float],
 ):
     hostname = str(parsed.hostname).casefold()
+    absolute_deadline = monotonic() + max(1.0, float(timeout))
     last_error: OSError | None = None
     for address in addresses:
+        remaining_seconds = absolute_deadline - monotonic()
+        if remaining_seconds <= 0:
+            raise TimeoutError("Remote provider request exceeded its absolute deadline.")
         connection = connection_factory(
             hostname,
             address,
             port,
-            timeout=max(1.0, float(timeout)),
+            timeout=max(0.001, remaining_seconds),
         )
         try:
             connection.connect()
@@ -347,10 +425,20 @@ def _open_pinned(
             )
             response = connection.getresponse()
             if 200 <= int(response.status) < 300:
-                return _ManagedResponse(response, connection)
-            body = response.read(_MAX_ERROR_BODY_BYTES)
-            response.close()
-            connection.close()
+                return _ManagedResponse(
+                    response,
+                    connection,
+                    absolute_deadline=absolute_deadline,
+                    monotonic=monotonic,
+                )
+            managed_error_response = _ManagedResponse(
+                response,
+                connection,
+                absolute_deadline=absolute_deadline,
+                monotonic=monotonic,
+            )
+            body = managed_error_response.read(_MAX_ERROR_BODY_BYTES)
+            managed_error_response.close()
             raise HTTPError(
                 request.full_url,
                 int(response.status),

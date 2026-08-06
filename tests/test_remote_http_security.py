@@ -29,6 +29,16 @@ class _Response(io.BytesIO):
         self.headers = dict(headers or {})
 
 
+class _TrickleResponse(_Response):
+    def __init__(self, *, body: bytes, advance) -> None:
+        super().__init__(status=200, body=body)
+        self._advance = advance
+
+    def read1(self, _size: int = -1) -> bytes:
+        self._advance()
+        return super().read(1)
+
+
 class _Connection:
     def __init__(self, *, peer_host: str, response: _Response) -> None:
         self.sock = _Socket(peer_host)
@@ -146,6 +156,32 @@ class RemoteHttpSecurityTests(unittest.TestCase):
         self.addCleanup(managed.close)
 
         with self.assertRaises(RemoteResponseTooLarge):
+            managed.readline()
+
+        self.assertTrue(connection.closed)
+
+    def test_streaming_response_has_an_absolute_deadline_despite_trickle_bytes(self) -> None:
+        now = 100.0
+
+        def monotonic() -> float:
+            return now
+
+        def advance() -> None:
+            nonlocal now
+            now += 0.4
+
+        response = _TrickleResponse(body=b"data: never finishes", advance=advance)
+        connection = _Connection(peer_host="93.184.216.34", response=response)
+        managed = safe_remote_urlopen(
+            Request("https://api.example.com/v1/chat/completions"),
+            timeout=1.0,
+            resolver=_public_resolver,
+            connection_factory=lambda *_args, **_kwargs: connection,
+            monotonic=monotonic,
+        )
+        self.addCleanup(managed.close)
+
+        with self.assertRaises(TimeoutError):
             managed.readline()
 
         self.assertTrue(connection.closed)
