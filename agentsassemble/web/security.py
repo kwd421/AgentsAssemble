@@ -119,7 +119,6 @@ def _public_invite_route_allowed(path: str, method: str) -> bool:
             "/api/host/claim",
             "/api/room-members/role",
             "/api/room-members/mute",
-            "/api/room-members/kick",
             "/api/room-invite/create",
             "/api/room-invite/revoke",
             "/api/identity/recovery-code",

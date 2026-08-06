@@ -21,6 +21,7 @@ class RetiredLegacyHttpTests(unittest.TestCase):
             ("POST", "/api/live-agent-create/check"),
             ("POST", "/api/live-agent-create"),
             ("POST", "/api/live-agent-room/expel"),
+            ("POST", "/api/room-members/kick"),
         )
         with tempfile.TemporaryDirectory() as temp_dir:
             server = ThreadingHTTPServer(("127.0.0.1", 0), _make_handler(Path(temp_dir)))

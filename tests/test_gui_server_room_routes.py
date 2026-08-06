@@ -661,6 +661,55 @@ class GuiServerRoomRouteTests(unittest.TestCase):
             self.assertEqual(denied.sent_error, (HTTPStatus.FORBIDDEN, "participant session token required"))
             self.assertEqual(RoomStore(root).participant("session-room", "agent-1")["status"], "joined")
 
+    def test_room_participant_session_cannot_leave_its_identity_in_another_room(self):
+        reset_room_invite_state()
+        reset_room_users_state()
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            configure_room_users_store(root / "identity.db")
+            set_runtime_public_url("https://room.example.com")
+            set_runtime_host_token("host-secret")
+            invite = create_room_invite(
+                room_url="http://127.0.0.1:8765",
+                meeting_id="session-room",
+                agent_id="shared-agent",
+                display_name="Shared Agent",
+            )
+            session = join_room_with_invite(
+                invite["invite_token"],
+                meeting_id="session-room",
+                display_name="Shared Agent",
+                device_token="shared-agent-device-token",
+            )
+            participant_id = str(session["agent_id"])
+            store = RoomStore(root)
+            store.ensure_room("other-room")
+            store.upsert_participant(
+                "other-room",
+                {
+                    "participant_id": participant_id,
+                    "display_name": "Other Room Identity",
+                    "participant_type": "human",
+                    "status": "joined",
+                },
+            )
+
+            denied = _dispatch_room_route(
+                root,
+                path="/api/room-participants/leave",
+                method="POST",
+                payload={"room_id": "other-room", "participant_id": participant_id},
+                headers={"Authorization": f"Bearer {session['session_token']}"},
+                loopback=False,
+                deps=_legacy_facade_route_dependencies(root),
+            )
+
+            self.assertEqual(
+                denied.sent_error,
+                (HTTPStatus.FORBIDDEN, "participant session token required"),
+            )
+            self.assertEqual(store.participant("other-room", participant_id)["status"], "joined")
+
 
     def test_agent_session_http_resume_start_requires_authorized_runner(self):
         reset_room_invite_state()

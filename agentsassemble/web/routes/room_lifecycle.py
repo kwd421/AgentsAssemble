@@ -22,13 +22,24 @@ def register_room_lifecycle_routes(router: Router) -> None:
         session = ctx.session()
         if not session:
             return False
+        requested_room = clean_room_text(
+            payload.get("room_id") or payload.get("meeting_id"),
+            limit=128,
+        )
+        session_room = clean_room_text(session.get("meeting_id"), limit=128)
         requested = clean_room_text(
             payload.get("participant_id") or payload.get("agent_id"),
             limit=128,
         )
-        return requested and requested == clean_room_text(
-            session.get("agent_id"),
-            limit=128,
+        return bool(
+            requested_room
+            and requested_room == session_room
+            and requested
+            and requested
+            == clean_room_text(
+                session.get("agent_id"),
+                limit=128,
+            )
         )
 
     def _participant_action(ctx: RequestContext, action: str) -> None:
