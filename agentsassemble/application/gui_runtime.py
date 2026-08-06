@@ -1,6 +1,7 @@
 """Application lifecycle for the local GUI server."""
 from __future__ import annotations
 
+import os
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Callable
@@ -17,6 +18,9 @@ from agentsassemble.web.frontend_runtime import (
 )
 from agentsassemble.identity.repository import IdentityBackend
 from agentsassemble.room.repository import RoomRepository
+
+
+DESKTOP_RUNTIME_URL_PREFIX = "AgentsAssemble desktop runtime: "
 
 
 @dataclass(frozen=True)
@@ -234,6 +238,11 @@ def serve_gui_runtime(
             print(f"AgentsAssemble host token: {generated_token}")
         assert server is not None
         server_url = dependencies.local_server_url(server.server_address)
+        if os.environ.get("AGENTSASSEMBLE_DESKTOP_RUNTIME") == "1":
+            # The desktop parent owns the child's stdout pipe. Reporting the
+            # address only after the server has bound lets the kernel choose a
+            # collision-free port without a find-free-port/rebind race.
+            print(f"{DESKTOP_RUNTIME_URL_PREFIX}{server_url}", flush=True)
         rolling_restart = RollingRestartCoordinator(
             server,
             output_root=root,

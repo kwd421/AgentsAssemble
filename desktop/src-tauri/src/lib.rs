@@ -277,10 +277,11 @@ pub fn run() {
     #[cfg(desktop)]
     app.run(|app, event| {
         if matches!(event, RunEvent::Exit) {
-            if let Ok(server) = normalized_server_url(server_url::DEFAULT_LOCAL_SERVER_URL) {
+            let runtime = app.state::<LocalRuntime>();
+            if let Some(server) = runtime.current_server() {
                 let _ = room_directory::refresh_local_rooms(app, &server);
             }
-            app.state::<LocalRuntime>().stop();
+            runtime.stop();
         }
     });
 

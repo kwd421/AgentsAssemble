@@ -1,9 +1,10 @@
 use std::{
     env,
     fs::{self, File},
+    io::{BufRead, BufReader, Write},
     path::{Path, PathBuf},
-    process::{Child, Command, Stdio},
-    sync::Mutex,
+    process::{Child, ChildStdout, Command, Stdio},
+    sync::{mpsc, Mutex},
     thread,
     time::{Duration, Instant},
 };
@@ -16,21 +17,21 @@ use std::os::unix::process::CommandExt;
 #[cfg(windows)]
 use std::os::windows::process::CommandExt;
 
-use crate::server_url::{
-    agentsassemble_server_is_ready, normalized_server_url, tcp_endpoint_is_reachable,
-    DEFAULT_LOCAL_SERVER_URL,
-};
+use crate::server_url::{agentsassemble_server_is_ready, normalized_server_url};
 
 const STARTUP_TIMEOUT: Duration = Duration::from_secs(45);
+const DESKTOP_RUNTIME_URL_PREFIX: &str = "AgentsAssemble desktop runtime: ";
 
 #[derive(Default)]
 pub struct LocalRuntime {
+    startup: Mutex<()>,
     child: Mutex<Option<Child>>,
+    server: Mutex<Option<Url>>,
 }
 
 impl LocalRuntime {
     pub fn ensure_running(&self, app: &AppHandle) -> Result<Url, String> {
-        let server = normalized_server_url(DEFAULT_LOCAL_SERVER_URL)?;
+        let _startup = self.startup.lock().expect("local runtime startup lock");
         let data_root = app
             .path()
             .app_local_data_dir()
@@ -40,64 +41,114 @@ impl LocalRuntime {
             .map_err(|error| format!("cannot create local runtime directory: {error}"))?;
         let stderr_path = runtime_root.join("server.stderr.log");
 
-        if self.owned_server_is_ready(&server)? {
-            return Ok(server);
-        }
         if self.owned_child_is_running()? {
+            let server = self
+                .current_server()
+                .ok_or_else(|| "The owned local runtime did not report its address.".to_owned())?;
             return self.wait_until_ready(&server, &stderr_path);
         }
-        if tcp_endpoint_is_reachable(&server) {
-            return Err(
-                "Port 8765 is already in use. The desktop app only reuses a local server process that it started itself. Close the other process or choose another server."
-                    .to_owned(),
-            );
-        }
+        self.server
+            .lock()
+            .expect("local runtime server lock")
+            .take();
 
         let (mut command, description) = local_server_command(app, &runtime_root)?;
         configure_process_group(&mut command);
         let stdout_path = runtime_root.join("server.stdout.log");
-        command.stdout(Stdio::from(create_log(&stdout_path)?));
+        let stdout_log = create_log(&stdout_path)?;
+        command
+            .env("AGENTSASSEMBLE_DESKTOP_RUNTIME", "1")
+            .stdout(Stdio::piped());
         command.stderr(Stdio::from(create_log(&stderr_path)?));
-        let child = command
+        let mut child = command
             .spawn()
             .map_err(|error| format!("cannot start {description}: {error}"))?;
+        let stdout = match child.stdout.take() {
+            Some(stdout) => stdout,
+            None => {
+                terminate_process_tree(&mut child);
+                return Err(format!("cannot capture startup output from {description}"));
+            }
+        };
+        let reported_server = capture_reported_server(stdout, stdout_log);
         *self.child.lock().expect("local runtime lock") = Some(child);
 
+        let server = self.wait_for_reported_server(reported_server, &stderr_path)?;
+        *self.server.lock().expect("local runtime server lock") = Some(server.clone());
         self.wait_until_ready(&server, &stderr_path)
+    }
+
+    fn wait_for_reported_server(
+        &self,
+        reported_server: mpsc::Receiver<Result<Url, String>>,
+        stderr_path: &Path,
+    ) -> Result<Url, String> {
+        let deadline = Instant::now() + STARTUP_TIMEOUT;
+        while Instant::now() < deadline {
+            match reported_server.recv_timeout(Duration::from_millis(100)) {
+                Ok(Ok(server)) => return Ok(server),
+                Ok(Err(error)) => return self.fail_startup(&error, stderr_path),
+                Err(mpsc::RecvTimeoutError::Disconnected) => {
+                    return self.fail_startup(
+                        "The local runtime closed its startup output before reporting an address.",
+                        stderr_path,
+                    );
+                }
+                Err(mpsc::RecvTimeoutError::Timeout) => {}
+            }
+            if let Some(status) = self.owned_child_status()? {
+                return self.fail_startup(
+                    &format!("The local runtime exited with {status} before reporting an address."),
+                    stderr_path,
+                );
+            }
+        }
+        self.fail_startup(
+            "The local runtime did not report its address within 45 seconds.",
+            stderr_path,
+        )
     }
 
     fn wait_until_ready(&self, server: &Url, stderr_path: &Path) -> Result<Url, String> {
         let deadline = Instant::now() + STARTUP_TIMEOUT;
         while Instant::now() < deadline {
+            if let Some(status) = self.owned_child_status()? {
+                return self.fail_startup(
+                    &format!("The local runtime exited with {status}."),
+                    stderr_path,
+                );
+            }
             if agentsassemble_server_is_ready(server) {
                 return Ok(server.clone());
-            }
-            let status = {
-                let mut owned_child = self.child.lock().expect("local runtime lock");
-                let Some(child) = owned_child.as_mut() else {
-                    return Err("The local runtime startup was cancelled.".to_owned());
-                };
-                child
-                    .try_wait()
-                    .map_err(|error| format!("cannot inspect local runtime: {error}"))?
-            };
-            if let Some(status) = status {
-                self.child.lock().expect("local runtime lock").take();
-                return Err(format!(
-                    "The local runtime exited with {status}. Details: {}",
-                    stderr_path.display()
-                ));
             }
             thread::sleep(Duration::from_millis(100));
         }
 
+        self.fail_startup(
+            "The local runtime did not become ready within 45 seconds.",
+            stderr_path,
+        )
+    }
+
+    fn owned_child_status(&self) -> Result<Option<std::process::ExitStatus>, String> {
+        let mut owned_child = self.child.lock().expect("local runtime lock");
+        let Some(child) = owned_child.as_mut() else {
+            return Err("The local runtime startup was cancelled.".to_owned());
+        };
+        child
+            .try_wait()
+            .map_err(|error| format!("cannot inspect local runtime: {error}"))
+    }
+
+    fn fail_startup<T>(&self, message: &str, stderr_path: &Path) -> Result<T, String> {
         if let Some(mut child) = self.child.lock().expect("local runtime lock").take() {
             terminate_process_tree(&mut child);
         }
-        Err(format!(
-            "The local runtime did not become ready within 45 seconds. Details: {}",
-            stderr_path.display()
-        ))
+        self.server
+            .lock()
+            .expect("local runtime server lock")
+            .take();
+        Err(format!("{message} Details: {}", stderr_path.display()))
     }
 
     fn owned_child_is_running(&self) -> Result<bool, String> {
@@ -116,20 +167,75 @@ impl LocalRuntime {
         Ok(false)
     }
 
-    fn owned_server_is_ready(&self, server: &Url) -> Result<bool, String> {
-        Ok(self.owned_child_is_running()? && agentsassemble_server_is_ready(server))
+    pub fn current_server(&self) -> Option<Url> {
+        self.server
+            .lock()
+            .expect("local runtime server lock")
+            .clone()
     }
 
     pub fn stop(&self) {
-        let Some(mut child) = self.child.lock().expect("local runtime lock").take() else {
-            return;
-        };
-        terminate_process_tree(&mut child);
+        if let Some(mut child) = self.child.lock().expect("local runtime lock").take() {
+            terminate_process_tree(&mut child);
+        }
+        self.server
+            .lock()
+            .expect("local runtime server lock")
+            .take();
     }
 }
 
 fn create_log(path: &Path) -> Result<File, String> {
     File::create(path).map_err(|error| format!("cannot open {}: {error}", path.display()))
+}
+
+fn capture_reported_server(
+    stdout: ChildStdout,
+    mut log: File,
+) -> mpsc::Receiver<Result<Url, String>> {
+    let (sender, receiver) = mpsc::sync_channel(1);
+    thread::spawn(move || {
+        let mut reader = BufReader::new(stdout);
+        let mut reported = false;
+        loop {
+            let mut line = String::new();
+            match reader.read_line(&mut line) {
+                Ok(0) => break,
+                Ok(_) => {
+                    let _ = log.write_all(line.as_bytes());
+                    let _ = log.flush();
+                    if !reported {
+                        if let Some(raw_url) = line.trim().strip_prefix(DESKTOP_RUNTIME_URL_PREFIX)
+                        {
+                            reported = true;
+                            let result = validate_reported_server(raw_url);
+                            let _ = sender.send(result);
+                        }
+                    }
+                }
+                Err(error) => {
+                    if !reported {
+                        let _ = sender.send(Err(format!(
+                            "cannot read local runtime startup output: {error}"
+                        )));
+                    }
+                    break;
+                }
+            }
+        }
+    });
+    receiver
+}
+
+fn validate_reported_server(raw: &str) -> Result<Url, String> {
+    let server = normalized_server_url(raw)?;
+    if server.scheme() != "http"
+        || server.host_str() != Some("127.0.0.1")
+        || server.port().is_none_or(|port| port == 0)
+    {
+        return Err("The local runtime reported a non-loopback or invalid address.".to_owned());
+    }
+    Ok(server)
 }
 
 fn local_server_command(app: &AppHandle, output_root: &Path) -> Result<(Command, String), String> {
@@ -166,7 +272,7 @@ fn add_server_arguments(command: &mut Command, output_root: &Path) {
         .arg("--host")
         .arg("127.0.0.1")
         .arg("--port")
-        .arg("8765")
+        .arg("0")
         .arg("--output-root")
         .arg(output_root);
 }
@@ -242,38 +348,21 @@ fn terminate_process_tree(child: &mut Child) {
 
 #[cfg(test)]
 mod tests {
-    use std::{
-        io::{Read, Write},
-        net::TcpListener,
-        thread,
-    };
+    use std::net::TcpListener;
 
     use super::*;
 
     #[test]
-    fn compatible_lookalike_server_is_not_reused_without_an_owned_process() {
-        let listener = TcpListener::bind("127.0.0.1:0").expect("bind fake server");
-        let address = listener.local_addr().expect("fake server address");
-        let fake = thread::spawn(move || {
-            let (mut stream, _) = listener.accept().expect("accept readiness probe");
-            let mut request = [0_u8; 1024];
-            let _ = stream.read(&mut request);
-            let body = r#"{"protocol_version":1,"frontend_version":"fake"}"#;
-            write!(
-                stream,
-                "HTTP/1.1 200 OK\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{}",
-                body.len(),
-                body
-            )
-            .expect("write fake readiness response");
-        });
-        let server = Url::parse(&format!("http://{address}/")).expect("server URL");
+    fn reported_runtime_must_be_an_already_bound_loopback_endpoint() {
+        let listener = TcpListener::bind("127.0.0.1:0").expect("bind owned runtime");
+        let address = listener.local_addr().expect("owned runtime address");
+        let server =
+            validate_reported_server(&format!("http://{address}")).expect("bound loopback report");
 
-        assert!(agentsassemble_server_is_ready(&server));
-        fake.join().expect("fake server thread");
-        assert!(!LocalRuntime::default()
-            .owned_server_is_ready(&server)
-            .expect("ownership decision"));
+        assert_eq!(server.host_str(), Some("127.0.0.1"));
+        assert_eq!(server.port(), Some(address.port()));
+        assert!(validate_reported_server("http://example.com:8765").is_err());
+        assert!(validate_reported_server("https://127.0.0.1:8765").is_err());
     }
 }
 

@@ -7,9 +7,6 @@ use std::{
 
 use url::Url;
 
-#[cfg(desktop)]
-pub const DEFAULT_LOCAL_SERVER_URL: &str = "http://127.0.0.1:8765/";
-
 pub fn normalized_server_url(raw: &str) -> Result<Url, String> {
     let mut url = Url::parse(raw.trim()).map_err(|_| "server URL is invalid".to_owned())?;
     if !matches!(url.scheme(), "http" | "https") {
@@ -84,22 +81,6 @@ pub fn google_account_handoff_url(raw: &str, server: &Url) -> Result<Url, String
 pub fn is_local_app_url(candidate: &Url) -> bool {
     matches!(candidate.scheme(), "tauri" | "asset")
         || candidate.host_str() == Some("tauri.localhost")
-}
-
-#[cfg(desktop)]
-pub fn tcp_endpoint_is_reachable(server: &Url) -> bool {
-    let Some(host) = server.host_str() else {
-        return false;
-    };
-    let Some(port) = server.port_or_known_default() else {
-        return false;
-    };
-    let Ok(addresses) = (host, port).to_socket_addrs() else {
-        return false;
-    };
-    addresses
-        .take(4)
-        .any(|address| TcpStream::connect_timeout(&address, Duration::from_millis(350)).is_ok())
 }
 
 #[cfg(desktop)]
