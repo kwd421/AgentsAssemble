@@ -99,7 +99,7 @@ def register_legacy_moderation_media_routes(
                 ctx.send_error(HTTPStatus.FORBIDDEN, "read-only invite session cannot post")
                 return None, None
             return str(session.get("meeting_id") or ""), session
-        if ctx.uses_loopback_host() or ctx.is_host():
+        if ctx.is_local_operator() or ctx.is_host():
             return str(payload_meeting_id or ""), None
         ctx.send_error(HTTPStatus.UNAUTHORIZED, "session token required")
         return None, None

@@ -90,6 +90,42 @@ class PublicInviteSecurityHttpTests(unittest.TestCase):
                 server.shutdown()
                 server.server_close()
 
+    def test_public_room_request_cannot_reach_unclassified_compatibility_mutation(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir) / "room"
+            server = ThreadingHTTPServer(("0.0.0.0", 0), _make_handler(root))
+            thread = threading.Thread(target=server.serve_forever, daemon=True)
+            thread.start()
+            try:
+                base = f"http://127.0.0.1:{server.server_port}"
+                with self.assertRaises(HTTPError) as rejected:
+                    urlopen(
+                        _json_request(
+                            f"{base}/api/side-chat",
+                            {
+                                "name": "remote caller",
+                                "message": "must not reach compatibility storage",
+                                "flow_meeting_id": "room-a",
+                            },
+                            {
+                                "Host": "lan-room.example.com",
+                                "Origin": "http://lan-room.example.com",
+                            },
+                        ),
+                        timeout=4,
+                    )
+                payload = json.loads(rejected.exception.read().decode("utf-8"))
+                rejected.exception.close()
+                event_written = (root / "side_chat.jsonl").exists()
+            finally:
+                server.shutdown()
+                server.server_close()
+                thread.join(timeout=2)
+
+        self.assertEqual(rejected.exception.code, 403)
+        self.assertEqual(payload.get("code"), "local_operator_required")
+        self.assertFalse(event_written)
+
     def test_guest_companion_cannot_replace_operator_identity_or_gain_moderation(self):
         with tempfile.TemporaryDirectory() as temp_dir:
             root = Path(temp_dir) / "room"

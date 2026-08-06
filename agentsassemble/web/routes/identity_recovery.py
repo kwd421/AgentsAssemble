@@ -87,7 +87,7 @@ def register_identity_recovery_routes(router: Router) -> None:
 
     @router.post("/api/identity/recovery-code/redeem")
     def redeem_recovery_code(ctx: RequestContext) -> None:
-        if not ctx.uses_loopback_host() and str(ctx.headers.get("X-Forwarded-Proto") or "").lower() != "https":
+        if not ctx.is_local_operator() and str(ctx.headers.get("X-Forwarded-Proto") or "").lower() != "https":
             ctx.send_error(HTTPStatus.FORBIDDEN, "HTTPS is required for identity recovery")
             return
         payload = ctx.read_json_body()

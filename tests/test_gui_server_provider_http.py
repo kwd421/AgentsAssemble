@@ -10,9 +10,11 @@ from unittest.mock import patch
 from urllib.error import HTTPError
 from urllib.parse import parse_qs, urlparse
 from urllib.request import Request, urlopen
+from uuid import uuid4
 
 from agentsassemble import room_invite
 from agentsassemble.gui import _make_handler
+from agentsassemble.persistence.local.room.repository import RoomStore
 from agentsassemble.web.routes.providers import register_provider_routes
 from agentsassemble.web.router import GuiDeps, RequestContext, Router
 
@@ -409,7 +411,7 @@ class ProviderHandlerDispatchTests(unittest.TestCase):
                 server.shutdown()
                 server.server_close()
 
-    def test_remote_caller_without_moderator_credential_is_rejected(self):
+    def test_remote_caller_without_host_credential_is_rejected(self):
         room_invite.set_runtime_public_url("https://public.example.test")
         store = FakeSecretStore()
 
@@ -421,7 +423,7 @@ class ProviderHandlerDispatchTests(unittest.TestCase):
             )
 
         self.assertEqual(status, HTTPStatus.FORBIDDEN)
-        self.assertEqual(payload, {"error": "host token or operator session required"})
+        self.assertEqual(payload, {"error": "host token required"})
         self.assertEqual(store.calls, [])
 
     def test_remote_host_token_over_http_is_rejected_with_exact_https_error(self):
@@ -438,6 +440,78 @@ class ProviderHandlerDispatchTests(unittest.TestCase):
 
         self.assertEqual(status, HTTPStatus.FORBIDDEN)
         self.assertEqual(payload, {"error": "HTTPS is required for remote credential management"})
+        self.assertEqual(store.calls, [])
+
+    def test_remote_operator_room_session_cannot_manage_server_provider_credentials(self):
+        room_invite.set_runtime_host_token("host-secret")
+        room_invite.set_runtime_public_url("https://public.example.test")
+        store = FakeSecretStore()
+
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            RoomStore(root).create_room("provider-room", label="Provider room")
+            with patch("agentsassemble.web.routes.providers.PROVIDER_SECRETS", store):
+                server = ThreadingHTTPServer(("127.0.0.1", 0), _make_handler(root))
+                thread = threading.Thread(target=server.serve_forever, daemon=True)
+                thread.start()
+                try:
+                    base = f"http://127.0.0.1:{server.server_port}"
+
+                    def post(path: str, payload: dict[str, object], headers=None):
+                        request = Request(
+                            f"{base}{path}",
+                            data=json.dumps(payload).encode("utf-8"),
+                            headers={
+                                "Content-Type": "application/json",
+                                **(headers or {}),
+                            },
+                            method="POST",
+                        )
+                        with urlopen(request, timeout=4) as response:
+                            return json.loads(response.read().decode("utf-8"))
+
+                    post(
+                        "/api/host/claim",
+                        {"device_token": "operator-device-token"},
+                        {"X-Host-Token": "host-secret"},
+                    )
+                    invite = post(
+                        "/api/room-invite/create",
+                        {"meeting_id": "provider-room", "display_name": "Operator"},
+                        {"X-Host-Token": "host-secret"},
+                    )
+                    session = post(
+                        "/api/room-invite/join",
+                        {
+                            "invite_token": invite["invite_token"],
+                            "request_id": str(uuid4()),
+                            "device_token": "operator-device-token",
+                        },
+                        {
+                            "Host": "public.example.test",
+                            "Origin": "https://public.example.test",
+                        },
+                    )
+                    request = Request(
+                        f"{base}/api/provider-credentials/deepseek",
+                        headers={
+                            "Host": "public.example.test",
+                            "Origin": "https://public.example.test",
+                            "Authorization": f"Bearer {session['session_token']}",
+                            "X-Forwarded-Proto": "https",
+                        },
+                    )
+                    with self.assertRaises(HTTPError) as rejected:
+                        urlopen(request, timeout=4)
+                    payload = json.loads(rejected.exception.read().decode("utf-8"))
+                    rejected.exception.close()
+                finally:
+                    server.shutdown()
+                    server.server_close()
+                    thread.join(timeout=2)
+
+        self.assertEqual(rejected.exception.code, HTTPStatus.FORBIDDEN)
+        self.assertEqual(payload, {"error": "host token required"})
         self.assertEqual(store.calls, [])
 
     def test_public_host_token_with_forwarded_https_is_accepted_without_key_disclosure(self):

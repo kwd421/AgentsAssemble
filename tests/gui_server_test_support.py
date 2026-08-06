@@ -136,6 +136,11 @@ class _RoomsRouteHandler:
         self.server = SimpleNamespace(
             server_address=("127.0.0.1", 8765) if loopback else ("0.0.0.0", 8765)
         )
+        self.client_address = (
+            ("127.0.0.1", 43100)
+            if loopback
+            else ("203.0.113.8", 43100)
+        )
 
     def _send_json(self, payload: dict[str, object]) -> None:
         self.sent_json = payload

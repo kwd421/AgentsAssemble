@@ -12,12 +12,12 @@ def register_room_lifecycle_routes(router: Router) -> None:
     """Register participant leave/kick/export and room close/archive routes."""
 
     def _loopback_or_moderator(ctx: RequestContext) -> bool:
-        if ctx.uses_loopback_host():
+        if ctx.is_local_operator():
             return True
         return ctx.require_moderator()
 
     def _leave_allowed(ctx: RequestContext, payload: dict[str, object]) -> bool:
-        if ctx.uses_loopback_host() or ctx.is_host() or ctx.is_operator_session():
+        if ctx.is_local_operator() or ctx.is_host() or ctx.is_operator_session():
             return True
         session = ctx.session()
         if not session:

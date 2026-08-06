@@ -116,7 +116,11 @@ def _local_agent_session_command_runner(command: list[str]) -> dict[str, object]
 
 def _agent_session_control_allowed(ctx: RequestContext) -> bool:
     has_host_token = bool(ctx.provided_host_token())
-    return ctx.uses_loopback_host() or (has_host_token and ctx.is_host()) or ctx.is_operator_session()
+    return (
+        ctx.is_local_operator()
+        or (has_host_token and ctx.is_host())
+        or ctx.is_operator_session()
+    )
 
 
 @dataclass(frozen=True)

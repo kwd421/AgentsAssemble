@@ -24,6 +24,85 @@ from agentsassemble.web.routes.runtime import register_runtime_routes
 from agentsassemble.web.websocket import register_ws_ticket_route
 
 
+# These mutation handlers prove a stronger credential or room/session
+# capability themselves. Every other POST/DELETE route in the composed GUI is
+# a local compatibility/control-plane operation and fails closed to the real
+# local operator. Keeping the exception inventory here makes a newly
+# registered mutation secure by default.
+_HANDLER_AUTHORIZED_MUTATIONS = frozenset(
+    {
+        "/api/account/google",
+        "/api/account/google/handoff/complete",
+        "/api/account/google/handoff/configure",
+        "/api/account/google/handoff/start",
+        "/api/agent-sessions",
+        "/api/agent-sessions/resume",
+        "/api/attachments",
+        "/api/host/claim",
+        "/api/identity/recovery-code",
+        "/api/identity/recovery-code/redeem",
+        "/api/operator-pairing/create",
+        "/api/operator-pairing/redeem",
+        "/api/operator-pairing/revoke",
+        "/api/provider-credentials/cerebras",
+        "/api/provider-credentials/custom_api",
+        "/api/provider-credentials/deepseek",
+        "/api/provider-credentials/llmgateway",
+        "/api/provider-credentials/openrouter",
+        "/api/provider-credentials/tokenrouter",
+        "/api/provider-credentials/vercel",
+        "/api/public-invite/host-token",
+        "/api/public-invite/public-url",
+        "/api/public-invite/tunnel/start",
+        "/api/public-invite/tunnel/stop",
+        "/api/room/channel-say",
+        "/api/room/voice/join",
+        "/api/room/voice/leave",
+        "/api/room-channels",
+        "/api/room-invite/admission",
+        "/api/room-invite/agent-join",
+        "/api/room-invite/companion",
+        "/api/room-invite/create",
+        "/api/room-invite/join",
+        "/api/room-invite/leave",
+        "/api/room-invite/revoke",
+        "/api/room-members",
+        "/api/room-members/mute",
+        "/api/room-members/role",
+        "/api/room-participants/export",
+        "/api/room-participants/kick",
+        "/api/room-participants/leave",
+        "/api/room-settings",
+        "/api/rooms",
+        "/api/rooms/archive",
+        "/api/rooms/close",
+        "/api/runtime/rolling-restart",
+        "/api/user-profile",
+        "/api/ws-ticket",
+    }
+)
+
+
+def install_gui_route_authorization(route_table: Router) -> None:
+    """Protect every composed GUI mutation with an explicit route policy."""
+
+    def authorize(method: str, registered_path: str, ctx: RequestContext) -> bool:
+        if method not in {"POST", "DELETE"}:
+            return True
+        if registered_path in _HANDLER_AUTHORIZED_MUTATIONS:
+            return True
+        if ctx.is_local_operator():
+            return True
+        ctx.send_error(
+            HTTPStatus.FORBIDDEN,
+            "This compatibility operation is limited to the local operator.",
+            code="local_operator_required",
+        )
+        return False
+
+    route_table.set_route_authorizer(authorize)
+
+
 def register_current_gui_routes(
     route_table: Router,
     *,
@@ -57,10 +136,10 @@ def register_current_gui_routes(
     register_room_friend_profile_routes(route_table, post_direct_dm=post_direct_dm)
 
     def provider_credentials_allowed(ctx: RequestContext) -> bool:
-        if not ctx.is_local_operator() and not ctx.require_moderator():
-            return False
-        if ctx.uses_loopback_host():
+        if ctx.is_local_operator():
             return True
+        if not ctx.require_host():
+            return False
         forwarded = str(ctx.headers.get("X-Forwarded-Proto") or "").lower()
         if forwarded != "https" or not ctx.peer_is_loopback():
             ctx.send_error(
@@ -89,3 +168,6 @@ def register_current_gui_routes(
         admission_projection=services.legacy_admission_projection,
     )
     register_mafia_routes(route_table, read_operation_payload=read_operation_payload)
+
+
+__all__ = ["install_gui_route_authorization", "register_current_gui_routes"]

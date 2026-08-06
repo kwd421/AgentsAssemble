@@ -45,6 +45,10 @@ class FakeHandler:
         self.server = SimpleNamespace(
             server_address=("127.0.0.1" if local_operator else "0.0.0.0", 8765)
         )
+        self.client_address = (
+            "127.0.0.1" if local_operator else "203.0.113.8",
+            43100,
+        )
         self.rfile = io.BytesIO(body)
         self.sent_json: dict[str, object] | None = None
         self.sent_error: tuple[HTTPStatus, str] | None = None
@@ -93,6 +97,7 @@ class RoomSettingsHttpTests(unittest.TestCase):
             )
             session = {
                 "agent_id": str((user or {}).get("participant_id") or ""),
+                "principal_user_id": str((user or {}).get("user_id") or ""),
                 "meeting_id": session_room_id,
                 "invite_scope": "room",
             }

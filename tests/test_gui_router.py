@@ -1,12 +1,15 @@
 import io
 import json
+import tempfile
 import unittest
 from http import HTTPStatus
 from pathlib import Path
 from urllib.parse import parse_qs, urlparse
 
 from agentsassemble import room_invite
+from agentsassemble.features.side_chat.routes import register_side_chat_routes
 from agentsassemble.web.router import GuiDeps, RequestContext, Router
+from agentsassemble.web.routes.gui import install_gui_route_authorization
 
 
 class FakeHandler:
@@ -23,7 +26,7 @@ class FakeHandler:
     def _send_json(self, payload):
         self.sent_json = payload
 
-    def _send_error(self, status, message):
+    def _send_error(self, status, message, **_kwargs):
         self.sent_error = (status, message)
 
 
@@ -108,6 +111,55 @@ class RouterDispatchTests(unittest.TestCase):
         for value in ("group%2Fone", "group%5Cone", "%2e", "%2e%2e", "%00", "a" * 257):
             with self.subTest(value=value):
                 self.assertFalse(router.dispatch("POST", _context(FakeHandler(), f"/api/groups/{value}/stop")))
+
+    def test_composed_policy_blocks_unclassified_remote_mutation_before_storage(self):
+        class NetworkHandler(FakeHandler):
+            def __init__(self, *, body: bytes, local: bool):
+                host = "127.0.0.1:8765" if local else "room.example"
+                origin = "http://127.0.0.1:8765" if local else "https://room.example"
+                super().__init__(headers={"Host": host, "Origin": origin}, body=body)
+                self.client_address = ("127.0.0.1" if local else "203.0.113.8", 43100)
+                self.server = type(
+                    "Server",
+                    (),
+                    {"server_address": (("127.0.0.1" if local else "0.0.0.0"), 8765)},
+                )()
+
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            body = json.dumps(
+                {
+                    "name": "caller",
+                    "message": "must require local authority",
+                    "flow_meeting_id": "room-a",
+                }
+            ).encode("utf-8")
+            deps = GuiDeps(output_root=root)
+            router = Router()
+            register_side_chat_routes(router)
+            install_gui_route_authorization(router)
+
+            remote = NetworkHandler(body=body, local=False)
+            remote_ctx = RequestContext(
+                remote,
+                deps,
+                urlparse("/api/side-chat"),
+                {},
+            )
+            self.assertTrue(router.dispatch("POST", remote_ctx))
+            self.assertEqual(remote.sent_error[0], HTTPStatus.FORBIDDEN)
+            self.assertFalse((root / "side_chat.jsonl").exists())
+
+            local = NetworkHandler(body=body, local=True)
+            local_ctx = RequestContext(
+                local,
+                deps,
+                urlparse("/api/side-chat"),
+                {},
+            )
+            self.assertTrue(router.dispatch("POST", local_ctx))
+            self.assertIsNone(local.sent_error)
+            self.assertTrue((root / "side_chat.jsonl").exists())
 
 
 class RequestContextBodyTests(unittest.TestCase):

@@ -118,7 +118,7 @@ def register_room_history_routes(router: Router) -> None:
     def rooms_list(ctx: RequestContext) -> None:
         session = ctx.session()
         operator_view = (
-            ctx.uses_loopback_host()
+            ctx.is_local_operator()
             or ctx.is_host()
             or ctx.is_operator_session()
         )

@@ -451,6 +451,7 @@ class RequestContext:
 
 RouteHandler = Callable[[RequestContext], None]
 DynamicRouteHandler = Callable[[RequestContext, dict[str, str]], None]
+RouteAuthorizer = Callable[[str, str, RequestContext], bool]
 
 
 class Router:
@@ -459,6 +460,17 @@ class Router:
     def __init__(self) -> None:
         self._routes: dict[str, dict[str, RouteHandler]] = {}
         self._dynamic_routes: dict[str, dict[str, DynamicRouteHandler]] = {}
+        self._route_authorizer: RouteAuthorizer | None = None
+
+    def set_route_authorizer(self, authorizer: RouteAuthorizer) -> None:
+        """Install the composed application's route-level authorization policy."""
+        if self._route_authorizer is not None:
+            raise ValueError("route authorizer is already configured")
+        self._route_authorizer = authorizer
+
+    def _authorized(self, method: str, registered_path: str, ctx: RequestContext) -> bool:
+        authorizer = self._route_authorizer
+        return authorizer is None or authorizer(method.upper(), registered_path, ctx)
 
     def add(self, method: str, path: str, handler: RouteHandler) -> None:
         method_routes = self._routes.setdefault(method.upper(), {})
@@ -521,11 +533,15 @@ class Router:
         """Run the registered handler; False when no route matches (legacy fallback)."""
         handler = self._routes.get(method.upper(), {}).get(ctx.path)
         if handler is not None:
+            if not self._authorized(method, ctx.path, ctx):
+                return True
             handler(ctx)
             return True
         for template, dynamic_handler in self._dynamic_routes.get(method.upper(), {}).items():
             path_params = match_route_template(template, ctx.path)
             if path_params is not None:
+                if not self._authorized(method, template, ctx):
+                    return True
                 dynamic_handler(ctx, path_params)
                 return True
         return False

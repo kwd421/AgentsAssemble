@@ -25,7 +25,10 @@ from agentsassemble.web.routes.providers import (
     provider_catalog_payload,
     register_provider_routes,
 )
-from agentsassemble.web.routes.gui import register_current_gui_routes
+from agentsassemble.web.routes.gui import (
+    install_gui_route_authorization,
+    register_current_gui_routes,
+)
 from agentsassemble.web.http_server import (
     AgentsAssembleHTTPServer as ThreadingHTTPServer,
 )
@@ -2026,6 +2029,7 @@ def _make_handler(
         read_operation_payload=_read_operation_payload,
         record_operation=record_live_agent_operation,
     )
+    install_gui_route_authorization(route_table)
 
     static_transport = ReactStaticTransport(
         frontend_root=react_app_root,
