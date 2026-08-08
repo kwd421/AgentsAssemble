@@ -43,6 +43,10 @@ from agentsassemble.room.command_uow import (
     RoomCommandUnitOfWork,
     command_payload_hash,
 )
+from agentsassemble.room.closure import (
+    RoomClosureService,
+    RoomLifecycleCommandService,
+)
 from agentsassemble.room.deleted_cleanup import RoomDeletedCleanupService
 from agentsassemble.room.deletion import RoomDeletionService
 from agentsassemble.room.agent_creation import RoomAgentCreationService
@@ -86,7 +90,10 @@ from agentsassemble.room.attachments import FileAttachmentStore
 from agentsassemble.room.messages import RoomMessageService
 from agentsassemble.room.member_mute import RoomMemberMuteService
 from agentsassemble.room.member_roles import update_member_role_in_unit
-from agentsassemble.room.participant_kick import RoomParticipantKickService
+from agentsassemble.room.participant_kick import (
+    RoomParticipantKickService,
+    RoomParticipantRemovalCommandService,
+)
 from agentsassemble.room.participant_leave import RoomParticipantLeaveService
 from agentsassemble.room.projection import (
     public_event as _public_event,
@@ -95,6 +102,7 @@ from agentsassemble.room.projection import (
 )
 from agentsassemble.room.provider_registry import RoomProviderRegistry
 from agentsassemble.room.provider_sessions import RoomProviderSessionService
+from agentsassemble.room.runtime_cleanup import RoomRuntimeCleanupService
 from agentsassemble.room.provider_requests import (
     PROVIDER_REQUEST_ACTIONS,
     RoomProviderRequestService,
@@ -385,6 +393,18 @@ class RoomRealtimeController:
             remove_provider=self._provider_registry.remove,
             schedule_cleanup=recovery_scheduler_impl,
         )
+        self._participant_removal_commands = (
+            RoomParticipantRemovalCommandService(
+                removal=self._participant_kick,
+                lock=self._lock,
+                require_capability=self._require_capability,
+                prior_command_ack=self._prior_command_ack,
+                execute_durable_command=self._execute_durable_command,
+                command_principal=room_identity_command_principal,
+                operation_id=_external_effect_operation_id,
+                participant_id_from_payload=self._payload_agent_id,
+            )
+        )
         self._deleted_room_cleanup = RoomDeletedCleanupService(
             store=self.store,
             broker=self.broker,
@@ -414,14 +434,8 @@ class RoomRealtimeController:
                 callback,
             ),
         )
-        self._room_deletion = RoomDeletionService(
+        self._room_runtime_cleanup = RoomRuntimeCleanupService(
             store=self.store,
-            identity_room=lambda room_id: (
-                identity_store_for_output_root(self.output_root).get_room(
-                    room_id
-                )
-                or {}
-            ),
             has_bridge=lambda room_id, session_id: self.broker.has_bridge(
                 room_id,
                 session_id,
@@ -443,6 +457,49 @@ class RoomRealtimeController:
                 self.broker.disconnect_participant(
                     room_id,
                     participant_id,
+                )
+            ),
+        )
+        self._room_closure = RoomClosureService(
+            cleanup_agent_sessions=lambda room_id, operation_id: (
+                self._room_runtime_cleanup.cleanup(
+                    room_id,
+                    operation_id=operation_id,
+                    failure_action="closure",
+                )
+            ),
+            revoke_room_invites=lambda room_id: (
+                self._invite_application.revoke_room(room_id)
+            ),
+            revoke_room_sessions=lambda room_id: (
+                self._room_sessions.revoke_room(room_id)
+            ),
+            disconnect_room=self.broker.disconnect_room,
+            remove_room_providers=self._provider_registry.remove_room,
+        )
+        self._room_lifecycle_commands = RoomLifecycleCommandService(
+            store=self.store,
+            closure=self._room_closure,
+            lock=self._lock,
+            require_capability=self._require_capability,
+            prior_command_ack=self._prior_command_ack,
+            execute_durable_command=self._execute_durable_command,
+            command_principal=room_identity_command_principal,
+            operation_id=_external_effect_operation_id,
+        )
+        self._room_deletion = RoomDeletionService(
+            store=self.store,
+            identity_room=lambda room_id: (
+                identity_store_for_output_root(self.output_root).get_room(
+                    room_id
+                )
+                or {}
+            ),
+            cleanup_agent_sessions=lambda room_id, operation_id: (
+                self._room_runtime_cleanup.cleanup(
+                    room_id,
+                    operation_id=operation_id,
+                    failure_action="deletion",
                 )
             ),
             complete_cleanup=lambda room_id, room_name, ack, deduplicated: (
@@ -487,13 +544,14 @@ class RoomRealtimeController:
         self._provider_sessions.restore_server_owned_providers()
         self._participant_leave.reconcile_pending()
         self._participant_kick.reconcile_pending()
-        for agent_id, spec in default_providers.items():
-            if self.store.session(self.default_room_id, agent_id) or self.store.participant(
-                self.default_room_id, agent_id
-            ):
-                continue
-            self._provider_registry.register(self.default_room_id, spec)
-            self._provider_sessions.ensure_provider_session(self.default_room_id, spec)
+        if self.store.room(self.default_room_id).get("status") != "closed":
+            for agent_id, spec in default_providers.items():
+                if self.store.session(self.default_room_id, agent_id) or self.store.participant(
+                    self.default_room_id, agent_id
+                ):
+                    continue
+                self._provider_registry.register(self.default_room_id, spec)
+                self._provider_sessions.ensure_provider_session(self.default_room_id, spec)
         if reconcile_startup_sessions:
             self._reconcile_startup_sessions()
         self._provider_sync_cursor_reconciliation_report = ProviderSyncCursorReconciler(
@@ -587,6 +645,18 @@ class RoomRealtimeController:
         request_id = command.request_id
         action = command.action
         payload = command.payload
+        room = self.store.room(room_id)
+        if room.get("status") == "closed" and action not in {
+            "bridge.stopped",
+            "room.close",
+            "room.delete",
+            "room.history",
+            "room.vote.summary",
+        }:
+            raise RoomCommandRejected(
+                "The room is closed.",
+                code="room_closed",
+            )
         if action == "bridge.stopped":
             self._require_bridge(identity)
             result = self._agent_lifecycle.confirm_external_stopped(
@@ -652,6 +722,14 @@ class RoomRealtimeController:
                         tombstone=deleted,
                     )
         self.ensure_room(room_id)
+        if action in {"room.close", "room.archive"}:
+            return self._room_lifecycle_commands.handle(
+                identity,
+                room_id,
+                request_id=request_id,
+                action=action,
+                payload=payload,
+            )
         if action in PROVIDER_REQUEST_ACTIONS:
             return self._provider_requests.handle_command(
                 identity, room_id, action, payload,
@@ -891,53 +969,14 @@ class RoomRealtimeController:
                     operation_id=operation_id,
                 )
                 return ack
-        if action == "participant.kick":
-            self._require_capability(identity, "participant.kick")
-            with self._lock:
-                prior_ack = self._prior_command_ack(
-                    identity,
-                    room_id,
-                    request_id,
-                    action,
-                    payload,
-                )
-                if prior_ack:
-                    return prior_ack
-                participant_id = self._payload_agent_id(payload)
-                operation_id = _external_effect_operation_id(
-                    room_id,
-                    room_identity_command_principal(identity),
-                    request_id,
-                    action,
-                )
-                participant = self._prepare_kick_intent(
-                    room_id,
-                    participant_id,
-                    operation_id=operation_id,
-                )
-                cleanup = self._apply_kick_effects(
-                    room_id,
-                    participant,
-                    operation_id=operation_id,
-                )
-                ack = self._execute_durable_command(
-                    identity,
-                    room_id,
-                    request_id,
-                    action,
-                    payload,
-                    lambda unit: self._finalize_kick_durable(
-                        participant_id,
-                        operation_id=operation_id,
-                        cleanup=cleanup,
-                        unit=unit,
-                    ),
-                )
-                self._participant_kick.apply_after_commit(
-                    room_id,
-                    participant,
-                )
-                return ack
+        if action in {"participant.kick", "participant.export"}:
+            return self._participant_removal_commands.handle(
+                identity,
+                room_id,
+                request_id=request_id,
+                action=action,
+                payload=payload,
+            )
         if action == "room.result.publish":
             self._require_bridge(identity)
             with self._lock:
@@ -1301,47 +1340,6 @@ class RoomRealtimeController:
         ack: dict[str, object],
     ) -> None:
         self._agent_profiles.apply_after_commit(room_id, ack)
-
-    def _prepare_kick_intent(
-        self,
-        room_id: str,
-        participant_id: str,
-        *,
-        operation_id: str,
-    ) -> dict[str, object]:
-        return self._participant_kick.prepare_intent(
-            room_id,
-            participant_id,
-            operation_id=operation_id,
-        )
-
-    def _apply_kick_effects(
-        self,
-        room_id: str,
-        participant: dict[str, object],
-        *,
-        operation_id: str,
-    ) -> dict[str, object]:
-        return self._participant_kick.apply_effects(
-            room_id,
-            participant,
-            operation_id=operation_id,
-        )
-
-    def _finalize_kick_durable(
-        self,
-        participant_id: str,
-        *,
-        operation_id: str,
-        cleanup: dict[str, object],
-        unit: RoomCommandUnitOfWork,
-    ) -> dict[str, object]:
-        return self._participant_kick.finalize_in_unit(
-            participant_id,
-            operation_id=operation_id,
-            cleanup=cleanup,
-            unit=unit,
-        )
 
     def _mute_participant_durable(
         self,

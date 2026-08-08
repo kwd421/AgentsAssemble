@@ -513,7 +513,7 @@ class RoomAdmissionCoordinator:
         room_id: str,
     ) -> tuple[dict[str, object], dict[str, object]]:
         room = self._rooms.room(room_id)
-        if not room:
+        if not room or room.get("status") == "closed":
             return {}, {}
         return room, self._rooms.room_settings(room_id)
 

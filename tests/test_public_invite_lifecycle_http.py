@@ -158,6 +158,147 @@ class PublicInviteLifecycleHttpTests(unittest.TestCase):
         self.assertEqual(len(leave_events), 1)
         self.assertEqual(ticket_error.exception.code, 401)
 
+    def test_closing_room_revokes_existing_sessions_and_unused_invites(self) -> None:
+        with urlopen(
+            _json_request(
+                f"{self.base}/api/room-invite/create",
+                {
+                    "meeting_id": "friend-room",
+                    "display_name": "Closing room guest",
+                    "max_uses": 2,
+                },
+                {"X-Host-Token": "host-secret"},
+            ),
+            timeout=4,
+        ) as response:
+            invite = json.loads(response.read().decode("utf-8"))
+        with urlopen(
+            _json_request(
+                f"{self.base}/api/room-invite/join",
+                {
+                    "invite_token": invite["invite_token"],
+                    "request_id": str(uuid4()),
+                    "display_name": "Connected before close",
+                },
+                self.public_headers,
+            ),
+            timeout=4,
+        ) as response:
+            session = json.loads(response.read().decode("utf-8"))
+
+        with urlopen(
+            _json_request(
+                f"{self.base}/api/rooms/close",
+                {"room_id": "friend-room"},
+                {"X-Host-Token": "host-secret"},
+            ),
+            timeout=4,
+        ) as response:
+            closed = json.loads(response.read().decode("utf-8"))
+
+        with self.assertRaises(HTTPError) as stale_session:
+            urlopen(
+                _json_request(
+                    f"{self.base}/api/ws-ticket",
+                    {},
+                    {
+                        **self.public_headers,
+                        "Authorization": f"Bearer {session['session_token']}",
+                    },
+                ),
+                timeout=4,
+            )
+        stale_session.exception.close()
+        with self.assertRaises(HTTPError) as stale_invite:
+            urlopen(
+                _json_request(
+                    f"{self.base}/api/room-invite/join",
+                    {
+                        "invite_token": invite["invite_token"],
+                        "request_id": str(uuid4()),
+                        "display_name": "Joined after close",
+                    },
+                    self.public_headers,
+                ),
+                timeout=4,
+            )
+        stale_invite.exception.close()
+        with self.assertRaises(HTTPError) as reopen_closed_room:
+            urlopen(
+                _json_request(
+                    f"{self.base}/api/rooms/archive",
+                    {"room_id": "friend-room", "archived": False},
+                    {"X-Host-Token": "host-secret"},
+                ),
+                timeout=4,
+            )
+        reopen_closed_room.exception.close()
+
+        self.assertEqual(closed["status"], "closed")
+        self.assertEqual(self.store.room("friend-room")["status"], "closed")
+        self.assertEqual(stale_session.exception.code, HTTPStatus.UNAUTHORIZED)
+        self.assertEqual(stale_invite.exception.code, HTTPStatus.FORBIDDEN)
+        self.assertEqual(reopen_closed_room.exception.code, HTTPStatus.CONFLICT)
+
+    def test_exporting_participant_revokes_its_existing_room_access(self) -> None:
+        with urlopen(
+            _json_request(
+                f"{self.base}/api/room-invite/create",
+                {"meeting_id": "friend-room", "display_name": "Exported guest"},
+                {"X-Host-Token": "host-secret"},
+            ),
+            timeout=4,
+        ) as response:
+            invite = json.loads(response.read().decode("utf-8"))
+        with urlopen(
+            _json_request(
+                f"{self.base}/api/room-invite/join",
+                {
+                    "invite_token": invite["invite_token"],
+                    "request_id": str(uuid4()),
+                    "display_name": "Exported guest",
+                },
+                self.public_headers,
+            ),
+            timeout=4,
+        ) as response:
+            session = json.loads(response.read().decode("utf-8"))
+
+        with urlopen(
+            _json_request(
+                f"{self.base}/api/room-participants/export",
+                {
+                    "room_id": "friend-room",
+                    "participant_id": session["agent_id"],
+                },
+                {"X-Host-Token": "host-secret"},
+            ),
+            timeout=4,
+        ) as response:
+            exported = json.loads(response.read().decode("utf-8"))
+
+        with self.assertRaises(HTTPError) as stale_session:
+            urlopen(
+                _json_request(
+                    f"{self.base}/api/ws-ticket",
+                    {},
+                    {
+                        **self.public_headers,
+                        "Authorization": f"Bearer {session['session_token']}",
+                    },
+                ),
+                timeout=4,
+            )
+        stale_session.exception.close()
+
+        participant = self.store.participant(
+            "friend-room",
+            str(session["agent_id"]),
+        )
+        self.assertEqual(exported["status"], "exported")
+        self.assertEqual(participant["status"], "exported")
+        self.assertEqual(stale_session.exception.code, HTTPStatus.UNAUTHORIZED)
+
     def test_invited_guest_profile_updates_the_canonical_room_identity(self) -> None:
         with urlopen(
             _json_request(

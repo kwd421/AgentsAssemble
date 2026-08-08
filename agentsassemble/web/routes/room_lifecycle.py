@@ -4,7 +4,6 @@ from __future__ import annotations
 from http import HTTPStatus
 from uuid import uuid4
 
-from agentsassemble.application.agent_sessions import room_action_payload, room_lifecycle_payload
 from agentsassemble.room.errors import RoomCommandRejected
 from agentsassemble.room.text import clean_room_text
 from agentsassemble.web.router import RequestContext, Router
@@ -54,7 +53,7 @@ def register_room_lifecycle_routes(router: Router) -> None:
                 "participant session token required",
             )
             return
-        if action in {"kick", "leave"}:
+        if action in {"kick", "leave", "export"}:
             room_id = clean_room_text(
                 payload.get("room_id") or payload.get("meeting_id"),
                 limit=128,
@@ -81,22 +80,15 @@ def register_room_lifecycle_routes(router: Router) -> None:
                 return
             ctx.send_json(
                 {
-                    "status": "kicked" if action == "kick" else "left",
+                    "status": {
+                        "kick": "kicked",
+                        "leave": "left",
+                        "export": "exported",
+                    }[action],
                     **dict(ack.get("result") or {}),
                 }
             )
             return
-        try:
-            ctx.send_json(
-                room_action_payload(
-                    ctx.deps.output_root,
-                    payload,
-                    action,
-                    repository=ctx.deps.rooms,
-                )
-            )
-        except ValueError as error:
-            ctx.send_error(HTTPStatus.BAD_REQUEST, str(error))
 
     @router.post("/api/room-participants/leave")
     def room_participants_leave(ctx: RequestContext) -> None:
@@ -116,17 +108,37 @@ def register_room_lifecycle_routes(router: Router) -> None:
         payload = ctx.read_json_body()
         if payload is None:
             return
+        room_id = clean_room_text(
+            payload.get("room_id") or payload.get("meeting_id"),
+            limit=128,
+        )
+        if not room_id:
+            ctx.send_error(HTTPStatus.BAD_REQUEST, "room_id is required")
+            return
+        identity = ctx.room_command_identity(room_id)
+        if identity is None:
+            return
         try:
-            ctx.send_json(
-                room_lifecycle_payload(
-                    ctx.deps.output_root,
-                    payload,
-                    action,
-                    repository=ctx.deps.rooms,
-                )
+            ack = ctx.deps.handle_room_command(
+                identity,
+                {
+                    "request_id": str(uuid4()),
+                    "action": f"room.{action}",
+                    "payload": payload,
+                },
             )
+        except RoomCommandRejected as error:
+            status = (
+                HTTPStatus.FORBIDDEN
+                if error.code == "permission_denied"
+                else HTTPStatus.CONFLICT
+            )
+            ctx.send_error(status, str(error), code=error.code)
+            return
         except ValueError as error:
             ctx.send_error(HTTPStatus.BAD_REQUEST, str(error))
+            return
+        ctx.send_json(dict(ack.get("result") or {}))
 
     @router.post("/api/rooms/close")
     def rooms_close(ctx: RequestContext) -> None:
@@ -134,7 +146,7 @@ def register_room_lifecycle_routes(router: Router) -> None:
 
     @router.post("/api/rooms/archive")
     def rooms_archive(ctx: RequestContext) -> None:
-        if not ctx.require_moderator():
+        if not _loopback_or_moderator(ctx):
             return
         payload = ctx.read_json_body()
         if payload is None:
@@ -144,37 +156,36 @@ def register_room_lifecycle_routes(router: Router) -> None:
             ctx.send_error(HTTPStatus.BAD_REQUEST, "room_id is required")
             return
         archived = bool(payload.get("archived"))
+        identity = ctx.room_command_identity(room_id)
+        if identity is None:
+            return
         identity_room = ctx.deps.identities.get_room(room_id)
-        updated = ctx.deps.identities.set_room_archived(room_id, archived)
-        store_updated = False
         try:
-            if ctx.deps.rooms.room(room_id):
-                ctx.deps.rooms.set_room_status(
-                    room_id,
-                    "archived" if archived else "active",
-                )
-                store_updated = True
+            ack = ctx.deps.handle_room_command(
+                identity,
+                {
+                    "request_id": str(uuid4()),
+                    "action": "room.archive",
+                    "payload": {"room_id": room_id, "archived": archived},
+                },
+            )
+        except RoomCommandRejected as error:
+            status = (
+                HTTPStatus.FORBIDDEN
+                if error.code == "permission_denied"
+                else HTTPStatus.CONFLICT
+            )
+            ctx.send_error(status, str(error), code=error.code)
+            return
         except ValueError as error:
-            if updated and identity_room is not None:
-                ctx.deps.identities.set_room_archived(
-                    room_id,
-                    bool(identity_room.get("archived")),
-                )
             ctx.send_error(HTTPStatus.BAD_REQUEST, str(error))
             return
-        except Exception:
-            if updated and identity_room is not None:
-                ctx.deps.identities.set_room_archived(
-                    room_id,
-                    bool(identity_room.get("archived")),
-                )
-            raise
-        if not updated and not store_updated:
-            ctx.send_error(HTTPStatus.NOT_FOUND, "room not found")
+        updated = ctx.deps.identities.set_room_archived(room_id, archived)
+        if not updated and identity_room is not None:
+            ctx.send_error(
+                HTTPStatus.CONFLICT,
+                "canonical room changed but directory projection did not update",
+                code="directory_projection_failed",
+            )
             return
-        ctx.send_json(
-            {
-                "status": "archived" if archived else "active",
-                "room_id": room_id,
-            }
-        )
+        ctx.send_json(dict(ack.get("result") or {}))

@@ -29,7 +29,7 @@ class RoomStartupSessionReconciler:
     def reconcile(self) -> None:
         for room in self.store.list_rooms(include_archived=True):
             room_id = clean_room_text(room.get("room_id"), 128)
-            if not room_id:
+            if not room_id or room.get("status") == "closed":
                 continue
             for session in self.store.sessions(room_id):
                 fail_pending_provider_request(

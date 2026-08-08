@@ -121,11 +121,20 @@ class RoomCommandUnitOfWork:
     ) -> RoomGlobalSettingsRecord:
         return self._require_transaction().update_room_settings(updates)
 
+    def update_room_status(self, status: str) -> dict[str, object]:
+        return self._require_transaction().update_room_status(status)
+
     def upsert_participant(self, participant: dict[str, object]) -> tuple[dict[str, object], bool]:
         return self._require_transaction().upsert_participant(participant)
 
     def update_participant_fields(self, participant_id: str, **updates: object) -> dict[str, object]:
         return self._require_transaction().update_participant_fields(participant_id, **updates)
+
+    def detach_participant_sessions(
+        self,
+        participant_id: str,
+    ) -> list[dict[str, object]]:
+        return self._require_transaction().detach_participant_sessions(participant_id)
 
     def upsert_session(self, session: dict[str, object]) -> tuple[dict[str, object], bool]:
         return self._require_transaction().upsert_session(session)

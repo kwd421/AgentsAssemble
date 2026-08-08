@@ -50,7 +50,7 @@ class RoomProviderSessionService:
         """Rebuild startable provider specs from durable Agent Sessions."""
         for room in self.store.list_rooms(include_archived=True):
             room_id = clean_room_text(room.get("room_id"), 128)
-            if not room_id:
+            if not room_id or room.get("status") == "closed":
                 continue
             self._ensure_room(room_id)
             for session in self.store.sessions(room_id):

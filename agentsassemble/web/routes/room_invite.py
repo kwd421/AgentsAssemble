@@ -80,6 +80,9 @@ def register_invite_admission_routes(router: Router) -> None:
         if not room:
             ctx.send_error(HTTPStatus.NOT_FOUND, "room was not found")
             return
+        if room.get("status") == "closed":
+            ctx.send_error(HTTPStatus.GONE, "room is closed", code="room_closed")
+            return
         try:
             client_type = str(payload.get("client_type") or "browser")
             request_session = ctx.session()

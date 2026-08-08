@@ -9,6 +9,7 @@ from unittest.mock import patch
 from agentsassemble.persistence.local.room.repository import RoomStore
 from agentsassemble.room.deletion import RoomDeletionService
 from agentsassemble.room.errors import RoomCommandRejected
+from agentsassemble.room.runtime_cleanup import RoomRuntimeCleanupService
 
 
 class RoomDeletionServiceTests(unittest.TestCase):
@@ -39,9 +40,8 @@ class RoomDeletionServiceTests(unittest.TestCase):
         ]
         | None = None,
     ) -> RoomDeletionService:
-        return RoomDeletionService(
+        runtime_cleanup = RoomRuntimeCleanupService(
             store=self.store,
-            identity_room=lambda _room_id: dict(self.identity_room),
             has_bridge=lambda room_id, session_id: (
                 room_id,
                 session_id,
@@ -51,6 +51,17 @@ class RoomDeletionServiceTests(unittest.TestCase):
             revoke_participant_sessions=self._revoke_sessions,
             disconnect_participant=lambda room_id, participant_id: (
                 self.disconnects.append((room_id, participant_id))
+            ),
+        )
+        return RoomDeletionService(
+            store=self.store,
+            identity_room=lambda _room_id: dict(self.identity_room),
+            cleanup_agent_sessions=lambda room_id, operation_id: (
+                runtime_cleanup.cleanup(
+                    room_id,
+                    operation_id=operation_id,
+                    failure_action="deletion",
+                )
             ),
             complete_cleanup=complete_cleanup or self._complete_cleanup,
         )

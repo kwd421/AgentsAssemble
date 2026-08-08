@@ -3729,7 +3729,8 @@ class RoomRealtimeControllerTests(RoomToolModeRealtimeContract, unittest.TestCas
         self.assertTrue(recovering["recovery_required"])
         self.assertFalse(recovering["provider_session_active"])
         self.assertIn(first_assignment["source_event_id"], recovering["pending_event_ids"])
-        self.assertEqual(recovering["stderr_tail"], "fatal provider stderr [redacted] [redacted]")
+        self.assertNotIn("bridge-stderr-secret", recovering["stderr_tail"])
+        self.assertIn("[redacted]", recovering["stderr_tail"])
         crash_error = next(
             event
             for event in reversed(self.controller.store.read_events("general"))

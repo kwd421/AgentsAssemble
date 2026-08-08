@@ -10,6 +10,7 @@ from agentsassemble.room.random import (
     choose_random,
     roll_dice,
 )
+from agentsassemble.room.repository_records import ACTIVE_PARTICIPANT_STATUSES
 from agentsassemble.room.system_results import (
     RoomSystemResultError,
     prepare_room_system_result,
@@ -239,7 +240,10 @@ class RoomMessageService:
     ) -> dict[str, object]:
         participant_id = clean_room_text(identity.get("agent_id"), 128)
         participant = unit.participant(participant_id)
-        if not participant or participant.get("status") in {"kicked", "left"}:
+        if (
+            not participant
+            or participant.get("status") not in ACTIVE_PARTICIPANT_STATUSES
+        ):
             raise RoomCommandRejected(
                 "This participant is no longer in the room.",
                 code="session_revoked",

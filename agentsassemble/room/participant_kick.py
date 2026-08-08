@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from typing import Callable
+from typing import Callable, ContextManager
 
 from agentsassemble.room.command_uow import RoomCommandUnitOfWork
 from agentsassemble.room.errors import RoomCommandRejected
@@ -17,10 +17,32 @@ AgentStopper = Callable[[str, str, str], object]
 ParticipantCleanup = Callable[[str, str], object]
 ProviderRemover = Callable[[str, str], None]
 CleanupScheduler = Callable[[float, Callable[[], None]], object]
+CommandCapabilityCheck = Callable[[dict[str, object], str], None]
+CommandPrincipal = Callable[[dict[str, object]], str]
+DurableCommand = Callable[
+    [
+        dict[str, object],
+        str,
+        str,
+        str,
+        dict[str, object],
+        Callable[[RoomCommandUnitOfWork], dict[str, object]],
+    ],
+    dict[str, object],
+]
+OperationId = Callable[[str, str, str, str], str]
+ParticipantIdFromPayload = Callable[[dict[str, object]], str]
+PriorCommandAck = Callable[
+    [dict[str, object], str, str, str, dict[str, object]],
+    dict[str, object],
+]
+
+_REMOVAL_STATUSES = {"kick": "kicked", "export": "exported"}
+_REMOVAL_EVENTS = {"kick": "participant_kicked", "export": "participant_exported"}
 
 
 class RoomParticipantKickService:
-    """Own the retryable participant-kick external-effect saga."""
+    """Own the retryable moderator participant-removal external-effect saga."""
 
     def __init__(
         self,
@@ -49,7 +71,10 @@ class RoomParticipantKickService:
         participant_id: str,
         *,
         operation_id: str,
+        action: str = "kick",
     ) -> dict[str, object]:
+        if action not in _REMOVAL_STATUSES:
+            raise ValueError(f"Unsupported participant removal action: {action}")
         if participant_id == "operator-local":
             raise RoomCommandRejected(
                 "The room host cannot be removed.",
@@ -61,10 +86,11 @@ class RoomParticipantKickService:
                 f"Participant {participant_id} was not found.",
                 code="not_found",
             )
-        if participant.get("status") == "kicked":
+        target_status = _REMOVAL_STATUSES[action]
+        if participant.get("status") == target_status:
             raise RoomCommandRejected(
-                "This participant was already removed.",
-                code="already_kicked",
+                f"This participant was already {target_status}.",
+                code=f"already_{target_status}",
             )
         intent_action = clean_room_text(
             participant.get("moderation_intent_action"),
@@ -75,7 +101,7 @@ class RoomParticipantKickService:
             128,
         )
         if intent_action:
-            if intent_action != "kick" or intent_id != operation_id:
+            if intent_action != action or intent_id != operation_id:
                 raise RoomCommandRejected(
                     "Another moderation operation is already in progress for "
                     "this participant.",
@@ -85,7 +111,7 @@ class RoomParticipantKickService:
         return self.store.update_participant_fields(
             room_id,
             participant_id,
-            moderation_intent_action="kick",
+            moderation_intent_action=action,
             moderation_intent_id=operation_id,
             moderation_intent_status="prepared",
             moderation_intent_cleanup_warning="",
@@ -152,7 +178,10 @@ class RoomParticipantKickService:
         operation_id: str,
         cleanup: dict[str, object],
         unit: RoomCommandUnitOfWork,
+        action: str = "kick",
     ) -> dict[str, object]:
+        if action not in _REMOVAL_STATUSES:
+            raise ValueError(f"Unsupported participant removal action: {action}")
         participant = unit.participant(participant_id)
         if not participant:
             raise RoomCommandRejected(
@@ -164,7 +193,7 @@ class RoomParticipantKickService:
                 participant.get("moderation_intent_action"),
                 32,
             )
-            != "kick"
+            != action
             or clean_room_text(
                 participant.get("moderation_intent_id"),
                 128,
@@ -177,12 +206,13 @@ class RoomParticipantKickService:
             != "effect_applied"
         ):
             raise RoomCommandRejected(
-                "The participant kick cleanup has not completed.",
+                "The participant removal cleanup has not completed.",
                 code="moderation_cleanup_incomplete",
             )
+        target_status = _REMOVAL_STATUSES[action]
         updated = unit.update_participant_fields(
             participant_id,
-            status="kicked",
+            status=target_status,
             moderation_intent_action="",
             moderation_intent_id="",
             moderation_intent_status="",
@@ -196,8 +226,9 @@ class RoomParticipantKickService:
             ),
             moderation_cleanup_attempt_count=0,
         )
+        unit.detach_participant_sessions(participant_id)
         unit.append_event(
-            "participant_kicked",
+            _REMOVAL_EVENTS[action],
             participant_id=participant_id,
         )
         return {
@@ -236,7 +267,7 @@ class RoomParticipantKickService:
                 )
                 if (
                     participant_id
-                    and participant.get("status") == "kicked"
+                    and participant.get("status") in _REMOVAL_STATUSES.values()
                     and participant.get("moderation_cleanup_pending")
                 ):
                     attempt = max(
@@ -280,7 +311,7 @@ class RoomParticipantKickService:
         participant = self.store.participant(room_id, participant_id)
         if (
             not participant
-            or participant.get("status") != "kicked"
+            or participant.get("status") not in _REMOVAL_STATUSES.values()
             or not participant.get("moderation_cleanup_pending")
         ):
             return
@@ -290,7 +321,7 @@ class RoomParticipantKickService:
                 self._stop_agent(
                     room_id,
                     participant_id,
-                    f"kick-cleanup:{participant_id}:{attempt}",
+                    f"participant-removal-cleanup:{participant_id}:{attempt}",
                 )
             except RoomCommandRejected as error:
                 warning = f"{error.code}: {error}"
@@ -343,6 +374,87 @@ class RoomParticipantKickService:
         return session
 
 
+class RoomParticipantRemovalCommandService:
+    """Coordinate canonical kick/export commands around one cleanup saga."""
+
+    def __init__(
+        self,
+        *,
+        removal: RoomParticipantKickService,
+        lock: ContextManager[object],
+        require_capability: CommandCapabilityCheck,
+        prior_command_ack: PriorCommandAck,
+        execute_durable_command: DurableCommand,
+        command_principal: CommandPrincipal,
+        operation_id: OperationId,
+        participant_id_from_payload: ParticipantIdFromPayload,
+    ) -> None:
+        self._removal = removal
+        self._lock = lock
+        self._require_capability = require_capability
+        self._prior_command_ack = prior_command_ack
+        self._execute_durable_command = execute_durable_command
+        self._command_principal = command_principal
+        self._operation_id = operation_id
+        self._participant_id_from_payload = participant_id_from_payload
+
+    def handle(
+        self,
+        identity: dict[str, object],
+        room_id: str,
+        *,
+        request_id: str,
+        action: str,
+        payload: dict[str, object],
+    ) -> dict[str, object]:
+        self._require_capability(identity, "participant.kick")
+        removal_action = action.removeprefix("participant.")
+        with self._lock:
+            prior_ack = self._prior_command_ack(
+                identity,
+                room_id,
+                request_id,
+                action,
+                payload,
+            )
+            if prior_ack:
+                return prior_ack
+            participant_id = self._participant_id_from_payload(payload)
+            operation_id = self._operation_id(
+                room_id,
+                self._command_principal(identity),
+                request_id,
+                action,
+            )
+            participant = self._removal.prepare_intent(
+                room_id,
+                participant_id,
+                operation_id=operation_id,
+                action=removal_action,
+            )
+            cleanup = self._removal.apply_effects(
+                room_id,
+                participant,
+                operation_id=operation_id,
+            )
+            ack = self._execute_durable_command(
+                identity,
+                room_id,
+                request_id,
+                action,
+                payload,
+                lambda unit: self._removal.finalize_in_unit(
+                    participant_id,
+                    operation_id=operation_id,
+                    cleanup=cleanup,
+                    action=removal_action,
+                    unit=unit,
+                ),
+            )
+            self._removal.apply_after_commit(room_id, participant)
+            return ack
+
+
 def _cleanup_from_participant(
     participant: dict[str, object],
 ) -> dict[str, object]:
@@ -366,4 +478,5 @@ __all__ = [
     "ParticipantCleanup",
     "ProviderRemover",
     "RoomParticipantKickService",
+    "RoomParticipantRemovalCommandService",
 ]

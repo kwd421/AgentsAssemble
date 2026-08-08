@@ -63,7 +63,7 @@ def _invite_route_dependencies(root: Path) -> GuiDeps:
         ttl_seconds=3600,
         token_key=invites.signing_secret,
     )
-    return GuiDeps(
+    deps = GuiDeps(
         output_root=root,
         room_repository=rooms,
         identity_backend=identities,
@@ -88,6 +88,43 @@ def _invite_route_dependencies(root: Path) -> GuiDeps:
         public_invite_runtime=compatibility_public_invite_runtime(),
         legacy_admission_projection=LiveAgentLegacyAdmissionProjection(root),
     )
+    deps.room_command_handler = lambda _identity, command: _room_lifecycle_command(
+        deps,
+        command,
+    )
+    return deps
+
+
+def _room_lifecycle_command(
+    deps: GuiDeps,
+    command: dict[str, object],
+) -> dict[str, object]:
+    payload = dict(command.get("payload") or {})
+    room_id = str(payload.get("room_id") or "")
+    action = str(command.get("action") or "")
+    if action == "participant.export":
+        participant_id = str(payload.get("participant_id") or "")
+        participant = deps.rooms.set_participant_status(
+            room_id,
+            participant_id,
+            "exported",
+        )
+        return {
+            "op": "ack",
+            "request_id": str(command.get("request_id") or ""),
+            "accepted": True,
+            "action": action,
+            "result": {"participant": participant},
+        }
+    status = "archived" if payload.get("archived") else "active"
+    deps.rooms.set_room_status(room_id, status)
+    return {
+        "op": "ack",
+        "request_id": str(command.get("request_id") or ""),
+        "accepted": True,
+        "action": "room.archive",
+        "result": {"room_id": room_id, "status": status},
+    }
 
 
 class _LegacyFacadeSessionVerifier:
@@ -591,6 +628,7 @@ class GuiServerRoomRouteTests(unittest.TestCase):
                 path="/api/room-participants/export",
                 method="POST",
                 payload={"room_id": "session-room", "participant_id": "agent-1"},
+                deps=_invite_route_dependencies(root),
             ).sent_json
             state = _dispatch_room_route(root, path="/api/rooms/state?room_id=session-room").sent_json
 
@@ -1016,6 +1054,7 @@ class GuiServerRoomRouteTests(unittest.TestCase):
                 path="/api/room-participants/export",
                 method="POST",
                 payload={"room_id": "session-room", "participant_id": "agent-1"},
+                deps=_invite_route_dependencies(root),
             )
 
             members = _dispatch_room_route(root, path="/api/room-members?meeting_id=session-room").sent_json["members"]
@@ -1104,12 +1143,15 @@ class GuiServerRoomRouteTests(unittest.TestCase):
 
                 set_runtime_host_token("host-secret")
                 upsert_room(room_id="archive-room", label="Archive Room", origin="frontend_room")
+                deps = _invite_route_dependencies(root)
+                deps.rooms.create_room("archive-room", label="Archive Room")
                 archive_handler = _dispatch_room_route(
                     root,
                     path="/api/rooms/archive",
                     method="POST",
                     payload={"room_id": "archive-room", "archived": True},
                     headers={"X-Host-Token": "host-secret"},
+                    deps=deps,
                 )
                 self.assertEqual(archive_handler.sent_json["status"], "archived")
                 default_payload = _dispatch_room_route(root, path="/api/rooms").sent_json
