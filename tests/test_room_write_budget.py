@@ -10,6 +10,40 @@ from agentsassemble.persistence.local.room.repository import RoomStore
 
 
 class DurableRoomWriteBudgetTests(unittest.TestCase):
+    def test_repeated_room_checks_cannot_bypass_authenticated_write_budget(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            store = RoomStore(Path(temp_dir))
+            store.create_room("general")
+            budget = RoomWriteBudget(
+                store,
+                policy=RoomWriteBudgetPolicy(
+                    max_commands_per_window=1,
+                    max_payload_bytes_per_window=100_000,
+                    max_room_commands_per_window=1,
+                    max_room_payload_bytes_per_window=100_000,
+                ),
+            )
+            budget.admit(
+                room_id="general",
+                principal_id="agent:bridge",
+                session_id="bridge",
+                request_id="first-room-check",
+                action="room.check",
+                payload={},
+            )
+
+            with self.assertRaises(RoomCommandRejected) as rejected:
+                budget.admit(
+                    room_id="general",
+                    principal_id="agent:bridge",
+                    session_id="bridge",
+                    request_id="second-room-check",
+                    action="room.check",
+                    payload={},
+                )
+
+            self.assertEqual(rejected.exception.code, "write_budget_exceeded")
+
     def test_different_identities_cannot_shard_or_reset_the_room_budget(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:
             root = Path(temp_dir)

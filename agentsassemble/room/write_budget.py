@@ -46,7 +46,6 @@ _SAFETY_AND_READ_ACTIONS = frozenset(
     {
         "room.history",
         "room.vote.summary",
-        "room.check",
         "room.attachment.read",
         "room.archive",
         "room.close",
