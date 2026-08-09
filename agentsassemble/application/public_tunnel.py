@@ -114,21 +114,33 @@ class PublicTunnelManager:
             with self._lock:
                 process = self._process
                 owned_origin = self._origin_host
-                self._process = None
                 self._public_url = ""
                 self._origin_host = ""
-                self._started_at = 0.0
                 self._generation += 1
-            if process is not None and process.poll() is None:
-                process.terminate()
-                try:
-                    process.wait(timeout=5)
-                except subprocess.TimeoutExpired:
-                    process.kill()
-                    process.wait(timeout=5)
             if owned_origin:
                 self._public_invite_runtime.clear_managed_ingress(owned_origin)
                 clear_stable_entry()
+            try:
+                if process is not None and process.poll() is None:
+                    process.terminate()
+                    try:
+                        process.wait(timeout=5)
+                    except subprocess.TimeoutExpired:
+                        process.kill()
+                        process.wait(timeout=5)
+            except BaseException as error:
+                with self._lock:
+                    if self._process is process:
+                        self._last_error = (
+                            "cloudflared stop failed; the public ingress was revoked "
+                            f"but the process is still being tracked ({type(error).__name__})"
+                        )
+                raise
+            with self._lock:
+                if self._process is process:
+                    self._process = None
+                    self._started_at = 0.0
+                    self._last_error = ""
             return self.status()
 
     def set_manual_public_url(self, public_url: str) -> str:
@@ -209,7 +221,15 @@ class PublicTunnelManager:
             clear_stable_entry()
             self._public_url = ""
             self._origin_host = ""
-        phase = "running" if running and self._public_url else "starting" if running else "stopped"
+        phase = (
+            "running"
+            if running and self._public_url
+            else "error"
+            if running and self._last_error
+            else "starting"
+            if running
+            else "stopped"
+        )
         return {
             "available": self._which("cloudflared") is not None,
             "running": running,

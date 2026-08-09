@@ -152,6 +152,50 @@ class PublicTunnelTests(unittest.TestCase):
         self.assertEqual(self.runtime.public_url(), "https://manual.example.com")
         self.assertFalse(self.runtime.verify_managed_ingress_origin(origin_host))
 
+    def test_failed_stop_revokes_ingress_and_keeps_process_for_retry(self):
+        class FailOnceTerminateProcess(FakeProcess):
+            def __init__(self):
+                super().__init__()
+                self.terminate_calls = 0
+
+            def terminate(self):
+                self.terminate_calls += 1
+                if self.terminate_calls == 1:
+                    raise OSError("simulated terminate failure")
+                self._exit_code = 0
+
+        manager = PublicTunnelManager(
+            public_invite_runtime=self.runtime,
+            local_url="http://127.0.0.1:8765",
+            which=lambda _name: "/bin/cloudflared",
+        )
+        process = FailOnceTerminateProcess()
+        origin_host = self.runtime.prepare_managed_ingress(ingress_kind="cloudflare")
+        self.runtime.set_managed_public_url(
+            "https://active-tunnel.trycloudflare.com",
+            ingress_kind="cloudflare",
+            expected_origin_host=origin_host,
+        )
+        manager._process = process
+        manager._public_url = "https://active-tunnel.trycloudflare.com"
+        manager._origin_host = origin_host
+
+        with self.assertRaises(OSError):
+            manager.stop()
+
+        failed_status = manager.status()
+        self.assertEqual(self.runtime.public_url(), "")
+        self.assertFalse(self.runtime.verify_managed_ingress_origin(origin_host))
+        self.assertTrue(failed_status["running"])
+        self.assertTrue(failed_status["last_error"])
+        self.assertIs(manager._process, process)
+
+        stopped_status = manager.stop()
+
+        self.assertEqual(process.terminate_calls, 2)
+        self.assertFalse(stopped_status["running"])
+        self.assertIsNone(manager._process)
+
     def test_invalid_manual_url_does_not_stop_the_active_tunnel(self):
         manager = PublicTunnelManager(
             public_invite_runtime=self.runtime,

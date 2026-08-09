@@ -5,12 +5,18 @@ import os
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Callable
+from uuid import uuid4
 
 from agentsassemble.admission.repository import InviteSessionRepository
 from agentsassemble.application.gui import ApplicationDatabase, GuiApplicationServices
 from agentsassemble.application.rolling_restart import (
     RollingChildBootstrap,
     RollingRestartCoordinator,
+)
+from agentsassemble.application.stable_entry import (
+    activate_stable_entry_publisher,
+    configure_stable_entry_publisher,
+    reset_stable_entry_publisher,
 )
 from agentsassemble.web.frontend_runtime import (
     frontend_build_version,
@@ -61,6 +67,7 @@ def serve_gui_runtime(
     frontend_dist_root: Path | None = None,
 ) -> None:
     rolling_bootstrap = RollingChildBootstrap.from_environment()
+    runtime_instance_id = f"gui-{uuid4().hex[:16]}"
     if not dependencies.is_loopback_host(host) and not unsafe_expose_control_plane:
         raise ValueError(
             "Direct non-loopback GUI bind is disabled because it exposes the local control plane. "
@@ -244,13 +251,23 @@ def serve_gui_runtime(
             f"WARNING: AgentsAssemble GUI explicitly bound to non-loopback host {host!r}; the control "
             "plane is unauthenticated and can launch local processes. This unsafe mode is for isolated networks only."
         )
+    stable_entry_configured = False
     try:
         assert services is not None
+        configure_stable_entry_publisher(
+            root,
+            owner_id=runtime_instance_id,
+            predecessor_owner_id=(
+                rolling_bootstrap.parent_instance_id if rolling_bootstrap else ""
+            ),
+            active=rolling_bootstrap is None,
+        )
+        stable_entry_configured = True
         public_invite_runtime = services.public_invite
         if host_token:
             public_invite_runtime.set_host_token(host_token)
         if public_url:
-            public_invite_runtime.set_public_url(public_url)
+            services.public_tunnel_manager.set_manual_public_url(public_url)
         if (public_url or start_public_tunnel) and not public_invite_runtime.host_token():
             generated_token = public_invite_runtime.generate_host_token()
             print(f"AgentsAssemble host token: {generated_token}")
@@ -265,6 +282,7 @@ def serve_gui_runtime(
             server,
             output_root=root,
             generation=rolling_bootstrap.generation if rolling_bootstrap else 0,
+            instance_id=runtime_instance_id,
             frontend_version=frontend_build_version(served_frontend_root),
         )
         server.rolling_restart = rolling_restart
@@ -291,6 +309,7 @@ def serve_gui_runtime(
         )
         if rolling_bootstrap is not None:
             rolling_bootstrap.report_ready_and_wait()
+            activate_stable_entry_publisher()
             rolling_restart.activate_from_handoff(
                 rolling_bootstrap.operation_id,
             )
@@ -303,18 +322,22 @@ def serve_gui_runtime(
     except KeyboardInterrupt:
         print("\nStopping AgentsAssemble GUI")
     finally:
-        assert services is not None
-        assert server is not None
-        rolling_restart = getattr(server, "rolling_restart", None)
-        if rolling_restart is not None and rolling_restart.handoff_ready():
-            try:
-                services.shutdown(
-                    transport_close=server.server_close,
-                    preserve_provider_runtimes=True,
-                )
-            except BaseException as error:
-                rolling_restart.abandon_replacement(str(error))
-                raise
-            rolling_restart.release_replacement()
-        else:
-            services.shutdown(transport_close=server.server_close)
+        try:
+            assert services is not None
+            assert server is not None
+            rolling_restart = getattr(server, "rolling_restart", None)
+            if rolling_restart is not None and rolling_restart.handoff_ready():
+                try:
+                    services.shutdown(
+                        transport_close=server.server_close,
+                        preserve_provider_runtimes=True,
+                    )
+                except BaseException as error:
+                    rolling_restart.abandon_replacement(str(error))
+                    raise
+                rolling_restart.release_replacement()
+            else:
+                services.shutdown(transport_close=server.server_close)
+        finally:
+            if stable_entry_configured:
+                reset_stable_entry_publisher()

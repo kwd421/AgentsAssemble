@@ -2,16 +2,95 @@ from __future__ import annotations
 
 import threading
 import unittest
+from pathlib import Path
+from tempfile import TemporaryDirectory
 from types import SimpleNamespace
 from unittest import mock
 
 from agentsassemble.application import stable_entry
 from agentsassemble.application.public_invite_runtime import PublicInviteRuntime
 from agentsassemble.application.public_tunnel import PublicTunnelManager
-from agentsassemble.application.stable_entry import announce_stable_entry
+from agentsassemble.application.stable_entry import (
+    StableEntryPublisher,
+    announce_stable_entry,
+)
 
 
 class StableEntryPublicationTests(unittest.TestCase):
+    def test_rolling_replacement_cannot_be_overwritten_by_previous_owner(self) -> None:
+        old_url = "https://old-tunnel.trycloudflare.com"
+        new_url = "https://new-tunnel.trycloudflare.com"
+        old_started = threading.Event()
+        release_old = threading.Event()
+        commands: list[list[str]] = []
+
+        def run_wrangler(command, **_kwargs):
+            commands.append(command)
+            if old_url in command:
+                old_started.set()
+                self.assertTrue(release_old.wait(timeout=2))
+            return SimpleNamespace(returncode=0)
+
+        config = {
+            "url": "https://stable-entry.example",
+            "namespace_id": "namespace-1",
+            "kv_key": "target",
+        }
+        with TemporaryDirectory() as temporary_root:
+            root = Path(temporary_root)
+            previous = StableEntryPublisher(
+                state_root=root,
+                owner_id="runtime-old",
+                config_provider=lambda: config,
+                command_runner=run_wrangler,
+            )
+            replacement = StableEntryPublisher(
+                state_root=root,
+                owner_id="runtime-new",
+                predecessor_owner_id="runtime-old",
+                active=False,
+                config_provider=lambda: config,
+                command_runner=run_wrangler,
+            )
+
+            old_publication = previous.announce(old_url)
+            self.assertIsNotNone(old_publication)
+            self.assertTrue(old_started.wait(timeout=2))
+            self.assertIsNone(replacement.announce(new_url))
+
+            activated: list[threading.Thread | None] = []
+            activation_started = threading.Event()
+
+            def activate_replacement() -> None:
+                activation_started.set()
+                activated.append(replacement.activate())
+
+            activation = threading.Thread(
+                target=activate_replacement
+            )
+            activation.start()
+            self.assertTrue(activation_started.wait(timeout=1))
+            self.assertTrue(activation.is_alive())
+            release_old.set()
+            old_publication.join(timeout=2)  # type: ignore[union-attr]
+            activation.join(timeout=2)
+            self.assertFalse(activation.is_alive())
+            self.assertEqual(len(activated), 1)
+            self.assertIsNotNone(activated[0])
+            activated[0].join(timeout=2)  # type: ignore[union-attr]
+
+            stale_clear = previous.clear()
+            self.assertIsNotNone(stale_clear)
+            stale_clear.join(timeout=2)  # type: ignore[union-attr]
+
+        published_urls = [
+            next(part for part in command if str(part).startswith("https://"))
+            for command in commands
+            if "put" in command
+        ]
+        self.assertEqual(published_urls, [old_url, new_url])
+        self.assertFalse(any("delete" in command for command in commands))
+
     def test_switching_manual_https_to_http_clears_the_external_stable_target(
         self,
     ) -> None:

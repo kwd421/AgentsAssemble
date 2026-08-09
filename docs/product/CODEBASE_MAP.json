@@ -1,10 +1,10 @@
 {
  "readme": "AgentsAssemble codebase map. Regenerate with `make codebase-map`; verify committed outputs with `make codebase-map-verify`. modules[] columns: name, path, package, domain, classification, migration_status, lines, docstring, imports[], imported_by[] (indexes into modules), classes[[name, [[base, defining_module], ...]]] (best-effort, top-level classes only). frontend[] columns: path, group, lines, doc, imports[], imported_by[] (indexes into frontend). package_edges go importer -> dependency with module-import counts; `points` is the precomputed polyline for that edge and `intra_cycle` marks imports whose endpoints share one cycle group. graph{} holds the layered package drawing: layers[] top-to-bottom (each with members[] package ids, member_count, and the dominant domain), (a package sits below everything importing it), clusters[] are mutually dependent packages (import cycles at package level) drawn as one labelled block, plus width/height of the drawing. health{} ranks findings for a reader who has to act: cycles[] (mutually dependent packages, with the lines they hold), leaning_on_retiring[] (current modules importing legacy/compatibility modules - the reason legacy cannot be deleted), highest_leverage_migrations[] (retiring modules with the most current importers), unreferenced_shims[] (compatibility modules with no importer in agentsassemble/ and no reference in tests/; callers outside this repository are not visible, so verify before deleting), and hotspots[] (largest modules). health.scope states exactly what was measured. class_graph{} is the UML generalization DAG over base classes that resolve inside the repo: edges go base -> subclass, so a subclass always sits below the class it extends. Coordinates in graph and class_graph are laid out with a Sugiyama pipeline (cycle condensation, Coffman-Graham layering, dummy-node edge routing, median/transpose crossing reduction) and are deterministic.",
- "generated_at": "2026-08-09T09:57:15Z",
- "fingerprint": "e9500dfaa6977238",
+ "generated_at": "2026-08-09T10:15:40Z",
+ "fingerprint": "d451cde732077444",
  "stats": {
   "backend_modules": 872,
-  "backend_lines": 151307,
+  "backend_lines": 151590,
   "frontend_files": 212,
   "frontend_lines": 49578,
   "packages": 30,
@@ -42,7 +42,7 @@
    "kind": "backend",
    "doc": "Application composition and cross-domain transaction contracts.",
    "files": 36,
-   "lines": 8950,
+   "lines": 9233,
    "domains": {
     "application": 36
    },
@@ -4195,7 +4195,7 @@
      "web"
     ],
     "internal_edges": 92,
-    "lines": 147824,
+    "lines": 148107,
     "heaviest": "legacy"
    },
    {
@@ -6071,12 +6071,13 @@
    "application",
    "current",
    "in-target-package",
-   320,
+   343,
    "Application lifecycle for the local GUI server.",
    [
     23,
     53,
     58,
+    65,
     193,
     742,
     837
@@ -6126,7 +6127,7 @@
    "application",
    "current",
    "in-target-package",
-   222,
+   242,
    "",
    [
     56,
@@ -6391,16 +6392,31 @@
    "application",
    "current",
    "in-target-package",
-   127,
+   367,
    "Permanent public entrypoint over the rotating quick tunnel.",
    [],
    [
+    55,
     57,
     339,
     829,
     858
    ],
-   []
+   [
+    [
+     "StableEntryOwnershipError",
+     [
+      [
+       "RuntimeError",
+       ""
+      ]
+     ]
+    ],
+    [
+     "StableEntryPublisher",
+     []
+    ]
+   ]
   ],
   [
    "agentsassemble.application.transaction",
@@ -28256,7 +28272,7 @@
    "name": "agentsassemble",
    "note": "Backend package (Python)",
    "files": 872,
-   "lines": 151307
+   "lines": 151590
   },
   {
    "name": "frontend/src",
@@ -28268,7 +28284,7 @@
    "name": "tests",
    "note": "Backend test suite",
    "files": 400,
-   "lines": 156582
+   "lines": 156705
   },
   {
    "name": "scripts",
