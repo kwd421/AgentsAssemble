@@ -16,9 +16,13 @@ from agentsassemble.providers.remote_http import (
 class _Socket:
     def __init__(self, peer_host: str) -> None:
         self._peer_host = peer_host
+        self.timeouts: list[float] = []
 
     def getpeername(self) -> tuple[str, int]:
         return self._peer_host, 443
+
+    def settimeout(self, timeout: float) -> None:
+        self.timeouts.append(timeout)
 
 
 class _Response(io.BytesIO):
@@ -183,6 +187,47 @@ class RemoteHttpSecurityTests(unittest.TestCase):
 
         with self.assertRaises(TimeoutError):
             managed.readline()
+
+        self.assertTrue(connection.closed)
+
+    def test_dns_and_every_http_stage_share_one_absolute_deadline(self) -> None:
+        now = 100.0
+
+        def monotonic() -> float:
+            return now
+
+        def advance(seconds: float) -> None:
+            nonlocal now
+            now += seconds
+
+        def resolver(_host: str, port: int, **_kwargs):
+            advance(0.4)
+            return [(2, 1, 6, "", ("93.184.216.34", port))]
+
+        class StageConnection(_Connection):
+            def connect(self) -> None:
+                advance(0.3)
+
+            def request(self, method: str, target: str, body=None, headers=None) -> None:
+                advance(0.2)
+                super().request(method, target, body, headers)
+
+            def getresponse(self) -> _Response:
+                advance(0.2)
+                return super().getresponse()
+
+        connection = StageConnection(
+            peer_host="93.184.216.34",
+            response=_Response(status=200, body=b"late"),
+        )
+        with self.assertRaises(TimeoutError):
+            safe_remote_urlopen(
+                Request("https://api.example.com/v1/chat/completions"),
+                timeout=1.0,
+                resolver=resolver,
+                connection_factory=lambda *_args, **_kwargs: connection,
+                monotonic=monotonic,
+            )
 
         self.assertTrue(connection.closed)
 

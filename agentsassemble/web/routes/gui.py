@@ -32,6 +32,7 @@ from agentsassemble.web.websocket import register_ws_ticket_route
 _HANDLER_AUTHORIZED_MUTATIONS = frozenset(
     {
         "/api/account/google",
+        "/api/account/google/challenge",
         "/api/account/google/handoff/complete",
         "/api/account/google/handoff/configure",
         "/api/account/google/handoff/start",
@@ -140,8 +141,7 @@ def register_current_gui_routes(
             return True
         if not ctx.require_host():
             return False
-        forwarded = str(ctx.headers.get("X-Forwarded-Proto") or "").lower()
-        if forwarded != "https" or not ctx.peer_is_loopback():
+        if not ctx.trusted_public_https_ingress_kind():
             ctx.send_error(
                 HTTPStatus.FORBIDDEN,
                 "HTTPS is required for remote credential management",

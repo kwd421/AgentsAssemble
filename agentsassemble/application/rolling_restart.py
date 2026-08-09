@@ -200,6 +200,7 @@ class RollingRestartCoordinator:
             )
             child_log_path.parent.mkdir(parents=True, exist_ok=True)
             child_log = child_log_path.open("ab", buffering=0)
+            desktop_owned = os.environ.get("AGENTSASSEMBLE_DESKTOP_RUNTIME") == "1"
             try:
                 child = self._popen_factory(
                     self.command,
@@ -209,7 +210,12 @@ class RollingRestartCoordinator:
                     stdin=subprocess.DEVNULL,
                     stdout=child_log,
                     stderr=subprocess.STDOUT,
-                    start_new_session=True,
+                    # The desktop shell owns the original server's process
+                    # group and stops that entire group on app exit.  A
+                    # replacement must stay in it instead of escaping into a
+                    # new session.  Standalone CLI servers keep the historical
+                    # detached replacement behavior.
+                    start_new_session=not desktop_owned,
                 )
             except BaseException:
                 child_log.close()

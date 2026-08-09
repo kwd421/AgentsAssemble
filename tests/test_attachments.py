@@ -2,12 +2,16 @@ import base64
 import json
 import tempfile
 import unittest
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
 from agentsassemble.room.attachments import (
     MAX_ATTACHMENT_BYTES,
+    MAX_ATTACHMENT_COUNT_PER_SUBJECT,
     MAX_ATTACHMENTS_PER_EVENT,
     AttachmentError,
+    AttachmentQuotaExceeded,
+    FileAttachmentStore,
     decode_attachment_data,
     normalize_attachment_id,
     normalize_attachment_references,
@@ -189,6 +193,63 @@ class TestStoreAndReadRoundTrip(unittest.TestCase):
             payload = {"filename": "big.bin", "content_type": "application/octet-stream", "data_base64": encoded}
             with self.assertRaises(AttachmentError):
                 store_uploaded_attachment(root, payload)
+
+    def test_uploader_quota_rejects_before_persisting_an_extra_attachment(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            store = FileAttachmentStore(root)
+            payload = {
+                "filename": "small.txt",
+                "content_type": "text/plain",
+                "data_base64": base64.b64encode(b"x").decode(),
+                "room_id": "room-a",
+                "upload_subject": "user:quota-test",
+            }
+            for _index in range(MAX_ATTACHMENT_COUNT_PER_SUBJECT):
+                store.store(payload)
+
+            with self.assertRaises(AttachmentQuotaExceeded):
+                store.store(payload)
+
+            persisted = [
+                path
+                for path in (root / "attachments").iterdir()
+                if path.is_dir() and not path.name.startswith(".")
+            ]
+            self.assertEqual(len(persisted), MAX_ATTACHMENT_COUNT_PER_SUBJECT)
+
+    def test_expired_prejoin_upload_is_reclaimed_after_store_restart(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            store = FileAttachmentStore(root)
+            pending = store.store(
+                {
+                    "filename": "avatar.png",
+                    "content_type": "image/png",
+                    "data_base64": base64.b64encode(b"old-avatar").decode(),
+                    "room_id": "room-a",
+                    "purpose": "profile_avatar",
+                    "upload_subject": "prejoin:expired",
+                    "prejoin_pending": True,
+                }
+            )
+            metadata_path = root / "attachments" / str(pending["id"]) / "metadata.json"
+            metadata = json.loads(metadata_path.read_text(encoding="utf-8"))
+            metadata["pending_until"] = (datetime.now(UTC) - timedelta(seconds=1)).isoformat()
+            metadata_path.write_text(json.dumps(metadata), encoding="utf-8")
+
+            restarted = FileAttachmentStore(root)
+            restarted.store(
+                {
+                    "filename": "current.txt",
+                    "content_type": "text/plain",
+                    "data_base64": base64.b64encode(b"current").decode(),
+                    "room_id": "room-a",
+                    "upload_subject": "user:current",
+                }
+            )
+
+            self.assertFalse(metadata_path.parent.exists())
 
 
 class TestPathTraversalContainment(unittest.TestCase):

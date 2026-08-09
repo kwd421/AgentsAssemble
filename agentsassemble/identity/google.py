@@ -70,29 +70,50 @@ class GoogleIdTokenVerifier:
 
 @dataclass
 class _Challenge:
+    subject: str
+    unbound: bool
     expires_at: float
 
 
 class GoogleLoginChallengeStore:
     """Short-lived one-time nonces embedded into Google ID tokens."""
 
-    def __init__(self, *, ttl_seconds: float = 300.0, maximum: int = 512) -> None:
+    def __init__(
+        self,
+        *,
+        ttl_seconds: float = 300.0,
+        maximum: int = 512,
+        maximum_unbound: int = 64,
+    ) -> None:
         self._ttl_seconds = ttl_seconds
         self._maximum = maximum
+        self._maximum_unbound = min(maximum_unbound, maximum)
         self._challenges: dict[str, _Challenge] = {}
         self._lock = threading.Lock()
 
-    def issue(self) -> str:
+    def issue(self, *, subject: str = "", unbound: bool = False) -> str:
         now = time.monotonic()
         nonce = secrets.token_urlsafe(32)
         with self._lock:
             self._prune(now)
+            clean_subject = str(subject or "").strip()
+            if clean_subject:
+                self._remove_subject(clean_subject)
             if len(self._challenges) >= self._maximum:
                 raise GoogleLoginRejected(
                     "Google login capacity is temporarily exhausted.",
                     code="google_login_capacity_exceeded",
                 )
-            self._challenges[nonce] = _Challenge(expires_at=now + self._ttl_seconds)
+            if unbound and self._unbound_count() >= self._maximum_unbound:
+                raise GoogleLoginRejected(
+                    "Google login capacity is temporarily exhausted.",
+                    code="google_login_capacity_exceeded",
+                )
+            self._challenges[nonce] = _Challenge(
+                subject=clean_subject,
+                unbound=unbound,
+                expires_at=now + self._ttl_seconds,
+            )
         return nonce
 
     def discard(self, nonce: str) -> None:
@@ -115,6 +136,25 @@ class GoogleLoginChallengeStore:
         ]
         for nonce in expired:
             self._challenges.pop(nonce, None)
+
+    def _remove_subject(self, subject: str) -> None:
+        replaced = [
+            nonce
+            for nonce, challenge in self._challenges.items()
+            if challenge.subject == subject
+        ]
+        for nonce in replaced:
+            self._challenges.pop(nonce, None)
+
+    def _unbound_count(self) -> int:
+        return sum(challenge.unbound for challenge in self._challenges.values())
+
+
+def _login_subject(*, user_id: str, device_auth_key: str) -> str:
+    clean_user_id = str(user_id or "").strip()
+    if clean_user_id:
+        return f"user:{clean_user_id}"
+    return f"device:{str(device_auth_key or '').strip()}"
 
 
 class GoogleAccountLoginService:
@@ -175,10 +215,14 @@ class GoogleAccountLoginService:
                 "A signed-in server identity or durable device identity is required to start Google login.",
                 code="device_identity_required",
             )
+        user_id = str((current_user or {}).get("user_id") or "").strip()
         return {
             "status": "ready",
             "client_id": self.client_id,
-            "nonce": self._challenges.issue(),
+            "nonce": self._challenges.issue(
+                subject=_login_subject(user_id=user_id, device_auth_key=device_auth_key),
+                unbound=not bool(user_id),
+            ),
         }
 
     def start_handoff(
@@ -199,7 +243,8 @@ class GoogleAccountLoginService:
                 "A signed-in server identity or durable device identity is required to start Google login.",
                 code="device_identity_required",
             )
-        nonce = self._challenges.issue()
+        subject = _login_subject(user_id=user_id, device_auth_key=device_auth_key)
+        nonce = self._challenges.issue(subject=subject, unbound=not bool(user_id))
         try:
             token = self._handoffs.issue(
                 user_id=user_id,

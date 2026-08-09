@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import io
 import json
 import tempfile
 import threading
@@ -14,6 +13,7 @@ from urllib.error import HTTPError
 from urllib.request import Request, urlopen
 
 from agentsassemble.identity.accounts import external_account_identity
+from agentsassemble.application.public_invite_runtime import PublicInviteRuntime
 from agentsassemble.identity.google import (
     GoogleAccountLoginService,
     GoogleLoginChallengeStore,
@@ -24,65 +24,10 @@ from agentsassemble.gui import _make_handler
 from agentsassemble.persistence.local.identity.repository import IdentityStore
 from agentsassemble.web.router import GuiDeps, RequestContext, Router
 from agentsassemble.web.routes.accounts import register_account_routes
-
-
-class _Verifier:
-    def __init__(self) -> None:
-        self.nonce = ""
-
-    def verify(self, credential: str) -> dict[str, object]:
-        if credential != "google-id-token":
-            raise ValueError("invalid token")
-        return {
-            "sub": "google-subject-123",
-            "nonce": self.nonce,
-            "name": "Google Person",
-            "email": "person@example.invalid",
-            "picture": "https://example.invalid/person.png",
-        }
-
-
-class _Handler:
-    def __init__(
-        self,
-        path: str,
-        method: str,
-        body: dict[str, object] | None = None,
-        *,
-        host: str = "127.0.0.1:8765",
-        peer_host: str = "127.0.0.1",
-        device_token: str = "account-http-device-token",
-        forwarded_proto: str = "",
-    ) -> None:
-        raw_body = json.dumps(body or {}).encode()
-        self.path = path
-        self.command = method
-        self.headers = {
-            "Content-Length": str(len(raw_body)),
-            "Host": host,
-            "X-Device-Token": device_token,
-        }
-        if forwarded_proto:
-            self.headers["X-Forwarded-Proto"] = forwarded_proto
-        self.rfile = io.BytesIO(raw_body)
-        self.server = SimpleNamespace(server_address=("127.0.0.1", 8765))
-        self.client_address = (peer_host, 54321)
-        self.sent_json: dict[str, object] | None = None
-        self.sent_error: tuple[HTTPStatus, str, str] | None = None
-
-    def _send_json(self, payload: dict[str, object]) -> None:
-        self.sent_json = payload
-
-    def _send_error(
-        self,
-        status: HTTPStatus,
-        message: str,
-        *,
-        code: str = "",
-        details: dict[str, object] | None = None,
-    ) -> None:
-        del details
-        self.sent_error = (status, message, code)
+from tests.google_account_http_support import (
+    GoogleAccountHandler as _Handler,
+    GoogleAccountVerifier as _Verifier,
+)
 
 
 class GoogleAccountHttpTests(unittest.TestCase):
@@ -250,6 +195,7 @@ class GoogleAccountHttpTests(unittest.TestCase):
                 invite_application=SimpleNamespace(
                     public_url=lambda: "https://rooms.example.invalid"
                 ),
+                public_invite_runtime=self._trusted_public_runtime(),
             )
 
             verifier.nonce = self._start_direct_login(router, deps)
@@ -323,6 +269,7 @@ class GoogleAccountHttpTests(unittest.TestCase):
                 invite_application=SimpleNamespace(
                     public_url=lambda: "https://rooms.example.invalid"
                 ),
+                public_invite_runtime=self._trusted_public_runtime(),
             )
 
             verifier.nonce = self._start_direct_login(router, deps)
@@ -335,6 +282,7 @@ class GoogleAccountHttpTests(unittest.TestCase):
                 host="rooms.example.invalid",
                 peer_host="203.0.113.10",
                 forwarded_proto="https",
+                cloudflare_ray="remote-spoof-ray",
             )
             linked = self._dispatch(
                 router,
@@ -351,6 +299,7 @@ class GoogleAccountHttpTests(unittest.TestCase):
                 host="rooms.example.invalid",
                 peer_host="203.0.113.10",
                 forwarded_proto="https",
+                cloudflare_ray="remote-spoof-ray",
             )
             status = self._dispatch(router, deps, "/api/account", "GET")
 
@@ -358,6 +307,40 @@ class GoogleAccountHttpTests(unittest.TestCase):
         self.assertEqual(linked.sent_json["status"], "connected")
         self.assertEqual(rejected_disconnect.sent_error[0], HTTPStatus.FORBIDDEN)
         self.assertIsNotNone(status.sent_json["account"])
+
+    def test_unregistered_loopback_proxy_cannot_start_google_login(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            identities = IdentityStore(Path(temp_dir) / "identity.db")
+            service = GoogleAccountLoginService(
+                client_id="google-client.apps.googleusercontent.com",
+                verifier=_Verifier(),
+            )
+            router = Router()
+            register_account_routes(router, google=service)
+            runtime = PublicInviteRuntime(environ={})
+            runtime.set_public_url("https://rooms.example.invalid")
+            deps = GuiDeps(
+                output_root=Path(temp_dir),
+                identity_backend=identities,
+                invite_application=SimpleNamespace(
+                    public_url=lambda: "https://rooms.example.invalid"
+                ),
+                public_invite_runtime=runtime,
+            )
+
+            rejected = self._dispatch(
+                router,
+                deps,
+                "/api/account/google/challenge",
+                "POST",
+                host="rooms.example.invalid",
+                peer_host="127.0.0.1",
+                forwarded_proto="https",
+                cloudflare_ray="spoofed-unregistered-ray",
+            )
+
+        self.assertEqual(rejected.sent_error[0], HTTPStatus.FORBIDDEN)
+        self.assertEqual(rejected.sent_error[1], "HTTPS is required for account login")
 
     def test_system_browser_handoff_reconnects_an_unbound_remote_device(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:
@@ -375,6 +358,7 @@ class GoogleAccountHttpTests(unittest.TestCase):
                 invite_application=SimpleNamespace(
                     public_url=lambda: "https://rooms.example.invalid"
                 ),
+                public_invite_runtime=self._trusted_public_runtime(),
             )
 
             verifier.nonce = self._start_direct_login(router, deps)
@@ -391,6 +375,7 @@ class GoogleAccountHttpTests(unittest.TestCase):
                 "peer_host": "127.0.0.1",
                 "device_token": "fresh-remote-device-token",
                 "forwarded_proto": "https",
+                "cloudflare_ray": "managed-handoff-ray",
             }
             started = self._dispatch(
                 router,
@@ -455,6 +440,7 @@ class GoogleAccountHttpTests(unittest.TestCase):
                 invite_application=SimpleNamespace(
                     public_url=lambda: "https://rooms.example.invalid"
                 ),
+                public_invite_runtime=self._trusted_public_runtime(),
                 room_sessions=SimpleNamespace(
                     active_summary=lambda: [],
                     revoke_participant=lambda room_id, participant_id: revoked_sessions.append(
@@ -470,6 +456,7 @@ class GoogleAccountHttpTests(unittest.TestCase):
                 "host": "rooms.example.invalid",
                 "peer_host": "127.0.0.1",
                 "forwarded_proto": "https",
+                "cloudflare_ray": "managed-switch-ray",
             }
 
             original_device = "existing-account-device-token"
@@ -580,93 +567,6 @@ class GoogleAccountHttpTests(unittest.TestCase):
                 [("guest-room", str(guest["participant_id"]))],
             )
 
-    def test_status_reads_do_not_consume_login_capacity(self) -> None:
-        with tempfile.TemporaryDirectory() as temp_dir:
-            identities = IdentityStore(Path(temp_dir) / "identity.db")
-            challenges = GoogleLoginChallengeStore(maximum=1)
-            verifier = _Verifier()
-            service = GoogleAccountLoginService(
-                client_id="google-client.apps.googleusercontent.com",
-                verifier=verifier,
-                challenges=challenges,
-            )
-            router = Router()
-            register_account_routes(router, google=service)
-            deps = GuiDeps(output_root=Path(temp_dir), identity_backend=identities)
-
-            for _ in range(3):
-                status = self._dispatch(router, deps, "/api/account", "GET")
-                self.assertNotIn("nonce", status.sent_json["google"])
-            first_nonce = self._start_direct_login(router, deps)
-            rejected = self._dispatch(
-                router,
-                deps,
-                "/api/account/google/challenge",
-                "POST",
-            )
-            verifier.nonce = first_nonce
-            connected = self._dispatch(
-                router,
-                deps,
-                "/api/account/google",
-                "POST",
-                body={"credential": "google-id-token", "nonce": first_nonce},
-            )
-
-        self.assertTrue(first_nonce)
-        self.assertEqual(rejected.sent_error[0], HTTPStatus.FORBIDDEN)
-        self.assertEqual(rejected.sent_error[2], "google_login_capacity_exceeded")
-        self.assertEqual(connected.sent_json["status"], "connected")
-
-    def test_full_handoff_pool_preserves_the_existing_login(self) -> None:
-        with tempfile.TemporaryDirectory() as temp_dir:
-            identities = IdentityStore(Path(temp_dir) / "identity.db")
-            verifier = _Verifier()
-            service = GoogleAccountLoginService(
-                client_id="google-client.apps.googleusercontent.com",
-                verifier=verifier,
-                handoffs=GoogleLoginHandoffStore(maximum=1),
-            )
-            router = Router()
-            register_account_routes(router, google=service)
-            deps = GuiDeps(output_root=Path(temp_dir), identity_backend=identities)
-
-            first = self._dispatch(
-                router,
-                deps,
-                "/api/account/google/handoff/start",
-                "POST",
-                body={},
-            )
-            first_token = parse_qs(
-                urlparse(first.sent_json["handoff_url"]).fragment
-            )["google_handoff"][0]
-            rejected = self._dispatch(
-                router,
-                deps,
-                "/api/account/google/handoff/start",
-                "POST",
-                body={},
-            )
-            configured = self._dispatch(
-                router,
-                deps,
-                "/api/account/google/handoff/configure",
-                "POST",
-                body={"token": first_token},
-            )
-            verifier.nonce = str(configured.sent_json["nonce"])
-            connected = self._dispatch(
-                router,
-                deps,
-                "/api/account/google/handoff/complete",
-                "POST",
-                body={"token": first_token, "credential": "google-id-token"},
-            )
-
-        self.assertEqual(rejected.sent_error[2], "google_login_capacity_exceeded")
-        self.assertEqual(connected.sent_json["status"], "connected")
-
     def _start_direct_login(
         self,
         router: Router,
@@ -694,6 +594,7 @@ class GoogleAccountHttpTests(unittest.TestCase):
         peer_host: str = "127.0.0.1",
         device_token: str = "account-http-device-token",
         forwarded_proto: str = "",
+        cloudflare_ray: str = "",
     ) -> _Handler:
         handler = _Handler(
             path,
@@ -703,11 +604,20 @@ class GoogleAccountHttpTests(unittest.TestCase):
             peer_host=peer_host,
             device_token=device_token,
             forwarded_proto=forwarded_proto,
+            cloudflare_ray=cloudflare_ray,
         )
         parsed = urlparse(path)
         context = RequestContext(handler, deps, parsed, parse_qs(parsed.query))
         self.assertTrue(router.dispatch(method, context))
         return handler
+
+    def _trusted_public_runtime(self) -> PublicInviteRuntime:
+        runtime = PublicInviteRuntime(environ={})
+        runtime.set_managed_public_url(
+            "https://rooms.example.invalid",
+            ingress_kind="cloudflare",
+        )
+        return runtime
 
 
 if __name__ == "__main__":

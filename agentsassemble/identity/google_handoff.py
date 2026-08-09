@@ -19,9 +19,16 @@ class GoogleLoginHandoff:
 class GoogleLoginHandoffStore:
     """Keep one-use desktop login grants in process memory only."""
 
-    def __init__(self, *, ttl_seconds: float = 180.0, maximum: int = 128) -> None:
+    def __init__(
+        self,
+        *,
+        ttl_seconds: float = 180.0,
+        maximum: int = 128,
+        maximum_unbound: int = 32,
+    ) -> None:
         self.ttl_seconds = ttl_seconds
         self._maximum = maximum
+        self._maximum_unbound = min(maximum_unbound, maximum)
         self._handoffs: dict[str, GoogleLoginHandoff] = {}
         self._lock = threading.Lock()
 
@@ -37,7 +44,13 @@ class GoogleLoginHandoffStore:
         token = secrets.token_urlsafe(32)
         with self._lock:
             self._prune(now)
+            subject = _handoff_subject(user_id=user_id, device_auth_key=device_auth_key)
+            self._remove_subject(subject)
             if len(self._handoffs) >= self._maximum:
+                raise GoogleLoginHandoffCapacityExceeded(
+                    "Google login handoff capacity is temporarily exhausted."
+                )
+            if not user_id and self._unbound_count() >= self._maximum_unbound:
                 raise GoogleLoginHandoffCapacityExceeded(
                     "Google login handoff capacity is temporarily exhausted."
                 )
@@ -74,6 +87,29 @@ class GoogleLoginHandoffStore:
         ]
         for token in expired:
             self._handoffs.pop(token, None)
+
+    def _remove_subject(self, subject: str) -> None:
+        replaced = [
+            token
+            for token, handoff in self._handoffs.items()
+            if _handoff_subject(
+                user_id=handoff.user_id,
+                device_auth_key=handoff.device_auth_key,
+            )
+            == subject
+        ]
+        for token in replaced:
+            self._handoffs.pop(token, None)
+
+    def _unbound_count(self) -> int:
+        return sum(not handoff.user_id for handoff in self._handoffs.values())
+
+
+def _handoff_subject(*, user_id: str, device_auth_key: str) -> str:
+    clean_user_id = str(user_id or "").strip()
+    if clean_user_id:
+        return f"user:{clean_user_id}"
+    return f"device:{str(device_auth_key or '').strip()}"
 
 
 class GoogleLoginHandoffCapacityExceeded(RuntimeError):

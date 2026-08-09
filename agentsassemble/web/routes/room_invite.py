@@ -9,9 +9,12 @@ from agentsassemble.identity.repository import device_auth_key
 from agentsassemble.admission.projection import LegacyAdmissionParticipant
 from agentsassemble.admission.lan_invite import NATIVE_REMOTE_ROOM_CLIENT_KIND
 from agentsassemble.identity.pairing import normalize_pairing_origin
+from agentsassemble.admission.capacity import RoomSessionCapacityExceeded
 from agentsassemble.admission.coordinator import AdmissionIdempotencyConflict
 from agentsassemble.admission.invite_service import CompanionLimitReached
 from agentsassemble.application.stable_entry import stable_entry_url
+from agentsassemble.features.social.profile import clean_avatar_image_url, update_user_profile
+from agentsassemble.room.attachments import AttachmentError, prejoin_attachment_subject
 from agentsassemble.room.errors import RoomCommandRejected
 
 
@@ -364,6 +367,13 @@ def _admit_invite(
             code="idempotency_conflict",
         )
         return None
+    except RoomSessionCapacityExceeded as error:
+        ctx.send_error(
+            HTTPStatus.TOO_MANY_REQUESTS,
+            str(error),
+            code="room_admission_capacity_reached",
+        )
+        return None
     if result.get("status") != "admitted":
         reason = str(result.get("reason", "rejected"))
         if reason == "room_unavailable":
@@ -371,6 +381,8 @@ def _admit_invite(
             return None
         ctx.send_error(HTTPStatus.FORBIDDEN, reason, code=reason)
         return None
+    if consumer_client_type == "browser":
+        _apply_admitted_avatar(ctx, payload, result, invite_token=token)
     if str(result.get("participant_type") or "human") != "human":
         ctx.deps.admission_projection.participant_joined(
             LegacyAdmissionParticipant(
@@ -385,6 +397,39 @@ def _admit_invite(
             )
         )
     return result
+
+
+def _apply_admitted_avatar(
+    ctx: RequestContext,
+    payload: dict[str, object],
+    result: dict[str, object],
+    *,
+    invite_token: str,
+) -> None:
+    avatar_image_url = clean_avatar_image_url(payload.get("avatar_image_url"))
+    device_token = str(payload.get("device_token") or "").strip()
+    if not avatar_image_url or len(device_token) < 8:
+        return
+    attachment_id = avatar_image_url.removeprefix("/api/attachments/").removesuffix("?view=1")
+    upload_subject = prejoin_attachment_subject(invite_token, device_token)
+    try:
+        ctx.deps.media.commit_prejoin(
+            attachment_id,
+            upload_subject=upload_subject,
+        )
+    except AttachmentError:
+        return
+    user = ctx.deps.identities.user_for_participant(str(result.get("agent_id") or ""))
+    if user is None:
+        return
+    update_user_profile(
+        ctx.deps.output_root,
+        {"avatar_image_url": avatar_image_url},
+        identities=ctx.deps.identities,
+        rooms=ctx.deps.rooms,
+        user_id=str(user.get("user_id") or ""),
+    )
+    result["avatar_image_url"] = avatar_image_url
 
 
 def _canonical_request_id(ctx: RequestContext, value: object) -> str | None:

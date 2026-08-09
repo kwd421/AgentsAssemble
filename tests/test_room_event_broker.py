@@ -13,6 +13,36 @@ def _event_message(event_type: str, sequence: int) -> dict[str, object]:
 
 
 class RoomSocketChannelBackpressureTests(unittest.TestCase):
+    def test_public_sockets_cannot_consume_operator_reserve(self):
+        broker = RoomEventBroker(
+            max_connections=3,
+            max_public_connections=2,
+            max_connections_per_session=1,
+        )
+        first = broker.connect(
+            {"meeting_id": "general", "session_id": "public-a", "client_type": "browser"}
+        )
+        second = broker.connect(
+            {"meeting_id": "general", "session_id": "public-b", "client_type": "browser"}
+        )
+
+        with self.assertRaises(event_broker_module.RoomConnectionLimitError):
+            broker.connect(
+                {"meeting_id": "general", "session_id": "public-c", "client_type": "browser"}
+            )
+
+        operator = broker.connect(
+            {
+                "meeting_id": "general",
+                "session_id": "operator",
+                "client_type": "browser",
+                "principal_is_operator": True,
+            }
+        )
+        self.assertFalse(operator.closed)
+        broker.disconnect(first)
+        broker.disconnect(second)
+        broker.disconnect(operator)
     def test_connection_limit_rejects_a_second_live_socket_for_same_session(self):
         broker = RoomEventBroker(max_connections=4, max_connections_per_session=1)
         first = broker.connect(

@@ -12,6 +12,7 @@ from agentsassemble.admission.invite_service import (
     InviteApplicationService,
     PreparedInviteAdmission,
 )
+from agentsassemble.admission.capacity import RoomSessionCapacityExceeded
 from agentsassemble.admission.saga import (
     RoomAdmissionCompensationFailed,
     RoomAdmissionSaga,
@@ -95,13 +96,14 @@ class RoomAdmissionCoordinator:
                 "client_id": clean_client_id,
             }
         )
-        workflow_id = _workflow_id(
+        request_workflow_id = _workflow_id(
             token_fingerprint=token_fingerprint,
             device_auth_key=auth_key,
             request_id=clean_request_id,
         )
 
         with self._lock:
+            workflow_id = request_workflow_id
             workflow = self._invites.admission_workflow(workflow_id)
             if workflow is None:
                 prepared = self._invites.prepare_admission(
@@ -117,6 +119,36 @@ class RoomAdmissionCoordinator:
                 )
                 if scope_rejection is not None:
                     return scope_rejection
+                if prepared.reusable and clean_consumer_client_type == "browser":
+                    if not auth_key:
+                        return {
+                            "status": "rejected",
+                            "reason": "stable_device_required",
+                        }
+                    workflow_id = _workflow_id(
+                        token_fingerprint=token_fingerprint,
+                        device_auth_key=auth_key,
+                        request_id="",
+                    )
+                    workflow = self._invites.admission_workflow(workflow_id)
+                if workflow is not None:
+                    self._validate_retry(
+                        workflow,
+                        request_id=clean_request_id,
+                        token_fingerprint=token_fingerprint,
+                        device_auth_key=auth_key,
+                        payload_hash=payload_hash,
+                    )
+                    return self._resume(
+                        workflow,
+                        invite_token=invite_token,
+                        display_name=display_name,
+                        participant_type=participant_type,
+                    )
+                self._assert_preworkflow_capacity(
+                    prepared,
+                    auth_key=auth_key,
+                )
                 room, settings = self._room_context(prepared.meeting_id)
                 if not room:
                     return {"status": "rejected", "reason": "room_unavailable"}
@@ -163,6 +195,34 @@ class RoomAdmissionCoordinator:
                 participant_type=participant_type,
             )
 
+    def _assert_preworkflow_capacity(
+        self,
+        prepared: PreparedInviteAdmission,
+        *,
+        auth_key: str,
+    ) -> None:
+        stable_user = self._identities.user_for_credential(auth_key) if auth_key else None
+        stable_participant_id = clean_lobby_text(
+            (stable_user or {}).get("participant_id"),
+            limit=128,
+        )
+        participant_id = (
+            stable_participant_id or f"pending-{auth_key[-12:]}"
+            if prepared.reusable
+            else prepared.base_agent_id
+        )
+        self._sessions.assert_capacity(
+            {
+                "agent_id": participant_id,
+                "meeting_id": prepared.meeting_id,
+                "client_type": prepared.client_type,
+                "principal_is_operator": bool(
+                    stable_user and stable_user.get("is_operator")
+                ),
+                "expires_at": self._now().isoformat(),
+            }
+        )
+
     def _resume(
         self,
         workflow: dict[str, object],
@@ -187,7 +247,7 @@ class RoomAdmissionCoordinator:
                     display_name=display_name,
                     participant_type=participant_type,
                 )
-        except AdmissionIdempotencyConflict:
+        except (AdmissionIdempotencyConflict, RoomSessionCapacityExceeded):
             raise
         except RoomAdmissionCompensationFailed as failure:
             try:
@@ -526,14 +586,15 @@ class RoomAdmissionCoordinator:
         device_auth_key: str,
         payload_hash: str,
     ) -> None:
+        stable_reusable = bool(workflow.get("reusable") and workflow.get("device_auth_key"))
         expected = (
-            request_id,
+            "" if stable_reusable else request_id,
             token_fingerprint,
             device_auth_key,
             payload_hash,
         )
         actual = (
-            str(workflow.get("request_id") or ""),
+            "" if stable_reusable else str(workflow.get("request_id") or ""),
             str(workflow.get("token_fingerprint") or ""),
             str(workflow.get("device_auth_key") or ""),
             str(workflow.get("payload_hash") or ""),

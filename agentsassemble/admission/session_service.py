@@ -42,6 +42,9 @@ class RoomSessionService:
     def issue(self, record: dict[str, object]) -> tuple[str, dict[str, object]]:
         return self._issuer.issue(record)
 
+    def assert_capacity(self, record: dict[str, object]) -> None:
+        self._issuer.assert_capacity(record)
+
     def token_for_request(self, request_key: str) -> str:
         if self._token_key is None:
             raise RuntimeError("idempotent room session key is not configured")

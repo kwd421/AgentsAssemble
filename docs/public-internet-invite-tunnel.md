@@ -24,6 +24,13 @@ access.
    modal, or start a Cloudflare quick tunnel from the modal when `cloudflared`
    is installed.
 
+3. If a reverse proxy is managed outside AgentsAssemble, configure
+   `AGENTSASSEMBLE_TRUSTED_PROXY_TOKEN` on the server and have that proxy add
+   the same value as `X-AgentsAssemble-Proxy-Token` on origin requests. The
+   token belongs at the proxy boundary, never in browser code or a public join
+   link. The GUI-managed Cloudflare quick tunnel is registered by the server
+   process and does not need this manual proxy token.
+
 ## Cloudflare Tunnel (Recommended)
 
 Free, no account required for quick tunnels:
@@ -116,6 +123,10 @@ tailscale funnel 8765
 - **A host token is required** for public invite creation and public tunnel
   management. The local operator UI may bootstrap a server-lifetime token only
   from a trusted loopback request; public guests cannot generate one.
+- Forwarded HTTPS and client-IP headers are trusted only for the currently
+  server-managed Cloudflare tunnel or a reverse proxy authenticated with
+  `AGENTSASSEMBLE_TRUSTED_PROXY_TOKEN`. Merely setting a public URL or sending
+  `X-Forwarded-Proto` from loopback does not establish proxy provenance.
 - External human invites require a configured public URL. `/api/room-invite/create`
   returns an error instead of producing a local `127.0.0.1` join URL when a
   public URL is missing.

@@ -24,6 +24,7 @@ export type LobbyAttachmentUploadOptions = {
   roomId?: string;
   sessionToken?: string;
   inviteToken?: string;
+  deviceToken?: string;
   purpose?: "room_attachment" | "profile_avatar" | "room_appearance";
 };
 
@@ -122,6 +123,7 @@ export function uploadLobbyAttachment(
         room_id: resolved.roomId || "",
         purpose: resolved.purpose || "room_attachment",
         invite_token: resolved.inviteToken || "",
+        device_token: resolved.deviceToken || "",
         filename: file.name || "attachment.bin",
         content_type: file.type || "application/octet-stream",
         data_base64: dataBase64,

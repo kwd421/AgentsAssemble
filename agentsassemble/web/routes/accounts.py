@@ -8,7 +8,6 @@ from agentsassemble.identity.accounts import AccountLinkConflict
 from agentsassemble.identity.google import GoogleAccountLoginService, GoogleLoginRejected
 from agentsassemble.identity.repository import device_auth_key
 from agentsassemble.web.router import RequestContext, Router
-from agentsassemble.web.security import _request_uses_trusted_public_https_proxy
 
 
 def register_account_routes(
@@ -156,15 +155,7 @@ def _account_login_transport_allowed(ctx: RequestContext) -> bool:
     local_request = ctx.is_local_operator() and ctx.peer_is_loopback()
     if local_request:
         return True
-    client_address = getattr(ctx.handler, "client_address", ())
-    peer_host = client_address[0] if isinstance(client_address, tuple) and client_address else ""
-    public_https_request = _request_uses_trusted_public_https_proxy(
-        peer_host=peer_host,
-        host_header=ctx.headers.get("Host"),
-        forwarded_proto=ctx.headers.get("X-Forwarded-Proto"),
-        public_url=ctx.deps.invites.public_url(),
-    )
-    if public_https_request:
+    if ctx.trusted_public_https_ingress_kind():
         return True
     ctx.send_error(HTTPStatus.FORBIDDEN, "HTTPS is required for account login")
     return False

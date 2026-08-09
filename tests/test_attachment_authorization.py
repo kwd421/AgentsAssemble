@@ -113,6 +113,57 @@ def _image_payload(**updates: object) -> dict[str, object]:
 
 
 class AttachmentAuthorizationTests(unittest.TestCase):
+    def test_prejoin_avatar_requires_a_stable_device_and_replaces_its_prior_upload(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            deps = _attachment_dependencies(root)
+            deps.rooms.create_room("room-a")
+            invite = deps.invites.create(
+                room_url="http://127.0.0.1:8765",
+                meeting_id="room-a",
+                display_name="Guest",
+            )
+            without_device = _dispatch_attachment_upload(
+                deps,
+                _image_payload(
+                    purpose="profile_avatar",
+                    invite_token=invite["join_code"],
+                ),
+            )
+            first = _dispatch_attachment_upload(
+                deps,
+                _image_payload(
+                    purpose="profile_avatar",
+                    invite_token=invite["join_code"],
+                    device_token="prejoin-avatar-device",
+                ),
+            )
+            second = _dispatch_attachment_upload(
+                deps,
+                _image_payload(
+                    purpose="profile_avatar",
+                    invite_token=invite["join_code"],
+                    device_token="prejoin-avatar-device",
+                    data_base64=base64.b64encode(b"replacement-avatar").decode("ascii"),
+                ),
+            )
+
+            self.assertEqual(
+                without_device.sent_error,
+                (
+                    HTTPStatus.UNAUTHORIZED,
+                    "device token required for pre-join profile upload",
+                ),
+            )
+            first_id = str(first.sent_json["attachment"]["id"])
+            second_id = str(second.sent_json["attachment"]["id"])
+            self.assertFalse((root / "attachments" / first_id).exists())
+            self.assertTrue((root / "attachments" / second_id).is_dir())
+            self.assertEqual(
+                read_attachment_metadata(root, second_id)["prejoin_pending"],
+                True,
+            )
+
     def test_private_room_attachment_download_requires_current_room_authority(self):
         with tempfile.TemporaryDirectory() as temp_dir:
             root = Path(temp_dir)
@@ -350,6 +401,7 @@ class AttachmentAuthorizationTests(unittest.TestCase):
                     room_id="room-b",
                     purpose="profile_avatar",
                     invite_token=invite["join_code"],
+                    device_token="profile-upload-device",
                 ),
             )
             accepted = _dispatch_attachment_upload(
@@ -357,6 +409,7 @@ class AttachmentAuthorizationTests(unittest.TestCase):
                 _image_payload(
                     purpose="profile_avatar",
                     invite_token=invite["join_code"],
+                    device_token="profile-upload-device",
                 ),
             )
             rejected = _dispatch_attachment_upload(
@@ -364,6 +417,7 @@ class AttachmentAuthorizationTests(unittest.TestCase):
                 {
                     "purpose": "profile_avatar",
                     "invite_token": invite["join_code"],
+                    "device_token": "profile-upload-device",
                     "filename": "active.svg",
                     "content_type": "image/svg+xml",
                     "data_base64": base64.b64encode(b"<svg></svg>").decode("ascii"),
@@ -416,6 +470,7 @@ class AttachmentAuthorizationTests(unittest.TestCase):
                 _image_payload(
                     purpose="profile_avatar",
                     invite_token=invite["join_code"],
+                    device_token="agent-bridge-upload-device",
                 ),
             )
 

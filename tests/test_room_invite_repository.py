@@ -8,6 +8,10 @@ from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from unittest.mock import patch
 
+from agentsassemble.admission.capacity import (
+    MAX_PUBLIC_SESSIONS_PER_ROOM,
+    RoomSessionCapacityExceeded,
+)
 from agentsassemble.admission.repository import (
     InviteRepositoryCorrupt,
     InviteRepositoryNotConfigured,
@@ -257,6 +261,29 @@ class InviteSessionRepositoryContract:
             "Replacement",
         )
         self.assertEqual(len(self.repository.list_sessions()), 1)
+
+    def test_public_sessions_cannot_consume_the_room_operator_reserve(self) -> None:
+        for index in range(MAX_PUBLIC_SESSIONS_PER_ROOM):
+            self.repository.save_session(
+                f"public-session-{index}",
+                {**_session(), "agent_id": f"public-guest-{index}"},
+            )
+
+        with self.assertRaises(RoomSessionCapacityExceeded):
+            self.repository.save_session(
+                "public-session-over-limit",
+                {**_session(), "agent_id": "public-guest-over-limit"},
+            )
+
+        self.repository.save_session(
+            "operator-session",
+            {
+                **_session(),
+                "agent_id": "operator-participant",
+                "principal_is_operator": True,
+            },
+        )
+        self.assertIsNotNone(self.repository.session("operator-session"))
 
     def test_concurrent_session_replacement_keeps_one_active_token(self) -> None:
         barrier = threading.Barrier(8)

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import base64
 import json
 import tempfile
 import threading
@@ -15,6 +16,7 @@ from agentsassemble.application.public_invite_runtime import PublicInviteRuntime
 from agentsassemble.application.public_tunnel import PublicTunnelManager
 from agentsassemble.gui import _make_handler
 from agentsassemble.persistence.local.room.repository import RoomStore
+from agentsassemble.room.attachments import read_attachment_metadata
 
 
 def _json_request(
@@ -38,7 +40,10 @@ class PublicInviteLifecycleHttpTests(unittest.TestCase):
         self.store.create_room("friend-room", label="Friend room")
         self.runtime = PublicInviteRuntime(environ={})
         self.runtime.set_host_token("host-secret")
-        self.runtime.set_public_url("https://shared-room.example.com")
+        self.runtime.set_managed_public_url(
+            "https://shared-room.example.com",
+            ingress_kind="cloudflare",
+        )
         tunnel = PublicTunnelManager(
             public_invite_runtime=self.runtime,
             which=lambda _name: None,
@@ -58,6 +63,7 @@ class PublicInviteLifecycleHttpTests(unittest.TestCase):
             "Host": "shared-room.example.com",
             "Origin": "https://shared-room.example.com",
             "X-Forwarded-Proto": "https",
+            "CF-Ray": "managed-ingress-test-ray",
         }
 
     def tearDown(self) -> None:
@@ -66,7 +72,7 @@ class PublicInviteLifecycleHttpTests(unittest.TestCase):
         self.store.close()
         self.temporary_directory.cleanup()
 
-    def test_manual_public_url_can_be_cleared_and_external_invites_stop(self) -> None:
+    def test_active_public_url_can_be_cleared_and_external_invites_stop(self) -> None:
         with urlopen(
             _json_request(
                 f"{self.base}/api/public-invite/public-url",
@@ -110,6 +116,7 @@ class PublicInviteLifecycleHttpTests(unittest.TestCase):
                     "invite_token": invite["invite_token"],
                     "request_id": str(uuid4()),
                     "display_name": "Guest Sync QA",
+                    "device_token": "guest-sync-device-token",
                 },
                 self.public_headers,
             ),
@@ -179,6 +186,7 @@ class PublicInviteLifecycleHttpTests(unittest.TestCase):
                     "invite_token": invite["invite_token"],
                     "request_id": str(uuid4()),
                     "display_name": "Connected before close",
+                    "device_token": "closing-room-device-token",
                 },
                 self.public_headers,
             ),
@@ -257,6 +265,7 @@ class PublicInviteLifecycleHttpTests(unittest.TestCase):
                     "invite_token": invite["invite_token"],
                     "request_id": str(uuid4()),
                     "display_name": "Exported guest",
+                    "device_token": "exported-guest-device-token",
                 },
                 self.public_headers,
             ),
@@ -300,6 +309,7 @@ class PublicInviteLifecycleHttpTests(unittest.TestCase):
         self.assertEqual(stale_session.exception.code, HTTPStatus.UNAUTHORIZED)
 
     def test_invited_guest_profile_updates_the_canonical_room_identity(self) -> None:
+        device_token = "guest-profile-device-token"
         with urlopen(
             _json_request(
                 f"{self.base}/api/room-invite/create",
@@ -311,12 +321,29 @@ class PublicInviteLifecycleHttpTests(unittest.TestCase):
             invite = json.loads(response.read().decode("utf-8"))
         with urlopen(
             _json_request(
+                f"{self.base}/api/attachments",
+                {
+                    "purpose": "profile_avatar",
+                    "invite_token": invite["invite_token"],
+                    "device_token": device_token,
+                    "filename": "guest.png",
+                    "content_type": "image/png",
+                    "data_base64": base64.b64encode(b"guest-avatar").decode("ascii"),
+                },
+                self.public_headers,
+            ),
+            timeout=4,
+        ) as response:
+            avatar = json.loads(response.read().decode("utf-8"))["attachment"]
+        with urlopen(
+            _json_request(
                 f"{self.base}/api/room-invite/join",
                 {
                     "invite_token": invite["invite_token"],
                     "request_id": str(uuid4()),
                     "display_name": "Guest Before",
-                    "device_token": "guest-profile-device-token",
+                    "avatar_image_url": avatar["url"],
+                    "device_token": device_token,
                 },
                 self.public_headers,
             ),
@@ -357,6 +384,11 @@ class PublicInviteLifecycleHttpTests(unittest.TestCase):
 
         self.assertEqual(saved["profile"]["display_name"], "Guest After")
         self.assertEqual(loaded["profile"]["custom_status"], "초대 게스트 프로필")
+        self.assertEqual(session["avatar_image_url"], avatar["url"])
+        self.assertFalse(
+            read_attachment_metadata(self.root, str(avatar["id"]))["prejoin_pending"]
+        )
+        self.assertEqual(participant["avatar_image_url"], avatar["url"])
         self.assertEqual(participant["display_name"], "Guest After")
         self.assertEqual(profile_events[-1]["display_name"], "Guest After")
 
@@ -509,6 +541,59 @@ class PublicInviteLifecycleHttpTests(unittest.TestCase):
                 break
 
         self.assertIn(HTTPStatus.TOO_MANY_REQUESTS, statuses)
+
+    def test_authenticated_non_cloudflare_proxy_does_not_trust_cloudflare_client_ip(self) -> None:
+        runtime = PublicInviteRuntime(
+            environ={
+                "AGENTSASSEMBLE_TRUSTED_PROXY_TOKEN": "generic-proxy-secret",
+            }
+        )
+        runtime.set_public_url("https://generic-proxy.example.com")
+        server = ThreadingHTTPServer(
+            ("127.0.0.1", 0),
+            _make_handler(
+                self.root / "generic-proxy",
+                public_invite_runtime_override=runtime,
+            ),
+        )
+        thread = threading.Thread(target=server.serve_forever, daemon=True)
+        thread.start()
+        statuses: list[int] = []
+        try:
+            endpoint = (
+                f"http://127.0.0.1:{server.server_port}"
+                "/api/identity/recovery-code/redeem"
+            )
+            for index in range(17):
+                with self.assertRaises(HTTPError) as rejected:
+                    urlopen(
+                        _json_request(
+                            endpoint,
+                            {
+                                "recovery_code": f"generic-invalid-code-{index}",
+                                "room_id": "friend-room",
+                                "device_token": "generic-proxy-device",
+                                "client_id": f"generic-proxy-client-{index}",
+                            },
+                            {
+                                "Host": "generic-proxy.example.com",
+                                "Origin": "https://generic-proxy.example.com",
+                                "X-Forwarded-Proto": "https",
+                                "X-AgentsAssemble-Proxy-Token": "generic-proxy-secret",
+                                "CF-Connecting-IP": f"198.51.100.{index + 20}",
+                            },
+                        ),
+                        timeout=4,
+                    )
+                statuses.append(rejected.exception.code)
+                rejected.exception.close()
+        finally:
+            server.shutdown()
+            server.server_close()
+            thread.join(timeout=2)
+
+        self.assertEqual(statuses[:16], [HTTPStatus.FORBIDDEN] * 16)
+        self.assertEqual(statuses[16], HTTPStatus.TOO_MANY_REQUESTS)
 
     def test_recovery_code_aliases_share_one_attempt_budget(self) -> None:
         endpoint = f"{self.base}/api/identity/recovery-code/redeem"

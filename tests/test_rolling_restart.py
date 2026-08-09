@@ -9,6 +9,7 @@ import tempfile
 import threading
 import time
 import unittest
+from unittest.mock import patch
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from urllib.request import urlopen
@@ -131,6 +132,38 @@ class RollingRestartTests(unittest.TestCase):
         self.assertTrue(result["accepted"])
         self.assertEqual(status["state"], "failed")
         self.assertFalse(server.shutdown_called.is_set())
+
+    @unittest.skipUnless(os.name == "posix", "Desktop process ownership uses POSIX groups.")
+    def test_desktop_replacement_remains_in_the_shell_owned_process_group(self) -> None:
+        server = _ObservedServer()
+        with tempfile.TemporaryDirectory() as temp_dir:
+            group_path = Path(temp_dir) / "replacement-group.txt"
+            command = [
+                os.environ.get("PYTHON", "python3"),
+                "-c",
+                (
+                    "import os,pathlib,time; "
+                    f"pathlib.Path({str(group_path)!r}).write_text(str(os.getpgrp())); "
+                    "time.sleep(10)"
+                ),
+            ]
+            coordinator = RollingRestartCoordinator(
+                server,
+                output_root=Path(temp_dir),
+                command=command,
+                ready_timeout_seconds=1.0,
+            )
+            with patch.dict(os.environ, {"AGENTSASSEMBLE_DESKTOP_RUNTIME": "1"}):
+                result = coordinator.request(blockers=[])
+            deadline = time.monotonic() + 2.0
+            while not group_path.exists() and time.monotonic() < deadline:
+                time.sleep(0.01)
+            try:
+                self.assertTrue(result["accepted"])
+                self.assertTrue(group_path.exists())
+                self.assertEqual(int(group_path.read_text()), os.getpgrp())
+            finally:
+                coordinator.abandon_replacement("test complete")
 
 
 class RollingRestartCliTests(unittest.TestCase):

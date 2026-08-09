@@ -8,6 +8,7 @@ from agentsassemble.providers.remote_openai import remote_openai_credential_ids
 _LOOPBACK_HOSTNAMES = {"127.0.0.1", "localhost", "::1"}
 _PUBLIC_INVITE_CORS_METHODS = "GET, POST, DELETE, OPTIONS"
 _PUBLIC_INVITE_CORS_HEADERS = "Authorization, Content-Type, Last-Event-ID, X-Device-Token"
+TRUSTED_PROXY_TOKEN_HEADER = "X-AgentsAssemble-Proxy-Token"
 _PROVIDER_CREDENTIAL_PATHS = {
     f"/api/provider-credentials/{provider_id}"
     for provider_id in remote_openai_credential_ids()
@@ -65,20 +66,29 @@ def _request_uses_trusted_public_https_proxy(
     host_header: object,
     forwarded_proto: object,
     public_url: str,
+    ingress_kind: object,
+    cloudflare_ray: object = "",
 ) -> bool:
-    """Accept proxy HTTPS claims only from the configured loopback ingress.
+    """Accept proxy HTTPS claims only from an authenticated ingress.
 
     The GUI server itself speaks HTTP.  A public HTTPS request is therefore
-    trustworthy only when a loopback reverse proxy delivered it for the exact
-    configured public host.  A remote peer cannot turn itself into HTTPS by
-    supplying ``X-Forwarded-Proto``.
+    trustworthy only when the server has registered its managed Cloudflare
+    tunnel or a user-managed proxy presents the configured shared token.  A
+    loopback process cannot establish HTTPS provenance with forwarding headers
+    alone.
     """
     parsed_public_url = urlparse(str(public_url or "").strip())
     public_hostname = (parsed_public_url.hostname or "").lower()
     request_hostname, _ = _split_authority_host_port(str(host_header or ""))
+    clean_ingress_kind = str(ingress_kind or "").strip().lower()
+    ingress_is_authenticated = clean_ingress_kind == "authenticated_proxy"
+    ingress_is_managed_cloudflare = (
+        clean_ingress_kind == "cloudflare" and bool(str(cloudflare_ray or "").strip())
+    )
     return (
         parsed_public_url.scheme.lower() == "https"
         and bool(public_hostname)
+        and (ingress_is_authenticated or ingress_is_managed_cloudflare)
         and _is_loopback_host(peer_host)
         and request_hostname == public_hostname
         and str(forwarded_proto or "").strip().lower() == "https"

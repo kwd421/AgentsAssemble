@@ -6,10 +6,12 @@ from http import HTTPStatus
 
 from agentsassemble.room.attachments import (
     AttachmentError,
+    AttachmentQuotaExceeded,
     INLINE_SAFE_IMAGE_TYPES,
     MAX_ATTACHMENT_BYTES,
     normalize_content_type,
     PUBLIC_ATTACHMENT_PURPOSES,
+    prejoin_attachment_subject,
     sanitize_attachment_filename,
 )
 from agentsassemble.room.text import clean_room_text
@@ -26,6 +28,8 @@ _MAX_UPLOAD_REQUEST_BYTES = ((MAX_ATTACHMENT_BYTES + 2) // 3) * 4 + (64 * 1024)
 class _AuthorizedUpload:
     room_id: str
     profile_avatar: bool = False
+    upload_subject: str = ""
+    prejoin_pending: bool = False
 
 
 def register_attachment_routes(router: Router) -> None:
@@ -65,9 +69,18 @@ def register_attachment_routes(router: Router) -> None:
                 if authority.profile_avatar
                 else clean_room_text(payload.get("purpose"), limit=32)
             ),
+            "upload_subject": authority.upload_subject,
+            "prejoin_pending": authority.prejoin_pending,
         }
         try:
             attachment = ctx.deps.media.store(stored_payload)
+        except AttachmentQuotaExceeded as error:
+            ctx.send_error(
+                HTTPStatus.TOO_MANY_REQUESTS,
+                str(error),
+                code="attachment_quota_reached",
+            )
+            return
         except AttachmentError as error:
             ctx.send_error(HTTPStatus.BAD_REQUEST, str(error))
             return
@@ -125,9 +138,15 @@ def _authorize_upload(
     profile_avatar = purpose == _PROFILE_AVATAR_PURPOSE
 
     if _has_operator_authority(ctx):
+        user = ctx.authenticated_user() or {}
         return _AuthorizedUpload(
             room_id=requested_room_id,
             profile_avatar=profile_avatar,
+            upload_subject=(
+                "user:" + clean_room_text(user.get("user_id"), limit=128)
+                if user.get("user_id")
+                else "operator:host"
+            ),
         )
 
     session = ctx.session()
@@ -154,6 +173,11 @@ def _authorize_upload(
         return _AuthorizedUpload(
             room_id=session_room_id,
             profile_avatar=profile_avatar,
+            upload_subject="user:"
+            + (
+                clean_room_text(session.get("principal_user_id"), limit=128)
+                or clean_room_text(session.get("agent_id"), limit=128)
+            ),
         )
 
     if not profile_avatar:
@@ -164,10 +188,17 @@ def _authorize_upload(
         return None
 
     invite_token = str(payload.get("invite_token") or "").strip()
+    device_token = str(payload.get("device_token") or "").strip()
     if not invite_token:
         ctx.send_error(
             HTTPStatus.UNAUTHORIZED,
             "invite token required for pre-join profile upload",
+        )
+        return None
+    if len(device_token) < 8:
+        ctx.send_error(
+            HTTPStatus.UNAUTHORIZED,
+            "device token required for pre-join profile upload",
         )
         return None
     inspected = ctx.deps.invites.inspect(invite_token, meeting_id=requested_room_id)
@@ -191,6 +222,8 @@ def _authorize_upload(
     return _AuthorizedUpload(
         room_id=invite_room_id,
         profile_avatar=True,
+        upload_subject=prejoin_attachment_subject(invite_token, device_token),
+        prejoin_pending=True,
     )
 
 

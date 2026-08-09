@@ -14,7 +14,6 @@ from agentsassemble.identity.recovery import (
     normalize_recovery_code,
 )
 from agentsassemble.web.router import RequestContext, Router
-from agentsassemble.web.security import _request_uses_trusted_public_https_proxy
 
 
 class _RecoveryAttemptLimiter:
@@ -130,7 +129,7 @@ def register_identity_recovery_routes(router: Router) -> None:
 def _recovery_network_key(ctx: RequestContext) -> str:
     client_address = getattr(ctx.handler, "client_address", ())
     peer = str(client_address[0] if isinstance(client_address, tuple) and client_address else "unknown")
-    if _recovery_uses_trusted_public_proxy(ctx):
+    if ctx.trusted_public_https_ingress_kind() == "cloudflare":
         candidate = str(ctx.headers.get("CF-Connecting-IP") or "").strip()
         try:
             return str(ipaddress.ip_address(candidate))
@@ -147,14 +146,7 @@ def _recovery_transport_is_secure(ctx: RequestContext) -> bool:
 
 
 def _recovery_uses_trusted_public_proxy(ctx: RequestContext) -> bool:
-    client_address = getattr(ctx.handler, "client_address", ())
-    peer_host = client_address[0] if isinstance(client_address, tuple) and client_address else ""
-    return _request_uses_trusted_public_https_proxy(
-        peer_host=peer_host,
-        host_header=ctx.headers.get("Host"),
-        forwarded_proto=ctx.headers.get("X-Forwarded-Proto"),
-        public_url=ctx.deps.invites.public_url(),
-    )
+    return bool(ctx.trusted_public_https_ingress_kind())
 
 
 __all__ = ["register_identity_recovery_routes"]

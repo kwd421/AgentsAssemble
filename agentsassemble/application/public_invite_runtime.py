@@ -10,6 +10,7 @@ from urllib.parse import urlsplit, urlunsplit
 
 HOST_TOKEN_ENV = "AGENTSASSEMBLE_HOST_TOKEN"
 PUBLIC_URL_ENV = "AGENTSASSEMBLE_PUBLIC_URL"
+TRUSTED_PROXY_TOKEN_ENV = "AGENTSASSEMBLE_TRUSTED_PROXY_TOKEN"
 PUBLIC_URL_BLOCKED_HOSTS = {"localhost", "127.0.0.1", "0.0.0.0", "::1"}
 
 
@@ -27,6 +28,8 @@ class PublicInviteRuntime:
         self._lock = threading.RLock()
         self._runtime_host_token = ""
         self._runtime_public_url = ""
+        self._managed_ingress_url = ""
+        self._managed_ingress_kind = ""
 
     def host_token(self) -> str:
         with self._lock:
@@ -56,6 +59,21 @@ class PublicInviteRuntime:
         normalized = normalize_public_room_url(url)
         with self._lock:
             self._runtime_public_url = normalized.rstrip("/")
+            self._managed_ingress_url = ""
+            self._managed_ingress_kind = ""
+            return self._runtime_public_url
+
+    def set_managed_public_url(self, url: str, *, ingress_kind: str) -> str:
+        """Register a public URL whose ingress lifecycle this process owns."""
+
+        normalized = normalize_public_room_url(url).rstrip("/")
+        clean_kind = str(ingress_kind or "").strip().lower()
+        if clean_kind not in {"cloudflare"}:
+            raise ValueError("unsupported managed public ingress")
+        with self._lock:
+            self._runtime_public_url = normalized
+            self._managed_ingress_url = normalized
+            self._managed_ingress_kind = clean_kind
             return self._runtime_public_url
 
     def clear_public_url(self, expected_url: str = "") -> None:
@@ -64,6 +82,35 @@ class PublicInviteRuntime:
             if expected and self._runtime_public_url != expected:
                 return
             self._runtime_public_url = ""
+            self._managed_ingress_url = ""
+            self._managed_ingress_kind = ""
+
+    def trusted_ingress_kind(self, *, provided_proxy_token: str = "") -> str:
+        """Return the authenticated ingress type for the current public URL.
+
+        The built-in tunnel is trusted only while its owned process has
+        registered the active URL.  User-managed reverse proxies must attach a
+        server-configured shared token; forwarding headers alone are never
+        sufficient evidence.
+        """
+
+        with self._lock:
+            current_url = self._runtime_public_url or str(
+                self._environ.get(PUBLIC_URL_ENV) or ""
+            ).rstrip("/")
+            if (
+                current_url
+                and current_url == self._managed_ingress_url
+                and self._managed_ingress_kind
+            ):
+                return self._managed_ingress_kind
+            expected_token = str(
+                self._environ.get(TRUSTED_PROXY_TOKEN_ENV) or ""
+            ).strip()
+        provided = str(provided_proxy_token or "").strip()
+        if expected_token and provided and hmac.compare_digest(expected_token, provided):
+            return "authenticated_proxy"
+        return ""
 
     def host_gate_required(self) -> bool:
         return bool(self.public_url())

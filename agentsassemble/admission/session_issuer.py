@@ -7,6 +7,7 @@ from collections.abc import Callable
 from datetime import UTC, datetime, timedelta
 
 from agentsassemble.admission.repository import SessionRepository
+from agentsassemble.admission.capacity import enforce_room_session_capacity
 
 
 def session_token_fingerprint(token: str) -> str:
@@ -36,6 +37,15 @@ class RoomSessionIssuer:
     def issue(self, record: dict[str, object]) -> tuple[str, dict[str, object]]:
         token = f"{self._token_prefix}.{self._token_factory()}"
         return self.issue_with_token(token, record)
+
+    def assert_capacity(self, record: dict[str, object]) -> None:
+        """Check the same durable limit enforced by the repository write."""
+
+        enforce_room_session_capacity(
+            (session for _fingerprint, session in self._repository.list_sessions()),
+            record,
+            now=self._now(),
+        )
 
     def issue_with_token(
         self,

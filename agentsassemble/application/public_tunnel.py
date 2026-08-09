@@ -124,7 +124,10 @@ class PublicTunnelManager:
                         self._public_url = url
                         if previous:
                             self._public_invite_runtime.clear_public_url(previous)
-                        self._public_invite_runtime.set_public_url(url)
+                        self._public_invite_runtime.set_managed_public_url(
+                            url,
+                            ingress_kind="cloudflare",
+                        )
                         # Re-point the permanent workers.dev entrypoint at the
                         # fresh tunnel hostname (async, best-effort).
                         announce_stable_entry(url)

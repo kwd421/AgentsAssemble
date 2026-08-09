@@ -7,6 +7,10 @@ const apiMocks = vi.hoisted(() => ({
   uploadLobbyAttachment: vi.fn(),
 }));
 
+vi.mock("../../lib/deviceIdentity", () => ({
+  getOrCreateDeviceToken: () => "device-current-browser",
+}));
+
 vi.mock("../../api", async (importOriginal) => {
   const actual = await importOriginal<typeof import("../../api")>();
   return {
@@ -65,6 +69,7 @@ describe("GuestJoinProfilePanel", () => {
     await waitFor(() =>
       expect(apiMocks.uploadLobbyAttachment).toHaveBeenCalledWith(croppedFile, {
         inviteToken: "aaj1_valid-invite",
+        deviceToken: "device-current-browser",
         purpose: "profile_avatar",
       })
     );

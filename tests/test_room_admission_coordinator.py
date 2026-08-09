@@ -272,6 +272,32 @@ class RoomAdmissionCoordinatorTests(unittest.TestCase):
         self.assertEqual(len(self.repository.list_sessions()), 1)
         self.assertEqual(len(self.rooms.participants("room-a")), 1)
 
+    def test_reusable_browser_invite_binds_new_request_ids_to_one_device_session(self) -> None:
+        self.rooms.create_room("room-a", label="Room A")
+        invite = self.invites.create(
+            room_url="http://127.0.0.1:8765",
+            meeting_id="room-a",
+            display_name="Guest",
+            max_uses=0,
+        )
+        arguments = {
+            "invite_token": str(invite["join_code"]),
+            "display_name": "Known Guest",
+            "device_token": "stable-browser-device",
+        }
+
+        first = self.coordinator.admit(request_id="browser-request-1", **arguments)
+        second = self.coordinator.admit(request_id="browser-request-2", **arguments)
+
+        self.assertEqual(second["session_token"], first["session_token"])
+        self.assertEqual(second["agent_id"], first["agent_id"])
+        self.assertEqual(
+            self.repository.invite(str(invite["invite_id"]))["use_count"],
+            1,
+        )
+        self.assertEqual(len(self.repository.list_sessions()), 1)
+        self.assertEqual(self.identities.count_users(), 1)
+
     def test_reusing_request_id_with_changed_payload_is_a_conflict(self) -> None:
         self.rooms.create_room("room-a", label="Room A")
         invite = self.invites.create(

@@ -77,6 +77,7 @@ class PublicTunnelTests(unittest.TestCase):
             manager._read_output(process, 1)
         self.assertEqual(manager._public_url, "https://new-tunnel.trycloudflare.com")
         self.assertEqual(self.runtime.public_url(), "https://new-tunnel.trycloudflare.com")
+        self.assertEqual(self.runtime.trusted_ingress_kind(), "cloudflare")
         # both hostnames were announced in order — workers.dev ends on the live one
         self.assertEqual(
             announced,
@@ -106,13 +107,17 @@ class PublicTunnelTests(unittest.TestCase):
         process = FakeProcess(exit_code=1)
         manager._process = process
         manager._public_url = "https://dead-tunnel.trycloudflare.com"
-        self.runtime.set_public_url("https://dead-tunnel.trycloudflare.com")
+        self.runtime.set_managed_public_url(
+            "https://dead-tunnel.trycloudflare.com",
+            ingress_kind="cloudflare",
+        )
 
         status = manager.status()
 
         self.assertEqual(status["public_url"], "")
         self.assertEqual(status["phase"], "stopped")
         self.assertEqual(self.runtime.public_url(), "")
+        self.assertEqual(self.runtime.trusted_ingress_kind(), "")
 
 
 if __name__ == "__main__":

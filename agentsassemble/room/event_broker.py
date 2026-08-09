@@ -10,6 +10,7 @@ from agentsassemble.room.text import clean_room_text as clean_lobby_text
 
 ROOM_EVENT_STREAM = "room_events"
 ROOM_MAX_SOCKET_CONNECTIONS = 512
+ROOM_MAX_PUBLIC_SOCKET_CONNECTIONS = 384
 ROOM_MAX_SOCKET_CONNECTIONS_PER_SESSION = 8
 
 
@@ -132,18 +133,36 @@ class RoomEventBroker:
         self,
         *,
         max_connections: int = ROOM_MAX_SOCKET_CONNECTIONS,
+        max_public_connections: int | None = None,
         max_connections_per_session: int = ROOM_MAX_SOCKET_CONNECTIONS_PER_SESSION,
     ) -> None:
         self._lock = threading.RLock()
         self._channels: dict[str, RoomSocketChannel] = {}
         self._active_bridges: dict[tuple[str, str], tuple[str, int]] = {}
         self._max_connections = max(1, int(max_connections))
+        self._max_public_connections = max(
+            1,
+            int(
+                max_public_connections
+                if max_public_connections is not None
+                else min(ROOM_MAX_PUBLIC_SOCKET_CONNECTIONS, self._max_connections)
+            ),
+        )
         self._max_connections_per_session = max(1, int(max_connections_per_session))
 
     def connect(self, identity: dict[str, object]) -> RoomSocketChannel:
         with self._lock:
             if len(self._channels) >= self._max_connections:
                 raise RoomConnectionLimitError("room WebSocket capacity reached")
+            if not _uses_reserved_capacity(identity):
+                public_connections = sum(
+                    not _uses_reserved_capacity(existing.identity)
+                    for existing in self._channels.values()
+                )
+                if public_connections >= self._max_public_connections:
+                    raise RoomConnectionLimitError(
+                        "public room WebSocket capacity reached"
+                    )
             subject = _connection_subject(identity)
             subject_connections = sum(
                 1
@@ -305,3 +324,10 @@ def _connection_subject(identity: dict[str, object]) -> tuple[str, str]:
         limit=128,
     )
     return room_id, session_id
+
+
+def _uses_reserved_capacity(identity: dict[str, object]) -> bool:
+    return bool(identity.get("principal_is_operator")) or clean_lobby_text(
+        identity.get("client_type"),
+        limit=32,
+    ) == "agent_bridge"

@@ -12,6 +12,7 @@ from agentsassemble.admission.maintenance import (
     AdmissionWorkflowSelection,
     PurgeReport,
 )
+from agentsassemble.admission.capacity import effective_invite_use_limit
 from agentsassemble.admission.repository import InviteSessionRepository
 from agentsassemble.admission.lan_invite import (
     NATIVE_REMOTE_ROOM_CLIENT_KIND,
@@ -181,7 +182,7 @@ class InviteApplicationService:
                 continue
             max_uses = max(0, int(invite.get("max_uses") or 0))
             use_count = max(0, int(invite.get("use_count") or 0))
-            if max_uses and use_count >= max_uses:
+            if use_count >= effective_invite_use_limit(max_uses):
                 continue
             pending += 1
         return active + pending
@@ -508,7 +509,7 @@ def prepare_invite_admission(
     max_uses = int(invite.get("max_uses", 1)) if invite else 1
     use_count = int(invite.get("use_count", 0)) if invite else 0
     reusable = max_uses != 1
-    if max_uses and use_count >= max_uses:
+    if use_count >= effective_invite_use_limit(max_uses):
         return {"status": "rejected", "reason": "invite_use_limit_reached"}
     nonce_fingerprint = fingerprint_nonce(str(claims.get("nonce") or ""))
     if not reusable and repository.nonce_was_used(nonce_fingerprint):

@@ -53,6 +53,30 @@ class PublicInviteRuntimeTests(unittest.TestCase):
         self.assertFalse(runtime.verify_host_token(""))
         self.assertFalse(runtime.verify_host_token("guessed-token"))
 
+    def test_forwarding_headers_require_a_registered_or_authenticated_ingress(self) -> None:
+        runtime = PublicInviteRuntime(
+            environ={
+                "AGENTSASSEMBLE_TRUSTED_PROXY_TOKEN": "proxy-shared-secret",
+            }
+        )
+        runtime.set_public_url("https://manual.example")
+
+        self.assertEqual(runtime.trusted_ingress_kind(), "")
+        self.assertEqual(
+            runtime.trusted_ingress_kind(
+                provided_proxy_token="proxy-shared-secret",
+            ),
+            "authenticated_proxy",
+        )
+
+        runtime.set_managed_public_url(
+            "https://owned.trycloudflare.com",
+            ingress_kind="cloudflare",
+        )
+        self.assertEqual(runtime.trusted_ingress_kind(), "cloudflare")
+        runtime.clear_public_url("https://owned.trycloudflare.com")
+        self.assertEqual(runtime.trusted_ingress_kind(), "")
+
 
 if __name__ == "__main__":
     unittest.main()

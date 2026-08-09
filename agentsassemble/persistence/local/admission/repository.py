@@ -15,6 +15,10 @@ from agentsassemble.admission.maintenance import (
     PurgeReport,
     build_purge_report,
 )
+from agentsassemble.admission.capacity import (
+    effective_invite_use_limit,
+    enforce_room_session_capacity,
+)
 from agentsassemble.admission.repository import (
     InviteRepositoryCorrupt,
     InviteRepositoryUnavailable,
@@ -108,7 +112,7 @@ class MemoryInviteSessionRepository:
                 if record is None:
                     return "invite_not_found"
                 current_uses = int(record.get("use_count", 0))
-                if max_uses and current_uses >= max_uses:
+                if current_uses >= effective_invite_use_limit(max_uses):
                     return "invite_use_limit_reached"
                 with self._persisted_mutation_locked():
                     record["use_count"] = current_uses + 1
@@ -159,6 +163,7 @@ class MemoryInviteSessionRepository:
             raise ValueError("session token fingerprint is required")
         room_id, participant_id = _session_identity(record)
         with self._lock:
+            enforce_room_session_capacity(self._sessions.values(), record)
             with self._persisted_mutation_locked():
                 replaced = [
                     fingerprint
@@ -292,7 +297,7 @@ class MemoryInviteSessionRepository:
                 if invite is None:
                     return "invite_not_found", deepcopy(workflow)
                 current_uses = int(invite.get("use_count", 0))
-                if max_uses and current_uses >= max_uses:
+                if current_uses >= effective_invite_use_limit(max_uses):
                     return "invite_use_limit_reached", deepcopy(workflow)
             elif clean_nonce in self._used_nonce_fingerprints:
                 return "token_already_used", deepcopy(workflow)

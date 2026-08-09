@@ -12,6 +12,10 @@ from agentsassemble.admission.maintenance import (
     PurgeReport,
     build_purge_report,
 )
+from agentsassemble.admission.capacity import (
+    effective_invite_use_limit,
+    enforce_room_session_capacity,
+)
 from agentsassemble.admission.workflow_record import validate_admission_workflow_record
 from agentsassemble.persistence.postgres.application_database import (
     PostgresConnectionProvider,
@@ -163,8 +167,10 @@ class PostgresInviteSessionRepository:
                 if row is None:
                     return "invite_not_found"
                 stored_max_uses = int(row["max_uses"])
-                effective_max = stored_max_uses if stored_max_uses >= 0 else max(0, int(max_uses))
-                if effective_max and int(row["use_count"]) >= effective_max:
+                effective_max = effective_invite_use_limit(
+                    stored_max_uses if stored_max_uses >= 0 else max_uses
+                )
+                if int(row["use_count"]) >= effective_max:
                     return "invite_use_limit_reached"
                 connection.execute(
                     "UPDATE room_invites SET use_count = use_count + 1 WHERE invite_id = %s",
@@ -220,6 +226,14 @@ class PostgresInviteSessionRepository:
         if not parameters[0] or not parameters[1] or not parameters[2]:
             raise ValueError("session token, room, and participant are required")
         with self._connections.connection() as connection, connection.transaction():
+            connection.execute("SELECT pg_advisory_xact_lock(%s)", (0x4153534D,))
+            active_rows = connection.execute(
+                "SELECT * FROM room_access_sessions WHERE expires_at > NOW()"
+            ).fetchall()
+            enforce_room_session_capacity(
+                (_session_from_row(row) for row in active_rows),
+                record,
+            )
             connection.execute(
                 "DELETE FROM room_access_sessions WHERE token_fingerprint = %s",
                 (parameters[0],),
@@ -398,8 +412,10 @@ class PostgresInviteSessionRepository:
                 if invite is None:
                     return "invite_not_found", workflow
                 stored_max = int(invite["max_uses"])
-                effective_max = stored_max if stored_max >= 0 else max(0, int(max_uses))
-                if effective_max and int(invite["use_count"]) >= effective_max:
+                effective_max = effective_invite_use_limit(
+                    stored_max if stored_max >= 0 else max_uses
+                )
+                if int(invite["use_count"]) >= effective_max:
                     return "invite_use_limit_reached", workflow
                 connection.execute(
                     "UPDATE room_invites SET use_count = use_count + 1 WHERE invite_id = %s",

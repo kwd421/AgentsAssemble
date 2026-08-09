@@ -1,5 +1,6 @@
 import io
 import json
+import os
 import tempfile
 import threading
 import unittest
@@ -514,9 +515,9 @@ class ProviderHandlerDispatchTests(unittest.TestCase):
         self.assertEqual(payload, {"error": "host token required"})
         self.assertEqual(store.calls, [])
 
-    def test_public_host_token_with_forwarded_https_is_accepted_without_key_disclosure(self):
+    def test_unregistered_loopback_proxy_cannot_assert_https_with_forwarding_headers(self):
         room_invite.set_runtime_host_token("host-secret")
-        room_invite.set_runtime_public_url("http://public.example.test")
+        room_invite.set_runtime_public_url("https://public.example.test")
         store = FakeSecretStore()
 
         with tempfile.TemporaryDirectory() as temp_dir:
@@ -527,8 +528,37 @@ class ProviderHandlerDispatchTests(unittest.TestCase):
                     "Host": "public.example.test",
                     "X-Host-Token": "host-secret",
                     "X-Forwarded-Proto": "https",
+                    "CF-Connecting-IP": "198.51.100.20",
                 },
             )
+
+        self.assertEqual(status, HTTPStatus.FORBIDDEN)
+        self.assertEqual(
+            payload,
+            {"error": "HTTPS is required for remote credential management"},
+        )
+        self.assertEqual(store.calls, [])
+
+    def test_authenticated_public_proxy_can_manage_credentials_without_key_disclosure(self):
+        room_invite.set_runtime_host_token("host-secret")
+        room_invite.set_runtime_public_url("https://public.example.test")
+        store = FakeSecretStore()
+
+        with patch.dict(
+            os.environ,
+            {"AGENTSASSEMBLE_TRUSTED_PROXY_TOKEN": "proxy-shared-secret"},
+        ):
+            with tempfile.TemporaryDirectory() as temp_dir:
+                status, payload = self._request_public_credential_status(
+                    Path(temp_dir),
+                    store,
+                    headers={
+                        "Host": "public.example.test",
+                        "X-Host-Token": "host-secret",
+                        "X-Forwarded-Proto": "https",
+                        "X-AgentsAssemble-Proxy-Token": "proxy-shared-secret",
+                    },
+                )
 
         self.assertEqual(status, HTTPStatus.OK)
         self.assertEqual(payload, {"configured": True, "source": "keyring"})

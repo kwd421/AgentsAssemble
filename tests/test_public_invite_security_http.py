@@ -311,30 +311,15 @@ class PublicInviteSecurityHttpTests(unittest.TestCase):
                     timeout=4,
                 ) as response:
                     invite = json.loads(response.read().decode("utf-8"))
-                with urlopen(
-                    _json_request(
-                        f"{base}/api/room-invite/join",
-                        {
-                            "invite_token": invite["invite_token"],
-                            "request_id": str(uuid4()),
-                        },
-                        public_headers,
-                    ),
-                    timeout=4,
-                ) as response:
-                    unstable_guest = json.loads(response.read().decode("utf-8"))
-
                 with self.assertRaises(HTTPError) as rejected:
                     urlopen(
                         _json_request(
-                            f"{base}/api/room-invite/companion",
-                            {"display_name": "Quota partition"},
+                            f"{base}/api/room-invite/join",
                             {
-                                **public_headers,
-                                "Authorization": (
-                                    f"Bearer {unstable_guest['session_token']}"
-                                ),
+                                "invite_token": invite["invite_token"],
+                                "request_id": str(uuid4()),
                             },
+                            public_headers,
                         ),
                         timeout=4,
                     )
@@ -345,7 +330,7 @@ class PublicInviteSecurityHttpTests(unittest.TestCase):
                 server.server_close()
 
         self.assertEqual(rejected.exception.code, HTTPStatus.FORBIDDEN)
-        self.assertEqual(payload.get("code"), "companion_owner_required")
+        self.assertEqual(payload.get("code"), "stable_device_required")
 
     def test_http_kick_revokes_the_live_session_and_disconnects_its_room_socket(self):
         with tempfile.TemporaryDirectory() as temp_dir:
@@ -378,6 +363,7 @@ class PublicInviteSecurityHttpTests(unittest.TestCase):
                         {
                             "invite_token": invite["invite_token"],
                             "request_id": str(uuid4()),
+                            "device_token": "kick-guest-device-token",
                         },
                         public_headers,
                     ),

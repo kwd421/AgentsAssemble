@@ -41,11 +41,14 @@ impl LocalRuntime {
             .map_err(|error| format!("cannot create local runtime directory: {error}"))?;
         let stderr_path = runtime_root.join("server.stderr.log");
 
-        if self.owned_child_is_running()? {
+        if self.owned_runtime_is_running()? {
             let server = self
                 .current_server()
                 .ok_or_else(|| "The owned local runtime did not report its address.".to_owned())?;
             return self.wait_until_ready(&server, &stderr_path);
+        }
+        if let Some(mut stale_child) = self.child.lock().expect("local runtime lock").take() {
+            terminate_process_tree(&mut stale_child);
         }
         self.server
             .lock()
@@ -151,7 +154,7 @@ impl LocalRuntime {
         Err(format!("{message} Details: {}", stderr_path.display()))
     }
 
-    fn owned_child_is_running(&self) -> Result<bool, String> {
+    fn owned_runtime_is_running(&self) -> Result<bool, String> {
         let mut owned_child = self.child.lock().expect("local runtime lock");
         let Some(child) = owned_child.as_mut() else {
             return Ok(false);
@@ -163,8 +166,7 @@ impl LocalRuntime {
         {
             return Ok(true);
         }
-        owned_child.take();
-        Ok(false)
+        Ok(owned_process_group_is_running(child))
     }
 
     pub fn current_server(&self) -> Option<Url> {
@@ -338,12 +340,18 @@ fn terminate_process_tree(child: &mut Child) {
         libc::kill(process_group, libc::SIGTERM);
     }
     thread::sleep(Duration::from_millis(250));
-    if child.try_wait().ok().flatten().is_none() {
+    if owned_process_group_is_running(child) {
         unsafe {
             libc::kill(process_group, libc::SIGKILL);
         }
     }
     let _ = child.wait();
+}
+
+#[cfg(unix)]
+fn owned_process_group_is_running(child: &Child) -> bool {
+    let result = unsafe { libc::kill(-(child.id() as i32), 0) };
+    result == 0 || std::io::Error::last_os_error().raw_os_error() == Some(libc::EPERM)
 }
 
 #[cfg(test)]
@@ -373,4 +381,9 @@ fn terminate_process_tree(child: &mut Child) {
         .creation_flags(0x0800_0000)
         .status();
     let _ = child.wait();
+}
+
+#[cfg(windows)]
+fn owned_process_group_is_running(_child: &Child) -> bool {
+    false
 }

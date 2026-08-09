@@ -44,7 +44,9 @@ from agentsassemble.web.security import (
     _LOOPBACK_HOSTNAMES,
     _is_loopback_host,
     _origin_is_loopback_or_empty,
+    _request_uses_trusted_public_https_proxy,
     _split_authority_host_port,
+    TRUSTED_PROXY_TOKEN_HEADER,
 )
 
 MAX_JSON_BODY_BYTES = 16 * 1024 * 1024
@@ -58,6 +60,7 @@ _PROXY_PROVENANCE_HEADERS = (
     "X-Forwarded-Host",
     "X-Forwarded-Proto",
     "X-Real-IP",
+    TRUSTED_PROXY_TOKEN_HEADER,
 )
 
 
@@ -219,6 +222,30 @@ class RequestContext:
 
     def has_proxy_provenance(self) -> bool:
         return any(str(self.headers.get(name) or "").strip() for name in _PROXY_PROVENANCE_HEADERS)
+
+    def trusted_public_https_ingress_kind(self) -> str:
+        runtime = self.deps.public_invite_runtime
+        if runtime is None:
+            return ""
+        ingress_kind = runtime.trusted_ingress_kind(
+            provided_proxy_token=self.headers.get(TRUSTED_PROXY_TOKEN_HEADER),
+        )
+        client_address = getattr(self.handler, "client_address", ())
+        peer_host = (
+            client_address[0]
+            if isinstance(client_address, tuple) and client_address
+            else ""
+        )
+        if not _request_uses_trusted_public_https_proxy(
+            peer_host=peer_host,
+            host_header=self.headers.get("Host"),
+            forwarded_proto=self.headers.get("X-Forwarded-Proto"),
+            public_url=runtime.public_url(),
+            ingress_kind=ingress_kind,
+            cloudflare_ray=self.headers.get("CF-Ray"),
+        ):
+            return ""
+        return ingress_kind
 
     def is_local_operator(self) -> bool:
         return (
