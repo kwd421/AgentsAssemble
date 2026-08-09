@@ -19,6 +19,11 @@ class CredentialRedactingRoomClient:
     def receive(self) -> list[dict[str, object]]:
         return self._client.receive()
 
+    def set_receive_timeout(self, seconds: float) -> None:
+        set_receive_timeout = getattr(self._client, "set_receive_timeout", None)
+        if callable(set_receive_timeout):
+            set_receive_timeout(seconds)
+
     def command(
         self,
         action: str,
