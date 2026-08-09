@@ -4,7 +4,15 @@ import threading
 import unittest
 
 import agentsassemble.web.room_session as room_session_module
-from agentsassemble.web.websocket_codec import OP_CLOSE, OP_PING, OP_PONG, OP_TEXT
+from agentsassemble.web.websocket_codec import (
+    CLOSE_MESSAGE_TOO_BIG,
+    CLOSE_POLICY_VIOLATION,
+    OP_CLOSE,
+    OP_PING,
+    OP_PONG,
+    OP_TEXT,
+    parse_close,
+)
 from agentsassemble.web.room_session import (
     WS_SESSION_REVOKED_CATEGORY,
     WsCommandRejected,
@@ -346,6 +354,47 @@ class ThinkingTests(unittest.TestCase):
 
 
 class ControlAndMiscTests(unittest.TestCase):
+    def test_oversized_raw_command_is_rejected_before_command_execution(self):
+        deps = FakeDeps()
+        sess = _session(deps)
+        payload = json.dumps(
+            {
+                "op": "command",
+                "request_id": "oversized-command",
+                "action": "message.send",
+                "payload": {"content": "tiny"},
+                "padding": "x" * (1024 * 1024),
+            }
+        ).encode()
+
+        frames = sess.handle_frame(OP_TEXT, payload)
+        decoded = server_frames(frames)
+
+        self.assertEqual(len(deps.commands), 0)
+        self.assertTrue(sess.closed)
+        self.assertEqual(decoded[0][0], OP_CLOSE)
+        self.assertEqual(
+            parse_close(decoded[0][1]),
+            (CLOSE_MESSAGE_TOO_BIG, "room message too large"),
+        )
+
+    def test_repeated_raw_input_is_rejected_when_connection_budget_is_exhausted(self):
+        deps = FakeDeps()
+        sess = _session(deps)
+        payload = json.dumps({"op": "ping", "padding": "x" * 128}).encode()
+        sess.max_ingress_bytes_per_window = len(payload) * 2 - 1
+
+        first = text_messages(sess.handle_frame(OP_TEXT, payload))
+        second = server_frames(sess.handle_frame(OP_TEXT, payload))
+
+        self.assertEqual(first, [{"op": "pong"}])
+        self.assertFalse(any(opcode == OP_TEXT for opcode, _ in second))
+        self.assertTrue(sess.closed)
+        self.assertEqual(
+            parse_close(second[0][1]),
+            (CLOSE_POLICY_VIOLATION, "room input budget exceeded"),
+        )
+
     def test_correlated_command_returns_ack(self):
         deps = FakeDeps()
         sess = _session(deps)

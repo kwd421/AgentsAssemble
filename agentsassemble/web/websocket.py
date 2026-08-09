@@ -21,6 +21,7 @@ from agentsassemble.web.websocket_codec import (
 from agentsassemble.web.router import RequestContext, Router
 from agentsassemble.web.sse_cadence import SSE_EVENT_POLL_INTERVAL_SECONDS
 from agentsassemble.web.room_session import (
+    WS_MAX_CLIENT_MESSAGE_BYTES,
     WS_SESSION_TOKEN_KEY,
     WS_TICKET_TTL_SECONDS,
     WsRoomSession,
@@ -146,7 +147,7 @@ def handle_ws_upgrade(
             deps=ws_room_deps_factory(channel, handler),
             session_token=session_token,
         )
-        assembler = MessageAssembler()
+        assembler = MessageAssembler(max_message_bytes=WS_MAX_CLIENT_MESSAGE_BYTES)
         opened_at = time.monotonic()
         last_client_activity_at = opened_at
         next_heartbeat_at = opened_at + WS_HEARTBEAT_INTERVAL_SECONDS
@@ -208,7 +209,7 @@ def handle_ws_upgrade(
                 next_heartbeat_at = now + WS_HEARTBEAT_INTERVAL_SECONDS
     except WebSocketProtocolError as error:
         try:
-            sock.sendall(encode_close(error.close_code))
+            sock.sendall(encode_close(error.close_code, str(error)[:100]))
         except OSError:
             pass
     except (BrokenPipeError, ConnectionResetError, OSError, ValueError):

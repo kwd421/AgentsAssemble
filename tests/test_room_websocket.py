@@ -2,10 +2,9 @@ import struct
 import unittest
 
 from agentsassemble.web.websocket_codec import (
-    CLOSE_NORMAL,
     CLOSE_MESSAGE_TOO_BIG,
+    CLOSE_NORMAL,
     MAX_MESSAGE_FRAGMENTS,
-    MAX_PAYLOAD_BYTES,
     OP_BINARY,
     OP_CLOSE,
     OP_PING,
@@ -171,9 +170,9 @@ class MessageAssemblerTests(unittest.TestCase):
         self.assertEqual(list(asm.messages()), [(OP_TEXT, b"Hello")])
 
     def test_fragmented_message_cannot_exceed_aggregate_payload_limit(self):
-        asm = MessageAssembler()
-        first = b"a" * (MAX_PAYLOAD_BYTES // 2 + 1)
-        second = b"b" * (MAX_PAYLOAD_BYTES // 2)
+        asm = MessageAssembler(max_message_bytes=64)
+        first = b"a" * 33
+        second = b"b" * 32
         asm.feed(_client_frame(first, opcode=OP_TEXT, fin=False))
         self.assertEqual(list(asm.messages()), [])
         asm.feed(_client_frame(second, opcode=0x0, fin=True))

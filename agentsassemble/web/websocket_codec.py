@@ -158,7 +158,12 @@ def parse_close(payload: bytes) -> tuple[int, str]:
     return code, payload[2:].decode("utf-8", "replace")
 
 
-def _parse_frame(buffer: bytes, *, expect_mask: bool) -> tuple[Frame | None, bytes]:
+def _parse_frame(
+    buffer: bytes,
+    *,
+    expect_mask: bool,
+    max_payload_bytes: int = MAX_PAYLOAD_BYTES,
+) -> tuple[Frame | None, bytes]:
     """Parse ONE frame. `expect_mask` True = client→server (must be masked),
     False = server→client (must NOT be masked). Returns (frame, rest), or
     (None, buffer) when more bytes are needed."""
@@ -182,7 +187,7 @@ def _parse_frame(buffer: bytes, *, expect_mask: bool) -> tuple[Frame | None, byt
             return None, buffer
         (length,) = struct.unpack("!Q", buffer[offset:offset + 8])
         offset += 8
-    if length > MAX_PAYLOAD_BYTES:
+    if length > max_payload_bytes:
         raise WebSocketProtocolError(
             "Frame payload too large.",
             close_code=CLOSE_MESSAGE_TOO_BIG,
@@ -270,13 +275,21 @@ class MessageAssembler:
     `expect_mask=True` (default) for the server side (client frames are masked);
     `expect_mask=False` for a WS client parsing unmasked server frames."""
 
-    def __init__(self, *, expect_mask: bool = True) -> None:
+    def __init__(
+        self,
+        *,
+        expect_mask: bool = True,
+        max_message_bytes: int = MAX_PAYLOAD_BYTES,
+    ) -> None:
+        if int(max_message_bytes) <= 0:
+            raise ValueError("max_message_bytes must be positive")
         self._buffer = b""
         self._fragments: list[bytes] = []
         self._fragment_opcode: int | None = None
         self._fragment_bytes = 0
         self._fragment_count = 0
         self._expect_mask = expect_mask
+        self._max_message_bytes = int(max_message_bytes)
 
     def feed(self, data: bytes) -> None:
         self._buffer += bytes(data)
@@ -284,7 +297,11 @@ class MessageAssembler:
     def messages(self):
         """Yield (opcode, payload) for each complete message/control frame."""
         while True:
-            frame, rest = _parse_frame(self._buffer, expect_mask=self._expect_mask)
+            frame, rest = _parse_frame(
+                self._buffer,
+                expect_mask=self._expect_mask,
+                max_payload_bytes=self._max_message_bytes,
+            )
             if frame is None:
                 return
             self._buffer = rest
@@ -302,7 +319,7 @@ class MessageAssembler:
             self._fragment_bytes += len(frame.payload)
             self._fragment_count += 1
             if (
-                self._fragment_bytes > MAX_PAYLOAD_BYTES
+                self._fragment_bytes > self._max_message_bytes
                 or self._fragment_count > MAX_MESSAGE_FRAGMENTS
             ):
                 raise WebSocketProtocolError(

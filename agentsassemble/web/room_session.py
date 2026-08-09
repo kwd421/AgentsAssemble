@@ -25,6 +25,7 @@ from agentsassemble.identity.repository import (
     LOCAL_OPERATOR_USER_ID,
 )
 from agentsassemble.web.websocket_codec import (
+    CLOSE_MESSAGE_TOO_BIG,
     CLOSE_NORMAL,
     CLOSE_POLICY_VIOLATION,
     CLOSE_PROTOCOL_ERROR,
@@ -45,6 +46,10 @@ WS_STREAMS = ("lobby", "roster", "side_chat", "room_events")
 WS_DEFAULT_STREAMS = ("lobby", "roster", "side_chat")
 WS_SESSION_TOKEN_KEY = "_ws_session_token"
 WS_SESSION_REVOKED_CATEGORY = "session_revoked"
+WS_MAX_CLIENT_MESSAGE_BYTES = 256 * 1024
+WS_CLIENT_INGRESS_WINDOW_SECONDS = 60.0
+WS_MAX_CLIENT_INGRESS_BYTES_PER_WINDOW = 8 * 1024 * 1024
+WS_MAX_CLIENT_MESSAGES_PER_WINDOW = 1024
 HOST_BROWSER_PARTICIPANT_ID = LOCAL_OPERATOR_PARTICIPANT_ID
 HOST_BROWSER_DISPLAY_DEFAULT = LOCAL_OPERATOR_DISPLAY_NAME_DEFAULT
 
@@ -207,6 +212,14 @@ class WsRoomSession:
     _room_after_seq: int = 0
     handshake_complete: bool = False
     closed: bool = False
+    ingress_clock: Callable[[], float] = time.monotonic
+    max_client_message_bytes: int = WS_MAX_CLIENT_MESSAGE_BYTES
+    max_ingress_bytes_per_window: int = WS_MAX_CLIENT_INGRESS_BYTES_PER_WINDOW
+    max_messages_per_window: int = WS_MAX_CLIENT_MESSAGES_PER_WINDOW
+    ingress_window_seconds: float = WS_CLIENT_INGRESS_WINDOW_SECONDS
+    _ingress_window_started_at: float | None = None
+    _ingress_window_bytes: int = 0
+    _ingress_window_messages: int = 0
 
     @property
     def meeting_id(self) -> str:
@@ -223,8 +236,40 @@ class WsRoomSession:
             self.closed = True
             return [encode_close(CLOSE_NORMAL)]
         if opcode == OP_TEXT:
+            rejected = self._admit_text_payload(payload)
+            if rejected is not None:
+                return rejected
             return self._handle_text(payload)
         return []
+
+    def _admit_text_payload(self, payload: bytes) -> list[bytes] | None:
+        payload_size = len(payload)
+        if payload_size > self.max_client_message_bytes:
+            self.closed = True
+            return [encode_close(CLOSE_MESSAGE_TOO_BIG, "room message too large")]
+
+        now = self.ingress_clock()
+        if (
+            self._ingress_window_started_at is None
+            or now < self._ingress_window_started_at
+            or now - self._ingress_window_started_at >= self.ingress_window_seconds
+        ):
+            self._ingress_window_started_at = now
+            self._ingress_window_bytes = 0
+            self._ingress_window_messages = 0
+
+        next_bytes = self._ingress_window_bytes + payload_size
+        next_messages = self._ingress_window_messages + 1
+        if (
+            next_bytes > self.max_ingress_bytes_per_window
+            or next_messages > self.max_messages_per_window
+        ):
+            self.closed = True
+            return [encode_close(CLOSE_POLICY_VIOLATION, "room input budget exceeded")]
+
+        self._ingress_window_bytes = next_bytes
+        self._ingress_window_messages = next_messages
+        return None
 
     def _handle_text(self, payload: bytes) -> list[bytes]:
         if not self._session_is_active():
