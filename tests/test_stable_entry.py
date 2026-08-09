@@ -6,10 +6,52 @@ from types import SimpleNamespace
 from unittest import mock
 
 from agentsassemble.application import stable_entry
+from agentsassemble.application.public_invite_runtime import PublicInviteRuntime
+from agentsassemble.application.public_tunnel import PublicTunnelManager
 from agentsassemble.application.stable_entry import announce_stable_entry
 
 
 class StableEntryPublicationTests(unittest.TestCase):
+    def test_switching_manual_https_to_http_clears_the_external_stable_target(
+        self,
+    ) -> None:
+        first_publish_finished = threading.Event()
+        clear_finished = threading.Event()
+        commands: list[list[str]] = []
+
+        def run_wrangler(command, **_kwargs):
+            commands.append(command)
+            if "delete" in command:
+                clear_finished.set()
+            else:
+                first_publish_finished.set()
+            return SimpleNamespace(returncode=0)
+
+        config = {
+            "url": "https://stable-entry.example",
+            "namespace_id": "namespace-1",
+            "kv_key": "target",
+        }
+        manager = PublicTunnelManager(
+            public_invite_runtime=PublicInviteRuntime(environ={}),
+        )
+        with (
+            mock.patch(
+                "agentsassemble.application.stable_entry.stable_entry_config",
+                return_value=config,
+            ),
+            mock.patch(
+                "agentsassemble.application.stable_entry.subprocess.run",
+                side_effect=run_wrangler,
+            ),
+        ):
+            manager.set_manual_public_url("https://manual.example.com")
+            self.assertTrue(first_publish_finished.wait(timeout=2))
+            manager.set_manual_public_url("http://manual.example.com")
+            self.assertTrue(clear_finished.wait(timeout=1))
+
+        self.assertIn("delete", commands[-1])
+
     def test_older_blocked_publication_cannot_overwrite_a_newer_url(self) -> None:
         old_url = "https://old-tunnel.trycloudflare.com"
         new_url = "https://new-tunnel.trycloudflare.com"

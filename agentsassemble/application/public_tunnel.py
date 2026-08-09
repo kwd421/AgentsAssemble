@@ -143,7 +143,10 @@ class PublicTunnelManager:
                 clear_stable_entry()
                 return ""
             committed_url = self._public_invite_runtime.set_public_url(normalized_url)
-            announce_stable_entry(committed_url)
+            if committed_url.startswith("https://"):
+                announce_stable_entry(committed_url)
+            else:
+                clear_stable_entry()
             return committed_url
 
     def _read_output(
