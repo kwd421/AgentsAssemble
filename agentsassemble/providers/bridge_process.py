@@ -651,6 +651,10 @@ class NativeCliBridgeProcessManager:
     def redact_public_payload(self, room_id, session_id, value):
         return self._sensitive_values.redact_public_payload(room_id, session_id, value)
 
+    @property
+    def sensitive_value_registry(self) -> BridgeSensitiveValueRegistry:
+        return self._sensitive_values
+
     def discard_stream_delta(self, room_id: str, session_id: str, turn_id: str) -> None:
         self._sensitive_values.discard_stream_delta(room_id, session_id, turn_id)
 

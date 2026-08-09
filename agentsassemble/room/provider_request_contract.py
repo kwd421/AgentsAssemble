@@ -131,6 +131,59 @@ def normalize_provider_resolution(
     raise ProviderRequestValidationError("Unsupported provider response kind.")
 
 
+def durable_provider_resolution(
+    request: dict[str, object],
+    resolution: dict[str, object],
+) -> dict[str, object]:
+    """Remove secret answers while preserving durable resolution state."""
+
+    raw_answers = resolution.get("answers")
+    if not isinstance(raw_answers, dict):
+        return dict(resolution)
+    secret_question_ids = {
+        clean_room_text(question.get("id"), limit=128)
+        for question in list(request.get("questions") or [])
+        if isinstance(question, dict) and question.get("is_secret") is True
+    }
+    answers = {
+        str(question_id): list(values) if isinstance(values, list) else [values]
+        for question_id, values in raw_answers.items()
+        if str(question_id) not in secret_question_ids
+    }
+    secret_answered_question_ids = sorted(
+        question_id
+        for question_id in secret_question_ids
+        if question_id in raw_answers
+    )
+    durable: dict[str, object] = {"answers": answers}
+    if secret_answered_question_ids:
+        durable["secret_answered_question_ids"] = secret_answered_question_ids
+    return durable
+
+
+def secret_provider_resolution_values(
+    request: dict[str, object],
+    resolution: dict[str, object],
+) -> tuple[str, ...]:
+    """Return secret answer values for process-lifetime delivery redaction."""
+
+    raw_answers = resolution.get("answers")
+    if not isinstance(raw_answers, dict):
+        return ()
+    secret_question_ids = {
+        clean_room_text(question.get("id"), limit=128)
+        for question in list(request.get("questions") or [])
+        if isinstance(question, dict) and question.get("is_secret") is True
+    }
+    return tuple(
+        str(value)
+        for question_id, raw_values in raw_answers.items()
+        if str(question_id) in secret_question_ids
+        for value in (raw_values if isinstance(raw_values, list) else [raw_values])
+        if str(value or "")
+    )
+
+
 def _normalize_options(value: object) -> list[dict[str, str]]:
     options: list[dict[str, str]] = []
     seen: set[str] = set()
@@ -189,6 +242,8 @@ def _bounded_int(value: object, *, default: int, minimum: int, maximum: int) -> 
 __all__ = [
     "PROVIDER_REQUEST_TERMINAL_STATUSES",
     "ProviderRequestValidationError",
+    "durable_provider_resolution",
     "normalize_provider_request",
     "normalize_provider_resolution",
+    "secret_provider_resolution_values",
 ]

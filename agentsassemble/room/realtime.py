@@ -55,6 +55,7 @@ from agentsassemble.room.bridge_reports import RoomBridgeReportService
 from agentsassemble.room.bridge_diagnostics import (
     bridge_manager_diagnostic_redactor,
     bridge_manager_public_payload_redactor,
+    bridge_manager_sensitive_value_registry,
     bridge_manager_stream_redactors,
 )
 from agentsassemble.room.connections import RoomConnectionService
@@ -246,6 +247,9 @@ class RoomRealtimeController:
 
         redact_bridge_diagnostic = bridge_manager_diagnostic_redactor(bridge_manager)
         redact_bridge_public_payload = bridge_manager_public_payload_redactor(bridge_manager)
+        register_sensitive_values, release_sensitive_values = (
+            bridge_manager_sensitive_value_registry(bridge_manager)
+        )
         redact_stream_delta, discard_stream_delta = (
             bridge_manager_stream_redactors(bridge_manager)
         )
@@ -569,6 +573,8 @@ class RoomRealtimeController:
             bridge_session=self._turn_coordinator.bridge_session,
             lock=self._lock,
             redact_public_payload=redact_bridge_public_payload,
+            register_sensitive_values=register_sensitive_values,
+            release_sensitive_values=release_sensitive_values,
         )
         self.last_cleanup_report = CleanupReport("room_realtime_controller")
         self.ensure_room(self.default_room_id)

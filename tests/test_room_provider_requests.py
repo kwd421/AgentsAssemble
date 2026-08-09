@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 import tempfile
 import threading
 import time
@@ -14,7 +15,7 @@ from agentsassemble.room.event_broker import RoomEventBroker
 from agentsassemble.room.realtime import RoomRealtimeController
 from agentsassemble.room.snapshots import ROOM_SNAPSHOT_EVENT_LIMIT
 from tests.test_room_agent_bridge import FakeRuntime, _wait_for
-from tests.room_realtime_test_support import memory_room_access_services
+from tests.room_realtime_test_support import FakeBridgeManager, memory_room_access_services
 
 
 HOST = {
@@ -32,9 +33,14 @@ class RecordingBroker(RoomEventBroker):
     def __init__(self) -> None:
         super().__init__()
         self.bridge_messages: list[dict[str, object]] = []
+        self.bridge_available = True
 
     def has_bridge(self, room_id: str, participant_id: str) -> bool:
-        return room_id == "general" and participant_id == "grok"
+        return (
+            self.bridge_available
+            and room_id == "general"
+            and participant_id == "grok"
+        )
 
     def direct_to_bridge(
         self,
@@ -109,10 +115,12 @@ class RoomProviderRequestTests(unittest.TestCase):
         self.root = Path(self.temp.name)
         access = memory_room_access_services()
         self.broker = RecordingBroker()
+        self.manager = FakeBridgeManager()
         self.controller = RoomRealtimeController(
             self.root,
             **access.controller_kwargs(),
             broker=self.broker,
+            bridge_manager=self.manager,
             reconcile_startup_sessions=False,
         )
         self.host_channel = self.controller.connect(HOST)
@@ -139,6 +147,7 @@ class RoomProviderRequestTests(unittest.TestCase):
         }
 
     def tearDown(self) -> None:
+        self.broker.bridge_available = False
         self.controller.close()
         self.temp.cleanup()
 
@@ -401,6 +410,144 @@ class RoomProviderRequestTests(unittest.TestCase):
             == provider_request_id
         ]
         self.assertEqual(resolved[-1]["provider_request"]["status"], "resolved")
+
+    def test_secret_provider_answer_reaches_bridge_without_entering_durable_room_state(self) -> None:
+        secret = "ordinary-looking-secret-918273645"
+        self.command(
+            self.bridge,
+            "open-secret-provider-request",
+            "provider.request.open",
+            {
+                "provider_request_id": "secret-provider-request",
+                "request_kind": "user_input",
+                "response_kind": "answers",
+                "title": "비밀 입력",
+                "questions": [
+                    {
+                        "id": "password",
+                        "question": "비밀번호를 입력하세요.",
+                        "is_other": True,
+                        "is_secret": True,
+                    }
+                ],
+            },
+        )
+
+        ack = self.command(
+            HOST,
+            "resolve-secret-provider-request",
+            "provider.request.resolve",
+            {
+                "provider_request_id": "secret-provider-request",
+                "answers": {"password": [secret]},
+            },
+        )
+
+        self.assertEqual(
+            self.broker.bridge_messages[-1]["answers"],
+            {"password": [secret]},
+        )
+        durable_surfaces = {
+            "ack": ack,
+            "command_record": self.controller.store.command_record(
+                "general",
+                "browser:operator-local",
+                "resolve-secret-provider-request",
+            ),
+            "session": self.controller.store.session("general", "grok"),
+            "snapshot": self.controller.snapshot(HOST),
+        }
+        self.assertNotIn(secret, json.dumps(durable_surfaces, ensure_ascii=False))
+        self.assertNotIn(
+            secret,
+            json.dumps(self.manager.redact_public_payload(
+                "general",
+                "grok",
+                {"content": f"provider repeated {secret}"},
+            )),
+        )
+        self.assertEqual(
+            sum(
+                message.get("provider_request_id") == "secret-provider-request"
+                for message in self.broker.bridge_messages
+            ),
+            1,
+        )
+
+        self.command(
+            self.bridge,
+            "close-secret-provider-request",
+            "provider.request.closed",
+            {
+                "provider_request_id": "secret-provider-request",
+                "status": "resolved",
+            },
+        )
+        self.assertIn(
+            secret,
+            json.dumps(self.manager.redact_public_payload(
+                "general",
+                "grok",
+                {"content": f"provider repeated {secret}"},
+            )),
+        )
+
+    def test_secret_provider_answer_fails_closed_when_delivery_redaction_cannot_register(self) -> None:
+        self.command(
+            self.bridge,
+            "open-secret-registry-failure",
+            "provider.request.open",
+            {
+                "provider_request_id": "secret-registry-failure",
+                "request_kind": "user_input",
+                "response_kind": "answers",
+                "title": "비밀 입력",
+                "questions": [
+                    {
+                        "id": "password",
+                        "question": "비밀번호를 입력하세요.",
+                        "is_other": True,
+                        "is_secret": True,
+                    }
+                ],
+            },
+        )
+        self.manager.register_errors.append(RuntimeError("registry unavailable"))
+
+        with self.assertRaises(RoomCommandRejected) as rejected:
+            self.command(
+                HOST,
+                "resolve-secret-registry-failure",
+                "provider.request.resolve",
+                {
+                    "provider_request_id": "secret-registry-failure",
+                    "answers": {"password": ["must-not-reach-bridge"]},
+                },
+            )
+
+        self.assertEqual(
+            rejected.exception.code,
+            "provider_request_sensitive_registry_failed",
+        )
+        self.assertFalse(
+            any(
+                message.get("provider_request_id") == "secret-registry-failure"
+                for message in self.broker.bridge_messages
+            )
+        )
+        session = self.controller.store.session("general", "grok")
+        self.assertEqual(session.get("pending_provider_request"), {})
+        resolved_events = [
+            event
+            for event in self.controller.snapshot(HOST)["events"]
+            if event.get("type") == "provider_request_resolved"
+            and event.get("provider_request", {}).get("provider_request_id")
+            == "secret-registry-failure"
+        ]
+        self.assertEqual(
+            resolved_events[-1]["reason_code"],
+            "provider_request_sensitive_registry_failed",
+        )
 
     def test_resolution_delivered_to_replacement_bridge_fails_durable_request(self) -> None:
         self.controller.store.update_session_fields(

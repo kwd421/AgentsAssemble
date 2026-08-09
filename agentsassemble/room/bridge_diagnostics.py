@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from collections.abc import Callable, Mapping
+from collections.abc import Callable, Iterable, Mapping
 
 from agentsassemble.diagnostics.sensitive_text import redact_persisted_diagnostic_text
 
@@ -11,6 +11,8 @@ DiagnosticRedactor = Callable[..., str]
 PublicPayloadRedactor = Callable[[str, str, dict[str, object]], dict[str, object]]
 StreamDeltaRedactor = Callable[[str, str, str, object], str]
 StreamDeltaDiscarder = Callable[[str, str, str], None]
+SensitiveValueRegistrar = Callable[[str, str, str, Iterable[object]], None]
+SensitiveValueReleaser = Callable[[str, str, str], None]
 
 
 def default_diagnostic_redactor(
@@ -77,6 +79,37 @@ def bridge_manager_stream_redactors(
     )
 
 
+def default_sensitive_value_registrar(
+    _room_id: str,
+    _session_id: str,
+    _registration_id: str,
+    _values: Iterable[object],
+) -> None:
+    return None
+
+
+def default_sensitive_value_releaser(
+    _room_id: str,
+    _session_id: str,
+    _registration_id: str,
+) -> None:
+    return None
+
+
+def bridge_manager_sensitive_value_registry(
+    bridge_manager: object,
+) -> tuple[SensitiveValueRegistrar, SensitiveValueReleaser]:
+    """Use the bridge lifetime registry for one-use provider secret answers."""
+
+    registry = getattr(bridge_manager, "sensitive_value_registry", None)
+    register = getattr(registry, "register", None)
+    release = getattr(registry, "release_registration", None)
+    return (
+        register if callable(register) else default_sensitive_value_registrar,
+        release if callable(release) else default_sensitive_value_releaser,
+    )
+
+
 def session_diagnostic_redactor(
     redactor: DiagnosticRedactor,
     room_id: str,
@@ -106,8 +139,11 @@ __all__ = [
     "PublicPayloadRedactor",
     "StreamDeltaDiscarder",
     "StreamDeltaRedactor",
+    "SensitiveValueRegistrar",
+    "SensitiveValueReleaser",
     "bridge_manager_diagnostic_redactor",
     "bridge_manager_public_payload_redactor",
+    "bridge_manager_sensitive_value_registry",
     "bridge_manager_stream_redactors",
     "default_diagnostic_redactor",
     "default_public_payload_redactor",

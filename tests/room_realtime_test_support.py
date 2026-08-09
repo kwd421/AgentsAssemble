@@ -21,12 +21,20 @@ class FakeBridgeManager:
         self.running: set[tuple[str, str]] = set()
         self.start_errors = []
         self.stop_errors = []
+        self.register_errors = []
         self.close_called = False
         self.sensitive_values: dict[tuple[str, str], tuple[str, ...]] = {}
+        self._sensitive_registrations: dict[
+            tuple[str, str], dict[str, tuple[str, ...]]
+        ] = {}
         self._stream_redactors = {}
         self.portal_publications: dict[
             tuple[str, str, str], dict[str, object]
         ] = {}
+
+    @property
+    def sensitive_value_registry(self):
+        return self
 
     def start(self, room_id, session, spec, *, server_url="", ticket_issuer=None):
         del server_url, ticket_issuer
@@ -73,6 +81,43 @@ class FakeBridgeManager:
             value,
             exact_values=self.sensitive_values.get((room_id, session_id), ()),
         )
+
+    def register(
+        self,
+        room_id,
+        session_id,
+        registration_id,
+        values,
+    ):
+        if self.register_errors:
+            raise self.register_errors.pop(0)
+        key = (room_id, session_id)
+        self._sensitive_registrations.setdefault(key, {})[registration_id] = tuple(
+            str(value) for value in values if str(value or "")
+        )
+        self.sensitive_values[key] = tuple(
+            dict.fromkeys(
+                value
+                for registered in self._sensitive_registrations[key].values()
+                for value in registered
+            )
+        )
+
+    def release_registration(self, room_id, session_id, registration_id):
+        key = (room_id, session_id)
+        registrations = self._sensitive_registrations.get(key, {})
+        registrations.pop(registration_id, None)
+        if registrations:
+            self.sensitive_values[key] = tuple(
+                dict.fromkeys(
+                    value
+                    for registered in registrations.values()
+                    for value in registered
+                )
+            )
+            return
+        self._sensitive_registrations.pop(key, None)
+        self.sensitive_values.pop(key, None)
 
     def _stream_redactor(self, room_id, session_id):
         from agentsassemble.diagnostics.sensitive_text import ExactSensitiveTextStreamRedactor

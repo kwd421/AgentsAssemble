@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from collections.abc import Callable
+from collections.abc import Callable, Iterable
 import threading
 
 from agentsassemble.room.command_uow import RoomCommandUnitOfWork
@@ -11,8 +11,10 @@ from agentsassemble.room.identity import room_identity_principals
 from agentsassemble.room.provider_request_contract import (
     PROVIDER_REQUEST_TERMINAL_STATUSES,
     ProviderRequestValidationError,
+    durable_provider_resolution,
     normalize_provider_request,
     normalize_provider_resolution,
+    secret_provider_resolution_values,
 )
 from agentsassemble.room.repository import RoomRepository
 from agentsassemble.room.text import clean_room_text
@@ -20,6 +22,8 @@ from agentsassemble.room.text import clean_room_text
 
 BridgeSession = Callable[[dict[str, object], str], tuple[str, dict[str, object]]]
 DurableCommand = Callable[[Callable[[RoomCommandUnitOfWork], dict[str, object]]], dict[str, object]]
+SensitiveValueRegistrar = Callable[[str, str, str, Iterable[object]], None]
+SensitiveValueReleaser = Callable[[str, str, str], None]
 PROVIDER_REQUEST_ACTIONS = frozenset(
     {"provider.request.open", "provider.request.resolve", "provider.request.closed"}
 )
@@ -36,6 +40,8 @@ class RoomProviderRequestService:
         bridge_session: BridgeSession,
         lock: threading.RLock,
         redact_public_payload: bridge_diagnostics.PublicPayloadRedactor | None = None,
+        register_sensitive_values: SensitiveValueRegistrar | None = None,
+        release_sensitive_values: SensitiveValueReleaser | None = None,
     ) -> None:
         self.store = store
         self.broker = broker
@@ -43,6 +49,14 @@ class RoomProviderRequestService:
         self._lock = lock
         self._redact_public_payload = (
             redact_public_payload or bridge_diagnostics.default_public_payload_redactor
+        )
+        self._register_sensitive_values = (
+            register_sensitive_values
+            or bridge_diagnostics.default_sensitive_value_registrar
+        )
+        self._release_sensitive_values = (
+            release_sensitive_values
+            or bridge_diagnostics.default_sensitive_value_releaser
         )
 
     def handle_command(
@@ -60,19 +74,75 @@ class RoomProviderRequestService:
                 "The session cannot resolve provider requests.",
                 code="permission_denied",
             )
-        operation = {
-            "provider.request.open": self.open_in_unit,
-            "provider.request.resolve": self.resolve_in_unit,
-            "provider.request.closed": self.close_in_unit,
-        }[action]
+        delivery: dict[str, object] = {}
+        release: dict[str, str] = {}
+
+        def operation(unit: RoomCommandUnitOfWork) -> dict[str, object]:
+            if action == "provider.request.resolve":
+                return self.resolve_in_unit(
+                    identity,
+                    room_id,
+                    payload,
+                    unit=unit,
+                    capture_delivery=delivery.update,
+                )
+            if action == "provider.request.closed":
+                return self.close_in_unit(
+                    identity,
+                    room_id,
+                    payload,
+                    unit=unit,
+                    capture_release=release.update,
+                )
+            return self.open_in_unit(identity, room_id, payload, unit=unit)
+
         with self._lock:
-            ack = execute(
-                lambda unit: operation(identity, room_id, payload, unit=unit)
-            )
-        if action != "provider.request.resolve" or ack.get("deduplicated"):
+            ack = execute(operation)
+        if ack.get("deduplicated"):
+            return ack
+        if action == "provider.request.closed":
+            if release:
+                self._release_sensitive_values(
+                    room_id,
+                    release["session_id"],
+                    self._sensitive_registration_id(release["provider_request_id"]),
+                )
+            return ack
+        if action != "provider.request.resolve":
             return ack
         result = ack.get("result") if isinstance(ack.get("result"), dict) else {}
-        if not self.deliver_resolution(room_id, result):
+        if not delivery:
+            self.mark_delivery_failed(
+                room_id,
+                clean_room_text(result.get("provider_request_id"), limit=128),
+            )
+            raise RoomCommandRejected(
+                "The provider request resolution was not prepared for delivery.",
+                code="provider_request_delivery_unavailable",
+            )
+        registration_id = self._sensitive_registration_id(
+            clean_room_text(delivery.get("provider_request_id"), limit=128)
+        )
+        session_id = clean_room_text(delivery.get("session_id"), limit=128)
+        try:
+            self._register_sensitive_values(
+                room_id,
+                session_id,
+                registration_id,
+                tuple(delivery.get("sensitive_values") or ()),
+            )
+        except Exception as error:
+            self.mark_delivery_failed(
+                room_id,
+                clean_room_text(result.get("provider_request_id"), limit=128),
+                reason_code="provider_request_sensitive_registry_failed",
+            )
+            raise RoomCommandRejected(
+                "The secret provider response could not be protected for delivery.",
+                code="provider_request_sensitive_registry_failed",
+            ) from error
+        if not self.deliver_resolution(room_id, delivery):
+            self._release_sensitive_values(room_id, session_id, registration_id)
             self.mark_delivery_failed(
                 room_id,
                 clean_room_text(result.get("provider_request_id"), limit=128),
@@ -134,6 +204,7 @@ class RoomProviderRequestService:
         payload: dict[str, object],
         *,
         unit: RoomCommandUnitOfWork,
+        capture_delivery: Callable[[dict[str, object]], None],
     ) -> dict[str, object]:
         request_id = clean_room_text(payload.get("provider_request_id"), limit=128)
         pending, session = self._pending_request(room_id, request_id, unit=unit)
@@ -150,15 +221,33 @@ class RoomProviderRequestService:
                 code="provider_request_bridge_unavailable",
             )
         resolution = self._normalized_resolution(pending, payload)
-        resolving = {**pending, "status": "resolving", "resolution": resolution}
+        durable_resolution = durable_provider_resolution(pending, resolution)
+        session_id = clean_room_text(session.get("session_id"), limit=128)
+        capture_delivery(
+            {
+                "provider_request_id": request_id,
+                "participant_id": participant_id,
+                "session_id": session_id,
+                "resolution": resolution,
+                "sensitive_values": secret_provider_resolution_values(
+                    pending,
+                    resolution,
+                ),
+            }
+        )
+        resolving = {
+            **pending,
+            "status": "resolving",
+            "resolution": durable_resolution,
+        }
         unit.update_session_fields(
-            clean_room_text(session.get("session_id"), limit=128),
+            session_id,
             pending_provider_request=resolving,
         )
         event = unit.append_event(
             "provider_request_resolution_requested",
             participant_id=participant_id,
-            session_id=clean_room_text(session.get("session_id"), limit=128),
+            session_id=session_id,
             owner_id=clean_room_text(pending.get("owner_id"), limit=128),
             audience="owner",
             provider_request={
@@ -170,7 +259,7 @@ class RoomProviderRequestService:
             "status": "resolving",
             "provider_request_id": request_id,
             "participant_id": participant_id,
-            "resolution": resolution,
+            "resolution": durable_resolution,
             "event": event,
         }
 
@@ -195,6 +284,7 @@ class RoomProviderRequestService:
         payload: dict[str, object],
         *,
         unit: RoomCommandUnitOfWork,
+        capture_release: Callable[[dict[str, str]], None],
     ) -> dict[str, object]:
         agent_id, _ = self._bridge_session(identity, room_id)
         request_id = clean_room_text(payload.get("provider_request_id"), limit=128)
@@ -210,14 +300,21 @@ class RoomProviderRequestService:
                 "Unsupported provider request completion status.",
                 code="invalid_provider_request_status",
             )
+        session_id = clean_room_text(session.get("session_id"), limit=128)
+        capture_release(
+            {
+                "provider_request_id": request_id,
+                "session_id": session_id,
+            }
+        )
         unit.update_session_fields(
-            clean_room_text(session.get("session_id"), limit=128),
+            session_id,
             pending_provider_request={},
         )
         event = unit.append_event(
             "provider_request_resolved",
             participant_id=agent_id,
-            session_id=clean_room_text(session.get("session_id"), limit=128),
+            session_id=session_id,
             owner_id=clean_room_text(pending.get("owner_id"), limit=128),
             audience="owner",
             provider_request={
@@ -231,7 +328,13 @@ class RoomProviderRequestService:
             "event": event,
         }
 
-    def mark_delivery_failed(self, room_id: str, request_id: str) -> None:
+    def mark_delivery_failed(
+        self,
+        room_id: str,
+        request_id: str,
+        *,
+        reason_code: str = "provider_request_bridge_unavailable",
+    ) -> None:
         for session in self.store.sessions(room_id):
             pending = session.get("pending_provider_request")
             if not isinstance(pending, dict) or pending.get("provider_request_id") != request_id:
@@ -240,7 +343,7 @@ class RoomProviderRequestService:
                 self.store,
                 room_id,
                 clean_room_text(session.get("session_id"), limit=128),
-                reason_code="provider_request_bridge_unavailable",
+                reason_code=reason_code,
             )
             return
 
@@ -307,6 +410,10 @@ class RoomProviderRequestService:
             return normalize_provider_resolution(request, payload)
         except ProviderRequestValidationError as error:
             raise RoomCommandRejected(str(error), code=error.code) from error
+
+    @staticmethod
+    def _sensitive_registration_id(request_id: str) -> str:
+        return f"provider-request:{request_id}"
 
 
 def fail_pending_provider_request(
