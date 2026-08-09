@@ -6,6 +6,7 @@ import threading
 import time
 from collections.abc import Callable
 from pathlib import Path
+from urllib.error import HTTPError
 from urllib.parse import quote, urlencode
 from urllib.request import Request, urlopen
 
@@ -87,7 +88,12 @@ class OpenCodeRuntime:
         if self._room_portal is not None:
             self._register_room_portal()
         restored = self._load_session_id()
-        if restored and self._session_exists(restored):
+        if restored:
+            if not self._session_exists(restored):
+                raise RuntimeError(
+                    "Stored OpenCode Agent Session no longer exists; "
+                    "refusing to replace it with a fresh session silently."
+                )
             session_id = restored
             reused = True
         else:
@@ -576,7 +582,10 @@ class OpenCodeRuntime:
             response = self._open("GET", f"/session/{quote(session_id)}", timeout_seconds=5.0)
             response.close()
             return True
-        except Exception:
+        except HTTPError as error:
+            if error.code != 404:
+                raise
+            error.close()
             return False
 
     def _open(
@@ -640,12 +649,26 @@ class OpenCodeRuntime:
     def _load_session_id(self) -> str:
         path = self.state_dir / "session.json"
         try:
-            payload = json.loads(path.read_text(encoding="utf-8"))
-        except (OSError, ValueError):
+            serialized = path.read_text(encoding="utf-8")
+        except FileNotFoundError:
             return ""
-        if not isinstance(payload, dict) or payload.get("model") != self.model:
+        except OSError as error:
+            raise RuntimeError("Unable to read stored OpenCode session state.") from error
+        try:
+            payload = json.loads(serialized)
+        except ValueError as error:
+            raise RuntimeError("Invalid stored OpenCode session state.") from error
+        if not isinstance(payload, dict):
+            raise RuntimeError("Invalid stored OpenCode session state.")
+        stored_model = clean_room_text(payload.get("model"), limit=256)
+        if not stored_model:
+            raise RuntimeError("Invalid stored OpenCode session state: model is missing.")
+        if stored_model != self.model:
             return ""
-        return clean_room_text(payload.get("session_id"), limit=128)
+        session_id = clean_room_text(payload.get("session_id"), limit=128)
+        if not session_id:
+            raise RuntimeError("Invalid stored OpenCode session state: session id is missing.")
+        return session_id
 
     def _save_session_id(self, session_id: str) -> None:
         path = self.state_dir / "session.json"
