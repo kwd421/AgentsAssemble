@@ -32,7 +32,10 @@ from agentsassemble.persistence.local.identity.registry import (
 )
 from agentsassemble.providers.capabilities import ProviderCapabilityCatalog
 from agentsassemble.providers.launch_specs import native_cli_provider_definition
-from tests.room_realtime_test_support import memory_room_access_services
+from tests.room_realtime_test_support import FakeBridgeManager, memory_room_access_services
+from tests.room_runtime_diagnostic_security_contract import (
+    RoomRuntimeDiagnosticSecurityContract,
+)
 from tests.room_tool_mode_realtime_contract import RoomToolModeRealtimeContract
 
 
@@ -45,45 +48,6 @@ HOST = {
     "meeting_id": "general",
     "operator": True,
 }
-
-
-class FakeBridgeManager:
-    def __init__(self) -> None:
-        self.starts: list[tuple[str, str]] = []
-        self.specs: list[NativeCliProviderSpec] = []
-        self.stops: list[tuple[str, str]] = []
-        self.running: set[tuple[str, str]] = set()
-        self.start_errors = []
-        self.stop_errors = []
-        self.close_called = False
-
-    def start(self, room_id, session, spec, *, server_url="", ticket_issuer=None):
-        del server_url, ticket_issuer
-        if self.start_errors:
-            raise self.start_errors.pop(0)
-        self.starts.append((room_id, str(session["session_id"])))
-        self.running.add((room_id, str(session["session_id"])))
-        self.specs.append(spec)
-        return {
-            "bridge_pid": 701,
-            "bridge_handle_id": f"handle-{session['session_id']}",
-            "resolved_executable": f"/fake/{spec.command[0]}",
-        }
-
-    def stop(self, room_id, session_id, *, timeout_seconds=2.0, handle_id=""):
-        del timeout_seconds
-        self.stops.append((room_id, session_id))
-        if self.stop_errors:
-            raise self.stop_errors.pop(0)
-        self.running.discard((room_id, session_id))
-        return {"stopped": bool(handle_id), "alive": False}
-
-    def health(self, room_id, session_id):
-        return {"running": (room_id, session_id) in self.running}
-
-    def close(self):
-        self.close_called = True
-        return None
 
 
 class _ScheduledRecovery:
@@ -256,7 +220,11 @@ class NativeCliProviderSpecTests(unittest.TestCase):
         self.assertNotEqual(first.runtime_profile_key(), second.runtime_profile_key())
 
 
-class RoomRealtimeControllerTests(RoomToolModeRealtimeContract, unittest.TestCase):
+class RoomRealtimeControllerTests(
+    RoomRuntimeDiagnosticSecurityContract,
+    RoomToolModeRealtimeContract,
+    unittest.TestCase,
+):
     def setUp(self):
         self.temp = tempfile.TemporaryDirectory()
         self.root = Path(self.temp.name)

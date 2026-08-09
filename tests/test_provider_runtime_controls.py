@@ -237,6 +237,15 @@ class ProviderRuntimeControlTests(unittest.TestCase):
                 self.assertNotIn(secret, json.dumps(status))
                 self.assertEqual(store.get(provider_id), secret)
 
+    def test_api_provider_secret_store_rejects_values_too_short_for_safe_redaction(self):
+        backend = FakeKeyring()
+        store = ProviderSecretStore(backend=backend, environment={})
+
+        with self.assertRaisesRegex(ValueError, "at least 8 characters"):
+            store.set("deepseek", "short")
+
+        self.assertEqual(backend.values, {})
+
     def test_custom_api_accepts_a_full_completion_endpoint_and_rejects_link_wrappers(self):
         catalog = ProviderCapabilityCatalog(
             runner=lambda _command, _timeout: (1, "", "not installed"),

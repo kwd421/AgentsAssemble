@@ -1,5 +1,6 @@
 import threading
 import unittest
+from time import monotonic
 from unittest import mock
 
 from agentsassemble.application.public_invite_runtime import PublicInviteRuntime
@@ -30,6 +31,18 @@ class FakeProcess:
 class PublicTunnelTests(unittest.TestCase):
     def setUp(self):
         self.runtime = PublicInviteRuntime(environ={})
+        announce_patcher = mock.patch(
+            "agentsassemble.application.public_tunnel.announce_stable_entry",
+            lambda _url: None,
+        )
+        clear_patcher = mock.patch(
+            "agentsassemble.application.public_tunnel.clear_stable_entry",
+            lambda: None,
+        )
+        announce_patcher.start()
+        clear_patcher.start()
+        self.addCleanup(announce_patcher.stop)
+        self.addCleanup(clear_patcher.stop)
 
     def test_extract_trycloudflare_url_from_cloudflared_log_line(self):
         self.assertEqual(
@@ -138,6 +151,101 @@ class PublicTunnelTests(unittest.TestCase):
         self.assertEqual(public_url, "https://manual.example.com")
         self.assertEqual(self.runtime.public_url(), "https://manual.example.com")
         self.assertFalse(self.runtime.verify_managed_ingress_origin(origin_host))
+
+    def test_invalid_manual_url_does_not_stop_the_active_tunnel(self):
+        manager = PublicTunnelManager(
+            public_invite_runtime=self.runtime,
+            local_url="http://127.0.0.1:8765",
+            which=lambda _name: "/bin/cloudflared",
+        )
+        process = FakeProcess()
+        origin_host = self.runtime.prepare_managed_ingress(ingress_kind="cloudflare")
+        manager._process = process
+        manager._origin_host = origin_host
+
+        with self.assertRaises(ValueError):
+            manager.set_manual_public_url("not a public URL")
+
+        self.assertIsNone(process.poll())
+        self.assertIs(manager._process, process)
+        self.assertTrue(self.runtime.verify_managed_ingress_origin(origin_host))
+
+    def test_manual_transition_serializes_a_concurrent_tunnel_start(self):
+        stop_started = threading.Event()
+        release_stop = threading.Event()
+        start_returned = threading.Event()
+        launched: list[FakeProcess] = []
+
+        class BlockingStopProcess(FakeProcess):
+            def terminate(self):
+                stop_started.set()
+
+            def wait(self, timeout=None):
+                del timeout
+                self.assert_released()
+                self._exit_code = 0
+                return 0
+
+            def assert_released(self):
+                if not release_stop.wait(timeout=2):
+                    raise AssertionError("stop was not released")
+
+        old_process = BlockingStopProcess()
+
+        def popen(_command, **_kwargs):
+            process = FakeProcess()
+            launched.append(process)
+            return process
+
+        manager = PublicTunnelManager(
+            public_invite_runtime=self.runtime,
+            local_url="http://127.0.0.1:8765",
+            which=lambda _name: "/bin/cloudflared",
+            popen=popen,
+        )
+        manager._process = old_process
+        manager._origin_host = self.runtime.prepare_managed_ingress(
+            ingress_kind="cloudflare"
+        )
+
+        manual = threading.Thread(
+            target=lambda: manager.set_manual_public_url("https://manual.example.com")
+        )
+        starter = threading.Thread(
+            target=lambda: (manager.start(), start_returned.set())
+        )
+        manual.start()
+        self.assertTrue(stop_started.wait(timeout=2))
+        starter.start()
+        deadline = monotonic() + 0.2
+        while monotonic() < deadline and not start_returned.is_set():
+            threading.Event().wait(0.01)
+        self.assertFalse(start_returned.is_set())
+        self.assertEqual(launched, [])
+
+        release_stop.set()
+        manual.join(timeout=2)
+        starter.join(timeout=2)
+
+        self.assertFalse(manual.is_alive())
+        self.assertFalse(starter.is_alive())
+        self.assertTrue(start_returned.is_set())
+        self.assertEqual(len(launched), 1)
+
+    def test_manual_url_replaces_the_stable_entry_target(self):
+        manager = PublicTunnelManager(
+            public_invite_runtime=self.runtime,
+            local_url="http://127.0.0.1:8765",
+            which=lambda _name: "/bin/cloudflared",
+        )
+        announced: list[str] = []
+        with mock.patch(
+            "agentsassemble.application.public_tunnel.announce_stable_entry",
+            lambda url: announced.append(url),
+        ):
+            manager.set_manual_public_url("https://manual.example.com")
+
+        self.assertEqual(announced[-1], "https://manual.example.com")
 
     def test_exited_tunnel_clears_owned_runtime_public_url(self):
         manager = PublicTunnelManager(

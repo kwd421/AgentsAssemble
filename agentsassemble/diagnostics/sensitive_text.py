@@ -65,6 +65,9 @@ _WINDOWS_PATH = re.compile(
     r"""(?ix)(?P<prefix>^|[\s'"`=(])(?:[a-z]:[\\/]|\\\\)[^\s'"`|;&<>]*"""
 )
 
+MIN_EXACT_SENSITIVE_VALUE_LENGTH = 8
+MAX_EXACT_SENSITIVE_VALUE_LENGTH = 8_192
+
 
 def _diagnostic_key_is_sensitive(key: object) -> bool:
     normalized = re.sub(r"[^a-z0-9]+", "_", str(key).casefold()).strip("_")
@@ -122,6 +125,95 @@ def looks_sensitive_diagnostic_text(message: str) -> bool:
     )
 
 
+def normalized_exact_sensitive_values(
+    exact_values: Iterable[object],
+) -> tuple[str, ...]:
+    """Return values safe to replace verbatim without corrupting normal text."""
+
+    return tuple(
+        sorted(
+            {
+                str(candidate)
+                for candidate in exact_values
+                if len(str(candidate or "")) >= MIN_EXACT_SENSITIVE_VALUE_LENGTH
+            },
+            key=len,
+            reverse=True,
+        )
+    )
+
+
+def validate_redactable_sensitive_value(
+    value: object,
+    *,
+    label: str,
+    maximum_length: int = MAX_EXACT_SENSITIVE_VALUE_LENGTH,
+) -> str:
+    """Reject runtime credentials that cannot be safely retained for redaction."""
+
+    sensitive_value = str(value or "")
+    if not sensitive_value:
+        raise ValueError(f"{label} is required.")
+    if len(sensitive_value) < MIN_EXACT_SENSITIVE_VALUE_LENGTH:
+        raise ValueError(
+            f"{label} must be at least {MIN_EXACT_SENSITIVE_VALUE_LENGTH} characters."
+        )
+    if len(sensitive_value) > maximum_length:
+        raise ValueError(f"{label} must be at most {maximum_length} characters.")
+    return sensitive_value
+
+
+def redact_exact_sensitive_text(
+    value: object,
+    *,
+    exact_values: Iterable[object],
+) -> str:
+    """Redact only known runtime values, preserving ordinary assistant text."""
+
+    text = str(value or "")
+    for sensitive_value in normalized_exact_sensitive_values(exact_values):
+        text = text.replace(sensitive_value, "[redacted]")
+    return text
+
+
+def redact_exact_sensitive_value(
+    value: object,
+    *,
+    exact_values: Iterable[object],
+) -> object:
+    """Recursively remove exact runtime values at an outbound payload boundary."""
+
+    normalized = normalized_exact_sensitive_values(exact_values)
+    if not normalized:
+        return value
+    if isinstance(value, dict):
+        return {
+            key: redact_exact_sensitive_value(item, exact_values=normalized)
+            for key, item in value.items()
+        }
+    if isinstance(value, (list, tuple)):
+        return [
+            redact_exact_sensitive_value(item, exact_values=normalized)
+            for item in value
+        ]
+    if isinstance(value, str):
+        return redact_exact_sensitive_text(value, exact_values=normalized)
+    return value
+
+
+def redact_exact_sensitive_mapping(
+    value: dict[str, object],
+    *,
+    exact_values: Iterable[object],
+) -> dict[str, object]:
+    """Redact a bridge command without changing its mapping-shaped contract."""
+
+    redacted = redact_exact_sensitive_value(value, exact_values=exact_values)
+    if not isinstance(redacted, dict):
+        raise TypeError("Redacted bridge command payload must remain a mapping.")
+    return redacted
+
+
 def redact_persisted_diagnostic_text(
     value: object,
     *,
@@ -133,15 +225,7 @@ def redact_persisted_diagnostic_text(
     text = str(value or "").replace("\x00", "").strip()
     if not text:
         return ""
-    for sensitive_value in sorted(
-        {
-            str(candidate)
-            for candidate in exact_values
-            if len(str(candidate or "")) >= 8
-        },
-        key=len,
-        reverse=True,
-    ):
+    for sensitive_value in normalized_exact_sensitive_values(exact_values):
         text = text.replace(sensitive_value, "[redacted]")
     # Redact multi-line/key-shaped structures before taking the diagnostic
     # tail. Otherwise a large PEM block or HTTP header could be truncated
@@ -205,7 +289,14 @@ def redact_persisted_diagnostic_value(value: object) -> object:
 
 
 __all__ = [
+    "MAX_EXACT_SENSITIVE_VALUE_LENGTH",
+    "MIN_EXACT_SENSITIVE_VALUE_LENGTH",
     "looks_sensitive_diagnostic_text",
+    "normalized_exact_sensitive_values",
+    "redact_exact_sensitive_text",
+    "redact_exact_sensitive_mapping",
+    "redact_exact_sensitive_value",
     "redact_persisted_diagnostic_text",
     "redact_persisted_diagnostic_value",
+    "validate_redactable_sensitive_value",
 ]

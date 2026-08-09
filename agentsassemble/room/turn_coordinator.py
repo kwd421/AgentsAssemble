@@ -9,6 +9,7 @@ from typing import Callable
 from uuid import uuid4
 
 from agentsassemble.diagnostics.cleanup import CleanupReport
+from agentsassemble.room import bridge_diagnostics
 from agentsassemble.room.text import (
     clean_room_text as clean_lobby_text,
     has_room_visible_text,
@@ -114,6 +115,7 @@ class RoomTurnCoordinator:
         recovery_scheduler: RecoveryScheduler,
         packet_builder: TurnPacketBuilder,
         attention_owner_id: str = "",
+        redact_diagnostic: bridge_diagnostics.DiagnosticRedactor | None = None,
     ) -> None:
         self.output_root = Path(output_root)
         self.store = store
@@ -126,6 +128,7 @@ class RoomTurnCoordinator:
         self.recovery_delay_seconds = max(0.0, float(recovery_delay_seconds))
         self._recovery_scheduler = recovery_scheduler
         self._packet_builder = packet_builder
+        self._redact_diagnostic = redact_diagnostic or bridge_diagnostics.default_diagnostic_redactor
         self._turn_attention = RoomTurnAttention(
             store,
             provider_lookup=provider_lookup,
@@ -1223,15 +1226,21 @@ class RoomTurnCoordinator:
                 "Agent activity category or status is invalid.",
                 code="adapter_activity_invalid",
             )
+        raw_detail, raw_title = bridge_diagnostics.redacted_activity_text(
+            self._redact_diagnostic,
+            room_id,
+            session["session_id"],
+            payload,
+        )
         content, activity_kind = public_activity(
             category,
             status,
-            detail=payload.get("activity_detail") or payload.get("content"),
+            detail=raw_detail,
         )
         activity_id = safe_activity_id(payload.get("activity_id"))
-        activity_title = safe_activity_detail(payload.get("activity_title"), limit=160)
+        activity_title = safe_activity_detail(raw_title, limit=160)
         activity_detail = safe_activity_display_detail(
-            payload.get("activity_detail"),
+            raw_detail,
             limit=2000 if category == "reasoning" else 600,
         )
         activity_fields: dict[str, object] = {}
@@ -1620,8 +1629,16 @@ class RoomTurnCoordinator:
             payload.get("error_code"),
             interrupted=interrupted,
         )
+        redact_text = bridge_diagnostics.session_diagnostic_redactor(
+            self._redact_diagnostic,
+            room_id,
+            session["session_id"],
+        )
         content = (
-            clean_lobby_text(payload.get("message") or payload.get("content"), limit=4000)
+            clean_lobby_text(
+                redact_text(payload.get("message") or payload.get("content"), 4000),
+                limit=4000,
+            )
             or "Provider turn failed."
         )
         diagnostics = payload.get("diagnostics") if isinstance(payload.get("diagnostics"), dict) else {}
@@ -1675,7 +1692,10 @@ class RoomTurnCoordinator:
                 turn_id=session["active_turn_id"],
                 content=content,
                 error_code=error_code,
-                diagnostics=public_runtime_diagnostics(diagnostics),
+                diagnostics=public_runtime_diagnostics(
+                    diagnostics,
+                    redact_text=redact_text,
+                ),
             )
             transaction.append_event(
                 "turn_finished",
@@ -1717,7 +1737,10 @@ class RoomTurnCoordinator:
                 recovery_attempt_count=recovery_attempt_count + (1 if automatic_recovery else 0),
                 last_error=content,
                 last_error_code=error_code,
-                **runtime_diagnostic_fields(diagnostics),
+                **runtime_diagnostic_fields(
+                    diagnostics,
+                    redact_text=redact_text,
+                ),
             )
         self._publish_session_state(room_id, updated)
         if automatic_recovery:
@@ -1785,6 +1808,11 @@ class RoomTurnCoordinator:
         provider_sync_event_id = (
             input_up_to_event_id or session.get("last_provider_sync_event_id") or ""
         )
+        redact_text = bridge_diagnostics.session_diagnostic_redactor(
+            self._redact_diagnostic,
+            writer.room_id,
+            session["session_id"],
+        )
         updates: dict[str, object] = {
             "status": "attached",
             "runtime_status": "idle",
@@ -1807,7 +1835,10 @@ class RoomTurnCoordinator:
             "latency": latency,
             "last_error": "",
             "last_error_code": "",
-            **runtime_diagnostic_fields(diagnostics),
+            **runtime_diagnostic_fields(
+                diagnostics,
+                redact_text=redact_text,
+            ),
             **dict(extra_session_updates or {}),
         }
         if last_spoke_event_id:

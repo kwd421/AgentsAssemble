@@ -49,11 +49,23 @@ def stable_entry_url() -> str:
 
 
 def announce_stable_entry(public_url: str) -> None:
-    """Point the stable worker at the current tunnel URL (async, best-effort)."""
+    """Point the stable worker at the current public URL (async, best-effort)."""
+
+    _schedule_stable_entry_publication(public_url)
+
+
+def clear_stable_entry() -> None:
+    """Remove the stable worker target after an owned public URL is revoked."""
+
+    _schedule_stable_entry_publication(None)
+
+
+def _schedule_stable_entry_publication(public_url: str | None) -> None:
     global _ANNOUNCE_GENERATION
     config = stable_entry_config()
     clean_url = str(public_url or "").strip().rstrip("/")
-    if not config or not clean_url.startswith("https://"):
+    deleting = public_url is None
+    if not config or (not deleting and not clean_url.startswith("https://")):
         return
     with _ANNOUNCE_STATE_LOCK:
         _ANNOUNCE_GENERATION += 1
@@ -68,10 +80,14 @@ def announce_stable_entry(public_url: str) -> None:
                 if not _announcement_is_current(generation):
                     return
                 try:
+                    operation = (
+                        ["delete", config["kv_key"]]
+                        if deleting
+                        else ["put", config["kv_key"], clean_url]
+                    )
                     completed = subprocess.run(
                         [
-                            "npx", "wrangler", "kv", "key", "put",
-                            config["kv_key"], clean_url,
+                            "npx", "wrangler", "kv", "key", *operation,
                             f"--namespace-id={config['namespace_id']}",
                             "--remote",
                         ],
@@ -82,7 +98,10 @@ def announce_stable_entry(public_url: str) -> None:
                         check=False,
                     )
                     if completed.returncode == 0:
-                        print(f"Stable entry updated: {config['url']} -> {clean_url}")
+                        if deleting:
+                            print(f"Stable entry cleared: {config['url']}")
+                        else:
+                            print(f"Stable entry updated: {config['url']} -> {clean_url}")
                         return
                 except (OSError, subprocess.TimeoutExpired):
                     pass
@@ -90,9 +109,17 @@ def announce_stable_entry(public_url: str) -> None:
                 if not _announcement_is_current(generation):
                     return
                 time.sleep(_ANNOUNCE_RETRY_DELAY_SECONDS)
-        print("Stable entry update failed (room stays reachable on the tunnel URL).")
+        operation_label = "clear" if deleting else "update"
+        print(
+            f"Stable entry {operation_label} failed "
+            "(the direct public URL remains authoritative)."
+        )
 
-    threading.Thread(target=push, daemon=True, name="AgentsAssembleStableEntryAnnounce").start()
+    threading.Thread(
+        target=push,
+        daemon=True,
+        name="AgentsAssembleStableEntryAnnounce",
+    ).start()
 
 
 def _announcement_is_current(generation: int) -> bool:

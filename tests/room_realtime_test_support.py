@@ -8,6 +8,55 @@ from agentsassemble.persistence.local.admission.repository import (
     MemoryInviteSessionRepository,
 )
 from agentsassemble.application.public_invite_runtime import PublicInviteRuntime
+from agentsassemble.diagnostics.sensitive_text import redact_persisted_diagnostic_text
+from agentsassemble.providers.launch_specs import NativeCliProviderSpec
+
+
+class FakeBridgeManager:
+    def __init__(self) -> None:
+        self.starts: list[tuple[str, str]] = []
+        self.specs: list[NativeCliProviderSpec] = []
+        self.stops: list[tuple[str, str]] = []
+        self.running: set[tuple[str, str]] = set()
+        self.start_errors = []
+        self.stop_errors = []
+        self.close_called = False
+        self.sensitive_values: dict[tuple[str, str], tuple[str, ...]] = {}
+
+    def start(self, room_id, session, spec, *, server_url="", ticket_issuer=None):
+        del server_url, ticket_issuer
+        if self.start_errors:
+            raise self.start_errors.pop(0)
+        self.starts.append((room_id, str(session["session_id"])))
+        self.running.add((room_id, str(session["session_id"])))
+        self.specs.append(spec)
+        return {
+            "bridge_pid": 701,
+            "bridge_handle_id": f"handle-{session['session_id']}",
+            "resolved_executable": f"/fake/{spec.command[0]}",
+        }
+
+    def stop(self, room_id, session_id, *, timeout_seconds=2.0, handle_id=""):
+        del timeout_seconds
+        self.stops.append((room_id, session_id))
+        if self.stop_errors:
+            raise self.stop_errors.pop(0)
+        self.running.discard((room_id, session_id))
+        return {"stopped": bool(handle_id), "alive": False}
+
+    def health(self, room_id, session_id):
+        return {"running": (room_id, session_id) in self.running}
+
+    def redact_diagnostic(self, room_id, session_id, value, *, limit=16_000):
+        return redact_persisted_diagnostic_text(
+            value,
+            limit=limit,
+            exact_values=self.sensitive_values.get((room_id, session_id), ()),
+        )
+
+    def close(self):
+        self.close_called = True
+        return None
 
 
 @dataclass(frozen=True)

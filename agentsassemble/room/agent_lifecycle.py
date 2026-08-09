@@ -42,6 +42,15 @@ class AgentBridgeManager(Protocol):
 
     def health(self, room_id: str, session_id: str) -> dict[str, object]: ...
 
+    def redact_diagnostic(
+        self,
+        room_id: str,
+        session_id: str,
+        value: object,
+        *,
+        limit: int = 16000,
+    ) -> str: ...
+
 
 RecoveryScheduler = Callable[[float, Callable[[], None]], object]
 ProviderLookup = Callable[[str, str], NativeCliProviderSpec]

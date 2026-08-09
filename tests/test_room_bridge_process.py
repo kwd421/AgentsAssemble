@@ -271,7 +271,7 @@ class NativeCliBridgeProcessManagerTests(unittest.TestCase):
                     {"session_id": "missing"},
                     spec,
                     server_url="http://127.0.0.1:9999",
-                    ticket_issuer=lambda identity: "ticket",
+                    ticket_issuer=lambda identity: "long-ticket",
                 )
 
         self.assertEqual(popen.calls, [])
@@ -291,7 +291,7 @@ class NativeCliBridgeProcessManagerTests(unittest.TestCase):
                 {"session_id": "codex"},
                 first,
                 server_url="http://127.0.0.1:9999",
-                ticket_issuer=lambda identity: "ticket",
+                ticket_issuer=lambda identity: "long-ticket",
             )
             reused = manager.start(
                 "general",
@@ -341,7 +341,7 @@ class NativeCliBridgeProcessManagerTests(unittest.TestCase):
                     {"session_id": "claude"},
                     spec,
                     server_url="http://127.0.0.1:9999",
-                    ticket_issuer=lambda identity: "ticket",
+                    ticket_issuer=lambda identity: "long-ticket",
                 )
 
         self.assertEqual(popen.calls, [])
@@ -362,7 +362,7 @@ class NativeCliBridgeProcessManagerTests(unittest.TestCase):
                 {"session_id": "codex"},
                 spec,
                 server_url="http://127.0.0.1:9999",
-                ticket_issuer=lambda identity: "ticket",
+                ticket_issuer=lambda identity: "long-ticket",
             )
             deadline = time.monotonic() + 2
             health = manager.health("general", "codex")
@@ -398,7 +398,7 @@ class NativeCliBridgeProcessManagerTests(unittest.TestCase):
                 {"session_id": "codex"},
                 _spec(),
                 server_url="http://127.0.0.1:9999",
-                ticket_issuer=lambda identity: "ticket",
+                ticket_issuer=lambda identity: "long-ticket",
             )
             deadline = time.monotonic() + 2
             while (
@@ -457,6 +457,86 @@ class NativeCliBridgeProcessManagerTests(unittest.TestCase):
         self.assertEqual(len(exits), 1)
         self.assertNotIn(secret, str(exits[0][3]))
         self.assertNotIn(ticket, str(exits[0][3]))
+
+    def test_remote_bridge_rejects_a_credential_too_short_to_redact_safely(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            popen = FakePopenFactory()
+            manager = NativeCliBridgeProcessManager(
+                Path(temp_dir),
+                popen_factory=popen,
+                secret_resolver=lambda _provider_id: "short",
+            )
+
+            with self.assertRaisesRegex(RuntimeError, "credential_invalid"):
+                manager.start(
+                    "general",
+                    {"session_id": "deepseek"},
+                    _spec(
+                        agent_id="deepseek",
+                        command=("server-owned-api",),
+                        provider_kind="deepseek_api",
+                    ),
+                    server_url="http://127.0.0.1:9999",
+                    ticket_issuer=lambda _identity: "long-enough-ticket",
+                )
+
+        self.assertEqual(popen.calls, [])
+
+    def test_bridge_rejects_a_ticket_too_short_to_redact_safely(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            popen = FakePopenFactory()
+            manager = NativeCliBridgeProcessManager(
+                Path(temp_dir),
+                popen_factory=popen,
+                executable_resolver=lambda executable: f"/resolved/{executable}",
+            )
+
+            with self.assertRaisesRegex(ValueError, "ticket.*at least 8"):
+                manager.start(
+                    "general",
+                    {"session_id": "codex"},
+                    _spec(),
+                    server_url="http://127.0.0.1:9999",
+                    ticket_issuer=lambda _identity: "short",
+                )
+
+        self.assertEqual(popen.calls, [])
+
+    def test_bridge_stderr_keeps_overlap_until_exact_credentials_are_redacted(self):
+        secret = "unknown-prefix-runtime-credential-918273645"
+        secret_offset = 10
+        filler = "z" * (16_000 - (len(secret) - secret_offset))
+        stderr = f"{'x' * 100}{secret}{filler}".encode()
+        with tempfile.TemporaryDirectory() as temp_dir:
+            popen = FakePopenFactory()
+            popen.process = FakeProcess(stderr_bytes=stderr)
+            manager = NativeCliBridgeProcessManager(
+                Path(temp_dir),
+                popen_factory=popen,
+                secret_resolver=lambda _provider_id: secret,
+            )
+            launch = manager.start(
+                "general",
+                {"session_id": "deepseek"},
+                _spec(
+                    agent_id="deepseek",
+                    command=("server-owned-api",),
+                    provider_kind="deepseek_api",
+                ),
+                server_url="http://127.0.0.1:9999",
+                ticket_issuer=lambda _identity: "long-enough-ticket",
+            )
+            deadline = time.monotonic() + 2
+            health = manager.health("general", "deepseek")
+            while health.get("stderr_line_count") != 1 and time.monotonic() < deadline:
+                time.sleep(0.01)
+                health = manager.health("general", "deepseek")
+            manager.stop("general", "deepseek", handle_id=launch["bridge_handle_id"])
+            persisted = Path(launch["stderr_path"]).read_text(encoding="utf-8")
+
+        for surface in (str(health.get("stderr_tail") or ""), persisted):
+            self.assertNotIn(secret[secret_offset:], surface)
+            self.assertIn("[redacted]", surface)
 
     def test_close_continues_after_failure_and_reports_owned_orphan(self):
         with tempfile.TemporaryDirectory() as temp_dir:

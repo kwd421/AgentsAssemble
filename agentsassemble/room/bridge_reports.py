@@ -4,7 +4,11 @@ import hashlib
 import json
 from typing import Callable
 
-from agentsassemble.diagnostics.sensitive_text import redact_persisted_diagnostic_text
+from agentsassemble.room.bridge_diagnostics import (
+    DiagnosticRedactor,
+    default_diagnostic_redactor,
+    session_diagnostic_redactor,
+)
 from agentsassemble.providers.launch_specs import (
     EXTERNAL_AGENT_PROVIDER_KIND,
     native_cli_provider_definition,
@@ -44,12 +48,14 @@ class RoomBridgeReportService:
         bridge_session: BridgeSessionLookup,
         assign_pending: PendingAssignment,
         publish_session_state: SessionCallback,
+        redact_diagnostic: DiagnosticRedactor | None = None,
     ) -> None:
         self.store = store
         self.broker = broker
         self._bridge_session = bridge_session
         self._assign_pending = assign_pending
         self._publish_session_state = publish_session_state
+        self._redact_diagnostic = redact_diagnostic or default_diagnostic_redactor
 
     def ready(
         self,
@@ -61,6 +67,11 @@ class RoomBridgeReportService:
             identity,
             room_id,
             allow_unleased=True,
+        )
+        redact_text = session_diagnostic_redactor(
+            self._redact_diagnostic,
+            room_id,
+            session["session_id"],
         )
         try:
             health = ProviderRuntimeHealth.parse(payload)
@@ -170,7 +181,7 @@ class RoomBridgeReportService:
             started_at=health.started_at,
             last_error="",
             **external_profile,
-            **runtime_diagnostic_fields(payload),
+            **runtime_diagnostic_fields(payload, redact_text=redact_text),
         )
         if previous_participant.get("status") != "joined":
             self.store.append_event(
@@ -197,6 +208,11 @@ class RoomBridgeReportService:
         payload: dict[str, object],
     ) -> dict[str, object]:
         _agent_id, session = self._bridge_session(identity, room_id)
+        redact_text = session_diagnostic_redactor(
+            self._redact_diagnostic,
+            room_id,
+            session["session_id"],
+        )
         try:
             health = ProviderRuntimeHealth.parse(payload)
         except AdapterContractError as error:
@@ -208,10 +224,7 @@ class RoomBridgeReportService:
                 1000,
             )
         if "last_error" in payload:
-            fields["last_error"] = redact_persisted_diagnostic_text(
-                payload.get("last_error"),
-                limit=4000,
-            )
+            fields["last_error"] = redact_text(payload.get("last_error"), 4000)
         if "returncode" in payload:
             fields["returncode"] = safe_int_or_none(payload.get("returncode"))
         fields.update(
@@ -222,7 +235,7 @@ class RoomBridgeReportService:
         )
         if "pid" in payload:
             fields["reported_provider_pid"] = safe_int_or_none(payload.get("pid"))
-        fields.update(runtime_diagnostic_fields(payload))
+        fields.update(runtime_diagnostic_fields(payload, redact_text=redact_text))
         updated = self.store.update_session_fields(
             room_id,
             str(session["session_id"]),

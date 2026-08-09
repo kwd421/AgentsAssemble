@@ -16,7 +16,10 @@ from typing import Callable, Mapping
 from uuid import uuid4
 
 from agentsassemble.diagnostics.cleanup import CleanupReport
-from agentsassemble.diagnostics.sensitive_text import redact_persisted_diagnostic_text
+from agentsassemble.diagnostics.sensitive_text import (
+    redact_persisted_diagnostic_text,
+    validate_redactable_sensitive_value,
+)
 from agentsassemble.providers.launch_specs import (
     NativeCliProviderSpec,
     validate_native_cli_provider_spec,
@@ -29,10 +32,24 @@ from agentsassemble.providers.runtime_config import CanonicalBridgeLaunchConfig
 from agentsassemble.providers.secrets import (
     PROVIDER_SECRETS,
     secret_provider_id_for_kind,
+    validate_provider_secret,
 )
 
 
 BridgeExitListener = Callable[[str, str, int, str], None]
+_PERSISTED_STDERR_LIMIT = 16_000
+
+
+def _raw_stderr_tail_limit(handle: _BridgeHandle) -> int:
+    longest_sensitive_value = max(
+        (
+            len(value.encode("utf-8", errors="replace"))
+            for value in handle.sensitive_values
+        ),
+        default=1,
+    )
+    return _PERSISTED_STDERR_LIMIT + max(0, longest_sensitive_value - 1)
+
 
 def _default_provider_executable(executable: str) -> str | None:
     resolved = shutil.which(executable)
@@ -109,6 +126,9 @@ class NativeCliBridgeProcessManager:
         self._on_exit = on_exit
         self._lock = threading.RLock()
         self._handles: dict[tuple[str, str], _BridgeHandle] = {}
+        self._sensitive_values_by_session: dict[
+            tuple[str, str], tuple[str, ...]
+        ] = {}
         self._launch_ownership: dict[tuple[str, str], _BridgeLaunchOwnership] = {}
         self._opencode_server: OpenCodeServerProcess | None = None
         self.last_cleanup_report = CleanupReport("native_cli_bridge_process_manager")
@@ -241,9 +261,13 @@ class NativeCliBridgeProcessManager:
             spec.normalized_provider_kind()
         )
         if secret_provider_id:
-            credential = self._secret_resolver(secret_provider_id)
-            if not credential:
+            resolved_credential = self._secret_resolver(secret_provider_id)
+            if not resolved_credential:
                 raise RuntimeError("credential_missing")
+            try:
+                credential = validate_provider_secret(resolved_credential)
+            except ValueError as error:
+                raise RuntimeError("credential_invalid") from error
             executable = "server-owned-api"
             provider_endpoint = spec.provider_endpoint or remote_provider_endpoint
         elif local_provider_endpoint:
@@ -277,8 +301,15 @@ class NativeCliBridgeProcessManager:
         else:
             ticket = str(issued_connection or "")
             session_token = ""
-        if not ticket:
-            raise ValueError("Agent Bridge ticket issuer returned an empty ticket.")
+        ticket = validate_redactable_sensitive_value(
+            ticket,
+            label="Agent Bridge ticket",
+        )
+        if session_token:
+            session_token = validate_redactable_sensitive_value(
+                session_token,
+                label="Agent Bridge session token",
+            )
         bridge_dir = self.output_root / "rooms" / room_id / "bridges" / session_id
         profile_dir = bridge_dir / runtime_profile_key
         profile_dir.mkdir(parents=True, exist_ok=True)
@@ -401,6 +432,14 @@ class NativeCliBridgeProcessManager:
         )
         with self._lock:
             self._handles[key] = handle
+            self._sensitive_values_by_session[key] = tuple(
+                dict.fromkeys(
+                    (
+                        *self._sensitive_values_by_session.get(key, ()),
+                        *handle.sensitive_values,
+                    )
+                )
+            )
         handle.stderr_thread = threading.Thread(
             target=self._drain_stderr,
             args=(handle,),
@@ -530,6 +569,27 @@ class NativeCliBridgeProcessManager:
             **self._stderr_snapshot(handle),
         }
 
+    def redact_diagnostic(
+        self,
+        room_id: str,
+        session_id: str,
+        value: object,
+        *,
+        limit: int = _PERSISTED_STDERR_LIMIT,
+    ) -> str:
+        """Redact credentials retained for every launch of one Agent Session."""
+
+        with self._lock:
+            exact_values = self._sensitive_values_by_session.get(
+                (room_id, session_id),
+                (),
+            )
+        return redact_persisted_diagnostic_text(
+            value,
+            limit=limit,
+            exact_values=exact_values,
+        )
+
     def _watch(self, handle: _BridgeHandle) -> None:
         returncode = handle.process.wait()
         self._finish_stderr(handle)
@@ -563,8 +623,9 @@ class NativeCliBridgeProcessManager:
                         if b"warn" in data.lower() or b"warning" in data.lower():
                             handle.stderr_warning_count += 1
                         handle.stderr_tail.extend(data)
-                        if len(handle.stderr_tail) > 16_000:
-                            del handle.stderr_tail[:-16_000]
+                        raw_tail_limit = _raw_stderr_tail_limit(handle)
+                        if len(handle.stderr_tail) > raw_tail_limit:
+                            del handle.stderr_tail[:-raw_tail_limit]
                             handle.stderr_tail_truncated = True
             except (OSError, ValueError):
                 pass
@@ -595,7 +656,7 @@ class NativeCliBridgeProcessManager:
                 "stderr_tail_truncated": handle.stderr_tail_truncated,
                 "stderr_tail": redact_persisted_diagnostic_text(
                     tail,
-                    limit=16_000,
+                    limit=_PERSISTED_STDERR_LIMIT,
                     exact_values=handle.sensitive_values,
                 ),
             }
@@ -605,7 +666,7 @@ class NativeCliBridgeProcessManager:
             tail = bytes(handle.stderr_tail).decode("utf-8", errors="replace")
         persisted = redact_persisted_diagnostic_text(
             tail,
-            limit=16_000,
+            limit=_PERSISTED_STDERR_LIMIT,
             exact_values=handle.sensitive_values,
         )
         try:

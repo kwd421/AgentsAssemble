@@ -3,10 +3,17 @@ from __future__ import annotations
 import os
 from typing import Protocol
 
+from agentsassemble.diagnostics.sensitive_text import (
+    MAX_EXACT_SENSITIVE_VALUE_LENGTH,
+    validate_redactable_sensitive_value,
+)
 from agentsassemble.providers.remote_openai import (
     remote_openai_credential_ids,
     remote_openai_profile,
 )
+
+
+MAX_PROVIDER_SECRET_LENGTH = MAX_EXACT_SENSITIVE_VALUE_LENGTH
 
 
 class KeyringBackend(Protocol):
@@ -61,9 +68,7 @@ class ProviderSecretStore:
 
     def set(self, provider_id: str, value: str) -> dict[str, object]:
         clean_provider = _provider_id(provider_id)
-        secret = str(value or "").strip()
-        if not secret:
-            raise ValueError("API key is required.")
+        secret = validate_provider_secret(value)
         if self._backend is None:
             raise RuntimeError("secure_store_unavailable")
         try:
@@ -112,6 +117,14 @@ def _environment_key(provider_id: str) -> str:
 def secret_provider_id_for_kind(provider_kind: object) -> str:
     profile = remote_openai_profile(provider_kind)
     return profile.provider_id if profile is not None else ""
+
+
+def validate_provider_secret(value: object) -> str:
+    return validate_redactable_sensitive_value(
+        str(value or "").strip(),
+        label="API key",
+        maximum_length=MAX_PROVIDER_SECRET_LENGTH,
+    )
 
 
 PROVIDER_SECRETS = ProviderSecretStore()

@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import hashlib
 import re
+from typing import Callable
 
 from agentsassemble.diagnostics.sensitive_text import redact_persisted_diagnostic_text
 from agentsassemble.room.identity import room_identity_principals
@@ -334,31 +335,35 @@ def merged_latency(existing: object, incoming: object) -> dict[str, object]:
     return base
 
 
-def runtime_diagnostic_fields(diagnostics: object) -> dict[str, object]:
+DiagnosticTextRedactor = Callable[[object, int], str]
+
+
+def runtime_diagnostic_fields(
+    diagnostics: object,
+    *,
+    redact_text: DiagnosticTextRedactor | None = None,
+) -> dict[str, object]:
     values = diagnostics if isinstance(diagnostics, dict) else {}
+    redact = redact_text or (
+        lambda value, limit: redact_persisted_diagnostic_text(value, limit=limit)
+    )
     return {
         "terminal_byte_count": int(values.get("terminal_byte_count") or 0),
-        "terminal_tail": redact_persisted_diagnostic_text(
-            values.get("terminal_tail"),
-            limit=16000,
-        ),
+        "terminal_tail": redact(values.get("terminal_tail"), 16000),
         "stderr_drained": bool(values.get("stderr_drained", False)),
         "stderr_byte_count": int(values.get("stderr_byte_count") or 0),
         "stderr_line_count": int(values.get("stderr_line_count") or 0),
         "stderr_warning_count": int(values.get("stderr_warning_count") or 0),
-        "stderr_tail": redact_persisted_diagnostic_text(
-            values.get("stderr_tail"),
-            limit=16000,
-        ),
+        "stderr_tail": redact(values.get("stderr_tail"), 16000),
         "stderr_tail_truncated": bool(values.get("stderr_tail_truncated", False)),
         "stderr_last_line_at": clean_lobby_text(values.get("stderr_last_line_at"), limit=128),
         "provider_session_active": bool(values.get("provider_session_active", False)),
         "provider_session_load_supported": bool(values.get("provider_session_load_supported", False)),
         "provider_session_reused": bool(values.get("provider_session_reused", False)),
         "provider_session_resume_failed": bool(values.get("provider_session_resume_failed", False)),
-        "provider_session_resume_error": redact_persisted_diagnostic_text(
+        "provider_session_resume_error": redact(
             values.get("provider_session_resume_error"),
-            limit=1000,
+            1000,
         ),
         "approval_policy": clean_lobby_text(values.get("approval_policy"), limit=64),
         "yolo_mode": values.get("yolo_mode") if isinstance(values.get("yolo_mode"), bool) else None,
@@ -375,10 +380,17 @@ def runtime_diagnostic_fields(diagnostics: object) -> dict[str, object]:
     }
 
 
-def public_runtime_diagnostics(diagnostics: object) -> dict[str, object]:
+def public_runtime_diagnostics(
+    diagnostics: object,
+    *,
+    redact_text: DiagnosticTextRedactor | None = None,
+) -> dict[str, object]:
     return {
         key: value
-        for key, value in runtime_diagnostic_fields(diagnostics).items()
+        for key, value in runtime_diagnostic_fields(
+            diagnostics,
+            redact_text=redact_text,
+        ).items()
         if key not in {"stderr_tail", "terminal_tail"}
     }
 

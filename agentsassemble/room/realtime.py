@@ -51,6 +51,7 @@ from agentsassemble.room.deleted_cleanup import RoomDeletedCleanupService
 from agentsassemble.room.deletion import RoomDeletionService
 from agentsassemble.room.agent_creation import RoomAgentCreationService
 from agentsassemble.room.bridge_reports import RoomBridgeReportService
+from agentsassemble.room.bridge_diagnostics import bridge_manager_diagnostic_redactor
 from agentsassemble.room.connections import RoomConnectionService
 from agentsassemble.room.agent_lifecycle import (
     AgentBridgeManager,
@@ -230,6 +231,8 @@ class RoomRealtimeController:
         self._attention_shadow_skipped_count = 0
         self._attention_active_error_count = 0
         self._attention_active_last_error = ""
+
+        redact_bridge_diagnostic = bridge_manager_diagnostic_redactor(bridge_manager)
         self._turn_coordinator = RoomTurnCoordinator(
             self.output_root,
             store=self.store,
@@ -247,6 +250,7 @@ class RoomRealtimeController:
                 **kwargs,
             ),
             attention_owner_id=self._attention_owner_id,
+            redact_diagnostic=redact_bridge_diagnostic,
         )
         self._connections = RoomConnectionService(
             store=self.store,
@@ -270,6 +274,7 @@ class RoomRealtimeController:
             bridge_session=self._turn_coordinator.bridge_session,
             assign_pending=self._turn_coordinator.assign_pending,
             publish_session_state=self._publish_session_state,
+            redact_diagnostic=redact_bridge_diagnostic,
         )
         self._member_mute = RoomMemberMuteService(
             store=self.store,

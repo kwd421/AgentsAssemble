@@ -11,6 +11,7 @@ import time
 from pathlib import Path
 
 from agentsassemble.providers.agent_bridge import RoomAgentBridge
+from agentsassemble.providers.redacting_room_client import CredentialRedactingRoomClient
 from agentsassemble.providers.room_portal import RoomPortal, room_session_orientation
 from agentsassemble.providers.runtime_config import CanonicalBridgeLaunchConfig
 from agentsassemble.providers.runtime_factory import runtime_from_config
@@ -99,7 +100,10 @@ def main() -> int:
                 first_connection = False
                 continue
             bridge = RoomAgentBridge(
-                client,
+                CredentialRedactingRoomClient(
+                    client,
+                    sensitive_values=(credential, ticket, session_token),
+                ),
                 runtime,
                 room_id=config.room_id,
                 participant_id=config.runtime.participant_id,

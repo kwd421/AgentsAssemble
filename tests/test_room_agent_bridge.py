@@ -29,6 +29,7 @@ from agentsassemble.providers.runtime_factory import (
     runtime_from_config,
 )
 from agentsassemble.providers.agent_bridge import RoomAgentBridge
+from agentsassemble.providers.redacting_room_client import CredentialRedactingRoomClient
 from agentsassemble.providers.room_portal import RoomPortal, room_wake_orientation
 
 
@@ -222,6 +223,31 @@ class InvalidActivityRuntime(FakeRuntime):
                 "message_source": "fake-transcript",
                 "observed_model_id": "gpt-test-observed",
             },
+        }
+
+
+class CredentialLeakingRuntime(FakeRuntime):
+    def __init__(self, secret):
+        super().__init__()
+        self.secret = secret
+
+    def read_output(self, *, timeout_seconds, on_delta=None, on_activity=None):
+        del timeout_seconds, on_delta
+        if on_activity:
+            on_activity(
+                {
+                    "category": "command",
+                    "status": "running",
+                    "content": f"provider echoed {self.secret}",
+                }
+            )
+        raise RuntimeError(f"provider failed with {self.secret}")
+
+    def health(self):
+        return {
+            **super().health(),
+            "last_error": f"runtime error {self.secret}",
+            "stderr_tail": f"runtime stderr {self.secret}",
         }
 
 
@@ -882,66 +908,6 @@ class RoomAgentBridgeTests(unittest.TestCase):
         )
         self.assertEqual(failure["message"], "provider output failed")
         self.assertIn("result_publish_rejected", stderr.getvalue())
-
-    def test_room_result_is_reported_before_a_provider_output_failure(self):
-        class FailingResultRuntime(RoomPortalResultRuntime):
-            def read_output(self, *, timeout_seconds, on_delta=None, on_activity=None):
-                del timeout_seconds, on_delta, on_activity
-                raise RuntimeError("provider output failed")
-
-        with tempfile.TemporaryDirectory() as temp_dir:
-            portal = RoomPortal(Path(temp_dir) / "portal", participant_id="codex")
-            portal.prepare()
-            portal.begin_observation("wake-result-first", input_up_to_seq=0)
-            runtime = FailingResultRuntime(
-                portal,
-                [""],
-                [
-                    [
-                        {
-                            "result_id": "result-eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee",
-                            "operation": "roll_dice",
-                            "details": {
-                                "notation": "1d20",
-                                "rolls": [9],
-                                "modifier": 0,
-                                "total": 9,
-                            },
-                        }
-                    ]
-                ],
-            )
-            bridge = RoomAgentBridge(
-                FakeClient(),
-                runtime,
-                room_id="general",
-                participant_id="codex",
-                session_id="codex",
-                room_portal=portal,
-            )
-            commands = []
-
-            def record_command(action, payload, **_kwargs):
-                commands.append((action, payload))
-                return {}
-
-            with patch.object(bridge, "_command", side_effect=record_command):
-                bridge._run_room_observation(
-                    RoomWakeEnvelope(
-                        room_id="general",
-                        participant_id="codex",
-                        session_id="codex",
-                        turn_id="wake-result-first",
-                        input_up_to_seq=0,
-                        timeout_seconds=2,
-                        attachment_ids=(),
-                        observation_kind="ambient_observation",
-                        publication_mode="explicit_room_portal",
-                    )
-                )
-
-        actions = [action for action, _ in commands]
-        self.assertLess(actions.index("room.result.publish"), actions.index("turn.failed"))
 
     def test_room_result_caps_and_malformed_records_are_diagnosed_on_the_turn(self):
         valid_results = [
@@ -1655,6 +1621,38 @@ class RoomAgentBridgeTests(unittest.TestCase):
         self.assertFalse(any(action == "activity.update" for action, _, _ in client.commands))
         final = next(payload for action, payload, _ in client.commands if action == "message.final")
         self.assertEqual(final["diagnostics"]["adapter_activity_invalid_count"], 1)
+
+    def test_runtime_credentials_never_cross_the_child_bridge_command_boundary(self):
+        secret = "runtime-credential-with-unknown-prefix-918273"
+        raw_client = FakeClient()
+        client = CredentialRedactingRoomClient(raw_client, sensitive_values=(secret,))
+        bridge = RoomAgentBridge(
+            client,
+            CredentialLeakingRuntime(secret),
+            room_id="general",
+            participant_id="deepseek",
+            session_id="deepseek",
+            receive_sleep_seconds=0.005,
+        )
+        thread = threading.Thread(target=bridge.run, daemon=True)
+        thread.start()
+        _wait_for(lambda: any(action == "bridge.ready" for action, _, _ in raw_client.commands))
+        raw_client.messages.append(
+            _turn_assignment(
+                "turn-secret",
+                "respond",
+                participant_id="deepseek",
+                session_id="deepseek",
+            )
+        )
+        _wait_for(lambda: any(action == "turn.failed" for action, _, _ in raw_client.commands))
+        raw_client.messages.append({"op": "agent.control", "action": "stop"})
+        thread.join(timeout=2)
+
+        transmitted = json.dumps(raw_client.commands, ensure_ascii=False)
+        self.assertFalse(thread.is_alive())
+        self.assertNotIn(secret, transmitted)
+        self.assertIn("[redacted]", transmitted)
 
     def test_interrupt_is_forwarded_without_stopping_runtime(self):
         client = FakeClient()

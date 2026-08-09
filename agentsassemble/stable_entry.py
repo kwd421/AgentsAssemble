@@ -2,6 +2,7 @@
 
 from agentsassemble.application.stable_entry import (
     announce_stable_entry,
+    clear_stable_entry,
     stable_entry_config,
     stable_entry_url,
 )
@@ -9,6 +10,7 @@ from agentsassemble.application.stable_entry import (
 
 __all__ = [
     "announce_stable_entry",
+    "clear_stable_entry",
     "stable_entry_config",
     "stable_entry_url",
 ]
