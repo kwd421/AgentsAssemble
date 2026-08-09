@@ -217,6 +217,7 @@ class OpenAICompatibleApiRuntime:
         progress = ProviderTurnProgress(timeout_seconds)
         tool_rounds = 0
         room_action_completed = False
+        discarded_after_terminal_tool_calls = 0
         observed_model_id = ""
         api_calls: list[dict[str, object]] = []
         try:
@@ -283,7 +284,7 @@ class OpenAICompatibleApiRuntime:
                 ):
                     assistant_message["reasoning_content"] = round_result.reasoning_content
                 messages.append(assistant_message)
-                for tool_call in tool_calls:
+                for tool_index, tool_call in enumerate(tool_calls):
                     tool_call_id = str(tool_call.get("id") or "")
                     tool_name = _tool_call_name(tool_call)
                     activity_id = clean_room_text(tool_call_id, limit=128)
@@ -357,6 +358,11 @@ class OpenAICompatibleApiRuntime:
                     if on_activity is not None:
                         on_activity({**activity_fields, "status": "completed"})
                     progress.record()
+                    if room_action_completed:
+                        discarded_after_terminal_tool_calls += (
+                            len(tool_calls) - tool_index - 1
+                        )
+                        break
                 if room_action_completed:
                     content = "RoomPortal action completed."
                     break
@@ -397,6 +403,9 @@ class OpenAICompatibleApiRuntime:
                     "model": self.model,
                     "observed_model_id": observed_model_id,
                     "room_tool_rounds": tool_rounds,
+                    "discarded_after_terminal_tool_calls": (
+                        discarded_after_terminal_tool_calls
+                    ),
                     "api_calls": api_calls,
                     "token_usage": aggregate_usage(api_calls),
                 },

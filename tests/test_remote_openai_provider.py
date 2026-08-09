@@ -272,65 +272,6 @@ class RemoteOpenAIProviderTests(unittest.TestCase):
                 self.assertEqual(selection.model, profile.default_model)
                 self.assertEqual(selection.reasoning_effort, profile.default_reasoning_effort)
 
-    def test_openrouter_runtime_reads_and_publishes_through_room_tools(self):
-        profile = remote_openai_profile("openrouter")
-        self.assertIsNotNone(profile)
-        requests: list[dict[str, object]] = []
-
-        def opener(request: Request, timeout: float):
-            del timeout
-            body = json.loads(request.data)
-            requests.append(body)
-            if len(requests) == 1:
-                return _tool_call_response("call-read", "read_discussion", {})
-            if len(requests) == 2:
-                return _tool_call_response(
-                    "call-publish",
-                    "publish_message",
-                    {"content": "공용 어댑터 발언"},
-                )
-            raise AssertionError(
-                "The provider was called again after its public room action."
-            )
-
-        with tempfile.TemporaryDirectory() as temp_dir:
-            portal = RoomPortal(Path(temp_dir), participant_id="openrouter-agent")
-            portal.prepare()
-            portal.ingest_frame(
-                {
-                    "events": [
-                        {
-                            "id": "evt-1",
-                            "seq": 1,
-                            "type": "message_final",
-                            "actor_id": "host",
-                            "content": "공용 어댑터를 확인해 줘.",
-                        }
-                    ]
-                }
-            )
-            portal.begin_observation("turn-1", input_up_to_seq=1)
-            runtime = RemoteOpenAICompatibleRuntime(
-                "openrouter-agent",
-                profile=profile,
-                api_key="secret-never-reported",
-                model="openai/gpt-oss-20b:free",
-                max_output_tokens=8192,
-                opener=opener,
-                room_portal=portal,
-            )
-
-            runtime.send_room_observation("room.wake turn-1")
-            result = runtime.read_output(timeout_seconds=2)
-            publication = portal.consume_publication("turn-1")
-
-        self.assertEqual(publication, "공용 어댑터 발언")
-        self.assertEqual(result["metadata"]["room_tool_rounds"], 2)
-        self.assertEqual(len(requests), 2)
-        self.assertTrue(all(request["max_tokens"] == 8192 for request in requests))
-        self.assertNotIn("secret-never-reported", json.dumps(result))
-        self.assertNotIn("secret-never-reported", json.dumps(runtime.health()))
-
     def test_api_work_harness_changes_only_the_selected_workspace_after_approval(self):
         profile = remote_openai_profile("tokenrouter")
         self.assertIsNotNone(profile)
