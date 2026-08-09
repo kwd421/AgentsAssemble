@@ -20,6 +20,10 @@ MAX_ATTACHMENT_BYTES = 10 * 1024 * 1024
 MAX_ATTACHMENTS_PER_EVENT = 8
 MAX_ATTACHMENT_COUNT_PER_SUBJECT = 64
 MAX_ATTACHMENT_BYTES_PER_SUBJECT = 128 * 1024 * 1024
+MAX_PREJOIN_ATTACHMENT_COUNT_PER_INVITE = 8
+MAX_PREJOIN_ATTACHMENT_BYTES_PER_INVITE = 32 * 1024 * 1024
+MAX_PREJOIN_ATTACHMENT_COUNT_PER_ROOM = 64
+MAX_PREJOIN_ATTACHMENT_BYTES_PER_ROOM = 128 * 1024 * 1024
 MAX_ATTACHMENT_COUNT_PER_ROOM = 512
 MAX_ATTACHMENT_BYTES_PER_ROOM = 1024 * 1024 * 1024
 MAX_ATTACHMENT_COUNT_TOTAL = 4096
@@ -107,6 +111,10 @@ def store_uploaded_attachment(output_root: Path, payload: dict[str, object]) -> 
     if len(raw) > MAX_ATTACHMENT_BYTES:
         raise AttachmentError("Attachment is too large")
     upload_subject = clean_room_text(payload.get("upload_subject"), limit=160) or "unscoped"
+    quota_subject = (
+        clean_room_text(payload.get("quota_subject"), limit=160)
+        or upload_subject
+    )
     prejoin_pending = bool(payload.get("prejoin_pending"))
     root = attachment_root(output_root)
     root.mkdir(parents=True, exist_ok=True)
@@ -126,6 +134,8 @@ def store_uploaded_attachment(output_root: Path, payload: dict[str, object]) -> 
         size=len(raw),
         room_id=room_id,
         upload_subject=upload_subject,
+        quota_subject=quota_subject,
+        prejoin_pending=prejoin_pending,
     )
     attachment_id = uuid4().hex
     directory = root / attachment_id
@@ -145,6 +155,7 @@ def store_uploaded_attachment(output_root: Path, payload: dict[str, object]) -> 
             "room_id": room_id,
             "purpose": normalize_attachment_purpose(payload.get("purpose")),
             "upload_subject": upload_subject,
+            "quota_subject": quota_subject,
             "prejoin_pending": prejoin_pending,
             "pending_until": (
                 datetime.fromtimestamp(
@@ -198,6 +209,13 @@ def commit_prejoin_attachment(
 def prejoin_attachment_subject(invite_token: str, device_token: str) -> str:
     material = f"{str(invite_token or '').strip()}\0{str(device_token or '').strip()}"
     return "prejoin:" + hashlib.sha256(material.encode("utf-8")).hexdigest()
+
+
+def prejoin_attachment_quota_subject(invite_token: str) -> str:
+    """Return the quota principal shared by every device using one invite."""
+
+    material = str(invite_token or "").strip()
+    return "prejoin-invite:" + hashlib.sha256(material.encode("utf-8")).hexdigest()
 
 
 def normalize_attachment_references(
@@ -383,6 +401,8 @@ def _enforce_attachment_quota(
     size: int,
     room_id: str,
     upload_subject: str,
+    quota_subject: str,
+    prejoin_pending: bool,
 ) -> None:
     room_records = [
         record
@@ -392,19 +412,52 @@ def _enforce_attachment_quota(
     subject_records = [
         record
         for record in records
-        if clean_room_text(record.get("upload_subject"), limit=160) == upload_subject
+        if (
+            clean_room_text(
+                record.get("quota_subject") or record.get("upload_subject"),
+                limit=160,
+            )
+            == quota_subject
+        )
     ]
-    checks = (
+    prejoin_room_records = [
+        record
+        for record in room_records
+        if record.get("prejoin_pending") is True
+    ]
+    checks = [
         (len(records), _sum_sizes(records), MAX_ATTACHMENT_COUNT_TOTAL, MAX_ATTACHMENT_BYTES_TOTAL, "server"),
         (len(room_records), _sum_sizes(room_records), MAX_ATTACHMENT_COUNT_PER_ROOM, MAX_ATTACHMENT_BYTES_PER_ROOM, "room"),
-        (
-            len(subject_records),
-            _sum_sizes(subject_records),
-            MAX_ATTACHMENT_COUNT_PER_SUBJECT,
-            MAX_ATTACHMENT_BYTES_PER_SUBJECT,
-            "uploader",
-        ),
-    )
+    ]
+    if prejoin_pending:
+        checks.extend(
+            [
+                (
+                    len(prejoin_room_records),
+                    _sum_sizes(prejoin_room_records),
+                    MAX_PREJOIN_ATTACHMENT_COUNT_PER_ROOM,
+                    MAX_PREJOIN_ATTACHMENT_BYTES_PER_ROOM,
+                    "pre-join room",
+                ),
+                (
+                    len(subject_records),
+                    _sum_sizes(subject_records),
+                    MAX_PREJOIN_ATTACHMENT_COUNT_PER_INVITE,
+                    MAX_PREJOIN_ATTACHMENT_BYTES_PER_INVITE,
+                    "invite",
+                ),
+            ]
+        )
+    else:
+        checks.append(
+            (
+                len(subject_records),
+                _sum_sizes(subject_records),
+                MAX_ATTACHMENT_COUNT_PER_SUBJECT,
+                MAX_ATTACHMENT_BYTES_PER_SUBJECT,
+                "uploader",
+            )
+        )
     for count, used_bytes, max_count, max_bytes, scope in checks:
         if count >= max_count or used_bytes + size > max_bytes:
             raise AttachmentQuotaExceeded(f"Attachment {scope} quota reached")

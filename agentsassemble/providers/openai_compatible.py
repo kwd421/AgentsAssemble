@@ -620,14 +620,9 @@ class OpenAICompatibleApiRuntime:
 
 
 _WORK_TOOL_NAMES = frozenset(
-    {
-        "list_workspace_files",
-        "read_workspace_file",
-        "search_workspace_text",
-        "write_workspace_file",
-        "replace_workspace_text",
-        "run_workspace_command",
-    }
+    str(function.get("name") or "")
+    for schema in work_tool_schemas("workspace_write")
+    if isinstance((function := schema.get("function")), dict)
 )
 
 _TERMINAL_ROOM_TOOLS = frozenset(
@@ -663,7 +658,6 @@ def _tool_title(tool_name: object) -> str:
         "search_workspace_text": "파일 내용 검색",
         "write_workspace_file": "파일 쓰기",
         "replace_workspace_text": "파일 수정",
-        "run_workspace_command": "명령 실행",
     }.get(value, value or "도구")
 
 
@@ -701,10 +695,6 @@ def _tool_activity(
         return title, clean_room_text(arguments.get("path"), limit=240)
     if name == "search_workspace_text":
         return title, clean_room_text(arguments.get("query"), limit=240)
-    if name == "run_workspace_command":
-        command = arguments.get("command")
-        if isinstance(command, list):
-            return title, " ".join(str(part) for part in command)[:240]
     return title, ""
 
 

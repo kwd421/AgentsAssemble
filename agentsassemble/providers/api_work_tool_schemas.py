@@ -87,35 +87,6 @@ WORK_TOOL_SCHEMAS: tuple[dict[str, object], ...] = (
             },
         },
     },
-    {
-        "type": "function",
-        "function": {
-            "name": "run_workspace_command",
-            "description": (
-                "Run one argv command in the selected workspace after owner approval. "
-                "Shell syntax is not accepted."
-            ),
-            "parameters": {
-                "type": "object",
-                "properties": {
-                    "command": {
-                        "type": "array",
-                        "items": {"type": "string"},
-                        "minItems": 1,
-                        "maxItems": 64,
-                    },
-                    "cwd": {"type": "string"},
-                    "timeout_seconds": {
-                        "type": "integer",
-                        "minimum": 1,
-                        "maximum": 120,
-                    },
-                },
-                "required": ["command"],
-                "additionalProperties": False,
-            },
-        },
-    },
 )
 
 

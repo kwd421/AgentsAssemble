@@ -17,6 +17,8 @@ class PublicTunnelControl(Protocol):
 
     def stop(self) -> dict[str, object]: ...
 
+    def set_manual_public_url(self, public_url: str) -> str: ...
+
 
 def register_public_invite_admin_routes(
     router: Router,
@@ -105,7 +107,7 @@ def register_public_invite_admin_routes(
             return
         requested_public_url = str(payload.get("public_url") or "").strip()
         if not requested_public_url:
-            runtime.clear_public_url()
+            tunnel.set_manual_public_url("")
             ctx.send_json(
                 {
                     "status": "cleared",
@@ -115,7 +117,7 @@ def register_public_invite_admin_routes(
             )
             return
         try:
-            public_url = runtime.set_public_url(requested_public_url)
+            public_url = tunnel.set_manual_public_url(requested_public_url)
         except ValueError as error:
             ctx.send_error(HTTPStatus.BAD_REQUEST, str(error))
             return

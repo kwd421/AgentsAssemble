@@ -223,7 +223,8 @@ def public_event_for_identity(
 
 def safe_activity_detail(value: object, *, limit: int = 600) -> str:
     """Return bounded provider activity text safe for the public room event log."""
-    text = clean_lobby_text(value, limit=max(1, int(limit)))
+    bounded_limit = max(1, int(limit))
+    text = str(value or "").replace("\x00", "").strip()
     if not text:
         return ""
     text = text.replace(
@@ -232,6 +233,10 @@ def safe_activity_detail(value: object, *, limit: int = 600) -> str:
     ).replace(
         "/agentsassemble-room/outbox.txt",
         "[room/outbox.txt]",
+    )
+    text = redact_persisted_diagnostic_text(
+        text,
+        limit=max(32_000, bounded_limit * 4),
     )
     text = _SENSITIVE_ACTIVITY_ASSIGNMENT.sub("[redacted]", text)
     text = _SENSITIVE_ACTIVITY_OPTION.sub("[redacted]", text)
@@ -257,12 +262,12 @@ def safe_activity_detail(value: object, *, limit: int = 600) -> str:
         lambda match: f"{match.group('prefix')}[local path]",
         text,
     )
-    return clean_lobby_text(text, limit=max(1, int(limit)))
+    return clean_lobby_text(text, limit=bounded_limit)
 
 
 def safe_activity_display_detail(value: object, *, limit: int = 600) -> str:
     """Redact local paths while retaining a bounded basename for the activity UI."""
-    text = clean_lobby_text(value, limit=max(1, int(limit)))
+    text = str(value or "").replace("\x00", "").strip()
     if not text:
         return ""
     text = text.replace(

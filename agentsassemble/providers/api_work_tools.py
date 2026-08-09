@@ -9,12 +9,7 @@ from __future__ import annotations
 
 import json
 import os
-import signal
 import stat
-import subprocess
-import sys
-import threading
-import time
 from collections.abc import Callable
 from pathlib import Path
 
@@ -23,16 +18,7 @@ from agentsassemble.providers.provider_requests import ProviderRequestHandler
 
 
 SIDE_EFFECT_WORK_TOOLS = frozenset(
-    {"write_workspace_file", "replace_workspace_text", "run_workspace_command"}
-)
-_POST_TERMINATION_DRAIN_SECONDS = 2.0
-_COMMAND_OUTPUT_LIMIT_BYTES = 1_000_000
-_COMMAND_OUTPUT_READ_SIZE = 64 * 1024
-_COMMAND_POLL_INTERVAL_SECONDS = 0.02
-_COMMAND_READER_JOIN_SECONDS = 1.0
-_DARWIN_SANDBOX_EXEC = Path("/usr/bin/sandbox-exec")
-_DARWIN_NO_CHILD_PROCESS_PROFILE = (
-    "(version 1)(allow default)(deny process-fork)"
+    {"write_workspace_file", "replace_workspace_text"}
 )
 
 
@@ -55,10 +41,6 @@ class ApiWorkHarness:
         self.permission_mode = str(permission_mode or "meeting_read_only")
         self.request_handler = request_handler
         self._interrupt_requested = interrupt_requested or (lambda: False)
-        self._process_lock = threading.RLock()
-        self._active_process: subprocess.Popen[bytes] | subprocess.Popen[str] | None = None
-        self._active_process_group = False
-        self._command_interrupted = threading.Event()
 
     @property
     def enabled(self) -> bool:
@@ -79,7 +61,10 @@ class ApiWorkHarness:
         if name == "replace_workspace_text":
             return self._replace_text(arguments)
         if name == "run_workspace_command":
-            return self._run_command(arguments)
+            raise RuntimeError(
+                "Workspace command execution is disabled until full-command approval "
+                "binding and a deny-default workspace sandbox are available."
+            )
         raise RuntimeError(f"Unsupported API work tool: {name or '(missing)'}.")
 
     def _list_files(self, arguments: dict[str, object]) -> dict[str, object]:
@@ -171,78 +156,9 @@ class ApiWorkHarness:
         )
         return {"path": relative, "replacements": expected}
 
-    def _run_command(self, arguments: dict[str, object]) -> dict[str, object]:
-        command = arguments.get("command")
-        if not isinstance(command, list) or not command or len(command) > 64:
-            raise ValueError("run_workspace_command command must be a non-empty argv list.")
-        argv = [str(part) for part in command]
-        if any(not part or "\x00" in part or len(part) > 4000 for part in argv):
-            raise ValueError("run_workspace_command contains an invalid argument.")
-        cwd = self._path(arguments.get("cwd") or ".", directory=True)
-        timeout = _bounded_int(arguments.get("timeout_seconds"), 30, minimum=1, maximum=120)
-        contained_argv = _contained_workspace_command(argv)
-        shown = " ".join(json.dumps(part, ensure_ascii=False) for part in argv)
-        self._approve(
-            "명령 실행 승인",
-            f"{cwd.relative_to(self.workspace).as_posix() or '.'}에서 실행:\n{shown[:900]}",
-        )
-        # Approval can remain open for minutes. Re-resolve the directory after
-        # it closes so a swapped symlink cannot redirect the command cwd.
-        cwd = self._path(cwd.relative_to(self.workspace), directory=True)
-        completed = _run_bounded_command(
-            contained_argv,
-            cwd=cwd,
-            env=_command_environment(),
-            timeout=timeout,
-            on_started=self._track_active_process,
-            on_finished=self._clear_active_process,
-            interrupted=lambda: (
-                self._command_interrupted.is_set()
-                or self._interrupt_requested()
-            ),
-        )
-        stdout = completed.stdout or ""
-        stderr = completed.stderr or ""
-        return {
-            "exit_code": completed.returncode,
-            "stdout": stdout[-20_000:],
-            "stderr": stderr[-20_000:],
-            "stdout_truncated": len(stdout) > 20_000,
-            "stderr_truncated": len(stderr) > 20_000,
-        }
-
     def interrupt(self) -> bool:
-        """Terminate the currently running workspace command, if any."""
-        with self._process_lock:
-            process = self._active_process
-            process_group = self._active_process_group
-            if process is None:
-                return False
-            self._command_interrupted.set()
-        _terminate_process_tree(process, process_group=process_group)
-        return True
-
-    def _track_active_process(
-        self,
-        process: subprocess.Popen[bytes] | subprocess.Popen[str],
-        process_group: bool,
-    ) -> None:
-        with self._process_lock:
-            if self._active_process is not None:
-                raise RuntimeError("An API workspace command is already running.")
-            self._raise_if_interrupted()
-            self._command_interrupted.clear()
-            self._active_process = process
-            self._active_process_group = process_group
-
-    def _clear_active_process(
-        self,
-        process: subprocess.Popen[bytes] | subprocess.Popen[str],
-    ) -> None:
-        with self._process_lock:
-            if self._active_process is process:
-                self._active_process = None
-                self._active_process_group = False
+        """No process is owned while workspace command execution is disabled."""
+        return False
 
     def _raise_if_interrupted(self) -> None:
         if self._interrupt_requested():
@@ -359,11 +275,6 @@ def _bounded_int(value: object, default: int, *, minimum: int, maximum: int) -> 
     except (TypeError, ValueError):
         parsed = default
     return min(maximum, max(minimum, parsed))
-
-
-def _command_environment() -> dict[str, str]:
-    allowed = ("PATH", "LANG", "LC_ALL", "TERM", "TMPDIR", "SYSTEMROOT", "WINDIR", "COMSPEC", "PATHEXT")
-    return {key: os.environ[key] for key in allowed if os.environ.get(key)}
 
 
 def _secure_write_text(workspace: Path, relative: Path, content: str) -> None:
@@ -516,267 +427,6 @@ def _validated_fallback_target(
     if resolved != root and root not in resolved.parents:
         raise ValueError("Workspace tool path escapes the selected workspace.")
     return resolved
-
-
-def _run_bounded_command(
-    argv: list[str],
-    *,
-    cwd: Path,
-    env: dict[str, str],
-    timeout: int,
-    on_started: Callable[[subprocess.Popen[bytes], bool], None],
-    on_finished: Callable[[subprocess.Popen[bytes]], None],
-    interrupted: Callable[[], bool],
-) -> subprocess.CompletedProcess[str]:
-    supports_process_groups = hasattr(os, "killpg") and hasattr(os, "setsid")
-    creation_flags = 0
-    if os.name == "nt":
-        creation_flags = getattr(subprocess, "CREATE_NEW_PROCESS_GROUP", 0)
-    process = subprocess.Popen(
-        argv,
-        cwd=cwd,
-        env=env,
-        stdout=subprocess.PIPE,
-        stderr=subprocess.PIPE,
-        start_new_session=supports_process_groups,
-        creationflags=creation_flags,
-    )
-    try:
-        on_started(process, supports_process_groups)
-    except Exception:
-        _terminate_process_tree(process, process_group=supports_process_groups)
-        _drain_after_termination(process)
-        raise
-    output = _BoundedCommandOutput(_COMMAND_OUTPUT_LIMIT_BYTES)
-    readers = [
-        threading.Thread(
-            target=_read_command_stream,
-            args=(process.stdout, output, "stdout"),
-            name="ApiWorkStdout",
-            daemon=True,
-        ),
-        threading.Thread(
-            target=_read_command_stream,
-            args=(process.stderr, output, "stderr"),
-            name="ApiWorkStderr",
-            daemon=True,
-        ),
-    ]
-    for reader in readers:
-        reader.start()
-    try:
-        deadline = time.monotonic() + timeout
-        while process.poll() is None:
-            if interrupted():
-                _terminate_process_tree(
-                    process,
-                    process_group=supports_process_groups,
-                )
-                _wait_for_process_exit(process)
-                raise RuntimeError("API workspace command was interrupted.")
-            if output.limit_exceeded.is_set():
-                _terminate_process_tree(
-                    process,
-                    process_group=supports_process_groups,
-                )
-                _wait_for_process_exit(process)
-                raise RuntimeError(
-                    "Workspace command exceeded its output limit."
-                )
-            remaining = deadline - time.monotonic()
-            if remaining <= 0:
-                _terminate_process_tree(
-                    process,
-                    process_group=supports_process_groups,
-                )
-                _wait_for_process_exit(process)
-                raise TimeoutError(
-                    f"Workspace command exceeded its {timeout}-second limit."
-                )
-            try:
-                process.wait(
-                    timeout=min(_COMMAND_POLL_INTERVAL_SECONDS, remaining)
-                )
-            except subprocess.TimeoutExpired:
-                pass
-        _finish_command_readers(process, readers)
-        if output.limit_exceeded.is_set():
-            raise RuntimeError("Workspace command exceeded its output limit.")
-        if interrupted():
-            raise RuntimeError("API workspace command was interrupted.")
-        stdout, stderr = output.text()
-        return subprocess.CompletedProcess(
-            argv,
-            int(process.returncode or 0),
-            stdout,
-            stderr,
-        )
-    finally:
-        _finish_command_readers(process, readers)
-        on_finished(process)
-
-
-class _BoundedCommandOutput:
-    """Capture subprocess pipes without allowing them to grow memory forever."""
-
-    def __init__(self, limit_bytes: int) -> None:
-        self.limit_bytes = max(1, int(limit_bytes))
-        self.limit_exceeded = threading.Event()
-        self._lock = threading.Lock()
-        self._stdout = bytearray()
-        self._stderr = bytearray()
-        self._stored_bytes = 0
-
-    def append(self, stream_name: str, chunk: bytes) -> None:
-        with self._lock:
-            remaining = self.limit_bytes - self._stored_bytes
-            if remaining <= 0:
-                self.limit_exceeded.set()
-                return
-            selected = chunk[:remaining]
-            target = self._stdout if stream_name == "stdout" else self._stderr
-            target.extend(selected)
-            self._stored_bytes += len(selected)
-            if len(selected) != len(chunk):
-                self.limit_exceeded.set()
-
-    def text(self) -> tuple[str, str]:
-        with self._lock:
-            return (
-                bytes(self._stdout).decode("utf-8", errors="replace"),
-                bytes(self._stderr).decode("utf-8", errors="replace"),
-            )
-
-
-def _read_command_stream(
-    stream: object,
-    output: _BoundedCommandOutput,
-    stream_name: str,
-) -> None:
-    if stream is None:
-        return
-    try:
-        while True:
-            chunk = stream.read(_COMMAND_OUTPUT_READ_SIZE)
-            if not chunk:
-                return
-            output.append(stream_name, chunk)
-            if output.limit_exceeded.is_set():
-                return
-    except (OSError, ValueError):
-        return
-    finally:
-        try:
-            stream.close()
-        except OSError:
-            pass
-
-
-def _finish_command_readers(
-    process: subprocess.Popen[bytes],
-    readers: list[threading.Thread],
-) -> None:
-    del process
-    deadline = time.monotonic() + _COMMAND_READER_JOIN_SECONDS
-    for reader in readers:
-        reader.join(timeout=max(0.0, deadline - time.monotonic()))
-
-
-def _wait_for_process_exit(
-    process: subprocess.Popen[bytes] | subprocess.Popen[str],
-) -> None:
-    try:
-        process.wait(timeout=0.5)
-    except subprocess.TimeoutExpired:
-        pass
-
-
-def _drain_after_termination(
-    process: subprocess.Popen[bytes] | subprocess.Popen[str],
-) -> None:
-    try:
-        process.communicate(timeout=_POST_TERMINATION_DRAIN_SECONDS)
-        return
-    except subprocess.TimeoutExpired:
-        pass
-    for stream in (process.stdout, process.stderr):
-        if stream is not None:
-            try:
-                stream.close()
-            except OSError:
-                pass
-    try:
-        process.kill()
-    except ProcessLookupError:
-        pass
-    try:
-        process.wait(timeout=0.5)
-    except subprocess.TimeoutExpired:
-        pass
-
-
-def _terminate_process_tree(
-    process: subprocess.Popen[bytes] | subprocess.Popen[str],
-    *,
-    process_group: bool,
-) -> None:
-    if process.poll() is not None:
-        return
-    if process_group:
-        _signal_process_group(process.pid, signal.SIGKILL)
-        _signal_process(process.pid, signal.SIGKILL)
-        return
-    if os.name == "nt":
-        try:
-            subprocess.run(
-                ["taskkill", "/PID", str(process.pid), "/T", "/F"],
-                capture_output=True,
-                check=False,
-                timeout=5,
-            )
-        except subprocess.TimeoutExpired:
-            pass
-        if process.poll() is None:
-            process.kill()
-        return
-    process.kill()
-
-
-def _contained_workspace_command(argv: list[str]) -> list[str]:
-    """Return an argv whose process lifetime can be bounded without PID scans.
-
-    A process-group kill cannot contain a command that forks and calls
-    ``setsid()``.  macOS' sandbox can prohibit all child-process creation while
-    still allowing the approved command itself to run.  Platforms without an
-    equivalent verified containment primitive fail closed instead of claiming
-    that best-effort process enumeration is a security boundary.
-    """
-
-    if sys.platform == "darwin" and _DARWIN_SANDBOX_EXEC.is_file():
-        return [
-            str(_DARWIN_SANDBOX_EXEC),
-            "-p",
-            _DARWIN_NO_CHILD_PROCESS_PROFILE,
-            *argv,
-        ]
-    raise RuntimeError(
-        "Workspace command execution is unavailable because this platform "
-        "does not provide verified child-process containment."
-    )
-
-
-def _signal_process_group(process_group_id: int, sent_signal: int) -> None:
-    try:
-        os.killpg(process_group_id, sent_signal)
-    except (PermissionError, ProcessLookupError):
-        pass
-
-
-def _signal_process(pid: int, sent_signal: int) -> None:
-    try:
-        os.kill(pid, sent_signal)
-    except ProcessLookupError:
-        pass
 
 
 __all__ = [

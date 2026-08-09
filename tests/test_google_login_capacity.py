@@ -257,9 +257,11 @@ class GoogleLoginCapacityTests(unittest.TestCase):
     @staticmethod
     def _trusted_public_runtime() -> PublicInviteRuntime:
         runtime = PublicInviteRuntime(environ={})
+        origin_host = runtime.prepare_managed_ingress(ingress_kind="cloudflare")
         runtime.set_managed_public_url(
             "https://rooms.example.invalid",
             ingress_kind="cloudflare",
+            expected_origin_host=origin_host,
         )
         return runtime
 

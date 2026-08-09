@@ -40,9 +40,11 @@ class PublicInviteLifecycleHttpTests(unittest.TestCase):
         self.store.create_room("friend-room", label="Friend room")
         self.runtime = PublicInviteRuntime(environ={})
         self.runtime.set_host_token("host-secret")
+        origin_host = self.runtime.prepare_managed_ingress(ingress_kind="cloudflare")
         self.runtime.set_managed_public_url(
             "https://shared-room.example.com",
             ingress_kind="cloudflare",
+            expected_origin_host=origin_host,
         )
         tunnel = PublicTunnelManager(
             public_invite_runtime=self.runtime,

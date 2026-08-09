@@ -81,6 +81,7 @@ class _BridgeHandle:
     stderr_lock: threading.Lock = field(default_factory=threading.Lock)
     stderr_thread: threading.Thread | None = None
     provider_process_shared: bool = False
+    sensitive_values: tuple[str, ...] = ()
 
 
 @dataclass
@@ -392,6 +393,11 @@ class NativeCliBridgeProcessManager:
             stdout_path=stdout_path,
             stderr_path=stderr_path,
             provider_process_shared=spec.normalized_provider_kind() == "opencode_server",
+            sensitive_values=tuple(
+                value
+                for value in (credential, ticket, session_token)
+                if value
+            ),
         )
         with self._lock:
             self._handles[key] = handle
@@ -580,19 +586,28 @@ class NativeCliBridgeProcessManager:
     @staticmethod
     def _stderr_snapshot(handle: _BridgeHandle) -> dict[str, object]:
         with handle.stderr_lock:
+            tail = bytes(handle.stderr_tail).decode("utf-8", errors="replace")
             return {
                 "stderr_drained": True,
                 "stderr_byte_count": handle.stderr_byte_count,
                 "stderr_line_count": handle.stderr_line_count,
                 "stderr_warning_count": handle.stderr_warning_count,
                 "stderr_tail_truncated": handle.stderr_tail_truncated,
-                "stderr_tail": bytes(handle.stderr_tail).decode("utf-8", errors="replace"),
+                "stderr_tail": redact_persisted_diagnostic_text(
+                    tail,
+                    limit=16_000,
+                    exact_values=handle.sensitive_values,
+                ),
             }
 
     def _persist_stderr_snapshot(self, handle: _BridgeHandle) -> None:
         with handle.stderr_lock:
             tail = bytes(handle.stderr_tail).decode("utf-8", errors="replace")
-        persisted = redact_persisted_diagnostic_text(tail, limit=16_000)
+        persisted = redact_persisted_diagnostic_text(
+            tail,
+            limit=16_000,
+            exact_values=handle.sensitive_values,
+        )
         try:
             handle.stderr_path.write_text(persisted, encoding="utf-8")
             handle.stderr_path.chmod(0o600)

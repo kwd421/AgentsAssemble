@@ -218,6 +218,50 @@ class TestStoreAndReadRoundTrip(unittest.TestCase):
             ]
             self.assertEqual(len(persisted), MAX_ATTACHMENT_COUNT_PER_SUBJECT)
 
+    def test_prejoin_room_reserve_does_not_consume_joined_upload_capacity(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            store = FileAttachmentStore(root)
+            base_payload = {
+                "filename": "avatar.png",
+                "content_type": "image/png",
+                "data_base64": base64.b64encode(b"avatar").decode(),
+                "room_id": "room-a",
+                "purpose": "profile_avatar",
+                "prejoin_pending": True,
+            }
+            for index in range(64):
+                store.store(
+                    {
+                        **base_payload,
+                        "upload_subject": f"prejoin-device:{index}",
+                        "quota_subject": f"prejoin-invite:{index}",
+                    }
+                )
+
+            with self.assertRaisesRegex(
+                AttachmentQuotaExceeded,
+                "pre-join room quota",
+            ):
+                store.store(
+                    {
+                        **base_payload,
+                        "upload_subject": "prejoin-device:overflow",
+                        "quota_subject": "prejoin-invite:overflow",
+                    }
+                )
+
+            joined = store.store(
+                {
+                    "filename": "joined.txt",
+                    "content_type": "text/plain",
+                    "data_base64": base64.b64encode(b"joined").decode(),
+                    "room_id": "room-a",
+                    "upload_subject": "user:joined",
+                }
+            )
+            self.assertTrue((root / "attachments" / str(joined["id"])).is_dir())
+
     def test_expired_prejoin_upload_is_reclaimed_after_store_restart(self):
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)

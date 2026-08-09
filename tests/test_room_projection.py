@@ -157,9 +157,12 @@ class RoomProjectionTests(unittest.TestCase):
         )
 
     def test_activity_detail_redacts_credentials_and_local_paths(self):
+        google_key = "AIza" + ("A" * 32)
+        jwt = "eyJabcdefghijk.eyJabcdefghijklmnop.qwertyuiopasdfgh"
         detail = (
             'curl -u user:pass https://alice:hunter2@example.test '
             '-d \'{"password":"hunter2"}\' '
+            f'{google_key} {jwt} Cookie: session=private-session\n'
             'C:/Users/alice/private.txt /Users/alice/private.txt'
         )
 
@@ -168,6 +171,9 @@ class RoomProjectionTests(unittest.TestCase):
         self.assertNotIn("user:pass", safe)
         self.assertNotIn("alice:hunter2", safe)
         self.assertNotIn("hunter2", safe)
+        self.assertNotIn(google_key, safe)
+        self.assertNotIn(jwt, safe)
+        self.assertNotIn("private-session", safe)
         self.assertNotIn("C:/Users/alice", safe)
         self.assertNotIn("/Users/alice", safe)
         self.assertIn("-u [redacted]", safe)

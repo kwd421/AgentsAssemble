@@ -617,9 +617,11 @@ class GoogleAccountHttpTests(unittest.TestCase):
 
     def _trusted_public_runtime(self) -> PublicInviteRuntime:
         runtime = PublicInviteRuntime(environ={})
+        origin_host = runtime.prepare_managed_ingress(ingress_kind="cloudflare")
         runtime.set_managed_public_url(
             "https://rooms.example.invalid",
             ingress_kind="cloudflare",
+            expected_origin_host=origin_host,
         )
         return runtime
 

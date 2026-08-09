@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import re
+from collections.abc import Iterable
 
 
 _SENSITIVE_ASSIGNMENT = re.compile(
@@ -121,12 +122,27 @@ def looks_sensitive_diagnostic_text(message: str) -> bool:
     )
 
 
-def redact_persisted_diagnostic_text(value: object, *, limit: int = 16_000) -> str:
+def redact_persisted_diagnostic_text(
+    value: object,
+    *,
+    limit: int = 16_000,
+    exact_values: Iterable[object] = (),
+) -> str:
     """Remove credentials and local paths before diagnostic text becomes durable."""
     bounded_limit = max(1, int(limit))
     text = str(value or "").replace("\x00", "").strip()
     if not text:
         return ""
+    for sensitive_value in sorted(
+        {
+            str(candidate)
+            for candidate in exact_values
+            if len(str(candidate or "")) >= 8
+        },
+        key=len,
+        reverse=True,
+    ):
+        text = text.replace(sensitive_value, "[redacted]")
     # Redact multi-line/key-shaped structures before taking the diagnostic
     # tail. Otherwise a large PEM block or HTTP header could be truncated
     # between its label and secret, leaving the persisted suffix recognizable

@@ -1,10 +1,10 @@
 {
  "readme": "AgentsAssemble codebase map. Regenerate with `make codebase-map`; verify committed outputs with `make codebase-map-verify`. modules[] columns: name, path, package, domain, classification, migration_status, lines, docstring, imports[], imported_by[] (indexes into modules), classes[[name, [[base, defining_module], ...]]] (best-effort, top-level classes only). frontend[] columns: path, group, lines, doc, imports[], imported_by[] (indexes into frontend). package_edges go importer -> dependency with module-import counts; `points` is the precomputed polyline for that edge and `intra_cycle` marks imports whose endpoints share one cycle group. graph{} holds the layered package drawing: layers[] top-to-bottom (each with members[] package ids, member_count, and the dominant domain), (a package sits below everything importing it), clusters[] are mutually dependent packages (import cycles at package level) drawn as one labelled block, plus width/height of the drawing. health{} ranks findings for a reader who has to act: cycles[] (mutually dependent packages, with the lines they hold), leaning_on_retiring[] (current modules importing legacy/compatibility modules - the reason legacy cannot be deleted), highest_leverage_migrations[] (retiring modules with the most current importers), unreferenced_shims[] (compatibility modules with no importer in agentsassemble/ and no reference in tests/; callers outside this repository are not visible, so verify before deleting), and hotspots[] (largest modules). health.scope states exactly what was measured. class_graph{} is the UML generalization DAG over base classes that resolve inside the repo: edges go base -> subclass, so a subclass always sits below the class it extends. Coordinates in graph and class_graph are laid out with a Sugiyama pipeline (cycle condensation, Coffman-Graham layering, dummy-node edge routing, median/transpose crossing reduction) and are deterministic.",
- "generated_at": "2026-08-09T03:56:20Z",
- "fingerprint": "abfe1341fc8c983d",
+ "generated_at": "2026-08-09T05:44:33Z",
+ "fingerprint": "94781860725be472",
  "stats": {
   "backend_modules": 869,
-  "backend_lines": 150908,
+  "backend_lines": 150635,
   "frontend_files": 212,
   "frontend_lines": 49578,
   "packages": 30,
@@ -22,7 +22,7 @@
    "kind": "backend",
    "doc": "HTTP and WebSocket transport boundaries for the current GUI.",
    "files": 33,
-   "lines": 6139,
+   "lines": 6145,
    "domains": {
     "web": 33
    },
@@ -42,7 +42,7 @@
    "kind": "backend",
    "doc": "Application composition and cross-domain transaction contracts.",
    "files": 36,
-   "lines": 8852,
+   "lines": 8873,
    "domains": {
     "application": 36
    },
@@ -63,7 +63,7 @@
    "kind": "backend",
    "doc": "Current room domain contracts and behavior.",
    "files": 60,
-   "lines": 16000,
+   "lines": 16058,
    "domains": {
     "room": 60
    },
@@ -124,7 +124,7 @@
    "kind": "backend",
    "doc": "Provider runtime contracts and implementations.",
    "files": 124,
-   "lines": 32204,
+   "lines": 31830,
    "domains": {
     "providers": 124
    },
@@ -144,7 +144,7 @@
    "kind": "backend",
    "doc": "Shared bounded diagnostics for current AgentsAssemble runtimes.",
    "files": 13,
-   "lines": 3932,
+   "lines": 3948,
    "domains": {
     "diagnostics": 13
    },
@@ -4195,7 +4195,7 @@
      "web"
     ],
     "internal_edges": 92,
-    "lines": 147425,
+    "lines": 147152,
     "heaviest": "legacy"
    },
    {
@@ -6096,7 +6096,7 @@
    "application",
    "current",
    "in-target-package",
-   210,
+   220,
    "",
    [],
    [
@@ -6124,7 +6124,7 @@
    "application",
    "current",
    "in-target-package",
-   191,
+   202,
    "",
    [
     56,
@@ -7419,7 +7419,7 @@
    "diagnostics",
    "current",
    "in-target-package",
-   195,
+   211,
    "Shared policy for redacting operator-visible diagnostic text.",
    [],
    [
@@ -17632,7 +17632,7 @@
    "providers",
    "current",
    "in-target-package",
-   126,
+   97,
    "OpenAI-compatible function schemas for the bounded API work harness.",
    [],
    [
@@ -17647,7 +17647,7 @@
    "providers",
    "current",
    "in-target-package",
-   788,
+   438,
    "Workspace-scoped tools for OpenAI-compatible API Agent Sessions.",
    [
     590,
@@ -17668,10 +17668,6 @@
     ],
     [
      "ApiWorkHarness",
-     []
-    ],
-    [
-     "_BoundedCommandOutput",
      []
     ]
    ]
@@ -17702,7 +17698,7 @@
    "providers",
    "current",
    "in-target-package",
-   642,
+   657,
    "Server-owned provider Agent Bridge process lifecycle.",
    [
     110,
@@ -19247,7 +19243,7 @@
    "providers",
    "current",
    "in-target-package",
-   739,
+   729,
    "",
    [
     588,
@@ -20917,7 +20913,7 @@
    "room",
    "current",
    "in-target-package",
-   470,
+   523,
    "",
    [
     751
@@ -21650,7 +21646,7 @@
    "room",
    "current",
    "in-target-package",
-   395,
+   400,
    "",
    [
     120,
@@ -24469,7 +24465,7 @@
    "web",
    "current",
    "in-target-package",
-   293,
+   297,
    "Canonical room attachment upload and download routes.",
    [
     707,
@@ -24668,7 +24664,7 @@
    "web",
    "current",
    "in-target-package",
-   162,
+   164,
    "Public invite host-token, URL, and tunnel administration routes.",
    [
     841
@@ -28180,7 +28176,7 @@
    "name": "agentsassemble",
    "note": "Backend package (Python)",
    "files": 869,
-   "lines": 150908
+   "lines": 150635
   },
   {
    "name": "frontend/src",
@@ -28192,7 +28188,7 @@
    "name": "tests",
    "note": "Backend test suite",
    "files": 396,
-   "lines": 155804
+   "lines": 155727
   },
   {
    "name": "scripts",

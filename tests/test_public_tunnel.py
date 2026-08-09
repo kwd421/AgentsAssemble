@@ -66,6 +66,9 @@ class PublicTunnelTests(unittest.TestCase):
         process = FakeProcess()
         manager._process = process
         manager._generation = 1
+        manager._origin_host = self.runtime.prepare_managed_ingress(
+            ingress_kind="cloudflare"
+        )
         announced: list[str] = []
         with mock.patch(
             "agentsassemble.application.public_tunnel.announce_stable_entry",
@@ -112,6 +115,30 @@ class PublicTunnelTests(unittest.TestCase):
 
         self.assertEqual(self.runtime.public_url(), "")
 
+    def test_manual_url_transition_stops_owned_tunnel_before_committing_url(self):
+        manager = PublicTunnelManager(
+            public_invite_runtime=self.runtime,
+            local_url="http://127.0.0.1:8765",
+            which=lambda _name: "/bin/cloudflared",
+        )
+        process = FakeProcess()
+        origin_host = self.runtime.prepare_managed_ingress(ingress_kind="cloudflare")
+        manager._process = process
+        manager._origin_host = origin_host
+        manager._generation = 4
+
+        public_url = manager.set_manual_public_url("https://manual.example.com")
+        manager._record_output_line(
+            process,
+            4,
+            "Visit https://late-output.trycloudflare.com to inspect\n",
+        )
+
+        self.assertEqual(process.poll(), 0)
+        self.assertEqual(public_url, "https://manual.example.com")
+        self.assertEqual(self.runtime.public_url(), "https://manual.example.com")
+        self.assertFalse(self.runtime.verify_managed_ingress_origin(origin_host))
+
     def test_exited_tunnel_clears_owned_runtime_public_url(self):
         manager = PublicTunnelManager(
             public_invite_runtime=self.runtime,
@@ -121,9 +148,11 @@ class PublicTunnelTests(unittest.TestCase):
         process = FakeProcess(exit_code=1)
         manager._process = process
         manager._public_url = "https://dead-tunnel.trycloudflare.com"
+        origin_host = self.runtime.prepare_managed_ingress(ingress_kind="cloudflare")
         self.runtime.set_managed_public_url(
             "https://dead-tunnel.trycloudflare.com",
             ingress_kind="cloudflare",
+            expected_origin_host=origin_host,
         )
         manager._origin_host = self.runtime.managed_ingress_origin_host()
 

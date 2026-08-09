@@ -78,21 +78,31 @@ class PublicInviteRuntime:
             )
             return self._managed_ingress_origin_host
 
-    def set_managed_public_url(self, url: str, *, ingress_kind: str) -> str:
+    def set_managed_public_url(
+        self,
+        url: str,
+        *,
+        ingress_kind: str,
+        expected_origin_host: object,
+    ) -> str:
         """Register a public URL whose ingress lifecycle this process owns."""
 
         normalized = normalize_public_room_url(url).rstrip("/")
         clean_kind = str(ingress_kind or "").strip().lower()
         if clean_kind not in {"cloudflare"}:
             raise ValueError("unsupported managed public ingress")
+        expected_origin = str(expected_origin_host or "").strip().lower()
         with self._lock:
             if (
                 self._managed_ingress_kind != clean_kind
                 or not self._managed_ingress_origin_host
-            ):
-                self._managed_ingress_origin_host = (
-                    f"aas-{secrets.token_hex(24)}.origin.invalid"
+                or not expected_origin
+                or not hmac.compare_digest(
+                    self._managed_ingress_origin_host.lower(),
+                    expected_origin,
                 )
+            ):
+                raise RuntimeError("managed public ingress is no longer active")
             self._runtime_public_url = normalized
             self._managed_ingress_url = normalized
             self._managed_ingress_kind = clean_kind

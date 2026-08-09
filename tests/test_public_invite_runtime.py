@@ -69,9 +69,11 @@ class PublicInviteRuntimeTests(unittest.TestCase):
             "authenticated_proxy",
         )
 
+        owned_origin = runtime.prepare_managed_ingress(ingress_kind="cloudflare")
         runtime.set_managed_public_url(
             "https://owned.trycloudflare.com",
             ingress_kind="cloudflare",
+            expected_origin_host=owned_origin,
         )
         origin_host = runtime.managed_ingress_origin_host()
         self.assertEqual(runtime.trusted_ingress_kind(), "")

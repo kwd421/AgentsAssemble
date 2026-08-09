@@ -199,6 +199,46 @@ class AttachmentAuthorizationTests(unittest.TestCase):
                 True,
             )
 
+    def test_prejoin_avatar_quota_cannot_be_reset_by_rotating_device_tokens(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            deps = _attachment_dependencies(root)
+            deps.rooms.create_room("room-a")
+            invite = deps.invites.create(
+                room_url="http://127.0.0.1:8765",
+                meeting_id="room-a",
+                display_name="Guest",
+            )
+
+            accepted = [
+                _dispatch_attachment_upload(
+                    deps,
+                    _image_payload(
+                        purpose="profile_avatar",
+                        invite_token=invite["join_code"],
+                        device_token=f"rotating-device-{index}",
+                    ),
+                )
+                for index in range(8)
+            ]
+            rejected = _dispatch_attachment_upload(
+                deps,
+                _image_payload(
+                    purpose="profile_avatar",
+                    invite_token=invite["join_code"],
+                    device_token="rotating-device-over-limit",
+                ),
+            )
+
+            self.assertTrue(all(response.sent_json for response in accepted))
+            self.assertEqual(
+                rejected.sent_error,
+                (
+                    HTTPStatus.TOO_MANY_REQUESTS,
+                    "Attachment invite quota reached",
+                ),
+            )
+
     def test_private_room_attachment_download_requires_current_room_authority(self):
         with tempfile.TemporaryDirectory() as temp_dir:
             root = Path(temp_dir)

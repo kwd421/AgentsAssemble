@@ -38,6 +38,7 @@ class FakeProcess:
         self.terminated = False
         self.killed = False
         self.stderr = io.BytesIO(stderr_bytes)
+        self.stdin = io.BytesIO()
         self._done = threading.Event()
 
     def poll(self):
@@ -411,6 +412,51 @@ class NativeCliBridgeProcessManagerTests(unittest.TestCase):
         self.assertNotIn(secret, persisted)
         self.assertIn("[redacted]", persisted)
         self.assertIn("provider connection failed safely", persisted)
+
+    def test_bridge_stderr_redacts_the_exact_runtime_credential_from_all_surfaces(self):
+        secret = "provider-credential-with-an-unknown-prefix-347921"
+        ticket = "single-use-ticket-with-an-unknown-prefix-918273"
+        stderr = f"credential echoed: {secret}\nticket echoed: {ticket}\n".encode()
+        with tempfile.TemporaryDirectory() as temp_dir:
+            popen = FakePopenFactory()
+            popen.process = FakeProcess(stderr_bytes=stderr)
+            exits: list[tuple[object, ...]] = []
+            manager = NativeCliBridgeProcessManager(
+                Path(temp_dir),
+                popen_factory=popen,
+                secret_resolver=lambda _provider_id: secret,
+                on_exit=lambda *args: exits.append(args),
+            )
+            launch = manager.start(
+                "general",
+                {"session_id": "deepseek"},
+                _spec(
+                    agent_id="deepseek",
+                    command=("server-owned-api",),
+                    provider_kind="deepseek_api",
+                ),
+                server_url="http://127.0.0.1:9999",
+                ticket_issuer=lambda _identity: ticket,
+            )
+            deadline = time.monotonic() + 2
+            health = manager.health("general", "deepseek")
+            while health.get("stderr_line_count") != 2 and time.monotonic() < deadline:
+                time.sleep(0.01)
+                health = manager.health("general", "deepseek")
+            popen.process.returncode = 17
+            popen.process._done.set()
+            deadline = time.monotonic() + 2
+            while not exits and time.monotonic() < deadline:
+                time.sleep(0.01)
+            persisted = Path(launch["stderr_path"]).read_text(encoding="utf-8")
+
+        self.assertNotIn(secret, str(health.get("stderr_tail") or ""))
+        self.assertNotIn(ticket, str(health.get("stderr_tail") or ""))
+        self.assertNotIn(secret, persisted)
+        self.assertNotIn(ticket, persisted)
+        self.assertEqual(len(exits), 1)
+        self.assertNotIn(secret, str(exits[0][3]))
+        self.assertNotIn(ticket, str(exits[0][3]))
 
     def test_close_continues_after_failure_and_reports_owned_orphan(self):
         with tempfile.TemporaryDirectory() as temp_dir:

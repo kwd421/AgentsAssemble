@@ -11,6 +11,7 @@ from agentsassemble.room.attachments import (
     MAX_ATTACHMENT_BYTES,
     normalize_content_type,
     PUBLIC_ATTACHMENT_PURPOSES,
+    prejoin_attachment_quota_subject,
     prejoin_attachment_subject,
     sanitize_attachment_filename,
 )
@@ -31,6 +32,7 @@ class _AuthorizedUpload:
     profile_avatar: bool = False
     purpose: str = "room_attachment"
     upload_subject: str = ""
+    quota_subject: str = ""
     prejoin_pending: bool = False
 
 
@@ -72,6 +74,7 @@ def register_attachment_routes(router: Router) -> None:
                 else authority.purpose
             ),
             "upload_subject": authority.upload_subject,
+            "quota_subject": authority.quota_subject,
             "prejoin_pending": authority.prejoin_pending,
         }
         try:
@@ -231,6 +234,7 @@ def _authorize_upload(
         room_id=invite_room_id,
         profile_avatar=True,
         upload_subject=prejoin_attachment_subject(invite_token, device_token),
+        quota_subject=prejoin_attachment_quota_subject(invite_token),
         prejoin_pending=True,
     )
 

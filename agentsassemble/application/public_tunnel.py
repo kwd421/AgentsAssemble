@@ -121,6 +121,16 @@ class PublicTunnelManager:
             self._public_invite_runtime.clear_managed_ingress(owned_origin)
         return self.status()
 
+    def set_manual_public_url(self, public_url: str) -> str:
+        """Stop the owned tunnel before committing a manual public URL."""
+
+        self.stop()
+        clean_url = str(public_url or "").strip()
+        if not clean_url:
+            self._public_invite_runtime.clear_public_url()
+            return ""
+        return self._public_invite_runtime.set_public_url(clean_url)
+
     def _read_output(
         self,
         process: subprocess.Popen[str],
@@ -165,6 +175,7 @@ class PublicTunnelManager:
             self._public_invite_runtime.set_managed_public_url(
                 url,
                 ingress_kind="cloudflare",
+                expected_origin_host=self._origin_host,
             )
             announce_stable_entry(url)
 
