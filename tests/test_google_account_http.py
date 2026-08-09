@@ -371,7 +371,8 @@ class GoogleAccountHttpTests(unittest.TestCase):
             )
 
             remote = {
-                "host": "rooms.example.invalid",
+                "host": deps.public_invite.managed_ingress_origin_host(),
+                "forwarded_host": "rooms.example.invalid",
                 "peer_host": "127.0.0.1",
                 "device_token": "fresh-remote-device-token",
                 "forwarded_proto": "https",
@@ -453,7 +454,8 @@ class GoogleAccountHttpTests(unittest.TestCase):
                 ),
             )
             remote = {
-                "host": "rooms.example.invalid",
+                "host": deps.public_invite.managed_ingress_origin_host(),
+                "forwarded_host": "rooms.example.invalid",
                 "peer_host": "127.0.0.1",
                 "forwarded_proto": "https",
                 "cloudflare_ray": "managed-switch-ray",
@@ -594,6 +596,7 @@ class GoogleAccountHttpTests(unittest.TestCase):
         peer_host: str = "127.0.0.1",
         device_token: str = "account-http-device-token",
         forwarded_proto: str = "",
+        forwarded_host: str = "",
         cloudflare_ray: str = "",
     ) -> _Handler:
         handler = _Handler(
@@ -604,6 +607,7 @@ class GoogleAccountHttpTests(unittest.TestCase):
             peer_host=peer_host,
             device_token=device_token,
             forwarded_proto=forwarded_proto,
+            forwarded_host=forwarded_host,
             cloudflare_ray=cloudflare_ray,
         )
         parsed = urlparse(path)

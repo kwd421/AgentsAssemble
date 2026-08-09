@@ -504,6 +504,7 @@ class PublicInviteHttpTests(unittest.TestCase):
                             {
                                 "invite_token": invite["invite_token"],
                                 "request_id": str(uuid4()),
+                                "device_token": "public-bootstrap-device",
                             },
                             public_headers,
                         ),
@@ -597,6 +598,7 @@ class PublicInviteHttpTests(unittest.TestCase):
                             {
                                 "invite_token": read_only_invite["invite_token"],
                                 "request_id": str(uuid4()),
+                                "device_token": "read-only-public-device",
                             },
                             public_headers,
                         ),
@@ -996,6 +998,7 @@ class PublicInviteHttpTests(unittest.TestCase):
                         {
                             "invite_token": invite["invite_token"],
                             "request_id": str(uuid4()),
+                            "device_token": "companion-packet-device",
                         },
                     ),
                     timeout=4,

@@ -1,3 +1,4 @@
+import threading
 import unittest
 from unittest import mock
 
@@ -62,11 +63,7 @@ class PublicTunnelTests(unittest.TestCase):
             local_url="http://127.0.0.1:8765",
             which=lambda _name: "/bin/cloudflared",
         )
-        process = FakeProcess(lines=[
-            "Visit https://old-tunnel.trycloudflare.com to inspect\n",
-            "connection lost, reconnecting...\n",
-            "Visit https://new-tunnel.trycloudflare.com to inspect\n",
-        ])
+        process = FakeProcess()
         manager._process = process
         manager._generation = 1
         announced: list[str] = []
@@ -74,10 +71,27 @@ class PublicTunnelTests(unittest.TestCase):
             "agentsassemble.application.public_tunnel.announce_stable_entry",
             lambda url: announced.append(url),
         ):
-            manager._read_output(process, 1)
+            manager._record_output_line(
+                process,
+                1,
+                "Visit https://old-tunnel.trycloudflare.com to inspect\n",
+            )
+            origin_host = self.runtime.managed_ingress_origin_host()
+            manager._record_output_line(process, 1, "connection lost, reconnecting...\n")
+            manager._record_output_line(
+                process,
+                1,
+                "Visit https://new-tunnel.trycloudflare.com to inspect\n",
+            )
         self.assertEqual(manager._public_url, "https://new-tunnel.trycloudflare.com")
         self.assertEqual(self.runtime.public_url(), "https://new-tunnel.trycloudflare.com")
-        self.assertEqual(self.runtime.trusted_ingress_kind(), "cloudflare")
+        self.assertEqual(self.runtime.managed_ingress_origin_host(), origin_host)
+        self.assertEqual(
+            self.runtime.trusted_ingress_kind(
+                provided_managed_origin=self.runtime.managed_ingress_origin_host(),
+            ),
+            "cloudflare",
+        )
         # both hostnames were announced in order — workers.dev ends on the live one
         self.assertEqual(
             announced,
@@ -111,6 +125,7 @@ class PublicTunnelTests(unittest.TestCase):
             "https://dead-tunnel.trycloudflare.com",
             ingress_kind="cloudflare",
         )
+        manager._origin_host = self.runtime.managed_ingress_origin_host()
 
         status = manager.status()
 
@@ -118,6 +133,81 @@ class PublicTunnelTests(unittest.TestCase):
         self.assertEqual(status["phase"], "stopped")
         self.assertEqual(self.runtime.public_url(), "")
         self.assertEqual(self.runtime.trusted_ingress_kind(), "")
+
+    def test_tunnel_uses_a_process_lifetime_origin_credential(self):
+        commands: list[list[str]] = []
+        release_output = threading.Event()
+
+        class HeldOutput:
+            def __iter__(self):
+                return self
+
+            def __next__(self):
+                release_output.wait(timeout=2)
+                raise StopIteration
+
+        def popen(command, **_kwargs):
+            commands.append(command)
+            process = FakeProcess()
+            process.stdout = HeldOutput()
+            return process
+
+        manager = PublicTunnelManager(
+            public_invite_runtime=self.runtime,
+            local_url="http://127.0.0.1:8765",
+            which=lambda _name: "/bin/cloudflared",
+            popen=popen,
+        )
+
+        try:
+            manager.start()
+            origin_host = self.runtime.managed_ingress_origin_host()
+
+            self.assertTrue(origin_host.endswith(".origin.invalid"))
+            self.assertIn("--http-host-header", commands[0])
+            self.assertEqual(commands[0][-1], origin_host)
+        finally:
+            release_output.set()
+            manager.stop()
+
+    def test_tunnel_output_eof_revokes_the_registered_ingress_immediately(self):
+        manager = PublicTunnelManager(
+            public_invite_runtime=self.runtime,
+            local_url="http://127.0.0.1:8765",
+            which=lambda _name: "/bin/cloudflared",
+        )
+        process = FakeProcess(
+            lines=["Visit https://ended.trycloudflare.com to inspect\n"],
+        )
+        origin_host = self.runtime.prepare_managed_ingress(ingress_kind="cloudflare")
+        manager._process = process
+        manager._origin_host = origin_host
+        manager._generation = 1
+
+        with mock.patch(
+            "agentsassemble.application.public_tunnel.announce_stable_entry",
+            lambda _url: None,
+        ):
+            manager._read_output(process, 1, origin_host)
+
+        self.assertEqual(self.runtime.public_url(), "")
+        self.assertEqual(manager._public_url, "")
+
+    def test_tunnel_output_eof_revokes_origin_before_a_url_is_announced(self):
+        manager = PublicTunnelManager(
+            public_invite_runtime=self.runtime,
+            local_url="http://127.0.0.1:8765",
+            which=lambda _name: "/bin/cloudflared",
+        )
+        process = FakeProcess()
+        origin_host = self.runtime.prepare_managed_ingress(ingress_kind="cloudflare")
+        manager._process = process
+        manager._origin_host = origin_host
+        manager._generation = 1
+
+        manager._read_output(process, 1, origin_host)
+
+        self.assertFalse(self.runtime.verify_managed_ingress_origin(origin_host))
 
 
 if __name__ == "__main__":

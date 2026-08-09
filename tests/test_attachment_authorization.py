@@ -1,8 +1,10 @@
 from __future__ import annotations
 
 import base64
+import json
 import tempfile
 import unittest
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from unittest.mock import Mock
 from urllib.parse import parse_qs, urlparse
@@ -17,6 +19,7 @@ from agentsassemble.persistence.local.identity.repository import IdentityStore
 from agentsassemble.persistence.local.room.repository import RoomStore
 from agentsassemble.room.attachments import (
     FileAttachmentStore,
+    read_attachment_file,
     read_attachment_metadata,
     store_uploaded_attachment,
 )
@@ -113,6 +116,38 @@ def _image_payload(**updates: object) -> dict[str, object]:
 
 
 class AttachmentAuthorizationTests(unittest.TestCase):
+    def test_expired_prejoin_avatar_is_rejected_and_reclaimed_on_read(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            deps = _attachment_dependencies(root)
+            pending = deps.media.store(
+                {
+                    **_image_payload(purpose="profile_avatar"),
+                    "upload_subject": "prejoin:expired-read",
+                    "prejoin_pending": True,
+                }
+            )
+            attachment_id = str(pending["id"])
+            attachment_dir = root / "attachments" / attachment_id
+            metadata_path = attachment_dir / "metadata.json"
+            metadata = json.loads(metadata_path.read_text(encoding="utf-8"))
+            metadata["pending_until"] = (
+                datetime.now(UTC) - timedelta(seconds=1)
+            ).isoformat()
+            metadata_path.write_text(json.dumps(metadata), encoding="utf-8")
+
+            response = _dispatch_attachment_download(
+                deps,
+                f"/api/attachments/{attachment_id}?view=1",
+            )
+
+            self.assertEqual(
+                response.sent_error,
+                (HTTPStatus.NOT_FOUND, "Attachment not found"),
+            )
+            self.assertIsNone(response.sent_attachment)
+            self.assertFalse(attachment_dir.exists())
+
     def test_prejoin_avatar_requires_a_stable_device_and_replaces_its_prior_upload(self):
         with tempfile.TemporaryDirectory() as temp_dir:
             root = Path(temp_dir)
@@ -307,13 +342,55 @@ class AttachmentAuthorizationTests(unittest.TestCase):
             )
             attachment = accepted.sent_json["attachment"]
             metadata = read_attachment_metadata(root, str(attachment["id"]))
+            _public_metadata, attachment_path = read_attachment_file(
+                root,
+                str(attachment["id"]),
+            )
             self.assertEqual(metadata["room_id"], "room-a")
             self.assertIn("room_media", accepted.sent_json)
-            self.assertIn(
-                "media_attached",
-                [event["type"] for event in deps.rooms.read_events("room-a")],
-            )
+            self.assertTrue(attachment_path.is_file())
+            media_event = deps.rooms.read_events("room-a")[-1]
+            self.assertEqual(media_event["type"], "media_attached")
+            self.assertEqual(accepted.sent_json["room_media"], media_event["media"])
+            self.assertNotIn("path", accepted.sent_json["room_media"])
             self.assertEqual(len(list((root / "attachments").iterdir())), 1)
+
+    def test_posting_session_cannot_publish_an_anonymous_room_appearance(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            deps = _attachment_dependencies(root)
+            deps.rooms.create_room("room-a")
+            session_token, _session = deps.sessions.issue(
+                {
+                    "agent_id": "guest-a",
+                    "display_name": "Guest A",
+                    "meeting_id": "room-a",
+                    "invite_scope": "room",
+                    "participant_type": "human",
+                    "client_type": "browser",
+                }
+            )
+
+            response = _dispatch_attachment_upload(
+                deps,
+                _image_payload(purpose="room_appearance"),
+                headers={"Authorization": f"Bearer {session_token}"},
+            )
+
+            attachment = response.sent_json["attachment"]
+            attachment_id = str(attachment["id"])
+            self.assertEqual(
+                read_attachment_metadata(root, attachment_id)["purpose"],
+                "room_attachment",
+            )
+            anonymous = _dispatch_attachment_download(
+                deps,
+                f"/api/attachments/{attachment_id}?view=1",
+            )
+            self.assertEqual(
+                anonymous.sent_error,
+                (HTTPStatus.UNAUTHORIZED, "attachment access is required"),
+            )
 
     def test_failed_canonical_media_write_removes_the_staged_upload(self):
         with tempfile.TemporaryDirectory() as temp_dir:

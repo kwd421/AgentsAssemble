@@ -73,9 +73,23 @@ class PublicInviteRuntimeTests(unittest.TestCase):
             "https://owned.trycloudflare.com",
             ingress_kind="cloudflare",
         )
-        self.assertEqual(runtime.trusted_ingress_kind(), "cloudflare")
+        origin_host = runtime.managed_ingress_origin_host()
+        self.assertEqual(runtime.trusted_ingress_kind(), "")
+        self.assertEqual(
+            runtime.trusted_ingress_kind(provided_managed_origin=origin_host),
+            "cloudflare",
+        )
         runtime.clear_public_url("https://owned.trycloudflare.com")
         self.assertEqual(runtime.trusted_ingress_kind(), "")
+        self.assertFalse(runtime.verify_managed_ingress_origin(origin_host))
+
+    def test_stale_tunnel_cannot_clear_a_newer_public_configuration(self) -> None:
+        runtime = PublicInviteRuntime(environ={})
+        stale_origin = runtime.prepare_managed_ingress(ingress_kind="cloudflare")
+        runtime.set_public_url("https://manual.example.com")
+
+        self.assertFalse(runtime.clear_managed_ingress(stale_origin))
+        self.assertEqual(runtime.public_url(), "https://manual.example.com")
 
 
 if __name__ == "__main__":

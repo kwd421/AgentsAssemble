@@ -46,6 +46,7 @@ from agentsassemble.web.security import (
     _origin_is_loopback_or_empty,
     _request_uses_trusted_public_https_proxy,
     _split_authority_host_port,
+    TRUSTED_PROXY_CLIENT_IP_HEADER,
     TRUSTED_PROXY_TOKEN_HEADER,
 )
 
@@ -61,6 +62,7 @@ _PROXY_PROVENANCE_HEADERS = (
     "X-Forwarded-Proto",
     "X-Real-IP",
     TRUSTED_PROXY_TOKEN_HEADER,
+    TRUSTED_PROXY_CLIENT_IP_HEADER,
 )
 
 
@@ -229,6 +231,7 @@ class RequestContext:
             return ""
         ingress_kind = runtime.trusted_ingress_kind(
             provided_proxy_token=self.headers.get(TRUSTED_PROXY_TOKEN_HEADER),
+            provided_managed_origin=self.headers.get("Host"),
         )
         client_address = getattr(self.handler, "client_address", ())
         peer_host = (
@@ -239,6 +242,7 @@ class RequestContext:
         if not _request_uses_trusted_public_https_proxy(
             peer_host=peer_host,
             host_header=self.headers.get("Host"),
+            forwarded_host=self.headers.get("X-Forwarded-Host"),
             forwarded_proto=self.headers.get("X-Forwarded-Proto"),
             public_url=runtime.public_url(),
             ingress_kind=ingress_kind,
@@ -636,7 +640,7 @@ class Router:
 
 
 def request_server_url(handler: Any) -> str:
-    host = handler.headers.get("Host")
+    host = getattr(handler, "_agentsassemble_effective_host", None) or handler.headers.get("Host")
     if host:
         return f"http://{host}"
     address = handler.server.server_address

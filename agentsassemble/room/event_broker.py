@@ -5,6 +5,8 @@ import threading
 from collections import deque
 from uuid import uuid4
 
+from agentsassemble.admission.capacity import uses_reserved_room_capacity
+
 from agentsassemble.room.projection import public_event_for_identity
 from agentsassemble.room.text import clean_room_text as clean_lobby_text
 
@@ -154,9 +156,9 @@ class RoomEventBroker:
         with self._lock:
             if len(self._channels) >= self._max_connections:
                 raise RoomConnectionLimitError("room WebSocket capacity reached")
-            if not _uses_reserved_capacity(identity):
+            if not uses_reserved_room_capacity(identity):
                 public_connections = sum(
-                    not _uses_reserved_capacity(existing.identity)
+                    not uses_reserved_room_capacity(existing.identity)
                     for existing in self._channels.values()
                 )
                 if public_connections >= self._max_public_connections:
@@ -324,10 +326,3 @@ def _connection_subject(identity: dict[str, object]) -> tuple[str, str]:
         limit=128,
     )
     return room_id, session_id
-
-
-def _uses_reserved_capacity(identity: dict[str, object]) -> bool:
-    return bool(identity.get("principal_is_operator")) or clean_lobby_text(
-        identity.get("client_type"),
-        limit=32,
-    ) == "agent_bridge"

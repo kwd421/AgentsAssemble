@@ -9,6 +9,7 @@ _LOOPBACK_HOSTNAMES = {"127.0.0.1", "localhost", "::1"}
 _PUBLIC_INVITE_CORS_METHODS = "GET, POST, DELETE, OPTIONS"
 _PUBLIC_INVITE_CORS_HEADERS = "Authorization, Content-Type, Last-Event-ID, X-Device-Token"
 TRUSTED_PROXY_TOKEN_HEADER = "X-AgentsAssemble-Proxy-Token"
+TRUSTED_PROXY_CLIENT_IP_HEADER = "X-AgentsAssemble-Client-IP"
 _PROVIDER_CREDENTIAL_PATHS = {
     f"/api/provider-credentials/{provider_id}"
     for provider_id in remote_openai_credential_ids()
@@ -64,6 +65,7 @@ def _request_uses_trusted_public_https_proxy(
     *,
     peer_host: object,
     host_header: object,
+    forwarded_host: object = "",
     forwarded_proto: object,
     public_url: str,
     ingress_kind: object,
@@ -79,12 +81,13 @@ def _request_uses_trusted_public_https_proxy(
     """
     parsed_public_url = urlparse(str(public_url or "").strip())
     public_hostname = (parsed_public_url.hostname or "").lower()
-    request_hostname, _ = _split_authority_host_port(str(host_header or ""))
     clean_ingress_kind = str(ingress_kind or "").strip().lower()
     ingress_is_authenticated = clean_ingress_kind == "authenticated_proxy"
     ingress_is_managed_cloudflare = (
         clean_ingress_kind == "cloudflare" and bool(str(cloudflare_ray or "").strip())
     )
+    effective_host = forwarded_host if ingress_is_managed_cloudflare else host_header
+    request_hostname, _ = _split_authority_host_port(str(effective_host or ""))
     return (
         parsed_public_url.scheme.lower() == "https"
         and bool(public_hostname)

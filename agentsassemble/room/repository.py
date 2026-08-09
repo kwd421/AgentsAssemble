@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from collections.abc import Callable, Iterable
+from pathlib import Path
 from typing import ContextManager, Protocol, runtime_checkable
 
 from agentsassemble.room_attention import AgentAttentionState, AttentionEvaluation
@@ -13,6 +14,20 @@ SessionRecord = dict[str, object]
 EventRecord = dict[str, object]
 CommandRecord = dict[str, object]
 EventListener = Callable[[EventRecord], None]
+
+
+def resolve_room_media_source(output_root: Path, source_path: str) -> Path:
+    """Resolve an existing server-owned media file without copying its bytes."""
+
+    root = Path(output_root).expanduser().resolve()
+    candidate = Path(source_path).expanduser().resolve()
+    try:
+        candidate.relative_to(root)
+    except ValueError as error:
+        raise ValueError("Room media source must be inside the application data root") from error
+    if not candidate.is_file():
+        raise ValueError("Room media source was not found")
+    return candidate
 
 
 class RoomTransaction(Protocol):
@@ -305,6 +320,7 @@ class RoomRepository(Protocol):
         size: int = 0,
         supported: bool,
         data: bytes = b"",
+        source_path: str = "",
     ) -> dict[str, object]: ...
 
     def export_participant(

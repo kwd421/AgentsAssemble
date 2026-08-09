@@ -45,7 +45,8 @@ class GoogleLoginCapacityTests(unittest.TestCase):
                 public_invite_runtime=self._trusted_public_runtime(),
             )
             remote = {
-                "host": "rooms.example.invalid",
+                "host": deps.public_invite.managed_ingress_origin_host(),
+                "forwarded_host": "rooms.example.invalid",
                 "peer_host": "127.0.0.1",
                 "forwarded_proto": "https",
                 "cloudflare_ray": "managed-capacity-ray",
@@ -162,7 +163,8 @@ class GoogleLoginCapacityTests(unittest.TestCase):
                 public_invite_runtime=self._trusted_public_runtime(),
             )
             remote = {
-                "host": "rooms.example.invalid",
+                "host": deps.public_invite.managed_ingress_origin_host(),
+                "forwarded_host": "rooms.example.invalid",
                 "peer_host": "127.0.0.1",
                 "forwarded_proto": "https",
                 "cloudflare_ray": "managed-reserve-ray",
@@ -233,6 +235,7 @@ class GoogleLoginCapacityTests(unittest.TestCase):
         peer_host: str = "127.0.0.1",
         device_token: str = "account-http-device-token",
         forwarded_proto: str = "",
+        forwarded_host: str = "",
         cloudflare_ray: str = "",
     ) -> GoogleAccountHandler:
         handler = GoogleAccountHandler(
@@ -243,6 +246,7 @@ class GoogleLoginCapacityTests(unittest.TestCase):
             peer_host=peer_host,
             device_token=device_token,
             forwarded_proto=forwarded_proto,
+            forwarded_host=forwarded_host,
             cloudflare_ray=cloudflare_ray,
         )
         parsed = urlparse(path)

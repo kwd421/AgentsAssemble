@@ -12,7 +12,6 @@ from psycopg import Connection
 from psycopg.rows import dict_row
 from psycopg.types.json import Jsonb
 
-from agentsassemble.room.text import clean_room_text
 from agentsassemble.persistence.postgres.application_database import (
     PostgresConnectionProvider,
 )
@@ -68,7 +67,7 @@ from agentsassemble.persistence.postgres.room.queries import (
 from agentsassemble.persistence.postgres.schema import upgrade_postgres_room_schema
 from agentsassemble.room_attention import AgentAttentionState, AttentionEvaluation
 from agentsassemble.room.global_settings import RoomGlobalSettingsRecord
-from agentsassemble.room.repository import RoomTransaction
+from agentsassemble.room.repository import RoomTransaction, resolve_room_media_source
 from agentsassemble.room.repository_records import (
     clean_participant_id,
     clean_room_id,
@@ -78,6 +77,7 @@ from agentsassemble.room.repository_records import (
     safe_media_filename,
     utc_now,
 )
+from agentsassemble.room.text import clean_room_text
 
 
 _LOGGER = logging.getLogger(__name__)
@@ -885,17 +885,22 @@ class PostgresRoomRepository:
         size: int = 0,
         supported: bool,
         data: bytes = b"",
+        source_path: str = "",
     ) -> dict[str, object]:
         root = self._require_output_root()
         clean_id = clean_room_id(room_id)
         media_id = uuid4().hex[:12]
         clean_filename = safe_media_filename(filename) or media_id
-        media_dir = root / "rooms" / clean_id / "media" / media_id
-        media_path = media_dir / clean_filename
-        media_dir.mkdir(parents=True, exist_ok=True)
-        if data:
-            media_path.write_bytes(data)
-            size = len(data)
+        if source_path:
+            media_path = resolve_room_media_source(root, source_path)
+            size = media_path.stat().st_size
+        else:
+            media_dir = root / "rooms" / clean_id / "media" / media_id
+            media_path = media_dir / clean_filename
+            media_dir.mkdir(parents=True, exist_ok=True)
+            if data:
+                media_path.write_bytes(data)
+                size = len(data)
         media = {
             "id": media_id,
             "filename": clean_filename,

@@ -12,6 +12,7 @@ import os
 import signal
 import stat
 import subprocess
+import sys
 import threading
 import time
 from collections.abc import Callable
@@ -29,6 +30,10 @@ _COMMAND_OUTPUT_LIMIT_BYTES = 1_000_000
 _COMMAND_OUTPUT_READ_SIZE = 64 * 1024
 _COMMAND_POLL_INTERVAL_SECONDS = 0.02
 _COMMAND_READER_JOIN_SECONDS = 1.0
+_DARWIN_SANDBOX_EXEC = Path("/usr/bin/sandbox-exec")
+_DARWIN_NO_CHILD_PROCESS_PROFILE = (
+    "(version 1)(allow default)(deny process-fork)"
+)
 
 
 class ApiWorkApprovalDenied(PermissionError):
@@ -175,6 +180,7 @@ class ApiWorkHarness:
             raise ValueError("run_workspace_command contains an invalid argument.")
         cwd = self._path(arguments.get("cwd") or ".", directory=True)
         timeout = _bounded_int(arguments.get("timeout_seconds"), 30, minimum=1, maximum=120)
+        contained_argv = _contained_workspace_command(argv)
         shown = " ".join(json.dumps(part, ensure_ascii=False) for part in argv)
         self._approve(
             "명령 실행 승인",
@@ -184,7 +190,7 @@ class ApiWorkHarness:
         # it closes so a swapped symlink cannot redirect the command cwd.
         cwd = self._path(cwd.relative_to(self.workspace), directory=True)
         completed = _run_bounded_command(
-            argv,
+            contained_argv,
             cwd=cwd,
             env=_command_environment(),
             timeout=timeout,
@@ -717,11 +723,9 @@ def _terminate_process_tree(
     if process.poll() is not None:
         return
     if process_group:
-        try:
-            os.killpg(process.pid, signal.SIGKILL)
-            return
-        except ProcessLookupError:
-            return
+        _signal_process_group(process.pid, signal.SIGKILL)
+        _signal_process(process.pid, signal.SIGKILL)
+        return
     if os.name == "nt":
         try:
             subprocess.run(
@@ -736,6 +740,43 @@ def _terminate_process_tree(
             process.kill()
         return
     process.kill()
+
+
+def _contained_workspace_command(argv: list[str]) -> list[str]:
+    """Return an argv whose process lifetime can be bounded without PID scans.
+
+    A process-group kill cannot contain a command that forks and calls
+    ``setsid()``.  macOS' sandbox can prohibit all child-process creation while
+    still allowing the approved command itself to run.  Platforms without an
+    equivalent verified containment primitive fail closed instead of claiming
+    that best-effort process enumeration is a security boundary.
+    """
+
+    if sys.platform == "darwin" and _DARWIN_SANDBOX_EXEC.is_file():
+        return [
+            str(_DARWIN_SANDBOX_EXEC),
+            "-p",
+            _DARWIN_NO_CHILD_PROCESS_PROFILE,
+            *argv,
+        ]
+    raise RuntimeError(
+        "Workspace command execution is unavailable because this platform "
+        "does not provide verified child-process containment."
+    )
+
+
+def _signal_process_group(process_group_id: int, sent_signal: int) -> None:
+    try:
+        os.killpg(process_group_id, sent_signal)
+    except (PermissionError, ProcessLookupError):
+        pass
+
+
+def _signal_process(pid: int, sent_signal: int) -> None:
+    try:
+        os.kill(pid, sent_signal)
+    except ProcessLookupError:
+        pass
 
 
 __all__ = [

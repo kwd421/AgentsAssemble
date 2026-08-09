@@ -43,6 +43,7 @@ class PublicTunnelManager:
         self._logs: deque[str] = deque(maxlen=12)
         self._reader_thread: threading.Thread | None = None
         self._generation = 0
+        self._origin_host = ""
 
     def set_local_url(self, local_url: str) -> None:
         with self._lock:
@@ -69,16 +70,32 @@ class PublicTunnelManager:
             self._started_at = time.time()
             self._generation += 1
             generation = self._generation
-            self._process = self._popen(
-                [executable, "tunnel", "--url", self.local_url],
-                stdout=subprocess.PIPE,
-                stderr=subprocess.STDOUT,
-                text=True,
-                bufsize=1,
+            origin_host = self._public_invite_runtime.prepare_managed_ingress(
+                ingress_kind="cloudflare",
             )
+            self._origin_host = origin_host
+            try:
+                self._process = self._popen(
+                    [
+                        executable,
+                        "tunnel",
+                        "--url",
+                        self.local_url,
+                        "--http-host-header",
+                        origin_host,
+                    ],
+                    stdout=subprocess.PIPE,
+                    stderr=subprocess.STDOUT,
+                    text=True,
+                    bufsize=1,
+                )
+            except BaseException:
+                self._origin_host = ""
+                self._public_invite_runtime.clear_managed_ingress(origin_host)
+                raise
             self._reader_thread = threading.Thread(
                 target=self._read_output,
-                args=(self._process, generation),
+                args=(self._process, generation, origin_host),
                 daemon=True,
             )
             self._reader_thread.start()
@@ -87,9 +104,10 @@ class PublicTunnelManager:
     def stop(self) -> dict[str, object]:
         with self._lock:
             process = self._process
-            owned_url = self._public_url
+            owned_origin = self._origin_host
             self._process = None
             self._public_url = ""
+            self._origin_host = ""
             self._started_at = 0.0
             self._generation += 1
         if process is not None and process.poll() is None:
@@ -99,41 +117,56 @@ class PublicTunnelManager:
             except subprocess.TimeoutExpired:
                 process.kill()
                 process.wait(timeout=5)
-        if owned_url:
-            self._public_invite_runtime.clear_public_url(owned_url)
+        if owned_origin:
+            self._public_invite_runtime.clear_managed_ingress(owned_origin)
         return self.status()
 
-    def _read_output(self, process: subprocess.Popen[str], generation: int) -> None:
+    def _read_output(
+        self,
+        process: subprocess.Popen[str],
+        generation: int,
+        origin_host: str = "",
+    ) -> None:
         if process is None or process.stdout is None:
             return
         try:
             for line in process.stdout:
-                clean_line = line.strip()
-                url = extract_trycloudflare_url(clean_line)
-                with self._lock:
-                    if self._process is not process or self._generation != generation:
-                        return
-                    if clean_line:
-                        self._logs.append(clean_line)
-                    # Update whenever a NEW hostname appears — not just the first.
-                    # cloudflared can re-issue a trycloudflare URL on reconnect; if
-                    # we keep the stale first one, the room (and the workers.dev
-                    # entrypoint) point at a dead tunnel while we report "running".
-                    if url and url != self._public_url:
-                        previous = self._public_url
-                        self._public_url = url
-                        if previous:
-                            self._public_invite_runtime.clear_public_url(previous)
-                        self._public_invite_runtime.set_managed_public_url(
-                            url,
-                            ingress_kind="cloudflare",
-                        )
-                        # Re-point the permanent workers.dev entrypoint at the
-                        # fresh tunnel hostname (async, best-effort).
-                        announce_stable_entry(url)
+                self._record_output_line(process, generation, line)
         except Exception as error:  # pragma: no cover - defensive thread guard
             with self._lock:
                 self._last_error = str(error)
+        finally:
+            with self._lock:
+                if self._process is process and self._generation == generation:
+                    self._public_url = ""
+                    owned_origin = self._origin_host or origin_host
+                    self._origin_host = ""
+                else:
+                    owned_origin = ""
+            if owned_origin:
+                self._public_invite_runtime.clear_managed_ingress(owned_origin)
+
+    def _record_output_line(
+        self,
+        process: subprocess.Popen[str],
+        generation: int,
+        line: str,
+    ) -> None:
+        clean_line = line.strip()
+        url = extract_trycloudflare_url(clean_line)
+        with self._lock:
+            if self._process is not process or self._generation != generation:
+                return
+            if clean_line:
+                self._logs.append(clean_line)
+            if not url or url == self._public_url:
+                return
+            self._public_url = url
+            self._public_invite_runtime.set_managed_public_url(
+                url,
+                ingress_kind="cloudflare",
+            )
+            announce_stable_entry(url)
 
     def _status_locked(self) -> dict[str, object]:
         process = self._process
@@ -141,9 +174,10 @@ class PublicTunnelManager:
         running = process is not None and exit_code is None
         if process is not None and exit_code is not None and not self._last_error:
             self._last_error = f"cloudflared exited with code {exit_code}"
-        if process is not None and exit_code is not None and self._public_url:
-            self._public_invite_runtime.clear_public_url(self._public_url)
+        if process is not None and exit_code is not None and self._origin_host:
+            self._public_invite_runtime.clear_managed_ingress(self._origin_host)
             self._public_url = ""
+            self._origin_host = ""
         phase = "running" if running and self._public_url else "starting" if running else "stopped"
         return {
             "available": self._which("cloudflared") is not None,

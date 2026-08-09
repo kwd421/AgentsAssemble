@@ -33,6 +33,7 @@ class GoogleAccountHandler:
         peer_host: str = "127.0.0.1",
         device_token: str = "account-http-device-token",
         forwarded_proto: str = "",
+        forwarded_host: str = "",
         cloudflare_ray: str = "",
     ) -> None:
         raw_body = json.dumps(body or {}).encode()
@@ -45,6 +46,8 @@ class GoogleAccountHandler:
         }
         if forwarded_proto:
             self.headers["X-Forwarded-Proto"] = forwarded_proto
+        if forwarded_host:
+            self.headers["X-Forwarded-Host"] = forwarded_host
         if cloudflare_ray:
             self.headers["CF-Ray"] = cloudflare_ray
         self.rfile = io.BytesIO(raw_body)

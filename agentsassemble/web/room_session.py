@@ -18,6 +18,7 @@ import time
 from dataclasses import dataclass, field
 from typing import Callable
 
+from agentsassemble.admission.capacity import uses_reserved_room_capacity
 from agentsassemble.identity.repository import (
     LOCAL_OPERATOR_DISPLAY_NAME_DEFAULT,
     LOCAL_OPERATOR_PARTICIPANT_ID,
@@ -38,6 +39,7 @@ from agentsassemble.web.websocket_codec import (
 
 WS_TICKET_TTL_SECONDS = 30.0
 WS_MAX_PENDING_TICKETS_TOTAL = 2048
+WS_PENDING_TICKET_RESERVE_DIVISOR = 8
 WS_MAX_PENDING_TICKETS_PER_SESSION = 8
 WS_STREAMS = ("lobby", "roster", "side_chat", "room_events")
 WS_DEFAULT_STREAMS = ("lobby", "roster", "side_chat")
@@ -82,11 +84,28 @@ class WsTicketStore:
         *,
         ttl_seconds: float = WS_TICKET_TTL_SECONDS,
         max_pending_total: int = WS_MAX_PENDING_TICKETS_TOTAL,
+        max_public_pending_total: int | None = None,
         max_pending_per_session: int = WS_MAX_PENDING_TICKETS_PER_SESSION,
         now_fn: Callable[[], float] = time.monotonic,
     ) -> None:
         self._ttl = float(ttl_seconds)
         self._max_pending_total = max(1, int(max_pending_total))
+        self._max_public_pending_total = max(
+            1,
+            min(
+                int(
+                    max_public_pending_total
+                    if max_public_pending_total is not None
+                    else max(
+                        1,
+                        self._max_pending_total
+                        * (WS_PENDING_TICKET_RESERVE_DIVISOR - 1)
+                        // WS_PENDING_TICKET_RESERVE_DIVISOR,
+                    )
+                ),
+                self._max_pending_total,
+            ),
+        )
         self._max_pending_per_session = max(1, int(max_pending_per_session))
         self._now = now_fn
         self._tickets: dict[str, tuple[dict, str, str, float]] = {}
@@ -98,6 +117,13 @@ class WsTicketStore:
             subject = _ticket_subject(session, session_token=session_token)
             if len(self._tickets) >= self._max_pending_total:
                 raise WsTicketLimitError("too many pending WebSocket tickets")
+            if not uses_reserved_room_capacity(session):
+                public_count = sum(
+                    not uses_reserved_room_capacity(entry_session)
+                    for entry_session, _token, _subject, _expires_at in self._tickets.values()
+                )
+                if public_count >= self._max_public_pending_total:
+                    raise WsTicketLimitError("too many pending public WebSocket tickets")
             subject_count = sum(
                 1 for _session, _token, entry_subject, _expires_at in self._tickets.values()
                 if entry_subject == subject

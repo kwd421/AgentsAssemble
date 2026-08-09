@@ -242,5 +242,12 @@ def strip_private_event_fields(value: dict[str, object]) -> dict[str, object]:
     return dict(strip(value))
 
 
+def public_room_media_metadata(value: dict[str, object]) -> dict[str, object]:
+    """Project an internal media record through the public room boundary."""
+
+    projected = strip_private_event_fields({"media": value}).get("media")
+    return projected if isinstance(projected, dict) else {}
+
+
 def utc_now() -> str:
     return datetime.now(UTC).isoformat()

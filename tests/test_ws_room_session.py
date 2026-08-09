@@ -81,6 +81,37 @@ class TicketStoreTests(unittest.TestCase):
         self.assertEqual(consumed["agent_id"], "guest-1")
         self.assertTrue(store.issue(session, session_token="session-secret").startswith("wst_"))
 
+    def test_public_ticket_flood_cannot_consume_operator_reserve(self):
+        store = WsTicketStore(
+            max_pending_total=3,
+            max_public_pending_total=2,
+            max_pending_per_session=1,
+        )
+        store.issue(
+            {"agent_id": "guest-a", "meeting_id": "room-1"},
+            session_token="guest-a-token",
+        )
+        store.issue(
+            {"agent_id": "guest-b", "meeting_id": "room-1"},
+            session_token="guest-b-token",
+        )
+
+        with self.assertRaises(room_session_module.WsTicketLimitError):
+            store.issue(
+                {"agent_id": "guest-c", "meeting_id": "room-1"},
+                session_token="guest-c-token",
+            )
+
+        operator_ticket = store.issue(
+            {
+                "agent_id": "local-operator",
+                "meeting_id": "room-1",
+                "principal_is_operator": True,
+            },
+            session_token="operator-token",
+        )
+        self.assertEqual(store.consume(operator_ticket)["agent_id"], "local-operator")
+
     def test_concurrent_prune_and_consume_preserve_single_use_without_runtime_error(self):
         class InterleavingClock:
             def __init__(self):

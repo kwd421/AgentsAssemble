@@ -60,11 +60,29 @@ class PublicInviteLifecycleHttpTests(unittest.TestCase):
         self.thread.start()
         self.base = f"http://127.0.0.1:{self.server.server_port}"
         self.public_headers = {
-            "Host": "shared-room.example.com",
+            "Host": self.runtime.managed_ingress_origin_host(),
+            "X-Forwarded-Host": "shared-room.example.com",
             "Origin": "https://shared-room.example.com",
             "X-Forwarded-Proto": "https",
             "CF-Ray": "managed-ingress-test-ray",
         }
+
+    def test_managed_cloudflare_headers_without_the_origin_credential_are_rejected(self) -> None:
+        with self.assertRaises(HTTPError) as rejected:
+            urlopen(
+                _json_request(
+                    f"{self.base}/api/room-invite/join",
+                    {},
+                    {
+                        **self.public_headers,
+                        "Host": "shared-room.example.com",
+                    },
+                ),
+                timeout=4,
+            )
+        rejected.exception.close()
+
+        self.assertEqual(rejected.exception.code, HTTPStatus.FORBIDDEN)
 
     def tearDown(self) -> None:
         self.server.shutdown()
@@ -542,7 +560,7 @@ class PublicInviteLifecycleHttpTests(unittest.TestCase):
 
         self.assertIn(HTTPStatus.TOO_MANY_REQUESTS, statuses)
 
-    def test_authenticated_non_cloudflare_proxy_does_not_trust_cloudflare_client_ip(self) -> None:
+    def test_authenticated_non_cloudflare_proxy_uses_its_authenticated_client_ip(self) -> None:
         runtime = PublicInviteRuntime(
             environ={
                 "AGENTSASSEMBLE_TRUSTED_PROXY_TOKEN": "generic-proxy-secret",
@@ -564,7 +582,7 @@ class PublicInviteLifecycleHttpTests(unittest.TestCase):
                 f"http://127.0.0.1:{server.server_port}"
                 "/api/identity/recovery-code/redeem"
             )
-            for index in range(17):
+            for index in range(16):
                 with self.assertRaises(HTTPError) as rejected:
                     urlopen(
                         _json_request(
@@ -580,6 +598,7 @@ class PublicInviteLifecycleHttpTests(unittest.TestCase):
                                 "Origin": "https://generic-proxy.example.com",
                                 "X-Forwarded-Proto": "https",
                                 "X-AgentsAssemble-Proxy-Token": "generic-proxy-secret",
+                                "X-AgentsAssemble-Client-IP": "198.51.100.20",
                                 "CF-Connecting-IP": f"198.51.100.{index + 20}",
                             },
                         ),
@@ -587,13 +606,35 @@ class PublicInviteLifecycleHttpTests(unittest.TestCase):
                     )
                 statuses.append(rejected.exception.code)
                 rejected.exception.close()
+
+            with self.assertRaises(HTTPError) as other_client:
+                urlopen(
+                    _json_request(
+                        endpoint,
+                        {
+                            "recovery_code": "generic-other-client-code",
+                            "room_id": "friend-room",
+                            "device_token": "generic-proxy-device",
+                            "client_id": "generic-other-client",
+                        },
+                        {
+                            "Host": "generic-proxy.example.com",
+                            "Origin": "https://generic-proxy.example.com",
+                            "X-Forwarded-Proto": "https",
+                            "X-AgentsAssemble-Proxy-Token": "generic-proxy-secret",
+                            "X-AgentsAssemble-Client-IP": "198.51.100.21",
+                        },
+                    ),
+                    timeout=4,
+                )
+            other_client.exception.close()
         finally:
             server.shutdown()
             server.server_close()
             thread.join(timeout=2)
 
-        self.assertEqual(statuses[:16], [HTTPStatus.FORBIDDEN] * 16)
-        self.assertEqual(statuses[16], HTTPStatus.TOO_MANY_REQUESTS)
+        self.assertEqual(statuses, [HTTPStatus.FORBIDDEN] * 16)
+        self.assertEqual(other_client.exception.code, HTTPStatus.FORBIDDEN)
 
     def test_recovery_code_aliases_share_one_attempt_budget(self) -> None:
         endpoint = f"{self.base}/api/identity/recovery-code/redeem"

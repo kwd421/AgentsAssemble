@@ -37,7 +37,7 @@ from agentsassemble.room.global_settings import (
     merge_room_global_settings,
     validate_room_global_settings,
 )
-from agentsassemble.room.repository import RoomTransaction
+from agentsassemble.room.repository import RoomTransaction, resolve_room_media_source
 from agentsassemble.room.repository_records import (
     ACTIVE_PARTICIPANT_STATUSES,
     build_room_event,
@@ -912,16 +912,21 @@ class RoomStore:
         size: int = 0,
         supported: bool,
         data: bytes = b"",
+        source_path: str = "",
     ) -> dict[str, object]:
         clean_room_id = _clean_room_id(room_id)
         media_id = uuid4().hex[:12]
         safe_filename = _safe_media_filename(filename) or media_id
-        media_dir = self._media_dir(clean_room_id) / media_id
-        media_path = media_dir / safe_filename
-        media_dir.mkdir(parents=True, exist_ok=True)
-        if data:
-            media_path.write_bytes(data)
-            size = len(data)
+        if source_path:
+            media_path = resolve_room_media_source(self.output_root, source_path)
+            size = media_path.stat().st_size
+        else:
+            media_dir = self._media_dir(clean_room_id) / media_id
+            media_path = media_dir / safe_filename
+            media_dir.mkdir(parents=True, exist_ok=True)
+            if data:
+                media_path.write_bytes(data)
+                size = len(data)
         media = {
             "id": media_id,
             "filename": safe_filename,

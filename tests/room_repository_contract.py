@@ -3,6 +3,7 @@ from __future__ import annotations
 import threading
 import time
 from concurrent.futures import ThreadPoolExecutor
+from pathlib import Path
 from typing import cast
 from unittest import TestCase
 from uuid import UUID
@@ -1169,3 +1170,28 @@ class RoomRepositoryContractMixin:
         case.assertEqual(event["type"], "media_attached")
         case.assertEqual(event["media"]["id"], media["id"])
         case.assertNotIn("path", event["media"])
+
+    def test_media_event_can_reference_one_existing_server_owned_file(self) -> None:
+        self.repository.create_room("general")
+        source = self.repository.attach_media(
+            "general",
+            filename="source.png",
+            content_type="image/png",
+            data=b"shared-image-bytes",
+            supported=True,
+        )
+
+        referenced = self.repository.attach_media(
+            "general",
+            filename="reference.png",
+            content_type="image/png",
+            source_path=str(source["path"]),
+            supported=True,
+        )
+
+        case = self._test_case()
+        case.assertEqual(
+            Path(str(referenced["path"])).resolve(),
+            Path(str(source["path"])).resolve(),
+        )
+        case.assertEqual(referenced["size"], len(b"shared-image-bytes"))

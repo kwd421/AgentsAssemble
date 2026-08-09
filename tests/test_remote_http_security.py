@@ -1,7 +1,10 @@
 from __future__ import annotations
 
 import io
+import tempfile
+import threading
 import unittest
+from pathlib import Path
 from urllib.error import HTTPError
 from urllib.request import Request
 
@@ -68,6 +71,52 @@ def _public_resolver(_host: str, port: int, **_kwargs):
 
 
 class RemoteHttpSecurityTests(unittest.TestCase):
+    def test_timed_out_dns_helpers_return_capacity_for_the_next_request(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            slow_worker = Path(temp_dir) / "slow_resolver.py"
+            slow_worker.write_text(
+                "import time\ntime.sleep(60)\n",
+                encoding="utf-8",
+            )
+            failures: list[BaseException] = []
+
+            def exhaust_one_slot() -> None:
+                try:
+                    safe_remote_urlopen(
+                        Request("https://provider.example/v1/models"),
+                        timeout=1.0,
+                        resolver_worker_path=slow_worker,
+                    )
+                except TimeoutError:
+                    return
+                except BaseException as error:
+                    failures.append(error)
+                else:
+                    failures.append(AssertionError("slow DNS unexpectedly succeeded"))
+
+            threads = [threading.Thread(target=exhaust_one_slot) for _ in range(16)]
+            for thread in threads:
+                thread.start()
+            for thread in threads:
+                thread.join(timeout=4.0)
+
+            self.assertFalse(failures)
+            self.assertFalse(any(thread.is_alive() for thread in threads))
+
+            def connection_factory(_hostname, address, _port, **_kwargs):
+                return _Connection(
+                    peer_host=address,
+                    response=_Response(status=200, body=b"ok"),
+                )
+
+            response = safe_loopback_urlopen(
+                Request("http://localhost/v1/models"),
+                timeout=5.0,
+                connection_factory=connection_factory,
+            )
+            self.addCleanup(response.close)
+            self.assertEqual(response.read(), b"ok")
+
     def test_private_dns_answer_is_rejected_before_credentials_are_sent(self) -> None:
         connections: list[_Connection] = []
 

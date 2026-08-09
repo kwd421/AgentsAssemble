@@ -56,23 +56,42 @@ def make_gui_http_handler(
     """Build the transport handler around already-composed GUI services."""
 
     class AgentsAssembleHandler(GuiResponseMethods, BaseHTTPRequestHandler):
-        def _request_is_trusted(self, *, path: str, method: str) -> bool:
-            return _request_trusted(
-                self.server.server_address[0],
+        def _effective_request_host(self) -> object:
+            if services.public_invite.verify_managed_ingress_origin(
                 self.headers.get("Host"),
+            ):
+                return self.headers.get("X-Forwarded-Host")
+            raw_host = self.headers.get("Host")
+            host_name, _ = _split_authority_host_port(str(raw_host or ""))
+            if (
+                services.public_invite.managed_ingress_origin_host()
+                and host_name not in _LOOPBACK_HOSTNAMES
+            ):
+                return ""
+            return raw_host
+
+        def _request_is_trusted(self, *, path: str, method: str) -> bool:
+            effective_host = self._effective_request_host()
+            trusted = _request_trusted(
+                self.server.server_address[0],
+                effective_host,
                 self.headers.get("Origin"),
                 path=path,
                 method=method,
                 public_url=services.public_invite.public_url(),
             )
+            if trusted:
+                self._agentsassemble_effective_host = effective_host
+            return trusted
 
         def _public_invite_cors_origin(self, *, requested_method: str = "") -> str:
             origin = str(self.headers.get("Origin") or "").strip()
             if not origin:
                 return ""
-            host_name, _ = _split_authority_host_port(str(self.headers.get("Host") or ""))
+            effective_host = self._effective_request_host()
+            host_name, _ = _split_authority_host_port(str(effective_host or ""))
             if host_name in _LOOPBACK_HOSTNAMES or not _host_header_is_trusted(
-                self.headers.get("Host"),
+                effective_host,
                 public_url=services.public_invite.public_url(),
             ):
                 return ""

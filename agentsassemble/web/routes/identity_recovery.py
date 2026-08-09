@@ -14,6 +14,7 @@ from agentsassemble.identity.recovery import (
     normalize_recovery_code,
 )
 from agentsassemble.web.router import RequestContext, Router
+from agentsassemble.web.security import TRUSTED_PROXY_CLIENT_IP_HEADER
 
 
 class _RecoveryAttemptLimiter:
@@ -129,8 +130,14 @@ def register_identity_recovery_routes(router: Router) -> None:
 def _recovery_network_key(ctx: RequestContext) -> str:
     client_address = getattr(ctx.handler, "client_address", ())
     peer = str(client_address[0] if isinstance(client_address, tuple) and client_address else "unknown")
-    if ctx.trusted_public_https_ingress_kind() == "cloudflare":
-        candidate = str(ctx.headers.get("CF-Connecting-IP") or "").strip()
+    ingress_kind = ctx.trusted_public_https_ingress_kind()
+    if ingress_kind in {"cloudflare", "authenticated_proxy"}:
+        header_name = (
+            "CF-Connecting-IP"
+            if ingress_kind == "cloudflare"
+            else TRUSTED_PROXY_CLIENT_IP_HEADER
+        )
+        candidate = str(ctx.headers.get(header_name) or "").strip()
         try:
             return str(ipaddress.ip_address(candidate))
         except ValueError:

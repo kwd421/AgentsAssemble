@@ -48,7 +48,7 @@ def enforce_room_session_capacity(
     moment = now or datetime.now(UTC)
     room_id = clean_room_text(candidate.get("meeting_id"), limit=128)
     participant_id = clean_room_text(candidate.get("agent_id"), limit=128)
-    privileged = _is_reserved_subject(candidate)
+    privileged = uses_reserved_room_capacity(candidate)
     active: list[dict[str, object]] = []
     for record in existing_records:
         if not _is_active(record, moment):
@@ -71,16 +71,21 @@ def enforce_room_session_capacity(
         raise RoomSessionCapacityExceeded("room participant capacity reached")
     if privileged:
         return
-    if sum(not _is_reserved_subject(record) for record in active) >= MAX_PUBLIC_ROOM_SESSIONS:
+    if (
+        sum(not uses_reserved_room_capacity(record) for record in active)
+        >= MAX_PUBLIC_ROOM_SESSIONS
+    ):
         raise RoomSessionCapacityExceeded("public room session capacity reached")
     if (
-        sum(not _is_reserved_subject(record) for record in room_active)
+        sum(not uses_reserved_room_capacity(record) for record in room_active)
         >= MAX_PUBLIC_SESSIONS_PER_ROOM
     ):
         raise RoomSessionCapacityExceeded("public room participant capacity reached")
 
 
-def _is_reserved_subject(record: dict[str, object]) -> bool:
+def uses_reserved_room_capacity(record: dict[str, object]) -> bool:
+    """Whether a room identity may use operator/bridge reserve capacity."""
+
     return bool(record.get("principal_is_operator")) or clean_room_text(
         record.get("client_type"),
         limit=32,
@@ -106,4 +111,5 @@ __all__ = [
     "RoomSessionCapacityExceeded",
     "effective_invite_use_limit",
     "enforce_room_session_capacity",
+    "uses_reserved_room_capacity",
 ]

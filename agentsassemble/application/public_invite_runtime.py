@@ -30,6 +30,7 @@ class PublicInviteRuntime:
         self._runtime_public_url = ""
         self._managed_ingress_url = ""
         self._managed_ingress_kind = ""
+        self._managed_ingress_origin_host = ""
 
     def host_token(self) -> str:
         with self._lock:
@@ -61,7 +62,21 @@ class PublicInviteRuntime:
             self._runtime_public_url = normalized.rstrip("/")
             self._managed_ingress_url = ""
             self._managed_ingress_kind = ""
+            self._managed_ingress_origin_host = ""
             return self._runtime_public_url
+
+    def prepare_managed_ingress(self, *, ingress_kind: str) -> str:
+        """Create the process-lifetime origin credential for an owned tunnel."""
+
+        clean_kind = str(ingress_kind or "").strip().lower()
+        if clean_kind not in {"cloudflare"}:
+            raise ValueError("unsupported managed public ingress")
+        with self._lock:
+            self._managed_ingress_kind = clean_kind
+            self._managed_ingress_origin_host = (
+                f"aas-{secrets.token_hex(24)}.origin.invalid"
+            )
+            return self._managed_ingress_origin_host
 
     def set_managed_public_url(self, url: str, *, ingress_kind: str) -> str:
         """Register a public URL whose ingress lifecycle this process owns."""
@@ -71,10 +86,42 @@ class PublicInviteRuntime:
         if clean_kind not in {"cloudflare"}:
             raise ValueError("unsupported managed public ingress")
         with self._lock:
+            if (
+                self._managed_ingress_kind != clean_kind
+                or not self._managed_ingress_origin_host
+            ):
+                self._managed_ingress_origin_host = (
+                    f"aas-{secrets.token_hex(24)}.origin.invalid"
+                )
             self._runtime_public_url = normalized
             self._managed_ingress_url = normalized
             self._managed_ingress_kind = clean_kind
             return self._runtime_public_url
+
+    def managed_ingress_origin_host(self) -> str:
+        with self._lock:
+            return self._managed_ingress_origin_host
+
+    def verify_managed_ingress_origin(self, provided_host: object) -> bool:
+        provided = str(provided_host or "").strip().lower()
+        with self._lock:
+            expected = self._managed_ingress_origin_host.lower()
+        return bool(expected and provided and hmac.compare_digest(expected, provided))
+
+    def clear_managed_ingress(self, expected_origin_host: object) -> bool:
+        """Revoke one owned tunnel without clearing a newer/manual public URL."""
+
+        expected = str(expected_origin_host or "").strip().lower()
+        with self._lock:
+            current = self._managed_ingress_origin_host.lower()
+            if not expected or not current or not hmac.compare_digest(expected, current):
+                return False
+            if self._runtime_public_url == self._managed_ingress_url:
+                self._runtime_public_url = ""
+            self._managed_ingress_url = ""
+            self._managed_ingress_kind = ""
+            self._managed_ingress_origin_host = ""
+            return True
 
     def clear_public_url(self, expected_url: str = "") -> None:
         expected = str(expected_url or "").rstrip("/")
@@ -84,8 +131,14 @@ class PublicInviteRuntime:
             self._runtime_public_url = ""
             self._managed_ingress_url = ""
             self._managed_ingress_kind = ""
+            self._managed_ingress_origin_host = ""
 
-    def trusted_ingress_kind(self, *, provided_proxy_token: str = "") -> str:
+    def trusted_ingress_kind(
+        self,
+        *,
+        provided_proxy_token: str = "",
+        provided_managed_origin: object = "",
+    ) -> str:
         """Return the authenticated ingress type for the current public URL.
 
         The built-in tunnel is trusted only while its owned process has
@@ -102,6 +155,7 @@ class PublicInviteRuntime:
                 current_url
                 and current_url == self._managed_ingress_url
                 and self._managed_ingress_kind
+                and self.verify_managed_ingress_origin(provided_managed_origin)
             ):
                 return self._managed_ingress_kind
             expected_token = str(

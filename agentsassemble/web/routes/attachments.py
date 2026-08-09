@@ -14,6 +14,7 @@ from agentsassemble.room.attachments import (
     prejoin_attachment_subject,
     sanitize_attachment_filename,
 )
+from agentsassemble.room.repository_records import public_room_media_metadata
 from agentsassemble.room.text import clean_room_text
 from agentsassemble.web.router import RequestContext, Router
 
@@ -28,6 +29,7 @@ _MAX_UPLOAD_REQUEST_BYTES = ((MAX_ATTACHMENT_BYTES + 2) // 3) * 4 + (64 * 1024)
 class _AuthorizedUpload:
     room_id: str
     profile_avatar: bool = False
+    purpose: str = "room_attachment"
     upload_subject: str = ""
     prejoin_pending: bool = False
 
@@ -67,7 +69,7 @@ def register_attachment_routes(router: Router) -> None:
             "purpose": (
                 _PROFILE_AVATAR_PURPOSE
                 if authority.profile_avatar
-                else clean_room_text(payload.get("purpose"), limit=32)
+                else authority.purpose
             ),
             "upload_subject": authority.upload_subject,
             "prejoin_pending": authority.prejoin_pending,
@@ -88,13 +90,14 @@ def register_attachment_routes(router: Router) -> None:
         if authority.room_id and not authority.profile_avatar:
             try:
                 _metadata, file_path = ctx.deps.media.read_file(str(attachment.get("id") or ""))
-                response["room_media"] = ctx.deps.rooms.attach_media(
+                internal_media = ctx.deps.rooms.attach_media(
                     authority.room_id,
                     filename=str(attachment.get("filename") or ""),
                     content_type=str(attachment.get("content_type") or ""),
-                    data=file_path.read_bytes(),
+                    source_path=str(file_path),
                     supported=str(attachment.get("content_type") or "") in INLINE_SAFE_IMAGE_TYPES,
                 )
+                response["room_media"] = public_room_media_metadata(internal_media)
             except (AttachmentError, OSError, ValueError) as error:
                 try:
                     ctx.deps.media.delete(
@@ -142,6 +145,7 @@ def _authorize_upload(
         return _AuthorizedUpload(
             room_id=requested_room_id,
             profile_avatar=profile_avatar,
+            purpose=purpose,
             upload_subject=(
                 "user:" + clean_room_text(user.get("user_id"), limit=128)
                 if user.get("user_id")
@@ -173,6 +177,10 @@ def _authorize_upload(
         return _AuthorizedUpload(
             room_id=session_room_id,
             profile_avatar=profile_avatar,
+            # A room posting session may attach media and update its own
+            # profile avatar. Public room appearance assets are an operator
+            # mutation and must not be selected by an untrusted payload.
+            purpose="room_attachment",
             upload_subject="user:"
             + (
                 clean_room_text(session.get("principal_user_id"), limit=128)

@@ -9,13 +9,18 @@ never follows redirects.
 from __future__ import annotations
 
 import io
+import json
+import os
 import socket
 import ssl
+import subprocess
+import sys
 import threading
 import time
 from collections.abc import Callable
 from http.client import HTTPConnection, HTTPSConnection, HTTPResponse
 from ipaddress import ip_address
+from pathlib import Path
 from typing import Any
 from urllib.error import HTTPError, URLError
 from urllib.parse import urlsplit, urlunsplit
@@ -27,6 +32,8 @@ MAX_REMOTE_RESPONSE_LINE_BYTES = 8 * 1_048_576
 _RESPONSE_READ_CHUNK_BYTES = 64 * 1024
 _MAX_CONCURRENT_RESOLUTIONS = 16
 _RESOLUTION_SLOTS = threading.BoundedSemaphore(_MAX_CONCURRENT_RESOLUTIONS)
+_DNS_WORKER_PATH = Path(__file__).with_name("dns_resolver_worker.py")
+_MAX_DNS_WORKER_OUTPUT_BYTES = 64 * 1024
 
 
 class RemoteEndpointBlocked(ValueError):
@@ -239,12 +246,18 @@ def _public_addresses(
         )
     except OSError as error:
         raise URLError(error) from error
-    addresses: list[str] = []
+    candidates: list[str] = []
     for answer in answers:
         socket_address = answer[4] if len(answer) > 4 else ()
         candidate = str(socket_address[0] if socket_address else "").strip()
-        if not candidate:
-            continue
+        if candidate:
+            candidates.append(candidate)
+    return _validated_public_addresses(candidates)
+
+
+def _validated_public_addresses(candidates: list[str]) -> tuple[str, ...]:
+    addresses: list[str] = []
+    for candidate in candidates:
         try:
             address = ip_address(candidate)
         except ValueError as error:
@@ -276,12 +289,18 @@ def _loopback_addresses(
         )
     except OSError as error:
         raise URLError(error) from error
-    addresses: list[str] = []
+    candidates: list[str] = []
     for answer in answers:
         socket_address = answer[4] if len(answer) > 4 else ()
         candidate = str(socket_address[0] if socket_address else "").strip()
-        if not candidate:
-            continue
+        if candidate:
+            candidates.append(candidate)
+    return _validated_loopback_addresses(candidates)
+
+
+def _validated_loopback_addresses(candidates: list[str]) -> tuple[str, ...]:
+    addresses: list[str] = []
+    for candidate in candidates:
         try:
             address = ip_address(candidate)
         except ValueError as error:
@@ -305,6 +324,7 @@ def safe_remote_urlopen(
     timeout: float = 10.0,
     *,
     resolver: Callable[..., list[tuple[object, ...]]] = socket.getaddrinfo,
+    resolver_worker_path: str | Path = _DNS_WORKER_PATH,
     connection_factory: Callable[..., HTTPSConnection] = _PinnedHTTPSConnection,
     monotonic: Callable[[], float] = time.monotonic,
 ):
@@ -318,8 +338,12 @@ def safe_remote_urlopen(
     hostname = parsed.hostname.casefold()
     port = parsed.port or 443
     absolute_deadline = monotonic() + max(1.0, float(timeout))
-    addresses = _resolve_before_deadline(
-        lambda: _public_addresses(hostname, port, resolver=resolver),
+    addresses = _resolve_addresses_before_deadline(
+        hostname,
+        port,
+        resolver=resolver,
+        validator=_validated_public_addresses,
+        resolver_worker_path=resolver_worker_path,
         absolute_deadline=absolute_deadline,
         monotonic=monotonic,
     )
@@ -341,6 +365,7 @@ def safe_loopback_urlopen(
     timeout: float = 10.0,
     *,
     resolver: Callable[..., list[tuple[object, ...]]] = socket.getaddrinfo,
+    resolver_worker_path: str | Path = _DNS_WORKER_PATH,
     connection_factory: Callable[..., HTTPConnection] | None = None,
     monotonic: Callable[[], float] = time.monotonic,
 ):
@@ -354,8 +379,12 @@ def safe_loopback_urlopen(
     hostname = parsed.hostname.casefold()
     port = parsed.port or 80
     absolute_deadline = monotonic() + max(1.0, float(timeout))
-    addresses = _resolve_before_deadline(
-        lambda: _loopback_addresses(hostname, port, resolver=resolver),
+    addresses = _resolve_addresses_before_deadline(
+        hostname,
+        port,
+        resolver=resolver,
+        validator=_validated_loopback_addresses,
+        resolver_worker_path=resolver_worker_path,
         absolute_deadline=absolute_deadline,
         monotonic=monotonic,
     )
@@ -478,43 +507,110 @@ def _open_pinned(
     raise URLError(last_error or "Remote provider connection failed.")
 
 
-def _resolve_before_deadline(
-    resolve: Callable[[], tuple[str, ...]],
+def _resolve_addresses_before_deadline(
+    hostname: str,
+    port: int,
     *,
+    resolver: Callable[..., list[tuple[object, ...]]],
+    validator: Callable[[list[str]], tuple[str, ...]],
+    resolver_worker_path: str | Path,
     absolute_deadline: float,
     monotonic: Callable[[], float],
 ) -> tuple[str, ...]:
-    """Resolve off-thread so a stuck system resolver cannot own the request forever."""
+    if resolver is not socket.getaddrinfo:
+        if validator is _validated_public_addresses:
+            result = _public_addresses(hostname, port, resolver=resolver)
+        else:
+            result = _loopback_addresses(hostname, port, resolver=resolver)
+        _remaining_request_seconds(absolute_deadline, monotonic)
+        return result
+
+    candidates = _run_system_dns_worker(
+        hostname,
+        port,
+        worker_path=resolver_worker_path,
+        absolute_deadline=absolute_deadline,
+        monotonic=monotonic,
+    )
+    return validator(candidates)
+
+
+def _run_system_dns_worker(
+    hostname: str,
+    port: int,
+    *,
+    worker_path: str | Path,
+    absolute_deadline: float,
+    monotonic: Callable[[], float],
+) -> list[str]:
+    """Resolve in a killable helper so timeout always returns its capacity slot."""
 
     if not _RESOLUTION_SLOTS.acquire(blocking=False):
         raise TimeoutError("Remote provider DNS resolver capacity is exhausted.")
-    done = threading.Event()
-    result: list[tuple[str, ...]] = []
-    errors: list[Exception] = []
-
-    def worker() -> None:
+    process: subprocess.Popen[bytes] | None = None
+    try:
+        environment = {"PATH": os.defpath, "PYTHONIOENCODING": "utf-8"}
+        for name in ("SYSTEMROOT", "WINDIR"):
+            if os.environ.get(name):
+                environment[name] = os.environ[name]
+        process = subprocess.Popen(
+            _dns_worker_command(hostname, port, worker_path=worker_path),
+            stdin=subprocess.DEVNULL,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.DEVNULL,
+            env=environment,
+        )
         try:
-            result.append(resolve())
-        except Exception as error:
-            errors.append(error)
-        finally:
-            _RESOLUTION_SLOTS.release()
-            done.set()
+            stdout, _stderr = process.communicate(
+                timeout=_remaining_request_seconds(absolute_deadline, monotonic)
+            )
+        except subprocess.TimeoutExpired as error:
+            process.kill()
+            process.communicate()
+            raise TimeoutError(
+                "Remote provider DNS exceeded its absolute deadline."
+            ) from error
+        _remaining_request_seconds(absolute_deadline, monotonic)
+        if process.returncode != 0:
+            raise URLError("Remote provider DNS resolution failed.")
+        if len(stdout) > _MAX_DNS_WORKER_OUTPUT_BYTES:
+            raise RemoteEndpointBlocked("Remote provider DNS returned too many addresses.")
+        try:
+            payload = json.loads(stdout.decode("utf-8"))
+        except (UnicodeDecodeError, json.JSONDecodeError) as error:
+            raise URLError("Remote provider DNS returned an invalid response.") from error
+        if not isinstance(payload, list) or not all(
+            isinstance(item, str) for item in payload
+        ):
+            raise URLError("Remote provider DNS returned an invalid response.")
+        return payload
+    finally:
+        if process is not None and process.poll() is None:
+            process.kill()
+            process.wait()
+        _RESOLUTION_SLOTS.release()
 
-    threading.Thread(
-        target=worker,
-        name="agentsassemble-provider-dns",
-        daemon=True,
-    ).start()
-    remaining = _remaining_request_seconds(absolute_deadline, monotonic)
-    if not done.wait(timeout=remaining):
-        raise TimeoutError("Remote provider DNS exceeded its absolute deadline.")
-    _remaining_request_seconds(absolute_deadline, monotonic)
-    if errors:
-        raise errors[0]
-    if not result:
-        raise URLError("Remote provider DNS returned no result.")
-    return result[0]
+
+def _dns_worker_command(
+    hostname: str,
+    port: int,
+    *,
+    worker_path: str | Path,
+) -> list[str]:
+    if getattr(sys, "frozen", False) and Path(worker_path) == _DNS_WORKER_PATH:
+        return [
+            sys.executable,
+            "--internal-dns-resolver",
+            hostname,
+            str(port),
+        ]
+    return [
+        sys.executable,
+        "-I",
+        str(worker_path),
+        hostname,
+        str(port),
+    ]
 
 
 def _remaining_request_seconds(

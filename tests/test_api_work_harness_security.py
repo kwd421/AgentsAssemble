@@ -27,6 +27,7 @@ class _Response(io.BytesIO):
 
 
 class ApiWorkHarnessSecurityTests(unittest.TestCase):
+    @unittest.skipUnless(sys.platform == "darwin", "macOS command containment required")
     def test_command_exceeding_output_budget_is_stopped_before_timeout(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:
             workspace = Path(temp_dir)
@@ -90,11 +91,10 @@ class ApiWorkHarnessSecurityTests(unittest.TestCase):
 
             self.assertFalse((outside / "owned.txt").exists())
 
-    @unittest.skipUnless(hasattr(os, "killpg") and hasattr(os, "setsid"), "POSIX process groups required")
-    def test_timed_out_command_terminates_its_descendant_processes(self) -> None:
+    @unittest.skipUnless(sys.platform == "darwin", "macOS command containment required")
+    def test_workspace_command_cannot_create_descendant_processes(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:
             workspace = Path(temp_dir)
-            child_pid_file = workspace / "child.pid"
             harness = ApiWorkHarness(
                 workspace,
                 permission_mode="workspace_write",
@@ -103,34 +103,22 @@ class ApiWorkHarnessSecurityTests(unittest.TestCase):
                 ),
             )
             script = (
-                "import pathlib, subprocess, sys, time; "
-                "child=subprocess.Popen([sys.executable, '-c', 'import time; time.sleep(60)']); "
-                "pathlib.Path('child.pid').write_text(str(child.pid)); "
-                "time.sleep(60)"
+                "import subprocess, sys; "
+                "subprocess.run([sys.executable, '-c', 'print(123)'], check=True)"
             )
-            child_pid = 0
-            try:
-                with self.assertRaises(TimeoutError):
-                    harness.execute(
-                        "run_workspace_command",
-                        {
-                            "command": [sys.executable, "-c", script],
-                            "timeout_seconds": 1,
-                        },
-                    )
-                deadline = time.monotonic() + 3.0
-                while not child_pid_file.exists() and time.monotonic() < deadline:
-                    time.sleep(0.02)
-                child_pid = int(child_pid_file.read_text(encoding="utf-8"))
-                while _process_exists(child_pid) and time.monotonic() < deadline:
-                    time.sleep(0.02)
-                self.assertFalse(_process_exists(child_pid))
-            finally:
-                if child_pid and _process_exists(child_pid):
-                    os.kill(child_pid, signal.SIGKILL)
+            result = harness.execute(
+                "run_workspace_command",
+                {
+                    "command": [sys.executable, "-c", script],
+                    "timeout_seconds": 3,
+                },
+            )
 
-    @unittest.skipUnless(hasattr(os, "killpg") and hasattr(os, "setsid"), "POSIX process groups required")
-    def test_timeout_does_not_wait_on_an_escaped_child_holding_output_pipes(self) -> None:
+            self.assertNotEqual(result["exit_code"], 0)
+            self.assertIn("Operation not permitted", result["stderr"])
+
+    @unittest.skipUnless(sys.platform == "darwin", "macOS command containment required")
+    def test_escape_attempt_cannot_leave_a_child_holding_output_pipes(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:
             workspace = Path(temp_dir)
             child_pid_file = workspace / "escaped.pid"
@@ -142,31 +130,25 @@ class ApiWorkHarnessSecurityTests(unittest.TestCase):
                 ),
             )
             script = (
-                "import pathlib, subprocess, sys, time; "
+                "import pathlib, subprocess, sys; "
                 "child=subprocess.Popen([sys.executable, '-c', 'import time; time.sleep(6)'], "
                 "start_new_session=True); "
-                "pathlib.Path('escaped.pid').write_text(str(child.pid)); "
-                "time.sleep(60)"
+                "pathlib.Path('escaped.pid').write_text(str(child.pid))"
             )
-            child_pid = 0
             started = time.monotonic()
-            try:
-                with self.assertRaises(TimeoutError):
-                    harness.execute(
-                        "run_workspace_command",
-                        {
-                            "command": [sys.executable, "-c", script],
-                            "timeout_seconds": 1,
-                        },
-                    )
-                self.assertLess(time.monotonic() - started, 4.5)
-                child_pid = int(child_pid_file.read_text(encoding="utf-8"))
-            finally:
-                if not child_pid and child_pid_file.exists():
-                    child_pid = int(child_pid_file.read_text(encoding="utf-8"))
-                if child_pid and _process_exists(child_pid):
-                    os.kill(child_pid, signal.SIGKILL)
+            result = harness.execute(
+                "run_workspace_command",
+                {
+                    "command": [sys.executable, "-c", script],
+                    "timeout_seconds": 3,
+                },
+            )
 
+            self.assertLess(time.monotonic() - started, 2.0)
+            self.assertNotEqual(result["exit_code"], 0)
+            self.assertFalse(child_pid_file.exists())
+
+    @unittest.skipUnless(sys.platform == "darwin", "macOS command containment required")
     def test_interrupt_terminates_the_active_workspace_command(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:
             workspace = Path(temp_dir)
@@ -219,6 +201,7 @@ class ApiWorkHarnessSecurityTests(unittest.TestCase):
                     os.kill(command_pid, signal.SIGKILL)
                 worker.join(timeout=1.0)
 
+    @unittest.skipUnless(sys.platform == "darwin", "macOS command containment required")
     def test_runtime_interrupt_reaches_an_active_api_workspace_command(self) -> None:
         profile = remote_openai_profile("tokenrouter")
         self.assertIsNotNone(profile)
@@ -284,6 +267,23 @@ class ApiWorkHarnessSecurityTests(unittest.TestCase):
                 if _process_exists(command_pid):
                     os.kill(command_pid, signal.SIGKILL)
                 worker.join(timeout=1.0)
+
+    @unittest.skipIf(sys.platform == "darwin", "macOS provides command containment")
+    def test_command_execution_fails_closed_without_verified_containment(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            harness = ApiWorkHarness(
+                Path(temp_dir),
+                permission_mode="workspace_write",
+                request_handler=lambda _request, respond: respond(
+                    {"option_id": "allow_once"}
+                ),
+            )
+
+            with self.assertRaisesRegex(RuntimeError, "verified child-process containment"):
+                harness.execute(
+                    "run_workspace_command",
+                    {"command": [sys.executable, "-c", "print('unsafe')"]},
+                )
 
 
 def _process_exists(pid: int) -> bool:

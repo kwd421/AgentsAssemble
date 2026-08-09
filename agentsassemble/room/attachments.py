@@ -51,6 +51,12 @@ class FileAttachmentStore:
 
     output_root: Path
 
+    def __post_init__(self) -> None:
+        with _store_lock(self.output_root):
+            root = attachment_root(self.output_root)
+            if root.is_dir():
+                _active_attachment_records(root, now=datetime.now(UTC))
+
     @property
     def root(self) -> Path:
         return attachment_root(self.output_root)
@@ -224,22 +230,33 @@ def normalize_attachment_references(
 
 
 def read_attachment_file(output_root: Path, attachment_id: str) -> tuple[dict[str, object], Path]:
-    normalized_id = normalize_attachment_id(attachment_id)
-    metadata = read_attachment_metadata(output_root, normalized_id)
-    storage_filename = sanitize_attachment_filename(metadata.get("storage_filename") or metadata.get("filename"))
-    base = (attachment_root(output_root) / normalized_id).resolve()
-    candidate = (base / storage_filename).resolve()
-    try:
-        candidate.relative_to(base)
-    except ValueError as error:
-        raise AttachmentError("Attachment path is invalid") from error
-    if not candidate.exists() or not candidate.is_file():
-        raise AttachmentError("Attachment not found")
-    return public_attachment_metadata(metadata), candidate
+    with _store_lock(output_root):
+        normalized_id = normalize_attachment_id(attachment_id)
+        metadata = _read_live_attachment_metadata(output_root, normalized_id)
+        storage_filename = sanitize_attachment_filename(
+            metadata.get("storage_filename") or metadata.get("filename")
+        )
+        base = (attachment_root(output_root) / normalized_id).resolve()
+        candidate = (base / storage_filename).resolve()
+        try:
+            candidate.relative_to(base)
+        except ValueError as error:
+            raise AttachmentError("Attachment path is invalid") from error
+        if not candidate.exists() or not candidate.is_file():
+            raise AttachmentError("Attachment not found")
+        return public_attachment_metadata(metadata), candidate
 
 
 def read_attachment_metadata(output_root: Path, attachment_id: str) -> dict[str, object]:
-    normalized_id = normalize_attachment_id(attachment_id)
+    with _store_lock(output_root):
+        normalized_id = normalize_attachment_id(attachment_id)
+        return _read_live_attachment_metadata(output_root, normalized_id)
+
+
+def _read_live_attachment_metadata(
+    output_root: Path,
+    normalized_id: str,
+) -> dict[str, object]:
     path = attachment_root(output_root) / normalized_id / "metadata.json"
     try:
         metadata = json.loads(path.read_text(encoding="utf-8"))
@@ -248,6 +265,12 @@ def read_attachment_metadata(output_root: Path, attachment_id: str) -> dict[str,
     if not isinstance(metadata, dict):
         raise AttachmentError("Attachment metadata is invalid")
     metadata["id"] = normalized_id
+    if metadata.get("prejoin_pending") is True and _pending_expired(
+        metadata,
+        datetime.now(UTC),
+    ):
+        delete_attachment(output_root, normalized_id)
+        raise AttachmentError("Attachment not found")
     return metadata
 
 
