@@ -17,7 +17,6 @@ class FakeBridgeManager:
         self.start_attempts: list[tuple[str, str]] = []
         self.stops: list[tuple[str, str, str]] = []
         self.running: set[tuple[str, str]] = set()
-        self.released_security_values: list[tuple[str, str]] = []
 
     def start(self, room_id, session, spec, *, server_url="", ticket_issuer=None):
         key = (room_id, str(session["session_id"]))
@@ -46,9 +45,6 @@ class FakeBridgeManager:
             "session_id": session_id,
             "bridge_handle_id": f"handle-{session_id}",
         }
-
-    def release_preserved_security_values(self, room_id, session_id):
-        self.released_security_values.append((room_id, session_id))
 
     def close(self):
         return CleanupReport("fake_bridge_manager")

@@ -35,6 +35,7 @@ class RoomBridgeReportServiceTests(unittest.TestCase):
                 "process_ownership": "server",
                 "enabled": True,
                 "runtime_status": "starting",
+                "bridge_handle_id": "current-launch",
                 "transport": "http",
             },
         )
@@ -112,6 +113,7 @@ class RoomBridgeReportServiceTests(unittest.TestCase):
             self.identity,
             "general",
             {
+                "bridge_launch_id": "current-launch",
                 "pid": 42,
                 "running": True,
                 "pty": False,
@@ -143,6 +145,7 @@ class RoomBridgeReportServiceTests(unittest.TestCase):
                 self.identity,
                 "general",
                 {
+                    "bridge_launch_id": "current-launch",
                     "running": True,
                     "provider_session_active": True,
                     "started_at": None,
@@ -155,6 +158,27 @@ class RoomBridgeReportServiceTests(unittest.TestCase):
             self.store.participant("general", "codex")["status"],
             "detached",
         )
+
+    def test_ready_rejects_a_stale_server_owned_launch_before_activation(self) -> None:
+        with self.assertRaises(RoomCommandRejected) as raised:
+            self.service.ready(
+                self.identity,
+                "general",
+                {
+                    "bridge_launch_id": "previous-launch",
+                    "pid": 42,
+                    "running": True,
+                    "transport": "http_sse",
+                    "provider_session_active": True,
+                    "started_at": None,
+                },
+            )
+
+        self.assertEqual(raised.exception.code, "stale_bridge_launch")
+        self.assertFalse(self.broker.has_bridge("general", "codex"))
+        session = self.store.session("general", "codex")
+        self.assertEqual(session["runtime_status"], "starting")
+        self.assertEqual(session["bridge_handle_id"], "current-launch")
 
     def test_start_failure_is_persisted_before_the_bridge_becomes_ready(self) -> None:
         result = self._start_failed(

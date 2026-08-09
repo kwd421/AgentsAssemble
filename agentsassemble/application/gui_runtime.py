@@ -151,24 +151,6 @@ def serve_gui_runtime(
                 if not room_id:
                     continue
                 for session in room_repository.sessions(room_id):
-                    session_id = str(
-                        session.get("session_id")
-                        or session.get("participant_id")
-                        or ""
-                    )
-                    if session_id:
-                        # A preserved child can report provider-owned text as
-                        # soon as it reconnects. Rehydrate its exact secrets
-                        # before the inherited listener starts accepting work;
-                        # unlike shared-runtime adoption, this cannot safely be
-                        # skipped on error.
-                        services.native_cli_bridge_manager.adopt_preserved_security_values(
-                            room_id,
-                            session,
-                            session_token=services.sessions.token_for_request(
-                                f"server-bridge:{room_id}:{session_id}"
-                            ),
-                        )
                     try:
                         services.native_cli_bridge_manager.adopt_preserved_shared_runtime(
                             room_id,
@@ -312,6 +294,10 @@ def serve_gui_runtime(
             activate_stable_entry_publisher()
             rolling_restart.activate_from_handoff(
                 rolling_bootstrap.operation_id,
+            )
+            services.room_realtime_controller.session_recovery.restart_preserved_server_sessions(
+                server_url=server_url,
+                ticket_issuer=services.issue_bridge_connection,
             )
         dependencies.print_startup_banner(
             server_url,

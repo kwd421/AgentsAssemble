@@ -37,6 +37,7 @@ from agentsassemble.room.projection import (
 )
 from agentsassemble.providers.runtime_contracts import (
     AdapterContractError,
+    BridgeRuntime,
     ProviderRuntimeHealth,
     ProviderTurnResult,
 )
@@ -68,15 +69,6 @@ class BridgeRoomClient(Protocol):
     def close(self) -> None: ...
 
 
-class BridgeRuntime(Protocol):
-    def start(self) -> dict[str, object]: ...
-    def send(self, text: str) -> None: ...
-    def read_output(self, *, timeout_seconds: float, on_delta=None, on_activity=None) -> dict[str, object]: ...
-    def interrupt(self) -> None: ...
-    def stop(self, *, timeout_seconds: float = 2.0) -> None: ...
-    def health(self) -> dict[str, object]: ...
-
-
 class RoomAgentBridge:
     """Own one persistent provider CLI and report it over the room WebSocket."""
 
@@ -88,6 +80,7 @@ class RoomAgentBridge:
         room_id: str,
         participant_id: str,
         session_id: str,
+        bridge_launch_id: str = "",
         receive_sleep_seconds: float = 0.05,
         initial_orientation: str = "",
         stop_runtime_on_exit: bool = True,
@@ -103,6 +96,7 @@ class RoomAgentBridge:
         self.room_id = clean_lobby_text(room_id, limit=128)
         self.participant_id = clean_lobby_text(participant_id, limit=128)
         self.session_id = clean_lobby_text(session_id, limit=128)
+        self.bridge_launch_id = clean_lobby_text(bridge_launch_id, limit=128)
         self.receive_sleep_seconds = max(0.001, float(receive_sleep_seconds))
         self._initial_orientation = str(initial_orientation or "").strip()
         self._stop_runtime_on_exit = bool(stop_runtime_on_exit)
@@ -936,6 +930,7 @@ class RoomAgentBridge:
             "room_id": self.room_id,
             "participant_id": self.participant_id,
             "session_id": self.session_id,
+            "bridge_launch_id": self.bridge_launch_id,
             "pid": details.get("pid"),
             "running": parsed.running,
             "pty": parsed.pty,

@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from copy import deepcopy
 from dataclasses import dataclass
-from typing import Literal
+from typing import Literal, Protocol
 
 
 PublicationMode = Literal["automatic_final", "explicit_room_portal"]
@@ -29,6 +29,21 @@ class AdapterContractError(RuntimeError):
     ) -> None:
         super().__init__(message)
         self.code = code
+
+
+class BridgeRuntime(Protocol):
+    def start(self) -> dict[str, object]: ...
+    def send(self, text: str) -> None: ...
+    def read_output(
+        self,
+        *,
+        timeout_seconds: float,
+        on_delta=None,
+        on_activity=None,
+    ) -> dict[str, object]: ...
+    def interrupt(self) -> None: ...
+    def stop(self, *, timeout_seconds: float = 2.0) -> None: ...
+    def health(self) -> dict[str, object]: ...
 
 
 @dataclass(frozen=True)
@@ -136,6 +151,7 @@ __all__ = [
     "AMBIENT_OBSERVATION",
     "AUTOMATIC_FINAL",
     "AdapterContractError",
+    "BridgeRuntime",
     "EXPLICIT_ROOM_PORTAL",
     "ORDERED_FLOOR",
     "PublicationMode",

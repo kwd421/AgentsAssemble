@@ -149,6 +149,28 @@ class GuiApplicationServices:
                 raise
             self._state = "started"
 
+    def issue_bridge_connection(
+        self,
+        bridge_identity: dict[str, object],
+    ) -> dict[str, str]:
+        room_id = str(bridge_identity.get("meeting_id") or "")
+        session_id = str(
+            bridge_identity.get("session_id")
+            or bridge_identity.get("agent_id")
+            or ""
+        )
+        session_token, bridge_session = self.sessions.ensure_server_bridge(
+            f"{room_id}:{session_id}",
+            bridge_identity,
+        )
+        return {
+            "ticket": self.ws_ticket_store.issue(
+                bridge_session,
+                session_token=session_token,
+            ),
+            "session_token": session_token,
+        }
+
     def shutdown(
         self,
         *,

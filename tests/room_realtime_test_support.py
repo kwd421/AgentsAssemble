@@ -55,10 +55,6 @@ class FakeBridgeManager:
             exact_values=self.sensitive_values.get((room_id, session_id), ()),
         )
 
-    def release_preserved_security_values(self, room_id, session_id):
-        self.sensitive_values.pop((room_id, session_id), None)
-        self._stream_redactors.pop((room_id, session_id), None)
-
     def _stream_redactor(self, room_id, session_id):
         from agentsassemble.diagnostics.sensitive_text import ExactSensitiveTextStreamRedactor
 

@@ -345,10 +345,6 @@ class RoomRealtimeController:
                 callback,
             ),
         )
-        self._startup_sessions = RoomStartupSessionReconciler(
-            store=self.store,
-            reconcile_session_attention=self._turn_coordinator.reconcile_session_attention,
-        )
         self._agent_profiles = RoomAgentProfileService(
             store=self.store,
             provider_registry=self._provider_registry,
@@ -381,6 +377,12 @@ class RoomRealtimeController:
             external_stop_timeout_seconds=external_stop_timeout_seconds,
             recovery_scheduler=recovery_scheduler_impl,
             prepare_session_reset=self._turn_coordinator.prepare_session_reset,
+        )
+        self.session_recovery = RoomStartupSessionReconciler(
+            store=self.store,
+            reconcile_session_attention=self._turn_coordinator.reconcile_session_attention,
+            lock=self._lock,
+            start_session=self._agent_lifecycle.start,
         )
         self._participant_kick = RoomParticipantKickService(
             store=self.store,
@@ -594,7 +596,7 @@ class RoomRealtimeController:
         return self._provider_sessions.configure_stopped_provider_profile(room_id, spec)
 
     def _reconcile_startup_sessions(self) -> None:
-        self._startup_sessions.reconcile()
+        self.session_recovery.reconcile()
 
     def ensure_room(self, room_id: str) -> dict[str, object]:
         clean_room_id = clean_lobby_text(room_id, limit=128)

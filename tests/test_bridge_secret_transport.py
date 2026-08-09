@@ -1,4 +1,5 @@
 import io
+import json
 import tempfile
 import threading
 import time
@@ -80,7 +81,7 @@ class BridgeSecretTransportTests(unittest.TestCase):
                 popen_factory=popen,
                 secret_resolver=lambda _provider_id: credential,
             )
-            manager.start(
+            launch = manager.start(
                 "general",
                 {"session_id": "deepseek"},
                 _api_spec(),
@@ -92,9 +93,16 @@ class BridgeSecretTransportTests(unittest.TestCase):
             )
             popen.process.stdin.seek(0)
             handoff = read_secure_launch_payload(popen.process.stdin)
+            launch_config = json.loads(
+                Path(launch["config_path"]).read_text(encoding="utf-8")
+            )
 
         self.assertEqual(handoff["credential"], credential)
         self.assertEqual(handoff["session_token"], "renewable-session-token")
+        self.assertEqual(
+            launch_config["bridge_launch_id"],
+            launch["bridge_handle_id"],
+        )
 
     def test_stderr_secret_is_redacted_before_multibyte_byte_tail_is_bounded(self):
         secret = "unknown-prefix-runtime-credential-918273645"
@@ -147,67 +155,6 @@ class BridgeSecretTransportTests(unittest.TestCase):
 
         self.assertIn(old_secret, public_diagnostic)
         self.assertNotIn(current_secret, public_diagnostic)
-
-    def test_preserved_bridge_secrets_are_redacted_before_reconnect_reports(self):
-        credential = "preserved-provider-credential-918273645"
-        session_token = "preserved-session-token-564738291"
-        with tempfile.TemporaryDirectory() as temp_dir:
-            manager = NativeCliBridgeProcessManager(
-                Path(temp_dir),
-                secret_resolver=lambda _provider_id: credential,
-            )
-            adopted = manager.adopt_preserved_security_values(
-                "room-a",
-                {
-                    "session_id": "deepseek",
-                    "participant_id": "deepseek",
-                    "provider_kind": "deepseek_api",
-                    "process_ownership": "server",
-                    "runtime_status": "idle",
-                },
-                session_token=session_token,
-            )
-            public_report = manager.redact_diagnostic(
-                "room-a",
-                "deepseek",
-                f"provider={credential} session={session_token}",
-            )
-
-        self.assertTrue(adopted)
-        self.assertNotIn(credential, public_report)
-        self.assertNotIn(session_token, public_report)
-        self.assertEqual(public_report.count("[redacted]"), 2)
-
-    def test_confirmed_preserved_bridge_stop_releases_exact_redaction_values(self):
-        credential = "preserved-provider-credential-1122334455"
-        session_token = "preserved-session-token-9988776655"
-        with tempfile.TemporaryDirectory() as temp_dir:
-            manager = NativeCliBridgeProcessManager(
-                Path(temp_dir),
-                secret_resolver=lambda _provider_id: credential,
-            )
-            manager.adopt_preserved_security_values(
-                "room-a",
-                {
-                    "session_id": "deepseek",
-                    "participant_id": "deepseek",
-                    "provider_kind": "deepseek_api",
-                    "process_ownership": "server",
-                    "runtime_status": "idle",
-                },
-                session_token=session_token,
-            )
-
-            manager.release_preserved_security_values("room-a", "deepseek")
-            after_stop = manager.redact_diagnostic(
-                "room-a",
-                "deepseek",
-                f"provider={credential} session={session_token}",
-            )
-
-        self.assertIn(credential, after_stop)
-        self.assertIn(session_token, after_stop)
-
 
 if __name__ == "__main__":
     unittest.main()

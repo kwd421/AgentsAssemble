@@ -137,44 +137,6 @@ class NativeCliBridgeProcessManager:
         with self._lock:
             self._on_exit = listener
 
-    def adopt_preserved_security_values(
-        self,
-        room_id: str,
-        session: Mapping[str, object],
-        *,
-        session_token: str,
-    ) -> bool:
-        """Rehydrate redaction values for a bridge preserved by a rolling handoff."""
-
-        if str(session.get("process_ownership") or "") != "server":
-            return False
-        if str(session.get("runtime_status") or "") in {"", "stopped"}:
-            return False
-        session_id = str(
-            session.get("session_id") or session.get("participant_id") or ""
-        )
-        if not room_id or not session_id:
-            return False
-        values: list[str] = [
-            validate_redactable_sensitive_value(
-                session_token,
-                label="Agent Bridge session token",
-            )
-        ]
-        secret_provider_id = secret_provider_id_for_kind(
-            str(session.get("provider_kind") or "")
-        )
-        if secret_provider_id:
-            resolved_credential = self._secret_resolver(secret_provider_id)
-            if not resolved_credential:
-                raise RuntimeError("credential_missing")
-            try:
-                values.append(validate_provider_secret(resolved_credential))
-            except ValueError as error:
-                raise RuntimeError("credential_invalid") from error
-        self._sensitive_values.register(room_id, session_id, "preserved", values)
-        return True
-
     def adopt_preserved_shared_runtime(
         self,
         room_id: str,
@@ -237,15 +199,6 @@ class NativeCliBridgeProcessManager:
                 # for a session whose server is still up.
                 return False
         return True
-
-    def release_preserved_security_values(self, room_id: str, session_id: str) -> None:
-        """Forget rolling-handoff credentials after authoritative runtime stop."""
-
-        self._sensitive_values.release_registration(
-            room_id,
-            session_id,
-            "preserved",
-        )
 
     def start(
         self,
@@ -360,6 +313,7 @@ class NativeCliBridgeProcessManager:
         bridge_dir = self.output_root / "rooms" / room_id / "bridges" / session_id
         profile_dir = bridge_dir / runtime_profile_key
         profile_dir.mkdir(parents=True, exist_ok=True)
+        bridge_launch_id = f"bridge-{uuid4().hex}"
         config_path = profile_dir / "config.json"
         stdout_path = profile_dir / "stdout.log"
         stderr_path = profile_dir / "stderr.log"
@@ -367,6 +321,7 @@ class NativeCliBridgeProcessManager:
             "room_id": room_id,
             "participant_id": spec.agent_id,
             "session_id": session_id,
+            "bridge_launch_id": bridge_launch_id,
             "provider_kind": spec.normalized_provider_kind(),
             "runtime_kind": spec.runtime_kind,
             "command": (
@@ -461,7 +416,7 @@ class NativeCliBridgeProcessManager:
             finally:
                 stream.close()
         handle = _BridgeHandle(
-            handle_id=f"bridge-{uuid4().hex}",
+            handle_id=bridge_launch_id,
             room_id=room_id,
             session_id=session_id,
             runtime_profile_key=runtime_profile_key,

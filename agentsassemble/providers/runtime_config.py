@@ -195,6 +195,7 @@ class ProviderRuntimeConfig:
 class CanonicalBridgeLaunchConfig:
     room_id: str
     session_id: str
+    bridge_launch_id: str
     turn_timeout_seconds: float
     runtime_profile_key: str
     credential_stdin: bool
@@ -209,6 +210,11 @@ class CanonicalBridgeLaunchConfig:
         return cls(
             room_id=_bridge_required_text(values, "room_id", limit=128),
             session_id=_bridge_required_text(values, "session_id", limit=128),
+            bridge_launch_id=(
+                _bridge_required_text(values, "bridge_launch_id", limit=128)
+                if "bridge_launch_id" in values
+                else ""
+            ),
             turn_timeout_seconds=_bridge_required_float(
                 values,
                 "turn_timeout_seconds",

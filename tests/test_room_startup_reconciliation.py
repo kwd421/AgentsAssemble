@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import tempfile
+import threading
 import unittest
 from pathlib import Path
 
@@ -121,6 +122,63 @@ class RoomStartupSessionReconcilerTests(unittest.TestCase):
         self.assertEqual(session["runtime_status"], "stopped")
         self.assertEqual(session["pending_event_ids"], ["event-1"])
         self.assertEqual(self.attention_resets, [])
+
+    def test_rolling_replacement_relaunches_each_enabled_server_owned_session(self) -> None:
+        self.store.upsert_participant(
+            "general",
+            {
+                "participant_id": "codex",
+                "display_name": "Codex",
+                "participant_type": "agent",
+                "status": "joined",
+            },
+        )
+        self.store.upsert_session(
+            "general",
+            {
+                "session_id": "codex",
+                "participant_id": "codex",
+                "enabled": True,
+                "runtime_status": "idle",
+                "process_ownership": "server",
+                "bridge_handle_id": "previous-launch",
+            },
+        )
+        starts: list[tuple[str, str, bool]] = []
+
+        def start_session(
+            room_id: str,
+            session_id: str,
+            **options: object,
+        ) -> dict[str, object]:
+            starts.append(
+                (room_id, session_id, bool(options.get("automatic_recovery")))
+            )
+            return self.store.update_session_fields(
+                room_id,
+                session_id,
+                runtime_status="starting",
+                bridge_handle_id="replacement-launch",
+            )
+
+        reconciler = RoomStartupSessionReconciler(
+            store=self.store,
+            reconcile_session_attention=self._reconcile_attention,
+            lock=threading.RLock(),
+            start_session=start_session,
+        )
+
+        restarted = reconciler.restart_preserved_server_sessions(
+            server_url="http://127.0.0.1:8765",
+            ticket_issuer=lambda _identity: {"ticket": "replacement-ticket"},
+        )
+
+        session = self.store.session("general", "codex")
+        self.assertEqual(starts, [("general", "codex", True)])
+        self.assertEqual(session["runtime_status"], "starting")
+        self.assertEqual(session["bridge_handle_id"], "replacement-launch")
+        self.assertTrue(session["recovery_required"])
+        self.assertEqual(len(restarted), 1)
 
 
 if __name__ == "__main__":

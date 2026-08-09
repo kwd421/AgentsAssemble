@@ -524,6 +524,7 @@ class RoomRealtimeControllerTests(
             f"ready-{agent_id}-{self.ready_count}",
             "bridge.ready",
             {
+                "bridge_launch_id": f"handle-{agent_id}",
                 "pid": 808,
                 "running": True,
                 "transport": "pty",
@@ -1480,6 +1481,7 @@ class RoomRealtimeControllerTests(
             "ready-second",
             "bridge.ready",
             {
+                "bridge_launch_id": "handle-codex",
                 "pid": 909,
                 "running": True,
                 "transport": "websocket",

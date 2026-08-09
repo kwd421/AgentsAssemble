@@ -32,7 +32,6 @@ def build_ws_room_deps_factory(
     composition: RoomWsComposition,
 ) -> Callable[..., WsRoomDeps]:
     room_realtime_controller = services.room_realtime_controller
-    ws_ticket_store = services.ws_ticket_store
 
     def ws_room_deps(channel, handler) -> WsRoomDeps:
         def read_lobby_after(meeting_id: str, after_id: str) -> tuple[list, str]:
@@ -78,25 +77,6 @@ def build_ws_room_deps_factory(
             )
 
         def execute_command(identity: dict, message: dict) -> dict[str, object]:
-            def issue_bridge_connection(bridge_identity: dict[str, object]) -> dict[str, str]:
-                room_id = str(bridge_identity.get("meeting_id") or "")
-                session_id = str(
-                    bridge_identity.get("session_id")
-                    or bridge_identity.get("agent_id")
-                    or ""
-                )
-                session_token, bridge_session = services.sessions.ensure_server_bridge(
-                    f"{room_id}:{session_id}",
-                    bridge_identity,
-                )
-                return {
-                    "ticket": ws_ticket_store.issue(
-                        bridge_session,
-                        session_token=session_token,
-                    ),
-                    "session_token": session_token,
-                }
-
             try:
                 return room_realtime_controller.handle_command(
                     identity,
@@ -104,7 +84,7 @@ def build_ws_room_deps_factory(
                     server_url=composition.local_server_url(
                         handler.server.server_address,
                     ),
-                    ticket_issuer=issue_bridge_connection,
+                    ticket_issuer=services.issue_bridge_connection,
                 )
             except RoomCommandRejected as rejected:
                 raise WsCommandRejected(

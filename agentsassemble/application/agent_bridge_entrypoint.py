@@ -111,6 +111,7 @@ def main() -> int:
                 room_id=config.room_id,
                 participant_id=config.runtime.participant_id,
                 session_id=config.session_id,
+                bridge_launch_id=config.bridge_launch_id,
                 runtime_profile=config.runtime.profile,
                 initial_orientation=room_session_orientation(
                     config.runtime.provider_kind

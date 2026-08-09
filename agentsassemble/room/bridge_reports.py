@@ -91,6 +91,20 @@ class RoomBridgeReportService:
                 "Agent bridge connection is no longer active.",
                 code="bridge_disconnected",
             )
+        if session.get("process_ownership") == "server":
+            expected_launch_id = clean_room_text(
+                session.get("bridge_handle_id"),
+                128,
+            )
+            reported_launch_id = clean_room_text(
+                payload.get("bridge_launch_id"),
+                128,
+            )
+            if not expected_launch_id or reported_launch_id != expected_launch_id:
+                raise RoomCommandRejected(
+                    "Agent bridge launch identity is stale.",
+                    code="stale_bridge_launch",
+                )
         external_profile: dict[str, object] = {}
         external_kind = clean_room_text(session.get("provider_kind"), 64)
         if (

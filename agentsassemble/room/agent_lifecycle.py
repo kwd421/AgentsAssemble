@@ -52,13 +52,6 @@ class AgentBridgeManager(Protocol):
         limit: int = 16000,
     ) -> str: ...
 
-    def release_preserved_security_values(
-        self,
-        room_id: str,
-        session_id: str,
-    ) -> None: ...
-
-
 RecoveryScheduler = Callable[[float, Callable[[], None]], object]
 ProviderLookup = Callable[[str, str], NativeCliProviderSpec]
 SessionCallback = Callable[[str, dict[str, object]], object]
@@ -791,8 +784,6 @@ class RoomAgentLifecycle:
         process: dict[str, object],
         revoked_sessions: int,
     ) -> dict[str, object]:
-        if self.bridge_manager is not None:
-            self.bridge_manager.release_preserved_security_values(room_id, agent_id)
         pending = _dedupe_text_list(
             [*list(session.get("inflight_event_ids") or []), *list(session.get("pending_event_ids") or [])]
         )
