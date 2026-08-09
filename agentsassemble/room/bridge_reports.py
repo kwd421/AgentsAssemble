@@ -14,6 +14,7 @@ from agentsassemble.providers.launch_specs import (
     native_cli_provider_definition,
 )
 from agentsassemble.providers.model_verification import model_verification_status
+from agentsassemble.providers.provider_errors import public_provider_failure_code
 from agentsassemble.providers.runtime_config import (
     ProviderRuntimeConfigError,
     ProviderRuntimeProfile,
@@ -180,6 +181,7 @@ class RoomBridgeReportService:
             is_one_shot=bool(payload.get("is_one_shot", False)),
             started_at=health.started_at,
             last_error="",
+            last_error_code="",
             **external_profile,
             **runtime_diagnostic_fields(payload, redact_text=redact_text),
         )
@@ -197,9 +199,63 @@ class RoomBridgeReportService:
             session_id=session["session_id"],
         )
         self._assign_pending(room_id, agent_id)
+        self.store.update_session_fields(
+            room_id,
+            str(session["session_id"]),
+            recovery_required=False,
+        )
         current = self.store.session(room_id, str(session["session_id"]))
         self._publish_session_state(room_id, current)
         return {"agent_session": public_session(current)}
+
+    def start_failed(
+        self,
+        identity: dict[str, object],
+        room_id: str,
+        payload: dict[str, object],
+    ) -> dict[str, object]:
+        agent_id, session = self._bridge_session(identity, room_id, allow_unleased=True)
+        if self.broker.has_bridge(room_id, agent_id):
+            raise RoomCommandRejected(
+                "A ready provider cannot report a startup failure.",
+                code="bridge_already_ready",
+            )
+        if clean_room_text(session.get("runtime_status"), 32) == "error":
+            raise RoomCommandRejected(
+                "The provider startup failure is already recorded.",
+                code="bridge_start_failure_recorded",
+            )
+        redact_text = session_diagnostic_redactor(
+            self._redact_diagnostic,
+            room_id,
+            session["session_id"],
+        )
+        error_code = public_provider_failure_code(payload.get("error_code"))
+        message = clean_room_text(redact_text(payload.get("message"), 4000), 4000)
+        if not message:
+            message = "Provider runtime failed before becoming ready."
+        updated = self.store.update_session_fields(
+            room_id,
+            str(session["session_id"]),
+            status="error",
+            runtime_status="error",
+            provider_session_active=False,
+            reported_provider_pid=None,
+            last_error=message,
+            last_error_code=error_code,
+            recovery_required=True,
+        )
+        self.store.append_event(
+            room_id,
+            "error",
+            participant_id=agent_id,
+            session_id=session["session_id"],
+            content=message,
+            error_code=error_code,
+            recovery_required=True,
+        )
+        self._publish_session_state(room_id, updated)
+        return {"agent_session": public_session(updated)}
 
     def health(
         self,

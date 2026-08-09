@@ -99,6 +99,28 @@ def public_provider_failure_code(value: object, *, interrupted: bool = False) ->
     return "interrupted" if interrupted else "provider_turn_failed"
 
 
+def bridge_process_exit_cause(
+    session: dict[str, object],
+    returncode: int,
+) -> tuple[str, str, bool, str]:
+    """Keep an explicit provider failure authoritative over the later process exit."""
+
+    existing_code = clean_room_text(session.get("last_error_code"), limit=64)
+    preserve_existing = bool(existing_code and existing_code != "bridge_process_exited")
+    process_message = f"Agent Bridge exited with return code {returncode}."
+    message = (
+        clean_room_text(session.get("last_error"), limit=4000)
+        if preserve_existing
+        else process_message
+    ) or process_message
+    return (
+        message,
+        existing_code if preserve_existing else "bridge_process_exited",
+        preserve_existing,
+        process_message,
+    )
+
+
 def provider_http_error(error: HTTPError, *, provider_name: str) -> ProviderTurnError:
     payload = _read_http_error_payload(error)
     provider_code, provider_message = _provider_error_fields(payload)
@@ -159,6 +181,7 @@ def _provider_error_fields(payload: object) -> tuple[str, str]:
 __all__ = [
     "PUBLIC_PROVIDER_FAILURE_CODES",
     "ProviderTurnError",
+    "bridge_process_exit_cause",
     "provider_failure_code",
     "provider_failure_code_from_text",
     "provider_http_error",

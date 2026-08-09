@@ -1301,6 +1301,8 @@ class RoomRealtimeController:
         self._require_bridge(identity)
         if action == "bridge.ready":
             return self._bridge_ready(identity, room_id, payload)
+        if action == "bridge.start_failed":
+            return self._bridge_reports.start_failed(identity, room_id, payload)
         if action == "bridge.health":
             return self._bridge_health(identity, room_id, payload)
         if action == "turn.state":

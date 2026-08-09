@@ -358,6 +358,35 @@ class RoomAgentLifecycleTests(unittest.TestCase):
         self.assertEqual(self.manager.starts, [("general", "codex"), ("general", "codex")])
         self.assertEqual(self.store.session("general", "codex")["runtime_status"], "starting")
 
+    def test_bridge_exit_preserves_an_explicit_failure_without_automatic_restart(self):
+        self.lifecycle.start("general", "codex", server_url="http://room", ticket_issuer=None)
+        self.manager.running.discard(("general", "codex"))
+        self.store.update_session_fields(
+            "general",
+            "codex",
+            status="error",
+            runtime_status="error",
+            enabled=True,
+            last_error="Provider did not read the assigned room observation.",
+            last_error_code="room_observation_unconfirmed",
+        )
+
+        self.lifecycle.bridge_process_exited(
+            "general",
+            "codex",
+            1,
+            "Agent Bridge room observation report failed: room_observation_unconfirmed",
+        )
+
+        failed = self.store.session("general", "codex")
+        self.assertEqual(
+            failed["last_error"],
+            "Provider did not read the assigned room observation.",
+        )
+        self.assertEqual(failed["last_error_code"], "room_observation_unconfirmed")
+        self.assertEqual(failed["runtime_status"], "error")
+        self.assertEqual(self.scheduler.pending, [])
+
 
 if __name__ == "__main__":
     unittest.main()

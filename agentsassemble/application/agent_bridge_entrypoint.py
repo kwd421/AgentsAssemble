@@ -116,6 +116,8 @@ def main() -> int:
             if stop_requested.is_set() or bridge.remote_stop_requested:
                 runtime_stopped = bridge.remote_stop_requested
                 break
+            if not bridge.reconnect_permitted:
+                break
             if not session_token:
                 break
             time.sleep(0.25)

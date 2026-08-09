@@ -18,6 +18,10 @@ from agentsassemble.providers.bridge_protocol import (
     TurnAssignmentEnvelope,
 )
 from agentsassemble.providers.bridge_report_tracker import BridgeReportTracker
+from agentsassemble.providers.bridge_failure_reporting import (
+    report_bridge_start_failure,
+    turn_failure_payload,
+)
 from agentsassemble.diagnostics.cleanup import CleanupReport, emit_cleanup_failure
 from agentsassemble.room.text import (
     clean_room_text as clean_lobby_text,
@@ -42,7 +46,6 @@ from agentsassemble.providers.room_portal import (
     automatic_turn_orientation,
     room_wake_orientation,
 )
-from agentsassemble.providers.provider_errors import provider_failure_code
 from agentsassemble.providers.provider_requests import BridgeProviderRequestRouter
 from agentsassemble.providers.observation_publication import (
     room_portal_publication_payload,
@@ -128,6 +131,7 @@ class RoomAgentBridge:
         if callable(set_receive_timeout):
             set_receive_timeout(self._observed_checkpoint_interval_seconds)
         self.remote_stop_requested = False
+        self.reconnect_permitted = True
         self.remote_stop_control_id = ""
         self.remote_stop_confirmation_required = False
         self.last_cleanup_report = CleanupReport("room_agent_bridge")
@@ -142,8 +146,17 @@ class RoomAgentBridge:
     def run(self) -> int:
         self._run_thread = threading.current_thread()
         try:
-            health = self.runtime.start()
-            self._command("bridge.ready", self._health_payload(health))
+            try:
+                health = self.runtime.start()
+            except Exception as error:
+                self.reconnect_permitted = False
+                report_bridge_start_failure(self._command, error)
+                return 1
+            try:
+                self._command("bridge.ready", self._health_payload(health))
+            except (BridgeReportRejected, BridgeReportTimeout) as error:
+                self._stop_after_report_failure(error, "ready")
+                return 1
             while not self._stop.is_set() and not self.client.closed:
                 messages = self._drain_deferred_messages()
                 if not messages:
@@ -499,7 +512,20 @@ class RoomAgentBridge:
                 raise
             self._publish_observation_results(portal, turn_id)
             result = ProviderTurnResult.parse(raw_result)
-            observed_through_seq = portal.observation_receipt(turn_id)
+            observed_through_seq = max(0, int(portal.observation_receipt(turn_id) or 0))
+            if observed_through_seq < wake.input_up_to_seq:
+                self._command(
+                    "turn.failed",
+                    {
+                        "turn_id": turn_id,
+                        "status": "error",
+                        "error_code": "room_observation_unconfirmed",
+                        "message": "Provider completed the room observation but did not read "
+                        "the assigned room state through the RoomPortal.",
+                        "diagnostics": self._failure_diagnostics(),
+                    },
+                )
+                return
             explicit_decline_reason = portal.observation_decline_reason(turn_id)
             publication = portal.consume_publication_result(turn_id)
             public_content = publication.content
@@ -556,32 +582,9 @@ class RoomAgentBridge:
                 },
             )
         except (BridgeReportRejected, BridgeReportTimeout) as report_error:
-            print(
-                f"Agent Bridge room observation report failed: {report_error.code}",
-                file=sys.stderr,
-                flush=True,
-            )
-            self._stop.set()
+            self._stop_after_report_failure(report_error, "room observation")
         except Exception as error:
-            if not self._stop.is_set():
-                try:
-                    self._command(
-                        "turn.failed",
-                        {
-                            "turn_id": turn_id,
-                            "status": "error",
-                            "error_code": provider_failure_code(error),
-                            "message": str(error),
-                            "diagnostics": self._failure_diagnostics(),
-                        },
-                    )
-                except (BridgeReportRejected, BridgeReportTimeout) as report_error:
-                    print(
-                        f"Agent Bridge room observation report failed: {report_error.code}",
-                        file=sys.stderr,
-                        flush=True,
-                    )
-                    self._stop.set()
+            self._report_turn_failure(turn_id, error, context="room observation")
         finally:
             portal.end_observation(turn_id)
             with self._worker_lock:
@@ -729,32 +732,9 @@ class RoomAgentBridge:
                 },
             )
         except (BridgeReportRejected, BridgeReportTimeout) as report_error:
-            print(
-                f"Agent Bridge terminal report failed: {report_error.code}",
-                file=sys.stderr,
-                flush=True,
-            )
-            self._stop.set()
+            self._stop_after_report_failure(report_error, "terminal")
         except Exception as error:
-            if not self._stop.is_set():
-                try:
-                    self._command(
-                        "turn.failed",
-                        {
-                            "turn_id": turn_id,
-                            "status": "error",
-                            "error_code": provider_failure_code(error),
-                            "message": str(error),
-                            "diagnostics": self._failure_diagnostics(),
-                        },
-                    )
-                except (BridgeReportRejected, BridgeReportTimeout) as report_error:
-                    print(
-                        f"Agent Bridge terminal report failed: {report_error.code}",
-                        file=sys.stderr,
-                        flush=True,
-                    )
-                    self._stop.set()
+            self._report_turn_failure(turn_id, error, context="terminal")
         finally:
             with self._worker_lock:
                 if self._worker is threading.current_thread():
@@ -890,7 +870,7 @@ class RoomAgentBridge:
                 )
         except (BridgeProtocolError, BridgeReportRejected, BridgeReportTimeout) as error:
             self._observed_checkpoint_error = error
-            self._stop.set()
+            self._stop_after_report_failure(error, "observation checkpoint")
             return
         self._last_observed_seq_reported = max(
             self._last_observed_seq_reported,
@@ -911,8 +891,27 @@ class RoomAgentBridge:
         print(f"Agent Bridge protocol error: {error.code}", file=sys.stderr, flush=True)
         if not error.fatal:
             return
+        self.reconnect_permitted = False
         self._stop.set()
         self.client.close()
+
+    def _stop_after_report_failure(self, error: Exception, context: str) -> None:
+        code = clean_lobby_text(getattr(error, "code", ""), limit=64) or type(error).__name__
+        print(f"Agent Bridge {context} report failed: {code}", file=sys.stderr, flush=True)
+        if not isinstance(error, BridgeReportTimeout):
+            self.reconnect_permitted = False
+        self._stop.set()
+
+    def _report_turn_failure(self, turn_id: str, error: Exception, *, context: str) -> None:
+        if self._stop.is_set():
+            return
+        try:
+            self._command(
+                "turn.failed",
+                turn_failure_payload(turn_id, error, self._failure_diagnostics()),
+            )
+        except (BridgeReportRejected, BridgeReportTimeout) as report_error:
+            self._stop_after_report_failure(report_error, context)
 
     def _failure_diagnostics(self) -> dict[str, object]:
         try:

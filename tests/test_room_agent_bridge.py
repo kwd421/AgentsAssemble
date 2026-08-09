@@ -8,10 +8,7 @@ import unittest
 from pathlib import Path
 from unittest.mock import patch
 
-from agentsassemble.providers.bridge_protocol import (
-    BridgeReportTimeout,
-    RoomWakeEnvelope,
-)
+from agentsassemble.providers.bridge_protocol import RoomWakeEnvelope
 from agentsassemble.providers.codex_app_server_live import CodexAppServerLiveRuntime
 from agentsassemble.providers.grok_acp import GrokAcpRuntime
 from agentsassemble.providers.runtime_contracts import (
@@ -1833,7 +1830,7 @@ class RoomAgentBridgeTests(unittest.TestCase):
         )
         self.assertFalse(any(action == "turn.failed" for action, _, _ in client.commands))
 
-    def test_bridge_ready_requires_a_correlated_ack(self):
+    def test_bridge_ready_timeout_exits_for_a_bounded_reconnect(self):
         client = FakeClient()
         client.command_responses["bridge.ready"] = None
         runtime = FakeRuntime()
@@ -1847,10 +1844,10 @@ class RoomAgentBridgeTests(unittest.TestCase):
             report_timeout_seconds=0.02,
         )
 
-        with self.assertRaises(BridgeReportTimeout) as raised:
-            bridge.run()
+        exit_code = bridge.run()
 
-        self.assertEqual(raised.exception.code, "bridge_report_timeout")
+        self.assertEqual(exit_code, 1)
+        self.assertTrue(bridge.reconnect_permitted)
         self.assertEqual(runtime.stop_count, 1)
 
 

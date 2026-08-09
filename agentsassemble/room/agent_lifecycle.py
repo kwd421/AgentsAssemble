@@ -11,6 +11,7 @@ from agentsassemble.room.bridge_stop_confirmation import (
 from agentsassemble.diagnostics.cleanup import CleanupReport
 from agentsassemble.diagnostics.sensitive_text import redact_persisted_diagnostic_text
 from agentsassemble.providers.launch_specs import NativeCliProviderSpec
+from agentsassemble.providers.provider_errors import bridge_process_exit_cause
 from agentsassemble.room.errors import RoomCommandRejected
 from agentsassemble.room.event_broker import RoomEventBroker
 from agentsassemble.room.projection import public_session
@@ -610,11 +611,12 @@ class RoomAgentLifecycle:
             pending = _dedupe_text_list(
                 [*list(session.get("inflight_event_ids") or []), *list(session.get("pending_event_ids") or [])]
             )
-            message = f"Agent Bridge exited with return code {returncode}."
+            message, error_code, preserve_existing_error, process_exit_message = bridge_process_exit_cause(session, returncode)
             recovery_attempt_count = int(session.get("recovery_attempt_count") or 0)
             automatic_recovery = bool(
                 not self._is_closed()
                 and session.get("enabled")
+                and not preserve_existing_error
                 and recovery_attempt_count < 1
                 and key in self._launch_contexts
             )
@@ -639,7 +641,8 @@ class RoomAgentLifecycle:
                 recovery_required=True,
                 recovery_attempt_count=recovery_attempt_count + (1 if automatic_recovery else 0),
                 last_error=message,
-            stderr_tail=redact_persisted_diagnostic_text(stderr_tail, limit=16000),
+                last_error_code=error_code,
+                stderr_tail=redact_persisted_diagnostic_text(stderr_tail, limit=16000),
             )
             participant_id = clean_lobby_text(session.get("participant_id"), limit=128)
             if participant_id and self.store.participant(room_id, participant_id):
@@ -649,7 +652,7 @@ class RoomAgentLifecycle:
                 "error",
                 participant_id=participant_id,
                 session_id=session_id,
-                content=message,
+                content=process_exit_message,
                 error_code="bridge_process_exited",
                 stderr_tail_present=bool(redact_persisted_diagnostic_text(stderr_tail, limit=16000)),
                 recovery_required=True,

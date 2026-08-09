@@ -77,6 +77,14 @@ class RoomBridgeReportServiceTests(unittest.TestCase):
         return True
 
     def test_ready_activates_one_generation_and_publishes_attached_state(self) -> None:
+        self.store.update_session_fields(
+            "general",
+            "codex",
+            last_error="earlier startup failure",
+            last_error_code="api_context_checkpoint_missing",
+            recovery_required=True,
+            recovery_attempt_count=1,
+        )
         result = self.service.ready(
             self.identity,
             "general",
@@ -102,6 +110,9 @@ class RoomBridgeReportServiceTests(unittest.TestCase):
         )
         self.assertEqual(self.assignments, [("general", "codex")])
         self.assertEqual(self.published_sessions[-1][1]["session_id"], "codex")
+        self.assertEqual(session["last_error_code"], "")
+        self.assertFalse(session["recovery_required"])
+        self.assertEqual(session["recovery_attempt_count"], 1)
 
     def test_ready_rejects_incomplete_health_before_activating_the_bridge(self) -> None:
         with self.assertRaises(RoomCommandRejected) as raised:
@@ -121,6 +132,43 @@ class RoomBridgeReportServiceTests(unittest.TestCase):
             self.store.participant("general", "codex")["status"],
             "detached",
         )
+
+    def test_start_failure_is_persisted_before_the_bridge_becomes_ready(self) -> None:
+        result = self.service.start_failed(
+            self.identity,
+            "general",
+            {
+                "error_code": "api_context_checkpoint_missing",
+                "message": "This API Agent Session has prior turns but no recoverable checkpoint.",
+            },
+        )
+
+        session = self.store.session("general", "codex")
+        self.assertEqual(result["agent_session"]["runtime_status"], "error")
+        self.assertEqual(session["last_error_code"], "api_context_checkpoint_missing")
+        self.assertIn("no recoverable checkpoint", session["last_error"])
+        self.assertFalse(self.broker.has_bridge("general", "codex"))
+
+        with self.assertRaises(RoomCommandRejected) as repeated:
+            self.service.start_failed(
+                self.identity,
+                "general",
+                {"error_code": "provider_turn_failed", "message": "duplicate"},
+            )
+        self.assertEqual(repeated.exception.code, "bridge_start_failure_recorded")
+
+    def test_ready_bridge_cannot_replace_its_state_with_a_start_failure(self) -> None:
+        self.broker.activate_bridge(self.channel)
+
+        with self.assertRaises(RoomCommandRejected) as raised:
+            self.service.start_failed(
+                self.identity,
+                "general",
+                {"error_code": "provider_turn_failed", "message": "late failure"},
+            )
+
+        self.assertEqual(raised.exception.code, "bridge_already_ready")
+        self.assertEqual(self.store.session("general", "codex")["runtime_status"], "starting")
 
     def test_health_updates_public_runtime_diagnostics(self) -> None:
         self.broker.activate_bridge(self.channel)
