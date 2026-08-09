@@ -6,6 +6,7 @@ from pathlib import Path
 
 from agentsassemble.persistence.local.room.repository import RoomStore
 from agentsassemble.room.bridge_reports import RoomBridgeReportService
+from agentsassemble.room.command_uow import RoomCommandUnitOfWork
 from agentsassemble.room.errors import RoomCommandRejected
 from agentsassemble.room.event_broker import RoomEventBroker
 
@@ -56,6 +57,7 @@ class RoomBridgeReportServiceTests(unittest.TestCase):
             "client_type": "agent_bridge",
         }
         self.channel = self.broker.connect(self.identity)
+        self.request_number = 0
 
     def tearDown(self) -> None:
         self.broker.close()
@@ -75,6 +77,27 @@ class RoomBridgeReportServiceTests(unittest.TestCase):
     def _assign_pending(self, room_id: str, agent_id: str) -> bool:
         self.assignments.append((room_id, agent_id))
         return True
+
+    def _start_failed(self, payload: dict[str, object]) -> dict[str, object]:
+        self.request_number += 1
+        with RoomCommandUnitOfWork(
+            self.store,
+            room_id="general",
+            principal_id="agent-session:codex",
+            request_id=f"start-failed-{self.request_number}",
+            action="bridge.start_failed",
+            payload=payload,
+        ) as unit:
+            result = self.service.start_failed_in_unit(
+                self.identity,
+                "general",
+                payload,
+                unit=unit,
+            )
+            unit.build_ack(result)
+            unit.record_ack()
+        self.service.publish_start_failure("general", "codex")
+        return result
 
     def test_ready_activates_one_generation_and_publishes_attached_state(self) -> None:
         self.store.update_session_fields(
@@ -134,9 +157,7 @@ class RoomBridgeReportServiceTests(unittest.TestCase):
         )
 
     def test_start_failure_is_persisted_before_the_bridge_becomes_ready(self) -> None:
-        result = self.service.start_failed(
-            self.identity,
-            "general",
+        result = self._start_failed(
             {
                 "error_code": "api_context_checkpoint_missing",
                 "message": "This API Agent Session has prior turns but no recoverable checkpoint.",
@@ -150,9 +171,7 @@ class RoomBridgeReportServiceTests(unittest.TestCase):
         self.assertFalse(self.broker.has_bridge("general", "codex"))
 
         with self.assertRaises(RoomCommandRejected) as repeated:
-            self.service.start_failed(
-                self.identity,
-                "general",
+            self._start_failed(
                 {"error_code": "provider_turn_failed", "message": "duplicate"},
             )
         self.assertEqual(repeated.exception.code, "bridge_start_failure_recorded")
@@ -161,9 +180,7 @@ class RoomBridgeReportServiceTests(unittest.TestCase):
         self.broker.activate_bridge(self.channel)
 
         with self.assertRaises(RoomCommandRejected) as raised:
-            self.service.start_failed(
-                self.identity,
-                "general",
+            self._start_failed(
                 {"error_code": "provider_turn_failed", "message": "late failure"},
             )
 

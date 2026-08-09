@@ -24,6 +24,7 @@ from agentsassemble.providers.runtime_contracts import (
     ProviderRuntimeHealth,
 )
 from agentsassemble.room.errors import RoomCommandRejected
+from agentsassemble.room.command_uow import RoomCommandUnitOfWork
 from agentsassemble.room.event_broker import RoomEventBroker
 from agentsassemble.room.projection import (
     public_session,
@@ -208,13 +209,28 @@ class RoomBridgeReportService:
         self._publish_session_state(room_id, current)
         return {"agent_session": public_session(current)}
 
-    def start_failed(
+    def start_failed_in_unit(
         self,
         identity: dict[str, object],
         room_id: str,
         payload: dict[str, object],
+        *,
+        unit: RoomCommandUnitOfWork,
     ) -> dict[str, object]:
         agent_id, session = self._bridge_session(identity, room_id, allow_unleased=True)
+        connection_id = clean_room_text(identity.get("connection_id"), 128)
+        channel = self.broker.channel(connection_id)
+        if channel is None or channel.closed:
+            raise RoomCommandRejected(
+                "Agent bridge connection is no longer active.",
+                code="bridge_disconnected",
+            )
+        session = unit.session(str(session["session_id"]))
+        if not session or session.get("participant_id") != agent_id:
+            raise RoomCommandRejected(
+                "Agent bridge session does not match its ticket identity.",
+                code="permission_denied",
+            )
         if self.broker.has_bridge(room_id, agent_id):
             raise RoomCommandRejected(
                 "A ready provider cannot report a startup failure.",
@@ -225,6 +241,14 @@ class RoomBridgeReportService:
                 "The provider startup failure is already recorded.",
                 code="bridge_start_failure_recorded",
             )
+        if (
+            clean_room_text(session.get("runtime_status"), 32) != "starting"
+            or clean_room_text(session.get("lifecycle_intent_action"), 32) == "stop"
+        ):
+            raise RoomCommandRejected(
+                "The provider startup failure no longer matches an active start.",
+                code="bridge_start_failure_stale",
+            )
         redact_text = session_diagnostic_redactor(
             self._redact_diagnostic,
             room_id,
@@ -234,8 +258,7 @@ class RoomBridgeReportService:
         message = clean_room_text(redact_text(payload.get("message"), 4000), 4000)
         if not message:
             message = "Provider runtime failed before becoming ready."
-        updated = self.store.update_session_fields(
-            room_id,
+        updated = unit.update_session_fields(
             str(session["session_id"]),
             status="error",
             runtime_status="error",
@@ -245,8 +268,7 @@ class RoomBridgeReportService:
             last_error_code=error_code,
             recovery_required=True,
         )
-        self.store.append_event(
-            room_id,
+        unit.append_event(
             "error",
             participant_id=agent_id,
             session_id=session["session_id"],
@@ -254,8 +276,38 @@ class RoomBridgeReportService:
             error_code=error_code,
             recovery_required=True,
         )
-        self._publish_session_state(room_id, updated)
         return {"agent_session": public_session(updated)}
+
+    def publish_start_failure(self, room_id: str, session_id: str) -> None:
+        self._publish_session_state(room_id, self.store.session(room_id, session_id))
+
+    def start_failed_command(
+        self,
+        identity: dict[str, object],
+        room_id: str,
+        payload: dict[str, object],
+        *,
+        execute: Callable[
+            [Callable[[RoomCommandUnitOfWork], dict[str, object]]],
+            dict[str, object],
+        ],
+    ) -> dict[str, object]:
+        """Commit and then project one authenticated provider startup failure."""
+
+        ack = execute(
+            lambda unit: self.start_failed_in_unit(
+                identity,
+                room_id,
+                payload,
+                unit=unit,
+            )
+        )
+        result = ack.get("result") if isinstance(ack.get("result"), dict) else {}
+        public = result.get("agent_session") if isinstance(result.get("agent_session"), dict) else {}
+        session_id = clean_room_text(public.get("session_id"), 128)
+        if session_id:
+            self.publish_start_failure(room_id, session_id)
+        return ack
 
     def health(
         self,

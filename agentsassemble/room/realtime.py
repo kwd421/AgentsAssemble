@@ -768,6 +768,22 @@ class RoomRealtimeController:
                 can_resolve=self.capabilities(identity).get("provider.request.resolve", False),
                 execute=lambda operation: self._execute_durable_command(identity, room_id, request_id, action, payload, operation),
             )
+        if action == "bridge.start_failed":
+            self._require_bridge(identity)
+            with self._lock:
+                return self._bridge_reports.start_failed_command(
+                    identity,
+                    room_id,
+                    payload,
+                    execute=lambda operation: self._execute_durable_command(
+                        identity,
+                        room_id,
+                        request_id,
+                        action,
+                        payload,
+                        operation,
+                    ),
+                )
         if action == "room.delete":
             with self._lock:
                 prior_ack = self._prior_command_ack(
@@ -1301,8 +1317,6 @@ class RoomRealtimeController:
         self._require_bridge(identity)
         if action == "bridge.ready":
             return self._bridge_ready(identity, room_id, payload)
-        if action == "bridge.start_failed":
-            return self._bridge_reports.start_failed(identity, room_id, payload)
         if action == "bridge.health":
             return self._bridge_health(identity, room_id, payload)
         if action == "turn.state":

@@ -15,6 +15,47 @@ from agentsassemble.providers.provider_errors import provider_failure_code
 BridgeCommand = Callable[..., dict[str, object] | None]
 
 
+class FailedBridgeRuntime:
+    """Carry a construction error through the normal bridge failure protocol."""
+
+    def __init__(self, error: Exception) -> None:
+        self._error = error
+
+    def start(self) -> dict[str, object]:
+        raise self._error
+
+    def send(self, _text: str) -> None:
+        raise self._error
+
+    def read_output(self, *, timeout_seconds: float, on_delta=None, on_activity=None) -> dict[str, object]:
+        del timeout_seconds, on_delta, on_activity
+        raise self._error
+
+    def interrupt(self) -> None:
+        return None
+
+    def stop(self, *, timeout_seconds: float = 2.0) -> None:
+        del timeout_seconds
+
+    def health(self) -> dict[str, object]:
+        return {
+            "running": False,
+            "pty": False,
+            "transport": "unavailable",
+            "provider_session_active": False,
+            "is_one_shot": False,
+            "started_at": None,
+        }
+
+
+def report_failure_allows_reconnect(error: Exception, *, context: str) -> bool:
+    """Expose a report failure and allow reconnect only for an ACK timeout."""
+
+    code = getattr(error, "code", "") or type(error).__name__
+    print(f"Agent Bridge {context} report failed: {code}", file=sys.stderr, flush=True)
+    return isinstance(error, BridgeReportTimeout)
+
+
 def turn_failure_payload(
     turn_id: str,
     error: Exception,
@@ -46,4 +87,9 @@ def report_bridge_start_failure(command: BridgeCommand, error: Exception) -> Non
         )
 
 
-__all__ = ["report_bridge_start_failure", "turn_failure_payload"]
+__all__ = [
+    "FailedBridgeRuntime",
+    "report_bridge_start_failure",
+    "report_failure_allows_reconnect",
+    "turn_failure_payload",
+]

@@ -16,6 +16,7 @@ from agentsassemble.providers.bridge_launch_secrets import (
     read_secure_launch_payload,
 )
 from agentsassemble.providers.redacting_room_client import CredentialRedactingRoomClient
+from agentsassemble.providers.bridge_failure_reporting import FailedBridgeRuntime
 from agentsassemble.providers.room_portal import RoomPortal, room_session_orientation
 from agentsassemble.providers.runtime_config import CanonicalBridgeLaunchConfig
 from agentsassemble.providers.runtime_factory import runtime_from_config
@@ -49,12 +50,18 @@ def main() -> int:
     )
     portal.prepare()
     provider_environment = portal.provider_environment(os.environ.get("PATH", ""))
-    runtime = runtime_from_config(
-        config.runtime,
-        credential=credential,
-        environment=provider_environment,
-        room_portal=portal,
-    )
+    try:
+        runtime = runtime_from_config(
+            config.runtime,
+            credential=credential,
+            environment=provider_environment,
+            room_portal=portal,
+        )
+    except Exception as error:
+        # The bridge connection is still viable even when the provider runtime
+        # cannot be constructed. Carry the exact failure through the same
+        # authenticated, redacted report path used by runtime.start().
+        runtime = FailedBridgeRuntime(error)
     stop_requested = threading.Event()
     current_bridge: list[RoomAgentBridge | None] = [None]
 
@@ -69,6 +76,7 @@ def main() -> int:
     first_connection = True
     exit_code = 0
     runtime_stopped = False
+    consecutive_report_timeout_reconnects = 0
     try:
         while not stop_requested.is_set():
             try:
@@ -116,6 +124,12 @@ def main() -> int:
             if stop_requested.is_set() or bridge.remote_stop_requested:
                 runtime_stopped = bridge.remote_stop_requested
                 break
+            if bridge.report_timeout_reconnect_requested:
+                consecutive_report_timeout_reconnects += 1
+                if consecutive_report_timeout_reconnects > 1:
+                    break
+            elif bridge.ready_reported:
+                consecutive_report_timeout_reconnects = 0
             if not bridge.reconnect_permitted:
                 break
             if not session_token:

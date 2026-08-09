@@ -20,6 +20,7 @@ from agentsassemble.providers.bridge_protocol import (
 from agentsassemble.providers.bridge_report_tracker import BridgeReportTracker
 from agentsassemble.providers.bridge_failure_reporting import (
     report_bridge_start_failure,
+    report_failure_allows_reconnect,
     turn_failure_payload,
 )
 from agentsassemble.diagnostics.cleanup import CleanupReport, emit_cleanup_failure
@@ -132,6 +133,7 @@ class RoomAgentBridge:
             set_receive_timeout(self._observed_checkpoint_interval_seconds)
         self.remote_stop_requested = False
         self.reconnect_permitted = True
+        self.ready_reported = self.report_timeout_reconnect_requested = False
         self.remote_stop_control_id = ""
         self.remote_stop_confirmation_required = False
         self.last_cleanup_report = CleanupReport("room_agent_bridge")
@@ -154,6 +156,7 @@ class RoomAgentBridge:
                 return 1
             try:
                 self._command("bridge.ready", self._health_payload(health))
+                self.ready_reported = True
             except (BridgeReportRejected, BridgeReportTimeout) as error:
                 self._stop_after_report_failure(error, "ready")
                 return 1
@@ -896,10 +899,8 @@ class RoomAgentBridge:
         self.client.close()
 
     def _stop_after_report_failure(self, error: Exception, context: str) -> None:
-        code = clean_lobby_text(getattr(error, "code", ""), limit=64) or type(error).__name__
-        print(f"Agent Bridge {context} report failed: {code}", file=sys.stderr, flush=True)
-        if not isinstance(error, BridgeReportTimeout):
-            self.reconnect_permitted = False
+        self.report_timeout_reconnect_requested = report_failure_allows_reconnect(error, context=context)
+        self.reconnect_permitted = self.report_timeout_reconnect_requested
         self._stop.set()
 
     def _report_turn_failure(self, turn_id: str, error: Exception, *, context: str) -> None:
