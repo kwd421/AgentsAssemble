@@ -48,6 +48,7 @@ class BridgeProviderRequestRouter:
         with self._lock:
             self._pending[request_id] = pending
         opened = False
+        close_attempted = False
         terminal_status = "cancelled"
         try:
             self._report(
@@ -65,23 +66,29 @@ class BridgeProviderRequestRouter:
             resolution = dict(pending.resolution)
             if not resolution:
                 resolution = _default_resolution(request)
-            respond(resolution)
             if pending.resolution:
                 terminal_status = _resolution_status(request, resolution)
+            close_attempted = True
+            self._report(
+                "provider.request.closed",
+                {
+                    "provider_request_id": request_id,
+                    "status": terminal_status,
+                },
+            )
+            opened = False
+            respond(resolution)
         finally:
             with self._lock:
                 self._pending.pop(request_id, None)
-            if opened:
-                try:
-                    self._report(
-                        "provider.request.closed",
-                        {
-                            "provider_request_id": request_id,
-                            "status": terminal_status,
-                        },
-                    )
-                except Exception:
-                    pass
+            if opened and not close_attempted:
+                self._report(
+                    "provider.request.closed",
+                    {
+                        "provider_request_id": request_id,
+                        "status": terminal_status,
+                    },
+                )
 
     def resolve(self, message: dict[str, object]) -> bool:
         request_id = clean_room_text(message.get("provider_request_id"), limit=128)
