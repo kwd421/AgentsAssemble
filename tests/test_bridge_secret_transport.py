@@ -178,6 +178,36 @@ class BridgeSecretTransportTests(unittest.TestCase):
         self.assertNotIn(session_token, public_report)
         self.assertEqual(public_report.count("[redacted]"), 2)
 
+    def test_confirmed_preserved_bridge_stop_releases_exact_redaction_values(self):
+        credential = "preserved-provider-credential-1122334455"
+        session_token = "preserved-session-token-9988776655"
+        with tempfile.TemporaryDirectory() as temp_dir:
+            manager = NativeCliBridgeProcessManager(
+                Path(temp_dir),
+                secret_resolver=lambda _provider_id: credential,
+            )
+            manager.adopt_preserved_security_values(
+                "room-a",
+                {
+                    "session_id": "deepseek",
+                    "participant_id": "deepseek",
+                    "provider_kind": "deepseek_api",
+                    "process_ownership": "server",
+                    "runtime_status": "idle",
+                },
+                session_token=session_token,
+            )
+
+            manager.release_preserved_security_values("room-a", "deepseek")
+            after_stop = manager.redact_diagnostic(
+                "room-a",
+                "deepseek",
+                f"provider={credential} session={session_token}",
+            )
+
+        self.assertIn(credential, after_stop)
+        self.assertIn(session_token, after_stop)
+
 
 if __name__ == "__main__":
     unittest.main()

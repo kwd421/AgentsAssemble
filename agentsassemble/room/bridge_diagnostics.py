@@ -8,6 +8,9 @@ from agentsassemble.diagnostics.sensitive_text import redact_persisted_diagnosti
 
 
 DiagnosticRedactor = Callable[..., str]
+StreamDeltaRedactor = Callable[[str, str, str, object], str]
+StreamDeltaFlusher = Callable[[str, str, str], str]
+StreamDeltaDiscarder = Callable[[str, str, str], None]
 
 
 def default_diagnostic_redactor(
@@ -25,6 +28,46 @@ def bridge_manager_diagnostic_redactor(bridge_manager: object) -> DiagnosticReda
 
     manager_redactor = getattr(bridge_manager, "redact_diagnostic", None)
     return manager_redactor if callable(manager_redactor) else default_diagnostic_redactor
+
+
+def default_stream_delta_redactor(
+    _room_id: str,
+    _session_id: str,
+    _turn_id: str,
+    value: object,
+) -> str:
+    return str(value or "")
+
+
+def default_stream_delta_flusher(
+    _room_id: str,
+    _session_id: str,
+    _turn_id: str,
+) -> str:
+    return ""
+
+
+def default_stream_delta_discarder(
+    _room_id: str,
+    _session_id: str,
+    _turn_id: str,
+) -> None:
+    return None
+
+
+def bridge_manager_stream_redactors(
+    bridge_manager: object,
+) -> tuple[StreamDeltaRedactor, StreamDeltaFlusher, StreamDeltaDiscarder]:
+    """Use stateful ingress redaction when the process manager owns credentials."""
+
+    redact = getattr(bridge_manager, "redact_stream_delta", None)
+    flush = getattr(bridge_manager, "flush_stream_delta", None)
+    discard = getattr(bridge_manager, "discard_stream_delta", None)
+    return (
+        redact if callable(redact) else default_stream_delta_redactor,
+        flush if callable(flush) else default_stream_delta_flusher,
+        discard if callable(discard) else default_stream_delta_discarder,
+    )
 
 
 def session_diagnostic_redactor(
@@ -53,7 +96,11 @@ def redacted_activity_text(
 
 __all__ = [
     "DiagnosticRedactor",
+    "StreamDeltaDiscarder",
+    "StreamDeltaFlusher",
+    "StreamDeltaRedactor",
     "bridge_manager_diagnostic_redactor",
+    "bridge_manager_stream_redactors",
     "default_diagnostic_redactor",
     "redacted_activity_text",
     "session_diagnostic_redactor",

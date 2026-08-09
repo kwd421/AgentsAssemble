@@ -18,9 +18,9 @@ from uuid import uuid4
 from agentsassemble.diagnostics.cleanup import CleanupReport
 from agentsassemble.diagnostics.sensitive_text import (
     redact_persisted_diagnostic_bytes,
-    redact_persisted_diagnostic_text,
     validate_redactable_sensitive_value,
 )
+from agentsassemble.providers.bridge_sensitive_values import BridgeSensitiveValueRegistry
 from agentsassemble.providers.bridge_launch_secrets import encode_secure_launch_payload
 from agentsassemble.providers.launch_specs import (
     NativeCliProviderSpec,
@@ -128,9 +128,7 @@ class NativeCliBridgeProcessManager:
         self._on_exit = on_exit
         self._lock = threading.RLock()
         self._handles: dict[tuple[str, str], _BridgeHandle] = {}
-        self._sensitive_values_by_session: dict[
-            tuple[str, str], dict[str, tuple[str, ...]]
-        ] = {}
+        self._sensitive_values = BridgeSensitiveValueRegistry()
         self._launch_ownership: dict[tuple[str, str], _BridgeLaunchOwnership] = {}
         self._opencode_server: OpenCodeServerProcess | None = None
         self.last_cleanup_report = CleanupReport("native_cli_bridge_process_manager")
@@ -174,11 +172,7 @@ class NativeCliBridgeProcessManager:
                 values.append(validate_provider_secret(resolved_credential))
             except ValueError as error:
                 raise RuntimeError("credential_invalid") from error
-        with self._lock:
-            self._sensitive_values_by_session.setdefault(
-                (room_id, session_id),
-                {},
-            )["preserved"] = tuple(dict.fromkeys(values))
+        self._sensitive_values.register(room_id, session_id, "preserved", values)
         return True
 
     def adopt_preserved_shared_runtime(
@@ -243,6 +237,15 @@ class NativeCliBridgeProcessManager:
                 # for a session whose server is still up.
                 return False
         return True
+
+    def release_preserved_security_values(self, room_id: str, session_id: str) -> None:
+        """Forget rolling-handoff credentials after authoritative runtime stop."""
+
+        self._sensitive_values.release_registration(
+            room_id,
+            session_id,
+            "preserved",
+        )
 
     def start(
         self,
@@ -476,9 +479,12 @@ class NativeCliBridgeProcessManager:
         )
         with self._lock:
             self._handles[key] = handle
-            self._sensitive_values_by_session.setdefault(key, {})[
-                handle.handle_id
-            ] = handle.sensitive_values
+        self._sensitive_values.register(
+            room_id,
+            session_id,
+            handle.handle_id,
+            handle.sensitive_values,
+        )
         handle.stderr_thread = threading.Thread(
             target=self._drain_stderr,
             args=(handle,),
@@ -524,7 +530,7 @@ class NativeCliBridgeProcessManager:
         with self._lock:
             handle = self._handles.get(key)
             if handle is None:
-                self._sensitive_values_by_session.pop(key, None)
+                self._sensitive_values.release_session(room_id, session_id)
                 return {"stopped": False, "alive": False, "bridge_pid": None, "reason": "handle_not_found"}
             if not handle_id or handle.handle_id != handle_id:
                 return {
@@ -545,7 +551,11 @@ class NativeCliBridgeProcessManager:
         self._finish_stderr(handle)
         with self._lock:
             self._handles.pop(key, None)
-            self._forget_sensitive_values_locked(key, handle.handle_id)
+        self._sensitive_values.release_registration(
+            room_id,
+            session_id,
+            handle.handle_id,
+        )
         return {
             "stopped": True,
             "alive": process.poll() is None,
@@ -593,9 +603,8 @@ class NativeCliBridgeProcessManager:
                     handle_id="shared-opencode-server",
                     orphaned=process is not None and process.poll() is None,
                 )
-        with self._lock:
-            if not report.orphaned_handle_ids:
-                self._sensitive_values_by_session.clear()
+        if not report.orphaned_handle_ids:
+            self._sensitive_values.clear()
         self.last_cleanup_report = report
         return report
 
@@ -623,23 +632,32 @@ class NativeCliBridgeProcessManager:
     ) -> str:
         """Redact credentials retained by active launches of one Agent Session."""
 
-        with self._lock:
-            registrations = self._sensitive_values_by_session.get(
-                (room_id, session_id),
-                {},
-            )
-            exact_values = tuple(
-                dict.fromkeys(
-                    value
-                    for registered in registrations.values()
-                    for value in registered
-                )
-            )
-        return redact_persisted_diagnostic_text(
+        return self._sensitive_values.redact_diagnostic(
+            room_id,
+            session_id,
             value,
             limit=limit,
-            exact_values=exact_values,
         )
+
+    def redact_stream_delta(
+        self,
+        room_id: str,
+        session_id: str,
+        turn_id: str,
+        value: object,
+    ) -> str:
+        return self._sensitive_values.redact_stream_delta(
+            room_id,
+            session_id,
+            turn_id,
+            value,
+        )
+
+    def flush_stream_delta(self, room_id: str, session_id: str, turn_id: str) -> str:
+        return self._sensitive_values.flush_stream_delta(room_id, session_id, turn_id)
+
+    def discard_stream_delta(self, room_id: str, session_id: str, turn_id: str) -> None:
+        self._sensitive_values.discard_stream_delta(room_id, session_id, turn_id)
 
     def _watch(self, handle: _BridgeHandle) -> None:
         returncode = handle.process.wait()
@@ -661,11 +679,17 @@ class NativeCliBridgeProcessManager:
                     str(self._stderr_snapshot(handle)["stderr_tail"]),
                 )
             finally:
-                with self._lock:
-                    self._forget_sensitive_values_locked(key, handle.handle_id)
+                self._sensitive_values.release_registration(
+                    handle.room_id,
+                    handle.session_id,
+                    handle.handle_id,
+                )
         else:
-            with self._lock:
-                self._forget_sensitive_values_locked(key, handle.handle_id)
+            self._sensitive_values.release_registration(
+                handle.room_id,
+                handle.session_id,
+                handle.handle_id,
+            )
 
     def _drain_stderr(self, handle: _BridgeHandle) -> None:
         stream = getattr(handle.process, "stderr", None)
@@ -731,18 +755,6 @@ class NativeCliBridgeProcessManager:
             handle.stderr_path.chmod(0o600)
         except OSError:
             pass
-
-    def _forget_sensitive_values_locked(
-        self,
-        key: tuple[str, str],
-        registration_id: str,
-    ) -> None:
-        registrations = self._sensitive_values_by_session.get(key)
-        if registrations is None:
-            return
-        registrations.pop(registration_id, None)
-        if not registrations:
-            self._sensitive_values_by_session.pop(key, None)
 
     def _resolve(self, executable: str) -> str:
         if not executable:

@@ -59,6 +59,10 @@ class FakeClient:
                     response["result"] = {
                         "observed_through_seq": int((payload or {}).get("through_seq") or 0)
                     }
+                elif action == "room.publication.stage":
+                    response["result"] = {
+                        "publication_proof": f"proof-{request_id}",
+                    }
             else:
                 response = dict(configured)
             response["request_id"] = request_id

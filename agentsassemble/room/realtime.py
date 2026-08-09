@@ -16,7 +16,6 @@ from agentsassemble.providers.launch_specs import (
 )
 from agentsassemble.providers.runtime_contracts import (
     AMBIENT_OBSERVATION,
-    ORDERED_FLOOR,
 )
 from agentsassemble.providers.capabilities import (
     PROVIDER_CAPABILITIES,
@@ -51,7 +50,10 @@ from agentsassemble.room.deleted_cleanup import RoomDeletedCleanupService
 from agentsassemble.room.deletion import RoomDeletionService
 from agentsassemble.room.agent_creation import RoomAgentCreationService
 from agentsassemble.room.bridge_reports import RoomBridgeReportService
-from agentsassemble.room.bridge_diagnostics import bridge_manager_diagnostic_redactor
+from agentsassemble.room.bridge_diagnostics import (
+    bridge_manager_diagnostic_redactor,
+    bridge_manager_stream_redactors,
+)
 from agentsassemble.room.connections import RoomConnectionService
 from agentsassemble.room.agent_lifecycle import (
     AgentBridgeManager,
@@ -80,7 +82,6 @@ from agentsassemble.room_floor_policy import (
     AgentFloorEligibility,
     continuous_floor_targets,
     evaluate_agent_floor_eligibility,
-    ordered_floor_target,
 )
 from agentsassemble.room.moderation import (
     is_room_member_muted,
@@ -91,6 +92,7 @@ from agentsassemble.room.attachments import FileAttachmentStore
 from agentsassemble.room.messages import RoomMessageService
 from agentsassemble.room.member_mute import RoomMemberMuteService
 from agentsassemble.room.member_roles import update_member_role_in_unit
+from agentsassemble.room.ordered_message_routing import RoomOrderedMessageRouter
 from agentsassemble.room.participant_kick import (
     RoomParticipantKickService,
     RoomParticipantRemovalCommandService,
@@ -113,7 +115,7 @@ from agentsassemble.providers.sync_cursor import (
     ProviderSyncCursorParityError,
     ProviderSyncCursorReconciler,
 )
-from agentsassemble.room_routing import direct_message_targets, route_message_targets
+from agentsassemble.room_routing import route_message_targets
 from agentsassemble.room.repository import RoomRepository
 from agentsassemble.room.snapshots import (
     ROOM_HISTORY_MAX_LIMIT,
@@ -129,6 +131,7 @@ from agentsassemble.room.text import clean_room_text as clean_lobby_text
 from agentsassemble.room.types import RoomCommand, RoomEvent
 from agentsassemble.room.votes import vote_summary
 from agentsassemble.room.voice_presence import leave_all_voice
+from agentsassemble.room.write_budget import RoomWriteBudget, RoomWriteBudgetPolicy
 
 AGENT_RUNTIME_PROFILE_KEYS = frozenset(
     {
@@ -183,6 +186,7 @@ class RoomRealtimeController:
         repository: RoomRepository | None = None,
         attention_shadow_mode: str = "off",
         reconcile_startup_sessions: bool = True,
+        write_budget_policy: RoomWriteBudgetPolicy | None = None,
     ) -> None:
         self.output_root = Path(output_root)
         self.store = repository or RoomStore(self.output_root)
@@ -201,6 +205,10 @@ class RoomRealtimeController:
             if clean_lobby_text(spec.agent_id, limit=128)
         }
         self._lock = threading.RLock()
+        self._write_budget = RoomWriteBudget(
+            self.store,
+            policy=write_budget_policy,
+        )
         self._provider_registry = RoomProviderRegistry(
             lock=self._lock,
             default_room_id=self.default_room_id,
@@ -233,6 +241,9 @@ class RoomRealtimeController:
         self._attention_active_last_error = ""
 
         redact_bridge_diagnostic = bridge_manager_diagnostic_redactor(bridge_manager)
+        redact_stream_delta, flush_stream_delta, discard_stream_delta = (
+            bridge_manager_stream_redactors(bridge_manager)
+        )
         self._turn_coordinator = RoomTurnCoordinator(
             self.output_root,
             store=self.store,
@@ -251,6 +262,14 @@ class RoomRealtimeController:
             ),
             attention_owner_id=self._attention_owner_id,
             redact_diagnostic=redact_bridge_diagnostic,
+            redact_stream_delta=redact_stream_delta,
+            flush_stream_delta=flush_stream_delta,
+            discard_stream_delta=discard_stream_delta,
+        )
+        self._ordered_message_router = RoomOrderedMessageRouter(
+            store=self.store,
+            turn_coordinator=self._turn_coordinator,
+            floor_eligibility=self.agent_floor_eligibility,
         )
         self._connections = RoomConnectionService(
             store=self.store,
@@ -662,6 +681,14 @@ class RoomRealtimeController:
                 "The room is closed.",
                 code="room_closed",
             )
+        self._write_budget.admit(
+            room_id=room_id,
+            principal_id=room_identity_command_principal(identity),
+            session_id=clean_lobby_text(identity.get("session_id"), limit=128),
+            request_id=request_id,
+            action=action,
+            payload=payload,
+        )
         if action == "bridge.stopped":
             self._require_bridge(identity)
             result = self._agent_lifecycle.confirm_external_stopped(
@@ -997,6 +1024,21 @@ class RoomRealtimeController:
                         unit=unit,
                     ),
                 )
+        if action == "room.publication.stage":
+            self._require_bridge(identity)
+            with self._lock:
+                return self._execute_durable_command(
+                    identity,
+                    room_id,
+                    request_id,
+                    action,
+                    payload,
+                    lambda unit: self._turn_coordinator.stage_observation_publication_in_unit(
+                        identity,
+                        payload,
+                        unit=unit,
+                    ),
+                )
         if action == "message.final":
             self._require_bridge(identity)
             with self._lock:
@@ -1138,6 +1180,7 @@ class RoomRealtimeController:
         return {**dict(prior.get("result") or {}), "deduplicated": True}
 
     def close(self, *, preserve_provider_runtimes: bool = False) -> CleanupReport:
+        self._write_budget.clear()
         with self._lock:
             if self._closed:
                 return self.last_cleanup_report
@@ -1589,84 +1632,18 @@ class RoomRealtimeController:
         *,
         exclude_previous_speaker: bool,
     ) -> None:
-        room_id = clean_lobby_text(event.get("room_id"), limit=128)
-        actor = event.get("actor") if isinstance(event.get("actor"), dict) else {}
-        actor_id = clean_lobby_text(
-            actor.get("participant_id") or event.get("participant_id"),
-            limit=128,
-        )
-        direct_targets = direct_message_targets(event, providers)
-        eligible_agent_ids: list[str] = []
-        for agent_id in providers:
-            if agent_id == actor_id:
-                continue
-            eligibility = self.agent_floor_eligibility(room_id, agent_id)
-            if eligibility.eligible or eligibility.reason_code == "runtime_busy":
-                eligible_agent_ids.append(agent_id)
-        actor_role = clean_lobby_text(
-            self.store.participant(room_id, actor_id).get("role"),
-            limit=32,
-        )
-        if actor_id in providers and actor_role != "director" and not direct_targets:
-            eligible_directors = [
-                agent_id
-                for agent_id in eligible_agent_ids
-                if clean_lobby_text(
-                    self.store.participant(room_id, agent_id).get("role"),
-                    limit=32,
-                )
-                == "director"
-            ]
-            if eligible_directors:
-                eligible_agent_ids = eligible_directors
-        message_counts, previous_speaker_id = self._recent_agent_speaking_state(
-            room_id,
+        self._ordered_message_router.route(
+            event,
             providers,
-        )
-        target_ids = ordered_floor_target(
-            provider_ids=providers,
-            actor_id=actor_id,
-            direct_targets=direct_targets,
-            eligible_agent_ids=eligible_agent_ids,
-            message_counts=message_counts,
-            previous_speaker_id=previous_speaker_id,
             exclude_previous_speaker=exclude_previous_speaker,
         )
-        for agent_id in target_ids:
-            participant = self.store.participant(room_id, agent_id)
-            if participant.get("status") == "kicked" or participant.get("muted"):
-                continue
-            self._turn_coordinator.queue_event(
-                room_id,
-                agent_id,
-                event,
-                relay_depth=0,
-                input_mode="room_observation",
-                observation_kind=ORDERED_FLOOR,
-            )
 
     def _recent_agent_speaking_state(
         self,
         room_id: str,
         providers: dict[str, NativeCliProviderSpec],
     ) -> tuple[dict[str, int], str]:
-        counts = {agent_id: 0 for agent_id in providers}
-        previous_speaker_id = ""
-        for message in self.store.read_events(
-            room_id,
-            event_types=("message_final",),
-            limit=100,
-            newest=True,
-        ):
-            actor = message.get("actor") if isinstance(message.get("actor"), dict) else {}
-            participant_id = clean_lobby_text(
-                message.get("participant_id") or actor.get("participant_id"),
-                limit=128,
-            )
-            if participant_id in counts:
-                counts[participant_id] += 1
-                previous_speaker_id = participant_id
-        return counts, previous_speaker_id
+        return self._ordered_message_router.recent_speaking_state(room_id, providers)
 
     def _route_ambient_event(
         self,

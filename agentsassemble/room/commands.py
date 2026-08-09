@@ -35,6 +35,7 @@ ROOM_COMMAND_ACTIONS = frozenset(
         "room.observed",
         "room.check",
         "room.result.publish",
+        "room.publication.stage",
         "room.attachment.read",
         "turn.state",
         "turn.decline",

@@ -11,6 +11,7 @@ from urllib.error import HTTPError
 from urllib.parse import urlsplit, urlunsplit
 from urllib.request import Request
 
+from agentsassemble.diagnostics.sensitive_text import redact_exact_sensitive_text
 from agentsassemble.providers.api_context import DEFAULT_API_CONTEXT_CONTRACT_BYTES
 from agentsassemble.providers.openai_compatible import (
     OpenAICompatibleApiRuntime,
@@ -178,6 +179,17 @@ REMOTE_OPENAI_PROFILES = (
 _BY_ID = {profile.provider_id: profile for profile in REMOTE_OPENAI_PROFILES}
 _BY_KIND = {profile.provider_kind: profile for profile in REMOTE_OPENAI_PROFILES}
 REMOTE_OUTPUT_TOKEN_OPTIONS = (1024, 2048, 4096, 8192, 16384)
+MAX_REMOTE_CATALOG_MODELS = 256
+MAX_REMOTE_CATALOG_RESPONSE_BYTES = 1_048_576
+MAX_REMOTE_CATALOG_PROJECTION_BYTES = 524_288
+
+
+class RemoteOpenAICatalogPolicyError(RuntimeError):
+    """A fail-closed public catalog boundary rejected remote data."""
+
+    def __init__(self, message: str, *, code: str) -> None:
+        super().__init__(message)
+        self.code = code
 
 
 def remote_openai_profiles() -> tuple[RemoteOpenAIProfile, ...]:
@@ -251,18 +263,82 @@ def discover_remote_openai_models(
     )
     try:
         with opener(request, timeout=max(1.0, float(timeout_seconds))) as response:
-            payload = json.load(response)
+            raw_payload = response.read(MAX_REMOTE_CATALOG_RESPONSE_BYTES + 1)
     except HTTPError as error:
         raise provider_http_error(error, provider_name=profile.display_name) from error
+    if len(raw_payload) > MAX_REMOTE_CATALOG_RESPONSE_BYTES:
+        raise RemoteOpenAICatalogPolicyError(
+            f"{profile.display_name} model catalog response is too large.",
+            code="catalog_response_too_large",
+        )
+    try:
+        payload = json.loads(raw_payload)
+    except (UnicodeDecodeError, json.JSONDecodeError) as error:
+        raise RemoteOpenAICatalogPolicyError(
+            f"{profile.display_name} returned an invalid model catalog.",
+            code="catalog_response_invalid",
+        ) from error
     entries = payload.get("data") if isinstance(payload, dict) else None
     if not isinstance(entries, list):
         raise ValueError(f"{profile.display_name} returned an invalid model catalog.")
-    return [
+    models = [
         option
         for entry in entries
         if isinstance(entry, dict)
         and (option := _gateway_model_option(entry)) is not None
     ]
+    return enforce_remote_openai_catalog_policy(models)
+
+
+def enforce_remote_openai_catalog_policy(
+    models: object,
+    *,
+    exact_sensitive_values: tuple[str, ...] = (),
+) -> list[dict[str, object]]:
+    """Bound and declassify a remote model list before public projection."""
+
+    if not isinstance(models, list):
+        raise RemoteOpenAICatalogPolicyError(
+            "The remote model catalog has an invalid shape.",
+            code="catalog_response_invalid",
+        )
+    if len(models) > MAX_REMOTE_CATALOG_MODELS:
+        raise RemoteOpenAICatalogPolicyError(
+            "The remote model catalog contains too many models.",
+            code="catalog_response_too_large",
+        )
+    if any(not isinstance(model, dict) for model in models):
+        raise RemoteOpenAICatalogPolicyError(
+            "The remote model catalog has an invalid model entry.",
+            code="catalog_response_invalid",
+        )
+    try:
+        encoded = json.dumps(
+            models,
+            ensure_ascii=False,
+            separators=(",", ":"),
+        ).encode("utf-8")
+    except (TypeError, ValueError) as error:
+        raise RemoteOpenAICatalogPolicyError(
+            "The remote model catalog cannot be projected safely.",
+            code="catalog_response_invalid",
+        ) from error
+    if len(encoded) > MAX_REMOTE_CATALOG_PROJECTION_BYTES:
+        raise RemoteOpenAICatalogPolicyError(
+            "The remote model catalog projection is too large.",
+            code="catalog_response_too_large",
+        )
+    serialized = encoded.decode("utf-8")
+    redacted = redact_exact_sensitive_text(
+        serialized,
+        exact_values=exact_sensitive_values,
+    )
+    if redacted != serialized:
+        raise RemoteOpenAICatalogPolicyError(
+            "The remote model catalog contained private credential material.",
+            code="catalog_sensitive_data",
+        )
+    return list(models)
 
 
 def remote_openai_catalog_payload(
@@ -379,18 +455,21 @@ def remote_openai_catalog_payload(
 def remote_openai_discovery_failure_payload(
     profile: RemoteOpenAIProfile,
     error: BaseException,
+    *,
+    exact_sensitive_values: tuple[str, ...] = (),
 ) -> dict[str, object]:
     """Project a protocol discovery failure without leaking provider details."""
 
     error_code = clean_room_text(getattr(error, "code", ""), limit=64)
-    if error_code:
-        message = str(error)
-    else:
+    if not re.fullmatch(r"[a-z][a-z0-9_]{0,63}", error_code):
         error_code = "model_discovery_failed"
-        message = (
-            f"{profile.display_name} 모델 목록을 불러오지 못했습니다 "
-            f"({type(error).__name__})."
-        )
+    error_code = redact_exact_sensitive_text(
+        error_code,
+        exact_values=exact_sensitive_values,
+    )
+    if error_code == "[redacted]":
+        error_code = "model_discovery_failed"
+    message = f"{profile.display_name} 모델 목록을 안전하게 불러오지 못했습니다."
     return remote_openai_catalog_payload(
         profile,
         discovery_error=message,

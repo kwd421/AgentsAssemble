@@ -36,6 +36,7 @@ from tests.room_realtime_test_support import FakeBridgeManager, memory_room_acce
 from tests.room_runtime_diagnostic_security_contract import (
     RoomRuntimeDiagnosticSecurityContract,
 )
+from tests.room_realtime_security_contract import RoomRealtimeSecurityContract
 from tests.room_tool_mode_realtime_contract import RoomToolModeRealtimeContract
 
 
@@ -221,6 +222,7 @@ class NativeCliProviderSpecTests(unittest.TestCase):
 
 
 class RoomRealtimeControllerTests(
+    RoomRealtimeSecurityContract,
     RoomRuntimeDiagnosticSecurityContract,
     RoomToolModeRealtimeContract,
     unittest.TestCase,
@@ -478,6 +480,24 @@ class RoomRealtimeControllerTests(
         return self.controller.handle_command(
             identity or HOST,
             {"op": "command", "request_id": request_id, "action": action, "payload": command_payload},
+        )
+
+    def _publish_observation_final(self, request_id, payload, identity):
+        publication = dict(payload)
+        staged = self._command(
+            f"{request_id}-stage",
+            "room.publication.stage",
+            publication,
+            identity,
+        )["result"]
+        return self._command(
+            request_id,
+            "message.final",
+            {
+                **publication,
+                "publication_proof": staged["publication_proof"],
+            },
+            identity,
         )
 
     def _settings_update(self, room_id="general", **updates):
@@ -1714,9 +1734,8 @@ class RoomRealtimeControllerTests(
             )
         )
 
-        final = self._command(
+        final = self._publish_observation_final(
             "ordered-first-final",
-            "message.final",
             {
                 "turn_id": first_wake["turn_id"],
                 "content": "첫 번째 검토 의견이야.",
@@ -1794,9 +1813,8 @@ class RoomRealtimeControllerTests(
             for message in channels["codex"].drain()
             if message.get("op") == "room.wake"
         )
-        self._command(
+        self._publish_observation_final(
             "ordered-previous-final",
-            "message.final",
             {
                 "turn_id": codex_wake["turn_id"],
                 "content": "첫 의견이야.",
@@ -1869,9 +1887,8 @@ class RoomRealtimeControllerTests(
             for message in channels["peer"].drain()
             if message.get("op") == "room.wake"
         )
-        peer_final = self._command(
+        peer_final = self._publish_observation_final(
             "ordered-director-player-final",
-            "message.final",
             {
                 "turn_id": peer_wake["turn_id"],
                 "content": "플레이어 행동을 마쳤어.",
@@ -1893,9 +1910,8 @@ class RoomRealtimeControllerTests(
             )
         )
 
-        self._command(
+        self._publish_observation_final(
             "ordered-director-handoff",
-            "message.final",
             {
                 "turn_id": director_wake["turn_id"],
                 "content": "다음은 codex 차례야.",
@@ -1970,9 +1986,8 @@ class RoomRealtimeControllerTests(
             self.controller.store.session("general", "peer")["pending_event_ids"],
         )
 
-        self._command(
+        self._publish_observation_final(
             "ordered-codex-final",
-            "message.final",
             {
                 "turn_id": codex_wake["turn_id"],
                 "content": "첫 검토를 마쳤어.",
@@ -2406,9 +2421,8 @@ class RoomRealtimeControllerTests(
             },
             codex_identity,
         )
-        peer_final = self._command(
+        peer_final = self._publish_observation_final(
             "ambient-peer-final",
-            "message.final",
             {
                 "turn_id": peer_wake["turn_id"],
                 "content": "먼저 출구 표식을 남겨야 해.",
@@ -2686,9 +2700,8 @@ class RoomRealtimeControllerTests(
         peer_wake = next(
             message for message in peer_channel.drain() if message.get("op") == "room.wake"
         )
-        codex_final = self._command(
+        codex_final = self._publish_observation_final(
             "ambient-busy-codex-final",
-            "message.final",
             {
                 "turn_id": codex_wake["turn_id"],
                 "content": "먼저 확인한 내용이야.",
@@ -2766,6 +2779,13 @@ class RoomRealtimeControllerTests(
             "content": "원자적 최종 답변",
             "observed_through_seq": assignment["input_up_to_seq"],
         }
+        staged = self._command(
+            "atomic-provider-final-stage",
+            "room.publication.stage",
+            payload,
+            identity,
+        )["result"]
+        payload["publication_proof"] = staged["publication_proof"]
 
         with patch.object(RoomCommandUnitOfWork, "record_ack", side_effect=RuntimeError("injected")):
             with self.assertRaisesRegex(RuntimeError, "injected"):
@@ -4471,7 +4491,7 @@ class RoomRealtimeControllerTests(
         self.assertEqual(activity["status"], "failed")
         self.assertEqual(
             activity["activity_detail"],
-            "cat [local path]/.env [redacted]",
+            "cat [local path] [redacted]",
         )
         self.assertNotIn("/private/project", str(activity))
         self.assertNotIn("TOKEN", str(activity))

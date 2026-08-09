@@ -44,6 +44,10 @@ from agentsassemble.providers.room_portal import (
 )
 from agentsassemble.providers.provider_errors import provider_failure_code
 from agentsassemble.providers.provider_requests import BridgeProviderRequestRouter
+from agentsassemble.providers.observation_publication import (
+    room_portal_publication_payload,
+    stage_room_portal_publication,
+)
 
 
 class BridgeRoomClient(Protocol):
@@ -529,24 +533,24 @@ class RoomAgentBridge:
                     },
                 )
                 return
+            publication_payload = room_portal_publication_payload(
+                publication,
+                turn_id=turn_id,
+                observed_through_seq=observed_through_seq,
+            )
+            publication_proof = stage_room_portal_publication(
+                self._command,
+                publication_payload,
+            )
             self._command(
                 "message.final",
                 {
-                    "turn_id": turn_id,
-                    "content": public_content,
-                    "target_agent_id": publication.target_agent_id,
+                    **publication_payload,
+                    "publication_proof": publication_proof,
                     "observed_model_id": clean_lobby_text(
                         result.metadata.get("observed_model_id"),
                         limit=128,
                     ),
-                    "message_source": "room_portal",
-                    "kind": publication.message_kind,
-                    "vote_id": publication.vote_id,
-                    "vote_question": publication.vote_question,
-                    "vote_options": list(publication.vote_options),
-                    "vote_duration_seconds": publication.vote_duration_seconds,
-                    "vote_choice": publication.vote_choice,
-                    "observed_through_seq": observed_through_seq,
                     "diagnostics": self._health_payload(self.runtime.health()),
                     "latency": latency,
                 },

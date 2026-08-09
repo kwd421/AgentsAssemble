@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import re
+import threading
 from collections.abc import Iterable
 
 
@@ -67,6 +68,56 @@ _WINDOWS_PATH = re.compile(
 
 MIN_EXACT_SENSITIVE_VALUE_LENGTH = 8
 MAX_EXACT_SENSITIVE_VALUE_LENGTH = 8_192
+
+
+class ExactSensitiveTextStreamRedactor:
+    """Redact exact values even when a transport splits them across frames."""
+
+    def __init__(self, exact_values: Iterable[object]) -> None:
+        self.exact_values = normalized_exact_sensitive_values(exact_values)
+        self._longest_value = max((len(value) for value in self.exact_values), default=0)
+        self._pending: dict[str, str] = {}
+        self._lock = threading.Lock()
+
+    def redact(self, stream_id: object, value: object) -> str:
+        text = str(value or "")
+        key = str(stream_id or "")
+        if not key or not self.exact_values:
+            return redact_exact_sensitive_text(text, exact_values=self.exact_values)
+        with self._lock:
+            combined = self._pending.pop(key, "") + text
+            safe_cut = max(0, len(combined) - self._longest_value + 1)
+            for sensitive_value in self.exact_values:
+                search_at = 0
+                while True:
+                    found_at = combined.find(sensitive_value, search_at)
+                    if found_at < 0:
+                        break
+                    if found_at < safe_cut < found_at + len(sensitive_value):
+                        safe_cut = found_at
+                    search_at = found_at + 1
+            safe_text = redact_exact_sensitive_text(
+                combined[:safe_cut],
+                exact_values=self.exact_values,
+            )
+            self._pending[key] = combined[safe_cut:]
+        return safe_text
+
+    def flush(self, stream_id: object) -> str:
+        key = str(stream_id or "")
+        if not key:
+            return ""
+        with self._lock:
+            pending = self._pending.pop(key, "")
+        return redact_exact_sensitive_text(pending, exact_values=self.exact_values)
+
+    def discard(self, stream_id: object) -> None:
+        with self._lock:
+            self._pending.pop(str(stream_id or ""), None)
+
+    def clear(self) -> None:
+        with self._lock:
+            self._pending.clear()
 
 
 def _diagnostic_key_is_sensitive(key: object) -> bool:
@@ -319,6 +370,7 @@ def redact_persisted_diagnostic_value(value: object) -> object:
 
 
 __all__ = [
+    "ExactSensitiveTextStreamRedactor",
     "MAX_EXACT_SENSITIVE_VALUE_LENGTH",
     "MIN_EXACT_SENSITIVE_VALUE_LENGTH",
     "looks_sensitive_diagnostic_text",

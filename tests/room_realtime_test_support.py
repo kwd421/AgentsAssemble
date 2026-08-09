@@ -22,6 +22,7 @@ class FakeBridgeManager:
         self.stop_errors = []
         self.close_called = False
         self.sensitive_values: dict[tuple[str, str], tuple[str, ...]] = {}
+        self._stream_redactors = {}
 
     def start(self, room_id, session, spec, *, server_url="", ticket_issuer=None):
         del server_url, ticket_issuer
@@ -53,6 +54,30 @@ class FakeBridgeManager:
             limit=limit,
             exact_values=self.sensitive_values.get((room_id, session_id), ()),
         )
+
+    def release_preserved_security_values(self, room_id, session_id):
+        self.sensitive_values.pop((room_id, session_id), None)
+        self._stream_redactors.pop((room_id, session_id), None)
+
+    def _stream_redactor(self, room_id, session_id):
+        from agentsassemble.diagnostics.sensitive_text import ExactSensitiveTextStreamRedactor
+
+        key = (room_id, session_id)
+        values = self.sensitive_values.get(key, ())
+        current = self._stream_redactors.get(key)
+        if current is None or current[0] != values:
+            current = (values, ExactSensitiveTextStreamRedactor(values))
+            self._stream_redactors[key] = current
+        return current[1]
+
+    def redact_stream_delta(self, room_id, session_id, turn_id, value):
+        return self._stream_redactor(room_id, session_id).redact(turn_id, value)
+
+    def flush_stream_delta(self, room_id, session_id, turn_id):
+        return self._stream_redactor(room_id, session_id).flush(turn_id)
+
+    def discard_stream_delta(self, room_id, session_id, turn_id):
+        self._stream_redactor(room_id, session_id).discard(turn_id)
 
     def close(self):
         self.close_called = True

@@ -34,17 +34,13 @@ from agentsassemble.room.tool_authorization import require_room_random_tools
 from agentsassemble.room_attention import AttentionLeaseConflict
 from agentsassemble.room.command_uow import RoomCommandUnitOfWork
 from agentsassemble.room.event_broker import RoomEventBroker
+from agentsassemble.room.observation_publication import RoomObservationPublication
+from agentsassemble.room.provider_stream_ingress import RoomProviderStreamIngress
 from agentsassemble.room.projection import (
-    PUBLIC_ACTIVITY_LABELS,
-    PUBLIC_ACTIVITY_STATUSES,
     merged_latency,
-    public_activity,
     public_runtime_diagnostics,
     public_session,
     runtime_diagnostic_fields,
-    safe_activity_display_detail,
-    safe_activity_detail,
-    safe_activity_id,
 )
 from agentsassemble.providers.sync_cursor import (
     ProviderSyncCursorParityError,
@@ -116,6 +112,9 @@ class RoomTurnCoordinator:
         packet_builder: TurnPacketBuilder,
         attention_owner_id: str = "",
         redact_diagnostic: bridge_diagnostics.DiagnosticRedactor | None = None,
+        redact_stream_delta: bridge_diagnostics.StreamDeltaRedactor | None = None,
+        flush_stream_delta: bridge_diagnostics.StreamDeltaFlusher | None = None,
+        discard_stream_delta: bridge_diagnostics.StreamDeltaDiscarder | None = None,
     ) -> None:
         self.output_root = Path(output_root)
         self.store = store
@@ -129,12 +128,24 @@ class RoomTurnCoordinator:
         self._recovery_scheduler = recovery_scheduler
         self._packet_builder = packet_builder
         self._redact_diagnostic = redact_diagnostic or bridge_diagnostics.default_diagnostic_redactor
+        self._stream_ingress = RoomProviderStreamIngress(
+            store,
+            redact_diagnostic=redact_diagnostic,
+            redact_delta=redact_stream_delta,
+            flush_delta=flush_stream_delta,
+            discard_delta=discard_stream_delta,
+        )
         self._turn_attention = RoomTurnAttention(
             store,
             provider_lookup=provider_lookup,
             owner_id=attention_owner_id,
         )
         self._recovery_handles: dict[tuple[str, str], object] = {}
+        self._observation_publication = RoomObservationPublication(
+            active_turn_in_writer=self.active_bridge_turn_in_writer,
+            require_active_phase=require_active_turn_phase,
+            require_observation_receipt=self._require_observation_receipt,
+        )
 
     def close(self) -> CleanupReport:
         with self._lock:
@@ -691,6 +702,9 @@ class RoomTurnCoordinator:
             provider_visible_chars=int(packet.get("provider_visible_chars") or 0),
             provider_visible_event_count=int(packet.get("provider_visible_event_count") or 0),
             provider_input_mode=clean_lobby_text(packet.get("input_mode"), limit=32),
+            room_publication_proof="",
+            room_publication_digest="",
+            room_publication_turn_id="",
             context_error_detected=False,
         )
         self._publish_session_state(room_id, updated)
@@ -924,6 +938,9 @@ class RoomTurnCoordinator:
             provider_visible_event_count=0,
             provider_input_mode="room_observation",
             provider_observation_kind=assigned_observation_kind,
+            room_publication_proof="",
+            room_publication_digest="",
+            room_publication_turn_id="",
             context_error_detected=False,
         )
         self._publish_session_state(room_id, updated)
@@ -1187,29 +1204,13 @@ class RoomTurnCoordinator:
     ) -> dict[str, object]:
         agent_id, session = self.active_bridge_turn(identity, room_id, payload)
         current_phase = require_active_turn_phase(session)
-        content = message_delta_text(payload.get("content"), limit=12000)
-        if not has_room_visible_text(content):
-            raise RoomCommandRejected("Delta content is required.", code="empty")
-        if current_phase != "streaming":
-            self.store.update_session_fields(room_id, str(session["session_id"]), turn_phase="streaming")
-            self.store.append_event(
-                room_id,
-                "turn_state",
-                participant_id=agent_id,
-                session_id=session["session_id"],
-                turn_id=session["active_turn_id"],
-                phase="streaming",
-            )
-        event = self.store.append_event(
+        return self._stream_ingress.publish_delta(
             room_id,
-            "message_delta",
-            participant_id=agent_id,
-            participant_type="agent",
-            session_id=session["session_id"],
-            turn_id=session["active_turn_id"],
-            content=content,
+            payload,
+            agent_id=agent_id,
+            session=session,
+            current_phase=current_phase,
         )
-        return {"event": event, "event_seq": event["seq"]}
 
     def activity_update(
         self,
@@ -1219,56 +1220,12 @@ class RoomTurnCoordinator:
     ) -> dict[str, object]:
         agent_id, session = self.active_bridge_turn(identity, room_id, payload)
         require_active_turn_phase(session)
-        category = clean_lobby_text(payload.get("category"), limit=32)
-        status = clean_lobby_text(payload.get("status"), limit=32)
-        if category not in PUBLIC_ACTIVITY_LABELS or status not in PUBLIC_ACTIVITY_STATUSES:
-            raise RoomCommandRejected(
-                "Agent activity category or status is invalid.",
-                code="adapter_activity_invalid",
-            )
-        raw_detail, raw_title = bridge_diagnostics.redacted_activity_text(
-            self._redact_diagnostic,
+        return self._stream_ingress.publish_activity(
             room_id,
-            session["session_id"],
             payload,
+            agent_id=agent_id,
+            session=session,
         )
-        content, activity_kind = public_activity(
-            category,
-            status,
-            detail=raw_detail,
-        )
-        activity_id = safe_activity_id(payload.get("activity_id"))
-        activity_title = safe_activity_detail(raw_title, limit=160)
-        activity_detail = safe_activity_display_detail(
-            raw_detail,
-            limit=2000 if category == "reasoning" else 600,
-        )
-        activity_fields: dict[str, object] = {}
-        if activity_id:
-            activity_fields["activity_id"] = activity_id
-        if activity_title:
-            activity_fields["activity_title"] = activity_title
-        if activity_detail:
-            activity_fields["activity_detail"] = activity_detail
-        event = self.store.append_event(
-            room_id,
-            "activity_delta",
-            participant_id=agent_id,
-            participant_type="agent",
-            actor_id=agent_id,
-            actor_type="agent",
-            display_name=session.get("display_name") or agent_id,
-            session_id=session["session_id"],
-            turn_id=session["active_turn_id"],
-            owner_id=session.get("owner_id") or session.get("created_by") or "",
-            visibility="public" if session.get("share_activity") else "owner",
-            activity_kind=activity_kind,
-            category=category,
-            status=status,
-            content=content,
-            **activity_fields,
-        )
-        return {"event": event, "event_seq": event["seq"]}
 
     def room_result_in_unit(
         self,
@@ -1345,6 +1302,19 @@ class RoomTurnCoordinator:
         self.after_message_final(room_id, result, deduplicated=False)
         return result
 
+    def stage_observation_publication_in_unit(
+        self,
+        identity: dict[str, object],
+        payload: dict[str, object],
+        *,
+        unit: RoomCommandUnitOfWork,
+    ) -> dict[str, object]:
+        return self._observation_publication.stage_in_unit(
+            identity,
+            payload,
+            unit=unit,
+        )
+
     def prepare_message_final(
         self,
         identity: dict[str, object],
@@ -1366,6 +1336,11 @@ class RoomTurnCoordinator:
                 raise RoomCommandRejected(str(error), code=error.code) from error
             structured = None
         active_turn_id = str(session["active_turn_id"])
+        self._observation_publication.require_matching_final(
+            payload,
+            session=session,
+            structured=structured,
+        )
         latency = merged_latency(session.get("latency"), payload.get("latency"))
         diagnostics = payload.get("diagnostics") if isinstance(payload.get("diagnostics"), dict) else {}
         observed_model_id = clean_lobby_text(payload.get("observed_model_id"), limit=128)
@@ -1468,6 +1443,7 @@ class RoomTurnCoordinator:
         )
         require_active_turn_phase(session)
         active_turn_id = str(session["active_turn_id"])
+        self._stream_ingress.flush_into(writer, agent_id=agent_id, session=session)
         input_up_to_event_id = clean_lobby_text(session.get("input_up_to_event_id"), limit=128)
         input_up_to_seq = safe_bounded_int(session.get("input_up_to_seq"), default=0, minimum=0)
         try:
@@ -1497,7 +1473,12 @@ class RoomTurnCoordinator:
             ),
             source_event_id=session.get("active_source_event_id"),
             relay_depth=int(session.get("active_relay_depth") or 0),
-            message_source=payload.get("message_source"),
+            message_source=(
+                "room_portal"
+                if clean_lobby_text(session.get("provider_input_mode"), limit=32)
+                == "room_observation"
+                else payload.get("message_source")
+            ),
         )
         writer.advance_attention_state(agent_id, spoke_seq=int(event["seq"]))
         verification_updates: dict[str, object] = {}
@@ -1557,6 +1538,7 @@ class RoomTurnCoordinator:
             raise RoomCommandRejected("A supported decline reason is required.", code="invalid_decline_reason")
         latency = merged_latency(session.get("latency"), payload.get("latency"))
         diagnostics = payload.get("diagnostics") if isinstance(payload.get("diagnostics"), dict) else {}
+        self._stream_ingress.discard(room_id, session)
         finished, current = self._complete_active_turn(
             room_id,
             session,
@@ -1624,6 +1606,7 @@ class RoomTurnCoordinator:
     ) -> dict[str, object]:
         agent_id, session = self.active_bridge_turn(identity, room_id, payload)
         require_active_turn_phase(session)
+        self._stream_ingress.discard(room_id, session)
         interrupted = clean_lobby_text(payload.get("status"), limit=32) == "interrupted"
         error_code = public_provider_failure_code(
             payload.get("error_code"),
@@ -1737,6 +1720,9 @@ class RoomTurnCoordinator:
                 recovery_attempt_count=recovery_attempt_count + (1 if automatic_recovery else 0),
                 last_error=content,
                 last_error_code=error_code,
+                room_publication_proof="",
+                room_publication_digest="",
+                room_publication_turn_id="",
                 **runtime_diagnostic_fields(
                     diagnostics,
                     redact_text=redact_text,
@@ -1835,6 +1821,9 @@ class RoomTurnCoordinator:
             "latency": latency,
             "last_error": "",
             "last_error_code": "",
+            "room_publication_proof": "",
+            "room_publication_digest": "",
+            "room_publication_turn_id": "",
             **runtime_diagnostic_fields(
                 diagnostics,
                 redact_text=redact_text,

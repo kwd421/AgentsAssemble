@@ -32,12 +32,13 @@ from agentsassemble.providers.process_environment import sanitized_provider_envi
 from agentsassemble.providers.remote_openai import (
     RemoteOpenAIProfile,
     discover_remote_openai_models,
+    enforce_remote_openai_catalog_policy,
     normalize_custom_openai_endpoint,
     remote_openai_catalog_payload,
     remote_openai_discovery_failure_payload,
     remote_openai_profiles,
 )
-from agentsassemble.providers.secrets import PROVIDER_SECRETS
+from agentsassemble.providers.secrets import PROVIDER_SECRETS, validate_provider_secret
 from agentsassemble.providers.selection import (
     ProviderCatalogSelectionError,
     ValidatedProviderSelection,
@@ -809,13 +810,25 @@ class ProviderCapabilityCatalog:
     ) -> dict[str, object]:
         if not profile.discovery_path:
             return remote_openai_catalog_payload(profile)
+        credential = ""
         try:
+            resolved_credential = self._secret_resolver(profile.provider_id)
+            if resolved_credential:
+                credential = validate_provider_secret(resolved_credential)
             models = self._remote_model_discovery(
                 profile,
-                self._secret_resolver(profile.provider_id),
+                credential,
+            )
+            models = enforce_remote_openai_catalog_policy(
+                models,
+                exact_sensitive_values=(credential,) if credential else (),
             )
         except Exception as error:
-            return remote_openai_discovery_failure_payload(profile, error)
+            return remote_openai_discovery_failure_payload(
+                profile,
+                error,
+                exact_sensitive_values=(credential,) if credential else (),
+            )
         if not models:
             return remote_openai_catalog_payload(
                 profile,

@@ -3,12 +3,11 @@
 from __future__ import annotations
 
 from collections.abc import Iterable
-import threading
 
 from agentsassemble.diagnostics.sensitive_text import (
+    ExactSensitiveTextStreamRedactor,
     normalized_exact_sensitive_values,
     redact_exact_sensitive_mapping,
-    redact_exact_sensitive_text,
 )
 
 
@@ -25,12 +24,7 @@ class CredentialRedactingRoomClient:
     def __init__(self, client: object, *, sensitive_values: Iterable[object]) -> None:
         self._client = client
         self._sensitive_values = normalized_exact_sensitive_values(sensitive_values)
-        self._longest_sensitive_value = max(
-            (len(value) for value in self._sensitive_values),
-            default=0,
-        )
-        self._pending_delta_by_turn: dict[str, str] = {}
-        self._delta_lock = threading.Lock()
+        self._delta_redactor = ExactSensitiveTextStreamRedactor(self._sensitive_values)
 
     @property
     def closed(self) -> bool:
@@ -84,23 +78,7 @@ class CredentialRedactingRoomClient:
                 request_id=request_id,
             )
 
-        with self._delta_lock:
-            combined = self._pending_delta_by_turn.pop(turn_id, "") + content
-            safe_cut = max(0, len(combined) - self._longest_sensitive_value + 1)
-            for sensitive_value in self._sensitive_values:
-                search_at = 0
-                while True:
-                    found_at = combined.find(sensitive_value, search_at)
-                    if found_at < 0:
-                        break
-                    if found_at < safe_cut < found_at + len(sensitive_value):
-                        safe_cut = found_at
-                    search_at = found_at + 1
-            safe_content = redact_exact_sensitive_text(
-                combined[:safe_cut],
-                exact_values=self._sensitive_values,
-            )
-            self._pending_delta_by_turn[turn_id] = combined[safe_cut:]
+        safe_content = self._delta_redactor.redact(turn_id, content)
 
         if not safe_content:
             return request_id
@@ -118,12 +96,10 @@ class CredentialRedactingRoomClient:
         turn_id = str(payload.get("turn_id") or "")
         if not turn_id:
             return
-        with self._delta_lock:
-            self._pending_delta_by_turn.pop(turn_id, None)
+        self._delta_redactor.discard(turn_id)
 
     def close(self) -> None:
-        with self._delta_lock:
-            self._pending_delta_by_turn.clear()
+        self._delta_redactor.clear()
         self._client.close()
 
 

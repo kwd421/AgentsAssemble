@@ -50,6 +50,66 @@ class _SlowResponse:
 
 
 class RemoteOpenAIProviderTests(unittest.TestCase):
+    def test_public_catalog_never_reflects_the_provider_credential_from_failure_text(self):
+        secret = "catalog-secret-credential-918273645"
+
+        class ReflectedProviderError(RuntimeError):
+            code = "provider_http_error"
+
+        catalog = ProviderCapabilityCatalog(
+            runner=lambda _command, _timeout: (1, "", "not installed"),
+            resolver=lambda _executable: None,
+            claude_model_discovery=lambda _executable: [],
+            claude_xhigh_model_discovery=lambda _executable: [],
+            secret_resolver=lambda provider_id: secret if provider_id == "openrouter" else "",
+            remote_model_discovery=lambda profile, _api_key: (
+                (_ for _ in ()).throw(
+                    ReflectedProviderError(f"Authorization: Bearer {secret}")
+                )
+                if profile.provider_id == "openrouter"
+                else []
+            ),
+        )
+
+        snapshot = catalog.snapshot(refresh=True)
+        openrouter = next(
+            provider for provider in snapshot["providers"] if provider["id"] == "openrouter"
+        )
+
+        self.assertNotIn(secret, json.dumps(openrouter, ensure_ascii=False))
+        self.assertEqual(openrouter["discovery_error_code"], "provider_http_error")
+
+    def test_public_catalog_rejects_credential_bearing_or_oversized_remote_models(self):
+        secret = "catalog-model-secret-918273645"
+        models = [
+            {
+                "label": f"Model {index}",
+                "value": f"vendor/model-{index}",
+                "metadata": {"description": "safe"},
+            }
+            for index in range(300)
+        ]
+        models[3]["metadata"] = {"description": f"reflected {secret}"}
+        catalog = ProviderCapabilityCatalog(
+            runner=lambda _command, _timeout: (1, "", "not installed"),
+            resolver=lambda _executable: None,
+            claude_model_discovery=lambda _executable: [],
+            claude_xhigh_model_discovery=lambda _executable: [],
+            secret_resolver=lambda provider_id: secret if provider_id == "openrouter" else "",
+            remote_model_discovery=lambda profile, _api_key: (
+                models if profile.provider_id == "openrouter" else []
+            ),
+        )
+
+        snapshot = catalog.snapshot(refresh=True)
+        openrouter = next(
+            provider for provider in snapshot["providers"] if provider["id"] == "openrouter"
+        )
+
+        self.assertFalse(openrouter["startable"])
+        self.assertEqual(openrouter["discovery_error_code"], "catalog_response_too_large")
+        self.assertNotIn(secret, json.dumps(openrouter, ensure_ascii=False))
+
     def test_provider_context_rejection_keeps_its_public_failure_code(self):
         profile = remote_openai_profile("tokenrouter")
         self.assertIsNotNone(profile)
