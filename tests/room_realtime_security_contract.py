@@ -253,7 +253,7 @@ class RoomRealtimeSecurityContract:
 
         self.assertEqual(rejected.exception.code, "unknown_action")
 
-    def test_server_redacts_a_credential_split_across_bridge_delta_frames(self):
+    def test_server_redacts_a_credential_from_all_bridge_publication_boundaries(self):
         self._use_continuous_routing()
         self._command("split-secret-start", "agent.start", {"agent_id": "codex"})
         identity, channel = self._connect_bridge("codex")
@@ -278,19 +278,49 @@ class RoomRealtimeSecurityContract:
         self._command(
             "split-secret-final",
             "message.final",
-            {"turn_id": assignment["turn_id"], "content": "완료"},
+            {
+                "turn_id": assignment["turn_id"],
+                "content": f"완료 {secret}",
+            },
             identity,
         )
+        request = self._command(
+            "split-secret-provider-request",
+            "provider.request.open",
+            {
+                "provider_request_id": "request-with-secret",
+                "request_kind": "permission",
+                "response_kind": "option",
+                "title": f"Allow {secret}?",
+                "options": [
+                    {"id": "allow", "label": f"Allow {secret}"},
+                    {"id": "deny", "label": "Deny"},
+                ],
+            },
+            identity,
+        )
+        events = self.controller.store.read_events("general")
         deltas = [
             event["content"]
-            for event in self.controller.store.read_events("general")
+            for event in events
             if event.get("type") == "message_delta"
             and event.get("turn_id") == assignment["turn_id"]
         ]
+        final = next(
+            event
+            for event in events
+            if event.get("type") == "message_final"
+            and event.get("turn_id") == assignment["turn_id"]
+        )
+        provider_request = request["result"]["event"]["provider_request"]
         reconstructed = "".join(deltas)
 
         self.assertNotIn(secret, reconstructed)
         self.assertIn("[redacted]", reconstructed)
+        self.assertNotIn(secret, final["content"])
+        self.assertIn("[redacted]", final["content"])
+        self.assertNotIn(secret, str(provider_request))
+        self.assertIn("[redacted]", str(provider_request))
 
 
 __all__ = ["RoomRealtimeSecurityContract"]

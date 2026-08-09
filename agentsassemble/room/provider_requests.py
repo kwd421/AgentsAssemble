@@ -4,6 +4,7 @@ from collections.abc import Callable
 import threading
 
 from agentsassemble.room.command_uow import RoomCommandUnitOfWork
+from agentsassemble.room import bridge_diagnostics
 from agentsassemble.room.errors import RoomCommandRejected
 from agentsassemble.room.event_broker import RoomEventBroker
 from agentsassemble.room.identity import room_identity_principals
@@ -34,11 +35,15 @@ class RoomProviderRequestService:
         broker: RoomEventBroker,
         bridge_session: BridgeSession,
         lock: threading.RLock,
+        redact_public_payload: bridge_diagnostics.PublicPayloadRedactor | None = None,
     ) -> None:
         self.store = store
         self.broker = broker
         self._bridge_session = bridge_session
         self._lock = lock
+        self._redact_public_payload = (
+            redact_public_payload or bridge_diagnostics.default_public_payload_redactor
+        )
 
     def handle_command(
         self,
@@ -92,7 +97,9 @@ class RoomProviderRequestService:
                 "This Agent Session already has a pending provider request.",
                 code="provider_request_conflict",
             )
-        request = self._normalized_request(payload)
+        request = self._normalized_request(
+            self._redact_public_payload(room_id, session_id, payload)
+        )
         participant = unit.participant(agent_id)
         owner_id = clean_room_text(
             participant.get("owner_id") or participant.get("created_by"),

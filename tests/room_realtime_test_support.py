@@ -9,6 +9,7 @@ from agentsassemble.persistence.local.admission.repository import (
 )
 from agentsassemble.application.public_invite_runtime import PublicInviteRuntime
 from agentsassemble.diagnostics.sensitive_text import redact_persisted_diagnostic_text
+from agentsassemble.diagnostics.sensitive_text import redact_exact_sensitive_mapping
 from agentsassemble.providers.launch_specs import NativeCliProviderSpec
 
 
@@ -64,6 +65,12 @@ class FakeBridgeManager:
         return redact_persisted_diagnostic_text(
             value,
             limit=limit,
+            exact_values=self.sensitive_values.get((room_id, session_id), ()),
+        )
+
+    def redact_public_payload(self, room_id, session_id, value):
+        return redact_exact_sensitive_mapping(
+            value,
             exact_values=self.sensitive_values.get((room_id, session_id), ()),
         )
 

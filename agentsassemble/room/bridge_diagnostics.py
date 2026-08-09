@@ -8,6 +8,7 @@ from agentsassemble.diagnostics.sensitive_text import redact_persisted_diagnosti
 
 
 DiagnosticRedactor = Callable[..., str]
+PublicPayloadRedactor = Callable[[str, str, dict[str, object]], dict[str, object]]
 StreamDeltaRedactor = Callable[[str, str, str, object], str]
 StreamDeltaFlusher = Callable[[str, str, str], str]
 StreamDeltaDiscarder = Callable[[str, str, str], None]
@@ -28,6 +29,23 @@ def bridge_manager_diagnostic_redactor(bridge_manager: object) -> DiagnosticReda
 
     manager_redactor = getattr(bridge_manager, "redact_diagnostic", None)
     return manager_redactor if callable(manager_redactor) else default_diagnostic_redactor
+
+
+def default_public_payload_redactor(
+    _room_id: str,
+    _session_id: str,
+    value: dict[str, object],
+) -> dict[str, object]:
+    return dict(value)
+
+
+def bridge_manager_public_payload_redactor(
+    bridge_manager: object,
+) -> PublicPayloadRedactor:
+    """Use server-owned exact credentials before any bridge payload is durable."""
+
+    manager_redactor = getattr(bridge_manager, "redact_public_payload", None)
+    return manager_redactor if callable(manager_redactor) else default_public_payload_redactor
 
 
 def default_stream_delta_redactor(
@@ -96,12 +114,15 @@ def redacted_activity_text(
 
 __all__ = [
     "DiagnosticRedactor",
+    "PublicPayloadRedactor",
     "StreamDeltaDiscarder",
     "StreamDeltaFlusher",
     "StreamDeltaRedactor",
     "bridge_manager_diagnostic_redactor",
+    "bridge_manager_public_payload_redactor",
     "bridge_manager_stream_redactors",
     "default_diagnostic_redactor",
+    "default_public_payload_redactor",
     "redacted_activity_text",
     "session_diagnostic_redactor",
 ]

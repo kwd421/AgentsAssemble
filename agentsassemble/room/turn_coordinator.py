@@ -116,6 +116,7 @@ class RoomTurnCoordinator:
         packet_builder: TurnPacketBuilder,
         attention_owner_id: str = "",
         redact_diagnostic: bridge_diagnostics.DiagnosticRedactor | None = None,
+        redact_public_payload: bridge_diagnostics.PublicPayloadRedactor | None = None,
         redact_stream_delta: bridge_diagnostics.StreamDeltaRedactor | None = None,
         flush_stream_delta: bridge_diagnostics.StreamDeltaFlusher | None = None,
         discard_stream_delta: bridge_diagnostics.StreamDeltaDiscarder | None = None,
@@ -133,6 +134,9 @@ class RoomTurnCoordinator:
         self._recovery_scheduler = recovery_scheduler
         self._packet_builder = packet_builder
         self._redact_diagnostic = redact_diagnostic or bridge_diagnostics.default_diagnostic_redactor
+        self._redact_public_payload = (
+            redact_public_payload or bridge_diagnostics.default_public_payload_redactor
+        )
         self._stream_ingress = RoomProviderStreamIngress(
             store,
             redact_diagnostic=redact_diagnostic,
@@ -1317,6 +1321,11 @@ class RoomTurnCoordinator:
             payload,
             room_id=room_id,
             session=session,
+        )
+        canonical_payload = self._redact_public_payload(
+            room_id,
+            str(session["session_id"]),
+            canonical_payload,
         )
         try:
             structured = prepare_structured_message(canonical_payload)

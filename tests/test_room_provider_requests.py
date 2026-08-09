@@ -403,6 +403,14 @@ class RoomProviderRequestTests(unittest.TestCase):
         self.assertEqual(resolved[-1]["provider_request"]["status"], "resolved")
 
     def test_resolution_delivered_to_replacement_bridge_fails_durable_request(self) -> None:
+        self.controller.store.update_session_fields(
+            "general",
+            "grok",
+            process_ownership="external",
+            external_owned=True,
+            provider_kind="external_agent",
+            transport="websocket",
+        )
         old_channel = self.controller.connect(dict(self.bridge))
         self.controller.handle_command(
             old_channel.identity,

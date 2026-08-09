@@ -53,6 +53,7 @@ from agentsassemble.room.agent_creation import RoomAgentCreationService
 from agentsassemble.room.bridge_reports import RoomBridgeReportService
 from agentsassemble.room.bridge_diagnostics import (
     bridge_manager_diagnostic_redactor,
+    bridge_manager_public_payload_redactor,
     bridge_manager_stream_redactors,
 )
 from agentsassemble.room.connections import RoomConnectionService
@@ -243,6 +244,7 @@ class RoomRealtimeController:
         self._attention_active_last_error = ""
 
         redact_bridge_diagnostic = bridge_manager_diagnostic_redactor(bridge_manager)
+        redact_bridge_public_payload = bridge_manager_public_payload_redactor(bridge_manager)
         redact_stream_delta, flush_stream_delta, discard_stream_delta = (
             bridge_manager_stream_redactors(bridge_manager)
         )
@@ -264,6 +266,7 @@ class RoomRealtimeController:
             ),
             attention_owner_id=self._attention_owner_id,
             redact_diagnostic=redact_bridge_diagnostic,
+            redact_public_payload=redact_bridge_public_payload,
             redact_stream_delta=redact_stream_delta,
             flush_stream_delta=flush_stream_delta,
             discard_stream_delta=discard_stream_delta,
@@ -565,6 +568,7 @@ class RoomRealtimeController:
             broker=self.broker,
             bridge_session=self._turn_coordinator.bridge_session,
             lock=self._lock,
+            redact_public_payload=redact_bridge_public_payload,
         )
         self.last_cleanup_report = CleanupReport("room_realtime_controller")
         self.ensure_room(self.default_room_id)

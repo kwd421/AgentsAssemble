@@ -946,12 +946,8 @@ class ProviderRuntimeControlTests(unittest.TestCase):
             return 1, "", "unsupported"
 
         catalog = ProviderCapabilityCatalog(
-            runner=runner,
-            resolver=lambda executable: f"/bin/{executable}",
-            claude_model_discovery=lambda _executable: ["claude-sonnet-5"],
-            claude_xhigh_model_discovery=lambda _executable: [],
-            remote_model_discovery=lambda _profile, _api_key: [],
-            grok_custom_model_discovery=lambda: set(),
+            runner=runner, resolver=lambda executable: f"/bin/{executable}",
+            remote_model_discovery=lambda _profile, _api_key: [], grok_custom_model_discovery=lambda: set(),
         )
         remove = catalog.subscribe(lambda snapshot: (snapshots.append(snapshot), notified.set()))
         try:

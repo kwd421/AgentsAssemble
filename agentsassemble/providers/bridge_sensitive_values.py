@@ -8,6 +8,7 @@ from collections.abc import Iterable
 from agentsassemble.diagnostics.sensitive_text import (
     ExactSensitiveTextStreamRedactor,
     normalized_exact_sensitive_values,
+    redact_exact_sensitive_mapping,
     redact_persisted_diagnostic_text,
 )
 
@@ -78,6 +79,17 @@ class BridgeSensitiveValueRegistry:
         return redact_persisted_diagnostic_text(
             value,
             limit=limit,
+            exact_values=self._exact_values(room_id, session_id),
+        )
+
+    def redact_public_payload(
+        self,
+        room_id: str,
+        session_id: str,
+        value: dict[str, object],
+    ) -> dict[str, object]:
+        return redact_exact_sensitive_mapping(
+            value,
             exact_values=self._exact_values(room_id, session_id),
         )
 
