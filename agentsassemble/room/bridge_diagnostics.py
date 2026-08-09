@@ -10,7 +10,6 @@ from agentsassemble.diagnostics.sensitive_text import redact_persisted_diagnosti
 DiagnosticRedactor = Callable[..., str]
 PublicPayloadRedactor = Callable[[str, str, dict[str, object]], dict[str, object]]
 StreamDeltaRedactor = Callable[[str, str, str, object], str]
-StreamDeltaFlusher = Callable[[str, str, str], str]
 StreamDeltaDiscarder = Callable[[str, str, str], None]
 
 
@@ -57,14 +56,6 @@ def default_stream_delta_redactor(
     return str(value or "")
 
 
-def default_stream_delta_flusher(
-    _room_id: str,
-    _session_id: str,
-    _turn_id: str,
-) -> str:
-    return ""
-
-
 def default_stream_delta_discarder(
     _room_id: str,
     _session_id: str,
@@ -75,15 +66,13 @@ def default_stream_delta_discarder(
 
 def bridge_manager_stream_redactors(
     bridge_manager: object,
-) -> tuple[StreamDeltaRedactor, StreamDeltaFlusher, StreamDeltaDiscarder]:
+) -> tuple[StreamDeltaRedactor, StreamDeltaDiscarder]:
     """Use stateful ingress redaction when the process manager owns credentials."""
 
     redact = getattr(bridge_manager, "redact_stream_delta", None)
-    flush = getattr(bridge_manager, "flush_stream_delta", None)
     discard = getattr(bridge_manager, "discard_stream_delta", None)
     return (
         redact if callable(redact) else default_stream_delta_redactor,
-        flush if callable(flush) else default_stream_delta_flusher,
         discard if callable(discard) else default_stream_delta_discarder,
     )
 
@@ -116,7 +105,6 @@ __all__ = [
     "DiagnosticRedactor",
     "PublicPayloadRedactor",
     "StreamDeltaDiscarder",
-    "StreamDeltaFlusher",
     "StreamDeltaRedactor",
     "bridge_manager_diagnostic_redactor",
     "bridge_manager_public_payload_redactor",

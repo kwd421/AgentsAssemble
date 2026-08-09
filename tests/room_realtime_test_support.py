@@ -88,9 +88,6 @@ class FakeBridgeManager:
     def redact_stream_delta(self, room_id, session_id, turn_id, value):
         return self._stream_redactor(room_id, session_id).redact(turn_id, value)
 
-    def flush_stream_delta(self, room_id, session_id, turn_id):
-        return self._stream_redactor(room_id, session_id).flush(turn_id)
-
     def discard_stream_delta(self, room_id, session_id, turn_id):
         self._stream_redactor(room_id, session_id).discard(turn_id)
 

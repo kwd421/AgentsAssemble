@@ -651,9 +651,6 @@ class NativeCliBridgeProcessManager:
     def redact_public_payload(self, room_id, session_id, value):
         return self._sensitive_values.redact_public_payload(room_id, session_id, value)
 
-    def flush_stream_delta(self, room_id: str, session_id: str, turn_id: str) -> str:
-        return self._sensitive_values.flush_stream_delta(room_id, session_id, turn_id)
-
     def discard_stream_delta(self, room_id: str, session_id: str, turn_id: str) -> None:
         self._sensitive_values.discard_stream_delta(room_id, session_id, turn_id)
 

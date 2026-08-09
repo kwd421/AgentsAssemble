@@ -103,10 +103,6 @@ class BridgeSensitiveValueRegistry:
         redactor = self._stream_redactor(room_id, session_id)
         return redactor.redact(turn_id, value) if redactor is not None else str(value or "")
 
-    def flush_stream_delta(self, room_id: str, session_id: str, turn_id: str) -> str:
-        redactor = self._stream_redactor(room_id, session_id)
-        return redactor.flush(turn_id) if redactor is not None else ""
-
     def discard_stream_delta(self, room_id: str, session_id: str, turn_id: str) -> None:
         with self._lock:
             registered = self._stream_redactors.get((room_id, session_id))

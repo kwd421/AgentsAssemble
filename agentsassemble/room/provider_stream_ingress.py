@@ -25,7 +25,6 @@ class RoomProviderStreamIngress:
         *,
         redact_diagnostic: bridge_diagnostics.DiagnosticRedactor | None = None,
         redact_delta: bridge_diagnostics.StreamDeltaRedactor | None = None,
-        flush_delta: bridge_diagnostics.StreamDeltaFlusher | None = None,
         discard_delta: bridge_diagnostics.StreamDeltaDiscarder | None = None,
     ) -> None:
         self._store = store
@@ -33,7 +32,6 @@ class RoomProviderStreamIngress:
             redact_diagnostic or bridge_diagnostics.default_diagnostic_redactor
         )
         self._redact_delta = redact_delta or bridge_diagnostics.default_stream_delta_redactor
-        self._flush_delta = flush_delta or bridge_diagnostics.default_stream_delta_flusher
         self._discard_delta = discard_delta or bridge_diagnostics.default_stream_delta_discarder
 
     def publish_delta(
@@ -140,25 +138,6 @@ class RoomProviderStreamIngress:
             **activity_fields,
         )
         return {"event": event, "event_seq": event["seq"]}
-
-    def flush_into(self, writer: object, *, agent_id: str, session: dict[str, object]) -> None:
-        room_id = str(getattr(writer, "room_id"))
-        active_turn_id = str(session["active_turn_id"])
-        pending_delta = self._flush_delta(
-            room_id,
-            str(session["session_id"]),
-            active_turn_id,
-        )
-        if not has_room_visible_text(pending_delta):
-            return
-        writer.append_event(
-            "message_delta",
-            participant_id=agent_id,
-            participant_type="agent",
-            session_id=session["session_id"],
-            turn_id=active_turn_id,
-            content=_message_delta_text(pending_delta, limit=12000),
-        )
 
     def discard(self, room_id: str, session: dict[str, object]) -> None:
         self._discard_delta(

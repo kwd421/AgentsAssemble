@@ -245,7 +245,7 @@ class RoomRealtimeController:
 
         redact_bridge_diagnostic = bridge_manager_diagnostic_redactor(bridge_manager)
         redact_bridge_public_payload = bridge_manager_public_payload_redactor(bridge_manager)
-        redact_stream_delta, flush_stream_delta, discard_stream_delta = (
+        redact_stream_delta, discard_stream_delta = (
             bridge_manager_stream_redactors(bridge_manager)
         )
         self._turn_coordinator = RoomTurnCoordinator(
@@ -268,7 +268,6 @@ class RoomRealtimeController:
             redact_diagnostic=redact_bridge_diagnostic,
             redact_public_payload=redact_bridge_public_payload,
             redact_stream_delta=redact_stream_delta,
-            flush_stream_delta=flush_stream_delta,
             discard_stream_delta=discard_stream_delta,
             read_portal_publication=(
                 bridge_manager.room_portal_publication

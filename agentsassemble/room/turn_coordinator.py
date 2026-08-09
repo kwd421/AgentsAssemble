@@ -118,7 +118,6 @@ class RoomTurnCoordinator:
         redact_diagnostic: bridge_diagnostics.DiagnosticRedactor | None = None,
         redact_public_payload: bridge_diagnostics.PublicPayloadRedactor | None = None,
         redact_stream_delta: bridge_diagnostics.StreamDeltaRedactor | None = None,
-        flush_stream_delta: bridge_diagnostics.StreamDeltaFlusher | None = None,
         discard_stream_delta: bridge_diagnostics.StreamDeltaDiscarder | None = None,
         read_portal_publication: PortalPublicationReader | None = None,
     ) -> None:
@@ -141,7 +140,6 @@ class RoomTurnCoordinator:
             store,
             redact_diagnostic=redact_diagnostic,
             redact_delta=redact_stream_delta,
-            flush_delta=flush_stream_delta,
             discard_delta=discard_stream_delta,
         )
         self._turn_attention = RoomTurnAttention(
@@ -1440,7 +1438,10 @@ class RoomTurnCoordinator:
         )
         require_active_turn_phase(session)
         active_turn_id = str(session["active_turn_id"])
-        self._stream_ingress.flush_into(writer, agent_id=agent_id, session=session)
+        # The final event is the authoritative complete response. A buffered
+        # delta suffix must not be flushed across this boundary because a raw
+        # bridge could complete an exact credential in the final payload.
+        self._stream_ingress.discard(str(getattr(writer, "room_id")), session)
         input_up_to_event_id = clean_lobby_text(session.get("input_up_to_event_id"), limit=128)
         input_up_to_seq = safe_bounded_int(session.get("input_up_to_seq"), default=0, minimum=0)
         try:

@@ -257,11 +257,90 @@ def redact_exact_sensitive_mapping(
     *,
     exact_values: Iterable[object],
 ) -> dict[str, object]:
-    """Redact a bridge command without changing its mapping-shaped contract."""
+    """Redact exact values even when ordered payload fields split them."""
 
-    redacted = redact_exact_sensitive_value(value, exact_values=exact_values)
+    normalized = normalized_exact_sensitive_values(exact_values)
+    if not normalized:
+        return dict(value)
+    strings: list[str] = []
+
+    def collect(item: object) -> None:
+        if isinstance(item, dict):
+            for child in item.values():
+                collect(child)
+        elif isinstance(item, (list, tuple)):
+            for child in item:
+                collect(child)
+        elif isinstance(item, str):
+            strings.append(item)
+
+    collect(value)
+    redacted_strings = iter(
+        _redact_exact_sensitive_segments(strings, exact_values=normalized)
+    )
+
+    def rebuild(item: object) -> object:
+        if isinstance(item, dict):
+            return {key: rebuild(child) for key, child in item.items()}
+        if isinstance(item, (list, tuple)):
+            return [rebuild(child) for child in item]
+        if isinstance(item, str):
+            return next(redacted_strings)
+        return item
+
+    redacted = rebuild(value)
     if not isinstance(redacted, dict):
         raise TypeError("Redacted bridge command payload must remain a mapping.")
+    return redacted
+
+
+def _redact_exact_sensitive_segments(
+    values: list[str],
+    *,
+    exact_values: Iterable[object],
+) -> list[str]:
+    """Preserve segment shape while removing matches that cross boundaries."""
+
+    normalized = normalized_exact_sensitive_values(exact_values)
+    if not values or not normalized:
+        return list(values)
+    combined = "".join(values)
+    matches: list[tuple[int, int]] = []
+    for sensitive_value in normalized:
+        search_at = 0
+        while True:
+            found_at = combined.find(sensitive_value, search_at)
+            if found_at < 0:
+                break
+            matches.append((found_at, found_at + len(sensitive_value)))
+            search_at = found_at + 1
+    if not matches:
+        return list(values)
+    merged: list[tuple[int, int]] = []
+    for start, end in sorted(matches):
+        if merged and start <= merged[-1][1]:
+            merged[-1] = (merged[-1][0], max(merged[-1][1], end))
+        else:
+            merged.append((start, end))
+    redacted: list[str] = []
+    segment_start = 0
+    for value in values:
+        segment_end = segment_start + len(value)
+        cursor = segment_start
+        parts: list[str] = []
+        for match_start, match_end in merged:
+            if match_end <= segment_start or match_start >= segment_end:
+                continue
+            visible_start = max(cursor, segment_start)
+            if match_start > visible_start:
+                parts.append(combined[visible_start:min(match_start, segment_end)])
+            if segment_start <= match_start < segment_end:
+                parts.append("[redacted]")
+            cursor = max(cursor, min(match_end, segment_end))
+        if cursor < segment_end:
+            parts.append(combined[cursor:segment_end])
+        redacted.append("".join(parts))
+        segment_start = segment_end
     return redacted
 
 

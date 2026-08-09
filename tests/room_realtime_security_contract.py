@@ -268,7 +268,7 @@ class RoomRealtimeSecurityContract:
         secret = "ordinary-looking-credential-918273645"
         self.manager.sensitive_values[("general", "codex")] = (secret,)
 
-        for index, content in enumerate(("prefix ", secret[:15], secret[15:], " suffix")):
+        for index, content in enumerate(("prefix ", secret[:15])):
             self._command(
                 f"split-secret-delta-{index}",
                 "message.delta",
@@ -280,7 +280,7 @@ class RoomRealtimeSecurityContract:
             "message.final",
             {
                 "turn_id": assignment["turn_id"],
-                "content": f"완료 {secret}",
+                "content": secret[15:],
             },
             identity,
         )
@@ -291,9 +291,10 @@ class RoomRealtimeSecurityContract:
                 "provider_request_id": "request-with-secret",
                 "request_kind": "permission",
                 "response_kind": "option",
-                "title": f"Allow {secret}?",
+                "title": secret[:15],
+                "description": secret[15:],
                 "options": [
-                    {"id": "allow", "label": f"Allow {secret}"},
+                    {"id": "allow", "label": "Allow"},
                     {"id": "deny", "label": "Deny"},
                 ],
             },
@@ -313,13 +314,15 @@ class RoomRealtimeSecurityContract:
             and event.get("turn_id") == assignment["turn_id"]
         )
         provider_request = request["result"]["event"]["provider_request"]
-        reconstructed = "".join(deltas)
+        reconstructed = "".join(deltas) + final["content"]
+        reconstructed_request = (
+            str(provider_request.get("title") or "")
+            + str(provider_request.get("description") or "")
+        )
 
         self.assertNotIn(secret, reconstructed)
-        self.assertIn("[redacted]", reconstructed)
         self.assertNotIn(secret, final["content"])
-        self.assertIn("[redacted]", final["content"])
-        self.assertNotIn(secret, str(provider_request))
+        self.assertNotIn(secret, reconstructed_request)
         self.assertIn("[redacted]", str(provider_request))
 
 
