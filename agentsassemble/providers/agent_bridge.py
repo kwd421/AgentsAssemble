@@ -49,10 +49,6 @@ from agentsassemble.providers.room_portal import (
     room_wake_orientation,
 )
 from agentsassemble.providers.provider_requests import BridgeProviderRequestRouter
-from agentsassemble.providers.observation_publication import (
-    room_portal_publication_payload,
-    stage_room_portal_publication,
-)
 
 
 class BridgeRoomClient(Protocol):
@@ -524,8 +520,7 @@ class RoomAgentBridge:
                 )
                 return
             explicit_decline_reason = portal.observation_decline_reason(turn_id)
-            publication = portal.consume_publication_result(turn_id)
-            public_content = publication.content
+            publication = portal.publication_result(turn_id)
             completed = time.monotonic()
             completed_at = _now()
             latency = {
@@ -556,20 +551,11 @@ class RoomAgentBridge:
                     },
                 )
                 return
-            publication_payload = room_portal_publication_payload(
-                publication,
-                turn_id=turn_id,
-                observed_through_seq=observed_through_seq,
-            )
-            publication_proof = stage_room_portal_publication(
-                self._command,
-                publication_payload,
-            )
             self._command(
                 "message.final",
                 {
-                    **publication_payload,
-                    "publication_proof": publication_proof,
+                    "turn_id": turn_id,
+                    "observed_through_seq": observed_through_seq,
                     "observed_model_id": clean_lobby_text(
                         result.metadata.get("observed_model_id"),
                         limit=128,

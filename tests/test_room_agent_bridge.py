@@ -56,10 +56,6 @@ class FakeClient:
                     response["result"] = {
                         "observed_through_seq": int((payload or {}).get("through_seq") or 0)
                     }
-                elif action == "room.publication.stage":
-                    response["result"] = {
-                        "publication_proof": f"proof-{request_id}",
-                    }
             else:
                 response = dict(configured)
             response["request_id"] = request_id
@@ -746,8 +742,9 @@ class RoomAgentBridgeTests(unittest.TestCase):
             thread.join(timeout=2)
 
         final = next(payload for action, payload, _ in client.commands if action == "message.final")
-        self.assertEqual(final["content"], "public room reply")
-        self.assertEqual(final["target_agent_id"], "sonnet")
+        self.assertNotIn("content", final)
+        self.assertNotIn("target_agent_id", final)
+        self.assertEqual(final["turn_id"], "wake-1")
         self.assertFalse(any(action == "message.delta" for action, _, _ in client.commands))
         self.assertEqual(
             len([item for item in client.commands if item[0] == "turn.decline"]),

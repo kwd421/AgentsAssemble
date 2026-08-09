@@ -265,6 +265,11 @@ class RoomRealtimeController:
             redact_stream_delta=redact_stream_delta,
             flush_stream_delta=flush_stream_delta,
             discard_stream_delta=discard_stream_delta,
+            read_portal_publication=(
+                bridge_manager.room_portal_publication
+                if bridge_manager is not None
+                else None
+            ),
         )
         self._ordered_message_router = RoomOrderedMessageRouter(
             store=self.store,
@@ -1037,21 +1042,6 @@ class RoomRealtimeController:
                     action,
                     payload,
                     lambda unit: self._turn_coordinator.room_result_in_unit(
-                        identity,
-                        payload,
-                        unit=unit,
-                    ),
-                )
-        if action == "room.publication.stage":
-            self._require_bridge(identity)
-            with self._lock:
-                return self._execute_durable_command(
-                    identity,
-                    room_id,
-                    request_id,
-                    action,
-                    payload,
-                    lambda unit: self._turn_coordinator.stage_observation_publication_in_unit(
                         identity,
                         payload,
                         unit=unit,

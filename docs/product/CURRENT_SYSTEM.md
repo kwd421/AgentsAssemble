@@ -319,10 +319,16 @@ pending input across later room-mode changes; the bridge must not derive it
 from the current room setting. It conveys provenance only, not room content or
 an instruction about what to say. The provider reads its bounded room mirror
 and either publishes through the portal or publishes nothing; a provider with
-the ordered floor may still decline. Only portal output becomes
-`message_final`; `decline_to_speak` records a supported reason code and no
-public message. Ordinary assistant or terminal output is private and is never
-used as an implicit fallback.
+the ordered floor may still decline. The Agent Bridge reports only a
+content-free observation completion. For a server-owned session, the room
+server resolves the active bridge handle and reads the matching turn directly
+from that handle's private portal outbox; bridge-supplied message, target, or
+vote fields are rejected. An externally owned bridge currently fails closed
+with `room_portal_provenance_unavailable` on observation publication because
+the room server cannot verify its local outbox. Only verified portal output
+becomes `message_final`; `decline_to_speak` records a supported reason code and
+no public message. Ordinary assistant or terminal output is private and is
+never used as an implicit fallback.
 
 ### Pending decision: API-provider final-answer publication
 

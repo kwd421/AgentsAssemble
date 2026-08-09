@@ -30,6 +30,7 @@ from agentsassemble.providers.local_openai import local_openai_endpoint
 from agentsassemble.providers.opencode import OpenCodeServerProcess
 from agentsassemble.providers.process_environment import sanitized_child_environment
 from agentsassemble.providers.remote_openai import remote_openai_endpoint
+from agentsassemble.providers.room_portal import RoomPortal
 from agentsassemble.providers.runtime_config import CanonicalBridgeLaunchConfig
 from agentsassemble.providers.secrets import (
     PROVIDER_SECRETS,
@@ -575,6 +576,45 @@ class NativeCliBridgeProcessManager:
             "returncode": handle.process.poll(),
             "runtime_profile_key": handle.runtime_profile_key,
             **self._stderr_snapshot(handle),
+        }
+
+    def room_portal_publication(
+        self,
+        room_id: str,
+        session_id: str,
+        turn_id: str,
+        *,
+        handle_id: str = "",
+    ) -> dict[str, object] | None:
+        """Read publication content only from the active server-owned portal."""
+
+        with self._lock:
+            handle = self._handles.get((room_id, session_id))
+            if (
+                handle is None
+                or handle.handle_id != handle_id
+                or handle.process.poll() is not None
+            ):
+                return None
+            profile_root = handle.config_path.parent.resolve()
+            portal_root = (profile_root / "provider-state" / "room-portal").resolve()
+            try:
+                portal_root.relative_to(profile_root)
+            except ValueError:
+                return None
+            portal = RoomPortal(portal_root, participant_id=session_id)
+            publication = portal.publication_result(turn_id)
+        if not publication.has_message:
+            return None
+        return {
+            "content": publication.content,
+            "target_agent_id": publication.target_agent_id,
+            "kind": publication.message_kind,
+            "vote_id": publication.vote_id,
+            "vote_question": publication.vote_question,
+            "vote_options": list(publication.vote_options),
+            "vote_duration_seconds": publication.vote_duration_seconds,
+            "vote_choice": publication.vote_choice,
         }
 
     def redact_diagnostic(

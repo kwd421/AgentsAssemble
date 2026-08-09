@@ -23,6 +23,9 @@ class FakeBridgeManager:
         self.close_called = False
         self.sensitive_values: dict[tuple[str, str], tuple[str, ...]] = {}
         self._stream_redactors = {}
+        self.portal_publications: dict[
+            tuple[str, str, str], dict[str, object]
+        ] = {}
 
     def start(self, room_id, session, spec, *, server_url="", ticket_issuer=None):
         del server_url, ticket_issuer
@@ -47,6 +50,15 @@ class FakeBridgeManager:
 
     def health(self, room_id, session_id):
         return {"running": (room_id, session_id) in self.running}
+
+    def room_portal_publication(self, room_id, session_id, turn_id, *, handle_id=""):
+        if handle_id != f"handle-{session_id}":
+            return None
+        publication = self.portal_publications.get((room_id, session_id, turn_id))
+        return dict(publication) if publication is not None else None
+
+    def set_room_portal_publication(self, room_id, session_id, turn_id, publication):
+        self.portal_publications[(room_id, session_id, turn_id)] = dict(publication)
 
     def redact_diagnostic(self, room_id, session_id, value, *, limit=16_000):
         return redact_persisted_diagnostic_text(

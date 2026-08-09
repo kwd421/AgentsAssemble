@@ -480,24 +480,24 @@ class RoomPortal:
     def consume_publication(self, turn_id: str) -> str:
         return self.consume_publication_result(turn_id).content
 
-    def consume_publication_result(self, turn_id: str) -> RoomPublication:
+    def publication_result(self, turn_id: str) -> RoomPublication:
+        """Read this turn's staged publication without consuming the portal state."""
         clean_turn_id = clean_room_text(turn_id, limit=128)
         with self._lock:
             try:
                 payload = json.loads(self.outbox_path.read_text(encoding="utf-8"))
             except (OSError, json.JSONDecodeError):
                 return RoomPublication()
-            finally:
-                self.outbox_path.unlink(missing_ok=True)
-                self.turn_path.unlink(missing_ok=True)
-                self._active_media_ids = ()
-                self._active_messages = None
-                self._write_view()
-            if not isinstance(payload, dict):
-                return RoomPublication()
-            if clean_room_text(payload.get("turn_id"), limit=128) != clean_turn_id:
-                return RoomPublication()
-            return RoomPublication.from_payload(payload)
+        if not isinstance(payload, dict):
+            return RoomPublication()
+        if clean_room_text(payload.get("turn_id"), limit=128) != clean_turn_id:
+            return RoomPublication()
+        return RoomPublication.from_payload(payload)
+
+    def consume_publication_result(self, turn_id: str) -> RoomPublication:
+        publication = self.publication_result(turn_id)
+        self.end_observation(turn_id)
+        return publication
 
     def end_observation(self, turn_id: str) -> None:
         clean_turn_id = clean_room_text(turn_id, limit=128)

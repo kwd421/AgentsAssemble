@@ -164,14 +164,17 @@ class RoomRealtimeSecurityContract:
             )
 
         self.assertEqual(delta_rejected.exception.code, "observation_publication_required")
-        self.assertEqual(final_rejected.exception.code, "observation_publication_required")
+        self.assertEqual(
+            final_rejected.exception.code,
+            "observation_completion_content_forbidden",
+        )
         self.assertEqual(self.controller.store.latest_event_sequence("general"), before)
         self.assertEqual(
             self.controller.store.session("general", "codex")["active_turn_id"],
             wake["turn_id"],
         )
 
-    def test_server_staged_observation_publication_is_one_use_and_content_bound(self):
+    def test_observation_final_uses_server_owned_portal_content_not_bridge_payload(self):
         identity, channel = self._connect_bridge("codex")
         channel.drain()
         self.controller.store.update_room_settings(
@@ -186,42 +189,69 @@ class RoomRealtimeSecurityContract:
         wake = next(
             message for message in channel.drain() if message.get("op") == "room.wake"
         )
-        publication = {
-            "turn_id": wake["turn_id"],
-            "content": "도구로 게시한 답변",
-            "observed_through_seq": wake["input_up_to_seq"],
-        }
-        staged = self._command(
-            "stage-observation-publication",
-            "room.publication.stage",
-            publication,
-            identity,
-        )["result"]
-
+        self.manager.set_room_portal_publication(
+            "general",
+            "codex",
+            wake["turn_id"],
+            {
+                "turn_id": wake["turn_id"],
+                "content": "도구로 게시한 답변",
+                "observed_through_seq": wake["input_up_to_seq"],
+            },
+        )
         with self.assertRaises(RoomCommandRejected) as tampered:
             self._command(
                 "tampered-observation-publication",
                 "message.final",
                 {
-                    **publication,
-                    "content": "바꿔치기한 답변",
-                    "publication_proof": staged["publication_proof"],
+                    "turn_id": wake["turn_id"],
+                    "content": "브리지가 바꿔치기하려는 답변",
+                    "observed_through_seq": wake["input_up_to_seq"],
                 },
                 identity,
             )
         completed = self._command(
             "commit-observation-publication",
             "message.final",
-            {**publication, "publication_proof": staged["publication_proof"]},
+            {
+                "turn_id": wake["turn_id"],
+                "observed_through_seq": wake["input_up_to_seq"],
+            },
             identity,
         )
 
-        self.assertEqual(tampered.exception.code, "observation_publication_mismatch")
-        self.assertEqual(completed["result"]["event"]["content"], publication["content"])
+        self.assertEqual(tampered.exception.code, "observation_completion_content_forbidden")
+        self.assertEqual(completed["result"]["event"]["content"], "도구로 게시한 답변")
         self.assertEqual(
             completed["result"]["event"]["message_source"],
             "room_portal",
         )
+
+    def test_bridge_cannot_stage_an_observation_publication_over_room_protocol(self):
+        identity, channel = self._connect_bridge("codex")
+        channel.drain()
+        self.controller.store.update_room_settings(
+            "general",
+            {"conversation_mode": "ambient"},
+        )
+        self._command("raw-stage-source", "message.send", {"content": "짧게 답해 줘"})
+        wake = next(
+            message for message in channel.drain() if message.get("op") == "room.wake"
+        )
+
+        with self.assertRaises(RoomCommandRejected) as rejected:
+            self._command(
+                "raw-stage-attempt",
+                "room.publication.stage",
+                {
+                    "turn_id": wake["turn_id"],
+                    "content": "RoomPortal을 거치지 않은 답변",
+                    "observed_through_seq": wake["input_up_to_seq"],
+                },
+                identity,
+            )
+
+        self.assertEqual(rejected.exception.code, "unknown_action")
 
     def test_server_redacts_a_credential_split_across_bridge_delta_frames(self):
         self._use_continuous_routing()

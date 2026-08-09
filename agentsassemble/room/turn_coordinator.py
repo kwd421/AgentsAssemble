@@ -34,7 +34,10 @@ from agentsassemble.room.tool_authorization import require_room_random_tools
 from agentsassemble.room_attention import AttentionLeaseConflict
 from agentsassemble.room.command_uow import RoomCommandUnitOfWork
 from agentsassemble.room.event_broker import RoomEventBroker
-from agentsassemble.room.observation_publication import RoomObservationPublication
+from agentsassemble.room.observation_publication import (
+    PortalPublicationReader,
+    RoomObservationPublication,
+)
 from agentsassemble.room.provider_stream_ingress import RoomProviderStreamIngress
 from agentsassemble.room.projection import (
     merged_latency,
@@ -87,6 +90,7 @@ class PendingEventPartition:
 @dataclass(frozen=True)
 class PreparedFinalMessage:
     content: str
+    target_agent_id: str
     latency: dict[str, object]
     diagnostics: dict[str, object]
     observed_model_id: str
@@ -115,6 +119,7 @@ class RoomTurnCoordinator:
         redact_stream_delta: bridge_diagnostics.StreamDeltaRedactor | None = None,
         flush_stream_delta: bridge_diagnostics.StreamDeltaFlusher | None = None,
         discard_stream_delta: bridge_diagnostics.StreamDeltaDiscarder | None = None,
+        read_portal_publication: PortalPublicationReader | None = None,
     ) -> None:
         self.output_root = Path(output_root)
         self.store = store
@@ -142,9 +147,7 @@ class RoomTurnCoordinator:
         )
         self._recovery_handles: dict[tuple[str, str], object] = {}
         self._observation_publication = RoomObservationPublication(
-            active_turn_in_writer=self.active_bridge_turn_in_writer,
-            require_active_phase=require_active_turn_phase,
-            require_observation_receipt=self._require_observation_receipt,
+            read_portal_publication=read_portal_publication,
         )
 
     def close(self) -> CleanupReport:
@@ -702,9 +705,6 @@ class RoomTurnCoordinator:
             provider_visible_chars=int(packet.get("provider_visible_chars") or 0),
             provider_visible_event_count=int(packet.get("provider_visible_event_count") or 0),
             provider_input_mode=clean_lobby_text(packet.get("input_mode"), limit=32),
-            room_publication_proof="",
-            room_publication_digest="",
-            room_publication_turn_id="",
             context_error_detected=False,
         )
         self._publish_session_state(room_id, updated)
@@ -938,9 +938,6 @@ class RoomTurnCoordinator:
             provider_visible_event_count=0,
             provider_input_mode="room_observation",
             provider_observation_kind=assigned_observation_kind,
-            room_publication_proof="",
-            room_publication_digest="",
-            room_publication_turn_id="",
             context_error_detected=False,
         )
         self._publish_session_state(room_id, updated)
@@ -1302,19 +1299,6 @@ class RoomTurnCoordinator:
         self.after_message_final(room_id, result, deduplicated=False)
         return result
 
-    def stage_observation_publication_in_unit(
-        self,
-        identity: dict[str, object],
-        payload: dict[str, object],
-        *,
-        unit: RoomCommandUnitOfWork,
-    ) -> dict[str, object]:
-        return self._observation_publication.stage_in_unit(
-            identity,
-            payload,
-            unit=unit,
-        )
-
     def prepare_message_final(
         self,
         identity: dict[str, object],
@@ -1329,18 +1313,18 @@ class RoomTurnCoordinator:
             payload,
             session=session,
         )
+        canonical_payload = self._observation_publication.canonical_payload(
+            payload,
+            room_id=room_id,
+            session=session,
+        )
         try:
-            structured = prepare_structured_message(payload)
+            structured = prepare_structured_message(canonical_payload)
         except StructuredMessageError as error:
             if error.code != "empty_provider_final":
                 raise RoomCommandRejected(str(error), code=error.code) from error
             structured = None
         active_turn_id = str(session["active_turn_id"])
-        self._observation_publication.require_matching_final(
-            payload,
-            session=session,
-            structured=structured,
-        )
         latency = merged_latency(session.get("latency"), payload.get("latency"))
         diagnostics = payload.get("diagnostics") if isinstance(payload.get("diagnostics"), dict) else {}
         observed_model_id = clean_lobby_text(payload.get("observed_model_id"), limit=128)
@@ -1407,6 +1391,10 @@ class RoomTurnCoordinator:
             raise RoomCommandRejected("Provider final message was empty.", code="empty_provider_final")
         return PreparedFinalMessage(
             content=structured.content,
+            target_agent_id=clean_lobby_text(
+                canonical_payload.get("target_agent_id"),
+                limit=128,
+            ),
             latency=latency,
             diagnostics=diagnostics,
             observed_model_id=observed_model_id,
@@ -1468,7 +1456,7 @@ class RoomTurnCoordinator:
             target_agent_id=clean_lobby_text(
                 None
                 if prepared.structured.message_kind == "vote_cast"
-                else payload.get("target_agent_id"),
+                else prepared.target_agent_id,
                 limit=128,
             ),
             source_event_id=session.get("active_source_event_id"),
@@ -1720,9 +1708,6 @@ class RoomTurnCoordinator:
                 recovery_attempt_count=recovery_attempt_count + (1 if automatic_recovery else 0),
                 last_error=content,
                 last_error_code=error_code,
-                room_publication_proof="",
-                room_publication_digest="",
-                room_publication_turn_id="",
                 **runtime_diagnostic_fields(
                     diagnostics,
                     redact_text=redact_text,
@@ -1821,9 +1806,6 @@ class RoomTurnCoordinator:
             "latency": latency,
             "last_error": "",
             "last_error_code": "",
-            "room_publication_proof": "",
-            "room_publication_digest": "",
-            "room_publication_turn_id": "",
             **runtime_diagnostic_fields(
                 diagnostics,
                 redact_text=redact_text,

@@ -43,6 +43,15 @@ class AgentBridgeManager(Protocol):
 
     def health(self, room_id: str, session_id: str) -> dict[str, object]: ...
 
+    def room_portal_publication(
+        self,
+        room_id: str,
+        session_id: str,
+        turn_id: str,
+        *,
+        handle_id: str = "",
+    ) -> dict[str, object] | None: ...
+
     def redact_diagnostic(
         self,
         room_id: str,

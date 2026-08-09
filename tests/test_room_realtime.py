@@ -484,18 +484,19 @@ class RoomRealtimeControllerTests(
 
     def _publish_observation_final(self, request_id, payload, identity):
         publication = dict(payload)
-        staged = self._command(
-            f"{request_id}-stage",
-            "room.publication.stage",
+        turn_id = str(publication["turn_id"])
+        self.manager.set_room_portal_publication(
+            "general",
+            str(identity["agent_id"]),
+            turn_id,
             publication,
-            identity,
-        )["result"]
+        )
         return self._command(
             request_id,
             "message.final",
             {
-                **publication,
-                "publication_proof": staged["publication_proof"],
+                "turn_id": turn_id,
+                "observed_through_seq": publication.get("observed_through_seq", 0),
             },
             identity,
         )
@@ -2781,17 +2782,20 @@ class RoomRealtimeControllerTests(
             "content": "원자적 최종 답변",
             "observed_through_seq": assignment["input_up_to_seq"],
         }
-        staged = self._command(
-            "atomic-provider-final-stage",
-            "room.publication.stage",
+        self.manager.set_room_portal_publication(
+            "general",
+            "codex",
+            assignment["turn_id"],
             payload,
-            identity,
-        )["result"]
-        payload["publication_proof"] = staged["publication_proof"]
+        )
+        completion = {
+            "turn_id": assignment["turn_id"],
+            "observed_through_seq": assignment["input_up_to_seq"],
+        }
 
         with patch.object(RoomCommandUnitOfWork, "record_ack", side_effect=RuntimeError("injected")):
             with self.assertRaisesRegex(RuntimeError, "injected"):
-                self._command("atomic-provider-final", "message.final", payload, identity)
+                self._command("atomic-provider-final", "message.final", completion, identity)
 
         rolled_back = store.session("general", "codex")
         self.assertEqual(rolled_back["runtime_status"], "busy")
@@ -2808,8 +2812,8 @@ class RoomRealtimeControllerTests(
             )
         )
 
-        completed = self._command("atomic-provider-final", "message.final", payload, identity)
-        duplicate = self._command("atomic-provider-final", "message.final", payload, identity)
+        completed = self._command("atomic-provider-final", "message.final", completion, identity)
+        duplicate = self._command("atomic-provider-final", "message.final", completion, identity)
         self.assertFalse(completed["deduplicated"])
         self.assertTrue(duplicate["deduplicated"])
         current = store.session("general", "codex")
