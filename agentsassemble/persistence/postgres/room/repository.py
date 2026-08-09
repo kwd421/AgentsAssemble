@@ -64,6 +64,7 @@ from agentsassemble.persistence.postgres.room.queries import (
     read_vote_events,
     room_is_deleted as query_room_is_deleted,
 )
+from agentsassemble.persistence.postgres.room.write_budget import reserve_room_write_budget
 from agentsassemble.persistence.postgres.schema import upgrade_postgres_room_schema
 from agentsassemble.room_attention import AgentAttentionState, AttentionEvaluation
 from agentsassemble.room.global_settings import RoomGlobalSettingsRecord
@@ -662,6 +663,18 @@ class PostgresRoomRepository:
 
     def command_result(self, room_id: str, request_id: str, *, principal_id: str = "") -> dict[str, object]:
         return dict(self.command_record(room_id, principal_id, request_id).get("result") or {})
+
+    def reserve_room_write_budget(
+        self, room_id: str, *, window_started_at: int, command_limit: int,
+        payload_byte_limit: int, payload_bytes: int,
+    ) -> bool:
+        clean_room = clean_room_id(room_id)
+        with self._connection() as connection, connection.transaction():
+            return reserve_room_write_budget(
+                connection, clean_room, window_started_at=window_started_at,
+                command_limit=command_limit, payload_byte_limit=payload_byte_limit,
+                payload_bytes=payload_bytes,
+            )
 
     def record_command_result(
         self,

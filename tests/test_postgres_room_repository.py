@@ -15,6 +15,7 @@ from agentsassemble.room.repository import RoomRepository
 from agentsassemble.room.command_uow import RoomCommandUnitOfWork
 from agentsassemble.application.room_repository_factory import RoomRepositorySettings, build_room_repository
 from tests.room_repository_contract import RoomRepositoryContractMixin
+from tests.room_write_budget_contract import RoomWriteBudgetRepositoryContractMixin
 
 
 _POSTGRES_DSN = os.environ.get("AGENTSASSEMBLE_TEST_POSTGRES_DSN", "").strip()
@@ -176,7 +177,11 @@ class PostgresRoomRepositoryPoolIntegrationTests(unittest.TestCase):
     _PSYCOPG_AVAILABLE and _POSTGRES_DSN,
     "AGENTSASSEMBLE_TEST_POSTGRES_DSN and the postgres extra are required",
 )
-class PostgresRoomRepositoryContractTests(RoomRepositoryContractMixin, unittest.TestCase):
+class PostgresRoomRepositoryContractTests(
+    RoomWriteBudgetRepositoryContractMixin,
+    RoomRepositoryContractMixin,
+    unittest.TestCase,
+):
     @classmethod
     def setUpClass(cls) -> None:
         cls.schema_name = f"agentsassemble_test_{uuid4().hex[:12]}"

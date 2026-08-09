@@ -19,6 +19,8 @@ class RoomWriteBudgetPolicy:
     window_seconds: float = 60.0
     max_commands_per_window: int = 3_600
     max_payload_bytes_per_window: int = 8 * 1024 * 1024
+    max_room_commands_per_window: int = 14_400
+    max_room_payload_bytes_per_window: int = 32 * 1024 * 1024
     max_turn_stream_commands: int = 8_192
     max_turn_stream_bytes: int = 32 * 1024 * 1024
 
@@ -28,6 +30,8 @@ class RoomWriteBudgetPolicy:
         for name in (
             "max_commands_per_window",
             "max_payload_bytes_per_window",
+            "max_room_commands_per_window",
+            "max_room_payload_bytes_per_window",
             "max_turn_stream_commands",
             "max_turn_stream_bytes",
         ):
@@ -80,10 +84,12 @@ class RoomWriteBudget:
         *,
         policy: RoomWriteBudgetPolicy | None = None,
         monotonic: Callable[[], float] = time.monotonic,
+        wall_clock: Callable[[], float] = time.time,
     ) -> None:
         self._repository = repository
         self.policy = policy or RoomWriteBudgetPolicy()
         self._monotonic = monotonic
+        self._wall_clock = wall_clock
         self._recent: dict[tuple[str, str], deque[tuple[float, int]]] = {}
         self._lock = threading.Lock()
 
@@ -103,7 +109,9 @@ class RoomWriteBudget:
             if self._repository.command_record(room_id, principal_id, request_id):
                 return
             payload_bytes = _command_size(request_id, action, payload)
-            self._admit_window(room_id, principal_id, payload_bytes)
+            recent, now = self._available_principal_window(room_id, principal_id, payload_bytes)
+            self._admit_room_window(room_id, payload_bytes)
+            recent.append((now, payload_bytes))
             if action in _TURN_STREAM_ACTIONS:
                 self._admit_turn_stream(
                     room_id=room_id,
@@ -116,12 +124,12 @@ class RoomWriteBudget:
         with self._lock:
             self._recent.clear()
 
-    def _admit_window(
+    def _available_principal_window(
         self,
         room_id: str,
         principal_id: str,
         payload_bytes: int,
-    ) -> None:
+    ) -> tuple[deque[tuple[float, int]], float]:
         now = self._monotonic()
         cutoff = now - self.policy.window_seconds
         key = (room_id, principal_id)
@@ -138,7 +146,24 @@ class RoomWriteBudget:
                 "Authenticated room payload budget exceeded.",
                 code="write_budget_exceeded",
             )
-        recent.append((now, payload_bytes))
+        return recent, now
+
+    def _admit_room_window(self, room_id: str, payload_bytes: int) -> None:
+        window_started_at = int(
+            (self._wall_clock() // self.policy.window_seconds) * self.policy.window_seconds
+        )
+        admitted = self._repository.reserve_room_write_budget(
+            room_id,
+            window_started_at=window_started_at,
+            command_limit=self.policy.max_room_commands_per_window,
+            payload_byte_limit=self.policy.max_room_payload_bytes_per_window,
+            payload_bytes=payload_bytes,
+        )
+        if not admitted:
+            raise RoomCommandRejected(
+                "Room-wide authenticated write budget exceeded.",
+                code="write_budget_exceeded",
+            )
 
     def _admit_turn_stream(
         self,

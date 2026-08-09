@@ -306,6 +306,44 @@ class CanonicalRoomEventStoreTests(unittest.TestCase):
         self.assertEqual(version, ROOM_SCHEMA_VERSION)
         self.assertEqual(settings["tool_mode"], "chat")
 
+    def test_version_nine_database_adds_durable_room_write_budget(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            store = RoomStore(root)
+            store.create_room("general", label="General")
+            with closing(open_room_database(store.database_path)) as connection:
+                connection.execute("DROP TABLE room_write_budgets")
+                connection.execute(
+                    "UPDATE schema_meta SET value = '9' WHERE key = 'schema_version'"
+                )
+
+            initialize_room_database(store.rooms_root, store.database_path)
+            restarted_store = RoomStore(root)
+            first = restarted_store.reserve_room_write_budget(
+                "general",
+                window_started_at=1_000,
+                command_limit=1,
+                payload_byte_limit=100,
+                payload_bytes=50,
+            )
+            second = restarted_store.reserve_room_write_budget(
+                "general",
+                window_started_at=1_000,
+                command_limit=1,
+                payload_byte_limit=100,
+                payload_bytes=1,
+            )
+            with closing(open_room_database(store.database_path)) as connection:
+                version = int(
+                    connection.execute(
+                        "SELECT value FROM schema_meta WHERE key = 'schema_version'"
+                    ).fetchone()["value"]
+                )
+
+        self.assertEqual(version, ROOM_SCHEMA_VERSION)
+        self.assertTrue(first)
+        self.assertFalse(second)
+
     def test_missing_room_global_settings_row_is_not_silently_recreated(self):
         with tempfile.TemporaryDirectory() as temp_dir:
             root = Path(temp_dir)

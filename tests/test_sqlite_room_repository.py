@@ -15,9 +15,14 @@ from agentsassemble.persistence.local.room.repository import _VOTE_BALLOT_EVENTS
 from agentsassemble.room.repository import RoomRepository
 from agentsassemble.room_store import RoomStore
 from tests.room_repository_contract import RoomRepositoryContractMixin
+from tests.room_write_budget_contract import RoomWriteBudgetRepositoryContractMixin
 
 
-class SQLiteRoomRepositoryContractTests(RoomRepositoryContractMixin, unittest.TestCase):
+class SQLiteRoomRepositoryContractTests(
+    RoomWriteBudgetRepositoryContractMixin,
+    RoomRepositoryContractMixin,
+    unittest.TestCase,
+):
     def setUp(self) -> None:
         self._temporary_directory = tempfile.TemporaryDirectory()
         self.repository = RoomStore(Path(self._temporary_directory.name))

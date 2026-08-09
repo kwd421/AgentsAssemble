@@ -293,6 +293,16 @@ class RoomRepository(Protocol):
 
     def command_record(self, room_id: str, principal_id: str, request_id: str) -> CommandRecord: ...
 
+    def reserve_room_write_budget(
+        self,
+        room_id: str,
+        *,
+        window_started_at: int,
+        command_limit: int,
+        payload_byte_limit: int,
+        payload_bytes: int,
+    ) -> bool: ...
+
     def command_result(self, room_id: str, request_id: str, *, principal_id: str = "") -> CommandRecord: ...
 
     def record_command_result(
