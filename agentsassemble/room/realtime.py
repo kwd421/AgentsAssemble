@@ -32,6 +32,7 @@ from agentsassemble.room.commands import (
     capabilities_for_identity,
     parse_room_command,
 )
+from agentsassemble.room.command_admission import authorize_room_command
 from agentsassemble.room.identity import (
     room_identity_command_principal,
     room_identity_is_operator,
@@ -687,6 +688,7 @@ class RoomRealtimeController:
                 "The room is closed.",
                 code="room_closed",
             )
+        authorize_room_command(identity, action)
         self._write_budget.admit(
             room_id=room_id,
             principal_id=room_identity_command_principal(identity),
