@@ -119,6 +119,8 @@ class RoomTurnCoordinator:
         redact_public_payload: bridge_diagnostics.PublicPayloadRedactor | None = None,
         redact_stream_delta: bridge_diagnostics.StreamDeltaRedactor | None = None,
         discard_stream_delta: bridge_diagnostics.StreamDeltaDiscarder | None = None,
+        redact_activity_payload: bridge_diagnostics.ActivityPayloadRedactor | None = None,
+        discard_activity_payloads: bridge_diagnostics.ActivityPayloadDiscarder | None = None,
         read_portal_publication: PortalPublicationReader | None = None,
     ) -> None:
         self.output_root = Path(output_root)
@@ -141,6 +143,8 @@ class RoomTurnCoordinator:
             redact_diagnostic=redact_diagnostic,
             redact_delta=redact_stream_delta,
             discard_delta=discard_stream_delta,
+            redact_activity=redact_activity_payload,
+            discard_activity=discard_activity_payloads,
         )
         self._turn_attention = RoomTurnAttention(
             store,

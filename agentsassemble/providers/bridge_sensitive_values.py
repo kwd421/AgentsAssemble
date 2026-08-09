@@ -11,6 +11,9 @@ from agentsassemble.diagnostics.sensitive_text import (
     redact_exact_sensitive_mapping,
     redact_persisted_diagnostic_text,
 )
+from agentsassemble.providers.bridge_activity_redaction import (
+    BridgeActivityStreamRedactor,
+)
 
 
 class BridgeSensitiveValueRegistry:
@@ -22,6 +25,9 @@ class BridgeSensitiveValueRegistry:
         ] = {}
         self._stream_redactors: dict[
             tuple[str, str], tuple[tuple[str, ...], ExactSensitiveTextStreamRedactor]
+        ] = {}
+        self._activity_redactors: dict[
+            tuple[str, str], tuple[tuple[str, ...], BridgeActivityStreamRedactor]
         ] = {}
         self._lock = threading.RLock()
 
@@ -57,16 +63,23 @@ class BridgeSensitiveValueRegistry:
         with self._lock:
             self._registrations.pop(key, None)
             stream = self._stream_redactors.pop(key, None)
+            activity = self._activity_redactors.pop(key, None)
         if stream is not None:
             stream[1].clear()
+        if activity is not None:
+            activity[1].clear()
 
     def clear(self) -> None:
         with self._lock:
             streams = list(self._stream_redactors.values())
+            activities = list(self._activity_redactors.values())
             self._stream_redactors.clear()
+            self._activity_redactors.clear()
             self._registrations.clear()
         for _values, stream in streams:
             stream.clear()
+        for _values, activity in activities:
+            activity.clear()
 
     def redact_diagnostic(
         self,
@@ -109,6 +122,27 @@ class BridgeSensitiveValueRegistry:
         if registered is not None:
             registered[1].discard(turn_id)
 
+    def redact_activity_payload(
+        self,
+        room_id: str,
+        session_id: str,
+        turn_id: str,
+        payload: dict[str, object],
+    ) -> list[dict[str, object]]:
+        redactor = self._activity_redactor(room_id, session_id)
+        return redactor.redact(turn_id, payload) if redactor is not None else [dict(payload)]
+
+    def discard_activity_payloads(
+        self,
+        room_id: str,
+        session_id: str,
+        turn_id: str,
+    ) -> None:
+        with self._lock:
+            registered = self._activity_redactors.get((room_id, session_id))
+        if registered is not None:
+            registered[1].discard(turn_id)
+
     def _stream_redactor(
         self,
         room_id: str,
@@ -125,6 +159,24 @@ class BridgeSensitiveValueRegistry:
                     current[1].clear()
                 current = (exact_values, ExactSensitiveTextStreamRedactor(exact_values))
                 self._stream_redactors[key] = current
+            return current[1]
+
+    def _activity_redactor(
+        self,
+        room_id: str,
+        session_id: str,
+    ) -> BridgeActivityStreamRedactor | None:
+        key = (room_id, session_id)
+        with self._lock:
+            exact_values = self._exact_values_locked(key)
+            if not exact_values:
+                return None
+            current = self._activity_redactors.get(key)
+            if current is None or current[0] != exact_values:
+                if current is not None:
+                    current[1].clear()
+                current = (exact_values, BridgeActivityStreamRedactor(exact_values))
+                self._activity_redactors[key] = current
             return current[1]
 
     def _exact_values(self, room_id: str, session_id: str) -> tuple[str, ...]:
@@ -152,6 +204,9 @@ class BridgeSensitiveValueRegistry:
         current = self._stream_redactors.pop(key, None)
         if current is not None:
             current[1].clear()
+        activity = self._activity_redactors.pop(key, None)
+        if activity is not None:
+            activity[1].clear()
 
 
 __all__ = ["BridgeSensitiveValueRegistry"]

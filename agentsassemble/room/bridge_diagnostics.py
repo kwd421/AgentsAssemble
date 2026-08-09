@@ -11,6 +11,11 @@ DiagnosticRedactor = Callable[..., str]
 PublicPayloadRedactor = Callable[[str, str, dict[str, object]], dict[str, object]]
 StreamDeltaRedactor = Callable[[str, str, str, object], str]
 StreamDeltaDiscarder = Callable[[str, str, str], None]
+ActivityPayloadRedactor = Callable[
+    [str, str, str, dict[str, object]],
+    list[dict[str, object]],
+]
+ActivityPayloadDiscarder = Callable[[str, str, str], None]
 SensitiveValueRegistrar = Callable[[str, str, str, Iterable[object]], None]
 SensitiveValueReleaser = Callable[[str, str, str], None]
 
@@ -79,6 +84,35 @@ def bridge_manager_stream_redactors(
     )
 
 
+def default_activity_payload_redactor(
+    _room_id: str,
+    _session_id: str,
+    _turn_id: str,
+    payload: dict[str, object],
+) -> list[dict[str, object]]:
+    return [dict(payload)]
+
+
+def default_activity_payload_discarder(
+    _room_id: str,
+    _session_id: str,
+    _turn_id: str,
+) -> None:
+    return None
+
+
+def bridge_manager_activity_redactors(
+    bridge_manager: object,
+) -> tuple[ActivityPayloadRedactor, ActivityPayloadDiscarder]:
+    registry = getattr(bridge_manager, "sensitive_value_registry", None)
+    redact = getattr(registry, "redact_activity_payload", None)
+    discard = getattr(registry, "discard_activity_payloads", None)
+    return (
+        redact if callable(redact) else default_activity_payload_redactor,
+        discard if callable(discard) else default_activity_payload_discarder,
+    )
+
+
 def default_sensitive_value_registrar(
     _room_id: str,
     _session_id: str,
@@ -135,16 +169,21 @@ def redacted_activity_text(
 
 
 __all__ = [
+    "ActivityPayloadDiscarder",
+    "ActivityPayloadRedactor",
     "DiagnosticRedactor",
     "PublicPayloadRedactor",
     "StreamDeltaDiscarder",
     "StreamDeltaRedactor",
     "SensitiveValueRegistrar",
     "SensitiveValueReleaser",
+    "bridge_manager_activity_redactors",
     "bridge_manager_diagnostic_redactor",
     "bridge_manager_public_payload_redactor",
     "bridge_manager_sensitive_value_registry",
     "bridge_manager_stream_redactors",
+    "default_activity_payload_discarder",
+    "default_activity_payload_redactor",
     "default_diagnostic_redactor",
     "default_public_payload_redactor",
     "redacted_activity_text",

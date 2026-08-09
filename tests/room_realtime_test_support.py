@@ -28,6 +28,7 @@ class FakeBridgeManager:
             tuple[str, str], dict[str, tuple[str, ...]]
         ] = {}
         self._stream_redactors = {}
+        self._activity_redactors = {}
         self.portal_publications: dict[
             tuple[str, str, str], dict[str, object]
         ] = {}
@@ -135,6 +136,25 @@ class FakeBridgeManager:
 
     def discard_stream_delta(self, room_id, session_id, turn_id):
         self._stream_redactor(room_id, session_id).discard(turn_id)
+
+    def _activity_redactor(self, room_id, session_id):
+        from agentsassemble.providers.bridge_activity_redaction import (
+            BridgeActivityStreamRedactor,
+        )
+
+        key = (room_id, session_id)
+        values = self.sensitive_values.get(key, ())
+        current = self._activity_redactors.get(key)
+        if current is None or current[0] != values:
+            current = (values, BridgeActivityStreamRedactor(values))
+            self._activity_redactors[key] = current
+        return current[1]
+
+    def redact_activity_payload(self, room_id, session_id, turn_id, payload):
+        return self._activity_redactor(room_id, session_id).redact(turn_id, payload)
+
+    def discard_activity_payloads(self, room_id, session_id, turn_id):
+        self._activity_redactor(room_id, session_id).discard(turn_id)
 
     def close(self):
         self.close_called = True

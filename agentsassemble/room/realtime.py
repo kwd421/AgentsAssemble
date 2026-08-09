@@ -53,6 +53,7 @@ from agentsassemble.room.deletion import RoomDeletionService
 from agentsassemble.room.agent_creation import RoomAgentCreationService
 from agentsassemble.room.bridge_reports import RoomBridgeReportService
 from agentsassemble.room.bridge_diagnostics import (
+    bridge_manager_activity_redactors,
     bridge_manager_diagnostic_redactor,
     bridge_manager_public_payload_redactor,
     bridge_manager_sensitive_value_registry,
@@ -253,6 +254,9 @@ class RoomRealtimeController:
         redact_stream_delta, discard_stream_delta = (
             bridge_manager_stream_redactors(bridge_manager)
         )
+        redact_activity_payload, discard_activity_payloads = (
+            bridge_manager_activity_redactors(bridge_manager)
+        )
         self._turn_coordinator = RoomTurnCoordinator(
             self.output_root,
             store=self.store,
@@ -274,6 +278,8 @@ class RoomRealtimeController:
             redact_public_payload=redact_bridge_public_payload,
             redact_stream_delta=redact_stream_delta,
             discard_stream_delta=discard_stream_delta,
+            redact_activity_payload=redact_activity_payload,
+            discard_activity_payloads=discard_activity_payloads,
             read_portal_publication=(
                 bridge_manager.room_portal_publication
                 if bridge_manager is not None

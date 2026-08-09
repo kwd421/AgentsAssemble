@@ -26,6 +26,8 @@ class RoomProviderStreamIngress:
         redact_diagnostic: bridge_diagnostics.DiagnosticRedactor | None = None,
         redact_delta: bridge_diagnostics.StreamDeltaRedactor | None = None,
         discard_delta: bridge_diagnostics.StreamDeltaDiscarder | None = None,
+        redact_activity: bridge_diagnostics.ActivityPayloadRedactor | None = None,
+        discard_activity: bridge_diagnostics.ActivityPayloadDiscarder | None = None,
     ) -> None:
         self._store = store
         self._redact_diagnostic = (
@@ -33,6 +35,12 @@ class RoomProviderStreamIngress:
         )
         self._redact_delta = redact_delta or bridge_diagnostics.default_stream_delta_redactor
         self._discard_delta = discard_delta or bridge_diagnostics.default_stream_delta_discarder
+        self._redact_activity = (
+            redact_activity or bridge_diagnostics.default_activity_payload_redactor
+        )
+        self._discard_activity = (
+            discard_activity or bridge_diagnostics.default_activity_payload_discarder
+        )
 
     def publish_delta(
         self,
@@ -105,6 +113,44 @@ class RoomProviderStreamIngress:
             str(session["session_id"]),
             payload,
         )
+        normalized_payload = dict(payload)
+        normalized_payload.pop("content", None)
+        normalized_payload["activity_title"] = raw_title
+        normalized_payload["activity_detail"] = raw_detail
+        safe_payloads = self._redact_activity(
+            room_id,
+            str(session["session_id"]),
+            str(session["active_turn_id"]),
+            normalized_payload,
+        )
+        if not safe_payloads:
+            return {
+                "buffered": True,
+                "event_seq": self._store.latest_event_sequence(room_id),
+            }
+        events = [
+            self._publish_activity_event(
+                room_id,
+                safe_payload,
+                agent_id=agent_id,
+                session=session,
+            )
+            for safe_payload in safe_payloads
+        ]
+        return {"event": events[-1], "event_seq": events[-1]["seq"]}
+
+    def _publish_activity_event(
+        self,
+        room_id: str,
+        payload: dict[str, object],
+        *,
+        agent_id: str,
+        session: dict[str, object],
+    ) -> dict[str, object]:
+        category = clean_room_text(payload.get("category"), limit=32)
+        status = clean_room_text(payload.get("status"), limit=32)
+        raw_title = str(payload.get("activity_title") or "")
+        raw_detail = str(payload.get("activity_detail") or "")
         content, activity_kind = public_activity(category, status, detail=raw_detail)
         activity_fields: dict[str, object] = {}
         activity_id = safe_activity_id(payload.get("activity_id"))
@@ -119,7 +165,7 @@ class RoomProviderStreamIngress:
             activity_fields["activity_title"] = activity_title
         if activity_detail:
             activity_fields["activity_detail"] = activity_detail
-        event = self._store.append_event(
+        return self._store.append_event(
             room_id,
             "activity_delta",
             participant_id=agent_id,
@@ -137,9 +183,13 @@ class RoomProviderStreamIngress:
             content=content,
             **activity_fields,
         )
-        return {"event": event, "event_seq": event["seq"]}
 
     def discard(self, room_id: str, session: dict[str, object]) -> None:
+        self._discard_activity(
+            room_id,
+            str(session["session_id"]),
+            str(session["active_turn_id"]),
+        )
         self._discard_delta(
             room_id,
             str(session["session_id"]),
