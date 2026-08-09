@@ -42,6 +42,8 @@ from agentsassemble.legacy.admission_projection import LiveAgentLegacyAdmissionP
 from agentsassemble.identity.pairing import OperatorPairingService
 from agentsassemble.persistence.local.identity.repository import IdentityStore
 from agentsassemble.room_admission import RoomAdmissionService
+from agentsassemble.room.realtime import RoomRealtimeController
+from agentsassemble.room.write_budget import RoomWriteBudgetPolicy
 from agentsassemble.admission.coordinator import RoomAdmissionCoordinator
 from agentsassemble.admission.invite import verify_session_token
 from agentsassemble.admission.invite import compatibility_public_invite_runtime
@@ -145,6 +147,75 @@ def _legacy_facade_route_dependencies(root: Path) -> GuiDeps:
 
 
 class GuiServerRoomRouteTests(unittest.TestCase):
+    def test_room_role_http_route_uses_canonical_command_budget(self):
+        reset_room_invite_state()
+        reset_room_users_state()
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            deps = _invite_route_dependencies(root)
+            deps.rooms.create_room("role-room")
+            deps.rooms.upsert_participant(
+                "role-room",
+                {
+                    "participant_id": "agent-1",
+                    "display_name": "Agent One",
+                    "participant_type": "agent",
+                    "status": "joined",
+                    "role": "agent",
+                },
+            )
+            provider_catalog = Mock()
+            provider_catalog.subscribe.return_value = lambda: None
+            provider_catalog.snapshot.return_value = {
+                "catalog_revision": "test",
+                "providers": [],
+            }
+            controller = RoomRealtimeController(
+                root,
+                invite_application=deps.invites,
+                room_sessions=deps.sessions,
+                repository=deps.rooms,
+                provider_catalog=provider_catalog,
+                write_budget_policy=RoomWriteBudgetPolicy(
+                    max_commands_per_window=1,
+                    max_payload_bytes_per_window=100_000,
+                    max_room_commands_per_window=1,
+                    max_room_payload_bytes_per_window=100_000,
+                ),
+            )
+            self.addCleanup(controller.close)
+            deps.room_command_handler = controller.handle_command
+
+            first = _dispatch_room_route(
+                root,
+                path="/api/room-members/role",
+                method="POST",
+                payload={
+                    "meeting_id": "role-room",
+                    "participant_id": "agent-1",
+                    "role": "reviewer",
+                },
+                deps=deps,
+            )
+            second = _dispatch_room_route(
+                root,
+                path="/api/room-members/role",
+                method="POST",
+                payload={
+                    "meeting_id": "role-room",
+                    "participant_id": "agent-1",
+                    "role": "implementer",
+                },
+                deps=deps,
+            )
+
+            self.assertEqual(first.sent_json["member"]["role"], "reviewer")
+            self.assertEqual(second.sent_error[0], HTTPStatus.CONFLICT)
+            self.assertEqual(
+                deps.rooms.participant("role-room", "agent-1")["role"],
+                "reviewer",
+            )
+
     def test_room_invite_creation_requires_an_existing_canonical_room(self):
         reset_room_invite_state()
         with tempfile.TemporaryDirectory() as temp_dir:

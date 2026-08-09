@@ -7,9 +7,9 @@ from uuid import uuid4
 from agentsassemble.room.errors import RoomCommandRejected
 from agentsassemble.room.members import (
     room_members_payload,
-    set_canonical_room_member_role,
     upsert_room_member,
 )
+from agentsassemble.room.text import clean_room_text
 from agentsassemble.web.router import RequestContext, Router
 
 
@@ -75,22 +75,42 @@ def register_room_member_routes(router: Router) -> None:
         payload = ctx.read_json_body()
         if payload is None:
             return
+        room_id = clean_room_text(
+            payload.get("meeting_id") or payload.get("room_id"),
+            limit=128,
+        )
+        identity = ctx.room_command_identity(room_id)
+        if identity is None:
+            return
         try:
-            member = set_canonical_room_member_role(
-                ctx.deps.rooms,
-                meeting_id=payload.get("meeting_id"),
-                participant_id=payload.get("participant_id"),
-                role=payload.get("role"),
+            ack = ctx.deps.handle_room_command(
+                identity,
+                {
+                    "request_id": str(payload.get("request_id") or uuid4()),
+                    "action": "participant.role.update",
+                    "payload": payload,
+                },
             )
+        except RoomCommandRejected as error:
+            status = (
+                HTTPStatus.FORBIDDEN
+                if error.code == "permission_denied"
+                else HTTPStatus.BAD_REQUEST
+                if error.code in {"bad_request", "unknown_action"}
+                else HTTPStatus.CONFLICT
+            )
+            ctx.send_error(status, str(error), code=error.code)
+            return
         except ValueError as error:
             ctx.send_error(HTTPStatus.BAD_REQUEST, str(error))
             return
+        member = dict((ack.get("result") or {}).get("participant") or {})
         ctx.send_json(
             {
                 "member": member,
                 **room_members_response(
                     ctx,
-                    str(member.get("room_id") or payload.get("meeting_id") or ""),
+                    str(member.get("room_id") or room_id),
                 ),
             }
         )
