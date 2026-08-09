@@ -4,17 +4,17 @@ Status: generated architecture inventory
 
 Generator: `python3 scripts/generate_package_map.py`
 
-Source fingerprint: `7e3c2e872bfd9292`
+Source fingerprint: `32c8e8e1b9b5144f`
 
 This file describes current evidence and proposed ownership. It does not by
 itself authorize a module move or a product behavior change.
 
 ## Summary
 
-- Python modules: 878
+- Python modules: 879
 - Top-level package modules: 302
-- Domains: admission=34, application=133, diagnostics=27, features=19, identity=13, legacy=226, persistence=74, providers=173, room=105, web=74
-- Classifications: compatibility=297, current=384, legacy=185, optional=12
+- Domains: admission=34, application=133, diagnostics=27, features=19, identity=13, legacy=226, persistence=74, providers=173, room=106, web=74
+- Classifications: compatibility=297, current=385, legacy=185, optional=12
 
 ## Classification Rules
 
@@ -140,7 +140,7 @@ itself authorize a module move or a product behavior change.
 | `agentsassemble.diagnostic_report_projection` | `agentsassemble/diagnostic_report_projection.py` | 11 | diagnostics | compatibility | `agentsassemble.diagnostics.report_projection` | 0 | - | test-import:1 | `tests/test_diagnostics_package.py` | `diagnostics/` | compatibility-shim |
 | `agentsassemble.diagnostics` | `agentsassemble/diagnostics/__init__.py` | 1 | diagnostics | current | - | 0 | - | test-import:1 | `tests/test_diagnostics_package.py` | `diagnostics/` | in-target-package |
 | `agentsassemble.diagnostics.canonical_room_benchmark` | `agentsassemble/diagnostics/canonical_room_benchmark.py` | 373 | diagnostics | current | `agentsassemble.persistence.local.room.database`, `agentsassemble.persistence.local.room.repository`, `agentsassemble.room.context` | 2 | - | test-import:1 | `tests/test_diagnostics_package.py` | `diagnostics/` | in-target-package |
-| `agentsassemble.diagnostics.cleanup` | `agentsassemble/diagnostics/cleanup.py` | 114 | diagnostics | current | `agentsassemble.room.text` | 7 | `call:compile@95`, `call:compile@98` | test-import:3 | `tests/test_diagnostics_package.py`, `tests/test_provider_runtime_controls.py`, `tests/test_room_agent_lifecycle.py` | `diagnostics/` | in-target-package |
+| `agentsassemble.diagnostics.cleanup` | `agentsassemble/diagnostics/cleanup.py` | 114 | diagnostics | current | `agentsassemble.room.text` | 8 | `call:compile@95`, `call:compile@98` | test-import:3 | `tests/test_diagnostics_package.py`, `tests/test_provider_runtime_controls.py`, `tests/test_room_agent_lifecycle.py` | `diagnostics/` | in-target-package |
 | `agentsassemble.diagnostics.cli` | `agentsassemble/diagnostics/cli.py` | 96 | diagnostics | current | - | 3 | - | test-import:1 | `tests/test_diagnostics_package.py` | `diagnostics/` | in-target-package |
 | `agentsassemble.diagnostics.codex_app_server_smoke` | `agentsassemble/diagnostics/codex_app_server_smoke.py` | 452 | diagnostics | current | `agentsassemble.application.room_repository_factory`, `agentsassemble.providers.codex_app_server`, `agentsassemble.room.text` | 1 | - | - | - | `diagnostics/` | in-target-package |
 | `agentsassemble.diagnostics.live_cli_smoke` | `agentsassemble/diagnostics/live_cli_smoke.py` | 326 | diagnostics | current | `agentsassemble.providers.live_cli`, `agentsassemble.room.text` | 4 | `call:Path@15` | test-import:1 | `tests/test_diagnostics_package.py` | `diagnostics/` | in-target-package |
@@ -751,6 +751,7 @@ itself authorize a module move or a product behavior change.
 | `agentsassemble.room.commands` | `agentsassemble/room/commands.py` | 103 | room | current | `agentsassemble.room.identity`, `agentsassemble.room.text` | 2 | `call:frozenset@8` | test-import:2 | `tests/test_room_commands.py`, `tests/test_room_package.py` | `room/` | in-target-package |
 | `agentsassemble.room.connections` | `agentsassemble/room/connections.py` | 162 | room | current | `agentsassemble.room.event_broker`, `agentsassemble.room.repository`, `agentsassemble.room.text` | 1 | - | test-import:1 | `tests/test_room_connections.py` | `room/` | in-target-package |
 | `agentsassemble.room.context` | `agentsassemble/room/context.py` | 139 | room | current | `agentsassemble.room.repository`, `agentsassemble.room.text` | 4 | - | test-import:2 | `tests/test_room_context.py`, `tests/test_room_package.py` | `room/` | in-target-package |
+| `agentsassemble.room.deferred_cleanup` | `agentsassemble/room/deferred_cleanup.py` | 75 | room | current | `agentsassemble.diagnostics.cleanup` | 1 | - | - | - | `room/` | in-target-package |
 | `agentsassemble.room.deleted_cleanup` | `agentsassemble/room/deleted_cleanup.py` | 119 | room | current | `agentsassemble.features.side_chat.service`, `agentsassemble.room.attachments`, `agentsassemble.room.event_broker`, `agentsassemble.room.provider_registry`, `agentsassemble.room.repository` | 1 | - | test-import:1 | `tests/test_room_deleted_cleanup.py` | `room/` | in-target-package |
 | `agentsassemble.room.deletion` | `agentsassemble/room/deletion.py` | 155 | room | current | `agentsassemble.room.errors`, `agentsassemble.room.repository`, `agentsassemble.room.text` | 1 | - | test-import:1 | `tests/test_room_deletion.py` | `room/` | in-target-package |
 | `agentsassemble.room.errors` | `agentsassemble/room/errors.py` | 9 | room | current | - | 30 | - | test-import:18 | `tests/room_realtime_security_contract.py`, `tests/test_room_agent_creation.py`, `tests/test_room_agent_lifecycle.py`, `+15` | `room/` | in-target-package |
@@ -776,7 +777,7 @@ itself authorize a module move or a product behavior change.
 | `agentsassemble.room.public_event_contract` | `agentsassemble/room/public_event_contract.py` | 143 | room | current | - | 1 | - | test-import:1 | `scripts/generate_room_event_types.py` | `room/` | in-target-package |
 | `agentsassemble.room.random` | `agentsassemble/room/random.py` | 63 | room | current | `agentsassemble.room.random_contract` | 2 | - | - | - | `room/` | in-target-package |
 | `agentsassemble.room.random_contract` | `agentsassemble/room/random_contract.py` | 90 | room | current | `agentsassemble.room.text` | 2 | `call:compile@12` | - | - | `room/` | in-target-package |
-| `agentsassemble.room.realtime` | `agentsassemble/room/realtime.py` | 1850 | room | current | `agentsassemble.admission.invite_service`, `agentsassemble.admission.session_service`, `agentsassemble.diagnostics.cleanup`, `agentsassemble.persistence.local.identity.registry`, `agentsassemble.persistence.local.room.repository`, `agentsassemble.persona_cards.library`, `agentsassemble.providers.capabilities`, `agentsassemble.providers.launch_specs`, +47 | 7 | `call:frozenset@136`, `call:getLogger@151`, `call:frozenset@1810` | test-import:16, monkeypatch:1 | `tests/fixtures/room_ui_server.py`, `tests/room_realtime_security_contract.py`, `tests/room_tool_mode_realtime_contract.py`, `+13` | `room/` | in-target-package |
+| `agentsassemble.room.realtime` | `agentsassemble/room/realtime.py` | 1847 | room | current | `agentsassemble.admission.invite_service`, `agentsassemble.admission.session_service`, `agentsassemble.diagnostics.cleanup`, `agentsassemble.persistence.local.identity.registry`, `agentsassemble.persistence.local.room.repository`, `agentsassemble.persona_cards.library`, `agentsassemble.providers.capabilities`, `agentsassemble.providers.launch_specs`, +48 | 7 | `call:frozenset@137`, `call:getLogger@152`, `call:frozenset@1807` | test-import:16, monkeypatch:1 | `tests/fixtures/room_ui_server.py`, `tests/room_realtime_security_contract.py`, `tests/room_tool_mode_realtime_contract.py`, `+13` | `room/` | in-target-package |
 | `agentsassemble.room.repository` | `agentsassemble/room/repository.py` | 370 | room | current | `agentsassemble.room.global_settings`, `agentsassemble.room_attention` | 56 | - | test-import:4 | `tests/room_repository_contract.py`, `tests/test_postgres_room_repository.py`, `tests/test_room_package.py`, `+1` | `room/` | in-target-package |
 | `agentsassemble.room.repository_records` | `agentsassemble/room/repository_records.py` | 253 | room | current | `agentsassemble.room.text`, `agentsassemble.room.visibility` | 13 | `call:frozenset@11`, `call:frozenset@12`, `call:frozenset@13`, `call:frozenset@14` | test-import:1 | `tests/test_room_package.py` | `room/` | in-target-package |
 | `agentsassemble.room.runtime_cleanup` | `agentsassemble/room/runtime_cleanup.py` | 95 | room | current | `agentsassemble.room.errors`, `agentsassemble.room.repository`, `agentsassemble.room.text` | 1 | - | test-import:1 | `tests/test_room_deletion.py` | `room/` | in-target-package |

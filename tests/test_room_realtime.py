@@ -33,6 +33,7 @@ from agentsassemble.persistence.local.identity.registry import (
 from agentsassemble.providers.capabilities import ProviderCapabilityCatalog
 from agentsassemble.providers.launch_specs import native_cli_provider_definition
 from tests.room_realtime_test_support import FakeBridgeManager, memory_room_access_services
+from tests.room_deferred_cleanup_contract import RoomDeferredCleanupContract
 from tests.room_runtime_diagnostic_security_contract import (
     RoomRuntimeDiagnosticSecurityContract,
 )
@@ -222,6 +223,7 @@ class NativeCliProviderSpecTests(unittest.TestCase):
 
 
 class RoomRealtimeControllerTests(
+    RoomDeferredCleanupContract,
     RoomRealtimeSecurityContract,
     RoomRuntimeDiagnosticSecurityContract,
     RoomToolModeRealtimeContract,

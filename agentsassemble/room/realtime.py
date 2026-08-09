@@ -47,6 +47,7 @@ from agentsassemble.room.closure import (
     RoomLifecycleCommandService,
 )
 from agentsassemble.room.deleted_cleanup import RoomDeletedCleanupService
+from agentsassemble.room.deferred_cleanup import DeferredCleanupScheduler
 from agentsassemble.room.deletion import RoomDeletionService
 from agentsassemble.room.agent_creation import RoomAgentCreationService
 from agentsassemble.room.bridge_reports import RoomBridgeReportService
@@ -198,6 +199,7 @@ class RoomRealtimeController:
         self.attention_shadow_mode = normalize_shadow_attention_mode(attention_shadow_mode)
         self.recovery_delay_seconds = max(0.0, float(recovery_delay_seconds))
         recovery_scheduler_impl = recovery_scheduler or schedule_daemon_timer
+        self._deferred_cleanup = DeferredCleanupScheduler(recovery_scheduler_impl)
         self.provider_catalog = provider_catalog or PROVIDER_CAPABILITIES
         default_providers = {
             clean_lobby_text(spec.agent_id, limit=128): spec
@@ -345,10 +347,7 @@ class RoomRealtimeController:
                 )
             ),
             remove_provider=self._provider_registry.remove,
-            schedule_cleanup=lambda delay, callback: schedule_daemon_timer(
-                delay,
-                callback,
-            ),
+            schedule_cleanup=self._deferred_cleanup.schedule,
         )
         self._agent_profiles = RoomAgentProfileService(
             store=self.store,
@@ -422,7 +421,7 @@ class RoomRealtimeController:
                 participant_id,
             ),
             remove_provider=self._provider_registry.remove,
-            schedule_cleanup=recovery_scheduler_impl,
+            schedule_cleanup=self._deferred_cleanup.schedule,
         )
         self._participant_removal_commands = (
             RoomParticipantRemovalCommandService(
@@ -460,10 +459,7 @@ class RoomRealtimeController:
                 ).delete_room(room_id)
             ),
             remove_event_listener=self._remove_room_event_listener,
-            schedule_cleanup=lambda delay, callback: schedule_daemon_timer(
-                delay,
-                callback,
-            ),
+            schedule_cleanup=self._deferred_cleanup.schedule,
         )
         self._room_runtime_cleanup = RoomRuntimeCleanupService(
             store=self.store,
@@ -1210,6 +1206,7 @@ class RoomRealtimeController:
             cleanup.record_success()
         except Exception as error:
             cleanup.record_failure("provider_catalog_listener.remove", error)
+        cleanup.merge(self._deferred_cleanup.close())
         cleanup.merge(self._turn_coordinator.close())
         cleanup.merge(
             self._agent_lifecycle.close(
