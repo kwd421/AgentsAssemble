@@ -121,7 +121,7 @@ class CredentialRedactingRoomClientTests(unittest.TestCase):
             participant_id="deepseek",
             session_id="deepseek",
             receive_sleep_seconds=0.005,
-            observed_checkpoint_interval_seconds=0.05,
+            receive_timeout_seconds=0.05,
         )
         thread = threading.Thread(target=bridge.run, daemon=True)
         thread.start()

@@ -78,13 +78,12 @@ class RoomAgentBridge:
         session_id: str,
         bridge_launch_id: str = "",
         receive_sleep_seconds: float = 0.05,
+        receive_timeout_seconds: float = 1.0,
         initial_orientation: str = "",
         stop_runtime_on_exit: bool = True,
         report_timeout_seconds: float = 5.0,
         runtime_profile: ProviderRuntimeProfile | None = None,
         room_portal: RoomPortal | None = None,
-        observed_checkpoint_max_events: int = 20,
-        observed_checkpoint_interval_seconds: float = 1.0,
         idle_room_check_seconds: float = 300.0,
     ) -> None:
         self.client = client
@@ -94,6 +93,7 @@ class RoomAgentBridge:
         self.session_id = clean_lobby_text(session_id, limit=128)
         self.bridge_launch_id = clean_lobby_text(bridge_launch_id, limit=128)
         self.receive_sleep_seconds = max(0.001, float(receive_sleep_seconds))
+        self.receive_timeout_seconds = max(0.05, float(receive_timeout_seconds))
         self._initial_orientation = str(initial_orientation or "").strip()
         self._stop_runtime_on_exit = bool(stop_runtime_on_exit)
         self._stop = threading.Event()
@@ -106,21 +106,12 @@ class RoomAgentBridge:
         self._activity_invalid_count = 0
         self._run_thread: threading.Thread | None = None
         self._last_observed_seq_reported = 0
-        self._pending_observed_seq = 0
-        self._pending_observed_event_count = 0
-        self._pending_observed_since = 0.0
-        self._observed_checkpoint_max_events = max(1, int(observed_checkpoint_max_events))
-        self._observed_checkpoint_interval_seconds = max(
-            0.05,
-            float(observed_checkpoint_interval_seconds),
-        )
-        self._observed_checkpoint_error: Exception | None = None
         self._deferred_messages: deque[dict[str, object]] = deque()
         self._idle_room_check_seconds = max(5.0, float(idle_room_check_seconds))
         self._next_idle_room_check_at = time.monotonic() + self._idle_room_check_seconds
         set_receive_timeout = getattr(self.client, "set_receive_timeout", None)
         if callable(set_receive_timeout):
-            set_receive_timeout(self._observed_checkpoint_interval_seconds)
+            set_receive_timeout(self.receive_timeout_seconds)
         self.remote_stop_requested = False
         self.reconnect_permitted = True
         self.ready_reported = self.report_timeout_reconnect_requested = False
@@ -155,29 +146,16 @@ class RoomAgentBridge:
                 if not messages:
                     messages = self.client.receive()
                 if not messages:
-                    self._flush_observed_checkpoint_if_due()
                     self._request_idle_room_check_if_due()
                     self._stop.wait(self.receive_sleep_seconds)
                     continue
-                processed_messages: list[dict[str, object]] = []
                 for message in messages:
-                    processed_messages.append(message)
                     self._handle_message(message)
                     if self._stop.is_set():
                         break
-                self._queue_observed_events(processed_messages)
-                self._flush_observed_checkpoint_if_due()
         finally:
             self._stop.set()
             cleanup = CleanupReport("room_agent_bridge")
-            if not self.client.closed and self._observed_checkpoint_error is None:
-                self._flush_observed_checkpoint_if_due(force=True)
-            if self._observed_checkpoint_error is not None:
-                cleanup.record_failure(
-                    "room.observed.flush",
-                    self._observed_checkpoint_error,
-                    handle_id=self.session_id,
-                )
             if self._stop_runtime_on_exit or self.remote_stop_requested:
                 try:
                     self.runtime.stop(timeout_seconds=2.0)
@@ -519,6 +497,7 @@ class RoomAgentBridge:
                     },
                 )
                 return
+            self._report_observation_receipt(observed_through_seq)
             explicit_decline_reason = portal.observation_decline_reason(turn_id)
             publication = portal.publication_result(turn_id)
             completed = time.monotonic()
@@ -818,57 +797,23 @@ class RoomAgentBridge:
                 flush=True,
             )
 
-    def _queue_observed_events(self, messages: list[dict[str, object]]) -> None:
-        after_seq = max(self._last_observed_seq_reported, self._pending_observed_seq)
-        observed_seq, event_count = _room_event_progress(messages, after_seq=after_seq)
-        if observed_seq <= after_seq:
+    def _report_observation_receipt(self, through_seq: int) -> None:
+        target_seq = max(0, int(through_seq))
+        if target_seq <= self._last_observed_seq_reported:
             return
-        if not self._pending_observed_seq:
-            self._pending_observed_since = time.monotonic()
-        self._pending_observed_seq = observed_seq
-        self._pending_observed_event_count += max(1, event_count)
-
-    def _flush_observed_checkpoint_if_due(self, *, force: bool = False) -> None:
-        if self._observed_checkpoint_error is not None or not self._pending_observed_seq:
-            return
-        due = (
-            force
-            or self._pending_observed_event_count >= self._observed_checkpoint_max_events
-            or time.monotonic() - self._pending_observed_since
-            >= self._observed_checkpoint_interval_seconds
-        )
-        if not due:
-            return
-        target_seq = self._pending_observed_seq
-        reported_event_count = self._pending_observed_event_count
-        try:
-            ack = self._command("room.observed", {"through_seq": target_seq}) or {}
-            result = ack.get("result") if isinstance(ack.get("result"), dict) else {}
-            acknowledged_seq = max(0, int(result.get("observed_through_seq") or 0))
-            if acknowledged_seq < target_seq:
-                raise BridgeProtocolError(
-                    "room.observed ACK did not cover the reported sequence.",
-                    code="observed_checkpoint_incomplete",
-                    fatal=True,
-                )
-        except (BridgeProtocolError, BridgeReportRejected, BridgeReportTimeout) as error:
-            self._observed_checkpoint_error = error
-            self._stop_after_report_failure(error, "observation checkpoint")
-            return
+        ack = self._command("room.observed", {"through_seq": target_seq}) or {}
+        result = ack.get("result") if isinstance(ack.get("result"), dict) else {}
+        acknowledged_seq = max(0, int(result.get("observed_through_seq") or 0))
+        if acknowledged_seq < target_seq:
+            raise BridgeProtocolError(
+                "room.observed ACK did not cover the provider's RoomPortal read receipt.",
+                code="observed_receipt_incomplete",
+                fatal=True,
+            )
         self._last_observed_seq_reported = max(
             self._last_observed_seq_reported,
             acknowledged_seq,
         )
-        if self._pending_observed_seq <= self._last_observed_seq_reported:
-            self._pending_observed_seq = 0
-            self._pending_observed_event_count = 0
-            self._pending_observed_since = 0.0
-            return
-        self._pending_observed_event_count = max(
-            0,
-            self._pending_observed_event_count - reported_event_count,
-        )
-        self._pending_observed_since = time.monotonic()
 
     def _fail_protocol(self, error: BridgeProtocolError) -> None:
         print(f"Agent Bridge protocol error: {error.code}", file=sys.stderr, flush=True)
@@ -1015,29 +960,6 @@ def _runtime_still_running(runtime: BridgeRuntime) -> bool:
 
 def _room_message_text(value: object, *, limit: int) -> str:
     return str(value or "").replace("\x00", "").replace("\r\n", "\n").replace("\r", "\n")[:limit].strip()
-
-
-def _room_event_progress(
-    messages: list[dict[str, object]],
-    *,
-    after_seq: int,
-) -> tuple[int, int]:
-    latest = 0
-    observed_sequences: set[int] = set()
-    for message in messages:
-        if (
-            clean_lobby_text(message.get("op"), limit=32) not in {"event", "snapshot"}
-            or clean_lobby_text(message.get("stream"), limit=32) != "room_events"
-        ):
-            continue
-        events = message.get("events") if isinstance(message.get("events"), list) else []
-        for event in events:
-            if isinstance(event, dict):
-                sequence = max(0, int(event.get("seq") or 0))
-                if sequence > after_seq:
-                    latest = max(latest, sequence)
-                    observed_sequences.add(sequence)
-    return latest, len(observed_sequences)
 
 
 def _contains_final_room_message(message: dict[str, object]) -> bool:

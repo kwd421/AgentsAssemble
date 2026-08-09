@@ -815,6 +815,12 @@ class RoomAgentBridgeTests(unittest.TestCase):
         )
         self.assertLess(result_commands[0][0], final_index)
         self.assertLess(result_commands[1][0], decline_index)
+        observed_reports = [
+            payload
+            for action, payload, _ in client.commands
+            if action == "room.observed"
+        ]
+        self.assertEqual(observed_reports, [{"through_seq": 1}, {"through_seq": 2}])
 
     def test_provider_failure_survives_a_second_result_publication_failure(self):
         class FailingResultRuntime(RoomPortalResultRuntime):
@@ -1342,7 +1348,7 @@ class RoomAgentBridgeTests(unittest.TestCase):
         self.assertNotIn("/private/project", str(activities))
         self.assertNotIn("TOKEN", str(activities))
 
-    def test_room_event_batches_advance_observation_without_invoking_provider(self):
+    def test_room_event_delivery_does_not_claim_provider_observation(self):
         client = FakeClient()
         runtime = FakeRuntime()
         bridge = RoomAgentBridge(
@@ -1372,130 +1378,87 @@ class RoomAgentBridgeTests(unittest.TestCase):
                     },
                 ]
             )
-        _wait_for(lambda: any(action == "room.observed" for action, _, _ in client.commands))
+        time.sleep(0.08)
         client.messages.append({"op": "agent.control", "action": "stop"})
         thread.join(timeout=2)
 
         observations = [payload for action, payload, _ in client.commands if action == "room.observed"]
-        self.assertEqual(observations, [{"through_seq": 7}])
+        self.assertEqual(observations, [])
         self.assertEqual(runtime.sent, [])
 
     def test_observed_cursor_advances_only_after_correlated_ack(self):
-        client = FakeClient()
-        client.command_responses["room.observed"] = None
-        bridge = RoomAgentBridge(
-            client,
-            FakeRuntime(),
-            room_id="general",
-            participant_id="codex",
-            session_id="codex",
-            receive_sleep_seconds=0.005,
-            observed_checkpoint_interval_seconds=0.05,
-        )
-        thread = threading.Thread(target=bridge.run, daemon=True)
-        thread.start()
-        _wait_for(lambda: any(action == "bridge.ready" for action, _, _ in client.commands))
-        with client._lock:
-            client.messages.append(
-                {
-                    "op": "event",
-                    "stream": "room_events",
-                    "events": [{"id": "event-4", "seq": 4, "type": "message_final"}],
-                }
+        with tempfile.TemporaryDirectory() as temp_dir:
+            portal = RoomPortal(Path(temp_dir) / "portal", participant_id="codex")
+            portal.prepare()
+            client = FakeClient()
+            client.command_responses["room.observed"] = None
+            bridge = RoomAgentBridge(
+                client,
+                RoomPortalRuntime(portal, [""]),
+                room_id="general",
+                participant_id="codex",
+                session_id="codex",
+                receive_sleep_seconds=0.005,
+                room_portal=portal,
             )
-        _wait_for(lambda: any(action == "room.observed" for action, _, _ in client.commands))
-        observation = next(
-            command for command in client.commands if command[0] == "room.observed"
-        )
-        self.assertEqual(bridge._last_observed_seq_reported, 0)
+            thread = threading.Thread(target=bridge.run, daemon=True)
+            thread.start()
+            _wait_for(lambda: any(action == "bridge.ready" for action, _, _ in client.commands))
+            with client._lock:
+                client.messages.extend(
+                    [
+                        {
+                            "op": "event",
+                            "stream": "room_events",
+                            "events": [
+                                {
+                                    "id": "event-4",
+                                    "seq": 4,
+                                    "type": "message_final",
+                                    "participant_id": "host",
+                                    "display_name": "Host",
+                                    "content": "assigned message",
+                                }
+                            ],
+                        },
+                        {
+                            "op": "room.wake",
+                            "room_id": "general",
+                            "participant_id": "codex",
+                            "session_id": "codex",
+                            "turn_id": "wake-read-receipt",
+                            "input_up_to_seq": 4,
+                            "attachment_ids": [],
+                            "observation_kind": "ambient_observation",
+                            "publication_mode": "explicit_room_portal",
+                            "timeout_seconds": 2,
+                        },
+                    ]
+                )
+            _wait_for(lambda: any(action == "room.observed" for action, _, _ in client.commands))
+            observation = next(
+                command for command in client.commands if command[0] == "room.observed"
+            )
+            self.assertEqual(bridge._last_observed_seq_reported, 0)
+            self.assertFalse(any(action == "turn.decline" for action, _, _ in client.commands))
 
-        with client._lock:
-            client.messages.append(
-                {
-                    "op": "ack",
-                    "request_id": observation[2],
-                    "accepted": True,
-                    "result": {"observed_through_seq": 4},
-                }
-            )
-        _wait_for(lambda: bridge._last_observed_seq_reported == 4)
-        with client._lock:
-            client.messages.append({"op": "agent.control", "action": "stop"})
-        thread.join(timeout=2)
+            with client._lock:
+                client.messages.append(
+                    {
+                        "op": "ack",
+                        "request_id": observation[2],
+                        "accepted": True,
+                        "result": {"observed_through_seq": 4},
+                    }
+                )
+            _wait_for(lambda: bridge._last_observed_seq_reported == 4)
+            _wait_for(lambda: any(action == "turn.decline" for action, _, _ in client.commands))
+            with client._lock:
+                client.messages.append({"op": "agent.control", "action": "stop"})
+            thread.join(timeout=2)
 
         self.assertFalse(thread.is_alive())
         self.assertTrue(bridge.last_cleanup_report.ok)
-
-    def test_observation_flushes_at_event_bound_without_waiting_for_timer(self):
-        client = FakeClient()
-        bridge = RoomAgentBridge(
-            client,
-            FakeRuntime(),
-            room_id="general",
-            participant_id="codex",
-            session_id="codex",
-            receive_sleep_seconds=0.005,
-            observed_checkpoint_max_events=2,
-            observed_checkpoint_interval_seconds=10.0,
-        )
-        thread = threading.Thread(target=bridge.run, daemon=True)
-        thread.start()
-        _wait_for(lambda: any(action == "bridge.ready" for action, _, _ in client.commands))
-        with client._lock:
-            client.messages.extend(
-                [
-                    {
-                        "op": "event",
-                        "stream": "room_events",
-                        "events": [{"id": "event-1", "seq": 1, "type": "message_final"}],
-                    },
-                    {
-                        "op": "event",
-                        "stream": "room_events",
-                        "events": [{"id": "event-2", "seq": 2, "type": "message_final"}],
-                    },
-                ]
-            )
-        _wait_for(lambda: any(action == "room.observed" for action, _, _ in client.commands))
-        with client._lock:
-            client.messages.append({"op": "agent.control", "action": "stop"})
-        thread.join(timeout=2)
-
-        observations = [payload for action, payload, _ in client.commands if action == "room.observed"]
-        self.assertEqual(observations, [{"through_seq": 2}])
-
-    def test_graceful_stop_flushes_pending_observation(self):
-        client = FakeClient()
-        bridge = RoomAgentBridge(
-            client,
-            FakeRuntime(),
-            room_id="general",
-            participant_id="codex",
-            session_id="codex",
-            receive_sleep_seconds=0.005,
-            observed_checkpoint_max_events=20,
-            observed_checkpoint_interval_seconds=10.0,
-        )
-        thread = threading.Thread(target=bridge.run, daemon=True)
-        thread.start()
-        _wait_for(lambda: any(action == "bridge.ready" for action, _, _ in client.commands))
-        with client._lock:
-            client.messages.extend(
-                [
-                    {
-                        "op": "event",
-                        "stream": "room_events",
-                        "events": [{"id": "event-3", "seq": 3, "type": "message_final"}],
-                    },
-                    {"op": "agent.control", "action": "stop"},
-                ]
-            )
-        thread.join(timeout=2)
-
-        observations = [payload for action, payload, _ in client.commands if action == "room.observed"]
-        self.assertFalse(thread.is_alive())
-        self.assertEqual(observations, [{"through_seq": 3}])
-        self.assertEqual(bridge._last_observed_seq_reported, 3)
 
     def test_bridge_ready_reports_the_explicit_launch_profile(self):
         client = FakeClient()
