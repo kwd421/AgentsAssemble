@@ -23,8 +23,10 @@ from agentsassemble.providers.room_portal import RoomPortal, room_session_orient
 from agentsassemble.providers.secrets import (
     PROVIDER_SECRETS,
     secret_provider_id_for_kind,
+    validate_provider_secret,
 )
 from agentsassemble.providers.agent_bridge import RoomAgentBridge
+from agentsassemble.providers.redacting_room_client import CredentialRedactingRoomClient
 from agentsassemble.web.room_client import connect_room_ws, join_agent_room_session
 
 
@@ -65,6 +67,7 @@ class AgentAttendee:
         self._runtime = None
         self._runtime_profile: ProviderRuntimeProfile | None = None
         self._opencode_server: OpenCodeServerProcess | None = None
+        self._provider_credential = ""
         self.last_cleanup_report = CleanupReport("agent_attendee")
 
     def run(self) -> int:
@@ -110,7 +113,14 @@ class AgentAttendee:
             while not self._stop.is_set():
                 client = connect_room_ws(self.server_url, session_token, ["room_events"], timeout=10.0)
                 bridge = RoomAgentBridge(
-                    client,
+                    CredentialRedactingRoomClient(
+                        client,
+                        sensitive_values=(
+                            self.invite_token,
+                            session_token,
+                            self._provider_credential,
+                        ),
+                    ),
                     self._runtime,
                     room_id=room_id,
                     participant_id=participant_id,
@@ -291,6 +301,9 @@ class AgentAttendee:
             )
             if secret_provider_id and not credential:
                 raise RuntimeError("credential_missing")
+            if credential:
+                credential = validate_provider_secret(credential)
+        self._provider_credential = credential
         runtime_kwargs: dict[str, object] = {"credential": credential}
         if environment is not None:
             runtime_kwargs["environment"] = environment
