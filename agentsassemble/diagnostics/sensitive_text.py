@@ -268,6 +268,36 @@ def redact_persisted_diagnostic_text(
     return text[-bounded_limit:].strip()
 
 
+def redact_persisted_diagnostic_bytes(
+    value: bytes | bytearray,
+    *,
+    limit: int = 16_000,
+    exact_values: Iterable[object] = (),
+) -> bytes:
+    """Sanitize a diagnostic tail while enforcing its limit in bytes.
+
+    Exact runtime secrets are replaced before the byte tail is selected. This
+    keeps a multibyte UTF-8 boundary from discarding the beginning of a secret
+    while retaining its otherwise unmatchable suffix.
+    """
+
+    bounded_limit = max(1, int(limit))
+    data = bytes(value or b"").replace(b"\x00", b"")
+    for sensitive_value in normalized_exact_sensitive_values(exact_values):
+        data = data.replace(sensitive_value.encode("utf-8"), b"[redacted]")
+    text = data.decode("utf-8", errors="replace")
+    sanitized = redact_persisted_diagnostic_text(
+        text,
+        limit=max(len(text), bounded_limit),
+    ).encode("utf-8")
+    if len(sanitized) <= bounded_limit:
+        return sanitized
+    tail = sanitized[-bounded_limit:]
+    while tail and tail[0] & 0b1100_0000 == 0b1000_0000:
+        tail = tail[1:]
+    return tail.decode("utf-8", errors="strict").strip().encode("utf-8")
+
+
 def redact_persisted_diagnostic_value(value: object) -> object:
     """Recursively sanitize provider-owned diagnostic structures for storage."""
     if isinstance(value, dict):
@@ -297,6 +327,7 @@ __all__ = [
     "redact_exact_sensitive_mapping",
     "redact_exact_sensitive_value",
     "redact_persisted_diagnostic_text",
+    "redact_persisted_diagnostic_bytes",
     "redact_persisted_diagnostic_value",
     "validate_redactable_sensitive_value",
 ]

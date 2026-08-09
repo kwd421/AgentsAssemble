@@ -17,9 +17,11 @@ from uuid import uuid4
 
 from agentsassemble.diagnostics.cleanup import CleanupReport
 from agentsassemble.diagnostics.sensitive_text import (
+    redact_persisted_diagnostic_bytes,
     redact_persisted_diagnostic_text,
     validate_redactable_sensitive_value,
 )
+from agentsassemble.providers.bridge_launch_secrets import encode_secure_launch_payload
 from agentsassemble.providers.launch_specs import (
     NativeCliProviderSpec,
     validate_native_cli_provider_spec,
@@ -127,7 +129,7 @@ class NativeCliBridgeProcessManager:
         self._lock = threading.RLock()
         self._handles: dict[tuple[str, str], _BridgeHandle] = {}
         self._sensitive_values_by_session: dict[
-            tuple[str, str], tuple[str, ...]
+            tuple[str, str], dict[str, tuple[str, ...]]
         ] = {}
         self._launch_ownership: dict[tuple[str, str], _BridgeLaunchOwnership] = {}
         self._opencode_server: OpenCodeServerProcess | None = None
@@ -136,6 +138,48 @@ class NativeCliBridgeProcessManager:
     def set_exit_listener(self, listener: BridgeExitListener | None) -> None:
         with self._lock:
             self._on_exit = listener
+
+    def adopt_preserved_security_values(
+        self,
+        room_id: str,
+        session: Mapping[str, object],
+        *,
+        session_token: str,
+    ) -> bool:
+        """Rehydrate redaction values for a bridge preserved by a rolling handoff."""
+
+        if str(session.get("process_ownership") or "") != "server":
+            return False
+        if str(session.get("runtime_status") or "") in {"", "stopped"}:
+            return False
+        session_id = str(
+            session.get("session_id") or session.get("participant_id") or ""
+        )
+        if not room_id or not session_id:
+            return False
+        values: list[str] = [
+            validate_redactable_sensitive_value(
+                session_token,
+                label="Agent Bridge session token",
+            )
+        ]
+        secret_provider_id = secret_provider_id_for_kind(
+            str(session.get("provider_kind") or "")
+        )
+        if secret_provider_id:
+            resolved_credential = self._secret_resolver(secret_provider_id)
+            if not resolved_credential:
+                raise RuntimeError("credential_missing")
+            try:
+                values.append(validate_provider_secret(resolved_credential))
+            except ValueError as error:
+                raise RuntimeError("credential_invalid") from error
+        with self._lock:
+            self._sensitive_values_by_session.setdefault(
+                (room_id, session_id),
+                {},
+            )["preserved"] = tuple(dict.fromkeys(values))
+        return True
 
     def adopt_preserved_shared_runtime(
         self,
@@ -384,6 +428,16 @@ class NativeCliBridgeProcessManager:
             "agentsassemble.application.agent_bridge_entrypoint",
         ]
         secure_launch_required = bool(credential or session_token)
+        secure_launch_payload = (
+            encode_secure_launch_payload(
+                {
+                    "credential": credential,
+                    "session_token": session_token,
+                }
+            )
+            if secure_launch_required
+            else b""
+        )
         process = self._popen_factory(
             command,
             stdin=subprocess.PIPE if secure_launch_required else subprocess.DEVNULL,
@@ -399,17 +453,7 @@ class NativeCliBridgeProcessManager:
                 process.terminate()
                 raise RuntimeError("Agent Bridge did not expose secure launch stdin.")
             try:
-                stream.write(
-                    json.dumps(
-                        {
-                            "credential": credential,
-                            "session_token": session_token,
-                        },
-                        ensure_ascii=True,
-                        separators=(",", ":"),
-                    ).encode("utf-8")
-                    + b"\n"
-                )
+                stream.write(secure_launch_payload)
                 stream.flush()
             finally:
                 stream.close()
@@ -432,14 +476,9 @@ class NativeCliBridgeProcessManager:
         )
         with self._lock:
             self._handles[key] = handle
-            self._sensitive_values_by_session[key] = tuple(
-                dict.fromkeys(
-                    (
-                        *self._sensitive_values_by_session.get(key, ()),
-                        *handle.sensitive_values,
-                    )
-                )
-            )
+            self._sensitive_values_by_session.setdefault(key, {})[
+                handle.handle_id
+            ] = handle.sensitive_values
         handle.stderr_thread = threading.Thread(
             target=self._drain_stderr,
             args=(handle,),
@@ -485,6 +524,7 @@ class NativeCliBridgeProcessManager:
         with self._lock:
             handle = self._handles.get(key)
             if handle is None:
+                self._sensitive_values_by_session.pop(key, None)
                 return {"stopped": False, "alive": False, "bridge_pid": None, "reason": "handle_not_found"}
             if not handle_id or handle.handle_id != handle_id:
                 return {
@@ -505,6 +545,7 @@ class NativeCliBridgeProcessManager:
         self._finish_stderr(handle)
         with self._lock:
             self._handles.pop(key, None)
+            self._forget_sensitive_values_locked(key, handle.handle_id)
         return {
             "stopped": True,
             "alive": process.poll() is None,
@@ -552,6 +593,9 @@ class NativeCliBridgeProcessManager:
                     handle_id="shared-opencode-server",
                     orphaned=process is not None and process.poll() is None,
                 )
+        with self._lock:
+            if not report.orphaned_handle_ids:
+                self._sensitive_values_by_session.clear()
         self.last_cleanup_report = report
         return report
 
@@ -577,12 +621,19 @@ class NativeCliBridgeProcessManager:
         *,
         limit: int = _PERSISTED_STDERR_LIMIT,
     ) -> str:
-        """Redact credentials retained for every launch of one Agent Session."""
+        """Redact credentials retained by active launches of one Agent Session."""
 
         with self._lock:
-            exact_values = self._sensitive_values_by_session.get(
+            registrations = self._sensitive_values_by_session.get(
                 (room_id, session_id),
-                (),
+                {},
+            )
+            exact_values = tuple(
+                dict.fromkeys(
+                    value
+                    for registered in registrations.values()
+                    for value in registered
+                )
             )
         return redact_persisted_diagnostic_text(
             value,
@@ -602,12 +653,19 @@ class NativeCliBridgeProcessManager:
             listener = self._on_exit if is_current else None
             stopping = handle.stopping
         if listener is not None and not stopping:
-            listener(
-                handle.room_id,
-                handle.session_id,
-                int(returncode),
-                str(self._stderr_snapshot(handle)["stderr_tail"]),
-            )
+            try:
+                listener(
+                    handle.room_id,
+                    handle.session_id,
+                    int(returncode),
+                    str(self._stderr_snapshot(handle)["stderr_tail"]),
+                )
+            finally:
+                with self._lock:
+                    self._forget_sensitive_values_locked(key, handle.handle_id)
+        else:
+            with self._lock:
+                self._forget_sensitive_values_locked(key, handle.handle_id)
 
     def _drain_stderr(self, handle: _BridgeHandle) -> None:
         stream = getattr(handle.process, "stderr", None)
@@ -647,33 +705,44 @@ class NativeCliBridgeProcessManager:
     @staticmethod
     def _stderr_snapshot(handle: _BridgeHandle) -> dict[str, object]:
         with handle.stderr_lock:
-            tail = bytes(handle.stderr_tail).decode("utf-8", errors="replace")
+            tail = redact_persisted_diagnostic_bytes(
+                handle.stderr_tail,
+                limit=_PERSISTED_STDERR_LIMIT,
+                exact_values=handle.sensitive_values,
+            )
             return {
                 "stderr_drained": True,
                 "stderr_byte_count": handle.stderr_byte_count,
                 "stderr_line_count": handle.stderr_line_count,
                 "stderr_warning_count": handle.stderr_warning_count,
                 "stderr_tail_truncated": handle.stderr_tail_truncated,
-                "stderr_tail": redact_persisted_diagnostic_text(
-                    tail,
-                    limit=_PERSISTED_STDERR_LIMIT,
-                    exact_values=handle.sensitive_values,
-                ),
+                "stderr_tail": tail.decode("utf-8"),
             }
 
     def _persist_stderr_snapshot(self, handle: _BridgeHandle) -> None:
         with handle.stderr_lock:
-            tail = bytes(handle.stderr_tail).decode("utf-8", errors="replace")
-        persisted = redact_persisted_diagnostic_text(
-            tail,
-            limit=_PERSISTED_STDERR_LIMIT,
-            exact_values=handle.sensitive_values,
-        )
+            persisted = redact_persisted_diagnostic_bytes(
+                handle.stderr_tail,
+                limit=_PERSISTED_STDERR_LIMIT,
+                exact_values=handle.sensitive_values,
+            )
         try:
-            handle.stderr_path.write_text(persisted, encoding="utf-8")
+            handle.stderr_path.write_bytes(persisted)
             handle.stderr_path.chmod(0o600)
         except OSError:
             pass
+
+    def _forget_sensitive_values_locked(
+        self,
+        key: tuple[str, str],
+        registration_id: str,
+    ) -> None:
+        registrations = self._sensitive_values_by_session.get(key)
+        if registrations is None:
+            return
+        registrations.pop(registration_id, None)
+        if not registrations:
+            self._sensitive_values_by_session.pop(key, None)
 
     def _resolve(self, executable: str) -> str:
         if not executable:

@@ -11,6 +11,10 @@ import time
 from pathlib import Path
 
 from agentsassemble.providers.agent_bridge import RoomAgentBridge
+from agentsassemble.providers.bridge_launch_secrets import (
+    SecureLaunchPayloadError,
+    read_secure_launch_payload,
+)
 from agentsassemble.providers.redacting_room_client import CredentialRedactingRoomClient
 from agentsassemble.providers.room_portal import RoomPortal, room_session_orientation
 from agentsassemble.providers.runtime_config import CanonicalBridgeLaunchConfig
@@ -31,21 +35,12 @@ def main() -> int:
     config = CanonicalBridgeLaunchConfig.parse_strict(raw_config)
     credential = ""
     session_token = ""
-    secure_launch_line = (
-        sys.stdin.buffer.readline(32_768).decode("utf-8", errors="replace").strip()
-    )
-    if secure_launch_line:
-        try:
-            secure_launch = json.loads(secure_launch_line)
-        except ValueError:
-            secure_launch = None
-        if isinstance(secure_launch, dict):
-            credential = str(secure_launch.get("credential") or "")
-            session_token = str(secure_launch.get("session_token") or "")
-        elif config.credential_stdin:
-            # Read old launch payloads long enough to let a pre-update server
-            # stop its bridge cleanly. New launches always use the JSON handoff.
-            credential = secure_launch_line
+    try:
+        secure_launch = read_secure_launch_payload(sys.stdin.buffer)
+    except SecureLaunchPayloadError as error:
+        raise SystemExit(str(error)) from error
+    credential = str(secure_launch.get("credential") or "")
+    session_token = str(secure_launch.get("session_token") or "")
     if config.credential_stdin and not credential:
         raise SystemExit("Agent Bridge credential handoff was empty.")
     portal = RoomPortal(
