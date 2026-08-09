@@ -18,7 +18,10 @@ from agentsassemble.providers.workspace_picker import (
     choose_workspace_folder,
 )
 from agentsassemble.web.router import RequestContext, Router
-from agentsassemble.providers.secrets import PROVIDER_SECRETS
+from agentsassemble.providers.secrets import (
+    PROVIDER_SECRETS,
+    ProviderSecretStoreUnavailable,
+)
 from agentsassemble.providers.sessions import (
     ProviderSessionListing,
     inspect_provider_sessions,
@@ -88,7 +91,12 @@ def register_provider_routes(
     capabilities = PROVIDER_CAPABILITIES if capability_catalog is None else capability_catalog
 
     def _send_store_status(ctx: RequestContext, operation: Callable[[], Mapping[str, object]]) -> None:
-        ctx.send_json(_safe_status_payload(operation()))
+        try:
+            status = operation()
+        except ProviderSecretStoreUnavailable:
+            ctx.send_error(HTTPStatus.SERVICE_UNAVAILABLE, "secure_store_unavailable")
+            return
+        ctx.send_json(_safe_status_payload(status))
 
     @router.get("/api/providers")
     def providers(ctx: RequestContext) -> None:
@@ -264,7 +272,7 @@ def register_provider_routes(
         except ValueError as error:
             ctx.send_error(HTTPStatus.BAD_REQUEST, str(error))
             return
-        except RuntimeError:
+        except ProviderSecretStoreUnavailable:
             ctx.send_error(HTTPStatus.SERVICE_UNAVAILABLE, "secure_store_unavailable")
             return
         ctx.send_json(_safe_status_payload(status))

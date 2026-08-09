@@ -945,7 +945,14 @@ class ProviderRuntimeControlTests(unittest.TestCase):
                 return 0, "Claude help", ""
             return 1, "", "unsupported"
 
-        catalog = ProviderCapabilityCatalog(runner=runner, resolver=lambda executable: f"/bin/{executable}")
+        catalog = ProviderCapabilityCatalog(
+            runner=runner,
+            resolver=lambda executable: f"/bin/{executable}",
+            claude_model_discovery=lambda _executable: ["claude-sonnet-5"],
+            claude_xhigh_model_discovery=lambda _executable: [],
+            remote_model_discovery=lambda _profile, _api_key: [],
+            grok_custom_model_discovery=lambda: set(),
+        )
         remove = catalog.subscribe(lambda snapshot: (snapshots.append(snapshot), notified.set()))
         try:
             self.assertEqual(catalog.snapshot()["status"], "loading")

@@ -16,6 +16,7 @@ from uuid import uuid4
 from agentsassemble import room_invite
 from agentsassemble.gui import _make_handler
 from agentsassemble.persistence.local.room.repository import RoomStore
+from agentsassemble.providers.secrets import ProviderSecretStoreUnavailable
 from agentsassemble.web.routes.providers import register_provider_routes
 from agentsassemble.web.router import GuiDeps, RequestContext, Router
 
@@ -345,7 +346,7 @@ class ProviderRouteTests(unittest.TestCase):
         self.assertEqual(blank.sent_error, (HTTPStatus.BAD_REQUEST, "API key is required."))
 
     def test_secure_store_failure_is_service_unavailable_for_post(self):
-        self.store.failure = RuntimeError("backend unavailable")
+        self.store.failure = ProviderSecretStoreUnavailable("backend unavailable")
 
         response = self.dispatch(
             "POST",
@@ -353,6 +354,21 @@ class ProviderRouteTests(unittest.TestCase):
             body=json.dumps({"api_key": "secret-value"}).encode(),
         )
         self.assertEqual(response.sent_error, (HTTPStatus.SERVICE_UNAVAILABLE, "secure_store_unavailable"))
+
+    def test_secure_store_failure_is_service_unavailable_for_status_and_delete(self):
+        self.store.failure = ProviderSecretStoreUnavailable("backend unavailable")
+
+        status = self.dispatch("GET", "/api/provider-credentials/deepseek")
+        deleted = self.dispatch("DELETE", "/api/provider-credentials/deepseek")
+
+        self.assertEqual(
+            status.sent_error,
+            (HTTPStatus.SERVICE_UNAVAILABLE, "secure_store_unavailable"),
+        )
+        self.assertEqual(
+            deleted.sent_error,
+            (HTTPStatus.SERVICE_UNAVAILABLE, "secure_store_unavailable"),
+        )
 
 
 class ProviderHandlerDispatchTests(unittest.TestCase):
