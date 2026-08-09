@@ -260,8 +260,6 @@ def redact_exact_sensitive_mapping(
     """Redact exact values even when ordered payload fields split them."""
 
     normalized = normalized_exact_sensitive_values(exact_values)
-    if not normalized:
-        return dict(value)
     strings: list[str] = []
 
     def collect(item: object) -> None:
