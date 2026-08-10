@@ -11,6 +11,7 @@ import secrets
 from datetime import UTC, datetime, timedelta
 from urllib.parse import urlsplit, urlunsplit
 
+from agentsassemble.admission.transport_security import require_secure_room_transport
 from agentsassemble.room.text import clean_room_text as clean_lobby_text
 
 
@@ -178,6 +179,7 @@ def normalize_lan_room_url(room_url: str) -> str:
         raise ValueError("LAN invite room URL must be an HTTP(S) URL with a valid host and port.")
     if parsed.username or parsed.password or parsed.query or parsed.fragment:
         raise ValueError("LAN invite room URL must be HTTP(S) without userinfo, query, or fragment.")
+    require_secure_room_transport(scheme=parsed.scheme, hostname=hostname)
     if not _is_lan_invite_host(hostname):
         raise ValueError("LAN invite room URL must use a connectable LAN, loopback, or private host.")
     return urlunsplit((parsed.scheme, parsed.netloc, parsed.path.rstrip("/"), "", ""))

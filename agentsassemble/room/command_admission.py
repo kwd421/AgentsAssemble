@@ -28,6 +28,13 @@ _BRIDGE_ONLY_ACTIONS = frozenset(
 )
 _BROWSER_ONLY_ACTIONS = frozenset({"room.history", "room.vote.summary"})
 _CAPABILITY_BY_ACTION = {
+    "room.result.publish": "bridge.publish",
+    "turn.state": "bridge.publish",
+    "activity.update": "bridge.publish",
+    "message.delta": "bridge.publish",
+    "message.final": "bridge.publish",
+    "provider.request.open": "bridge.publish",
+    "provider.request.closed": "bridge.publish",
     "room.random.roll": "room.random",
     "room.random.choose": "room.random",
     "room.archive": "room.manage",
@@ -62,7 +69,6 @@ def authorize_room_command(identity: dict[str, object], action: str) -> None:
                 "This command is reserved for an Agent Bridge.",
                 code="permission_denied",
             )
-        return
     if action in _BROWSER_ONLY_ACTIONS and bridge:
         raise RoomCommandRejected(
             "This command is reserved for a room participant.",

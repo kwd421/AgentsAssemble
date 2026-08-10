@@ -16,7 +16,7 @@ class MultiHostInviteTests(unittest.TestCase):
         issued_at = datetime(2026, 5, 22, 1, 2, 3, tzinfo=UTC)
 
         packet = create_lan_invite_packet(
-            room_url="http://192.168.1.50:8765",
+            room_url="https://192.168.1.50:8765",
             meeting_id="resident-m1",
             agent_id="friend-claude",
             display_name="Friend Claude",
@@ -29,7 +29,7 @@ class MultiHostInviteTests(unittest.TestCase):
 
         self.assertEqual(packet["mode"], LAN_INVITE_MODE)
         self.assertEqual(packet["client_kind"], NATIVE_REMOTE_ROOM_CLIENT_KIND)
-        self.assertEqual(packet["room_url"], "http://192.168.1.50:8765")
+        self.assertEqual(packet["room_url"], "https://192.168.1.50:8765")
         self.assertEqual(packet["agent"]["agent_id"], "friend-claude")
         self.assertEqual(packet["agent"]["provider_kind"], "claude_code")
         self.assertEqual(packet["admission"]["identity_proof"], "hmac_sha256_invite_token")
@@ -60,7 +60,7 @@ class MultiHostInviteTests(unittest.TestCase):
                 "schema": "agentsassemble.lan_invite.v1",
                 "mode": LAN_INVITE_MODE,
                 "client_kind": NATIVE_REMOTE_ROOM_CLIENT_KIND,
-                "room_url": "http://192.168.1.50:8765",
+                "room_url": "https://192.168.1.50:8765",
                 "issued_at": issued_at.isoformat(),
                 "expires_at": (issued_at + timedelta(seconds=60)).isoformat(),
                 "nonce": "fixed-nonce",
@@ -77,7 +77,7 @@ class MultiHostInviteTests(unittest.TestCase):
         self.assertEqual(missing["identity_status"], "missing_identity_claims")
 
         packet = create_lan_invite_packet(
-            room_url="http://192.168.1.50:8765",
+            room_url="https://192.168.1.50:8765",
             meeting_id="resident-m1",
             agent_id="friend-claude",
             display_name="Friend Claude",
@@ -100,7 +100,7 @@ class MultiHostInviteTests(unittest.TestCase):
     def test_lan_invite_rejects_expired_or_tampered_tokens(self):
         issued_at = datetime(2026, 5, 22, 1, 2, 3, tzinfo=UTC)
         packet = create_lan_invite_packet(
-            room_url="http://10.0.0.8:8765",
+            room_url="https://10.0.0.8:8765",
             meeting_id="resident-m1",
             agent_id="friend-cursor",
             display_name="Friend Cursor",
@@ -140,7 +140,7 @@ class MultiHostInviteTests(unittest.TestCase):
     def test_lan_invite_rejects_bridge_or_unsafe_room_urls(self):
         with self.assertRaisesRegex(ValueError, "native remote room client"):
             create_lan_invite_packet(
-                room_url="http://192.168.1.50:8765",
+                room_url="https://192.168.1.50:8765",
                 meeting_id="resident-m1",
                 agent_id="friend-bridge",
                 display_name="Friend Bridge",
@@ -150,7 +150,7 @@ class MultiHostInviteTests(unittest.TestCase):
 
         with self.assertRaisesRegex(ValueError, "without userinfo, query, or fragment"):
             create_lan_invite_packet(
-                room_url="http://token@192.168.1.50:8765/?secret=1",
+                room_url="https://token@192.168.1.50:8765/?secret=1",
                 meeting_id="resident-m1",
                 agent_id="friend-claude",
                 display_name="Friend Claude",
@@ -168,10 +168,30 @@ class MultiHostInviteTests(unittest.TestCase):
                 secret="test-secret",
             )
 
+        with self.assertRaisesRegex(ValueError, "HTTP is loopback-only"):
+            create_lan_invite_packet(
+                room_url="http://192.168.1.50:8765",
+                meeting_id="resident-m1",
+                agent_id="friend-claude",
+                display_name="Friend Claude",
+                provider_kind="claude_code",
+                secret="test-secret",
+            )
+
+        loopback = create_lan_invite_packet(
+            room_url="http://127.0.0.1:8765",
+            meeting_id="resident-m1",
+            agent_id="local-claude",
+            display_name="Local Claude",
+            provider_kind="claude_code",
+            secret="test-secret",
+        )
+        self.assertEqual(loopback["room_url"], "http://127.0.0.1:8765")
+
         for unusable_url in (
-            "http://0.0.0.0:8765",
-            "http://[::]:8765",
-            "http://255.255.255.255:8765",
+            "https://0.0.0.0:8765",
+            "https://[::]:8765",
+            "https://255.255.255.255:8765",
         ):
             with self.subTest(unusable_url=unusable_url):
                 with self.assertRaisesRegex(ValueError, "connectable LAN, loopback, or private host"):

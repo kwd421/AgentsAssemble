@@ -335,7 +335,7 @@ class ConnectRoomWsTests(unittest.TestCase):
         sock = FakeSocket()
         with patch("agentsassemble.web.room_client.socket_module.create_connection", return_value=sock):
             client = connect_room_ws_with_ticket(
-                "http://room.example",
+                "http://127.0.0.1:8765",
                 "internal-ticket",
                 ["room_events"],
             )
@@ -383,12 +383,29 @@ class ConnectRoomWsTests(unittest.TestCase):
             patch("agentsassemble.web.room_client.request_ws_ticket", return_value="ticket"),
             patch("agentsassemble.web.room_client.socket_module.create_connection", return_value=sock),
         ):
-            client = connect_room_ws("http://room.example/aa", "session-token", ["lobby"])
+            client = connect_room_ws("http://localhost:8765/aa", "session-token", ["lobby"])
 
         try:
             self.assertIn(b"GET /aa/ws?ticket=ticket HTTP/1.1", sock.sent)
         finally:
             client.close()
+
+    def test_remote_plaintext_is_rejected_before_bearer_or_ticket_network_use(self):
+        with (
+            patch("agentsassemble.web.room_client.urllib.request.urlopen") as urlopen,
+            patch("agentsassemble.web.room_client.socket_module.create_connection") as connect,
+        ):
+            with self.assertRaisesRegex(ValueError, "HTTP is loopback-only"):
+                join_room_session("http://192.168.1.20:8765", "invite-bearer")
+            with self.assertRaisesRegex(ValueError, "HTTP is loopback-only"):
+                connect_room_ws_with_ticket(
+                    "http://room.example",
+                    "single-use-ticket",
+                    ["room_events"],
+                )
+
+        urlopen.assert_not_called()
+        connect.assert_not_called()
 
     def test_tls_setup_failure_closes_the_connected_socket(self):
         sock = FakeSocket()

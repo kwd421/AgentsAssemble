@@ -3,6 +3,7 @@ import unittest
 from pathlib import Path
 
 from agentsassemble.room.errors import RoomCommandRejected
+from agentsassemble.room.command_admission import authorize_room_command
 from agentsassemble.room.realtime import RoomRealtimeController
 from agentsassemble.room.write_budget import RoomWriteBudgetPolicy
 from tests.room_realtime_test_support import (
@@ -23,6 +24,28 @@ HOST = {
 
 
 class RoomCommandAdmissionTests(unittest.TestCase):
+    def test_read_only_bridge_cannot_publish_or_open_provider_requests(self):
+        read_only_bridge = {
+            "client_type": "agent_bridge",
+            "invite_scope": "read_only",
+        }
+        read_write_bridge = {
+            "client_type": "agent_bridge",
+            "invite_scope": "room",
+        }
+
+        for action in (
+            "message.final",
+            "room.result.publish",
+            "provider.request.open",
+            "provider.request.closed",
+        ):
+            with self.subTest(action=action):
+                with self.assertRaises(RoomCommandRejected) as rejected:
+                    authorize_room_command(read_only_bridge, action)
+                self.assertEqual(rejected.exception.code, "permission_denied")
+                authorize_room_command(read_write_bridge, action)
+
     def test_denied_write_does_not_consume_another_principals_room_budget(self):
         policy = RoomWriteBudgetPolicy(
             max_commands_per_window=10,

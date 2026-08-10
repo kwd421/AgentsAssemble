@@ -91,6 +91,7 @@ def capabilities_for_identity(identity: dict[str, object]) -> dict[str, bool]:
         "agent.control": operator,
         "provider.request.resolve": read_write and not bridge,
         "bridge.report": bridge,
+        "bridge.publish": bridge and read_write,
     }
 
 

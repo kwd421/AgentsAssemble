@@ -7,6 +7,7 @@ from collections.abc import Callable
 from datetime import UTC, datetime, timedelta
 from urllib.parse import quote, urlsplit, urlunsplit
 
+from agentsassemble.admission.transport_security import require_secure_room_transport
 from agentsassemble.admission.session_issuer import session_token_fingerprint
 from agentsassemble.admission.session_service import RoomSessionService
 from agentsassemble.application.transaction import ApplicationTransactionBoundary
@@ -37,6 +38,7 @@ def normalize_pairing_origin(value: str) -> str:
         raise ValueError("pairing target must not contain credentials, query, or fragment")
     scheme = parsed.scheme.lower()
     hostname = parsed.hostname.lower()
+    require_secure_room_transport(scheme=scheme, hostname=hostname)
     if ":" in hostname and not hostname.startswith("["):
         hostname = f"[{hostname}]"
     port = parsed.port

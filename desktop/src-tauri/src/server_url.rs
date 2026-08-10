@@ -7,6 +7,27 @@ use std::{
 
 use url::Url;
 
+fn plaintext_http_allowed(url: &Url) -> bool {
+    let Some(host) = url.host_str() else {
+        return false;
+    };
+    if host.eq_ignore_ascii_case("localhost") {
+        return true;
+    }
+    host.trim_matches(['[', ']'])
+        .parse::<std::net::IpAddr>()
+        .is_ok_and(|address| address.is_loopback())
+}
+
+fn require_secure_remote_transport(url: &Url, label: &str) -> Result<(), String> {
+    if url.scheme() == "https" || (url.scheme() == "http" && plaintext_http_allowed(url)) {
+        return Ok(());
+    }
+    Err(format!(
+        "{label} must use https unless it targets literal loopback or localhost"
+    ))
+}
+
 pub fn normalized_server_url(raw: &str) -> Result<Url, String> {
     let mut url = Url::parse(raw.trim()).map_err(|_| "server URL is invalid".to_owned())?;
     if !matches!(url.scheme(), "http" | "https") {
@@ -15,6 +36,7 @@ pub fn normalized_server_url(raw: &str) -> Result<Url, String> {
     if url.host_str().is_none() {
         return Err("server URL must include a host".to_owned());
     }
+    require_secure_remote_transport(&url, "server URL")?;
     if !url.username().is_empty() || url.password().is_some() {
         return Err("server URL must not contain credentials".to_owned());
     }
@@ -36,6 +58,7 @@ pub fn normalized_navigation_url(raw: &str) -> Result<(Url, Url), String> {
     if destination.host_str().is_none() {
         return Err("room link must include a host".to_owned());
     }
+    require_secure_remote_transport(&destination, "room link")?;
     if !destination.username().is_empty() || destination.password().is_some() {
         return Err("room link must not contain embedded credentials".to_owned());
     }
@@ -140,12 +163,22 @@ mod tests {
 
         for raw in [
             "file:///tmp/room.html",
+            "http://192.168.1.20:8765",
+            "http://rooms.example.test",
             "https://user:secret@rooms.example.test",
             "https://rooms.example.test/another-app",
             "https://rooms.example.test/?token=secret",
             "https://rooms.example.test/#room",
         ] {
             assert!(normalized_server_url(raw).is_err(), "accepted {raw}");
+        }
+
+        for raw in [
+            "http://localhost:8765",
+            "http://127.0.0.1:8765",
+            "http://[::1]:8765",
+        ] {
+            assert!(normalized_server_url(raw).is_ok(), "rejected {raw}");
         }
     }
 

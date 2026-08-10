@@ -14,9 +14,10 @@ import socket as socket_module
 import ssl
 import threading
 import urllib.request
-from urllib.parse import urlparse
+from urllib.parse import ParseResult, urlparse
 from uuid import uuid4
 
+from agentsassemble.admission.transport_security import require_secure_room_transport
 from agentsassemble.web.websocket_codec import (
     OP_CLOSE,
     OP_PING,
@@ -37,6 +38,16 @@ class WsRoomCommandRejected(Exception):
     def __init__(self, message: str, *, code: str = "rejected") -> None:
         super().__init__(message)
         self.code = code
+
+
+def _validated_server_url(server_url: str) -> ParseResult:
+    parsed = urlparse(str(server_url or "").strip())
+    if not parsed.hostname or parsed.username or parsed.password:
+        raise ValueError("Room server URL must include a host and no embedded credentials.")
+    if parsed.query or parsed.fragment:
+        raise ValueError("Room server URL must not contain a query or fragment.")
+    require_secure_room_transport(scheme=parsed.scheme, hostname=parsed.hostname)
+    return parsed
 
 
 def _parse_response_headers(blob: bytes) -> tuple[bytes, dict[str, str]]:
@@ -236,6 +247,7 @@ class WsRoomClient:
 
 def request_ws_ticket(server_url: str, session_token: str, *, timeout: float = 5.0) -> str:
     """POST /api/ws-ticket (Bearer) → ticket. Uses urllib (resident already does)."""
+    _validated_server_url(server_url)
     request = urllib.request.Request(
         f"{server_url.rstrip('/')}/api/ws-ticket",
         data=b"{}",
@@ -307,6 +319,7 @@ def _join_room_session(
     body: dict[str, object],
     timeout: float,
 ) -> dict[str, object]:
+    _validated_server_url(server_url)
     request = urllib.request.Request(
         f"{server_url.rstrip('/')}{path}",
         data=json.dumps(body).encode("utf-8"),
@@ -344,6 +357,7 @@ def fetch_room_conversation_mode(server_url: str, meeting_id: str, *, timeout: f
     """GET /api/room-settings → the room's conversation_mode ("turn"/"free").
     Best-effort: returns "turn" on any error so a resident never fails to launch."""
     try:
+        _validated_server_url(server_url)
         request = urllib.request.Request(
             f"{server_url.rstrip('/')}/api/room-settings?room_id={urllib.parse.quote(str(meeting_id or ''))}",
             method="GET",
@@ -383,7 +397,7 @@ def connect_room_ws_with_ticket(
     browsers and remote residents first exchange a session token for one.
     Both continue through the exact same WebSocket endpoint and protocol.
     """
-    parsed = urlparse(server_url)
+    parsed = _validated_server_url(server_url)
     host = parsed.hostname or "127.0.0.1"
     port = parsed.port or (443 if parsed.scheme == "https" else 80)
     raw_sock = socket_module.create_connection((host, port), timeout=timeout)
