@@ -1,12 +1,11 @@
 """Public coordinator and local runtime adapters for room HTTP routes.
 
 The domain registrars keep route behavior near the room concern that owns it.
-This module retains the public ``register_room_routes`` import and the local
-provider runner names used by ``gui.py`` and the HTTP tests.
+This module retains the public ``register_room_routes`` import and compatibility
+service re-exports used by older callers.
 """
 from __future__ import annotations
 
-import subprocess
 from collections.abc import Callable
 from dataclasses import dataclass
 from http import HTTPStatus
@@ -25,7 +24,7 @@ from agentsassemble.legacy.meeting.http.room_lifecycle_compat import register_le
 from agentsassemble.legacy.meeting.http.room_moderation_media import (
     register_legacy_moderation_media_routes,
 )
-from agentsassemble.web.router import RequestContext, Router
+from agentsassemble.web.router import Router
 from agentsassemble.web.routes.room_history import register_room_history_routes
 from agentsassemble.web.routes.room_lifecycle import register_room_lifecycle_routes
 from agentsassemble.web.routes.room_members import register_room_member_routes
@@ -103,38 +102,14 @@ def _speech_rejection_status(category: str) -> HTTPStatus:
     return HTTPStatus.BAD_REQUEST
 
 
-def _local_agent_session_command_runner(command: list[str]) -> dict[str, object]:
-    process = subprocess.Popen(
-        [str(part) for part in command],
-        stdin=subprocess.DEVNULL,
-        stdout=subprocess.DEVNULL,
-        stderr=subprocess.DEVNULL,
-        start_new_session=True,
-    )
-    return {"returncode": 0, "pid": process.pid}
-
-
-def _agent_session_control_allowed(ctx: RequestContext) -> bool:
-    has_host_token = bool(ctx.provided_host_token())
-    return (
-        ctx.is_local_operator()
-        or (has_host_token and ctx.is_host())
-        or ctx.is_operator_session()
-    )
-
-
 @dataclass(frozen=True)
 class RoomRouteAdapters:
-    agent_session_control_allowed: Callable[[RequestContext], bool]
     speech_rejection_status: Callable[[str], HTTPStatus]
-    process_command_runner: Callable[..., object]
 
 
 def _default_room_route_adapters() -> RoomRouteAdapters:
     return RoomRouteAdapters(
-        agent_session_control_allowed=_agent_session_control_allowed,
         speech_rejection_status=_speech_rejection_status,
-        process_command_runner=_local_agent_session_command_runner,
     )
 
 
@@ -147,11 +122,7 @@ def register_room_routes(
     resolved = adapters or _default_room_route_adapters()
 
     register_room_history_routes(router)
-    register_agent_session_routes(
-        router,
-        agent_session_control_allowed=resolved.agent_session_control_allowed,
-        process_command_runner=resolved.process_command_runner,
-    )
+    register_agent_session_routes(router)
     register_legacy_room_ensure_route(router)
     register_room_lifecycle_routes(router)
     register_room_member_routes(router)

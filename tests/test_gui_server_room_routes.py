@@ -36,13 +36,13 @@ from tests.gui_server_test_support import (
     user_for_participant,
 )
 from agentsassemble.web.router import GuiDeps
-from agentsassemble.legacy.meeting.http.room_composition import RoomRouteAdapters
 from agentsassemble.identity.repository import device_auth_key
 from agentsassemble.legacy.admission_projection import LiveAgentLegacyAdmissionProjection
 from agentsassemble.identity.pairing import OperatorPairingService
 from agentsassemble.persistence.local.identity.repository import IdentityStore
 from agentsassemble.room_admission import RoomAdmissionService
 from agentsassemble.room.realtime import RoomRealtimeController
+from agentsassemble.room.errors import RoomCommandRejected
 from agentsassemble.room.write_budget import RoomWriteBudgetPolicy
 from agentsassemble.admission.coordinator import RoomAdmissionCoordinator
 from agentsassemble.admission.invite import verify_session_token
@@ -127,6 +127,42 @@ def _room_lifecycle_command(
         "action": "room.archive",
         "result": {"room_id": room_id, "status": status},
     }
+
+
+def _seed_canonical_agent_session(
+    root: Path,
+    *,
+    room_id: str = "session-room",
+    agent_id: str = "agent-1",
+    session_id: str = "session-1",
+    display_name: str = "Agent One",
+    provider_kind: str = "codex_live_session",
+) -> RoomStore:
+    store = RoomStore(root)
+    store.create_room(room_id)
+    store.upsert_participant(
+        room_id,
+        {
+            "participant_id": agent_id,
+            "display_name": display_name,
+            "role": "agent",
+            "participant_type": "agent",
+            "status": "joined",
+            "session_id": session_id,
+            "provider_kind": provider_kind,
+        },
+    )
+    store.upsert_session(
+        room_id,
+        {
+            "session_id": session_id,
+            "participant_id": agent_id,
+            "display_name": display_name,
+            "status": "attached",
+            "provider_kind": provider_kind,
+        },
+    )
+    return store
 
 
 class _LegacyFacadeSessionVerifier:
@@ -632,54 +668,90 @@ class GuiServerRoomRouteTests(unittest.TestCase):
             self.assertEqual(state["origin"], "frontend_room")
 
 
-    def test_room_session_resume_endpoint_feeds_room_members_from_canonical_state(self):
+    def test_agent_session_http_delegates_creation_to_canonical_room_command(self):
         reset_room_invite_state()
         reset_room_users_state()
         with tempfile.TemporaryDirectory() as temp_dir:
             root = Path(temp_dir)
+            deps = _invite_route_dependencies(root)
+            deps.rooms.create_room("session-room")
+            commands: list[tuple[dict[str, object], dict[str, object]]] = []
 
-            resumed = _dispatch_room_route(
-                root,
-                path="/api/agent-sessions/resume",
-                method="POST",
-                payload={"room_id": "session-room", "agent_id": "agent-1", "session_id": "session-1"},
-            ).sent_json
-            members = _dispatch_room_route(root, path="/api/room-members?meeting_id=session-room").sent_json
+            def handle_command(
+                identity: dict[str, object],
+                command: dict[str, object],
+            ) -> dict[str, object]:
+                commands.append((dict(identity), dict(command)))
+                return {
+                    "op": "ack",
+                    "accepted": True,
+                    "action": "agent.create",
+                    "result": {
+                        "status": "created",
+                        "agent_session": {"session_id": "server-session"},
+                    },
+                }
 
-            self.assertEqual(resumed["status"], "resumed")
-            self.assertEqual(len(members["members"]), 1)
-            self.assertEqual(members["members"][0]["participant_id"], "agent-1")
-            self.assertEqual(members["members"][0]["source"], "agent_session")
-
-
-    def test_agent_session_create_endpoint_feeds_room_members_from_canonical_state(self):
-        reset_room_invite_state()
-        reset_room_users_state()
-        with tempfile.TemporaryDirectory() as temp_dir:
-            root = Path(temp_dir)
-
-            created = _dispatch_room_route(
+            deps.room_command_handler = handle_command
+            response = _dispatch_room_route(
                 root,
                 path="/api/agent-sessions",
                 method="POST",
                 payload={
                     "room_id": "session-room",
-                    "agent_id": "agent-1",
-                    "display_name": "Agent One",
-                    "provider_kind": "codex_live_session",
-                    "model": "gpt-5.3-codex-spark",
-                    "runtime_sharing_policy": "isolated_session",
+                    "provider_id": "codex",
+                    "catalog_revision": "catalog-1",
+                    "owner_id": "attacker-chosen-owner",
+                    "created_by": "attacker-chosen-creator",
                 },
-            ).sent_json
-            members = _dispatch_room_route(root, path="/api/room-members?meeting_id=session-room").sent_json
+                deps=deps,
+            )
 
-            self.assertEqual(created["status"], "created")
-            self.assertEqual(members["members"][0]["participant_id"], "agent-1")
-            self.assertEqual(members["members"][0]["source"], "agent_session")
-            self.assertEqual(members["members"][0]["connection_kind"], "agent_session")
-            self.assertEqual(members["members"][0]["execution_mode"], "agent_session_app_server")
-            self.assertEqual(members["members"][0]["owner_id"], "operator-local")
-            self.assertEqual(members["members"][0]["model_id"], "gpt-5.3-codex-spark")
+            self.assertEqual(response.sent_json["status"], "created")
+            self.assertEqual(len(commands), 1)
+            identity, command = commands[0]
+            self.assertEqual(identity["principal_user_id"], "operator-local-user")
+            self.assertEqual(command["action"], "agent.create")
+            self.assertNotIn("owner_id", command["payload"])
+            self.assertNotIn("created_by", command["payload"])
+            self.assertEqual(deps.rooms.participants("session-room"), [])
+
+    def test_agent_session_http_preserves_state_when_canonical_resume_rejects(self):
+        reset_room_invite_state()
+        reset_room_users_state()
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            deps = _invite_route_dependencies(root)
+            deps.rooms.create_room("session-room")
+
+            def reject_resume(
+                _identity: dict[str, object],
+                command: dict[str, object],
+            ) -> dict[str, object]:
+                self.assertEqual(command["action"], "agent.readd")
+                raise RoomCommandRejected(
+                    "Agent session agent-1 was not found.",
+                    code="not_found",
+                )
+
+            deps.room_command_handler = reject_resume
+            response = _dispatch_room_route(
+                root,
+                path="/api/agent-sessions/resume",
+                method="POST",
+                payload={
+                    "room_id": "session-room",
+                    "agent_id": "agent-1",
+                    "session_id": "session-1",
+                    "start": True,
+                },
+                deps=deps,
+            )
+
+            self.assertEqual(response.sent_error[0], HTTPStatus.NOT_FOUND)
+            self.assertEqual(response.sent_error_code, "not_found")
+            self.assertEqual(deps.rooms.participants("session-room"), [])
+            self.assertEqual(deps.rooms.sessions("session-room"), [])
 
 
     def test_room_session_export_endpoint_persists_exported_state(self):
@@ -687,12 +759,7 @@ class GuiServerRoomRouteTests(unittest.TestCase):
         reset_room_users_state()
         with tempfile.TemporaryDirectory() as temp_dir:
             root = Path(temp_dir)
-            _dispatch_room_route(
-                root,
-                path="/api/agent-sessions/resume",
-                method="POST",
-                payload={"room_id": "session-room", "agent_id": "agent-1", "session_id": "session-1"},
-            )
+            _seed_canonical_agent_session(root)
 
             exported = _dispatch_room_route(
                 root,
@@ -728,12 +795,7 @@ class GuiServerRoomRouteTests(unittest.TestCase):
                 display_name="Agent Two",
                 device_token="agent-two-device-token",
             )
-            _dispatch_room_route(
-                root,
-                path="/api/agent-sessions/resume",
-                method="POST",
-                payload={"room_id": "session-room", "agent_id": "agent-1", "session_id": "session-1"},
-            )
+            _seed_canonical_agent_session(root)
 
             denied = _dispatch_room_route(
                 root,
@@ -861,6 +923,14 @@ class GuiServerRoomRouteTests(unittest.TestCase):
         set_runtime_host_token("host-secret")
         with tempfile.TemporaryDirectory() as temp_dir:
             root = Path(temp_dir)
+            deps = _invite_route_dependencies(root)
+            deps.rooms.create_room("session-room")
+            deps.room_command_handler = lambda _identity, command: {
+                "op": "ack",
+                "accepted": True,
+                "action": command["action"],
+                "result": {"status": "created"},
+            }
             created = _dispatch_room_route(
                 root,
                 path="/api/agent-sessions",
@@ -868,42 +938,11 @@ class GuiServerRoomRouteTests(unittest.TestCase):
                 payload={"room_id": "session-room", "agent_id": "agent-1", "provider_kind": "codex_live_session"},
                 headers={"X-Host-Token": "host-secret"},
                 loopback=False,
+                deps=deps,
             )
 
             self.assertIsNone(created.sent_error)
             self.assertEqual(created.sent_json["status"], "created")
-
-
-    def test_agent_session_http_resume_start_uses_process_service_runner(self):
-        reset_room_invite_state()
-        reset_room_users_state()
-        calls: list[list[str]] = []
-        with tempfile.TemporaryDirectory() as temp_dir:
-            root = Path(temp_dir)
-            resumed = _dispatch_room_route(
-                root,
-                path="/api/agent-sessions/resume",
-                method="POST",
-                payload={
-                    "room_id": "session-room",
-                    "agent_id": "agent-1",
-                    "session_id": "session-1",
-                    "provider_kind": "codex_live_session",
-                    "start": True,
-                },
-                room_route_adapters=RoomRouteAdapters(
-                    agent_session_control_allowed=lambda ctx: ctx.is_local_operator(),
-                    speech_rejection_status=lambda _category: HTTPStatus.BAD_REQUEST,
-                    process_command_runner=lambda command: calls.append(command)
-                    or {"returncode": 0},
-                ),
-            ).sent_json
-
-            self.assertEqual(resumed["process_status"], "resumed")
-            self.assertEqual(calls[0][:2], ["codex", "exec"])
-            self.assertIn("--ephemeral", calls[0])
-            self.assertNotIn("--last", calls[0])
-
 
     def test_agent_session_http_turn_is_retired_without_running_a_provider(self):
         reset_room_invite_state()
@@ -954,16 +993,11 @@ class GuiServerRoomRouteTests(unittest.TestCase):
 
         with tempfile.TemporaryDirectory() as temp_dir:
             root = Path(temp_dir)
-            _dispatch_room_route(
+            _seed_canonical_agent_session(
                 root,
-                path="/api/agent-sessions",
-                method="POST",
-                payload={
-                    "room_id": "session-room",
-                    "agent_id": "agent-a",
-                    "display_name": "Agent A",
-                    "provider_kind": "codex_live_session",
-                },
+                agent_id="agent-a",
+                session_id="agent-a",
+                display_name="Agent A",
             )
             server = ThreadingHTTPServer(("127.0.0.1", 0), _make_handler(root))
             thread = threading.Thread(target=server.serve_forever, daemon=True)
@@ -1076,18 +1110,7 @@ class GuiServerRoomRouteTests(unittest.TestCase):
                     "status": "online",
                 },
             )
-            _dispatch_room_route(
-                root,
-                path="/api/agent-sessions/resume",
-                method="POST",
-                payload={
-                    "room_id": "session-room",
-                    "agent_id": "agent-1",
-                    "session_id": "session-1",
-                    "display_name": "Canonical Agent",
-                    "provider_kind": "codex_live_session",
-                },
-            )
+            _seed_canonical_agent_session(root, display_name="Canonical Agent")
 
             members = _dispatch_room_route(root, path="/api/room-members?meeting_id=session-room").sent_json["members"]
 
@@ -1114,12 +1137,7 @@ class GuiServerRoomRouteTests(unittest.TestCase):
                     "status": "online",
                 },
             )
-            _dispatch_room_route(
-                root,
-                path="/api/agent-sessions/resume",
-                method="POST",
-                payload={"room_id": "session-room", "agent_id": "agent-1", "session_id": "session-1"},
-            )
+            _seed_canonical_agent_session(root)
             _dispatch_room_route(
                 root,
                 path="/api/room-participants/export",
@@ -1138,12 +1156,7 @@ class GuiServerRoomRouteTests(unittest.TestCase):
         reset_room_users_state()
         with tempfile.TemporaryDirectory() as temp_dir:
             root = Path(temp_dir)
-            _dispatch_room_route(
-                root,
-                path="/api/agent-sessions/resume",
-                method="POST",
-                payload={"room_id": "session-room", "agent_id": "agent-1", "session_id": "session-1"},
-            )
+            _seed_canonical_agent_session(root)
             set_room_member_muted(root, meeting_id="session-room", participant_id="agent-1", muted=True)
 
             member = _dispatch_room_route(root, path="/api/room-members?meeting_id=session-room").sent_json["members"][0]
