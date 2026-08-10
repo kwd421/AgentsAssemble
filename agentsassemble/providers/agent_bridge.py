@@ -49,6 +49,7 @@ from agentsassemble.providers.room_portal import (
     room_wake_orientation,
 )
 from agentsassemble.providers.provider_requests import BridgeProviderRequestRouter
+from agentsassemble.providers.provider_errors import provider_failure_code
 
 
 class BridgeRoomClient(Protocol):
@@ -458,13 +459,16 @@ class RoomAgentBridge:
                     wait_for_ack=False,
                 )
 
+            provider_error: Exception | None = None
+            raw_result: object = None
             try:
                 raw_result = self.runtime.read_output(
                     timeout_seconds=wake.timeout_seconds,
                     on_delta=on_private_delta,
                     on_activity=on_activity,
                 )
-            except Exception as provider_error:
+            except Exception as error:
+                provider_error = error
                 try:
                     self._publish_observation_results(portal, turn_id)
                 except Exception as publish_error:
@@ -475,14 +479,13 @@ class RoomAgentBridge:
                         file=sys.stderr,
                         flush=True,
                     )
-                    if hasattr(provider_error, "add_note"):
-                        provider_error.add_note(
+                    if hasattr(error, "add_note"):
+                        error.add_note(
                             "Room result publication also failed: "
                             f"{getattr(publish_error, 'code', type(publish_error).__name__)}"
                         )
-                raise
-            self._publish_observation_results(portal, turn_id)
-            result = ProviderTurnResult.parse(raw_result)
+            else:
+                self._publish_observation_results(portal, turn_id)
             observed_through_seq = max(0, int(portal.observation_receipt(turn_id) or 0))
             if observed_through_seq < wake.input_up_to_seq:
                 self._command(
@@ -500,6 +503,13 @@ class RoomAgentBridge:
             self._report_observation_receipt(observed_through_seq)
             explicit_decline_reason = portal.observation_decline_reason(turn_id)
             publication = portal.publication_result(turn_id)
+            if provider_error is not None and not publication.has_message:
+                raise provider_error
+            result = (
+                ProviderTurnResult.parse(raw_result)
+                if provider_error is None
+                else None
+            )
             completed = time.monotonic()
             completed_at = _now()
             latency = {
@@ -516,7 +526,7 @@ class RoomAgentBridge:
             if not publication.has_message:
                 decline_reason = explicit_decline_reason or (
                     result.decline_reason
-                    if result.outcome == "decline"
+                    if result is not None and result.outcome == "decline"
                     else "nothing_useful_to_add"
                 )
                 self._command(
@@ -530,16 +540,29 @@ class RoomAgentBridge:
                     },
                 )
                 return
+            diagnostics = (
+                self._failure_diagnostics()
+                if provider_error is not None
+                else self._health_payload(self.runtime.health())
+            )
+            if provider_error is not None:
+                diagnostics["post_publication_provider_error_code"] = (
+                    provider_failure_code(provider_error)
+                )
             self._command(
                 "message.final",
                 {
                     "turn_id": turn_id,
                     "observed_through_seq": observed_through_seq,
                     "observed_model_id": clean_lobby_text(
-                        result.metadata.get("observed_model_id"),
+                        (
+                            result.metadata.get("observed_model_id")
+                            if result
+                            else diagnostics.get("observed_model_id")
+                        ),
                         limit=128,
                     ),
-                    "diagnostics": self._health_payload(self.runtime.health()),
+                    "diagnostics": diagnostics,
                     "latency": latency,
                 },
             )
@@ -900,6 +923,7 @@ class RoomAgentBridge:
             "message_source": str(details.get("message_source") or ""),
             "message_source_strict": bool(details.get("message_source_strict", False)),
             "model": str(details.get("model") or ""),
+            "observed_model_id": str(details.get("observed_model_id") or ""),
             "reasoning_effort": str(details.get("reasoning_effort") or ""),
             "service_tier": str(details.get("service_tier") or ""),
             "variant": str(details.get("variant") or ""),

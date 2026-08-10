@@ -913,6 +913,76 @@ class RoomAgentBridgeTests(unittest.TestCase):
         self.assertEqual(failure["message"], "provider output failed")
         self.assertIn("result_publish_rejected", stderr.getvalue())
 
+    def test_room_publication_survives_provider_error_after_confirmed_read(self):
+        class FailingAfterPublicationRuntime(RoomPortalRuntime):
+            def read_output(self, *, timeout_seconds, on_delta=None, on_activity=None):
+                del timeout_seconds, on_delta, on_activity
+                raise RuntimeError("provider failed after publishing")
+
+        with tempfile.TemporaryDirectory() as temp_dir:
+            portal = RoomPortal(Path(temp_dir) / "portal", participant_id="codex")
+            portal.prepare()
+            client = FakeClient()
+            runtime = FailingAfterPublicationRuntime(
+                portal,
+                ["public message already staged"],
+            )
+            bridge = RoomAgentBridge(
+                client,
+                runtime,
+                room_id="general",
+                participant_id="codex",
+                session_id="codex",
+                receive_sleep_seconds=0.005,
+                room_portal=portal,
+            )
+            thread = threading.Thread(target=bridge.run, daemon=True)
+            thread.start()
+            _wait_for(
+                lambda: any(
+                    action == "bridge.ready"
+                    for action, _, _ in client.commands
+                )
+            )
+            with client._lock:
+                client.messages.append(
+                    {
+                        "op": "room.wake",
+                        "room_id": "general",
+                        "participant_id": "codex",
+                        "session_id": "codex",
+                        "turn_id": "wake-published-before-error",
+                        "input_up_to_seq": 0,
+                        "attachment_ids": [],
+                        "observation_kind": "ambient_observation",
+                        "publication_mode": "explicit_room_portal",
+                        "timeout_seconds": 2,
+                    }
+                )
+            _wait_for(
+                lambda: any(
+                    action in {"message.final", "turn.failed"}
+                    for action, _, _ in client.commands
+                )
+            )
+            with client._lock:
+                client.messages.append({"op": "agent.control", "action": "stop"})
+            thread.join(timeout=2)
+
+        outcomes = [
+            (action, payload)
+            for action, payload, _ in client.commands
+            if action in {"message.final", "turn.failed"}
+        ]
+        self.assertEqual([action for action, _ in outcomes], ["message.final"])
+        final = outcomes[0][1]
+        self.assertEqual(final["turn_id"], "wake-published-before-error")
+        self.assertEqual(final["observed_through_seq"], 0)
+        self.assertEqual(
+            final["diagnostics"]["post_publication_provider_error_code"],
+            "provider_turn_failed",
+        )
+
     def test_room_result_caps_and_malformed_records_are_diagnosed_on_the_turn(self):
         valid_results = [
             {
