@@ -11,10 +11,8 @@ import {
   saveHostToken,
   startPublicInviteTunnel,
   stopPublicInviteTunnel,
-  upsertRoomMember,
   type PublicInviteStatus,
   type RoomFriend,
-  type RoomMember,
 } from "../api";
 import { getOrCreateDeviceToken } from "../lib/deviceIdentity";
 import {
@@ -39,7 +37,6 @@ export type PublicAccessTransition = "idle" | "starting" | "stopping";
 type UseRoomInviteControllerOptions = {
   guestLocked: boolean;
   sessionToken?: string;
-  onMembersChanged: (room: RoomDockItem, members: RoomMember[]) => void;
 };
 
 async function copyText(value: string) {
@@ -75,7 +72,6 @@ function inviteErrorLooksLikeHostToken(error: unknown) {
 export function useRoomInviteController({
   guestLocked,
   sessionToken = "",
-  onMembersChanged,
 }: UseRoomInviteControllerOptions) {
   const [modal, setModal] = useState<InviteModalState>(null);
   const [copyStatus, setCopyStatus] = useState("");
@@ -496,7 +492,6 @@ export function useRoomInviteController({
       const inviteScope = appearance?.inviteScope || room.inviteScope || "room";
       const readOnlyInvite = inviteScope === "read_only";
       const participantId = friend.source_agent_id || friend.friend_id;
-      const memberStatus = isAiFriend ? (isLiveSession ? friend.status : "pending") : "invited";
       const { invite, target } = await createSecureInviteForRoom({
         room,
         agentId: participantId,
@@ -510,21 +505,6 @@ export function useRoomInviteController({
         friendName: packetPreview ? friend.display_name : "",
         preview: packetPreview,
       });
-      const memberPayload = await upsertRoomMember(
-        {
-          meeting_id: room.meetingId,
-          participant_id: participantId,
-          display_name: friend.display_name,
-          role: isAiFriend ? "agent" : "human",
-          participant_type: friend.participant_type,
-          provider_kind: friend.provider_kind,
-          connection_kind: friend.connection_kind,
-          status: memberStatus,
-          source: "friend_invite",
-        },
-        sessionToken
-      );
-      onMembersChanged(room, memberPayload.members || []);
       if (isAiFriend) {
         await postCurrentUserFriendDm({
           friendId,

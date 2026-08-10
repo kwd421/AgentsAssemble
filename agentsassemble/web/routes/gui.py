@@ -67,7 +67,6 @@ _HANDLER_AUTHORIZED_MUTATIONS = frozenset(
         "/api/room-invite/join",
         "/api/room-invite/leave",
         "/api/room-invite/revoke",
-        "/api/room-members",
         "/api/room-members/mute",
         "/api/room-members/role",
         "/api/room-participants/export",

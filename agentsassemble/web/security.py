@@ -154,7 +154,6 @@ def _public_invite_route_allowed(path: str, method: str) -> bool:
             "/api/room/channel-say",
             "/api/room/voice/join",
             "/api/room/voice/leave",
-            "/api/room-members",
             "/api/rooms/archive",
             "/api/host/claim",
             "/api/room-members/role",

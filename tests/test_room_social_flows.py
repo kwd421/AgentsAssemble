@@ -82,21 +82,6 @@ class CanonicalRoomSocialFlowTests(unittest.TestCase):
                 friend = saved["friend"]
                 self.assertEqual(friend["friend_id"], "friend:moon")
 
-                member = _post_json(
-                    f"{base}/api/room-members",
-                    {
-                        "meeting_id": "general",
-                        "participant_id": "friend:moon",
-                        "display_name": "Moon",
-                        "role": "human",
-                        "participant_type": "human",
-                        "status": "invited",
-                        "source": "friend_invite",
-                    },
-                )["member"]
-                self.assertEqual(member["source"], "friend_invite")
-                self.assertEqual(member["status"], "invited")
-
                 invite = _post_json(
                     f"{base}/api/room-invite/create",
                     {

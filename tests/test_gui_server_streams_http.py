@@ -932,7 +932,6 @@ class GuiServerStreamsHttpTests(unittest.TestCase):
                 ("/api/room/channel-say", "POST"),
                 ("/api/room/voice/join", "POST"),
                 ("/api/room/voice/leave", "POST"),
-                ("/api/room-members", "POST"),
             ):
                 with self.subTest(path=path, method=method):
                     self.assertTrue(

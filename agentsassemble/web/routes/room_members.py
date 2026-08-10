@@ -5,10 +5,7 @@ from http import HTTPStatus
 from uuid import uuid4
 
 from agentsassemble.room.errors import RoomCommandRejected
-from agentsassemble.room.members import (
-    room_members_payload,
-    upsert_room_member,
-)
+from agentsassemble.room.members import room_members_payload
 from agentsassemble.room.text import clean_room_text
 from agentsassemble.web.router import RequestContext, Router
 
@@ -45,28 +42,6 @@ def register_room_member_routes(router: Router) -> None:
         if not ctx.require_room_access(meeting_id):
             return
         ctx.send_json(room_members_response(ctx, meeting_id))
-
-    @router.post("/api/room-members")
-    def room_members_upsert(ctx: RequestContext) -> None:
-        if not ctx.is_local_operator() and not ctx.require_moderator():
-            return
-        payload = ctx.read_json_body()
-        if payload is None:
-            return
-        try:
-            member = upsert_room_member(ctx.deps.output_root, payload)
-        except ValueError as error:
-            ctx.send_error(HTTPStatus.BAD_REQUEST, str(error))
-            return
-        ctx.send_json(
-            {
-                "member": member,
-                **room_members_response(
-                    ctx,
-                    str(member.get("meeting_id") or ""),
-                ),
-            }
-        )
 
     @router.post("/api/room-members/role")
     def room_member_role_update(ctx: RequestContext) -> None:

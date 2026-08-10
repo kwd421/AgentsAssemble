@@ -1609,7 +1609,7 @@ class GuiServerLobbySocialTests(unittest.TestCase):
             self.assertEqual(loaded_payload["profile"], saved_payload["profile"])
 
 
-    def test_room_members_api_saves_roles_and_suggests_live_agents(self):
+    def test_room_members_api_does_not_create_participants_outside_admission(self):
         with tempfile.TemporaryDirectory() as temp_dir:
             root = Path(temp_dir)
             connect_live_agent_payload(
@@ -1627,81 +1627,45 @@ class GuiServerLobbySocialTests(unittest.TestCase):
             thread = threading.Thread(target=server.serve_forever, daemon=True)
             thread.start()
             try:
-                with urlopen(
-                    f"http://127.0.0.1:{server.server_port}/api/room-members?meeting_id=m1",
-                    timeout=4,
-                ) as response:
-                    initial_payload = json.loads(response.read().decode("utf-8"))
                 request = Request(
                     f"http://127.0.0.1:{server.server_port}/api/room-members",
                     data=json.dumps(
                         {
                             "meeting_id": "m1",
-                            "participant_id": "codex-critic",
-                            "display_name": "Codex Critic",
-                            "role": "director",
-                            "participant_type": "subscription_ai",
-                        }
-                    ).encode("utf-8"),
-                    headers={"Content-Type": "application/json"},
-                    method="POST",
-                )
-                with urlopen(request, timeout=4) as response:
-                    saved_payload = json.loads(response.read().decode("utf-8"))
-                remote_request = Request(
-                    f"http://127.0.0.1:{server.server_port}/api/room-members",
-                    data=json.dumps(
-                        {
-                            "meeting_id": "m1",
-                            "participant_id": "remote-friend",
-                            "display_name": "Remote Friend",
+                            "participant_id": "ghost-participant",
+                            "display_name": "Ghost Participant",
                             "role": "agent",
                             "participant_type": "remote",
-                            "connection_kind": "native_remote_room_client",
                         }
                     ).encode("utf-8"),
                     headers={"Content-Type": "application/json"},
                     method="POST",
                 )
-                with urlopen(remote_request, timeout=4) as response:
-                    remote_payload = json.loads(response.read().decode("utf-8"))
                 with urlopen(
-                    f"http://127.0.0.1:{server.server_port}/api/room-members?meeting_id=m2",
+                    f"http://127.0.0.1:{server.server_port}/api/room-members?meeting_id=m1",
                     timeout=4,
                 ) as response:
-                    other_room_payload = json.loads(response.read().decode("utf-8"))
-                bad_request = Request(
-                    f"http://127.0.0.1:{server.server_port}/api/room-members",
-                    data=json.dumps(
-                        {
-                            "meeting_id": "m1",
-                            "participant_id": "codex-critic",
-                            "role": "wizard",
-                        }
-                    ).encode("utf-8"),
-                    headers={"Content-Type": "application/json"},
-                    method="POST",
-                )
+                    before = json.loads(response.read().decode("utf-8"))
                 with self.assertRaises(HTTPError) as error_context:
-                    urlopen(bad_request, timeout=4)
-                error_code = error_context.exception.code
+                    urlopen(request, timeout=4)
+                self.assertEqual(error_context.exception.code, 404)
                 error_context.exception.close()
-                self.assertEqual(error_code, 400)
+                with urlopen(
+                    f"http://127.0.0.1:{server.server_port}/api/room-members?meeting_id=m1",
+                    timeout=4,
+                ) as response:
+                    after = json.loads(response.read().decode("utf-8"))
             finally:
                 server.shutdown()
                 server.server_close()
 
-            self.assertEqual(initial_payload["members"][0]["participant_id"], "codex-critic")
-            self.assertEqual(initial_payload["members"][0]["role"], "reviewer")
-            self.assertTrue(any(role["id"] == "agent" for role in initial_payload["roles"]))
-            self.assertEqual(saved_payload["member"]["role"], "director")
-            self.assertEqual(saved_payload["members"][0]["role"], "director")
-            remote_member = next(
-                member for member in remote_payload["members"] if member["participant_id"] == "remote-friend"
+            self.assertEqual(after["members"], before["members"])
+            self.assertFalse(
+                any(
+                    member["participant_id"] == "ghost-participant"
+                    for member in after["members"]
+                )
             )
-            self.assertEqual(remote_member["role"], "agent")
-            self.assertEqual(remote_member["participant_type"], "remote")
-            self.assertEqual(other_room_payload["members"], [])
 
 
     def test_legacy_side_chat_lines_are_read_as_side_chat_channel(self):

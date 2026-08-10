@@ -554,7 +554,6 @@ export default function App() {
   const roomInvite = useRoomInviteController({
     guestLocked,
     sessionToken: admittedSessionToken,
-    onMembersChanged: roomMembers.replaceMembers,
   });
   const {
     modal: inviteModal,

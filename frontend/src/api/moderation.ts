@@ -8,17 +8,6 @@ export function archiveRoom(roomId: string, archived: boolean) {
   });
 }
 
-export function upsertRoomMember(
-  member: Partial<RoomMember>,
-  sessionToken = ""
-) {
-  return postJsonModerator<RoomMembersResponse & { member: RoomMember }>(
-    "/api/room-members",
-    member,
-    sessionToken
-  );
-}
-
 export function updateRoomMemberRole(params: {
   meetingId: string;
   participantId: string;

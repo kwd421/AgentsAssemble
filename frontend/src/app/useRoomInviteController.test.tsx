@@ -15,12 +15,10 @@ const apiMocks = vi.hoisted(() => ({
   fetchUserProfile: vi.fn(),
   generatePublicInviteHostToken: vi.fn(),
   loadHostToken: vi.fn(),
-  onMembersChanged: vi.fn(),
   postRoomFriendDm: vi.fn(),
   saveHostToken: vi.fn(),
   startPublicInviteTunnel: vi.fn(),
   stopPublicInviteTunnel: vi.fn(),
-  upsertRoomMember: vi.fn(),
 }));
 
 vi.mock("../api", async () => ({
@@ -59,7 +57,6 @@ function renderInviteController() {
   return renderHook(() =>
     useRoomInviteController({
       guestLocked: true,
-      onMembersChanged: apiMocks.onMembersChanged,
     })
   );
 }
@@ -135,7 +132,6 @@ describe("useRoomInviteController", () => {
       join_url: "https://room.example.com/join?token=token-friend",
       remote_client_packet: { attend: { room: room.meetingId } },
     });
-    apiMocks.upsertRoomMember.mockResolvedValue({ members: [{ participant_id: "codex-friend" }] });
     apiMocks.postRoomFriendDm.mockResolvedValue({});
     const hook = renderInviteController();
     act(() => hook.result.current.open("room-1"));
@@ -144,17 +140,6 @@ describe("useRoomInviteController", () => {
       await hook.result.current.inviteFriend({ friend, room });
     });
 
-    expect(apiMocks.upsertRoomMember).toHaveBeenCalledWith(
-      expect.objectContaining({
-        meeting_id: room.meetingId,
-        participant_id: "codex-friend",
-      }),
-      ""
-    );
-    expect(apiMocks.onMembersChanged).toHaveBeenCalledWith(
-      room,
-      [{ participant_id: "codex-friend" }]
-    );
     expect(apiMocks.postRoomFriendDm).toHaveBeenCalledTimes(1);
     expect(hook.result.current.friendStatuses[friend.friend_id]).toBe("호출됨");
     expect(hook.result.current.remoteClientPacket.preview).toContain('"attend"');
