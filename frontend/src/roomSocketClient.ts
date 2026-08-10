@@ -579,6 +579,15 @@ export function openRoomSocket(
         try {
           dispatchFrame(event.data as string);
         } catch (error) {
+          if (error instanceof SyntaxError) {
+            reconnectForProtocolError(
+              new RoomSocketSayError(
+                "Room socket received malformed JSON; reconnecting before accepting more events.",
+                "frame_json_invalid"
+              )
+            );
+            return;
+          }
           handlers.onError?.(error as Error);
         }
       };

@@ -19,7 +19,13 @@ class FakeWebSocket {
   }
 
   receive(message: Record<string, unknown>) {
+    if (this.readyState === WebSocket.CLOSED) return;
     this.onmessage?.({ data: JSON.stringify(message) } as MessageEvent);
+  }
+
+  receiveRaw(message: string) {
+    if (this.readyState === WebSocket.CLOSED) return;
+    this.onmessage?.({ data: message } as MessageEvent);
   }
 
   close() {
@@ -313,6 +319,45 @@ describe("canonical room socket client", () => {
       streams: ["room_events"],
       resume_from_seq: 7,
     });
+    handle.close();
+  });
+
+  it("does not accept durable events after a malformed initial snapshot", async () => {
+    vi.useFakeTimers();
+    const sockets: FakeWebSocket[] = [];
+    const errors: RoomSocketSayError[] = [];
+    const delivered = vi.fn();
+    const handle = openRoomSocket(
+      { kind: "host", meetingId: "general" },
+      ["room_events"],
+      {
+        onRoomEvents: delivered,
+        onError: (error) => {
+          if (error instanceof RoomSocketSayError) errors.push(error);
+        },
+      },
+      {
+        getTicket: async () => `ticket-${sockets.length + 1}`,
+        createSocket: () => {
+          const socket = new FakeWebSocket();
+          sockets.push(socket);
+          return socket as unknown as WebSocket;
+        },
+      }
+    );
+    await flushPromises();
+    sockets[0].open();
+
+    sockets[0].receiveRaw('{"op":"snapshot"');
+    sockets[0].receive({
+      op: "event",
+      stream: "room_events",
+      events: [{ id: "evt-42", room_id: "general", seq: 42, type: "message_final" }],
+    });
+
+    expect(delivered).not.toHaveBeenCalled();
+    expect(errors.at(-1)?.category).toBe("frame_json_invalid");
+    expect(sockets[0].readyState).toBe(WebSocket.CLOSED);
     handle.close();
   });
 
