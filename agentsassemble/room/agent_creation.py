@@ -12,6 +12,7 @@ from agentsassemble.providers.launch_specs import (
 )
 from agentsassemble.room.agent_runtime_profiles import ProviderSelectionCatalog
 from agentsassemble.room.errors import RoomCommandRejected
+from agentsassemble.room.projection import public_session
 from agentsassemble.room.repository import RoomRepository
 from agentsassemble.room.text import clean_room_text
 
@@ -144,7 +145,22 @@ class RoomAgentCreationService:
                 str(error),
                 code="invalid_runtime_profile",
             ) from error
-        session = self._create_provider_session(room_id, spec)
+        existing_session = self.store.session(room_id, spec.agent_id)
+        existing_participant = self.store.participant(room_id, spec.agent_id)
+        if existing_session or existing_participant:
+            if (
+                not existing_session
+                or not existing_participant
+                or existing_session.get("process_ownership") != "server"
+                or existing_session.get("runtime_profile_key") != spec.runtime_profile_key()
+            ):
+                raise RoomCommandRejected(
+                    "An Agent Session with this identity already exists; re-add or configure the existing session instead.",
+                    code="session_exists",
+                )
+            session = public_session(existing_session)
+        else:
+            session = self._create_provider_session(room_id, spec)
         result: dict[str, object] = {
             "status": "created",
             "agent_session": session,

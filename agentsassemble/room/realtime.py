@@ -1290,9 +1290,11 @@ class RoomRealtimeController:
             )
         if action == "agent.readd":
             self._require_capability(identity, "agent.control")
-            return self._readd_agent(
+            return self._agent_reactivation.readd(
                 room_id,
+                self._payload_agent_id(payload),
                 payload,
+                operation_id=operation_id,
                 server_url=server_url,
                 ticket_issuer=ticket_issuer,
             )
@@ -1366,22 +1368,6 @@ class RoomRealtimeController:
             room_id,
             payload,
             operation_id=operation_id,
-            server_url=server_url,
-            ticket_issuer=ticket_issuer,
-        )
-
-    def _readd_agent(
-        self,
-        room_id: str,
-        payload: dict[str, object],
-        *,
-        server_url: str,
-        ticket_issuer: Callable[[dict[str, object]], object] | None,
-    ) -> dict[str, object]:
-        return self._agent_reactivation.readd(
-            room_id,
-            self._payload_agent_id(payload),
-            payload,
             server_url=server_url,
             ticket_issuer=ticket_issuer,
         )

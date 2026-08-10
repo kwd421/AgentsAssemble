@@ -139,6 +139,7 @@ _PRIVATE_SESSION_FIELDS = frozenset(
         "lifecycle_intent_action",
         "lifecycle_intent_id",
         "lifecycle_intent_status",
+        "reactivation_operation_id",
     }
 )
 

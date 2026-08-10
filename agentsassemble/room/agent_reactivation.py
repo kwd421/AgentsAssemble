@@ -13,6 +13,7 @@ from agentsassemble.room.event_broker import RoomEventBroker
 from agentsassemble.room.projection import public_session
 from agentsassemble.room.provider_registry import RoomProviderRegistry
 from agentsassemble.room.repository import RoomRepository
+from agentsassemble.room.text import clean_room_text
 
 
 EnsureProviderSession = Callable[[str, NativeCliProviderSpec], None]
@@ -50,6 +51,7 @@ class RoomAgentReactivationService:
         *,
         server_url: str,
         ticket_issuer: Callable[[dict[str, object]], object] | None,
+        operation_id: str = "",
     ) -> dict[str, object]:
         current = self.store.session(room_id, agent_id)
         if not current:
@@ -63,12 +65,21 @@ class RoomAgentReactivationService:
                 code="runtime_unavailable",
             )
         participant = self.store.participant(room_id, agent_id)
-        if current.get("runtime_status") not in {"stopped", "available"}:
+        clean_operation_id = clean_room_text(operation_id, 128)
+        continuing_same_reactivation = bool(
+            clean_operation_id
+            and current.get("reactivation_operation_id") == clean_operation_id
+            and current.get("runtime_status") == "error"
+        )
+        if (
+            current.get("runtime_status") not in {"stopped", "available"}
+            and not continuing_same_reactivation
+        ):
             raise RoomCommandRejected(
                 "Only stopped Agent Sessions can be added back to the room.",
                 code="readd_invalid_state",
             )
-        if current.get("enabled"):
+        if current.get("enabled") and not continuing_same_reactivation:
             raise RoomCommandRejected(
                 "The Agent Session is still enabled.",
                 code="readd_invalid_state",
@@ -105,19 +116,26 @@ class RoomAgentReactivationService:
         with self._lock:
             self._provider_registry.register(room_id, spec)
             self._ensure_provider_session(room_id, spec)
-            self.store.update_participant_fields(
-                room_id,
-                agent_id,
-                status="detached",
-            )
+            if not continuing_same_reactivation:
+                self.store.update_participant_fields(
+                    room_id,
+                    agent_id,
+                    status="detached",
+                )
+                self.store.update_session_fields(
+                    room_id,
+                    agent_id,
+                    reactivation_operation_id=clean_operation_id,
+                )
             session = self.store.session(room_id, agent_id)
-            self.store.append_event(
-                room_id,
-                "agent_session_reactivated",
-                participant_id=agent_id,
-                session_id=agent_id,
-            )
-            self._publish_session_state(room_id, session)
+            if not continuing_same_reactivation:
+                self.store.append_event(
+                    room_id,
+                    "agent_session_reactivated",
+                    participant_id=agent_id,
+                    session_id=agent_id,
+                )
+                self._publish_session_state(room_id, session)
         result: dict[str, object] = {
             "status": "readded",
             "agent_session": public_session(session),
