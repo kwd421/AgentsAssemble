@@ -485,6 +485,7 @@ class RoomAdmissionCoordinator:
                 "participant_type": participant_type,
                 "provider_kind": prepared.provider_kind,
                 "connection_kind": connection_kind,
+                "invite_scope": prepared.invite_scope,
                 "status": "online",
                 "is_host": False,
                 "source": "room_invite",

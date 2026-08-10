@@ -416,7 +416,11 @@ class PublicInviteLifecycleHttpTests(unittest.TestCase):
         with urlopen(
             _json_request(
                 f"{self.base}/api/room-invite/create",
-                {"meeting_id": "friend-room", "display_name": "Friend"},
+                {
+                    "meeting_id": "friend-room",
+                    "display_name": "Friend",
+                    "invite_scope": "read_only",
+                },
                 {"X-Host-Token": "host-secret"},
             ),
             timeout=4,
@@ -485,6 +489,8 @@ class PublicInviteLifecycleHttpTests(unittest.TestCase):
         self.assertEqual(recovered["agent_id"], original["agent_id"])
         self.assertNotEqual(recovered["session_token"], original["session_token"])
         self.assertEqual(recovered["client_id"], "replacement-client")
+        self.assertEqual(original["invite_scope"], "read_only")
+        self.assertEqual(recovered["invite_scope"], "read_only")
         self.assertNotEqual(recovered["recovery_code"], issued["recovery_code"])
         self.assertEqual(reused_error.exception.code, 403)
         raw_code = issued["recovery_code"].encode("utf-8")

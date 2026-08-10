@@ -293,6 +293,7 @@ class IdentityRepositoryContractMixin:
                 "participant_id": "guest-contract",
                 "display_name": "Guest",
                 "participant_type": "human",
+                "invite_scope": "read_only",
             }
         )
         merged = self.repository.upsert_membership(
@@ -305,6 +306,7 @@ class IdentityRepositoryContractMixin:
         )
         self.assertEqual(merged["display_name"], "Guest")
         self.assertEqual(merged["status"], "online")
+        self.assertEqual(merged["invite_scope"], "read_only")
         self.assertTrue(
             self.repository.set_membership_muted(
                 "room-contract",

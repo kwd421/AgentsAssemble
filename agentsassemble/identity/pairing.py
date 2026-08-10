@@ -287,6 +287,7 @@ class OperatorPairingService:
                 "participant_type": "human",
                 "role": "host",
                 "connection_kind": NATIVE_REMOTE_ROOM_CLIENT_KIND,
+                "invite_scope": "room",
                 "status": "online",
                 "is_host": True,
                 "source": "operator_pairing",

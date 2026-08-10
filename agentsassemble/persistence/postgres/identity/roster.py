@@ -1,8 +1,6 @@
 """PostgreSQL operations for identity-owned memberships and room registry."""
 from __future__ import annotations
 
-from uuid import uuid4
-
 from psycopg import Connection
 
 from agentsassemble.room.text import clean_room_text
@@ -16,6 +14,7 @@ _MEMBERSHIP_FIELDS = (
     "participant_type",
     "provider_kind",
     "connection_kind",
+    "invite_scope",
     "status",
     "muted",
     "is_host",
@@ -31,6 +30,7 @@ _MEMBERSHIP_MERGE_FIELDS = (
     "participant_type",
     "provider_kind",
     "connection_kind",
+    "invite_scope",
     "status",
     "source",
     "last_seen_at",
@@ -101,14 +101,13 @@ def upsert_membership(
         (meeting_id, participant_id),
     ).fetchone()
     if existing is None:
-        stable_room_uid = clean_room_uid or str(uuid4())
         connection.execute(
             """INSERT INTO identity_memberships(
                    meeting_id, participant_id, display_name, role,
-                   participant_type, provider_kind, connection_kind, status,
-                   muted, is_host, source, created_at, updated_at, last_seen_at
+                   participant_type, provider_kind, connection_kind, invite_scope,
+                   status, muted, is_host, source, created_at, updated_at, last_seen_at
                ) VALUES(
-                   %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s
+                   %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s
                )""",
             (
                 meeting_id,
@@ -118,6 +117,7 @@ def upsert_membership(
                 str(member["participant_type"] or "unknown"),
                 str(member["provider_kind"] or ""),
                 str(member["connection_kind"] or ""),
+                str(member["invite_scope"] or "room"),
                 str(member["status"] or ""),
                 bool(member["muted"]),
                 bool(member["is_host"]),

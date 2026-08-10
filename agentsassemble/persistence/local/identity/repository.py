@@ -112,6 +112,7 @@ CREATE TABLE IF NOT EXISTS memberships (
     participant_type TEXT NOT NULL DEFAULT 'unknown',
     provider_kind TEXT NOT NULL DEFAULT '',
     connection_kind TEXT NOT NULL DEFAULT '',
+    invite_scope TEXT NOT NULL DEFAULT 'room',
     status TEXT NOT NULL DEFAULT '',
     muted INTEGER NOT NULL DEFAULT 0,
     is_host INTEGER NOT NULL DEFAULT 0,
@@ -175,6 +176,7 @@ _MEMBERSHIP_FIELDS = (
     "participant_type",
     "provider_kind",
     "connection_kind",
+    "invite_scope",
     "status",
     "muted",
     "is_host",
@@ -191,6 +193,7 @@ _MEMBERSHIP_MERGE_FIELDS = (
     "participant_type",
     "provider_kind",
     "connection_kind",
+    "invite_scope",
     "status",
     "source",
     "last_seen_at",
@@ -260,6 +263,12 @@ class IdentityStore(SqliteAccountsMixin, SqliteRecoveryCodesMixin):
             self._ensure_column(connection, "rooms", "last_active_at", "TEXT NOT NULL DEFAULT ''")
             self._ensure_column(connection, "rooms", "archived", "INTEGER NOT NULL DEFAULT 0")
             self._ensure_column(connection, "rooms", "origin", "TEXT NOT NULL DEFAULT ''")
+            self._ensure_column(
+                connection,
+                "memberships",
+                "invite_scope",
+                "TEXT NOT NULL DEFAULT 'room'",
+            )
             ensure_durable_identity_schema(connection, self._ensure_column)
             self._ensure_column(
                 connection,
@@ -840,9 +849,9 @@ class IdentityStore(SqliteAccountsMixin, SqliteRecoveryCodesMixin):
             if existing is None:
                 connection.execute(
                     "INSERT INTO memberships (meeting_id, participant_id, display_name, role,"
-                    " participant_type, provider_kind, connection_kind, status, muted, is_host,"
-                    " source, created_at, updated_at, last_seen_at)"
-                    " VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                    " participant_type, provider_kind, connection_kind, invite_scope, status,"
+                    " muted, is_host, source, created_at, updated_at, last_seen_at)"
+                    " VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
                     (
                         meeting_id,
                         participant_id,
@@ -851,6 +860,7 @@ class IdentityStore(SqliteAccountsMixin, SqliteRecoveryCodesMixin):
                         str(member["participant_type"] or "unknown"),
                         str(member["provider_kind"] or ""),
                         str(member["connection_kind"] or ""),
+                        str(member["invite_scope"] or "room"),
                         str(member["status"] or ""),
                         1 if member["muted"] else 0,
                         1 if member["is_host"] else 0,

@@ -7,6 +7,7 @@ import secrets
 from datetime import UTC, datetime
 
 from agentsassemble.admission.session_service import RoomSessionService
+from agentsassemble.admission.invite_service import INVITE_SCOPES
 from agentsassemble.identity.repository import IdentityBackend, device_auth_key
 from agentsassemble.room.repository import RoomRepository
 from agentsassemble.room.text import clean_room_text
@@ -75,6 +76,9 @@ class GuestIdentityRecoveryService:
             or str(participant.get("status") or "").lower() in _INACTIVE_STATUSES
         ):
             return {"status": "rejected", "reason": "recovery_membership_inactive"}
+        invite_scope = str(membership.get("invite_scope") or "").strip().lower()
+        if invite_scope not in INVITE_SCOPES:
+            return {"status": "rejected", "reason": "recovery_scope_unavailable"}
 
         replacement_code = generate_recovery_code()
         consumed_user = self._identities.consume_recovery_code(
@@ -93,7 +97,7 @@ class GuestIdentityRecoveryService:
                 "agent_id": participant_id,
                 "display_name": str(consumed_user.get("display_name") or participant_id),
                 "meeting_id": clean_room_id,
-                "invite_scope": "room",
+                "invite_scope": invite_scope,
                 "participant_type": str(consumed_user.get("participant_type") or "human"),
                 "client_type": "browser",
                 "client_id": clean_room_text(client_id, limit=128),
@@ -111,7 +115,7 @@ class GuestIdentityRecoveryService:
             "meeting_id": clean_room_id,
             "room_uid": str(room.get("room_uid") or ""),
             "server_id": self._identities.server_id(),
-            "invite_scope": "room",
+            "invite_scope": invite_scope,
             "participant_type": str(consumed_user.get("participant_type") or "human"),
             "client_type": "browser",
             "client_id": clean_room_text(client_id, limit=128),
