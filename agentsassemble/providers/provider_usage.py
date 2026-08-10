@@ -66,6 +66,7 @@ def default_provider_usage_registry() -> ProviderUsageRegistry:
     from agentsassemble.providers.claude_usage import CLAUDE_USAGE
     from agentsassemble.providers.codex_usage import CODEX_USAGE
     from agentsassemble.providers.deepseek_usage import DEEPSEEK_USAGE
+    from agentsassemble.providers.opencode_usage import OPENCODE_USAGE
     from agentsassemble.providers.terminal_usage import (
         ANTIGRAVITY_USAGE,
         GROK_USAGE,
@@ -78,6 +79,7 @@ def default_provider_usage_registry() -> ProviderUsageRegistry:
             "deepseek": DEEPSEEK_USAGE,
             "antigravity": ANTIGRAVITY_USAGE,
             "grok": GROK_USAGE,
+            "opencode": OPENCODE_USAGE,
         }
     )
 

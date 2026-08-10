@@ -82,6 +82,32 @@ class DeepSeekRoomObservationTests(unittest.TestCase):
                                             "arguments": "{}",
                                         },
                                     },
+                                ]
+                            },
+                            "finish_reason": "tool_calls",
+                        }
+                    ],
+                },
+                _usage_chunk(input_tokens=50, output_tokens=6),
+            ),
+            _stream(
+                {
+                    "model": "deepseek-v4-flash",
+                    "choices": [
+                        {
+                            "delta": {
+                                "tool_calls": [
+                                    {
+                                        "index": 0,
+                                        "id": "call-roll",
+                                        "type": "function",
+                                        "function": {
+                                            "name": "roll_dice",
+                                            "arguments": json.dumps(
+                                                {"notation": "1d6"}
+                                            ),
+                                        },
+                                    },
                                     {
                                         "index": 1,
                                         "id": "call-publish",
@@ -96,24 +122,13 @@ class DeepSeekRoomObservationTests(unittest.TestCase):
                                             ),
                                         },
                                     },
-                                    {
-                                        "index": 2,
-                                        "id": "call-roll",
-                                        "type": "function",
-                                        "function": {
-                                            "name": "roll_dice",
-                                            "arguments": json.dumps(
-                                                {"notation": "1d6"}
-                                            ),
-                                        },
-                                    },
                                 ]
                             },
                             "finish_reason": "tool_calls",
                         }
                     ],
                 },
-                _usage_chunk(input_tokens=120, output_tokens=20),
+                _usage_chunk(input_tokens=70, output_tokens=14),
             ),
         ]
         request_bodies: list[dict[str, object]] = []
@@ -176,7 +191,7 @@ class DeepSeekRoomObservationTests(unittest.TestCase):
                 "reasoning_tokens": 10,
             },
         )
-        self.assertEqual(len(result["metadata"]["api_calls"]), 1)
+        self.assertEqual(len(result["metadata"]["api_calls"]), 2)
         self.assertEqual(receipt, 7)
         self.assertEqual(publication.content, "DEEPSEEK_ROOM_OK")
         self.assertEqual(publication.target_agent_id, "")
@@ -187,9 +202,13 @@ class DeepSeekRoomObservationTests(unittest.TestCase):
         self.assertEqual(random_results[0]["operation"], "roll_dice")
         self.assertEqual(random_results[0]["details"]["notation"], "1d6")
         self.assertTrue(request_bodies[0]["tools"])
-        self.assertEqual(request_bodies[0]["tool_choice"], "auto")
+        self.assertEqual(
+            request_bodies[0]["tool_choice"],
+            {"type": "function", "function": {"name": "read_discussion"}},
+        )
+        self.assertEqual(request_bodies[1]["tool_choice"], "auto")
         self.assertEqual(request_bodies[0]["stream_options"], {"include_usage": True})
-        self.assertEqual(len(request_bodies), 1)
+        self.assertEqual(len(request_bodies), 2)
 
     def test_chat_turn_can_inspect_participants_and_stage_a_structured_vote(self):
         responses = [
@@ -209,8 +228,22 @@ class DeepSeekRoomObservationTests(unittest.TestCase):
                                             "arguments": "{}",
                                         },
                                     },
+                                ]
+                            },
+                            "finish_reason": "tool_calls",
+                        }
+                    ],
+                }
+            ),
+            _stream(
+                {
+                    "model": "deepseek-v4-flash",
+                    "choices": [
+                        {
+                            "delta": {
+                                "tool_calls": [
                                     {
-                                        "index": 1,
+                                        "index": 0,
                                         "id": "call-participants",
                                         "type": "function",
                                         "function": {
@@ -219,7 +252,7 @@ class DeepSeekRoomObservationTests(unittest.TestCase):
                                         },
                                     },
                                     {
-                                        "index": 2,
+                                        "index": 1,
                                         "id": "call-vote",
                                         "type": "function",
                                         "function": {
@@ -237,14 +270,6 @@ class DeepSeekRoomObservationTests(unittest.TestCase):
                             },
                             "finish_reason": "tool_calls",
                         }
-                    ],
-                }
-            ),
-            _stream(
-                {
-                    "model": "deepseek-v4-flash",
-                    "choices": [
-                        {"delta": {"content": "done"}, "finish_reason": "stop"}
                     ],
                 }
             ),

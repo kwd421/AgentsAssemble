@@ -74,17 +74,6 @@ class LocalOpenAIRoomObservationTests(unittest.TestCase):
                                             "arguments": "{}",
                                         },
                                     },
-                                    {
-                                        "index": 1,
-                                        "id": "call-publish",
-                                        "type": "function",
-                                        "function": {
-                                            "name": "publish_message",
-                                            "arguments": json.dumps(
-                                                {"content": "LOCAL_ROOM_OK"}
-                                            ),
-                                        },
-                                    },
                                 ]
                             },
                             "finish_reason": "tool_calls",
@@ -97,8 +86,22 @@ class LocalOpenAIRoomObservationTests(unittest.TestCase):
                     "model": "gemma-4-e4b-it",
                     "choices": [
                         {
-                            "delta": {},
-                            "finish_reason": "stop",
+                            "delta": {
+                                "tool_calls": [
+                                    {
+                                        "index": 0,
+                                        "id": "call-publish",
+                                        "type": "function",
+                                        "function": {
+                                            "name": "publish_message",
+                                            "arguments": json.dumps(
+                                                {"content": "LOCAL_ROOM_OK"}
+                                            ),
+                                        },
+                                    }
+                                ]
+                            },
+                            "finish_reason": "tool_calls",
                         }
                     ],
                 }

@@ -30,6 +30,29 @@ class CerebrasRoomObservationTests(unittest.TestCase):
                             "delta": {
                                 "tool_calls": [
                                     {
+                                        "index": 0,
+                                        "id": "call-read_discussion",
+                                        "type": "function",
+                                        "function": {
+                                            "name": "read_discussion",
+                                            "arguments": "{}",
+                                        },
+                                    }
+                                ]
+                            },
+                            "finish_reason": "tool_calls",
+                        }
+                    ],
+                }
+            ),
+            _stream(
+                {
+                    "model": "gpt-oss-120b",
+                    "choices": [
+                        {
+                            "delta": {
+                                "tool_calls": [
+                                    {
                                         "index": index,
                                         "id": f"call-{name}",
                                         "type": "function",
@@ -40,15 +63,14 @@ class CerebrasRoomObservationTests(unittest.TestCase):
                                     }
                                     for index, (name, arguments) in enumerate(
                                         (
-                                            ("read_discussion", {}),
-                                            (
-                                                "publish_message",
-                                                {"content": "CEREBRAS_ROOM_OK"},
-                                            ),
                                             ("roll_dice", {"notation": "1d6"}),
                                             (
                                                 "choose_random",
                                                 {"options": ["red", "blue"]},
+                                            ),
+                                            (
+                                                "publish_message",
+                                                {"content": "CEREBRAS_ROOM_OK"},
                                             ),
                                         )
                                     )
@@ -121,7 +143,7 @@ class CerebrasRoomObservationTests(unittest.TestCase):
             publication = portal.consume_publication("cerebras-turn")
 
         self.assertEqual(result["content"], "RoomPortal action completed.")
-        self.assertEqual(request_count, 1)
+        self.assertEqual(request_count, 2)
         self.assertEqual(receipt, 5)
         self.assertEqual(publication, "CEREBRAS_ROOM_OK")
         self.assertEqual(
@@ -154,7 +176,31 @@ class CerebrasRoomObservationTests(unittest.TestCase):
         )
 
     def test_room_tool_failure_terminates_the_visible_activity(self) -> None:
-        response = _stream(
+        responses = [
+            _stream(
+                {
+                    "model": "gpt-oss-120b",
+                    "choices": [
+                        {
+                            "delta": {
+                                "tool_calls": [
+                                    {
+                                        "index": 0,
+                                        "id": "call-read",
+                                        "type": "function",
+                                        "function": {
+                                            "name": "read_discussion",
+                                            "arguments": "{}",
+                                        },
+                                    }
+                                ]
+                            },
+                            "finish_reason": "tool_calls",
+                        }
+                    ],
+                }
+            ),
+            _stream(
             {
                 "model": "gpt-oss-120b",
                 "choices": [
@@ -176,7 +222,8 @@ class CerebrasRoomObservationTests(unittest.TestCase):
                     }
                 ],
             }
-        )
+            ),
+        ]
         with tempfile.TemporaryDirectory() as temp_dir:
             portal = RoomPortal(Path(temp_dir) / "portal", participant_id="cerebras")
             portal.prepare()
@@ -184,7 +231,7 @@ class CerebrasRoomObservationTests(unittest.TestCase):
             runtime = CerebrasApiRuntime(
                 "cerebras",
                 api_key="csk-private",
-                opener=lambda *args, **kwargs: response,
+                opener=lambda *args, **kwargs: responses.pop(0),
                 room_portal=portal,
             )
             runtime.send_room_observation("room.wake cerebras-turn")
@@ -197,7 +244,11 @@ class CerebrasRoomObservationTests(unittest.TestCase):
                 )
 
         self.assertEqual(
-            [activity["status"] for activity in activities],
+            [
+                activity["status"]
+                for activity in activities
+                if activity["activity_title"] == "무작위 선택"
+            ],
             ["running", "failed"],
         )
 
@@ -211,16 +262,12 @@ class CerebrasEmptyRoundDiagnosticsTests(unittest.TestCase):
 
     def _run_and_capture_error(self, chunk: dict[str, object]) -> str:
         with tempfile.TemporaryDirectory() as temp_dir:
-            portal = RoomPortal(Path(temp_dir) / "portal", participant_id="cerebras")
-            portal.prepare()
-            portal.begin_observation("cerebras-turn", input_up_to_seq=1)
             runtime = CerebrasApiRuntime(
                 "cerebras",
                 api_key="csk-private",
                 opener=lambda *args, **kwargs: _stream(chunk),
-                room_portal=portal,
             )
-            runtime.send_room_observation("room.wake cerebras-turn")
+            runtime.send("hello")
             with self.assertRaises(RuntimeError) as caught:
                 runtime.read_output(timeout_seconds=2)
             return str(caught.exception)

@@ -50,6 +50,7 @@ _HANDLER_AUTHORIZED_MUTATIONS = frozenset(
         "/api/provider-credentials/deepseek",
         "/api/provider-credentials/llmgateway",
         "/api/provider-credentials/openrouter",
+        "/api/provider-credentials/opencode",
         "/api/provider-credentials/tokenrouter",
         "/api/provider-credentials/vercel",
         "/api/public-invite/host-token",

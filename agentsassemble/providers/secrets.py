@@ -14,6 +14,9 @@ from agentsassemble.providers.remote_openai import (
 
 
 MAX_PROVIDER_SECRET_LENGTH = MAX_EXACT_SENSITIVE_VALUE_LENGTH
+_SUBSCRIPTION_SECRET_ENV = {
+    "opencode": "OPENCODE_GO_SESSION_COOKIE",
+}
 
 
 class KeyringBackend(Protocol):
@@ -127,12 +130,14 @@ def _load_keyring_backend() -> KeyringBackend | None:
 
 def _provider_id(value: object) -> str:
     clean = str(value or "").strip().lower()
-    if clean not in remote_openai_credential_ids():
+    if clean not in {*remote_openai_credential_ids(), *_SUBSCRIPTION_SECRET_ENV}:
         raise ValueError(f"Unsupported provider credential: {clean or 'missing'}")
     return clean
 
 
 def _environment_key(provider_id: str) -> str:
+    if provider_id in _SUBSCRIPTION_SECRET_ENV:
+        return _SUBSCRIPTION_SECRET_ENV[provider_id]
     profile = remote_openai_profile(provider_id)
     return profile.credential_env if profile is not None else ""
 

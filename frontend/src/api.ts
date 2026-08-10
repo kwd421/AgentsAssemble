@@ -532,7 +532,13 @@ export interface ProviderUsageSnapshot {
   account_balances?: NonNullable<LiveAgent["account_balances"]>;
 }
 
-export type ProviderUsageId = "claude" | "codex" | "antigravity" | "grok" | "deepseek";
+export type ProviderUsageId =
+  | "claude"
+  | "codex"
+  | "antigravity"
+  | "grok"
+  | "deepseek"
+  | "opencode";
 
 export async function fetchProviderUsage(
   providerId: ProviderUsageId,
@@ -544,6 +550,7 @@ export async function fetchProviderUsage(
     antigravity: "/api/provider-usage/antigravity",
     grok: "/api/provider-usage/grok",
     deepseek: "/api/provider-usage/deepseek",
+    opencode: "/api/provider-usage/opencode",
   };
   const headers: Record<string, string> = {};
   const hostToken = loadHostToken();
@@ -565,6 +572,7 @@ export async function fetchProviderCredentialStatus(
     deepseek: "/api/provider-credentials/deepseek",
     openrouter: "/api/provider-credentials/openrouter",
     llmgateway: "/api/provider-credentials/llmgateway",
+    opencode: "/api/provider-credentials/opencode",
     tokenrouter: "/api/provider-credentials/tokenrouter",
     vercel: "/api/provider-credentials/vercel",
   };
@@ -580,16 +588,21 @@ export async function fetchProviderCredentialStatus(
 
 export async function setProviderCredential(
   providerId: string,
-  apiKey: string
+  apiKey: string,
+  options: { workspaceId?: string } = {}
 ): Promise<ProviderCredentialStatus> {
   const postCredential = (path: string) =>
-    postJsonHost<ProviderCredentialStatus>(path, { api_key: apiKey });
+    postJsonHost<ProviderCredentialStatus>(path, {
+      api_key: apiKey,
+      workspace_id: options.workspaceId,
+    });
   const paths: Record<string, string> = {
     cerebras: "/api/provider-credentials/cerebras",
     custom_api: "/api/provider-credentials/custom_api",
     deepseek: "/api/provider-credentials/deepseek",
     openrouter: "/api/provider-credentials/openrouter",
     llmgateway: "/api/provider-credentials/llmgateway",
+    opencode: "/api/provider-credentials/opencode",
     tokenrouter: "/api/provider-credentials/tokenrouter",
     vercel: "/api/provider-credentials/vercel",
   };
@@ -608,6 +621,7 @@ export async function deleteProviderCredential(
     deepseek: "/api/provider-credentials/deepseek",
     openrouter: "/api/provider-credentials/openrouter",
     llmgateway: "/api/provider-credentials/llmgateway",
+    opencode: "/api/provider-credentials/opencode",
     tokenrouter: "/api/provider-credentials/tokenrouter",
     vercel: "/api/provider-credentials/vercel",
   };

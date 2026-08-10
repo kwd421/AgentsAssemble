@@ -222,9 +222,11 @@ class OpenAICompatibleApiRuntime:
         api_calls: list[dict[str, object]] = []
         try:
             while True:
+                force_room_read = room_observation and tool_rounds == 0
                 round_result = self._stream_round(
                     messages,
                     room_observation=room_observation,
+                    force_room_read=force_room_read,
                     timeout_seconds=max(1.0, progress.remaining()),
                     progress=progress,
                     on_delta=on_delta,
@@ -240,6 +242,13 @@ class OpenAICompatibleApiRuntime:
                 )
                 observed_model_id = round_result.observed_model_id or observed_model_id
                 api_calls.append(round_result.usage)
+                if force_room_read and not any(
+                    _tool_call_name(tool_call) == "read_discussion"
+                    for tool_call in round_result.tool_calls
+                ):
+                    raise RuntimeError(
+                        f"{self.provider_name} did not honor the required room read."
+                    )
                 if not round_result.tool_calls:
                     content = round_result.content.strip()
                     if not content and room_action_completed:
@@ -273,6 +282,14 @@ class OpenAICompatibleApiRuntime:
                         f"{self.provider_name} exceeded the bounded tool-call rounds."
                     )
                 tool_calls = list(round_result.tool_calls)
+                if force_room_read:
+                    required_read = next(
+                        tool_call
+                        for tool_call in tool_calls
+                        if _tool_call_name(tool_call) == "read_discussion"
+                    )
+                    discarded_after_terminal_tool_calls += len(tool_calls) - 1
+                    tool_calls = [required_read]
                 assistant_message: dict[str, object] = {
                     "role": "assistant",
                     "content": round_result.content or None,
@@ -429,6 +446,7 @@ class OpenAICompatibleApiRuntime:
         messages: list[dict[str, object]],
         *,
         room_observation: bool,
+        force_room_read: bool,
         timeout_seconds: float,
         progress: ProviderTurnProgress,
         on_delta=None,
@@ -449,7 +467,21 @@ class OpenAICompatibleApiRuntime:
             tools.extend(room_tool_schemas(self._room_portal.active_tool_names()))
         if tools:
             payload["tools"] = list(tools)
-            payload["tool_choice"] = "auto"
+            if force_room_read:
+                if not any(
+                    isinstance(schema.get("function"), dict)
+                    and schema["function"].get("name") == "read_discussion"
+                    for schema in tools
+                ):
+                    raise RuntimeError(
+                        "Room observation requires the read_discussion tool."
+                    )
+                payload["tool_choice"] = {
+                    "type": "function",
+                    "function": {"name": "read_discussion"},
+                }
+            else:
+                payload["tool_choice"] = "auto"
         initial_size = self._context_policy.encoded_size(payload)
         compaction_started = initial_size > self._context_policy.hard_limit_bytes
         if compaction_started and on_activity is not None:

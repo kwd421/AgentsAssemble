@@ -14,6 +14,7 @@ _PROVIDER_CREDENTIAL_PATHS = {
     f"/api/provider-credentials/{provider_id}"
     for provider_id in remote_openai_credential_ids()
 }
+_PROVIDER_CREDENTIAL_PATHS.add("/api/provider-credentials/opencode")
 
 
 def _is_loopback_host(host: object) -> bool:
@@ -128,6 +129,7 @@ def _public_invite_route_allowed(path: str, method: str) -> bool:
                 "/api/provider-usage/antigravity",
                 "/api/provider-usage/grok",
                 "/api/provider-usage/deepseek",
+                "/api/provider-usage/opencode",
             }
             or path in _PROVIDER_CREDENTIAL_PATHS
             or path.startswith("/api/attachments/")

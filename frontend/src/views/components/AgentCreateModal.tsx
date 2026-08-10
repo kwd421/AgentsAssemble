@@ -28,6 +28,7 @@ import ProviderLogo from "./ProviderLogo";
 import ProviderControlSelect from "./ProviderControlSelect";
 import ProviderControlToggle from "./ProviderControlToggle";
 import AgentPersonaPicker from "./AgentPersonaPicker";
+import ProviderCredentialField from "./ProviderCredentialField";
 import WorkspacePickerField from "./WorkspacePickerField";
 
 type AgentCreateModalProps = {
@@ -162,7 +163,14 @@ export default function AgentCreateModal({
   }, [displayNameEdited, existingSessionId, open, selectedProvider, settings]);
 
   useEffect(() => {
-    if (!open || !selectedProvider || providerCatalogGroup(selectedProvider) !== "api") {
+    if (
+      !open ||
+      !selectedProvider ||
+      (
+        providerCatalogGroup(selectedProvider) !== "api" &&
+        selectedProvider.id !== "opencode"
+      )
+    ) {
       setProviderApiKey("");
       setCredentialStatus(null);
       return;
@@ -284,13 +292,14 @@ export default function AgentCreateModal({
     }
   }
 
-  async function saveProviderApiKey() {
+  async function saveProviderApiKey(options?: { workspaceId?: string }) {
     if (!selectedProvider || !providerApiKey.trim() || credentialBusy) return;
     setCredentialBusy(true);
     try {
-      setCredentialStatus(
-        await setProviderCredential(selectedProvider.id, providerApiKey)
-      );
+      const credentialStatus = options
+        ? await setProviderCredential(selectedProvider.id, providerApiKey, options)
+        : await setProviderCredential(selectedProvider.id, providerApiKey);
+      setCredentialStatus(credentialStatus);
       setProviderApiKey("");
       setStatus(`${selectedProvider.display_name} 키가 서버의 보안 저장소에 저장됐습니다`);
     } catch (error) {
@@ -571,45 +580,18 @@ export default function AgentCreateModal({
             </section>
           )}
 
-          {selectedProvider && providerCatalogGroup(selectedProvider) === "api" && (
-            <section className="dc-agent-section">
-              <p className="dc-agent-section-title">인증</p>
-              <div className="dc-provider-secret-field">
-                <label className="dc-agent-field">
-                  <span>API 키</span>
-                  <input
-                    type="password"
-                    autoComplete="off"
-                    value={providerApiKey}
-                    placeholder={
-                      credentialStatus?.configured
-                        ? "설정됨"
-                        : `${selectedProvider.display_name} API key`
-                    }
-                    onChange={(event) => setProviderApiKey(event.currentTarget.value)}
-                  />
-                </label>
-                <div>
-                  <button
-                    type="button"
-                    disabled={!providerApiKey.trim() || credentialBusy}
-                    onClick={() => void saveProviderApiKey()}
-                  >
-                    보안 저장
-                  </button>
-                  {credentialStatus?.source === "keyring" && (
-                    <button
-                      type="button"
-                      disabled={credentialBusy}
-                      onClick={() => void deleteProviderApiKey()}
-                    >
-                      저장 키 삭제
-                    </button>
-                  )}
-                </div>
-                <p>{credentialStatus?.configured ? `키 설정됨 · ${credentialStatus.source}` : "키 없음"}</p>
-              </div>
-            </section>
+          {selectedProvider &&
+            (providerCatalogGroup(selectedProvider) === "api" ||
+              selectedProvider.id === "opencode") && (
+              <ProviderCredentialField
+                provider={selectedProvider}
+                status={credentialStatus}
+                value={providerApiKey}
+                busy={credentialBusy}
+                onValueChange={setProviderApiKey}
+                onSave={(options) => void saveProviderApiKey(options)}
+                onDelete={() => void deleteProviderApiKey()}
+              />
           )}
 
           {selectedProvider?.login_available &&

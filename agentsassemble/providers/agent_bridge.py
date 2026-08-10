@@ -486,7 +486,21 @@ class RoomAgentBridge:
                         )
             else:
                 self._publish_observation_results(portal, turn_id)
-            observed_through_seq = max(0, int(portal.observation_receipt(turn_id) or 0))
+            raw_observation_receipt = portal.observation_receipt(turn_id)
+            if raw_observation_receipt is None:
+                self._command(
+                    "turn.failed",
+                    {
+                        "turn_id": turn_id,
+                        "status": "error",
+                        "error_code": "room_observation_unconfirmed",
+                        "message": "Provider completed the room observation but did not read "
+                        "the assigned room state through the RoomPortal.",
+                        "diagnostics": self._failure_diagnostics(),
+                    },
+                )
+                return
+            observed_through_seq = max(0, int(raw_observation_receipt))
             if observed_through_seq < wake.input_up_to_seq:
                 self._command(
                     "turn.failed",

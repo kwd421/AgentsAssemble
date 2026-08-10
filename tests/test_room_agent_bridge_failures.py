@@ -380,7 +380,7 @@ class RoomAgentBridgeFailureTests(unittest.TestCase):
                         "participant_id": "solar",
                         "session_id": "solar",
                         "turn_id": "wake-unread",
-                        "input_up_to_seq": 1,
+                        "input_up_to_seq": 0,
                         "attachment_ids": [],
                         "observation_kind": "ambient_observation",
                         "publication_mode": "explicit_room_portal",

@@ -289,11 +289,12 @@ function providerUsageTarget(session?: RoomAgentSession) {
     antigravity_live_session: "antigravity",
     grok_live_session: "grok",
     deepseek_api: "deepseek",
+    opencode_server: "opencode",
   };
   const providerId = providerByKind[session.provider_kind];
   if (!providerId) return null;
   const model =
-    providerId === "codex" || providerId === "antigravity"
+    providerId === "codex" || providerId === "antigravity" || providerId === "opencode"
       ? String(session.model || "").trim()
       : "";
   return {

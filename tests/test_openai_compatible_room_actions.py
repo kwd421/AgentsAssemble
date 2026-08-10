@@ -78,6 +78,11 @@ class OpenAICompatibleRoomActionTests(unittest.TestCase):
         self.assertEqual(publication, "공용 어댑터 발언")
         self.assertEqual(result["metadata"]["room_tool_rounds"], 2)
         self.assertEqual(len(requests), 2)
+        self.assertEqual(
+            requests[0]["tool_choice"],
+            {"type": "function", "function": {"name": "read_discussion"}},
+        )
+        self.assertEqual(requests[1]["tool_choice"], "auto")
         self.assertTrue(all(request["max_tokens"] == 8192 for request in requests))
         self.assertNotIn("secret-never-reported", json.dumps(result))
         self.assertNotIn("secret-never-reported", json.dumps(runtime.health()))
@@ -86,8 +91,23 @@ class OpenAICompatibleRoomActionTests(unittest.TestCase):
         profile = remote_openai_profile("openrouter")
         self.assertIsNotNone(profile)
 
+        calls = 0
+
         def opener(_request: Request, timeout: float):
+            nonlocal calls
             del timeout
+            calls += 1
+            if calls == 1:
+                return _tool_calls_response(
+                    [
+                        ("call-read", "read_discussion", {}),
+                        (
+                            "call-publish-before-read-completes",
+                            "publish_message",
+                            {"content": "읽기와 함께 실행되면 안 되는 발언"},
+                        ),
+                    ]
+                )
             return _tool_calls_response(
                 [
                     (
@@ -121,10 +141,10 @@ class OpenAICompatibleRoomActionTests(unittest.TestCase):
             publication = portal.consume_publication("turn-1")
 
         self.assertEqual(publication, "첫 공개 발언")
-        self.assertEqual(result["metadata"]["room_tool_rounds"], 1)
+        self.assertEqual(result["metadata"]["room_tool_rounds"], 2)
         self.assertEqual(
             result["metadata"]["discarded_after_terminal_tool_calls"],
-            1,
+            2,
         )
 
 

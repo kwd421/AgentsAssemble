@@ -13,6 +13,7 @@ from agentsassemble.providers.provider_usage import (
     ProviderUsageUnavailable,
     default_provider_usage_registry,
 )
+from agentsassemble.providers.opencode_usage import build_opencode_go_credential
 from agentsassemble.providers.workspace_picker import (
     WorkspacePickerUnavailable,
     choose_workspace_folder,
@@ -227,6 +228,10 @@ def register_provider_routes(
     def custom_api_credentials_status(ctx: RequestContext) -> None:
         _credential_status(ctx, "custom_api")
 
+    @router.get("/api/provider-credentials/opencode")
+    def opencode_credentials_status(ctx: RequestContext) -> None:
+        _credential_status(ctx, "opencode")
+
     def _send_provider_usage(ctx: RequestContext, provider_id: str) -> None:
         if not credentials_allowed(ctx):
             return
@@ -261,6 +266,10 @@ def register_provider_routes(
     def deepseek_provider_usage(ctx: RequestContext) -> None:
         _send_provider_usage(ctx, "deepseek")
 
+    @router.get("/api/provider-usage/opencode")
+    def opencode_provider_usage(ctx: RequestContext) -> None:
+        _send_provider_usage(ctx, "opencode")
+
     def _credential_set(ctx: RequestContext, provider_id: str) -> None:
         if not credentials_allowed(ctx):
             return
@@ -268,8 +277,14 @@ def register_provider_routes(
         if payload is None:
             return
         try:
-            status = store.set(provider_id, str(payload.get("api_key") or ""))
-        except ValueError as error:
+            credential = str(payload.get("api_key") or "")
+            if provider_id == "opencode":
+                credential = build_opencode_go_credential(
+                    payload.get("workspace_id"),
+                    credential,
+                )
+            status = store.set(provider_id, credential)
+        except (ProviderUsageUnavailable, ValueError) as error:
             ctx.send_error(HTTPStatus.BAD_REQUEST, str(error))
             return
         except ProviderSecretStoreUnavailable:
@@ -305,6 +320,10 @@ def register_provider_routes(
     def custom_api_credentials_set(ctx: RequestContext) -> None:
         _credential_set(ctx, "custom_api")
 
+    @router.post("/api/provider-credentials/opencode")
+    def opencode_credentials_set(ctx: RequestContext) -> None:
+        _credential_set(ctx, "opencode")
+
     def _credential_delete(ctx: RequestContext, provider_id: str) -> None:
         if not credentials_allowed(ctx):
             return
@@ -337,3 +356,7 @@ def register_provider_routes(
     @router.delete("/api/provider-credentials/custom_api")
     def custom_api_credentials_delete(ctx: RequestContext) -> None:
         _credential_delete(ctx, "custom_api")
+
+    @router.delete("/api/provider-credentials/opencode")
+    def opencode_credentials_delete(ctx: RequestContext) -> None:
+        _credential_delete(ctx, "opencode")
