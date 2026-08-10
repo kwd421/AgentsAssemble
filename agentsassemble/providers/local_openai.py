@@ -1,11 +1,10 @@
 from __future__ import annotations
 
-from urllib.request import urlopen
-
 from agentsassemble.providers.openai_compatible import (
     OpenAICompatibleApiRuntime,
     UrlOpen,
 )
+from agentsassemble.providers.remote_http import safe_loopback_urlopen
 from agentsassemble.providers.room_portal import RoomPortal
 
 LOCAL_OPENAI_PROVIDER_ENDPOINTS = {
@@ -32,7 +31,7 @@ class LocalOpenAICompatibleRuntime(OpenAICompatibleApiRuntime):
         model: str,
         base_url: str,
         message_source: str,
-        opener: UrlOpen = urlopen,
+        opener: UrlOpen = safe_loopback_urlopen,
         room_portal: RoomPortal | None = None,
         workspace: str = "",
         permission_mode: str = "meeting_read_only",

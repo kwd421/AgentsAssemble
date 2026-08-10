@@ -1,10 +1,13 @@
 import json
 import tempfile
+import threading
 import time
 import unittest
+from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 
 from agentsassemble.providers.opencode import OpenCodeRuntime
+from agentsassemble.providers.remote_http import RemoteResponseTooLarge
 
 
 class _Response:
@@ -27,6 +30,39 @@ def _event(event_type, properties):
 
 
 class OpenCodeRuntimeTests(unittest.TestCase):
+    def test_default_transport_rejects_an_oversized_json_response(self):
+        class OversizedJsonHandler(BaseHTTPRequestHandler):
+            def do_POST(self) -> None:
+                self.send_response(200)
+                self.send_header("Content-Type", "application/json")
+                self.send_header("Content-Length", str(32 * 1_048_576 + 1))
+                self.send_header("Connection", "close")
+                self.end_headers()
+                self.wfile.write(b"{}")
+                self.close_connection = True
+
+            def log_message(self, _format: str, *_args: object) -> None:
+                return
+
+        server = ThreadingHTTPServer(("127.0.0.1", 0), OversizedJsonHandler)
+        thread = threading.Thread(target=server.serve_forever, daemon=True)
+        thread.start()
+        try:
+            with tempfile.TemporaryDirectory() as temp_dir:
+                runtime = OpenCodeRuntime(
+                    "opencode",
+                    endpoint=f"http://127.0.0.1:{server.server_port}",
+                    workspace=temp_dir,
+                    state_dir=Path(temp_dir) / "state",
+                )
+
+                with self.assertRaises(RemoteResponseTooLarge):
+                    runtime.start()
+        finally:
+            server.shutdown()
+            server.server_close()
+            thread.join(timeout=2)
+
     def test_structured_progress_extends_the_inactivity_timeout(self):
         session_id = "session-1"
         state = {"request_message_id": ""}

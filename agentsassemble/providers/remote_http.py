@@ -379,15 +379,20 @@ def safe_loopback_urlopen(
     hostname = parsed.hostname.casefold()
     port = parsed.port or 80
     absolute_deadline = monotonic() + max(1.0, float(timeout))
-    addresses = _resolve_addresses_before_deadline(
-        hostname,
-        port,
-        resolver=resolver,
-        validator=_validated_loopback_addresses,
-        resolver_worker_path=resolver_worker_path,
-        absolute_deadline=absolute_deadline,
-        monotonic=monotonic,
-    )
+    try:
+        literal_address = ip_address(hostname)
+    except ValueError:
+        addresses = _resolve_addresses_before_deadline(
+            hostname,
+            port,
+            resolver=resolver,
+            validator=_validated_loopback_addresses,
+            resolver_worker_path=resolver_worker_path,
+            absolute_deadline=absolute_deadline,
+            monotonic=monotonic,
+        )
+    else:
+        addresses = _validated_loopback_addresses([str(literal_address)])
     factory = connection_factory or _PinnedHTTPConnection
     return _open_pinned(
         request,

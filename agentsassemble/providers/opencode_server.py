@@ -7,9 +7,10 @@ import socket
 import subprocess
 import time
 from pathlib import Path
-from urllib.request import urlopen
+from urllib.request import Request
 
 from agentsassemble.providers.process_environment import sanitized_provider_environment
+from agentsassemble.providers.remote_http import safe_loopback_urlopen
 
 
 class OpenCodeServerProcess:
@@ -36,7 +37,7 @@ class OpenCodeServerProcess:
         executable: str,
         pid: int,
         endpoint: str,
-        opener=urlopen,
+        opener=safe_loopback_urlopen,
     ) -> OpenCodeServerProcess:
         """Take lifecycle ownership of a server preserved across GUI handoff."""
 
@@ -46,7 +47,10 @@ class OpenCodeServerProcess:
         if handle.process.poll() is not None or not handle.endpoint:
             raise RuntimeError("Preserved OpenCode server is no longer running.")
         try:
-            with opener(f"{handle.endpoint}/global/health", timeout=1.0) as response:
+            with opener(
+                Request(f"{handle.endpoint}/global/health"),
+                timeout=1.0,
+            ) as response:
                 healthy = response.status == 200
         except Exception as error:
             raise RuntimeError(
@@ -92,7 +96,10 @@ class OpenCodeServerProcess:
             if self.process.poll() is not None:
                 break
             try:
-                with urlopen(f"{self.endpoint}/global/health", timeout=0.5) as response:
+                with safe_loopback_urlopen(
+                    Request(f"{self.endpoint}/global/health"),
+                    timeout=0.5,
+                ) as response:
                     if response.status == 200:
                         return self.health()
             except Exception:

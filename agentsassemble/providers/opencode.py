@@ -8,7 +8,7 @@ from collections.abc import Callable
 from pathlib import Path
 from urllib.error import HTTPError
 from urllib.parse import quote, urlencode
-from urllib.request import Request, urlopen
+from urllib.request import Request
 
 from agentsassemble.providers.opencode_provider_requests import (
     handle_opencode_permission_request,
@@ -17,6 +17,7 @@ from agentsassemble.providers.opencode_provider_requests import (
 )
 from agentsassemble.providers.opencode_server import OpenCodeServerProcess
 from agentsassemble.providers.provider_requests import ProviderRequestHandler
+from agentsassemble.providers.remote_http import safe_loopback_urlopen
 from agentsassemble.providers.turn_progress import (
     ProviderTurnProgress,
     run_during_provider_wait,
@@ -44,7 +45,7 @@ class OpenCodeRuntime:
         variant: str = "",
         permission_mode: str = "meeting_read_only",
         server_pid: int | None = None,
-        opener=urlopen,
+        opener=safe_loopback_urlopen,
         room_portal: RoomPortal | None = None,
     ) -> None:
         self.agent_id = clean_room_text(agent_id, limit=128)
