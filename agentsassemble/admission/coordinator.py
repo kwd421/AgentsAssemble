@@ -120,17 +120,13 @@ class RoomAdmissionCoordinator:
                 if scope_rejection is not None:
                     return scope_rejection
                 if prepared.reusable and clean_consumer_client_type == "browser":
-                    if not auth_key:
-                        return {
-                            "status": "rejected",
-                            "reason": "stable_device_required",
-                        }
-                    workflow_id = _workflow_id(
-                        token_fingerprint=token_fingerprint,
-                        device_auth_key=auth_key,
-                        request_id="",
-                    )
-                    workflow = self._invites.admission_workflow(workflow_id)
+                    if auth_key:
+                        workflow_id = _workflow_id(
+                            token_fingerprint=token_fingerprint,
+                            device_auth_key=auth_key,
+                            request_id="",
+                        )
+                        workflow = self._invites.admission_workflow(workflow_id)
                 if workflow is not None:
                     self._validate_retry(
                         workflow,
@@ -145,13 +141,22 @@ class RoomAdmissionCoordinator:
                         display_name=display_name,
                         participant_type=participant_type,
                     )
+                room, settings = self._room_context(prepared.meeting_id)
+                if not room:
+                    return {"status": "rejected", "reason": "room_unavailable"}
+                if (
+                    prepared.reusable
+                    and clean_consumer_client_type == "browser"
+                    and not auth_key
+                ):
+                    return {
+                        "status": "rejected",
+                        "reason": "stable_device_required",
+                    }
                 self._assert_preworkflow_capacity(
                     prepared,
                     auth_key=auth_key,
                 )
-                room, settings = self._room_context(prepared.meeting_id)
-                if not room:
-                    return {"status": "rejected", "reason": "room_unavailable"}
                 moment = self._now().isoformat()
                 workflow = self._invites.create_admission_workflow(
                     workflow_id,
