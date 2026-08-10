@@ -34,6 +34,7 @@ class RecordingBroker(RoomEventBroker):
         super().__init__()
         self.bridge_messages: list[dict[str, object]] = []
         self.bridge_available = True
+        self.fail_next_delivery = False
 
     def has_bridge(self, room_id: str, participant_id: str) -> bool:
         return (
@@ -49,6 +50,9 @@ class RecordingBroker(RoomEventBroker):
         message: dict[str, object],
     ) -> bool:
         if not self.has_bridge(room_id, participant_id):
+            return False
+        if self.fail_next_delivery:
+            self.fail_next_delivery = False
             return False
         self.bridge_messages.append(dict(message))
         super().direct_to_bridge(room_id, participant_id, message)
@@ -483,14 +487,122 @@ class RoomProviderRequestTests(unittest.TestCase):
                 "status": "resolved",
             },
         )
-        self.assertIn(
-            secret,
-            json.dumps(self.manager.redact_public_payload(
+        after_close = json.dumps(
+            self.manager.redact_public_payload(
                 "general",
                 "grok",
                 {"content": f"provider repeated {secret}"},
-            )),
+            )
         )
+        self.assertNotIn(secret, after_close)
+        self.assertIn("[redacted]", after_close)
+
+    def test_secret_answer_stays_redacted_after_provider_consumes_it(self) -> None:
+        secret = "ordinary-looking-secret-918273645"
+        report_count = 0
+
+        def report(action: str, payload: dict[str, object]) -> dict[str, object]:
+            nonlocal report_count
+            report_count += 1
+            return self.command(
+                self.bridge,
+                f"secret-provider-report-{report_count}",
+                action,
+                payload,
+            )
+
+        router = BridgeProviderRequestRouter(
+            report=report,
+            stopping=threading.Event(),
+        )
+        redacted_after_response: list[dict[str, object]] = []
+        worker = threading.Thread(
+            target=router.handle,
+            args=(
+                {
+                    "request_kind": "user_input",
+                    "response_kind": "answers",
+                    "title": "비밀 입력",
+                    "questions": [
+                        {
+                            "id": "password",
+                            "question": "비밀번호를 입력하세요.",
+                            "is_other": True,
+                            "is_secret": True,
+                        }
+                    ],
+                    "timeout_seconds": 15,
+                },
+                lambda _resolution: redacted_after_response.append(
+                    self.manager.redact_public_payload(
+                        "general",
+                        "grok",
+                        {"content": f"provider repeated {secret}"},
+                    )
+                ),
+            ),
+            daemon=True,
+        )
+        worker.start()
+        _wait_for(lambda: bool(self.controller.snapshot(HOST)["provider_requests"]))
+        pending = self.controller.snapshot(HOST)["provider_requests"][0]
+        self.command(
+            HOST,
+            "resolve-secret-through-router",
+            "provider.request.resolve",
+            {
+                "provider_request_id": pending["provider_request_id"],
+                "answers": {"password": [secret]},
+            },
+        )
+        self.assertTrue(router.resolve(self.broker.bridge_messages[-1]))
+        worker.join(timeout=2)
+
+        self.assertFalse(worker.is_alive())
+        serialized = json.dumps(redacted_after_response, ensure_ascii=False)
+        self.assertNotIn(secret, serialized)
+        self.assertIn("[redacted]", serialized)
+
+    def test_delivery_failure_is_terminal_for_the_original_request_id(self) -> None:
+        self.command(
+            self.bridge,
+            "open-delivery-failure",
+            "provider.request.open",
+            {
+                "provider_request_id": "delivery-failure",
+                "request_kind": "permission",
+                "response_kind": "option",
+                "title": "파일 변경",
+                "options": [
+                    {"id": "allow-once", "label": "이번만 허용", "kind": "allow_once"},
+                    {"id": "reject-once", "label": "거절", "kind": "reject_once"},
+                ],
+            },
+        )
+        payload = {
+            "provider_request_id": "delivery-failure",
+            "option_id": "allow-once",
+        }
+        self.broker.fail_next_delivery = True
+
+        with self.assertRaises(RoomCommandRejected) as first:
+            self.command(
+                HOST,
+                "resolve-delivery-failure",
+                "provider.request.resolve",
+                payload,
+            )
+        with self.assertRaises(RoomCommandRejected) as retried:
+            self.command(
+                HOST,
+                "resolve-delivery-failure",
+                "provider.request.resolve",
+                payload,
+            )
+
+        self.assertEqual(first.exception.code, "provider_request_bridge_unavailable")
+        self.assertEqual(retried.exception.code, "provider_request_bridge_unavailable")
+        self.assertEqual(self.controller.snapshot(HOST)["provider_requests"], [])
 
     def test_secret_provider_answer_fails_closed_when_delivery_redaction_cannot_register(self) -> None:
         self.command(

@@ -285,6 +285,7 @@ class RoomRealtimeController:
                 if bridge_manager is not None
                 else None
             ),
+            release_terminal_sensitive_values=lambda room_id, session_id: self._provider_requests.release_terminal_sensitive_values(room_id, session_id),
         )
         self._ordered_message_router = RoomOrderedMessageRouter(
             store=self.store,

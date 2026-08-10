@@ -58,6 +58,9 @@ class RoomProviderRequestService:
             release_sensitive_values
             or bridge_diagnostics.default_sensitive_value_releaser
         )
+        self._deferred_sensitive_releases: dict[
+            tuple[str, str], set[str]
+        ] = {}
 
     def handle_command(
         self,
@@ -99,14 +102,20 @@ class RoomProviderRequestService:
         with self._lock:
             ack = execute(operation)
         if ack.get("deduplicated"):
+            if action == "provider.request.resolve":
+                result = ack.get("result") if isinstance(ack.get("result"), dict) else {}
+                self._raise_if_delivery_failed(
+                    room_id,
+                    clean_room_text(result.get("provider_request_id"), limit=128),
+                )
             return ack
         if action == "provider.request.closed":
             if release:
-                self._release_sensitive_values(
-                    room_id,
-                    release["session_id"],
-                    self._sensitive_registration_id(release["provider_request_id"]),
-                )
+                key = (room_id, release["session_id"])
+                with self._lock:
+                    self._deferred_sensitive_releases.setdefault(key, set()).add(
+                        self._sensitive_registration_id(release["provider_request_id"])
+                    )
             return ack
         if action != "provider.request.resolve":
             return ack
@@ -147,7 +156,25 @@ class RoomProviderRequestService:
                 room_id,
                 clean_room_text(result.get("provider_request_id"), limit=128),
             )
+            raise RoomCommandRejected(
+                "The Agent Session disconnected before the response was delivered.",
+                code="provider_request_bridge_unavailable",
+            )
         return ack
+
+    def release_terminal_sensitive_values(
+        self,
+        room_id: str,
+        session_id: str,
+    ) -> None:
+        """Release provider answers only after the surrounding turn is terminal."""
+
+        clean_session_id = clean_room_text(session_id, limit=128)
+        key = (room_id, clean_session_id)
+        with self._lock:
+            registration_ids = tuple(self._deferred_sensitive_releases.pop(key, ()))
+        for registration_id in registration_ids:
+            self._release_sensitive_values(room_id, clean_session_id, registration_id)
 
     def open_in_unit(
         self,
@@ -346,6 +373,35 @@ class RoomProviderRequestService:
                 reason_code=reason_code,
             )
             return
+
+    def _raise_if_delivery_failed(self, room_id: str, request_id: str) -> None:
+        if not request_id:
+            return
+        events = self.store.read_events(
+            room_id,
+            newest=True,
+            limit=500,
+            include_hidden=True,
+            event_types=("provider_request_resolved",),
+        )
+        for event in events:
+            provider_request = event.get("provider_request")
+            if not isinstance(provider_request, dict):
+                continue
+            if provider_request.get("provider_request_id") != request_id:
+                continue
+            if provider_request.get("status") != "failed":
+                return
+            reason_code = clean_room_text(event.get("reason_code"), limit=128)
+            code = (
+                "provider_request_sensitive_registry_failed"
+                if reason_code == "provider_request_sensitive_registry_failed"
+                else "provider_request_bridge_unavailable"
+            )
+            raise RoomCommandRejected(
+                "The provider request response was not delivered.",
+                code=code,
+            )
 
     def _pending_request(
         self,

@@ -122,6 +122,7 @@ class RoomTurnCoordinator:
         redact_activity_payload: bridge_diagnostics.ActivityPayloadRedactor | None = None,
         discard_activity_payloads: bridge_diagnostics.ActivityPayloadDiscarder | None = None,
         read_portal_publication: PortalPublicationReader | None = None,
+        release_terminal_sensitive_values: Callable[[str, str], None] = lambda _room, _session: None,
     ) -> None:
         self.output_root = Path(output_root)
         self.store = store
@@ -155,6 +156,7 @@ class RoomTurnCoordinator:
         self._observation_publication = RoomObservationPublication(
             read_portal_publication=read_portal_publication,
         )
+        self._release_terminal_sensitive_values = release_terminal_sensitive_values
 
     def close(self) -> CleanupReport:
         with self._lock:
@@ -1550,6 +1552,7 @@ class RoomTurnCoordinator:
             diagnostics=diagnostics,
             finish_status="declined",
         )
+        self._release_terminal_sensitive_values(room_id, str(session["session_id"]))
         return {
             "declined": True,
             "reason_code": reason_code,
@@ -1736,6 +1739,7 @@ class RoomTurnCoordinator:
             )
         elif not interrupted:
             self._advance_floor_after_commit(room_id)
+        self._release_terminal_sensitive_values(room_id, str(session["session_id"]))
         return {"event": error, "agent_session": public_session(updated)}
 
     def _complete_active_turn(
@@ -1870,12 +1874,14 @@ class RoomTurnCoordinator:
         session_id = clean_lobby_text(session.get("session_id"), limit=128)
         if not participant_id or not session_id:
             return {}
-        return self._after_completed_turn(
+        current = self._after_completed_turn(
             room_id,
             participant_id=participant_id,
             session_id=session_id,
             publish_state=not deduplicated,
         )
+        self._release_terminal_sensitive_values(room_id, session_id)
+        return current
 
     def _after_completed_turn(
         self,

@@ -48,4 +48,4 @@ class ProviderRequestRouterTests(unittest.TestCase):
         ):
             router.handle(request, responses.append)
 
-        self.assertEqual(responses, [])
+        self.assertEqual(responses, [{"option_id": "allow_once"}])

@@ -68,6 +68,7 @@ class BridgeProviderRequestRouter:
                 resolution = _default_resolution(request)
             if pending.resolution:
                 terminal_status = _resolution_status(request, resolution)
+            respond(resolution)
             close_attempted = True
             self._report(
                 "provider.request.closed",
@@ -77,7 +78,6 @@ class BridgeProviderRequestRouter:
                 },
             )
             opened = False
-            respond(resolution)
         finally:
             with self._lock:
                 self._pending.pop(request_id, None)
@@ -86,7 +86,7 @@ class BridgeProviderRequestRouter:
                     "provider.request.closed",
                     {
                         "provider_request_id": request_id,
-                        "status": terminal_status,
+                        "status": "failed",
                     },
                 )
 
