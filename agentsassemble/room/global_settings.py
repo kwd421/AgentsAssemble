@@ -28,12 +28,14 @@ from agentsassemble.room.setting_values import (
     clean_room_text,
     clean_short_label,
 )
+from agentsassemble.plugin.settings import clean_activity_plugin
 from agentsassemble.room.tool_modes import CHAT_TOOL_MODE, validate_room_tool_mode
 
 
 DEFAULT_CONVERSATION_MODE = "ordered"
 DEFAULT_ORDERED_EXCLUDE_PREVIOUS_SPEAKER = True
 DEFAULT_MAX_RELAY_TURNS = 6
+DEFAULT_ACTIVITY_PLUGIN = ""
 MIN_RELAY_TURNS = 2
 MAX_RELAY_TURNS = 20
 ROOM_LABEL_LIMIT = 128
@@ -48,6 +50,7 @@ ROOM_GLOBAL_SETTING_FIELDS = frozenset(
         "ordered_exclude_previous_speaker",
         "max_relay_turns",
         "channels",
+        "activity_plugin",
     }
 )
 ROOM_APPEARANCE_FIELDS = frozenset(
@@ -87,6 +90,7 @@ class RoomGlobalSettingsRecord(TypedDict):
     ordered_exclude_previous_speaker: bool
     max_relay_turns: int
     channels: list[RoomGlobalChannel]
+    activity_plugin: str
 
 
 def room_settings_revision(value: object) -> str:
@@ -131,6 +135,7 @@ def default_room_global_settings(*, label: str = "") -> RoomGlobalSettingsRecord
             "ordered_exclude_previous_speaker": DEFAULT_ORDERED_EXCLUDE_PREVIOUS_SPEAKER,
             "max_relay_turns": DEFAULT_MAX_RELAY_TURNS,
             "channels": [],
+            "activity_plugin": DEFAULT_ACTIVITY_PLUGIN,
         }
     )
 
@@ -138,7 +143,10 @@ def default_room_global_settings(*, label: str = "") -> RoomGlobalSettingsRecord
 def validate_room_global_settings(value: object) -> RoomGlobalSettingsRecord:
     """Validate a complete canonical record without silently repairing it."""
 
-    source = _require_mapping(value, field="room settings")
+    source = dict(_require_mapping(value, field="room settings"))
+    # New optional activity plugin defaults empty for pre-plugin durable rows.
+    if "activity_plugin" not in source:
+        source["activity_plugin"] = DEFAULT_ACTIVITY_PLUGIN
     _require_exact_fields(source, ROOM_GLOBAL_SETTING_FIELDS, field="room settings")
     return {
         "label": _strict_text(source["label"], field="label", limit=ROOM_LABEL_LIMIT),
@@ -152,6 +160,7 @@ def validate_room_global_settings(value: object) -> RoomGlobalSettingsRecord:
         ),
         "max_relay_turns": _validate_max_relay_turns(source["max_relay_turns"]),
         "channels": _validate_channels(source["channels"]),
+        "activity_plugin": clean_activity_plugin(source["activity_plugin"]),
     }
 
 

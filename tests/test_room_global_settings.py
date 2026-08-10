@@ -34,6 +34,7 @@ def _settings() -> dict[str, object]:
                 "created_at": "2026-07-14T00:00:00+00:00",
             }
         ],
+        "activity_plugin": "rimworld",
     }
 
 
@@ -45,6 +46,7 @@ class RoomGlobalSettingsTests(unittest.TestCase):
         self.assertEqual(settings["label"], "General")
         self.assertEqual(settings["conversation_mode"], "ordered")
         self.assertEqual(settings["tool_mode"], "chat")
+        self.assertEqual(settings["activity_plugin"], "")
         self.assertTrue(settings["ordered_exclude_previous_speaker"])
         self.assertEqual(settings["max_relay_turns"], 6)
         self.assertEqual(settings["channels"], [])

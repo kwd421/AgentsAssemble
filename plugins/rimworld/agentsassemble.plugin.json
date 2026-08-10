@@ -1,0 +1,17 @@
+{
+  "api": "agentsassemble.plugin/v1",
+  "id": "rimworld",
+  "version": "0.1.0",
+  "display_name": "RimWorld Survival Slice",
+  "entrypoints": {
+    "server": "server/main.py",
+    "web": "web/index.html",
+    "agent_tools": "server/tools.py"
+  },
+  "permissions": [
+    "room.read",
+    "room.activity.write",
+    "agent.tools",
+    "plugin.storage"
+  ]
+}

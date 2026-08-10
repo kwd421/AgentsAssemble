@@ -111,6 +111,21 @@ class ReactStaticTransport:
                 "Legacy static assets are retired.",
             )
             return True
+        if path.startswith("/plugins/"):
+            plugins_root = (
+                Path(__file__).resolve().parent.parent.parent / "plugins"
+            ).resolve()
+            relative_path = unquote(path.removeprefix("/plugins/"))
+            plugin_path = safe_static_path(plugins_root, relative_path)
+            if plugin_path is None or not plugin_path.is_file():
+                handler._send_error(HTTPStatus.NOT_FOUND, "Plugin asset not found")
+            else:
+                handler._send_file(
+                    plugin_path,
+                    react_app_content_type(plugin_path),
+                    cache_control="no-store",
+                )
+            return True
         return False
 
 

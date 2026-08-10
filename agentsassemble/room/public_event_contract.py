@@ -46,6 +46,7 @@ class PublicRoomGlobalSettings(TypedDict):
     ordered_exclude_previous_speaker: bool
     max_relay_turns: int
     channels: list[PublicRoomGlobalChannel]
+    activity_plugin: NotRequired[str]
 
 
 class PublicProviderRequestOption(TypedDict):
@@ -128,6 +129,9 @@ class PublicRoomEvent(TypedDict):
     reason_code: NotRequired[str]
     room_settings: NotRequired[PublicRoomGlobalSettings]
     provider_request: NotRequired[PublicProviderRequest]
+    plugin_id: NotRequired[str]
+    plugin_payload: NotRequired[dict[str, object]]
+    plugin_code: NotRequired[str]
 
 
 __all__ = [

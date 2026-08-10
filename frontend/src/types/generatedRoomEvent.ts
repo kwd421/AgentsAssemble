@@ -75,6 +75,7 @@ export interface PublicRoomGlobalSettings {
   ordered_exclude_previous_speaker: boolean;
   max_relay_turns: number;
   channels: PublicRoomGlobalChannel[];
+  activity_plugin?: string;
 }
 
 export interface RoomEvent {
@@ -124,4 +125,7 @@ export interface RoomEvent {
   reason_code?: string;
   room_settings?: PublicRoomGlobalSettings;
   provider_request?: PublicProviderRequest;
+  plugin_id?: string;
+  plugin_payload?: Record<string, unknown>;
+  plugin_code?: string;
 }

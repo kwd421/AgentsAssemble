@@ -1,0 +1,225 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>RimWorld Slice</title>
+    <style>
+      :root {
+        color-scheme: dark;
+        --bg: #1a1f18;
+        --panel: #243022;
+        --ink: #e7f0dc;
+        --muted: #9bb08a;
+        --accent: #8bc34a;
+        --danger: #e57373;
+        --tile: #2f3b2a;
+      }
+      * { box-sizing: border-box; }
+      body {
+        margin: 0;
+        font-family: ui-sans-serif, system-ui, sans-serif;
+        background: var(--bg);
+        color: var(--ink);
+      }
+      .layout {
+        display: grid;
+        grid-template-rows: auto 1fr auto;
+        min-height: 100vh;
+      }
+      header, footer {
+        display: flex;
+        gap: 0.75rem;
+        align-items: center;
+        flex-wrap: wrap;
+        padding: 0.6rem 0.8rem;
+        background: var(--panel);
+        border-bottom: 1px solid #31422e;
+      }
+      footer { border-bottom: 0; border-top: 1px solid #31422e; }
+      button, select {
+        background: #31422e;
+        color: var(--ink);
+        border: 1px solid #40563a;
+        border-radius: 0.4rem;
+        padding: 0.35rem 0.65rem;
+        cursor: pointer;
+      }
+      button.active { outline: 2px solid var(--accent); }
+      .map {
+        display: grid;
+        grid-template-columns: repeat(48, minmax(0, 1fr));
+        gap: 1px;
+        padding: 0.5rem;
+        background: #10140f;
+        overflow: auto;
+        min-height: 0;
+      }
+      .cell {
+        aspect-ratio: 1;
+        background: var(--tile);
+        position: relative;
+      }
+      .cell.wall { background: #6d5d4b; }
+      .cell.bed { background: #5c7cfa; }
+      .cell.table { background: #d4a373; }
+      .cell.campfire { background: #ff922b; }
+      .cell.workbench { background: #748ffc; }
+      .cell.door { background: #adb5bd; }
+      .cell.storage { background: #868e96; }
+      .pawn {
+        position: absolute;
+        inset: 15%;
+        border-radius: 50%;
+        background: var(--accent);
+        display: grid;
+        place-items: center;
+        font-size: 0.55rem;
+        font-weight: 700;
+        color: #10210a;
+      }
+      .pawn.break { background: var(--danger); }
+      .pawn.wait { background: #fab005; }
+      .status { color: var(--muted); font-size: 0.85rem; }
+      .error { color: var(--danger); }
+      .colonist-list {
+        display: flex;
+        gap: 0.5rem;
+        flex-wrap: wrap;
+      }
+      .card {
+        background: #1c261b;
+        border: 1px solid #31422e;
+        border-radius: 0.45rem;
+        padding: 0.4rem 0.55rem;
+        min-width: 9rem;
+        font-size: 0.8rem;
+      }
+      @media (max-width: 720px) {
+        .map { grid-template-columns: repeat(48, 10px); }
+        header, footer { font-size: 0.85rem; }
+      }
+    </style>
+  </head>
+  <body>
+    <div class="layout">
+      <header>
+        <strong>Colony Slice</strong>
+        <button data-speed="0" type="button">Pause</button>
+        <button data-speed="1" type="button" class="active">1×</button>
+        <button data-speed="3" type="button">3×</button>
+        <span class="status" id="tick">tick 0</span>
+        <span class="status" id="resources">wood 0 · steel 0 · food 0</span>
+        <span class="status error" id="error"></span>
+      </header>
+      <div class="map" id="map" aria-label="Colony map"></div>
+      <footer>
+        <div class="colonist-list" id="colonists"></div>
+      </footer>
+    </div>
+    <script>
+      const parent = window.parent;
+      const channel = new MessageChannel();
+      let state = null;
+      let port = null;
+
+      function postReady() {
+        parent.postMessage({ type: "plugin.web.ready", plugin_id: "rimworld" }, "*", [channel.port2]);
+        port = channel.port1;
+        port.onmessage = (event) => {
+          const data = event.data || {};
+          if (data.type === "plugin.snapshot" || data.type === "plugin.delta") {
+            state = data.payload || data.payload?.payload || data.payload;
+            if (data.payload?.colonists) state = data.payload;
+            render();
+          }
+          if (data.type === "plugin.error") {
+            document.getElementById("error").textContent = data.message || "plugin error";
+          }
+        };
+        port.start();
+        port.postMessage({ type: "plugin.command", command: "snapshot", args: {} });
+      }
+
+      function sendCommand(command, args = {}) {
+        if (!port || !state) return;
+        port.postMessage({
+          type: "plugin.command",
+          command,
+          args,
+          revision: String(state.revision ?? ""),
+        });
+      }
+
+      document.querySelectorAll("button[data-speed]").forEach((button) => {
+        button.addEventListener("click", () => {
+          document.querySelectorAll("button[data-speed]").forEach((item) => item.classList.remove("active"));
+          button.classList.add("active");
+          sendCommand("set_speed", { speed: Number(button.dataset.speed) });
+        });
+      });
+
+      function render() {
+        if (!state) return;
+        document.getElementById("tick").textContent = `tick ${state.tick} · speed ${state.speed}×`;
+        const resources = state.resources || {};
+        document.getElementById("resources").textContent =
+          `wood ${resources.wood ?? 0} · steel ${resources.steel ?? 0} · food ${resources.food ?? 0}`;
+        const map = document.getElementById("map");
+        map.innerHTML = "";
+        const width = state.map?.width || 48;
+        const height = state.map?.height || 32;
+        const structureAt = new Map();
+        for (const structure of state.structures || []) {
+          structureAt.set(`${structure.x},${structure.y}`, structure.kind);
+        }
+        const pawnAt = new Map();
+        for (const colonist of state.colonists || []) {
+          pawnAt.set(`${colonist.x},${colonist.y}`, colonist);
+        }
+        for (let y = 0; y < height; y += 1) {
+          for (let x = 0; x < width; x += 1) {
+            const cell = document.createElement("div");
+            const kind = structureAt.get(`${x},${y}`);
+            cell.className = kind ? `cell ${kind}` : "cell";
+            const pawn = pawnAt.get(`${x},${y}`);
+            if (pawn) {
+              const mark = document.createElement("div");
+              mark.className = "pawn" + (pawn.mental_break ? " break" : "") + (pawn.waiting ? " wait" : "");
+              mark.textContent = (pawn.name || "?").slice(0, 1);
+              mark.title = pawn.name;
+              cell.appendChild(mark);
+            }
+            map.appendChild(cell);
+          }
+        }
+        const list = document.getElementById("colonists");
+        list.innerHTML = "";
+        for (const colonist of state.colonists || []) {
+          const card = document.createElement("div");
+          card.className = "card";
+          const needs = colonist.needs || {};
+          card.innerHTML = `<strong>${colonist.name}</strong><br/>
+            mood ${(needs.mood * 100).toFixed(0)}% · food ${(needs.hunger * 100).toFixed(0)}% · rest ${(needs.rest * 100).toFixed(0)}%<br/>
+            job ${colonist.current_job?.kind || "idle"}
+            ${colonist.mental_break ? `<br/><span class="error">break: ${colonist.mental_break}</span>` : ""}
+            ${colonist.error ? `<br/><span class="error">${colonist.error}</span>` : ""}
+            ${colonist.waiting ? `<br/><span class="error">waiting on model</span>` : ""}`;
+          list.appendChild(card);
+        }
+        if (state.raid) {
+          document.getElementById("error").textContent = `Raid active (hp ${Number(state.raid.hp).toFixed(1)})`;
+        } else if (!document.getElementById("error").textContent.includes("plugin")) {
+          document.getElementById("error").textContent = "";
+        }
+      }
+
+      window.addEventListener("message", (event) => {
+        if (event.data?.type === "plugin.host.hello") {
+          postReady();
+        }
+      });
+      postReady();
+    </script>
+  </body>
+</html>

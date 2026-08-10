@@ -36,6 +36,7 @@ export interface RoomGlobalSettings {
   orderedExcludePreviousSpeaker: boolean;
   maxRelayTurns: number;
   channels: RoomChannel[];
+  activityPlugin?: string;
 }
 
 export type RoomGlobalSettingsUpdate = {
@@ -48,6 +49,7 @@ export type RoomGlobalSettingsUpdate = {
   orderedExcludePreviousSpeaker?: boolean;
   maxRelayTurns?: number;
   channels?: RoomChannel[];
+  activityPlugin?: string;
 };
 
 export type ChannelNotificationSetting = "default" | "all" | "mentions" | "mute";
@@ -217,6 +219,7 @@ type ApiRoomSettings = {
   ordered_exclude_previous_speaker?: boolean;
   max_relay_turns?: number;
   channels?: ApiRoomChannel[];
+  activity_plugin?: string;
 };
 
 type ApiChannelSettings = {
@@ -311,6 +314,7 @@ export function normalizeRoomGlobalSettings(
     orderedExcludePreviousSpeaker: payload.ordered_exclude_previous_speaker,
     maxRelayTurns: Number(payload.max_relay_turns),
     channels: normalizeRoomChannelList(payload.channels as ApiRoomChannel[]),
+    activityPlugin: String(payload.activity_plugin || ""),
   };
 }
 

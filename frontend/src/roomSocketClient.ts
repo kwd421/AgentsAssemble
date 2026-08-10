@@ -57,6 +57,7 @@ export interface RoomSocketHandle {
   ready: () => boolean;
   say: (request: RoomSayRequest) => Promise<LobbyPostResponse>;
   command: (action: string, payload?: Record<string, unknown>) => Promise<RoomCommandAck>;
+  plugin?: (payload: Record<string, unknown>) => void;
   historyBefore: (beforeSeq: number, limit?: number) => Promise<RoomHistoryPage>;
 }
 
@@ -700,6 +701,12 @@ export function openRoomSocket(
     },
     ready: () => socket?.readyState === WebSocket.OPEN,
     command,
+    plugin: (payload) => {
+      if (socket?.readyState !== WebSocket.OPEN) {
+        throw new RoomSocketSayError("Room socket is closed.", "socket_closed");
+      }
+      socket.send(JSON.stringify({ op: "plugin", ...payload }));
+    },
     historyBefore: async (beforeSeq, limit = 200) => {
       const ack = await command("room.history", { before_seq: beforeSeq, limit });
       const result = ack.result || {};

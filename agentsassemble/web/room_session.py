@@ -287,6 +287,8 @@ class WsRoomSession:
             return self._on_thinking(msg)
         if op == "command":
             return self._on_command(msg)
+        if op == "plugin":
+            return self._on_plugin(msg)
         if op == "ping":  # app-level ping (in addition to control-frame ping)
             return [encode_text(json.dumps({"op": "pong"}))]
         return [self._error("unknown_op", f"Unknown op: {op!r}")]
@@ -342,6 +344,40 @@ class WsRoomSession:
             return [self._nack(request_id, "command_failed", "Room command returned an invalid response.")]
         return [encode_text(json.dumps(response))]
 
+    def _on_plugin(self, msg: dict) -> list[bytes]:
+        """First-party activity plugin envelope: command / snapshot only."""
+
+        from agentsassemble.plugin.host_service import handle_ws_plugin_message
+
+        try:
+            response = handle_ws_plugin_message(
+                room_id=self.meeting_id,
+                identity=self.identity,
+                message=msg,
+            )
+        except Exception as error:  # explicit plugin errors stay on the plugin channel
+            return [
+                encode_text(
+                    json.dumps(
+                        {
+                            "op": "event",
+                            "stream": "plugin",
+                            "events": [
+                                {
+                                    "type": "plugin.error",
+                                    "code": str(getattr(error, "code", "plugin_error") or "plugin_error"),
+                                    "message": str(error) or "Plugin command failed.",
+                                    "room_id": self.meeting_id,
+                                }
+                            ],
+                        }
+                    )
+                )
+            ]
+        if not isinstance(response, dict):
+            return []
+        return [encode_text(json.dumps(response))]
+
     # -- delivery ---------------------------------------------------------- #
     def poll(self, *, snapshot: bool = False) -> list[bytes]:
         """Read new events for subscribed streams; return push frames. Reuses the
@@ -394,6 +430,21 @@ class WsRoomSession:
             payload["op"] = "snapshot"
             payload["stream"] = "room_events"
             frames.append(encode_text(json.dumps(payload)))
+        from agentsassemble.plugin.host_service import drain_plugin_events
+
+        plugin_events = drain_plugin_events(self.meeting_id)
+        if plugin_events:
+            frames.append(
+                encode_text(
+                    json.dumps(
+                        {
+                            "op": "event",
+                            "stream": "plugin",
+                            "events": plugin_events,
+                        }
+                    )
+                )
+            )
         return frames
 
     def _session_is_active(self) -> bool:

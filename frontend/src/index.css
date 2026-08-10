@@ -7110,3 +7110,8 @@ body[data-sidebar-resizing="true"] {
     z-index: 2;
   }
 }
+
+.dc-plugin-stage{display:flex;flex-direction:column;min-height:100%;background:#121612}
+.dc-plugin-stage-toolbar{display:flex;gap:.75rem;align-items:center;padding:.5rem .75rem;border-bottom:1px solid #2a3528}
+.dc-plugin-frame{flex:1;width:100%;border:0;background:#0d120d;min-height:0}
+.dc-plugin-error{color:#e57373}

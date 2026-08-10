@@ -49,6 +49,7 @@ import type { HomeFilter } from "./app/friendsDirectoryTypes";
 import { useCanonicalRoom } from "./useCanonicalRoom";
 import CreateChannelModal from "./views/components/CreateChannelModal";
 import LobbyView from "./views/LobbyView";
+import RimWorldPluginView from "./views/plugins/rimworld/RimWorldPluginView";
 import { RoomSocketProvider } from "./RoomSocketContext";
 import ChannelContextMenu from "./views/components/ChannelContextMenu";
 import type { ChannelHeaderActions } from "./views/components/ChannelHeader";
@@ -1814,6 +1815,24 @@ export default function App() {
           ) : adminOpen ? (
             <AdminPanel onClose={() => setAdminOpen(false)} activeMeetingId={activeRoom.meetingId} />
           ) : channel === "lobby" ? (
+            canonicalRoom.roomSettings?.activityPlugin === "rimworld" ? (
+              <RimWorldPluginView
+                roomId={activeRoom.id}
+                envelopes={[]}
+                onOpenSideChat={() => {
+                  /* side chat remains available as an auxiliary panel */
+                }}
+                onCommand={(command) => {
+                  if (!roomSocket?.ready() || !roomSocket.plugin) return;
+                  roomSocket.plugin({
+                    plugin_id: command.plugin_id,
+                    action: command.command,
+                    args: command.args,
+                    revision: command.revision,
+                  });
+                }}
+              />
+            ) : (
             <LobbyView
               activeRoom={activeRoom}
               agents={scopedAgents}
@@ -1845,6 +1864,7 @@ export default function App() {
               providerRequests={canonicalRoom.providerRequests}
               resolveProviderRequest={canonicalRoom.sendProviderRequestResolution}
             />
+            )
           ) : activeCustomChannel ? (
             <CustomChannelView
               key={activeCustomChannel.id}
