@@ -236,18 +236,39 @@ class PublicInviteHttpTests(unittest.TestCase):
                     timeout=4,
                 ) as response:
                     admitted = json.loads(response.read().decode("utf-8"))
+                paired_headers = {
+                    **public_headers,
+                    "Authorization": f"Bearer {admitted['session_token']}",
+                }
                 with urlopen(
                     _json_request(
                         f"{base}/api/room-invite/create",
                         {"meeting_id": "friend-room", "display_name": "Paired moderator invite"},
-                        {
-                            **public_headers,
-                            "Authorization": f"Bearer {admitted['session_token']}",
-                        },
+                        paired_headers,
                     ),
                     timeout=4,
                 ) as response:
                     moderator_invite = json.loads(response.read().decode("utf-8"))
+                with self.assertRaises(HTTPError) as recovery_from_pairing_error:
+                    urlopen(
+                        _json_request(
+                            f"{base}/api/identity/recovery-code",
+                            {"room_id": "friend-room"},
+                            paired_headers,
+                        ),
+                        timeout=4,
+                    )
+                self.addCleanup(recovery_from_pairing_error.exception.close)
+                with self.assertRaises(HTTPError) as account_from_pairing_error:
+                    urlopen(
+                        _json_request(
+                            f"{base}/api/account/google/challenge",
+                            {},
+                            paired_headers,
+                        ),
+                        timeout=4,
+                    )
+                self.addCleanup(account_from_pairing_error.exception.close)
                 with urlopen(
                     _json_request(
                         f"{base}/api/operator-pairing/redeem",
@@ -269,6 +290,15 @@ class PublicInviteHttpTests(unittest.TestCase):
                     timeout=4,
                 ) as response:
                     revoked = json.loads(response.read().decode("utf-8"))
+                with urlopen(
+                    _json_request(
+                        f"{base}/api/room-invite/create",
+                        {"meeting_id": "friend-room", "display_name": "Host still active"},
+                        host_headers,
+                    ),
+                    timeout=4,
+                ) as response:
+                    host_invite_after_revoke = json.loads(response.read().decode("utf-8"))
                 with self.assertRaises(HTTPError) as revoked_session_error:
                     self._ws_ticket(base, admitted["session_token"], public_headers)
                 self.addCleanup(revoked_session_error.exception.close)
@@ -316,7 +346,14 @@ class PublicInviteHttpTests(unittest.TestCase):
         self.assertEqual(resumed["session_token"], admitted["session_token"])
         self.assertEqual(admitted["room_label"], "Friend room")
         self.assertEqual(moderator_invite["meeting_id"], "friend-room")
+        self.assertEqual(recovery_from_pairing_error.exception.code, 403)
+        self.assertIn(
+            "pairing_authority_not_durable",
+            recovery_from_pairing_error.exception.read().decode("utf-8"),
+        )
+        self.assertEqual(account_from_pairing_error.exception.code, 403)
         self.assertEqual(revoked["status"], "revoked")
+        self.assertEqual(host_invite_after_revoke["meeting_id"], "friend-room")
         self.assertEqual(revoked_session_error.exception.code, 401)
         self.assertEqual(revoked_pairing_error.exception.code, 403)
         self.assertIn(

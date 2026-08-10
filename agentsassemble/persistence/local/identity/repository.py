@@ -50,7 +50,7 @@ from agentsassemble.persistence.local.identity.recovery_codes import (
     ensure_recovery_code_schema,
     SqliteRecoveryCodesMixin,
 )
-from agentsassemble.persistence.local.identity.operator_pairings import revoke_operator_pairing_grant
+from agentsassemble.persistence.local.identity.operator_pairings import SqliteOperatorPairingsMixin, revoke_operator_pairing_grant
 from agentsassemble.persistence.local.identity.user_profiles import (
     ensure_user_profiles_schema,
     read_user_profile,
@@ -113,7 +113,7 @@ CREATE TABLE IF NOT EXISTS memberships (
     participant_type TEXT NOT NULL DEFAULT 'unknown',
     provider_kind TEXT NOT NULL DEFAULT '',
     connection_kind TEXT NOT NULL DEFAULT '',
-    invite_scope TEXT NOT NULL DEFAULT 'room',
+    invite_scope TEXT NOT NULL DEFAULT 'read_only',
     status TEXT NOT NULL DEFAULT '',
     muted INTEGER NOT NULL DEFAULT 0,
     is_host INTEGER NOT NULL DEFAULT 0,
@@ -233,7 +233,7 @@ def _now() -> str:
     return datetime.now(UTC).isoformat()
 
 
-class IdentityStore(SqliteAccountsMixin, SqliteRecoveryCodesMixin):
+class IdentityStore(SqliteAccountsMixin, SqliteRecoveryCodesMixin, SqliteOperatorPairingsMixin):
     def __init__(self, db_path: Path) -> None:
         self.db_path = Path(db_path)
         self._write_lock = threading.Lock()
@@ -268,7 +268,7 @@ class IdentityStore(SqliteAccountsMixin, SqliteRecoveryCodesMixin):
                 connection,
                 "memberships",
                 "invite_scope",
-                "TEXT NOT NULL DEFAULT 'room'",
+                "TEXT NOT NULL DEFAULT 'read_only'",
             )
             ensure_durable_identity_schema(connection, self._ensure_column)
             self._ensure_column(
@@ -871,7 +871,7 @@ class IdentityStore(SqliteAccountsMixin, SqliteRecoveryCodesMixin):
                         str(member["participant_type"] or "unknown"),
                         str(member["provider_kind"] or ""),
                         str(member["connection_kind"] or ""),
-                        str(member["invite_scope"] or "room"),
+                        str(member["invite_scope"] or "read_only"),
                         str(member["status"] or ""),
                         1 if member["muted"] else 0,
                         1 if member["is_host"] else 0,

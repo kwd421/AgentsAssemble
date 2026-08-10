@@ -117,7 +117,7 @@ def upsert_membership(
                 str(member["participant_type"] or "unknown"),
                 str(member["provider_kind"] or ""),
                 str(member["connection_kind"] or ""),
-                str(member["invite_scope"] or "room"),
+                str(member["invite_scope"] or "read_only"),
                 str(member["status"] or ""),
                 bool(member["muted"]),
                 bool(member["is_host"]),

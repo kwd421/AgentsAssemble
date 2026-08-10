@@ -318,6 +318,22 @@ def operator_pairing(
     return pairing_from_row(row) if row else None
 
 
+def operator_pairing_for_auth_key(
+    connection: Connection,
+    auth_key: str,
+) -> dict[str, object] | None:
+    clean_auth_key = clean_room_text(auth_key, limit=128)
+    if not clean_auth_key:
+        return None
+    row = connection.execute(
+        """SELECT * FROM identity_operator_pairings
+           WHERE consumed_auth_key = %s
+           ORDER BY used_at DESC LIMIT 1""",
+        (clean_auth_key,),
+    ).fetchone()
+    return pairing_from_row(row) if row else None
+
+
 def consume_operator_pairing(
     connection: Connection,
     *,

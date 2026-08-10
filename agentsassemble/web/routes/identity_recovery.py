@@ -66,6 +66,13 @@ def register_identity_recovery_routes(router: Router) -> None:
 
     @router.post("/api/identity/recovery-code")
     def issue_recovery_code(ctx: RequestContext) -> None:
+        if ctx.is_remote_pairing_authority():
+            ctx.send_error(
+                HTTPStatus.FORBIDDEN,
+                "A paired remote session cannot create durable recovery authority.",
+                code="pairing_authority_not_durable",
+            )
+            return
         payload = ctx.read_json_body()
         if payload is None:
             return

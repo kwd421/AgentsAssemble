@@ -402,6 +402,24 @@ class RequestContext:
         user = self.deps.identities.get_user(principal_user_id)
         return bool(user and user.get("is_operator"))
 
+    def is_remote_pairing_authority(self) -> bool:
+        """True when durable authority comes only from cross-origin pairing."""
+
+        session = self.session()
+        auth_key = str((session or {}).get("credential_auth_key") or "")
+        if not auth_key:
+            auth_key = device_auth_key(
+                str(self.headers.get("X-Device-Token") or "")
+            )
+        if not auth_key:
+            return False
+        pairing = self.deps.identities.operator_pairing_for_auth_key(auth_key)
+        return bool(
+            pairing
+            and pairing.get("used_at")
+            and not pairing.get("revoked_at")
+        )
+
     def require_moderator(self) -> bool:
         """Gate moderation endpoints for the local operator or remote operator."""
         if self.is_local_operator() or self.is_host() or self.is_operator_session():

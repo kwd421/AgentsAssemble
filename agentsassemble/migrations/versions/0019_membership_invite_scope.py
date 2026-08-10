@@ -18,7 +18,17 @@ depends_on = None
 def upgrade() -> None:
     op.execute(
         "ALTER TABLE identity_memberships "
-        "ADD COLUMN invite_scope TEXT NOT NULL DEFAULT 'room'"
+        "ADD COLUMN invite_scope TEXT NOT NULL DEFAULT 'read_only'"
+    )
+    op.execute(
+        """UPDATE identity_memberships AS membership
+           SET invite_scope = 'room'
+           WHERE EXISTS (
+               SELECT 1 FROM room_access_sessions AS session
+               WHERE session.room_id = membership.meeting_id
+                 AND session.participant_id = membership.participant_id
+                 AND session.invite_scope = 'room'
+           )"""
     )
 
 

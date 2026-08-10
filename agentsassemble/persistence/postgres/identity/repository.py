@@ -51,6 +51,7 @@ from agentsassemble.persistence.postgres.identity.users import (
     create_operator_pairing,
     get_user,
     operator_pairing_for_fingerprint,
+    operator_pairing_for_auth_key,
     operator_pairing,
     operator_user_id,
     resolve_credential_user,
@@ -224,6 +225,13 @@ class PostgresIdentityRepository(PostgresAccountsMixin, PostgresRecoveryCodesMix
     def operator_pairing(self, pairing_id: str) -> dict[str, object] | None:
         with self._connections.connection() as connection:
             return operator_pairing(connection, pairing_id)
+
+    def operator_pairing_for_auth_key(
+        self,
+        auth_key: str,
+    ) -> dict[str, object] | None:
+        with self._connections.connection() as connection:
+            return operator_pairing_for_auth_key(connection, auth_key)
 
     def consume_operator_pairing(
         self,

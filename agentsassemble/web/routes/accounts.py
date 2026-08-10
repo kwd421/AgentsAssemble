@@ -152,6 +152,13 @@ def register_account_routes(
 
 
 def _account_login_transport_allowed(ctx: RequestContext) -> bool:
+    if ctx.is_remote_pairing_authority():
+        ctx.send_error(
+            HTTPStatus.FORBIDDEN,
+            "A paired remote session cannot create durable account authority.",
+            code="pairing_authority_not_durable",
+        )
+        return False
     local_request = ctx.is_local_operator() and ctx.peer_is_loopback()
     if local_request:
         return True
