@@ -17,6 +17,7 @@ from agentsassemble.web.response import (
     _last_payload_event_id,
     _sse_event,
 )
+from agentsassemble.web.request_limits import RequestDeadlineHandlerMixin
 from agentsassemble.web.router import GuiDeps, RequestContext, Router
 from agentsassemble.web.security import (
     _LOOPBACK_HOSTNAMES,
@@ -55,7 +56,11 @@ def make_gui_http_handler(
 ) -> type[BaseHTTPRequestHandler]:
     """Build the transport handler around already-composed GUI services."""
 
-    class AgentsAssembleHandler(GuiResponseMethods, BaseHTTPRequestHandler):
+    class AgentsAssembleHandler(
+        RequestDeadlineHandlerMixin,
+        GuiResponseMethods,
+        BaseHTTPRequestHandler,
+    ):
         def _effective_request_host(self) -> object:
             if services.public_invite.verify_managed_ingress_origin(
                 self.headers.get("Host"),

@@ -49,6 +49,7 @@ from agentsassemble.web.security import (
     TRUSTED_PROXY_CLIENT_IP_HEADER,
     TRUSTED_PROXY_TOKEN_HEADER,
 )
+from agentsassemble.web.request_limits import RequestBodyDeadlineExceeded
 
 MAX_JSON_BODY_BYTES = 16 * 1024 * 1024
 
@@ -310,7 +311,18 @@ class RequestContext:
             )
             return None
         try:
-            payload = json.loads(self.handler.rfile.read(length).decode("utf-8")) if length else {}
+            if length:
+                reader = getattr(self.handler, "read_request_body", self.handler.rfile.read)
+                raw_body = reader(length)
+                if len(raw_body) != length:
+                    self.send_error(HTTPStatus.BAD_REQUEST, "Incomplete JSON request body")
+                    return None
+                payload = json.loads(raw_body.decode("utf-8"))
+            else:
+                payload = {}
+        except RequestBodyDeadlineExceeded:
+            self.send_error(HTTPStatus.REQUEST_TIMEOUT, "JSON request body timed out")
+            return None
         except (UnicodeDecodeError, json.JSONDecodeError):
             reject_invalid_json()
             return None
