@@ -35,8 +35,11 @@ class RoomCommandAdmissionTests(unittest.TestCase):
         }
 
         for action in (
+            "bridge.start_failed",
             "message.final",
             "room.result.publish",
+            "turn.decline",
+            "turn.failed",
             "provider.request.open",
             "provider.request.closed",
         ):

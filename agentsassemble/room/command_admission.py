@@ -28,8 +28,11 @@ _BRIDGE_ONLY_ACTIONS = frozenset(
 )
 _BROWSER_ONLY_ACTIONS = frozenset({"room.history", "room.vote.summary"})
 _CAPABILITY_BY_ACTION = {
+    "bridge.start_failed": "bridge.publish",
     "room.result.publish": "bridge.publish",
     "turn.state": "bridge.publish",
+    "turn.decline": "bridge.publish",
+    "turn.failed": "bridge.publish",
     "activity.update": "bridge.publish",
     "message.delta": "bridge.publish",
     "message.final": "bridge.publish",

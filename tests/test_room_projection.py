@@ -11,30 +11,45 @@ from agentsassemble.room.projection import (
     runtime_diagnostic_fields,
     safe_activity_detail,
 )
+from agentsassemble.room.repository_records import build_room_event
 
 
 class RoomProjectionTests(unittest.TestCase):
     def test_owner_only_reasoning_keeps_event_sequence_without_exposing_content(self):
-        event = {
-            "id": "evt-reasoning",
-            "seq": 41,
-            "room_id": "general",
-            "created_at": "2026-08-03T00:00:00+00:00",
-            "type": "activity_delta",
-            "participant_id": "agent-1",
-            "owner_id": "owner-1",
-            "visibility": "owner",
-            "category": "reasoning",
-            "activity_detail": "provider reasoning",
-        }
+        event, visibility, _participant_id = build_room_event(
+            "general",
+            "activity_delta",
+            41,
+            {
+                "participant_id": "agent-1",
+                "owner_id": "owner-1",
+                "visibility": "owner",
+                "category": "reasoning",
+                "activity_detail": "provider reasoning",
+            },
+        )
 
         owner = public_event_for_identity(event, {"user_id": "owner-1"})
         peer = public_event_for_identity(event, {"user_id": "peer-1"})
 
+        self.assertEqual(visibility, "owner")
         self.assertEqual(owner["activity_detail"], "provider reasoning")
         self.assertEqual(peer["type"], "event_hidden")
         self.assertEqual(peer["seq"], 41)
         self.assertNotIn("activity_detail", peer)
+
+    def test_unknown_visibility_is_not_silently_published(self):
+        with self.assertRaisesRegex(ValueError, "visibility"):
+            build_room_event(
+                "general",
+                "activity_delta",
+                42,
+                {
+                    "participant_id": "agent-1",
+                    "visibility": "private-ish",
+                    "activity_detail": "must not become public",
+                },
+            )
 
     def test_public_session_keeps_room_state_and_removes_runtime_secrets(self):
         session = {

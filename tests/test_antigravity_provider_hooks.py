@@ -224,6 +224,69 @@ class AntigravityProviderHookTests(unittest.TestCase):
         self.assertEqual(result["decision"], "allow")
         self.assertEqual(requests, [])
 
+    def test_room_portal_auto_approval_rejects_the_exact_unsafe_command(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            runtime = AntigravityHookRuntime(
+                "agy-agent",
+                ["agy", "--sandbox"],
+                cwd=temp_dir,
+                terminal_runtime_factory=_FakeTerminalRuntime,
+            )
+            requests: list[dict[str, object]] = []
+
+            def deny(request, respond) -> None:
+                requests.append(request)
+                respond({"option_id": "deny"})
+
+            runtime.set_request_handler(deny)
+            for command in (
+                "agentsassemble-room read\nwhoami",
+                "agentsassemble-room read " + ("x" * 4_000) + "; whoami",
+                "agentsassemble-room read *",
+                "agentsassemble-room read %PATH%",
+                "agentsassemble-room read !PATH!",
+            ):
+                with self.subTest(command=command[:80]):
+                    result = runtime.handle_hook(
+                        {
+                            "toolCall": {
+                                "name": "run_command",
+                                "args": {"CommandLine": command, "Cwd": temp_dir},
+                            }
+                        }
+                    )
+                    self.assertEqual(result["decision"], "deny")
+
+        self.assertEqual(len(requests), 5)
+
+    def test_symlinked_agents_directory_cannot_redirect_hook_registration(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            workspace = root / "workspace"
+            outside = root / "outside"
+            workspace.mkdir()
+            outside.mkdir()
+            outside_hooks = outside / "hooks.json"
+            outside_hooks.write_text('{"outside": true}', encoding="utf-8")
+            try:
+                (workspace / ".agents").symlink_to(outside, target_is_directory=True)
+            except OSError as error:
+                self.skipTest(f"symlinks are unavailable: {error}")
+            runtime = AntigravityHookRuntime(
+                "agy-agent",
+                ["agy", "--sandbox"],
+                cwd=workspace,
+                terminal_runtime_factory=_FakeTerminalRuntime,
+            )
+
+            with self.assertRaisesRegex(ValueError, "symbolic link"):
+                runtime.start()
+
+            self.assertEqual(
+                outside_hooks.read_text(encoding="utf-8"),
+                '{"outside": true}',
+            )
+
     def test_runtime_restores_existing_workspace_hooks_after_stop(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:
             hooks_path = Path(temp_dir) / ".agents" / "hooks.json"

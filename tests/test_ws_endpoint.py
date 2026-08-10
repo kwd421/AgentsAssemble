@@ -26,6 +26,7 @@ from agentsassemble.admission.invite import (
     reset_state,
 )
 from agentsassemble.room.event_broker import RoomEventBroker
+from agentsassemble.web.http_server import AgentsAssembleHTTPServer
 from agentsassemble.web.websocket import handle_ws_upgrade
 from agentsassemble.web.websocket_codec import OP_TEXT, compute_accept_key
 from agentsassemble.web.room_session import (
@@ -89,6 +90,17 @@ class WsEndpointTests(unittest.TestCase):
 
     def _start_server(self, root: Path) -> ThreadingHTTPServer:
         server = ThreadingHTTPServer(("127.0.0.1", 0), _make_handler(root))
+        threading.Thread(target=server.serve_forever, daemon=True).start()
+        self._servers.append(server)
+        return server
+
+    def _start_capacity_limited_server(self, root: Path) -> AgentsAssembleHTTPServer:
+        server = AgentsAssembleHTTPServer(
+            ("127.0.0.1", 0),
+            _make_handler(root),
+            max_request_workers=1,
+            max_websocket_workers=1,
+        )
         threading.Thread(target=server.serve_forever, daemon=True).start()
         self._servers.append(server)
         return server
@@ -198,6 +210,23 @@ class WsEndpointTests(unittest.TestCase):
                     msg = _recv_server_text(sock)
                     self.assertEqual(msg["op"], "subscribed")
                     self.assertEqual(msg["streams"], ["lobby"])
+                finally:
+                    sock.close()
+            finally:
+                self._stop_server(server)
+
+    def test_open_websocket_does_not_consume_the_only_http_request_slot(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            server = self._start_capacity_limited_server(Path(tmp))
+            try:
+                host, port = server.server_address
+                base = f"http://{host}:{port}"
+                ticket = self._host_ws_ticket(base, "room-capacity")
+                sock = self._handshake(host, port, ticket)
+                try:
+                    with urlopen(f"{base}/api/runtime/version", timeout=4) as response:
+                        version = json.loads(response.read().decode("utf-8"))
+                    self.assertEqual(version["protocol_version"], 1)
                 finally:
                     sock.close()
             finally:

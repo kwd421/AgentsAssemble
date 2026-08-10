@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import re
 import shlex
 from pathlib import Path
 from typing import Any
@@ -27,6 +28,7 @@ from agentsassemble.legacy.meeting.support.templates import DEMO_MEETING_TEMPLAT
 
 
 DEFAULT_CONFIG_PATH = Path(__file__).resolve().parent.parent / "configs" / "demo-council.json"
+_SAFE_ROLE_ID = re.compile(r"[A-Za-z0-9][A-Za-z0-9_-]{0,63}\Z")
 
 
 def load_council_config(path: Path | str | None = None) -> CouncilConfig:
@@ -48,8 +50,13 @@ def load_council_config(path: Path | str | None = None) -> CouncilConfig:
 
 
 def _role_from_dict(data: dict[str, Any]) -> Role:
+    role_id = str(data.get("id") or "")
+    if not _SAFE_ROLE_ID.fullmatch(role_id):
+        raise ValueError(
+            "Council role id must contain only letters, numbers, underscores, and hyphens."
+        )
     return Role(
-        id=data["id"],
+        id=role_id,
         display_name=data["display_name"],
         lens=data["lens"],
         research_focus=data["research_focus"],

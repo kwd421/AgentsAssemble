@@ -3,7 +3,8 @@ from __future__ import annotations
 
 
 VISIBLE = "visible"
+OWNER = "owner"
 LEGACY_HIDDEN = "legacy_hidden"
 
 
-__all__ = ["LEGACY_HIDDEN", "VISIBLE"]
+__all__ = ["LEGACY_HIDDEN", "OWNER", "VISIBLE"]

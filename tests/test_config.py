@@ -11,6 +11,7 @@ from agentsassemble.config import (
     providers_from_config,
 )
 from agentsassemble.live_agent_runner import load_group_configs
+from agentsassemble.legacy.meeting.support.artifacts import write_role_files
 from agentsassemble.models import normalize_engagement_mode
 
 
@@ -56,6 +57,40 @@ class ConfigTests(unittest.TestCase):
         self.assertEqual(config.meeting_mode, "free_chat")
         self.assertFalse(config.moderator.enabled)
         self.assertEqual(config.moderator.to_dict(), {"enabled": False})
+
+    def test_council_role_id_cannot_escape_the_meeting_artifact_directory(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            config_path = root / "council.json"
+            meeting_dir = root / "meetings" / "meeting-1"
+            outside_artifact = root / "escaped" / "role.md"
+            config_path.write_text(
+                json.dumps(
+                    {
+                        "topic": "topic",
+                        "question": "question",
+                        "roles": [
+                            {
+                                "id": "../../escaped",
+                                "display_name": "Escaping role",
+                                "lens": "Lens",
+                                "research_focus": "focus",
+                            }
+                        ],
+                    }
+                ),
+                encoding="utf-8",
+            )
+
+            try:
+                config = load_council_config(config_path)
+            except ValueError:
+                config = None
+            if config is not None:
+                meeting_dir.mkdir(parents=True)
+                write_role_files(meeting_dir, config.roles[0])
+
+            self.assertFalse(outside_artifact.exists())
 
     def test_load_council_config_with_custom_rounds(self):
         with tempfile.TemporaryDirectory() as temp_dir:

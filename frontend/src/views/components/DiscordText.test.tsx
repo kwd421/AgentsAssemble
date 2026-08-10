@@ -69,4 +69,15 @@ describe("DiscordText", () => {
     expect(container.querySelectorAll("del")).toHaveLength(1);
     expect(container.querySelector("del")?.textContent).toBe("removed");
   });
+
+  it("does not fetch a remote markdown image until the viewer opens its inert link", () => {
+    const { container } = render(
+      <DiscordText text={"![tracking pixel](https://tracker.invalid/pixel.png)"} />
+    );
+
+    expect(container.querySelector("img")).toBeNull();
+    expect(
+      screen.getByRole("link", { name: "tracking pixel" }).getAttribute("href")
+    ).toBe("https://tracker.invalid/pixel.png");
+  });
 });

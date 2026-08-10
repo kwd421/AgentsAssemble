@@ -113,35 +113,47 @@ def handle_ws_upgrade(
         "principal_user_id": principal_user_id,
         "user_id": principal_user_id,
     }
+    server = getattr(handler, "server", None)
+    transfer_to_websocket = getattr(
+        server,
+        "transfer_request_to_websocket",
+        None,
+    )
+    websocket_slot_owned = callable(transfer_to_websocket)
+    if websocket_slot_owned and not transfer_to_websocket():
+        handler._send_error(HTTPStatus.SERVICE_UNAVAILABLE, "WebSocket capacity reached")
+        return
+    release_websocket = getattr(server, "release_websocket_worker", None)
     channel = None
     try:
-        channel = room_realtime_controller.connect(identity)
-    except RoomConnectionLimitError as error:
-        handler._send_error(HTTPStatus.TOO_MANY_REQUESTS, str(error))
-        return
-    sock = handler.connection
-    try:
-        handler.close_connection = True
-        handler.send_response(HTTPStatus.SWITCHING_PROTOCOLS)
-        handler.send_header("Upgrade", "websocket")
-        handler.send_header("Connection", "Upgrade")
-        handler.send_header("Sec-WebSocket-Accept", compute_accept_key(key))
-        handler.end_headers()
-        handler.wfile.flush()
-    except BaseException:
-        room_realtime_controller.disconnect(channel)
-        raise
+        try:
+            channel = room_realtime_controller.connect(identity)
+        except RoomConnectionLimitError as error:
+            handler._send_error(HTTPStatus.TOO_MANY_REQUESTS, str(error))
+            return
+        sock = handler.connection
+        try:
+            handler.close_connection = True
+            handler.send_response(HTTPStatus.SWITCHING_PROTOCOLS)
+            handler.send_header("Upgrade", "websocket")
+            handler.send_header("Connection", "Upgrade")
+            handler.send_header("Sec-WebSocket-Accept", compute_accept_key(key))
+            handler.end_headers()
+            handler.wfile.flush()
+        except BaseException:
+            room_realtime_controller.disconnect(channel)
+            channel = None
+            raise
 
-    def _send_all(frames: list[bytes]) -> bool:
-        # Processed room side effects must survive a peer closing during send.
-        for frame in frames:
-            try:
-                sock.sendall(frame)
-            except (BrokenPipeError, ConnectionResetError, OSError):
-                return False
-        return True
+        def _send_all(frames: list[bytes]) -> bool:
+            # Processed room side effects must survive a peer closing during send.
+            for frame in frames:
+                try:
+                    sock.sendall(frame)
+                except (BrokenPipeError, ConnectionResetError, OSError):
+                    return False
+            return True
 
-    try:
         ws = WsRoomSession(
             identity=identity,
             deps=ws_room_deps_factory(channel, handler),
@@ -208,12 +220,17 @@ def handle_ws_upgrade(
                     break
                 next_heartbeat_at = now + WS_HEARTBEAT_INTERVAL_SECONDS
     except WebSocketProtocolError as error:
-        try:
-            sock.sendall(encode_close(error.close_code, str(error)[:100]))
-        except OSError:
-            pass
+        if channel is not None:
+            try:
+                handler.connection.sendall(
+                    encode_close(error.close_code, str(error)[:100])
+                )
+            except OSError:
+                pass
     except (BrokenPipeError, ConnectionResetError, OSError, ValueError):
         pass
     finally:
         if channel is not None:
             room_realtime_controller.disconnect(channel)
+        if websocket_slot_owned and callable(release_websocket):
+            release_websocket()

@@ -114,6 +114,17 @@ export default function DiscordText({
           rehypePlugins={[[rehypeRoomReferences, { mentionLabels }]]}
           skipHtml
           components={{
+            img: ({ alt, src }) => (
+              <a
+                className="dc-chat-link"
+                href={src}
+                target="_blank"
+                rel="noreferrer"
+                data-markdown-image-link
+              >
+                {alt || "이미지 링크"}
+              </a>
+            ),
             a: ({ children, href }) => (
               <a className="dc-chat-link" href={href} target="_blank" rel="noreferrer">
                 {children}

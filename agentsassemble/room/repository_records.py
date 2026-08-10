@@ -5,7 +5,7 @@ from pathlib import Path
 from uuid import uuid4
 
 from agentsassemble.room.text import clean_room_text
-from agentsassemble.room.visibility import LEGACY_HIDDEN, VISIBLE
+from agentsassemble.room.visibility import LEGACY_HIDDEN, OWNER, VISIBLE
 
 
 ROOM_STATUSES = frozenset({"active", "closed", "archived"})
@@ -194,9 +194,10 @@ def build_room_event(
         participant_type = "human"
     if participant_id and not participant_type:
         participant_type = "agent" if payload.get("participant_id") else "human"
-    visibility = clean_room_text(payload.get("visibility"), limit=32)
-    if visibility not in {VISIBLE, LEGACY_HIDDEN}:
-        visibility = VISIBLE
+    raw_visibility = clean_room_text(payload.get("visibility"), limit=32)
+    if raw_visibility and raw_visibility not in {VISIBLE, OWNER, LEGACY_HIDDEN}:
+        raise ValueError(f"Unsupported room event visibility: {raw_visibility}")
+    visibility = raw_visibility or VISIBLE
     event: dict[str, object] = {
         "v": 1,
         "id": uuid4().hex[:12],

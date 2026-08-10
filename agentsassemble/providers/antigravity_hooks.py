@@ -2,7 +2,9 @@ from __future__ import annotations
 
 import json
 import os
+import secrets
 import shlex
+import stat
 import subprocess
 import sys
 import tempfile
@@ -19,6 +21,7 @@ from agentsassemble.room.text import clean_room_text
 
 _HOOK_NAME = "agentsassemble-room-requests"
 _HOOK_TIMEOUT_SECONDS = 900
+_MAX_COMMAND_LINE_CHARACTERS = 4000
 
 
 class AntigravityHookRuntime:
@@ -114,8 +117,10 @@ class AntigravityHookRuntime:
         name = clean_room_text(tool.get("name"), limit=128)
         args = tool.get("args") if isinstance(tool.get("args"), dict) else {}
         if name == "run_command":
-            command = clean_room_text(args.get("CommandLine"), limit=4000)
-            if is_safe_room_portal_command(command):
+            raw_command = args.get("CommandLine")
+            command = raw_command if isinstance(raw_command, str) else ""
+            exact_safe_command = _exact_safe_command_line(raw_command)
+            if exact_safe_command and is_safe_room_portal_command(exact_safe_command):
                 return {
                     "decision": "allow",
                     "reason": "AgentsAssemble room tool command.",
@@ -325,45 +330,221 @@ def _unregister_workspace_hook(path: Path) -> None:
         if document:
             _write_hooks_document(path, document)
             return
-        try:
-            path.unlink()
-            path.parent.rmdir()
-        except OSError:
-            pass
+        _remove_empty_hooks_document(path)
 
 
 def _read_hooks_document(path: Path) -> dict[str, object]:
-    if not path.exists():
+    if not _supports_hook_directory_descriptors():
+        directory = _validated_hooks_directory(path, create=False)
+        if directory is None:
+            return {}
+        target = directory / path.name
+        if not os.path.lexists(target):
+            return {}
+        if _is_link_or_junction(target) or not target.is_file():
+            raise ValueError("Antigravity hooks.json must be a regular file.")
+        with target.open("r", encoding="utf-8") as stream:
+            document = json.load(stream)
+        if not isinstance(document, dict):
+            raise ValueError("Antigravity hooks.json must contain an object.")
+        return dict(document)
+
+    directory_fd = _open_hooks_directory(path, create=False)
+    if directory_fd is None:
         return {}
-    document = json.loads(path.read_text(encoding="utf-8"))
+    try:
+        flags = os.O_RDONLY
+        if hasattr(os, "O_NOFOLLOW"):
+            flags |= os.O_NOFOLLOW
+        try:
+            descriptor = os.open(path.name, flags, dir_fd=directory_fd)
+        except FileNotFoundError:
+            return {}
+        try:
+            file_status = os.fstat(descriptor)
+            if not stat.S_ISREG(file_status.st_mode):
+                raise ValueError("Antigravity hooks.json must be a regular file.")
+            with os.fdopen(descriptor, "r", encoding="utf-8", closefd=False) as stream:
+                document = json.load(stream)
+        finally:
+            os.close(descriptor)
+    finally:
+        os.close(directory_fd)
     if not isinstance(document, dict):
         raise ValueError("Antigravity hooks.json must contain an object.")
     return dict(document)
 
 
 def _write_hooks_document(path: Path, document: dict[str, object]) -> None:
-    path.parent.mkdir(parents=True, exist_ok=True)
-    descriptor, temporary_name = tempfile.mkstemp(
-        prefix=".hooks-", suffix=".json", dir=path.parent
-    )
+    if not _supports_hook_directory_descriptors():
+        directory = _validated_hooks_directory(path, create=True)
+        if directory is None:  # pragma: no cover - create=True guarantees a directory
+            raise ValueError("Antigravity hooks directory is unavailable.")
+        descriptor, temporary_name = tempfile.mkstemp(
+            prefix=".hooks-",
+            suffix=".json",
+            dir=directory,
+        )
+        temporary_path = Path(temporary_name)
+        try:
+            with os.fdopen(descriptor, "w", encoding="utf-8") as temporary:
+                json.dump(document, temporary, ensure_ascii=False, indent=2)
+                temporary.write("\n")
+            verified_directory = _validated_hooks_directory(path, create=False)
+            if verified_directory != directory:
+                raise ValueError("Antigravity hooks directory changed during registration.")
+            os.replace(temporary_path, directory / path.name)
+        except Exception:
+            temporary_path.unlink(missing_ok=True)
+            raise
+        return
+
+    directory_fd = _open_hooks_directory(path, create=True)
+    if directory_fd is None:  # pragma: no cover - create=True guarantees a directory
+        raise ValueError("Antigravity hooks directory is unavailable.")
+    temporary_name = f".hooks-{secrets.token_hex(12)}.json"
+    flags = os.O_WRONLY | os.O_CREAT | os.O_EXCL
+    if hasattr(os, "O_NOFOLLOW"):
+        flags |= os.O_NOFOLLOW
+    descriptor = os.open(temporary_name, flags, 0o600, dir_fd=directory_fd)
     try:
         with os.fdopen(descriptor, "w", encoding="utf-8") as temporary:
             json.dump(document, temporary, ensure_ascii=False, indent=2)
             temporary.write("\n")
-        os.replace(temporary_name, path)
+        os.replace(
+            temporary_name,
+            path.name,
+            src_dir_fd=directory_fd,
+            dst_dir_fd=directory_fd,
+        )
     except Exception:
         try:
             os.close(descriptor)
         except OSError:
             pass
         try:
-            os.unlink(temporary_name)
+            os.unlink(temporary_name, dir_fd=directory_fd)
         except OSError:
             pass
         raise
+    finally:
+        os.close(directory_fd)
+
+
+def _open_hooks_directory(path: Path, *, create: bool) -> int | None:
+    """Open ``workspace/.agents`` without following a redirected directory."""
+
+    if path.name != "hooks.json" or path.parent.name != ".agents":
+        raise ValueError("Antigravity hooks path must be workspace/.agents/hooks.json.")
+    workspace = path.parent.parent
+    directory_flags = os.O_RDONLY
+    if hasattr(os, "O_DIRECTORY"):
+        directory_flags |= os.O_DIRECTORY
+    if hasattr(os, "O_NOFOLLOW"):
+        directory_flags |= os.O_NOFOLLOW
+    workspace_fd = os.open(workspace, directory_flags)
+    try:
+        try:
+            return os.open(".agents", directory_flags, dir_fd=workspace_fd)
+        except FileNotFoundError:
+            if not create:
+                return None
+            os.mkdir(".agents", mode=0o700, dir_fd=workspace_fd)
+            return os.open(".agents", directory_flags, dir_fd=workspace_fd)
+        except OSError as error:
+            raise ValueError("Antigravity hooks directory must not be a symbolic link.") from error
+    finally:
+        os.close(workspace_fd)
+
+
+def _supports_hook_directory_descriptors() -> bool:
+    return all(
+        operation in os.supports_dir_fd
+        for operation in (os.open, os.mkdir, os.rename, os.unlink, os.rmdir)
+    )
+
+
+def _validated_hooks_directory(path: Path, *, create: bool) -> Path | None:
+    """Portable no-link check for platforms without openat-style operations."""
+
+    if path.name != "hooks.json" or path.parent.name != ".agents":
+        raise ValueError("Antigravity hooks path must be workspace/.agents/hooks.json.")
+    workspace = path.parent.parent.resolve(strict=True)
+    directory = workspace / ".agents"
+    if os.path.lexists(directory):
+        if _is_link_or_junction(directory) or not directory.is_dir():
+            raise ValueError("Antigravity hooks directory must not be a symbolic link.")
+    elif create:
+        directory.mkdir(mode=0o700)
+    else:
+        return None
+    if _is_link_or_junction(directory) or directory.resolve(strict=True).parent != workspace:
+        raise ValueError("Antigravity hooks directory escaped the workspace.")
+    return directory
+
+
+def _is_link_or_junction(path: Path) -> bool:
+    if path.is_symlink():
+        return True
+    is_junction = getattr(os.path, "isjunction", None)
+    if callable(is_junction) and is_junction(path):
+        return True
+    try:
+        attributes = getattr(path.lstat(), "st_file_attributes", 0)
+    except OSError:
+        return False
+    return bool(attributes & getattr(stat, "FILE_ATTRIBUTE_REPARSE_POINT", 0))
+
+
+def _remove_empty_hooks_document(path: Path) -> None:
+    if not _supports_hook_directory_descriptors():
+        try:
+            directory = _validated_hooks_directory(path, create=False)
+            if directory is None:
+                return
+            target = directory / path.name
+            if os.path.lexists(target):
+                if _is_link_or_junction(target) or not target.is_file():
+                    return
+                target.unlink()
+            _validated_hooks_directory(path, create=False)
+            directory.rmdir()
+        except (OSError, ValueError):
+            pass
+        return
+    directory_fd = _open_hooks_directory(path, create=False)
+    if directory_fd is None:
+        return
+    try:
+        try:
+            os.unlink(path.name, dir_fd=directory_fd)
+        except OSError:
+            return
+    finally:
+        os.close(directory_fd)
+    workspace_fd = os.open(path.parent.parent, os.O_RDONLY)
+    try:
+        os.rmdir(".agents", dir_fd=workspace_fd)
+    except OSError:
+        pass
+    finally:
+        os.close(workspace_fd)
+
+
+def _exact_safe_command_line(value: object) -> str:
+    """Return the exact command only when it is safe to authorize automatically."""
+
+    if not isinstance(value, str):
+        return ""
+    if any(character in value for character in ("\x00", "\r", "\n")):
+        return ""
+    if len(value) > _MAX_COMMAND_LINE_CHARACTERS:
+        return ""
+    return value
 
 
 def _command_description(command: str, cwd: object) -> str:
+    command = clean_room_text(command, limit=_MAX_COMMAND_LINE_CHARACTERS)
     directory = clean_room_text(cwd, limit=1000)
     if directory:
         return f"{command or '(빈 명령)'}\n작업 폴더: {directory}"

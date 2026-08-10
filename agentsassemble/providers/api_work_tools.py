@@ -10,6 +10,7 @@ from __future__ import annotations
 import json
 import os
 import stat
+import time
 from collections.abc import Callable
 from pathlib import Path
 
@@ -20,6 +21,11 @@ from agentsassemble.providers.provider_requests import ProviderRequestHandler
 SIDE_EFFECT_WORK_TOOLS = frozenset(
     {"write_workspace_file", "replace_workspace_text"}
 )
+
+_DISCOVERY_ENTRY_BUDGET = 5_000
+_DISCOVERY_SECONDS_BUDGET = 0.75
+_SEARCH_BYTES_BUDGET = 10_000_000
+_SEARCH_FILE_BYTES_LIMIT = 1_000_000
 
 
 class ApiWorkApprovalDenied(PermissionError):
@@ -69,13 +75,14 @@ class ApiWorkHarness:
 
     def _list_files(self, arguments: dict[str, object]) -> dict[str, object]:
         base = self._path(arguments.get("path") or ".", directory=True)
-        files: list[str] = []
-        for path in sorted(base.rglob("*")):
-            if len(files) >= 500:
-                break
-            if _safe_discovered_file(path, self.workspace) is not None:
-                files.append(path.relative_to(self.workspace).as_posix())
-        return {"files": files, "truncated": len(files) >= 500}
+        paths, truncated = _bounded_workspace_files(
+            base,
+            self.workspace,
+            maximum_files=500,
+            interrupt_requested=self._interrupt_requested,
+        )
+        files = sorted(path.relative_to(self.workspace).as_posix() for path in paths)
+        return {"files": files, "truncated": truncated}
 
     def _read_file(self, arguments: dict[str, object]) -> dict[str, object]:
         path = self._path(arguments.get("path"))
@@ -98,30 +105,45 @@ class ApiWorkHarness:
             raise ValueError("search_workspace_text query must contain 1 to 1000 characters.")
         base = self._path(arguments.get("path") or ".", directory=True)
         matches: list[dict[str, object]] = []
-        for path in sorted(base.rglob("*")):
-            if len(matches) >= 200:
-                break
-            safe_path = _safe_discovered_file(path, self.workspace)
-            if safe_path is None:
-                continue
+        paths, discovery_truncated = _bounded_workspace_files(
+            base,
+            self.workspace,
+            maximum_files=_DISCOVERY_ENTRY_BUDGET,
+            interrupt_requested=self._interrupt_requested,
+        )
+        bytes_examined = 0
+        truncated = discovery_truncated
+        for safe_path in paths:
+            self._raise_if_interrupted()
             try:
-                text = safe_path.read_text(encoding="utf-8")
-            except (OSError, UnicodeError):
+                size = safe_path.stat().st_size
+            except OSError:
                 continue
-            if len(text) > 1_000_000:
+            if size > _SEARCH_FILE_BYTES_LIMIT:
+                continue
+            if bytes_examined + size > _SEARCH_BYTES_BUDGET:
+                truncated = True
+                break
+            bytes_examined += size
+            try:
+                text = _read_text(safe_path, maximum_bytes=_SEARCH_FILE_BYTES_LIMIT)
+            except (OSError, UnicodeError, ValueError):
                 continue
             for line_number, line in enumerate(text.splitlines(), start=1):
                 if query in line:
                     matches.append(
                         {
-                            "path": path.relative_to(self.workspace).as_posix(),
+                            "path": safe_path.relative_to(self.workspace).as_posix(),
                             "line": line_number,
                             "text": line[:500],
                         }
                     )
                     if len(matches) >= 200:
+                        truncated = True
                         break
-        return {"matches": matches, "truncated": len(matches) >= 200}
+            if len(matches) >= 200:
+                break
+        return {"matches": matches, "truncated": truncated}
 
     def _write_file(self, arguments: dict[str, object]) -> dict[str, object]:
         path = self._path(arguments.get("path"), allow_missing=True)
@@ -267,6 +289,56 @@ def _safe_discovered_file(path: Path, workspace: Path) -> Path | None:
     if _hidden_control_path(resolved, workspace) or not resolved.is_file():
         return None
     return resolved
+
+
+def _bounded_workspace_files(
+    base: Path,
+    workspace: Path,
+    *,
+    maximum_files: int,
+    interrupt_requested: Callable[[], bool],
+) -> tuple[list[Path], bool]:
+    """Discover files lazily without allowing one request to monopolize memory."""
+
+    deadline = time.monotonic() + _DISCOVERY_SECONDS_BUDGET
+    pending = [base]
+    files: list[Path] = []
+    entries_examined = 0
+    truncated = False
+    while pending:
+        if interrupt_requested():
+            raise RuntimeError("API workspace action was interrupted.")
+        if entries_examined >= _DISCOVERY_ENTRY_BUDGET or time.monotonic() >= deadline:
+            truncated = True
+            break
+        directory = pending.pop()
+        try:
+            with os.scandir(directory) as entries:
+                for entry in entries:
+                    entries_examined += 1
+                    if (
+                        entries_examined > _DISCOVERY_ENTRY_BUDGET
+                        or time.monotonic() >= deadline
+                    ):
+                        truncated = True
+                        break
+                    if entry.name in {".git", ".hg", ".svn"} or entry.is_symlink():
+                        continue
+                    try:
+                        if entry.is_dir(follow_symlinks=False):
+                            pending.append(Path(entry.path))
+                        elif entry.is_file(follow_symlinks=False):
+                            safe_path = _safe_discovered_file(Path(entry.path), workspace)
+                            if safe_path is not None:
+                                files.append(safe_path)
+                                if len(files) >= maximum_files:
+                                    truncated = True
+                                    return files, truncated
+                    except OSError:
+                        continue
+        except OSError:
+            continue
+    return files, truncated
 
 
 def _bounded_int(value: object, default: int, *, minimum: int, maximum: int) -> int:

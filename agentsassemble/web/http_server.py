@@ -13,6 +13,7 @@ from agentsassemble.web.request_limits import (
 
 
 DEFAULT_MAX_REQUEST_WORKERS = 64
+DEFAULT_MAX_WEBSOCKET_WORKERS = 48
 _OVERLOADED_RESPONSE = (
     b"HTTP/1.0 503 Service Unavailable\r\n"
     b"Content-Length: 0\r\n"
@@ -38,17 +39,25 @@ class AgentsAssembleHTTPServer(ThreadingHTTPServer):
         *,
         inherited_fd: int | None = None,
         max_request_workers: int = DEFAULT_MAX_REQUEST_WORKERS,
+        max_websocket_workers: int = DEFAULT_MAX_WEBSOCKET_WORKERS,
         request_header_timeout_seconds: float = DEFAULT_REQUEST_HEADER_TIMEOUT_SECONDS,
         request_body_timeout_seconds: float = DEFAULT_REQUEST_BODY_TIMEOUT_SECONDS,
     ) -> None:
         if max_request_workers < 1:
             raise ValueError("max_request_workers must be positive")
+        if max_websocket_workers < 1:
+            raise ValueError("max_websocket_workers must be positive")
         if request_header_timeout_seconds <= 0 or request_body_timeout_seconds <= 0:
             raise ValueError("HTTP request deadlines must be positive")
         self.max_request_workers = int(max_request_workers)
+        self.max_websocket_workers = int(max_websocket_workers)
         self.request_header_timeout_seconds = float(request_header_timeout_seconds)
         self.request_body_timeout_seconds = float(request_body_timeout_seconds)
         self._request_worker_slots = threading.BoundedSemaphore(self.max_request_workers)
+        self._websocket_worker_slots = threading.BoundedSemaphore(
+            self.max_websocket_workers
+        )
+        self._worker_ownership = threading.local()
         if inherited_fd is None:
             super().__init__(
                 server_address,
@@ -94,7 +103,24 @@ class AgentsAssembleHTTPServer(ThreadingHTTPServer):
             raise
 
     def process_request_thread(self, request, client_address) -> None:
+        self._worker_ownership.request_slot = True
         try:
             super().process_request_thread(request, client_address)
         finally:
-            self._request_worker_slots.release()
+            if getattr(self._worker_ownership, "request_slot", False):
+                self._request_worker_slots.release()
+            self._worker_ownership.request_slot = False
+
+    def transfer_request_to_websocket(self) -> bool:
+        """Move the current upgraded request into the independent WS budget."""
+
+        if not getattr(self._worker_ownership, "request_slot", False):
+            return False
+        if not self._websocket_worker_slots.acquire(blocking=False):
+            return False
+        self._request_worker_slots.release()
+        self._worker_ownership.request_slot = False
+        return True
+
+    def release_websocket_worker(self) -> None:
+        self._websocket_worker_slots.release()
