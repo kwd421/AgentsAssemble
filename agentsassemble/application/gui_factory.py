@@ -50,13 +50,24 @@ from agentsassemble.room.repository import RoomRepository
 from agentsassemble.web.room_session import WsTicketStore
 
 
-def _reconcile_canonical_room_identities(
+def reconcile_canonical_room_directory(
     identities: IdentityBackend,
     rooms: RoomRepository,
 ) -> None:
-    """Give the identity directory the canonical room UID without rewriting it."""
+    """Make the identity directory a projection of canonical room existence."""
 
-    for room in rooms.list_rooms(include_archived=True):
+    canonical_rooms = rooms.list_rooms(include_archived=True)
+    canonical_room_ids = {
+        str(room.get("room_id") or "")
+        for room in canonical_rooms
+        if str(room.get("room_id") or "")
+    }
+    for projected in identities.list_rooms(include_archived=True):
+        projected_id = str(projected.get("room_id") or "")
+        if projected_id and projected_id not in canonical_room_ids:
+            identities.delete_room(projected_id)
+
+    for room in canonical_rooms:
         room_id = str(room.get("room_id") or "")
         room_uid = str(room.get("room_uid") or "")
         if not room_id or not room_uid:
@@ -92,7 +103,6 @@ class GuiRuntimeConstructors:
     public_tunnel_manager: Callable[..., PublicTunnelManager]
     session_run_monitor: Callable[..., SessionRunMonitor]
     legacy_admission_projection: Callable[[Path], LegacyAdmissionProjection]
-    backfill_room_registry: Callable[[Path, IdentityBackend], None]
 
 
 def build_gui_application_services(
@@ -186,8 +196,7 @@ def build_gui_application_services(
 
         remember_cleanup("identity_backend.unregister", release_identity_registration)
         configure_room_users_backend(identity_backend)
-        _reconcile_canonical_room_identities(identity_backend, room_repository)
-        constructors.backfill_room_registry(output_root, identity_backend)
+        reconcile_canonical_room_directory(identity_backend, room_repository)
 
         public_invite_runtime = (
             public_invite_runtime_override or constructors.public_invite_runtime()

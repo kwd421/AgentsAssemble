@@ -22,7 +22,27 @@ class RoomMembersPresenceTests(unittest.TestCase):
         self.repository = RoomStore(self.output_root)
         self.addCleanup(self.repository.close)
 
-    def _saved_guest(self, participant_id, display_name, *, updated_at):
+    def _canonical_member(
+        self,
+        participant_id,
+        display_name,
+        *,
+        participant_type="human",
+        role="human",
+    ):
+        self.repository.create_room(ROOM)
+        self.repository.upsert_participant(
+            ROOM,
+            {
+                "participant_id": participant_id,
+                "display_name": display_name,
+                "role": role,
+                "participant_type": participant_type,
+                "status": "joined",
+            },
+        )
+
+    def _saved_guest(self, participant_id, display_name, *, updated_at, canonical=True):
         upsert_room_member(
             self.output_root,
             {
@@ -37,6 +57,8 @@ class RoomMembersPresenceTests(unittest.TestCase):
                 "updated_at": updated_at,
             },
         )
+        if canonical:
+            self._canonical_member(participant_id, display_name)
 
     def test_canonical_role_change_updates_room_authority_and_emits_an_event(self):
         self.repository.create_room(ROOM)
@@ -76,14 +98,17 @@ class RoomMembersPresenceTests(unittest.TestCase):
                 role="unknown-role",
             )
 
-    def test_invite_member_without_live_session_shows_offline(self):
-        self._saved_guest("guest-dead01", "유령", updated_at="2026-06-10T00:00:00+00:00")
+    def test_identity_only_invite_member_does_not_seed_the_canonical_roster(self):
+        self._saved_guest(
+            "guest-dead01",
+            "유령",
+            updated_at="2026-06-10T00:00:00+00:00",
+            canonical=False,
+        )
         payload = room_members_payload(
             self.output_root, [], meeting_id=ROOM, sessions=[], repository=self.repository
         )
-        members = payload["members"]
-        self.assertEqual(len(members), 1)
-        self.assertEqual(members[0]["status"], "offline")
+        self.assertEqual(payload["members"], [])
 
     def test_invite_member_with_live_session_stays_online(self):
         self._saved_guest("guest-live01", "현재인", updated_at="2026-06-10T00:00:00+00:00")
@@ -103,8 +128,7 @@ class RoomMembersPresenceTests(unittest.TestCase):
         self.assertEqual(len(members), 1)
         self.assertEqual(members[0]["status"], "online")
 
-    def test_stale_same_name_guests_collapse_to_newest(self):
-        # Pre-stable-identity rejoins minted a fresh guest id per join.
+    def test_distinct_canonical_guests_are_not_collapsed_by_display_name(self):
         self._saved_guest("guest-aaaa01", "친절한페이블찡", updated_at="2026-06-11T01:00:00+00:00")
         self._saved_guest("guest-aaaa02", "친절한페이블찡", updated_at="2026-06-11T02:00:00+00:00")
         self._saved_guest("guest-aaaa03", "친절한페이블찡", updated_at="2026-06-11T03:00:00+00:00")
@@ -112,13 +136,26 @@ class RoomMembersPresenceTests(unittest.TestCase):
             self.output_root, [], meeting_id=ROOM, sessions=[], repository=self.repository
         )
         members = payload["members"]
-        self.assertEqual(len(members), 1)
-        self.assertEqual(members[0]["participant_id"], "guest-aaaa03")
-        self.assertEqual(members[0]["status"], "offline")
+        self.assertEqual(len(members), 3)
+        self.assertEqual(
+            {member["participant_id"] for member in members},
+            {"guest-aaaa01", "guest-aaaa02", "guest-aaaa03"},
+        )
 
     def test_stale_duplicates_vanish_when_same_name_is_live(self):
-        self._saved_guest("guest-bbbb01", "친절한페이블찡", updated_at="2026-06-11T01:00:00+00:00")
-        self._saved_guest("guest-bbbb02", "친절한페이블찡", updated_at="2026-06-11T02:00:00+00:00")
+        self._saved_guest(
+            "guest-bbbb01",
+            "친절한페이블찡",
+            updated_at="2026-06-11T01:00:00+00:00",
+            canonical=False,
+        )
+        self._saved_guest(
+            "guest-bbbb02",
+            "친절한페이블찡",
+            updated_at="2026-06-11T02:00:00+00:00",
+            canonical=False,
+        )
+        self._canonical_member("user-stable-1", "친절한페이블찡")
         sessions = [
             {
                 "agent_id": "user-stable-1",
@@ -153,6 +190,8 @@ class RoomMembersPresenceTests(unittest.TestCase):
                 "joined_at": "2026-06-11T05:01:00+00:00",
             },
         ]
+        self._canonical_member("guest-cccc01", "Guest")
+        self._canonical_member("guest-cccc02", "Guest")
         payload = room_members_payload(
             self.output_root, [], meeting_id=ROOM, sessions=sessions, repository=self.repository
         )
@@ -169,6 +208,12 @@ class RoomMembersPresenceTests(unittest.TestCase):
                 "status": "working",
             }
         ]
+        self._canonical_member(
+            "agent-haiku",
+            "하이쿠",
+            participant_type="agent",
+            role="agent",
+        )
         payload = room_members_payload(
             self.output_root, agents, meeting_id=ROOM, sessions=[], repository=self.repository
         )
@@ -186,6 +231,12 @@ class RoomMembersPresenceTests(unittest.TestCase):
                 "joined_at": "2026-06-11T05:00:00+00:00",
             }
         ]
+        self._canonical_member(
+            "remote-claude-1",
+            "Claude (Guest)",
+            participant_type="remote",
+            role="agent",
+        )
         payload = room_members_payload(
             self.output_root, [], meeting_id=ROOM, sessions=sessions, repository=self.repository
         )
@@ -220,6 +271,17 @@ class RosterStreamSnapshotTests(unittest.TestCase):
         upsert_room_member(
             self.output_root,
             {"meeting_id": ROOM, "participant_id": "guest-1", "display_name": "사람"},
+        )
+        self.repository.create_room(ROOM)
+        self.repository.upsert_participant(
+            ROOM,
+            {
+                "participant_id": "guest-1",
+                "display_name": "사람",
+                "participant_type": "human",
+                "role": "human",
+                "status": "joined",
+            },
         )
         first = _stream_snapshot_payload(
             self.output_root, "roster", meeting_id=ROOM, repository=self.repository

@@ -488,36 +488,6 @@ SESSION_ENSURE_REASONS = {
 }
 
 
-def _backfill_room_registry(
-    output_root: Path,
-    identity_backend: IdentityBackend,
-) -> None:
-    """Register pre-existing meeting dirs into the rooms table.
-
-    This remains best-effort compatibility behavior so a legacy directory
-    cannot block current server startup.
-    """
-
-    try:
-        known = {
-            str(room.get("room_id"))
-            for room in identity_backend.list_rooms(include_archived=True)
-        }
-        owner = identity_backend.operator_user_id()
-        for meeting in list_meetings(output_root):
-            meeting_id = str(meeting.get("meeting_id") or "")
-            if not meeting_id or meeting_id in known:
-                continue
-            identity_backend.upsert_room(
-                room_id=meeting_id,
-                owner_id=owner,
-                label=str(meeting.get("topic") or ""),
-                origin="backfill",
-            )
-    except Exception:
-        return
-
-
 def _build_gui_application_services(
     output_root: Path,
     *,
@@ -551,7 +521,6 @@ def _build_gui_application_services(
             public_tunnel_manager=PublicTunnelManager,
             session_run_monitor=LiveAgentSessionRunMonitor,
             legacy_admission_projection=LiveAgentLegacyAdmissionProjection,
-            backfill_room_registry=_backfill_room_registry,
         ),
         process_supervisor=process_supervisor,
         session_run_controller=session_run_controller,

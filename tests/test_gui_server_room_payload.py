@@ -152,31 +152,30 @@ class GuiServerRoomPayloadTests(unittest.TestCase):
             self.assertTrue(all(e.get("flow_meeting_id") == "fable-room" for e in scoped))
 
 
-    def test_backfill_room_registry_seeds_existing_meetings(self):
-        # Rooms created before the registry existed must resurface in /api/rooms.
-        from agentsassemble.gui import _backfill_room_registry
+    def test_room_directory_reconciliation_removes_identity_only_ghosts(self):
+        from agentsassemble.application.gui_factory import (
+            reconcile_canonical_room_directory,
+        )
         from agentsassemble.persistence.local.identity.repository import IdentityStore
+        from agentsassemble.persistence.local.room.repository import RoomStore
 
         with tempfile.TemporaryDirectory() as temp_dir:
             root = Path(temp_dir)
             identities = IdentityStore(root / "identity.db")
-            for mid in ("old-room-a", "old-room-b"):
-                meeting_dir = root / "meetings" / mid
-                meeting_dir.mkdir(parents=True)
-                (meeting_dir / "live_state.json").write_text(
-                    json.dumps({"meeting_id": mid, "topic": f"T-{mid}", "live_status": "running"}),
-                    encoding="utf-8",
-                )
-            self.assertEqual(identities.list_rooms(include_archived=True), [])
-            _backfill_room_registry(root, identities)
-            ids = {
-                str(room["room_id"])
-                for room in identities.list_rooms(include_archived=True)
-            }
-            self.assertEqual(ids, {"old-room-a", "old-room-b"})
-            # Idempotent: a second pass adds no duplicates.
-            _backfill_room_registry(root, identities)
-            self.assertEqual(len(identities.list_rooms(include_archived=True)), 2)
+            rooms = RoomStore(root)
+            self.addCleanup(rooms.close)
+            identities.upsert_room(room_id="ghost-room", label="Ghost")
+            rooms.create_room("canonical-room", label="Canonical")
+
+            reconcile_canonical_room_directory(identities, rooms)
+
+            self.assertIsNone(identities.get_room("ghost-room"))
+            projected = identities.get_room("canonical-room")
+            self.assertIsNotNone(projected)
+            self.assertEqual(
+                projected["room_uid"],
+                rooms.room("canonical-room")["room_uid"],
+            )
 
 
     def test_live_agent_room_endpoint_keeps_probe_sized_lobby_tail(self):

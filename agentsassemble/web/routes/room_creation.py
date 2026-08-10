@@ -21,51 +21,71 @@ def register_room_creation_routes(router: Router) -> None:
         if not room_id:
             ctx.send_error(HTTPStatus.BAD_REQUEST, "room_id is required")
             return
-        canonical_room = ctx.deps.rooms.room(room_id)
-        room_uid = str(canonical_room.get("room_uid") or uuid4())
-        previous_identity_room = ctx.deps.identities.get_room(room_id)
         try:
-            identity_room = ctx.deps.identities.upsert_room(
+            result = create_canonical_room(
+                ctx,
                 room_id=room_id,
-                room_uid=room_uid,
-                owner_id=(
-                    ctx.preference_user_id()
-                    or ctx.deps.identities.operator_user_id()
-                ),
-                label=label or room_id,
-                origin="frontend_room",
+                label=label,
             )
-            try:
-                room = ctx.deps.rooms.create_room(
-                    room_id,
-                    label=label or room_id,
-                    room_uid=room_uid,
-                )
-            except Exception:
-                _restore_identity_room(
-                    ctx,
-                    room_id,
-                    previous_identity_room,
-                )
-                raise
         except ValueError as error:
             ctx.send_error(HTTPStatus.BAD_REQUEST, str(error))
             return
-        ctx.send_json(
-            {
-                "status": "ready",
-                "server_id": ctx.deps.identities.server_id(),
-                "room": {
-                    "room_id": room_id,
-                    "room_uid": str(room.get("room_uid") or room_uid),
-                    "label": str(room.get("label") or room_id),
-                    "last_active_at": str(room.get("updated_at") or ""),
-                    "archived": False,
-                    "status": str(room.get("status") or "active"),
-                    "origin": str(identity_room.get("origin") or "frontend_room"),
-                },
-            }
+        ctx.send_json(result)
+
+
+def create_canonical_room(
+    ctx: RequestContext,
+    *,
+    room_id: str,
+    label: str = "",
+    owner_id: str = "",
+) -> dict[str, object]:
+    """Create one canonical room and update its identity-directory projection."""
+
+    canonical_room = ctx.deps.rooms.room(room_id)
+    previous_identity_room = ctx.deps.identities.get_room(room_id)
+    room_uid = str(
+        canonical_room.get("room_uid")
+        or (previous_identity_room or {}).get("room_uid")
+        or uuid4()
+    )
+    identity_room = ctx.deps.identities.upsert_room(
+        room_id=room_id,
+        room_uid=room_uid,
+        owner_id=(
+            owner_id
+            or ctx.preference_user_id()
+            or ctx.deps.identities.operator_user_id()
+        ),
+        label=label or room_id,
+        origin="frontend_room",
+    )
+    try:
+        room = ctx.deps.rooms.create_room(
+            room_id,
+            label=label or room_id,
+            room_uid=room_uid,
         )
+    except Exception:
+        _restore_identity_room(
+            ctx,
+            room_id,
+            previous_identity_room,
+        )
+        raise
+    return {
+        "status": "ready",
+        "server_id": ctx.deps.identities.server_id(),
+        "room": {
+            "room_id": room_id,
+            "room_uid": str(room.get("room_uid") or room_uid),
+            "label": str(room.get("label") or room_id),
+            "last_active_at": str(room.get("updated_at") or ""),
+            "archived": False,
+            "status": str(room.get("status") or "active"),
+            "origin": str(identity_room.get("origin") or "frontend_room"),
+        },
+    }
 
 
 def _restore_identity_room(
@@ -91,4 +111,4 @@ def _restore_identity_room(
     )
 
 
-__all__ = ["register_room_creation_routes"]
+__all__ = ["create_canonical_room", "register_room_creation_routes"]

@@ -3,9 +3,9 @@ from __future__ import annotations
 
 from http import HTTPStatus
 
-from agentsassemble.legacy.live_agent.runtime.frontend_create import ensure_frontend_meeting
 from agentsassemble.room.text import clean_room_text
 from agentsassemble.web.router import RequestContext, Router
+from agentsassemble.web.routes.room_creation import create_canonical_room
 from agentsassemble.web.routes.room_history import register_room_history_routes
 from agentsassemble.web.routes.room_lifecycle import (
     register_room_lifecycle_routes as register_current_room_lifecycle_routes,
@@ -13,7 +13,7 @@ from agentsassemble.web.routes.room_lifecycle import (
 
 
 def register_legacy_room_ensure_route(router: Router) -> None:
-    """Register the legacy file-backed frontend room ensure endpoint."""
+    """Keep the old endpoint as a thin adapter to canonical room creation."""
 
     def _room_owner_id(ctx: RequestContext) -> str:
         session = ctx.session()
@@ -27,21 +27,26 @@ def register_legacy_room_ensure_route(router: Router) -> None:
 
     @router.post("/api/room/ensure")
     def room_ensure(ctx: RequestContext) -> None:
+        if not ctx.is_local_operator() and not ctx.require_moderator():
+            return
         payload = ctx.read_json_body()
         if payload is None:
             return
+        room_id = clean_room_text(payload.get("meeting_id"), limit=128)
+        if not room_id:
+            ctx.send_error(HTTPStatus.BAD_REQUEST, "meeting_id is required")
+            return
         try:
-            meeting_dir = ensure_frontend_meeting(
-                ctx.deps.output_root,
-                clean_room_text(payload.get("meeting_id"), limit=128),
+            create_canonical_room(
+                ctx,
+                room_id=room_id,
                 label=clean_room_text(payload.get("label"), limit=128),
                 owner_id=_room_owner_id(ctx),
-                identity_backend=ctx.deps.identities,
             )
-        except (OSError, ValueError) as error:
+        except ValueError as error:
             ctx.send_error(HTTPStatus.BAD_REQUEST, str(error))
             return
-        ctx.send_json({"status": "ready", "meeting_id": meeting_dir.name})
+        ctx.send_json({"status": "ready", "meeting_id": room_id})
 
 
 def register_room_lifecycle_routes(router: Router) -> None:

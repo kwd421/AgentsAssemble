@@ -137,15 +137,15 @@ def register_room_history_routes(router: Router) -> None:
             if operator_view or session is None
             else str(session.get("meeting_id") or "").strip()
         )
-        rooms_by_id = {
-            str(room.get("room_id") or ""): _room_payload(room)
+        identity_rooms_by_id = {
+            str(room.get("room_id") or ""): room
             for room in ctx.deps.identities.list_rooms(
                 owner_id=owner_id,
                 include_archived=include_archived,
             )
-            if not session_room_id
-            or str(room.get("room_id") or "") == session_room_id
+            if str(room.get("room_id") or "")
         }
+        rooms_by_id: dict[str, dict[str, object]] = {}
         for room in ctx.deps.rooms.list_rooms(include_archived=include_archived):
             room_id = str(room.get("room_id") or "")
             if not room_id or (
@@ -155,8 +155,9 @@ def register_room_history_routes(router: Router) -> None:
             room_settings = public_room_global_settings(
                 ctx.deps.rooms.room_settings(room_id)
             )
+            identity_room = identity_rooms_by_id.get(room_id, {})
             rooms_by_id[room_id] = {
-                **rooms_by_id.get(room_id, {}),
+                **_room_payload(identity_room),
                 **_room_payload(
                     {
                         "room_id": room_id,

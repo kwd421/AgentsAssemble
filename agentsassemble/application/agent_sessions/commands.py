@@ -147,13 +147,8 @@ def merge_room_store_members(
     if not meeting_id:
         return existing_members
     participants = repository.participants(meeting_id)
-    room_participant_ids = {str(participant.get("participant_id") or "") for participant in participants}
     active = [participant for participant in participants if str(participant.get("status") or "") == "joined"]
-    by_id: dict[str, dict[str, object]] = {
-        str(member.get("participant_id") or ""): dict(member)
-        for member in existing_members
-        if str(member.get("participant_id") or "") not in room_participant_ids
-    }
+    by_id: dict[str, dict[str, object]] = {}
     for participant in active:
         participant_id = str(participant.get("participant_id") or "")
         session = repository.session(meeting_id, str(participant.get("session_id") or participant_id))
@@ -173,7 +168,7 @@ def merge_room_store_members(
             "participant_type": participant.get("participant_type", "local"),
             "provider_kind": participant.get("provider_kind", ""),
             "connection_kind": "agent_session",
-            "status": participant.get("status", ""),
+            "status": existing.get("status") or participant.get("status", ""),
             "session_id": participant.get("session_id", ""),
             "owner_id": participant.get("owner_id", ""),
             "created_by": participant.get("created_by", ""),

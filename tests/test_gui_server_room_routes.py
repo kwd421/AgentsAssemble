@@ -451,7 +451,7 @@ class GuiServerRoomRouteTests(unittest.TestCase):
         self.assertNotIn("secret", str(diagnostics))
         self.assertNotIn("/tmp", str(diagnostics))
 
-    def test_rooms_endpoint_lists_room_created_by_ensure(self):
+    def test_rooms_endpoint_does_not_list_identity_only_ghost_room(self):
         with tempfile.TemporaryDirectory() as temp_dir:
             root = Path(temp_dir)
             deps = _invite_route_dependencies(root)
@@ -463,12 +463,7 @@ class GuiServerRoomRouteTests(unittest.TestCase):
             handler = _dispatch_room_route(root, path="/api/rooms", deps=deps)
             payload = handler.sent_json
 
-            rooms = payload["rooms"]
-            self.assertIn("db-room", [room["room_id"] for room in rooms])
-            room = next(room for room in rooms if room["room_id"] == "db-room")
-            self.assertEqual(room["label"], "DB 방")
-            self.assertFalse(room["archived"])
-            self.assertNotIn("owner_id", room)
+            self.assertEqual(payload["rooms"], [])
 
     def test_rooms_endpoint_uses_injected_identity_backend_not_global_registry(self):
         reset_room_users_state()
@@ -481,6 +476,7 @@ class GuiServerRoomRouteTests(unittest.TestCase):
                 label="Injected",
                 origin="frontend_room",
             )
+            deps.rooms.create_room("injected-room", label="Injected")
             configure_room_users_store(root / "compatibility-identity.db")
             from agentsassemble.application.room_users import upsert_room
 
@@ -661,11 +657,10 @@ class GuiServerRoomRouteTests(unittest.TestCase):
                 for item in deps.identities.list_rooms()
                 if item["room_id"] == "new-room"
             )
-            state = json.loads((root / "meetings" / "new-room" / "live_state.json").read_text(encoding="utf-8"))
             self.assertEqual(response, {"status": "ready", "meeting_id": "new-room"})
             self.assertEqual(room["owner_id"], operator["user_id"])
             self.assertEqual(room["label"], "New Room")
-            self.assertEqual(state["origin"], "frontend_room")
+            self.assertEqual(deps.rooms.room("new-room")["room_id"], "new-room")
 
 
     def test_agent_session_http_delegates_creation_to_canonical_room_command(self):
@@ -1197,6 +1192,8 @@ class GuiServerRoomRouteTests(unittest.TestCase):
                     origin="frontend_room",
                 )
                 upsert_room(room_id="operator-room", label="Operator Room", origin="frontend_room")
+                RoomStore(root).create_room("guest-room", label="Guest Room")
+                RoomStore(root).create_room("operator-room", label="Operator Room")
                 handler = _dispatch_room_route(
                     root,
                     path="/api/rooms",
