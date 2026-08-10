@@ -36,7 +36,7 @@ class ProviderCredentialTransportSecurityTests(unittest.TestCase):
 
     def test_nonloopback_peer_cannot_spoof_forwarded_https_to_read_api_credentials(self):
         self.public_invite.set_host_token("host-secret")
-        self.public_invite.set_public_url("http://public.example.test")
+        self.public_invite.set_public_url("https://public.example.test")
         for provider_id in (
             "cerebras",
             "deepseek",

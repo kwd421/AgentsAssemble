@@ -35,6 +35,14 @@ class PublicInviteRuntimeTests(unittest.TestCase):
         self.assertTrue(runtime.verify_host_token("runtime-token"))
         self.assertEqual(runtime.public_url(), "https://runtime.example")
 
+    def test_environment_plaintext_public_url_is_rejected(self) -> None:
+        runtime = PublicInviteRuntime(
+            environ={"AGENTSASSEMBLE_PUBLIC_URL": "http://public.example"}
+        )
+
+        with self.assertRaises(ValueError):
+            runtime.public_url()
+
     def test_clear_only_removes_the_owned_runtime_url(self) -> None:
         runtime = PublicInviteRuntime(environ={})
         runtime.set_public_url("https://current.example")

@@ -144,6 +144,7 @@ class TestJoinUrl(unittest.TestCase):
 
     def test_public_url_rejects_userinfo_query_and_fragment(self):
         for bad_url in (
+            "http://example.com",
             "https://user:pass@example.com",
             "https://example.com?x=1",
             "https://example.com#frag",

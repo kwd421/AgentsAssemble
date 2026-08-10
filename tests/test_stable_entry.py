@@ -126,7 +126,7 @@ class StableEntryPublicationTests(unittest.TestCase):
         ):
             manager.set_manual_public_url("https://manual.example.com")
             self.assertTrue(first_publish_finished.wait(timeout=2))
-            manager.set_manual_public_url("http://manual.example.com")
+            manager.set_manual_public_url("")
             self.assertTrue(clear_finished.wait(timeout=1))
 
         self.assertIn("delete", commands[-1])

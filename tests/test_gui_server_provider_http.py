@@ -445,7 +445,7 @@ class ProviderHandlerDispatchTests(unittest.TestCase):
 
     def test_remote_host_token_over_http_is_rejected_with_exact_https_error(self):
         room_invite.set_runtime_host_token("host-secret")
-        room_invite.set_runtime_public_url("http://public.example.test")
+        room_invite.set_runtime_public_url("https://public.example.test")
         store = FakeSecretStore()
 
         with tempfile.TemporaryDirectory() as temp_dir:

@@ -54,7 +54,7 @@ class PublicInviteRuntime:
     def public_url(self) -> str:
         with self._lock:
             value = self._runtime_public_url or str(self._environ.get(PUBLIC_URL_ENV) or "")
-        return value.rstrip("/")
+        return normalize_public_room_url(value) if value else ""
 
     def set_public_url(self, url: str) -> str:
         normalized = normalize_public_room_url(url)
@@ -158,9 +158,7 @@ class PublicInviteRuntime:
         """
 
         with self._lock:
-            current_url = self._runtime_public_url or str(
-                self._environ.get(PUBLIC_URL_ENV) or ""
-            ).rstrip("/")
+            current_url = self.public_url()
             if (
                 current_url
                 and current_url == self._managed_ingress_url
@@ -197,24 +195,26 @@ def normalize_public_room_url(room_url: str) -> str:
     try:
         parsed = urlsplit(value)
     except ValueError:
-        raise ValueError("public invite URL must be an HTTP(S) URL.") from None
+        raise ValueError("public invite URL must be an HTTPS URL.") from None
     if parsed.scheme not in {"http", "https"} or not parsed.netloc:
-        raise ValueError("public invite URL must be an HTTP(S) URL.")
+        raise ValueError("public invite URL must be an HTTPS URL.")
     try:
         hostname = parsed.hostname
         parsed.port
     except ValueError:
         raise ValueError(
-            "public invite URL must be an HTTP(S) URL with a valid host and port."
+            "public invite URL must be an HTTPS URL with a valid host and port."
         ) from None
     if not hostname:
         raise ValueError(
-            "public invite URL must be an HTTP(S) URL with a valid host and port."
+            "public invite URL must be an HTTPS URL with a valid host and port."
         )
     if hostname.lower().strip("[]") in PUBLIC_URL_BLOCKED_HOSTS:
         raise ValueError("public invite URL must not use a local or loopback host.")
+    if parsed.scheme != "https":
+        raise ValueError("public invite URL must be an HTTPS URL.")
     if parsed.username or parsed.password or parsed.query or parsed.fragment:
         raise ValueError(
-            "public invite URL must be HTTP(S) without userinfo, query, or fragment."
+            "public invite URL must be HTTPS without userinfo, query, or fragment."
         )
     return urlunsplit((parsed.scheme, parsed.netloc, parsed.path.rstrip("/"), "", ""))

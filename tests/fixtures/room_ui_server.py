@@ -22,7 +22,7 @@ from tests.room_realtime_test_support import memory_room_access_services
 def main() -> int:
     stop = threading.Event()
     port = int(os.environ.get("AGENTSASSEMBLE_E2E_PORT", "8898"))
-    os.environ[PUBLIC_URL_ENV] = f"http://public.localhost:{port}"
+    os.environ[PUBLIC_URL_ENV] = "https://public.example.test"
     fixture = Path(__file__).with_name("fake_interactive_cli.py")
     with tempfile.TemporaryDirectory(prefix="agentsassemble-ui-e2e-") as temp_dir:
         output_root = Path(temp_dir)
@@ -46,7 +46,7 @@ def main() -> int:
         manager = NativeCliBridgeProcessManager(output_root)
         access = memory_room_access_services()
         access.public_invite.set_host_token("e2e-host-token")
-        access.public_invite.set_public_url(f"http://public.localhost:{port}")
+        access.public_invite.set_public_url("https://public.example.test")
         controller = RoomRealtimeController(
             output_root,
             **access.controller_kwargs(),
