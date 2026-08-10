@@ -115,6 +115,23 @@ class OperatorPairingServiceTests(unittest.TestCase):
             "SeiNel",
         )
 
+    def test_revoking_a_redeemed_pairing_removes_its_credential_and_session(self) -> None:
+        created = self._create()
+        device_token = "revoked-public-origin-device"
+        result = self.service.redeem(
+            pairing_token=self._token(created),
+            device_token=device_token,
+            request_origin="https://public.example",
+        )
+        session_token = str(result["session_token"])
+        auth_key = device_auth_key(device_token)
+
+        self.assertIsNotNone(self.sessions.verify(session_token))
+        self.assertIsNotNone(self.identities.user_for_credential(auth_key))
+        self.assertTrue(self.service.revoke(str(created["pairing_id"])))
+        self.assertIsNone(self.sessions.verify(session_token))
+        self.assertIsNone(self.identities.user_for_credential(auth_key))
+
     def test_raw_pairing_token_is_not_persisted(self) -> None:
         created = self._create()
         token = self._token(created)

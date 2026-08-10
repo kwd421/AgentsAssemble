@@ -152,6 +152,7 @@ class IdentityBackend(Protocol):
         self,
         token_fingerprint: str,
     ) -> dict[str, object] | None: ...
+    def operator_pairing(self, pairing_id: str) -> dict[str, object] | None: ...
     def consume_operator_pairing(
         self,
         *,

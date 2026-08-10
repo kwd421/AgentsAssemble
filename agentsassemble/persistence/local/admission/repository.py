@@ -208,6 +208,22 @@ class MemoryInviteSessionRepository:
                         del self._sessions[fingerprint]
             return len(doomed)
 
+    def revoke_credential_sessions(self, credential_auth_key: str) -> int:
+        clean_auth_key = clean_lobby_text(credential_auth_key, limit=128)
+        if not clean_auth_key:
+            return 0
+        with self._lock:
+            doomed = [
+                fingerprint
+                for fingerprint, record in self._sessions.items()
+                if record.get("credential_auth_key") == clean_auth_key
+            ]
+            if doomed:
+                with self._persisted_mutation_locked():
+                    for fingerprint in doomed:
+                        del self._sessions[fingerprint]
+            return len(doomed)
+
     def revoke_room_sessions(self, room_id: str) -> int:
         clean_room_id = clean_lobby_text(room_id, limit=128)
         with self._lock:
@@ -593,6 +609,10 @@ def _clean_session_record(value: object) -> dict[str, object]:
             limit=128,
         ),
         "principal_is_operator": bool(source.get("principal_is_operator")),
+        "credential_auth_key": clean_lobby_text(
+            source.get("credential_auth_key"),
+            limit=128,
+        ),
         "connection_kind": clean_lobby_text(source.get("connection_kind"), limit=64),
         "client_id": clean_lobby_text(source.get("client_id"), limit=128),
         "joined_at": clean_lobby_text(source.get("joined_at"), limit=64),

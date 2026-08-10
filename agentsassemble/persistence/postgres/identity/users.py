@@ -304,6 +304,20 @@ def operator_pairing_for_fingerprint(
     return pairing_from_row(row) if row else None
 
 
+def operator_pairing(
+    connection: Connection,
+    pairing_id: str,
+) -> dict[str, object] | None:
+    clean_pairing_id = clean_room_text(pairing_id, limit=128)
+    if not clean_pairing_id:
+        return None
+    row = connection.execute(
+        "SELECT * FROM identity_operator_pairings WHERE pairing_id = %s",
+        (clean_pairing_id,),
+    ).fetchone()
+    return pairing_from_row(row) if row else None
+
+
 def consume_operator_pairing(
     connection: Connection,
     *,
@@ -433,12 +447,25 @@ def revoke_operator_pairing(
     clean_pairing_id = clean_room_text(pairing_id, limit=128)
     if not clean_pairing_id:
         return False
-    cursor = connection.execute(
+    pairing = connection.execute(
+        """SELECT consumed_auth_key FROM identity_operator_pairings
+           WHERE pairing_id = %s FOR UPDATE""",
+        (clean_pairing_id,),
+    ).fetchone()
+    if pairing is None:
+        return False
+    connection.execute(
         """UPDATE identity_operator_pairings SET revoked_at = %s
-           WHERE pairing_id = %s AND used_at = '' AND revoked_at = ''""",
+           WHERE pairing_id = %s AND revoked_at = ''""",
         (clean_room_text(revoked_at, limit=64), clean_pairing_id),
     )
-    return cursor.rowcount == 1
+    consumed_auth_key = str(pairing["consumed_auth_key"] or "")
+    if consumed_auth_key:
+        connection.execute(
+            "DELETE FROM identity_credentials WHERE auth_key = %s AND user_id = %s",
+            (consumed_auth_key, LOCAL_OPERATOR_USER_ID),
+        )
+    return True
 
 
 def operator_user_id(connection: Connection) -> str:

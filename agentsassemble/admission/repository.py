@@ -75,6 +75,8 @@ class SessionRepository(Protocol):
 
     def revoke_participant_sessions(self, room_id: str, participant_id: str) -> int: ...
 
+    def revoke_credential_sessions(self, credential_auth_key: str) -> int: ...
+
     def revoke_room_sessions(self, room_id: str) -> int: ...
 
     def list_sessions(self) -> list[tuple[str, dict[str, object]]]: ...
@@ -195,6 +197,10 @@ class UnconfiguredInviteSessionRepository:
 
     def revoke_participant_sessions(self, room_id: str, participant_id: str) -> int:
         del room_id, participant_id
+        self._raise()
+
+    def revoke_credential_sessions(self, credential_auth_key: str) -> int:
+        del credential_auth_key
         self._raise()
 
     def revoke_room_sessions(self, room_id: str) -> int:

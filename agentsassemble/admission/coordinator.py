@@ -715,6 +715,7 @@ def _session_record(workflow: dict[str, object]) -> dict[str, object]:
         "owner_id": str(workflow.get("owner_id") or ""),
         "principal_user_id": str(workflow.get("principal_user_id") or ""),
         "principal_is_operator": bool(workflow.get("operator")),
+        "credential_auth_key": str(workflow.get("device_auth_key") or ""),
         "connection_kind": str(workflow.get("connection_kind") or ""),
         "client_id": str(workflow.get("client_id") or ""),
     }

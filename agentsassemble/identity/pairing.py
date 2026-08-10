@@ -220,7 +220,11 @@ class OperatorPairingService:
         self._commit_operator_membership(room_id, display_name=display_name)
         session_token, session = self._sessions.ensure_for_request(
             f"operator-pairing:{pairing_id}",
-            self._session_record(room_id, display_name=display_name),
+            self._session_record(
+                room_id,
+                display_name=display_name,
+                credential_auth_key=auth_key,
+            ),
             joined_at=clean_room_text(pairing.get("used_at"), limit=64),
         )
         completed = self._identities.update_operator_pairing_redemption(
@@ -235,10 +239,27 @@ class OperatorPairingService:
         return session_token, session
 
     def revoke(self, pairing_id: str) -> bool:
-        return self._identities.revoke_operator_pairing(
-            clean_room_text(pairing_id, limit=128),
+        clean_pairing_id = clean_room_text(pairing_id, limit=128)
+        pairing = self._identities.operator_pairing(clean_pairing_id)
+        if pairing is None:
+            return False
+        revoked = self._identities.revoke_operator_pairing(
+            clean_pairing_id,
             revoked_at=self._now().isoformat(),
         )
+        session_fingerprint = clean_room_text(
+            pairing.get("session_fingerprint"),
+            limit=128,
+        )
+        if session_fingerprint:
+            self._sessions.revoke_fingerprint(session_fingerprint)
+        credential_auth_key = clean_room_text(
+            pairing.get("consumed_auth_key"),
+            limit=128,
+        )
+        if credential_auth_key:
+            self._sessions.revoke_credential(credential_auth_key)
+        return revoked
 
     def _record_status(
         self,
@@ -295,7 +316,12 @@ class OperatorPairingService:
         )
 
     @staticmethod
-    def _session_record(room_id: str, *, display_name: str) -> dict[str, object]:
+    def _session_record(
+        room_id: str,
+        *,
+        display_name: str,
+        credential_auth_key: str,
+    ) -> dict[str, object]:
         return {
             "agent_id": LOCAL_OPERATOR_PARTICIPANT_ID,
             "display_name": display_name,
@@ -307,6 +333,7 @@ class OperatorPairingService:
             "owner_id": LOCAL_OPERATOR_USER_ID,
             "principal_user_id": LOCAL_OPERATOR_USER_ID,
             "principal_is_operator": True,
+            "credential_auth_key": credential_auth_key,
             "connection_kind": NATIVE_REMOTE_ROOM_CLIENT_KIND,
         }
 

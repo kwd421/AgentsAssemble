@@ -90,8 +90,14 @@ class RoomSessionIssuer:
     def revoke(self, token: str) -> bool:
         return self._repository.revoke_session(session_token_fingerprint(token))
 
+    def revoke_fingerprint(self, token_fingerprint: str) -> bool:
+        return self._repository.revoke_session(token_fingerprint)
+
     def revoke_participant(self, room_id: str, participant_id: str) -> int:
         return self._repository.revoke_participant_sessions(room_id, participant_id)
+
+    def revoke_credential(self, credential_auth_key: str) -> int:
+        return self._repository.revoke_credential_sessions(credential_auth_key)
 
     def revoke_room(self, room_id: str) -> int:
         return self._repository.revoke_room_sessions(room_id)

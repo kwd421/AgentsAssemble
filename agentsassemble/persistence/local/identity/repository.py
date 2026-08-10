@@ -50,6 +50,7 @@ from agentsassemble.persistence.local.identity.recovery_codes import (
     ensure_recovery_code_schema,
     SqliteRecoveryCodesMixin,
 )
+from agentsassemble.persistence.local.identity.operator_pairings import revoke_operator_pairing_grant
 from agentsassemble.persistence.local.identity.user_profiles import (
     ensure_user_profiles_schema,
     read_user_profile,
@@ -661,6 +662,17 @@ class IdentityStore(SqliteAccountsMixin, SqliteRecoveryCodesMixin):
             ).fetchone()
         return self._operator_pairing_dict(row) if row else None
 
+    def operator_pairing(self, pairing_id: str) -> dict[str, object] | None:
+        clean_pairing_id = clean_lobby_text(pairing_id, limit=128)
+        if not clean_pairing_id:
+            return None
+        with closing(self._connect()) as connection:
+            row = connection.execute(
+                "SELECT * FROM operator_pairings WHERE pairing_id = ?",
+                (clean_pairing_id,),
+            ).fetchone()
+        return self._operator_pairing_dict(row) if row else None
+
     def consume_operator_pairing(
         self,
         *,
@@ -785,12 +797,11 @@ class IdentityStore(SqliteAccountsMixin, SqliteRecoveryCodesMixin):
         if not clean_pairing_id:
             return False
         with self._write_lock, closing(self._connect()) as connection, connection:
-            cursor = connection.execute(
-                "UPDATE operator_pairings SET revoked_at = ?"
-                " WHERE pairing_id = ? AND used_at = '' AND revoked_at = ''",
-                (clean_lobby_text(revoked_at, limit=64), clean_pairing_id),
+            return revoke_operator_pairing_grant(
+                connection,
+                clean_pairing_id,
+                revoked_at=clean_lobby_text(revoked_at, limit=64),
             )
-        return cursor.rowcount == 1
 
     def participant_is_operator(self, participant_id: str) -> bool:
         user = self.user_for_participant(participant_id)

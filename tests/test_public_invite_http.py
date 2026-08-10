@@ -260,6 +260,31 @@ class PublicInviteHttpTests(unittest.TestCase):
                     timeout=4,
                 ) as response:
                     resumed = json.loads(response.read().decode("utf-8"))
+                with urlopen(
+                    _json_request(
+                        f"{base}/api/operator-pairing/revoke",
+                        {"pairing_id": pairing["pairing_id"]},
+                        host_headers,
+                    ),
+                    timeout=4,
+                ) as response:
+                    revoked = json.loads(response.read().decode("utf-8"))
+                with self.assertRaises(HTTPError) as revoked_session_error:
+                    self._ws_ticket(base, admitted["session_token"], public_headers)
+                self.addCleanup(revoked_session_error.exception.close)
+                with self.assertRaises(HTTPError) as revoked_pairing_error:
+                    urlopen(
+                        _json_request(
+                            f"{base}/api/operator-pairing/redeem",
+                            {
+                                "pairing_token": pairing_token,
+                                "origin": "https://shared-room.example.com",
+                            },
+                            public_headers,
+                        ),
+                        timeout=4,
+                    )
+                self.addCleanup(revoked_pairing_error.exception.close)
                 with self.assertRaises(HTTPError) as other_device_error:
                     urlopen(
                         _json_request(
@@ -291,6 +316,13 @@ class PublicInviteHttpTests(unittest.TestCase):
         self.assertEqual(resumed["session_token"], admitted["session_token"])
         self.assertEqual(admitted["room_label"], "Friend room")
         self.assertEqual(moderator_invite["meeting_id"], "friend-room")
+        self.assertEqual(revoked["status"], "revoked")
+        self.assertEqual(revoked_session_error.exception.code, 401)
+        self.assertEqual(revoked_pairing_error.exception.code, 403)
+        self.assertIn(
+            "pairing_revoked",
+            revoked_pairing_error.exception.read().decode("utf-8"),
+        )
         self.assertEqual(other_device_error.exception.code, 403)
 
     def test_host_token_bootstrap_rejects_untrusted_public_request(self):

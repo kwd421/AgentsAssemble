@@ -285,6 +285,14 @@ class IdentityRepositoryContractMixin:
         )
         self.assertEqual(completed["redemption_status"], "completed")
         self.assertEqual(completed["session_fingerprint"], "session-fingerprint-contract")
+        self.assertTrue(
+            self.repository.revoke_operator_pairing(
+                "pairing-contract",
+                revoked_at="2026-07-15T00:45:00+00:00",
+            )
+        )
+        self.assertIsNone(self.repository.user_for_credential("device:operator-bravo"))
+        self.assertTrue(self.repository.operator_pairing("pairing-contract")["revoked_at"])
 
     def test_membership_merge_mute_and_remove(self) -> None:
         self.repository.upsert_membership(

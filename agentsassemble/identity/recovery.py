@@ -104,6 +104,7 @@ class GuestIdentityRecoveryService:
                 "provider_kind": str(membership.get("provider_kind") or "manual"),
                 "principal_user_id": str(consumed_user.get("user_id") or ""),
                 "principal_is_operator": bool(consumed_user.get("is_operator")),
+                "credential_auth_key": auth_key,
                 "connection_kind": str(membership.get("connection_kind") or "browser"),
             }
         )
