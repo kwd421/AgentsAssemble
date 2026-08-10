@@ -1339,11 +1339,24 @@ class GuiServerRoomRouteTests(unittest.TestCase):
                 server.server_close()
 
             media = payload["room_media"]
-            self.assertEqual(Path(media["path"]).read_bytes(), b"room-image")
+            self.assertNotIn("path", media)
             self.assertEqual(media["content_type"], "image/png")
             self.assertEqual(media["size"], len(b"room-image"))
             self.assertTrue(media["supported"])
-            self.assertIn("media_attached", [event["type"] for event in RoomStore(root).read_events("room-a")])
+            attached = next(
+                event
+                for event in RoomStore(root).read_events("room-a")
+                if event["type"] == "media_attached"
+            )
+            self.assertEqual(attached["media"]["id"], media["id"])
+            attachment = payload["attachment"]
+            stored_path = (
+                root
+                / "attachments"
+                / attachment["id"]
+                / attachment["filename"]
+            )
+            self.assertEqual(stored_path.read_bytes(), b"room-image")
 
 
     def test_attachment_svg_is_not_served_inline(self):
