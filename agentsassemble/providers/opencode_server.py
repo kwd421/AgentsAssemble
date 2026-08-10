@@ -22,10 +22,12 @@ class OpenCodeServerProcess:
         cwd: str | Path,
         executable: str = "opencode",
         popen_factory=subprocess.Popen,
+        environment: dict[str, str] | None = None,
     ) -> None:
         self.cwd = Path(cwd).expanduser().resolve()
         self.executable = executable
         self._popen_factory = popen_factory
+        self._environment = dict(environment or {})
         self.process = None
         self.endpoint = ""
 
@@ -88,7 +90,7 @@ class OpenCodeServerProcess:
             stdout=subprocess.DEVNULL,
             stderr=subprocess.DEVNULL,
             cwd=str(self.cwd),
-            env=sanitized_provider_environment(),
+            env=sanitized_provider_environment(self._environment),
             start_new_session=True,
         )
         deadline = time.monotonic() + 15.0

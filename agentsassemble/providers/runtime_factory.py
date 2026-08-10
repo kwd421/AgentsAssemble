@@ -9,10 +9,11 @@ from agentsassemble.providers.api_context import DEFAULT_API_CONTEXT_CONTRACT_BY
 from agentsassemble.providers.claude_hooks import ClaudeHookRuntime
 from agentsassemble.providers.codex_app_server_live import CodexAppServerLiveRuntime
 from agentsassemble.providers.cursor_room_portal import CursorRoomPortalRuntime
+from agentsassemble.providers.freebuff_runtime import FreebuffRuntime
 from agentsassemble.providers.grok_acp import GrokAcpRuntime
 from agentsassemble.providers.live_cli import LiveCliRuntime
 from agentsassemble.providers.local_openai import LocalOpenAICompatibleRuntime
-from agentsassemble.providers.native_harness import native_harness_runtime
+from agentsassemble.providers.harness_registry import create_alternate_harness_runtime
 from agentsassemble.providers.opencode import OpenCodeRuntime
 from agentsassemble.providers.remote_openai import (
     RemoteOpenAICompatibleRuntime,
@@ -37,11 +38,13 @@ _TERMINAL_RUNTIME_KINDS = {
     ("antigravity_live_session", "pty"): "live_cli",
     ("claude_code", "pty"): "live_cli",
     ("cursor_live_session", "pty"): "live_cli",
+    ("freebuff_live_session", "pty"): "live_cli",
     ("local_cli", "pty"): "live_cli",
     ("codex_live_session", "conpty"): "live_cli",
     ("antigravity_live_session", "conpty"): "live_cli",
     ("claude_code", "conpty"): "live_cli",
     ("cursor_live_session", "conpty"): "live_cli",
+    ("freebuff_live_session", "conpty"): "live_cli",
     ("local_cli", "conpty"): "live_cli",
 }
 
@@ -85,9 +88,9 @@ def runtime_from_config(
                 code="provider_runtime_kind_mismatch",
             )
         remote_profile = remote_openai_profile(config.provider_kind)
-        return native_harness_runtime(
-            agent_id=config.participant_id,
+        return create_alternate_harness_runtime(
             harness=config.execution_harness,
+            agent_id=config.participant_id,
             runtime_kind=config.runtime_kind,
             provider_kind=config.provider_kind,
             provider_endpoint=config.provider_endpoint,
@@ -213,6 +216,22 @@ def runtime_from_config(
         ("claude_code", "pty"),
         ("claude_code", "conpty"),
     }
+    freebuff_runtime = key in {
+        ("freebuff_live_session", "pty"),
+        ("freebuff_live_session", "conpty"),
+    }
+    if freebuff_runtime:
+        return FreebuffRuntime(
+            config.participant_id,
+            workspace=config.cwd,
+            state_dir=config.runtime_state_dir,
+            model=config.model,
+            permission_mode=config.permission_mode,
+            executable=config.command[0] if config.command else "freebuff",
+            room_portal=room_portal,
+            terminal_runtime_factory=runtime_class,
+            environment=environment,
+        )
     runtime_kwargs = {
         "env": environment,
         "idle_quiet_seconds": config.quiet_seconds,

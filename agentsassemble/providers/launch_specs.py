@@ -9,6 +9,7 @@ from typing import Callable
 
 from agentsassemble.persona_cards.selection import persona_spec_kwargs, validate_persona_spec
 from agentsassemble.providers.claude_command import claude_interactive_command
+from agentsassemble.providers.freebuff_runtime import freebuff_command
 from agentsassemble.providers.launch_profile import NativeCliProviderSpec
 from agentsassemble.providers.remote_openai import remote_openai_profiles
 from agentsassemble.room.text import clean_room_text
@@ -121,7 +122,9 @@ class NativeCliProviderDefinition:
             clean_room_text(execution_harness, limit=32)
             or self.default_execution_harness
         )
-        if selected_execution_harness not in {"builtin", "codex", "claude"}:
+        from agentsassemble.providers.harness_registry import is_public_harness_id
+
+        if not is_public_harness_id(selected_execution_harness):
             raise ValueError(
                 f"Provider {self.provider_id} execution harness is invalid."
             )
@@ -754,6 +757,21 @@ NATIVE_CLI_PROVIDER_CATALOG: tuple[NativeCliProviderDefinition, ...] = (
         login_command=("cursor-agent", "login"),
         login_flow="browser_oauth",
     ),
+    NativeCliProviderDefinition(
+        provider_id="freebuff",
+        display_name="Freebuff",
+        provider_kind="freebuff_live_session",
+        executable="freebuff",
+        command_builder=freebuff_command,
+        aliases=("freebuff_cli", "freebuff_live_session"),
+        default_model="DeepSeek V4 Flash",
+        model_observation_policy="unavailable",
+        input_mode="raw",
+        startup_quiet_seconds=1.0,
+        login_command=("freebuff", "login"),
+        login_flow="interactive_terminal",
+        catalog_group="subscription",
+    ),
 )
 
 STRUCTURED_PROVIDER_CATALOG: tuple[NativeCliProviderDefinition, ...] = (
@@ -1031,7 +1049,9 @@ def validate_native_cli_provider_spec(spec: NativeCliProviderSpec) -> None:
             raise ValueError("Grok Agent Sessions require grok agent stdio; PTY fallback is disabled.")
     if spec.permission_mode not in {"meeting_read_only", "workspace_write"}:
         raise ValueError(f"Unsupported native CLI permission mode: {spec.permission_mode}")
-    if spec.execution_harness not in {"builtin", "codex", "claude"}:
+    from agentsassemble.providers.harness_registry import is_public_harness_id
+
+    if not is_public_harness_id(spec.execution_harness):
         raise ValueError(
             f"Unsupported execution harness: {spec.execution_harness}"
         )

@@ -1,7 +1,8 @@
 """Native coding-harness adapters for API and Local model providers.
 
-The room still owns session lifecycle, publication, and approvals.  This module
-only changes the model wire beneath an existing Codex or Claude Code harness.
+The room still owns session lifecycle, publication, and approvals. This module
+keeps gateway lifetime aligned with Codex/Claude harnesses and dispatches other
+registered harnesses through ``harness_registry``.
 """
 
 from __future__ import annotations
@@ -58,7 +59,11 @@ class NativeHarnessRuntime:
 
     def send_room_observation(self, text: str, *, media_blocks=None) -> None:
         self.start()
-        self.delegate.send_room_observation(text, media_blocks=media_blocks)
+        sender = getattr(self.delegate, "send_room_observation", None)
+        if callable(sender):
+            sender(text, media_blocks=media_blocks)
+            return
+        self.delegate.send(text)
 
     def read_output(self, *, timeout_seconds: float, on_delta=None, on_activity=None):
         return self.delegate.read_output(
@@ -126,9 +131,54 @@ def native_harness_runtime(
     max_output_tokens: int = 0,
     context_contract_bytes: int = 256_000,
 ):
-    selected = clean_room_text(harness, limit=32)
+    """Create Codex/Claude harnesses. Other harnesses go through harness_registry."""
+
+    return create_codex_or_claude_harness(
+        agent_id=agent_id,
+        harness=harness,
+        runtime_kind=runtime_kind,
+        provider_kind=provider_kind,
+        provider_endpoint=provider_endpoint,
+        credential=credential,
+        model=model,
+        reasoning_effort=reasoning_effort,
+        permission_mode=permission_mode,
+        service_tier=service_tier,
+        workspace=workspace,
+        runtime_state_dir=runtime_state_dir,
+        environment=environment,
+        room_portal=room_portal,
+        request_headers=request_headers,
+        variant=variant,
+        max_output_tokens=max_output_tokens,
+        context_contract_bytes=context_contract_bytes,
+    )
+
+
+def create_codex_or_claude_harness(
+    *,
+    agent_id: str,
+    harness: str,
+    runtime_kind: str,
+    provider_kind: str,
+    provider_endpoint: str,
+    credential: str,
+    model: str,
+    reasoning_effort: str,
+    permission_mode: str,
+    service_tier: str,
+    workspace: str,
+    runtime_state_dir: str,
+    environment: dict[str, str] | None,
+    room_portal: RoomPortal | None,
+    request_headers: tuple[tuple[str, str], ...] = (),
+    variant: str = "",
+    max_output_tokens: int = 0,
+    context_contract_bytes: int = 256_000,
+) -> NativeHarnessRuntime:
+    selected = clean_room_text(harness, limit=32).casefold()
     if selected not in {"codex", "claude"}:
-        raise NativeHarnessUnavailable(f"Unsupported native harness: {selected}")
+        raise NativeHarnessUnavailable(f"Unsupported Codex/Claude harness: {selected}")
     gateway: NativeModelGateway | None = None
     harness_endpoint = provider_endpoint
     if not _supports_direct_harness(provider_kind, selected):
@@ -228,5 +278,6 @@ def _supports_direct_harness(provider_kind: str, harness: str) -> bool:
 __all__ = [
     "NativeHarnessRuntime",
     "NativeHarnessUnavailable",
+    "create_codex_or_claude_harness",
     "native_harness_runtime",
 ]

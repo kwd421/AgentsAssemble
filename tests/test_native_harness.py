@@ -90,7 +90,7 @@ class _UpstreamServer:
 
 class NativeHarnessCatalogTests(unittest.TestCase):
     def test_api_catalog_exposes_installed_native_coding_harnesses(self) -> None:
-        available = {"codex", "claude"}
+        available = {"codex", "claude", "opencode", "pi"}
         catalog = ProviderCapabilityCatalog(
             runner=lambda _command, _timeout: (1, "", "not installed"),
             resolver=lambda executable: (
@@ -113,7 +113,7 @@ class NativeHarnessCatalogTests(unittest.TestCase):
 
         self.assertEqual(
             [option["value"] for option in harness["options"]],
-            ["builtin", "codex", "claude"],
+            ["builtin", "codex", "claude", "opencode", "pi"],
         )
 
 

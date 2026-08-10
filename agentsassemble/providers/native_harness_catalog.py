@@ -3,6 +3,8 @@ from __future__ import annotations
 import copy
 from collections.abc import Callable
 
+from agentsassemble.providers.harness_registry import catalog_harness_options
+
 
 ExecutableResolver = Callable[[str], str | None]
 
@@ -14,26 +16,11 @@ def add_native_harness_controls(
     resolver: ExecutableResolver,
 ) -> dict[str, object]:
     """Describe installed native harnesses without probing or starting them."""
+    del provider_id
     result = copy.deepcopy(payload)
     fixed_values = dict(result.get("fixed_values") or {})
     controls = list(result.get("controls") or [])
-    options = [_option("builtin", "기본")]
-    if resolver("codex"):
-        options.append(
-            _option(
-                "codex",
-                "Codex",
-                description="Codex의 파일·명령·승인 하네스를 사용합니다.",
-            )
-        )
-    if resolver("claude"):
-        options.append(
-            _option(
-                "claude",
-                "Claude Code",
-                description="Claude Code의 파일·명령·승인 하네스를 사용합니다.",
-            )
-        )
+    options = catalog_harness_options(resolver=resolver)
     fixed_values.pop("execution_harness", None)
     controls = [
         control
@@ -78,13 +65,6 @@ def add_native_harness_catalog_controls(
         else provider
         for provider in providers
     ]
-
-
-def _option(value: str, label: str, **metadata: object) -> dict[str, object]:
-    option: dict[str, object] = {"value": value, "label": label}
-    if metadata:
-        option["metadata"] = metadata
-    return option
 
 
 __all__ = [
