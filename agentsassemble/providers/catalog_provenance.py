@@ -22,6 +22,7 @@ SUBSCRIPTION_CATALOG_PROVENANCE: dict[str, SubscriptionCatalogProvenance] = {
     ),
     "claude": SubscriptionCatalogProvenance(source="embedded_registry"),
     "cursor": SubscriptionCatalogProvenance(source="managed_cli_catalog"),
+    "freebuff": SubscriptionCatalogProvenance(source="live_cli_label_scan"),
     "opencode": SubscriptionCatalogProvenance(
         source="managed_provider_namespaces",
         managed_namespaces=frozenset({"opencode", "opencode-go"}),
