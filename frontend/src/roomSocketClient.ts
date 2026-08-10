@@ -168,7 +168,19 @@ function commandAckResultIsValid(
   payload: Record<string, unknown>,
   result: unknown
 ): boolean {
-  if (result !== undefined && !isRecord(result)) return false;
+  if (!isRecord(result)) return false;
+  const event = isRecord(result.event) ? result.event : null;
+  const hasDurableEvent = Boolean(
+    event &&
+    typeof event.id === "string" &&
+    event.id &&
+    isNonNegativeInteger(event.seq) &&
+    event.seq > 0 &&
+    result.event_seq === event.seq
+  );
+  if (action === "message.send" || action.startsWith("room.random.")) {
+    return hasDurableEvent && event?.type === "message_final";
+  }
   if (action === "room.history") {
     return Boolean(
       isRecord(result) &&
@@ -204,11 +216,45 @@ function commandAckResultIsValid(
     );
   }
   if (action === "room.settings.update") {
-    const event = isRecord(result) && isRecord(result.event) ? result.event : null;
     return Boolean(
-      isRecord(result) &&
       isRecord(result.room_settings) &&
       event?.type === "room_settings_updated"
+    );
+  }
+  if (action === "participant.mute") {
+    const participant = isRecord(result.participant) ? result.participant : null;
+    return Boolean(
+      participant &&
+      participant.participant_id === payload.participant_id &&
+      participant.muted === Boolean(payload.muted)
+    );
+  }
+  if (action === "participant.leave") {
+    const participant = isRecord(result.participant) ? result.participant : null;
+    return Boolean(
+      participant &&
+      participant.status === "left" &&
+      event?.type === "participant_left"
+    );
+  }
+  if (action === "room.delete") return result.deleted === true;
+  if (action === "provider.request.resolve") {
+    return Boolean(
+      result.status === "resolving" &&
+      result.provider_request_id === payload.provider_request_id &&
+      event?.type === "provider_request_resolution_requested"
+    );
+  }
+  if (action === "agent.create" || action === "agent.configure") {
+    return isRecord(result.agent_session);
+  }
+  if (action === "agent.readd") return result.status === "readded";
+  if (action.startsWith("agent.")) return isRecord(result.agent_session);
+  if (action === "room.vote.summary") {
+    return Boolean(
+      typeof result.question === "string" &&
+      isRecord(result.tallies) &&
+      isNonNegativeInteger(result.total_votes)
     );
   }
   return true;
@@ -335,6 +381,7 @@ export function openRoomSocket(
   let reconnectTimer = 0;
   let reconnectAttempt = 0;
   let lastSeq = 0;
+  let roomSnapshotAccepted = false;
   let canonicalRoomId = auth.kind === "host" ? auth.meetingId : "";
   let requestCounter = 0;
   const requestTicket = dependencies.getTicket || getWsTicket;
@@ -495,6 +542,7 @@ export function openRoomSocket(
       if (accepted === false) return;
       canonicalRoomId = String((snapshot.room as Record<string, unknown>).room_id || canonicalRoomId);
       lastSeq = snapshot.last_seq;
+      roomSnapshotAccepted = true;
       return;
     }
     if (msg.op === "provider_catalog_updated" && msg.catalog) {
@@ -502,6 +550,15 @@ export function openRoomSocket(
       return;
     }
     if (msg.op === "event" && msg.stream === "room_events" && Array.isArray(msg.events)) {
+      if (!roomSnapshotAccepted) {
+        reconnectForProtocolError(
+          new RoomSocketSayError(
+            "Room events arrived before the connection established a canonical snapshot; reconnecting.",
+            "snapshot_required"
+          )
+        );
+        return;
+      }
       const events = msg.events as unknown as RoomEvent[];
       const freshEvents: RoomEvent[] = [];
       let nextSeq = lastSeq;
@@ -569,6 +626,7 @@ export function openRoomSocket(
       if (closed) return;
       const currentSocket = createSocket(`${wsBaseUrl()}/ws?ticket=${encodeURIComponent(ticket)}`);
       socket = currentSocket;
+      roomSnapshotAccepted = false;
       currentSocket.onopen = () => {
         reconnectAttempt = 0;
         currentSocket.send(JSON.stringify({ op: "subscribe", streams, resume_from_seq: lastSeq }));

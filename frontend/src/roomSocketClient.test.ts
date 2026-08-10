@@ -109,6 +109,10 @@ describe("canonical room socket client", () => {
       accepted: true,
       request_id: command.request_id,
       action: "message.send",
+      result: {
+        event: { id: "evt-message-1", room_id: "general", seq: 1, type: "message_final" },
+        event_seq: 1,
+      },
     });
     await expect(pending).resolves.toMatchObject({ accepted: true, action: "message.send" });
     handle.close();
@@ -169,6 +173,60 @@ describe("canonical room socket client", () => {
     await expect(pending).rejects.toMatchObject({ category: "socket_closed" });
   });
 
+  it("keeps a message command pending when its ACK omits the durable event receipt", async () => {
+    vi.useFakeTimers();
+    const sockets: FakeWebSocket[] = [];
+    const errors: RoomSocketSayError[] = [];
+    const handle = openRoomSocket(
+      { kind: "host", meetingId: "general" },
+      ["room_events"],
+      {
+        onError: (error) => {
+          if (error instanceof RoomSocketSayError) errors.push(error);
+        },
+      },
+      {
+        getTicket: async () => `ticket-${sockets.length + 1}`,
+        createSocket: () => {
+          const socket = new FakeWebSocket();
+          sockets.push(socket);
+          return socket as unknown as WebSocket;
+        },
+      }
+    );
+    await flushPromises();
+    sockets[0].open();
+
+    let resolved = false;
+    const pending = handle.command("message.send", { content: "hello" });
+    void pending.then(
+      () => { resolved = true; },
+      () => undefined
+    );
+    const command = sockets[0].sent[1];
+    sockets[0].receive({
+      op: "ack",
+      accepted: true,
+      request_id: command.request_id,
+      action: "message.send",
+    });
+    await flushPromises();
+
+    expect(resolved).toBe(false);
+    expect(errors.at(-1)?.category).toBe("ack_result_invalid");
+    expect(sockets[0].readyState).toBe(WebSocket.CLOSED);
+    await vi.advanceTimersByTimeAsync(500);
+    await flushPromises();
+    sockets[1].open();
+    expect(sockets[1].sent[1]).toMatchObject({
+      op: "command",
+      request_id: command.request_id,
+      action: "message.send",
+    });
+    handle.close();
+    await expect(pending).rejects.toMatchObject({ category: "socket_closed" });
+  });
+
   it("forwards vote duration on the canonical message command", async () => {
     const sockets: FakeWebSocket[] = [];
     const handle = openRoomSocket(
@@ -212,6 +270,10 @@ describe("canonical room socket client", () => {
       accepted: true,
       request_id: command.request_id,
       action: "message.send",
+      result: {
+        event: { id: "evt-vote-1", room_id: "general", seq: 1, type: "message_final" },
+        event_seq: 1,
+      },
     });
     await expect(pending).resolves.toEqual({ events: [] });
     handle.close();
@@ -241,9 +303,22 @@ describe("canonical room socket client", () => {
     await flushPromises();
     sockets[0].open();
     sockets[0].receive({
-      op: "event",
+      op: "snapshot",
       stream: "room_events",
+      room: { room_id: "general" },
+      room_settings: {},
+      participants: [],
+      agent_sessions: [],
+      active_turns: [],
       events: [{ id: "evt-7", room_id: "general", seq: 7, type: "message_final" }],
+      oldest_seq: 7,
+      last_seq: 7,
+      has_more_before: false,
+      resume_gap: false,
+      snapshot_mode: "initial",
+      provider_catalog: { status: "ready", catalog_revision: "", providers: [] },
+      available_providers: [],
+      capabilities: {},
     });
     sockets[0].receive({ op: "resync_required", reason: "outbound_backpressure" });
 
@@ -358,6 +433,52 @@ describe("canonical room socket client", () => {
     expect(delivered).not.toHaveBeenCalled();
     expect(errors.at(-1)?.category).toBe("frame_json_invalid");
     expect(sockets[0].readyState).toBe(WebSocket.CLOSED);
+    handle.close();
+  });
+
+  it("does not accept durable events before the connection receives a valid snapshot", async () => {
+    vi.useFakeTimers();
+    const sockets: FakeWebSocket[] = [];
+    const errors: RoomSocketSayError[] = [];
+    const delivered = vi.fn();
+    const handle = openRoomSocket(
+      { kind: "host", meetingId: "general" },
+      ["room_events"],
+      {
+        onRoomEvents: delivered,
+        onError: (error) => {
+          if (error instanceof RoomSocketSayError) errors.push(error);
+        },
+      },
+      {
+        getTicket: async () => `ticket-${sockets.length + 1}`,
+        createSocket: () => {
+          const socket = new FakeWebSocket();
+          sockets.push(socket);
+          return socket as unknown as WebSocket;
+        },
+      }
+    );
+    await flushPromises();
+    sockets[0].open();
+
+    sockets[0].receive({
+      op: "event",
+      stream: "room_events",
+      events: [{ id: "evt-1", room_id: "general", seq: 1, type: "message_final" }],
+    });
+
+    expect(delivered).not.toHaveBeenCalled();
+    expect(errors.at(-1)?.category).toBe("snapshot_required");
+    expect(sockets[0].readyState).toBe(WebSocket.CLOSED);
+    await vi.advanceTimersByTimeAsync(500);
+    await flushPromises();
+    sockets[1].open();
+    expect(sockets[1].sent[0]).toEqual({
+      op: "subscribe",
+      streams: ["room_events"],
+      resume_from_seq: 0,
+    });
     handle.close();
   });
 
