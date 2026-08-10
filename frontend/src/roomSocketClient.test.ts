@@ -108,6 +108,61 @@ describe("canonical room socket client", () => {
     handle.close();
   });
 
+  it("does not resolve a command from a same-id ACK for a different action", async () => {
+    vi.useFakeTimers();
+    const sockets: FakeWebSocket[] = [];
+    const errors: RoomSocketSayError[] = [];
+    const handle = openRoomSocket(
+      { kind: "host", meetingId: "general" },
+      ["room_events"],
+      {
+        onError: (error) => {
+          if (error instanceof RoomSocketSayError) errors.push(error);
+        },
+      },
+      {
+        getTicket: async () => `ticket-${sockets.length + 1}`,
+        createSocket: () => {
+          const socket = new FakeWebSocket();
+          sockets.push(socket);
+          return socket as unknown as WebSocket;
+        },
+      }
+    );
+    await flushPromises();
+    sockets[0].open();
+
+    let resolved = false;
+    const pending = handle.command("message.send", { content: "hello" });
+    void pending.then(
+      () => { resolved = true; },
+      () => undefined
+    );
+    const command = sockets[0].sent[1];
+    sockets[0].receive({
+      op: "ack",
+      accepted: true,
+      request_id: command.request_id,
+      action: "participant.kick",
+      result: {},
+    });
+    await flushPromises();
+
+    expect(resolved).toBe(false);
+    expect(errors.at(-1)?.category).toBe("ack_action_mismatch");
+    expect(sockets[0].readyState).toBe(WebSocket.CLOSED);
+    await vi.advanceTimersByTimeAsync(500);
+    await flushPromises();
+    sockets[1].open();
+    expect(sockets[1].sent[1]).toMatchObject({
+      op: "command",
+      request_id: command.request_id,
+      action: "message.send",
+    });
+    handle.close();
+    await expect(pending).rejects.toMatchObject({ category: "socket_closed" });
+  });
+
   it("forwards vote duration on the canonical message command", async () => {
     const sockets: FakeWebSocket[] = [];
     const handle = openRoomSocket(
@@ -182,7 +237,7 @@ describe("canonical room socket client", () => {
     sockets[0].receive({
       op: "event",
       stream: "room_events",
-      events: [{ id: "evt-7", seq: 7, type: "message_final" }],
+      events: [{ id: "evt-7", room_id: "general", seq: 7, type: "message_final" }],
     });
     sockets[0].receive({ op: "resync_required", reason: "outbound_backpressure" });
 
@@ -232,8 +287,8 @@ describe("canonical room socket client", () => {
       participants: [],
       agent_sessions: [],
       active_turns: [],
-      events: [],
-      oldest_seq: 0,
+      events: [{ id: "evt-7", room_id: "general", seq: 7, type: "message_final" }],
+      oldest_seq: 7,
       last_seq: 7,
       has_more_before: false,
       resume_gap: false,
@@ -245,7 +300,7 @@ describe("canonical room socket client", () => {
     sockets[0].receive({
       op: "event",
       stream: "room_events",
-      events: [{ id: "evt-9", seq: 9, type: "message_final" }],
+      events: [{ id: "evt-9", room_id: "general", seq: 9, type: "message_final" }],
     });
 
     expect(delivered).not.toHaveBeenCalled();
@@ -293,8 +348,8 @@ describe("canonical room socket client", () => {
       participants: [],
       agent_sessions: [],
       active_turns: [],
-      events: [],
-      oldest_seq: 0,
+      events: [{ id: "evt-42", room_id: "general", seq: 42, type: "message_final" }],
+      oldest_seq: 42,
       last_seq: 42,
       has_more_before: false,
       resume_gap: false,
@@ -311,6 +366,79 @@ describe("canonical room socket client", () => {
       op: "subscribe",
       streams: ["room_events"],
       resume_from_seq: 0,
+    });
+    handle.close();
+  });
+
+  it("rejects a snapshot whose last sequence is ahead of its event boundary", async () => {
+    vi.useFakeTimers();
+    const sockets: FakeWebSocket[] = [];
+    const errors: RoomSocketSayError[] = [];
+    const handle = openRoomSocket(
+      { kind: "host", meetingId: "general" },
+      ["room_events"],
+      {
+        onError: (error) => {
+          if (error instanceof RoomSocketSayError) errors.push(error);
+        },
+      },
+      {
+        getTicket: async () => `ticket-${sockets.length + 1}`,
+        createSocket: () => {
+          const socket = new FakeWebSocket();
+          sockets.push(socket);
+          return socket as unknown as WebSocket;
+        },
+      }
+    );
+    await flushPromises();
+    sockets[0].open();
+    sockets[0].receive({
+      op: "snapshot",
+      stream: "room_events",
+      room: { room_id: "general" },
+      room_settings: {},
+      participants: [],
+      agent_sessions: [],
+      active_turns: [],
+      events: [{ id: "evt-10", room_id: "general", seq: 10, type: "message_final" }],
+      oldest_seq: 10,
+      last_seq: 10,
+      has_more_before: true,
+      resume_gap: false,
+      snapshot_mode: "initial",
+      provider_catalog: { status: "ready", catalog_revision: "", providers: [] },
+      available_providers: [],
+      capabilities: {},
+    });
+    sockets[0].receive({
+      op: "snapshot",
+      stream: "room_events",
+      room: { room_id: "general" },
+      room_settings: {},
+      participants: [],
+      agent_sessions: [],
+      active_turns: [],
+      events: [{ id: "evt-40", room_id: "general", seq: 40, type: "message_final" }],
+      oldest_seq: 40,
+      last_seq: 42,
+      has_more_before: false,
+      resume_gap: false,
+      snapshot_mode: "resume",
+      provider_catalog: { status: "ready", catalog_revision: "", providers: [] },
+      available_providers: [],
+      capabilities: {},
+    });
+
+    expect(errors.at(-1)?.category).toBe("snapshot_sequence_invalid");
+    expect(sockets[0].readyState).toBe(WebSocket.CLOSED);
+    await vi.advanceTimersByTimeAsync(500);
+    await flushPromises();
+    sockets[1].open();
+    expect(sockets[1].sent[0]).toEqual({
+      op: "subscribe",
+      streams: ["room_events"],
+      resume_from_seq: 10,
     });
     handle.close();
   });

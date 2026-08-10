@@ -155,6 +155,171 @@ function wsBaseUrl(): string {
   return `${proto}//${window.location.host}`;
 }
 
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return Boolean(value) && typeof value === "object" && !Array.isArray(value);
+}
+
+function isNonNegativeInteger(value: unknown): value is number {
+  return typeof value === "number" && Number.isInteger(value) && value >= 0;
+}
+
+function commandAckResultIsValid(
+  action: string,
+  payload: Record<string, unknown>,
+  result: unknown
+): boolean {
+  if (result !== undefined && !isRecord(result)) return false;
+  if (action === "room.history") {
+    return Boolean(
+      isRecord(result) &&
+      Array.isArray(result.events) &&
+      isNonNegativeInteger(result.oldest_seq) &&
+      isNonNegativeInteger(result.last_seq) &&
+      typeof result.has_more_before === "boolean"
+    );
+  }
+  if (action === "participant.kick") {
+    const participant = isRecord(result) && isRecord(result.participant)
+      ? result.participant
+      : null;
+    return Boolean(
+      participant &&
+      participant.participant_id === payload.participant_id &&
+      participant.status === "kicked"
+    );
+  }
+  if (action === "participant.role.update") {
+    const participant = isRecord(result) && isRecord(result.participant)
+      ? result.participant
+      : null;
+    const event = isRecord(result) && isRecord(result.event) ? result.event : null;
+    return Boolean(
+      participant &&
+      event &&
+      participant.participant_id === payload.participant_id &&
+      participant.role === payload.role &&
+      event.type === "participant_updated" &&
+      event.participant_id === payload.participant_id &&
+      event.role === payload.role
+    );
+  }
+  if (action === "room.settings.update") {
+    const event = isRecord(result) && isRecord(result.event) ? result.event : null;
+    return Boolean(
+      isRecord(result) &&
+      isRecord(result.room_settings) &&
+      event?.type === "room_settings_updated"
+    );
+  }
+  return true;
+}
+
+function snapshotValidationError(
+  value: unknown,
+  {
+    expectedRoomId,
+    currentLastSeq,
+  }: { expectedRoomId: string; currentLastSeq: number }
+): RoomSocketSayError | null {
+  if (
+    !isRecord(value) ||
+    value.op !== "snapshot" ||
+    value.stream !== "room_events" ||
+    !isRecord(value.room) ||
+    typeof value.room.room_id !== "string" ||
+    !value.room.room_id ||
+    (Boolean(expectedRoomId) && value.room.room_id !== expectedRoomId) ||
+    !isRecord(value.room_settings) ||
+    !Array.isArray(value.participants) ||
+    !Array.isArray(value.agent_sessions) ||
+    !Array.isArray(value.active_turns) ||
+    !Array.isArray(value.events) ||
+    !isRecord(value.provider_catalog) ||
+    !Array.isArray(value.available_providers) ||
+    !isRecord(value.capabilities) ||
+    typeof value.has_more_before !== "boolean" ||
+    typeof value.resume_gap !== "boolean"
+  ) {
+    return new RoomSocketSayError(
+      "Room snapshot did not match the canonical browser schema; reconnecting.",
+      "snapshot_schema_invalid"
+    );
+  }
+  const mode = value.snapshot_mode;
+  if (mode !== "initial" && mode !== "resume" && mode !== "gap") {
+    return new RoomSocketSayError(
+      "Room snapshot used an invalid browser snapshot mode; reconnecting.",
+      "snapshot_mode_invalid"
+    );
+  }
+  if (
+    value.resume_gap !== (mode === "gap") ||
+    (mode === "initial" && currentLastSeq !== 0) ||
+    (mode !== "initial" && currentLastSeq <= 0) ||
+    !isNonNegativeInteger(value.oldest_seq) ||
+    !isNonNegativeInteger(value.last_seq) ||
+    value.last_seq < currentLastSeq
+  ) {
+    return new RoomSocketSayError(
+      "Room snapshot sequence metadata was inconsistent; reconnecting.",
+      "snapshot_sequence_invalid"
+    );
+  }
+  const sequences: number[] = [];
+  for (const event of value.events) {
+    if (
+      !isRecord(event) ||
+      typeof event.id !== "string" ||
+      !event.id ||
+      event.room_id !== expectedRoomId ||
+      typeof event.type !== "string" ||
+      !event.type ||
+      !isNonNegativeInteger(event.seq) ||
+      event.seq <= 0
+    ) {
+      return new RoomSocketSayError(
+        "Room snapshot contained an invalid canonical event; reconnecting.",
+        "snapshot_event_invalid"
+      );
+    }
+    sequences.push(event.seq);
+  }
+  for (let index = 1; index < sequences.length; index += 1) {
+    if (sequences[index] !== sequences[index - 1] + 1) {
+      return new RoomSocketSayError(
+        "Room snapshot event sequence was not contiguous; reconnecting.",
+        "snapshot_sequence_invalid"
+      );
+    }
+  }
+  if (!sequences.length) {
+    const validEmptyBoundary =
+      value.oldest_seq === 0 &&
+      ((mode === "initial" && value.last_seq === 0) ||
+        (mode === "resume" && value.last_seq === currentLastSeq));
+    if (!validEmptyBoundary) {
+      return new RoomSocketSayError(
+        "Room snapshot omitted events required by its sequence boundary; reconnecting.",
+        "snapshot_sequence_invalid"
+      );
+    }
+    return null;
+  }
+  const firstSeq = sequences[0];
+  const finalSeq = sequences[sequences.length - 1];
+  if (
+    value.oldest_seq !== firstSeq ||
+    value.last_seq !== finalSeq ||
+    (mode === "resume" && firstSeq !== currentLastSeq + 1)
+  ) {
+    return new RoomSocketSayError(
+      "Room snapshot event range did not match its durable cursor; reconnecting.",
+      "snapshot_sequence_invalid"
+    );
+  }
+  return null;
+}
+
 /**
  * Open the canonical room transport. It owns ticket renewal, reconnect cursor,
  * correlated commands, and bounded-delivery recovery; React state lives above it.
@@ -170,6 +335,7 @@ export function openRoomSocket(
   let reconnectTimer = 0;
   let reconnectAttempt = 0;
   let lastSeq = 0;
+  let canonicalRoomId = auth.kind === "host" ? auth.meetingId : "";
   let requestCounter = 0;
   const requestTicket = dependencies.getTicket || getWsTicket;
   const createSocket = dependencies.createSocket || ((url: string) => new WebSocket(url));
@@ -214,6 +380,11 @@ export function openRoomSocket(
     pending.clear();
   }
 
+  function reconnectForProtocolError(error: RoomSocketSayError) {
+    handlers.onError?.(error);
+    socket?.close();
+  }
+
   function dispatchFrame(raw: string) {
     const msg = JSON.parse(raw) as {
       op?: string;
@@ -235,18 +406,47 @@ export function openRoomSocket(
     if ((msg.op === "ack" || msg.op === "nack") && msg.request_id) {
       const command = pending.get(msg.request_id);
       if (!command) return;
-      pending.delete(msg.request_id);
-      window.clearTimeout(command.timerId);
       if (msg.op === "nack" || msg.accepted === false) {
+        pending.delete(msg.request_id);
+        window.clearTimeout(command.timerId);
         command.reject(
           new RoomSocketSayError(
             String(msg.error?.message || msg.message || "Room command was rejected."),
             String(msg.error?.code || msg.category || "rejected")
           )
         );
-      } else {
-        command.resolve(msg as RoomCommandAck);
+        return;
       }
+      if (msg.action !== command.action) {
+        reconnectForProtocolError(
+          new RoomSocketSayError(
+            `Room ACK action mismatch (expected ${command.action}, received ${String(msg.action || "missing")}); reconnecting.`,
+            "ack_action_mismatch"
+          )
+        );
+        return;
+      }
+      if (msg.op !== "ack" || msg.accepted !== true) {
+        reconnectForProtocolError(
+          new RoomSocketSayError(
+            "Room ACK did not explicitly confirm acceptance; reconnecting.",
+            "ack_acceptance_invalid"
+          )
+        );
+        return;
+      }
+      if (!commandAckResultIsValid(command.action, command.payload, msg.result)) {
+        reconnectForProtocolError(
+          new RoomSocketSayError(
+            `Room ACK result for ${command.action} did not match its contract; reconnecting.`,
+            "ack_result_invalid"
+          )
+        );
+        return;
+      }
+      pending.delete(msg.request_id);
+      window.clearTimeout(command.timerId);
+      command.resolve(msg as RoomCommandAck);
       return;
     }
     if (msg.op === "error") {
@@ -282,10 +482,19 @@ export function openRoomSocket(
       return;
     }
     if (msg.op === "snapshot" && msg.stream === "room_events") {
+      const validationError = snapshotValidationError(msg, {
+        expectedRoomId: canonicalRoomId,
+        currentLastSeq: lastSeq,
+      });
+      if (validationError) {
+        reconnectForProtocolError(validationError);
+        return;
+      }
       const snapshot = msg as unknown as RoomSocketSnapshot;
       const accepted = handlers.onRoomSnapshot?.(snapshot);
       if (accepted === false) return;
-      lastSeq = Math.max(lastSeq, Number(snapshot.last_seq || 0));
+      canonicalRoomId = String((snapshot.room as Record<string, unknown>).room_id || canonicalRoomId);
+      lastSeq = snapshot.last_seq;
       return;
     }
     if (msg.op === "provider_catalog_updated" && msg.catalog) {
@@ -297,6 +506,24 @@ export function openRoomSocket(
       const freshEvents: RoomEvent[] = [];
       let nextSeq = lastSeq;
       for (const event of events) {
+        if (
+          !isRecord(event) ||
+          typeof event.id !== "string" ||
+          !event.id ||
+          typeof event.room_id !== "string" ||
+          !event.room_id ||
+          (Boolean(canonicalRoomId) && event.room_id !== canonicalRoomId) ||
+          typeof event.type !== "string" ||
+          !event.type
+        ) {
+          reconnectForProtocolError(
+            new RoomSocketSayError(
+              "Room event did not match the canonical event schema; reconnecting.",
+              "event_schema_invalid"
+            )
+          );
+          return;
+        }
         const eventSeq = Number(event.seq || 0);
         if (!Number.isInteger(eventSeq) || eventSeq <= 0) {
           handlers.onError?.(
@@ -321,6 +548,7 @@ export function openRoomSocket(
         }
         freshEvents.push(event);
         nextSeq = eventSeq;
+        if (!canonicalRoomId) canonicalRoomId = event.room_id;
       }
       lastSeq = nextSeq;
       if (freshEvents.length) handlers.onRoomEvents?.(freshEvents);
