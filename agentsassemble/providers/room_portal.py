@@ -13,7 +13,10 @@ from pathlib import Path
 from typing import Iterable
 from uuid import uuid4
 
-from agentsassemble.providers.activity_plugin_portal import ActivityPluginPortal
+from agentsassemble.providers.activity_plugin_portal import (
+    ActivityPluginPortal,
+    ActivityPluginPortalError,
+)
 from agentsassemble.providers.room_observation_orientation import room_wake_orientation
 from agentsassemble.providers.room_random import (
     choose_random as choose_random_result,

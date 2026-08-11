@@ -32,7 +32,9 @@ BUILDABLES = {
 MINOR_BREAK = 0.35
 MAJOR_BREAK = 0.20
 EXTREME_BREAK = 0.05
-BREAK_LOW_MOOD_TICKS = 30
+BREAK_LOW_MOOD_TICKS = 450
+INITIAL_THREAT_GRACE_TICKS = 1_800
+THREAT_RECOVERY_TICKS = 1_800
 
 
 @dataclass
@@ -72,7 +74,9 @@ class ColonySimulation:
         self.blueprints: list[dict[str, Any]] = []
         self.raid: dict[str, Any] | None = None
         self.recovery_until_tick = 0
-        self.last_threat_tick = -10_000
+        # New colonies get time to establish before the storyteller may
+        # introduce the first threat.
+        self.last_threat_tick = 0
         self.events: list[dict[str, Any]] = []
         self.colonists = self._spawn_colonists()
         self.revision = 0
@@ -300,11 +304,14 @@ class ColonySimulation:
 
     def _decay_needs(self) -> None:
         for colonist in self.colonists:
-            colonist.hunger = max(0.0, colonist.hunger - 0.0025)
-            colonist.rest = max(0.0, colonist.rest - 0.0018)
-            colonist.recreation = max(0.0, colonist.recreation - 0.0012)
+            # At 3x the process advances 15 ticks per wall-clock second. These
+            # rates leave enough time for a provider observation and response
+            # while still producing need events during a 15-minute run.
+            colonist.hunger = max(0.0, colonist.hunger - 0.00010)
+            colonist.rest = max(0.0, colonist.rest - 0.00007)
+            colonist.recreation = max(0.0, colonist.recreation - 0.00005)
             comfort_floor = 0.35 if any(item["kind"] == "bed" for item in self.structures) else 0.2
-            colonist.comfort = max(comfort_floor, min(1.0, colonist.comfort - 0.0005))
+            colonist.comfort = max(comfort_floor, min(1.0, colonist.comfort - 0.00002))
             mood = (
                 0.35 * colonist.hunger
                 + 0.25 * colonist.rest
@@ -435,7 +442,7 @@ class ColonySimulation:
         if float(self.raid.get("hp") or 0.0) <= 0:
             self.events.append({"tick": self.tick, "kind": "raid_defeated"})
             self.raid = None
-            self.recovery_until_tick = self.tick + 400
+            self.recovery_until_tick = self.tick + THREAT_RECOVERY_TICKS
             self.last_threat_tick = self.tick
             for fighter in fighters:
                 self._wake(fighter.id, "threat_resolved")
@@ -459,7 +466,7 @@ class ColonySimulation:
             + len(self.structures) * 8
         )
         since = self.tick - self.last_threat_tick
-        if since < 500:
+        if since < INITIAL_THREAT_GRACE_TICKS:
             return
         chance = min(0.02, 0.002 + wealth / 50_000)
         if self.rng.random() < chance:

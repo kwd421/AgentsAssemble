@@ -83,7 +83,8 @@ def restore_simulation(sim: ColonySimulation, payload: dict[str, Any]) -> None:
     sim.blueprints = deepcopy(payload.get("blueprints") if isinstance(payload.get("blueprints"), list) else [])
     sim.raid = deepcopy(payload.get("raid") if isinstance(payload.get("raid"), dict) else None)
     sim.recovery_until_tick = int(payload.get("recovery_until_tick") or 0)
-    sim.last_threat_tick = int(payload.get("last_threat_tick") or -10_000)
+    last_threat_tick = payload.get("last_threat_tick")
+    sim.last_threat_tick = int(last_threat_tick) if last_threat_tick is not None else 0
     sim.events = deepcopy(payload.get("events") if isinstance(payload.get("events"), list) else [])
     sim.colonists = colonists
     sim._agent_wakes = []

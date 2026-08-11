@@ -14,7 +14,7 @@ from agentsassemble.plugin.process_host import PluginProcessHost
 from agentsassemble.plugin.registry import PluginRegistry
 from agentsassemble.plugin.settings import clean_activity_plugin
 from agentsassemble.plugin.storage import PluginStorage
-from agentsassemble.providers.room_portal import RoomPortal
+from agentsassemble.providers.room_portal import RoomPortal, RoomPortalError
 from agentsassemble.web.static import ReactStaticTransport
 
 
@@ -116,6 +116,46 @@ class PluginRimworldTests(unittest.TestCase):
         self.assertEqual(batch["args"]["colonist_id"], "c2")
         self.assertEqual(batch["args"]["act"]["action"], "build")
         self.assertEqual(batch["args"]["speak"], "침대를 먼저 짓겠습니다.")
+
+    def test_room_portal_translates_duplicate_plugin_action_to_public_error(self) -> None:
+        from plugins.rimworld.server.sim import ColonySimulation
+
+        with tempfile.TemporaryDirectory() as temp_dir:
+            portal = RoomPortal(Path(temp_dir) / "portal", participant_id="agent-a")
+            portal.prepare()
+            portal.ingest_frame(
+                {
+                    "room_settings": {"activity_plugin": "rimworld"},
+                    "participants": [
+                        {
+                            "participant_id": "agent-a",
+                            "participant_type": "agent",
+                            "display_name": "A",
+                        }
+                    ],
+                }
+            )
+            portal.ingest_frame(
+                {
+                    "op": "event",
+                    "stream": "plugin",
+                    "events": [
+                        {
+                            "type": "plugin.snapshot",
+                            "plugin_id": "rimworld",
+                            "payload": ColonySimulation(seed=11).snapshot(),
+                        }
+                    ],
+                }
+            )
+            portal.begin_observation("wake-plugin", input_up_to_seq=0)
+            portal.activity_plugin_act("eat", {})
+
+            with self.assertRaisesRegex(
+                RoomPortalError,
+                "Only one colony action may be staged per turn",
+            ):
+                portal.activity_plugin_act("sleep", {})
 
     def test_public_plugin_assets_do_not_expose_server_source(self) -> None:
         class Handler:
@@ -362,7 +402,7 @@ class PluginRimworldTests(unittest.TestCase):
         events: list[dict[str, object]] = []
         server._emit = lambda event: events.append(event)
         server.sim.set_speed(1)
-        server.sim.colonists[0].hunger = 0.301
+        server.sim.colonists[0].hunger = 0.30005
 
         server.handle(
             {
@@ -430,6 +470,7 @@ class PluginRimworldTests(unittest.TestCase):
                     time.sleep(0.02)
                 self.assertEqual(restored_events[0]["payload"]["speed"], 1)
                 self.assertEqual(restored_events[0]["payload"]["revision"], 1)
+                self.assertEqual(restored_events[0]["payload"]["last_threat_tick"], 0)
             finally:
                 restored.deactivate("room-restore", "rimworld")
 
@@ -454,6 +495,22 @@ class PluginRimworldTests(unittest.TestCase):
         self.assertTrue(colonist.waiting)
         with self.assertRaisesRegex(RuntimeError, "waiting"):
             sim.apply_act(colonist.id, "eat", {})
+
+    def test_accelerated_colony_stays_actionable_during_provider_response_window(self) -> None:
+        from plugins.rimworld.server.sim import ColonySimulation
+
+        sim = ColonySimulation(seed=1)
+        sim.set_speed(3)
+
+        # The ticker calls step once every 200 ms. 150 calls therefore model
+        # a 30-second provider response window at the accelerated speed.
+        sim.step(150)
+
+        self.assertIsNone(sim.raid)
+        for colonist in sim.colonists:
+            self.assertGreater(colonist.hunger, 0.30)
+            self.assertGreater(colonist.rest, 0.30)
+            self.assertFalse(colonist.mental_break)
 
     def test_work_selection_uses_priority_then_job_order_and_distance(self) -> None:
         from plugins.rimworld.server.sim import ColonySimulation
