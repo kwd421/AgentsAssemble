@@ -7,6 +7,7 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from agentsassemble.application.gui import GuiApplicationServices
+from agentsassemble.plugin.host_service import plugin_registry
 from agentsassemble.room.realtime import RoomCommandRejected
 from agentsassemble.room.repository import RoomRepository
 from agentsassemble.web.room_session import (
@@ -92,6 +93,23 @@ def build_ws_room_deps_factory(
                     code=rejected.code,
                 ) from rejected
 
+        def active_plugin_id(meeting_id: str) -> str:
+            return str(
+                room_repository.room_settings(meeting_id).get("activity_plugin") or ""
+            )
+
+        def subscribe(identity: dict, streams: set[str], _after_seq: int) -> None:
+            channel.subscribe(streams)
+            if "plugin" not in streams:
+                return
+            meeting_id = str(identity.get("meeting_id") or "")
+            configured_plugin = active_plugin_id(meeting_id)
+            if configured_plugin:
+                # Room settings are durable while plugin processes are not.
+                # Recreate the process before the immediate subscribe poll so
+                # a reconnect receives a fresh persisted snapshot.
+                plugin_registry().activate(meeting_id, configured_plugin)
+
         return WsRoomDeps(
             read_lobby_after=read_lobby_after,
             read_roster=read_roster,
@@ -105,10 +123,8 @@ def build_ws_room_deps_factory(
                 after_seq=after_seq,
             ),
             execute_command=execute_command,
-            on_subscribe=lambda identity, streams, after_seq: channel.subscribe(streams),
-            active_plugin_id=lambda meeting_id: str(
-                room_repository.room_settings(meeting_id).get("activity_plugin") or ""
-            ),
+            on_subscribe=subscribe,
+            active_plugin_id=active_plugin_id,
         )
 
     return ws_room_deps
