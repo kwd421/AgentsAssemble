@@ -407,6 +407,60 @@ class RoomAgentBridgeFailureTests(unittest.TestCase):
             any(action == "turn.decline" for action, _, _ in client.commands)
         )
 
+    def test_room_wake_preserves_provider_failure_when_no_read_receipt_exists(self) -> None:
+        class FailingRuntime(FakeRuntime):
+            def read_output(self, *, timeout_seconds, on_delta=None, on_activity=None):
+                del timeout_seconds, on_delta, on_activity
+                raise RuntimeError("upstream provider failed before reading")
+
+        with tempfile.TemporaryDirectory() as temp_dir:
+            portal = RoomPortal(Path(temp_dir) / "portal", participant_id="solar")
+            portal.prepare()
+            client = FakeClient()
+            bridge = RoomAgentBridge(
+                client,
+                FailingRuntime(),
+                room_id="general",
+                participant_id="solar",
+                session_id="solar",
+                receive_sleep_seconds=0.005,
+                room_portal=portal,
+            )
+            thread = threading.Thread(target=bridge.run, daemon=True)
+            thread.start()
+            _wait_for(
+                lambda: any(action == "bridge.ready" for action, _, _ in client.commands)
+            )
+            with client._lock:
+                client.messages.append(
+                    {
+                        "op": "room.wake",
+                        "room_id": "general",
+                        "participant_id": "solar",
+                        "session_id": "solar",
+                        "turn_id": "wake-provider-failure",
+                        "input_up_to_seq": 0,
+                        "attachment_ids": [],
+                        "observation_kind": "ambient_observation",
+                        "publication_mode": "explicit_room_portal",
+                        "timeout_seconds": 2,
+                    }
+                )
+            _wait_for(
+                lambda: any(action == "turn.failed" for action, _, _ in client.commands)
+            )
+            with client._lock:
+                client.messages.append({"op": "agent.control", "action": "stop"})
+            thread.join(timeout=2)
+
+        failure = next(
+            payload
+            for action, payload, _ in client.commands
+            if action == "turn.failed"
+        )
+        self.assertEqual(failure["error_code"], "provider_turn_failed")
+        self.assertIn("upstream provider failed", failure["message"])
+
 
 if __name__ == "__main__":
     unittest.main()

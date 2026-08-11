@@ -498,6 +498,16 @@ class RoomAgentBridge:
                 self._publish_activity_plugin_commands(portal, turn_id)
                 self._publish_observation_results(portal, turn_id)
             raw_observation_receipt = portal.observation_receipt(turn_id)
+            if provider_error is not None and (
+                raw_observation_receipt is None
+                or max(0, int(raw_observation_receipt)) < wake.input_up_to_seq
+            ):
+                # A missing receipt is useful evidence only after a provider
+                # reports successful completion. If the provider itself
+                # failed first, replacing that failure with the secondary
+                # receipt symptom hides the actionable cause (HTTP error,
+                # timeout, unsupported tool choice, and so on).
+                raise provider_error
             if raw_observation_receipt is None:
                 self._command(
                     "turn.failed",
