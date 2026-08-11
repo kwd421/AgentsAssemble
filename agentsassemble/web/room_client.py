@@ -148,6 +148,28 @@ class WsRoomClient:
         )
         return correlated_id
 
+    def plugin(
+        self,
+        plugin_id: str,
+        action: str,
+        args: dict[str, object] | None = None,
+        *,
+        revision: str = "",
+        request_id: str = "",
+    ) -> str:
+        correlated_id = str(request_id or f"plugin-{uuid4().hex[:16]}")
+        self._send(
+            {
+                "op": "plugin",
+                "request_id": correlated_id,
+                "plugin_id": str(plugin_id or ""),
+                "action": str(action or ""),
+                "args": dict(args or {}),
+                "revision": str(revision or ""),
+            }
+        )
+        return correlated_id
+
     def set_receive_timeout(self, seconds: float) -> None:
         """Bound a blocking receive so callers can service local deadlines.
 

@@ -59,6 +59,27 @@ class CredentialRedactingRoomClient:
         )
         return self._client.command(action, safe_payload, request_id=request_id)
 
+    def plugin(
+        self,
+        plugin_id: str,
+        action: str,
+        args: dict[str, object] | None = None,
+        *,
+        revision: str = "",
+        request_id: str = "",
+    ) -> str:
+        safe_args = redact_exact_sensitive_mapping(
+            dict(args or {}),
+            exact_values=self._sensitive_values,
+        )
+        return self._client.plugin(
+            plugin_id,
+            action,
+            safe_args,
+            revision=revision,
+            request_id=request_id,
+        )
+
     def _send_safe_message_delta(
         self,
         payload: dict[str, object],

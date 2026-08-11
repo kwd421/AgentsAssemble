@@ -69,10 +69,11 @@ class PluginServer:
                     command_id=str(message.get("id") or ""),
                 )
                 return
+            agent_wakes: list[dict[str, object]] = []
             if command == "set_speed":
                 self.sim.set_speed(int(args.get("speed", 0)))
             elif command == "step":
-                self.sim.step(int(args.get("steps") or 1))
+                agent_wakes = self.sim.step(int(args.get("steps") or 1))
             elif command == "act":
                 self.sim.apply_act(
                     str(args.get("colonist_id") or ""),
@@ -88,16 +89,42 @@ class PluginServer:
                 )
             elif command == "clear_wait":
                 self.sim.clear_wait(str(args.get("colonist_id") or ""))
+            elif command == "agent_turn":
+                colonist_id = str(args.get("colonist_id") or "")
+                act = args.get("act") if isinstance(args.get("act"), dict) else None
+                speech = str(args.get("speak") or "").strip()[:500]
+                if act is not None:
+                    self.sim.apply_act(
+                        colonist_id,
+                        str(act.get("action") or ""),
+                        act.get("action_args")
+                        if isinstance(act.get("action_args"), dict)
+                        else {},
+                    )
+                if speech:
+                    self.sim.events.append(
+                        {
+                            "tick": self.sim.tick,
+                            "kind": "colonist_speech",
+                            "colonist_id": colonist_id,
+                            "text": speech,
+                        }
+                    )
+                    if act is None:
+                        self.sim.revision += 1
+                if act is None and not speech:
+                    raise ValueError("An agent turn requires an action or speech.")
             else:
                 self._emit_error("unknown_command", f"Unknown plugin command: {command}")
                 return
-            self._emit(
-                {
-                    "type": "plugin.delta",
-                    "payload": self.sim.snapshot(),
-                    "id": message.get("id"),
-                }
-            )
+            event: dict[str, object] = {
+                "type": "plugin.delta",
+                "payload": self.sim.snapshot(),
+                "id": message.get("id"),
+            }
+            if agent_wakes:
+                event["agent_wakes"] = agent_wakes
+            self._emit(event)
         except Exception as error:  # noqa: BLE001 - process boundary
             self._emit_error("command_failed", str(error), command_id=str(message.get("id") or ""))
 
@@ -109,8 +136,14 @@ class PluginServer:
             while self._running:
                 with self._lock:
                     if self.sim.speed > 0:
-                        self.sim.step(1)
-                        self._emit({"type": "plugin.delta", "payload": self.sim.snapshot()})
+                        agent_wakes = self.sim.step(1)
+                        event: dict[str, object] = {
+                            "type": "plugin.delta",
+                            "payload": self.sim.snapshot(),
+                        }
+                        if agent_wakes:
+                            event["agent_wakes"] = agent_wakes
+                        self._emit(event)
                 time.sleep(0.2)
 
         self._ticker = threading.Thread(target=loop, name="rimworld-ticker", daemon=True)

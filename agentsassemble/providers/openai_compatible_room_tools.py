@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 from dataclasses import dataclass, field
 
+from agentsassemble.plugin.agent_tools import plugin_agent_tool_schemas
 from agentsassemble.providers.room_portal import RoomPortal
 
 
@@ -177,12 +178,29 @@ def room_tool_schemas(tool_names: object) -> tuple[dict[str, object], ...]:
         if isinstance(tool_names, (set, frozenset, list, tuple))
         else frozenset()
     )
-    return tuple(
+    room_schemas = tuple(
         schema
         for schema in ROOM_TOOL_SCHEMAS
         if isinstance(schema.get("function"), dict)
         and schema["function"].get("name") in allowed
     )
+    plugin_ids = sorted(
+        {name.partition(".")[0] for name in allowed if "." in str(name)}
+    )
+    plugin_schemas = tuple(
+        {
+            "type": "function",
+            "function": {
+                "name": schema["name"],
+                "description": schema["description"],
+                "parameters": schema["parameters"],
+            },
+        }
+        for plugin_id in plugin_ids
+        for schema in plugin_agent_tool_schemas(plugin_id)
+        if schema["name"] in allowed
+    )
+    return (*room_schemas, *plugin_schemas)
 
 
 @dataclass
@@ -255,6 +273,8 @@ def execute_room_tool(
         raise RuntimeError(f"{name or 'Room tool'} arguments were not valid JSON.") from error
     if not isinstance(arguments, dict):
         raise RuntimeError(f"{name or 'Room tool'} arguments must be an object.")
+    if name not in portal.active_tool_names():
+        raise RuntimeError(f"Provider requested unavailable room tool: {name or '(missing)'}.")
     if name == "read_discussion":
         result: object = portal.read_discussion()
     elif name == "list_participants":
@@ -293,6 +313,17 @@ def execute_room_tool(
         if not isinstance(options, list):
             raise RuntimeError("choose_random options must be a list.")
         result = portal.choose_random(options, reason=arguments.get("reason"))
+    elif name.endswith(".observe"):
+        result = portal.activity_plugin_observe()
+    elif name.endswith(".inspect"):
+        result = portal.activity_plugin_inspect(arguments)
+    elif name.endswith(".act"):
+        result = portal.activity_plugin_act(
+            arguments.get("action"),
+            arguments.get("action_args"),
+        )
+    elif name.endswith(".speak"):
+        result = portal.activity_plugin_speak(arguments.get("text"))
     else:
         raise RuntimeError(f"Provider requested unsupported room tool: {name or '(missing)'}.")
     return name, json.dumps(result, ensure_ascii=False)

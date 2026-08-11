@@ -56,8 +56,15 @@ def restore_simulation(sim: ColonySimulation, payload: dict[str, Any]) -> None:
                     item.get("current_job") if isinstance(item.get("current_job"), dict) else None
                 ),
                 waiting=bool(item.get("waiting")),
+                stop_after_job=bool(item.get("stop_after_job")),
                 error=str(item.get("error") or ""),
                 mental_break=str(item.get("mental_break") or ""),
+                low_mood_ticks=max(0, int(item.get("low_mood_ticks") or 0)),
+                need_alerts={
+                    str(value)
+                    for value in item.get("need_alerts", [])
+                    if str(value)
+                },
             )
         )
 
@@ -76,8 +83,10 @@ def restore_simulation(sim: ColonySimulation, payload: dict[str, Any]) -> None:
     sim.blueprints = deepcopy(payload.get("blueprints") if isinstance(payload.get("blueprints"), list) else [])
     sim.raid = deepcopy(payload.get("raid") if isinstance(payload.get("raid"), dict) else None)
     sim.recovery_until_tick = int(payload.get("recovery_until_tick") or 0)
+    sim.last_threat_tick = int(payload.get("last_threat_tick") or -10_000)
     sim.events = deepcopy(payload.get("events") if isinstance(payload.get("events"), list) else [])
     sim.colonists = colonists
+    sim._agent_wakes = []
 
 
 __all__ = ["restore_simulation"]

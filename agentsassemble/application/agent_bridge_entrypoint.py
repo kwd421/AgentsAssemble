@@ -84,7 +84,7 @@ def main() -> int:
                     client = connect_room_ws_with_ticket(
                         server_url,
                         ticket,
-                        ["room_events"],
+                        ["room_events", "plugin"],
                         timeout=10.0,
                     )
                     first_connection = False
@@ -92,7 +92,7 @@ def main() -> int:
                     client = connect_room_ws(
                         server_url,
                         session_token,
-                        ["room_events"],
+                        ["room_events", "plugin"],
                         timeout=10.0,
                     )
                 else:

@@ -51,6 +51,10 @@ class RoomPortalMcpTests(unittest.TestCase):
                 "vote_summary",
                 "roll_dice",
                 "choose_random",
+                "rimworld.observe",
+                "rimworld.inspect",
+                "rimworld.act",
+                "rimworld.speak",
             ],
         )
         self.assertFalse(read_error)

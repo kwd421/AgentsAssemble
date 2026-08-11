@@ -38,6 +38,7 @@ BUILDABLES = {
 MINOR_BREAK = 0.35
 MAJOR_BREAK = 0.20
 EXTREME_BREAK = 0.05
+BREAK_LOW_MOOD_TICKS = 30
 
 
 @dataclass
@@ -59,8 +60,11 @@ class Colonist:
     job_priorities: dict[str, int] = field(default_factory=dict)
     current_job: dict[str, Any] | None = None
     waiting: bool = False
+    stop_after_job: bool = False
     error: str = ""
     mental_break: str = ""
+    low_mood_ticks: int = 0
+    need_alerts: set[str] = field(default_factory=set)
 
 
 class ColonySimulation:
@@ -78,6 +82,7 @@ class ColonySimulation:
         self.events: list[dict[str, Any]] = []
         self.colonists = self._spawn_colonists()
         self.revision = 0
+        self._agent_wakes: list[dict[str, str]] = []
 
     def _spawn_colonists(self) -> list[Colonist]:
         specs = (
@@ -128,6 +133,7 @@ class ColonySimulation:
             "blueprints": deepcopy(self.blueprints),
             "raid": deepcopy(self.raid),
             "recovery_until_tick": self.recovery_until_tick,
+            "last_threat_tick": self.last_threat_tick,
             "events": list(self.events[-20:]),
             "colonists": [self._colonist_public(colonist) for colonist in self.colonists],
             "job_order": list(JOB_ORDER),
@@ -154,8 +160,11 @@ class ColonySimulation:
             "job_priorities": dict(colonist.job_priorities),
             "current_job": deepcopy(colonist.current_job),
             "waiting": colonist.waiting,
+            "stop_after_job": colonist.stop_after_job,
             "error": colonist.error,
             "mental_break": colonist.mental_break,
+            "low_mood_ticks": colonist.low_mood_ticks,
+            "need_alerts": sorted(colonist.need_alerts),
         }
 
     def set_speed(self, speed: int) -> None:
@@ -165,9 +174,9 @@ class ColonySimulation:
         self.revision += 1
 
     def step(self, steps: int = 1) -> list[dict[str, Any]]:
+        self._agent_wakes = []
         if self.speed == 0:
             return []
-        produced: list[dict[str, Any]] = []
         for _ in range(max(1, int(steps)) * self.speed):
             self.tick += 1
             self._decay_needs()
@@ -176,9 +185,13 @@ class ColonySimulation:
             self._recover_injuries()
             self._maybe_storyteller()
             self._check_mental_breaks()
-            produced.append({"tick": self.tick})
         self.revision += 1
-        return produced
+        return list(self._agent_wakes)
+
+    def _wake(self, colonist_id: str, reason: str) -> None:
+        wake = {"colonist_id": colonist_id, "reason": reason}
+        if wake not in self._agent_wakes:
+            self._agent_wakes.append(wake)
 
     def apply_act(self, colonist_id: str, action: str, args: dict[str, Any]) -> dict[str, Any]:
         colonist = self._colonist(colonist_id)
@@ -234,13 +247,15 @@ class ColonySimulation:
     def mark_model_error(self, colonist_id: str, message: str) -> None:
         colonist = self._colonist(colonist_id)
         colonist.error = str(message or "model error")[:300]
-        colonist.waiting = True
-        # Finish current job only; do not substitute another AI.
+        # Finish an already-started job, then wait. Never substitute another AI.
+        colonist.stop_after_job = colonist.current_job is not None
+        colonist.waiting = colonist.current_job is None
         self.revision += 1
 
     def clear_wait(self, colonist_id: str) -> None:
         colonist = self._colonist(colonist_id)
         colonist.waiting = False
+        colonist.stop_after_job = False
         colonist.error = ""
         self.revision += 1
 
@@ -282,6 +297,14 @@ class ColonySimulation:
             if self.raid is not None:
                 mood -= 0.08
             colonist.mood = max(0.0, min(1.0, mood))
+            for name in ("hunger", "rest", "recreation"):
+                value = float(getattr(colonist, name))
+                reason = f"need_{name}"
+                if value <= 0.30 and reason not in colonist.need_alerts:
+                    colonist.need_alerts.add(reason)
+                    self._wake(colonist.id, reason)
+                elif value >= 0.45:
+                    colonist.need_alerts.discard(reason)
 
     def _progress_jobs(self) -> None:
         for colonist in self.colonists:
@@ -346,6 +369,14 @@ class ColonySimulation:
                     colonist.current_job = None
             elif progress >= 1.0:
                 colonist.current_job = None
+            if colonist.current_job is None:
+                self._wake(
+                    colonist.id,
+                    "social_event" if kind == "social" else "job_completed",
+                )
+            if colonist.current_job is None and colonist.stop_after_job:
+                colonist.stop_after_job = False
+                colonist.waiting = True
 
     def _resolve_combat(self) -> None:
         if self.raid is None:
@@ -360,11 +391,14 @@ class ColonySimulation:
             victim.injuries.append({"kind": "cut", "severity": 0.3})
             victim.pain = min(1.0, victim.pain + 0.15)
             victim.mood = max(0.0, victim.mood - 0.1)
+            self._wake(victim.id, "injury")
         if float(self.raid.get("hp") or 0.0) <= 0:
             self.events.append({"tick": self.tick, "kind": "raid_defeated"})
             self.raid = None
             self.recovery_until_tick = self.tick + 400
             self.last_threat_tick = self.tick
+            for fighter in fighters:
+                self._wake(fighter.id, "threat_resolved")
 
     def _recover_injuries(self) -> None:
         for colonist in self.colonists:
@@ -396,12 +430,20 @@ class ColonySimulation:
             }
             self.events.append({"tick": self.tick, "kind": "raid_started", "raid": dict(self.raid)})
             self.last_threat_tick = self.tick
+            for colonist in self.colonists:
+                self._wake(colonist.id, "threat")
 
     def _check_mental_breaks(self) -> None:
         for colonist in self.colonists:
-            if colonist.mental_break or colonist.mood >= MINOR_BREAK:
+            if colonist.mental_break:
                 continue
-            # Prolonged low mood: choose severity from thresholds.
+            if colonist.mood >= MINOR_BREAK:
+                colonist.low_mood_ticks = 0
+                continue
+            colonist.low_mood_ticks += 1
+            if colonist.low_mood_ticks < BREAK_LOW_MOOD_TICKS:
+                continue
+            colonist.low_mood_ticks = 0
             if colonist.mood < EXTREME_BREAK:
                 colonist.mental_break = self.rng.choice(["berserk", "catatonic", "give_up"])
             elif colonist.mood < MAJOR_BREAK:
@@ -417,6 +459,13 @@ class ColonySimulation:
                     "break": colonist.mental_break,
                 }
             )
+            self._wake(colonist.id, "mental_break")
 
 
-__all__ = ["ColonySimulation", "JOB_ORDER", "MAP_HEIGHT", "MAP_WIDTH"]
+__all__ = [
+    "BREAK_LOW_MOOD_TICKS",
+    "ColonySimulation",
+    "JOB_ORDER",
+    "MAP_HEIGHT",
+    "MAP_WIDTH",
+]

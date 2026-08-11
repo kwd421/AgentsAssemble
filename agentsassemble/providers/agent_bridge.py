@@ -63,6 +63,15 @@ class BridgeRoomClient(Protocol):
         *,
         request_id: str = "",
     ) -> str: ...
+    def plugin(
+        self,
+        plugin_id: str,
+        action: str,
+        args: dict[str, object] | None = None,
+        *,
+        revision: str = "",
+        request_id: str = "",
+    ) -> str: ...
     def close(self) -> None: ...
 
 
@@ -470,6 +479,7 @@ class RoomAgentBridge:
             except Exception as error:
                 provider_error = error
                 try:
+                    self._publish_activity_plugin_error(portal, turn_id, error)
                     self._publish_observation_results(portal, turn_id)
                 except Exception as publish_error:
                     print(
@@ -485,6 +495,7 @@ class RoomAgentBridge:
                             f"{getattr(publish_error, 'code', type(publish_error).__name__)}"
                         )
             else:
+                self._publish_activity_plugin_commands(portal, turn_id)
                 self._publish_observation_results(portal, turn_id)
             raw_observation_receipt = portal.observation_receipt(turn_id)
             if raw_observation_receipt is None:
@@ -620,6 +631,42 @@ class RoomAgentBridge:
                 request_id=f"bridge-room-result-{result_id}",
                 retry_on_timeout=True,
             )
+
+    def _publish_activity_plugin_commands(
+        self,
+        portal: RoomPortal,
+        turn_id: str,
+    ) -> None:
+        batch = portal.activity_plugin_command_batch(turn_id)
+        if not batch:
+            return
+        self.client.plugin(
+            clean_lobby_text(batch.get("plugin_id"), limit=64),
+            clean_lobby_text(batch.get("action"), limit=64),
+            batch.get("args") if isinstance(batch.get("args"), dict) else {},
+            revision=clean_lobby_text(batch.get("revision"), limit=64),
+            request_id=f"bridge-plugin-{turn_id}",
+        )
+
+    def _publish_activity_plugin_error(
+        self,
+        portal: RoomPortal,
+        turn_id: str,
+        error: Exception,
+    ) -> None:
+        batch = portal.activity_plugin_model_error_batch(
+            turn_id,
+            type(error).__name__,
+        )
+        if not batch:
+            return
+        self.client.plugin(
+            clean_lobby_text(batch.get("plugin_id"), limit=64),
+            clean_lobby_text(batch.get("action"), limit=64),
+            batch.get("args") if isinstance(batch.get("args"), dict) else {},
+            revision=clean_lobby_text(batch.get("revision"), limit=64),
+            request_id=f"bridge-plugin-error-{turn_id}",
+        )
 
     def _run_turn(self, assignment: TurnAssignmentEnvelope) -> None:
         turn_id = assignment.turn_id

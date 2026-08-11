@@ -780,9 +780,17 @@ class RoomTurnCoordinator:
         self,
         identity: dict[str, object],
         room_id: str,
+        *, agent_id: str = "", allow_non_ambient: bool = False,
     ) -> dict[str, object]:
-        agent_id, session = self.bridge_session(identity, room_id)
-        if self.store.room_settings(room_id).get("conversation_mode") != "ambient":
+        if agent_id:
+            session = self.store.session(room_id, agent_id)
+            if not session:
+                return {"assigned": False, "reason": "session_missing"}
+        else:
+            agent_id, session = self.bridge_session(identity, room_id)
+        if not allow_non_ambient and (
+            self.store.room_settings(room_id).get("conversation_mode") != "ambient"
+        ):
             return {"assigned": False, "reason": "ambient_disabled"}
         assigned = self._assign_room_observation(
             room_id,

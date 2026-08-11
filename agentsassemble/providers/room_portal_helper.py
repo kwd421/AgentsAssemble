@@ -54,6 +54,9 @@ MEDIA = ROOT / "media.json"
 PARTICIPANTS = ROOT / "participants.json"
 MESSAGES = ROOT / "messages.json"
 ACTIVITY = ROOT / "activity.jsonl"
+PLUGIN_STATE = ROOT / "activity-plugin-state.json"
+PLUGIN_ACTION = ROOT / "activity-plugin-action.json"
+PLUGIN_SPEECH = ROOT / "activity-plugin-speech.json"
 
 def fail(message):
     print(message, file=sys.stderr)
@@ -144,6 +147,23 @@ def resolve_choice(choice, options):
     if cleaned.isdigit() and 1 <= int(cleaned) <= len(options):
         return str(options[int(cleaned) - 1])
     fail("choice must match one of the vote options")
+
+def plugin_context(tool):
+    require_tool(f"rimworld.{tool}")
+    try:
+        turn = json.loads(TURN.read_text(encoding="utf-8"))
+        stored = json.loads(PLUGIN_STATE.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        fail("activity plugin state is unavailable")
+    if turn.get("activity_plugin") != "rimworld" or stored.get("plugin_id") != "rimworld":
+        fail("RimWorld is not active for this observation")
+    payload = stored.get("payload")
+    if not isinstance(payload, dict):
+        fail("activity plugin state is invalid")
+    colonist_id = clean_text(turn.get("activity_plugin_colonist_id"), 64)
+    if not colonist_id:
+        fail("this session has no assigned colonist")
+    return turn, payload, colonist_id
 
 command = sys.argv[1] if len(sys.argv) > 1 else "help"
 if command == "read":
@@ -338,8 +358,50 @@ elif command == "choose":
     }
     audit("choose_random", details=result)
     print(json.dumps(result, ensure_ascii=False))
+elif command == "rim-observe":
+    _turn, payload, colonist_id = plugin_context("observe")
+    print(json.dumps({"plugin_id": "rimworld", "colonist_id": colonist_id, "snapshot": payload}, ensure_ascii=False))
+elif command == "rim-inspect":
+    _turn, payload, colonist_id = plugin_context("inspect")
+    if len(sys.argv) < 3 or sys.argv[2] not in {"colonist", "structure", "cell"}:
+        fail("usage: agentsassemble-room rim-inspect <colonist|structure|cell> [target-id|x y]")
+    target_type = sys.argv[2]
+    if target_type == "colonist":
+        target_id = clean_text(sys.argv[3] if len(sys.argv) > 3 else colonist_id, 64)
+        result = next((item for item in payload.get("colonists", []) if isinstance(item, dict) and item.get("id") == target_id), None)
+        if result is None:
+            fail(f"colonist {target_id!r} was not found")
+        print(json.dumps({"colonist": result}, ensure_ascii=False))
+    elif target_type == "structure":
+        print(json.dumps({"structures": payload.get("structures", [])}, ensure_ascii=False))
+    else:
+        if len(sys.argv) != 5:
+            fail("usage: agentsassemble-room rim-inspect cell <x> <y>")
+        print(json.dumps({"cell": {"x": int(sys.argv[3]), "y": int(sys.argv[4])}}, ensure_ascii=False))
+elif command == "rim-act":
+    _turn, _payload, colonist_id = plugin_context("act")
+    if PLUGIN_ACTION.exists() or len(sys.argv) != 4:
+        fail("usage: agentsassemble-room rim-act <action> '<json-args>' (one action per turn)")
+    try:
+        action_args = json.loads(sys.argv[3])
+    except json.JSONDecodeError:
+        fail("RimWorld action args must be a JSON object")
+    if not isinstance(action_args, dict):
+        fail("RimWorld action args must be a JSON object")
+    action = clean_text(sys.argv[2], 64)
+    atomic_json(PLUGIN_ACTION, {"action": action, "action_args": action_args})
+    print(json.dumps({"queued": True, "colonist_id": colonist_id, "action": action}, ensure_ascii=False))
+elif command == "rim-speak":
+    _turn, _payload, colonist_id = plugin_context("speak")
+    if PLUGIN_SPEECH.exists():
+        fail("only one colony speech line may be staged per turn")
+    text = clean_text(" ".join(sys.argv[2:]) if len(sys.argv) > 2 else sys.stdin.read(), 500)
+    if not text:
+        fail("colony speech cannot be empty")
+    atomic_json(PLUGIN_SPEECH, {"text": text})
+    print(json.dumps({"queued": True, "colonist_id": colonist_id, "text": text}, ensure_ascii=False))
 elif command == "help":
-    print("agentsassemble-room read | participants | speak [text] | speak-to <agent-id> [text] | decline <reason> | vote-create <question> <json-options> [duration] | vote-cast <vote-id> <choice> | vote-summary <vote-id> | media <id> | roll <NdS+M> | choose <json-options>")
+    print("agentsassemble-room read | participants | speak [text] | speak-to <agent-id> [text] | decline <reason> | vote-create <question> <json-options> [duration] | vote-cast <vote-id> <choice> | vote-summary <vote-id> | media <id> | roll <NdS+M> | choose <json-options> | rim-observe | rim-inspect <type> | rim-act <action> <json-args> | rim-speak <text>")
 else:
     fail("unknown command")
 """

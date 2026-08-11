@@ -13,6 +13,8 @@ from pathlib import Path
 from typing import Iterable
 from uuid import uuid4
 
+from agentsassemble.providers.activity_plugin_portal import ActivityPluginPortal
+from agentsassemble.providers.room_observation_orientation import room_wake_orientation
 from agentsassemble.providers.room_random import (
     choose_random as choose_random_result,
 )
@@ -26,11 +28,6 @@ from agentsassemble.providers.room_portal_collaboration import (
     RoomPortalCollaboration,
     RoomPortalError,
     RoomPublication,
-)
-from agentsassemble.providers.runtime_contracts import (
-    AMBIENT_OBSERVATION,
-    ORDERED_FLOOR,
-    RoomObservationKind,
 )
 from agentsassemble.room.system_results import (
     RoomSystemResultError,
@@ -58,58 +55,6 @@ _MAX_OBSERVATION_RESULT_BYTES = 64 * 1024
 _MAX_OBSERVATION_RESULT_LINE_BYTES = 48 * 1024
 
 
-def _room_interfaces(provider_kind: object = "") -> tuple[str, str, str]:
-    kind = clean_room_text(provider_kind, limit=64)
-    provider_note = ""
-    if kind in {
-        "codex_live_session",
-        "cursor_live_session",
-        "grok_live_session",
-        "opencode_server",
-        "cerebras_api",
-        "deepseek_api",
-        "openrouter_api",
-        "vercel_ai_gateway",
-        "llm_gateway_api",
-        "tokenrouter_api",
-        "custom_openai_api",
-        "ollama_api",
-        "lmstudio_api",
-    }:
-        read_interface = "the `read_discussion` MCP tool"
-        speak_interface = (
-            "the `publish_message` MCP tool with `content` and, when deliberately "
-            "handing the floor to one participant, `next_agent_id`"
-        )
-    elif kind in {"claude_code", "antigravity_live_session"}:
-        read_interface = "terminal command `agentsassemble-room read`"
-        speak_interface = (
-            'terminal command `agentsassemble-room speak "<message>"`, or '
-            '`agentsassemble-room speak-to <agent-id> "<message>"` when deliberately '
-            "handing the floor to one participant"
-        )
-        provider_note = """
-- `agentsassemble-room` is already on `PATH`. Run the documented `read`,
-  collaboration, and `speak` commands directly. `agentsassemble-room help`
-  lists their syntax; do not try to locate or inspect the helper with `which`,
-  `find`, or other discovery commands.
-- The terminal command is shell-parsed. Wrap the whole public message in one
-  pair of ASCII double quotes. Inside the message, use Unicode quotation marks
-  such as `「」` and Unicode arrows such as `→`; do not use ASCII `"`, `$`, or
-  backticks. This keeps ordinary room prose inside the one approved command."""
-    else:
-        read_interface = (
-            "the provider's private room read interface: Codex `read_discussion` MCP, "
-            "terminal `agentsassemble-room read`, or ACP `/agentsassemble-room/current.md`"
-        )
-        speak_interface = (
-            "the matching private room speak interface: Codex `publish_message` MCP, "
-            'terminal `agentsassemble-room speak "<message>"` / `speak-to`, or ACP '
-            "`/agentsassemble-room/outbox.txt` / `outbox-to/<agent-id>.txt`"
-        )
-    return read_interface, speak_interface, provider_note
-
-
 def room_session_orientation(provider_kind: object = "") -> str:
     del provider_kind
     return f"""Shared room session:
@@ -125,61 +70,6 @@ def room_session_orientation(provider_kind: object = "") -> str:
 - Room norm: public messages add new substance. Resolving an open decision is new
   substance; after a point is settled, receipt, thanks, repeated agreement,
   restatement, a silence explanation, or another closing is not."""
-
-
-def room_wake_orientation(
-    provider_kind: object = "",
-    *,
-    observation_kind: RoomObservationKind,
-    tool_names: Iterable[str] = CORE_ROOM_TOOLS,
-) -> str:
-    read_interface, speak_interface, provider_note = _room_interfaces(provider_kind)
-    kind = clean_room_text(provider_kind, limit=64)
-    if observation_kind == ORDERED_FLOOR:
-        floor_note = """
-- Queue provenance: ordered selection. This session was the single provider
-  selected for this event when it was queued."""
-    elif observation_kind == AMBIENT_OBSERVATION:
-        floor_note = """
-- Queue provenance: shared ambient observation. Other eligible sessions may
-  receive the same triggering event."""
-    else:
-        raise ValueError("Unsupported room observation kind.")
-    random_note = ""
-    available_tools = frozenset(tool_names)
-    if "roll_dice" in available_tools and kind in {
-        "codex_live_session",
-        "cursor_live_session",
-        "grok_live_session",
-        "opencode_server",
-        "cerebras_api",
-        "deepseek_api",
-        "openrouter_api",
-        "vercel_ai_gateway",
-        "llm_gateway_api",
-        "tokenrouter_api",
-        "custom_openai_api",
-        "ollama_api",
-        "lmstudio_api",
-    }:
-        random_note = """
-- For official game randomness, use `roll_dice` with NdS±M notation or
-  `choose_random`; do not invent a result yourself."""
-    elif "roll_dice" in available_tools and kind in {"claude_code", "antigravity_live_session"}:
-        random_note = """
-- For official game dice, run exactly one terminal command per roll:
-  `agentsassemble-room roll '<NdS±M>'`. If another roll is needed, wait for the
-  first result and use a separate tool call. Shell chaining such as `&&`, `;`,
-  or `|` is rejected."""
-    return f"""Current turn contract: room wake
-- `room.wake <turn-id>` is only a content-free signal that assigned, finalized
-  room activity is available.
-- Read the private room mirror through {read_interface}.
-- If you should speak, only {speak_interface} creates a public room message.
-- Ordinary assistant output is private on this turn and is never published.
-  Do not merely draft the intended public message as your final answer.
-- Never invent or simulate a room tool. Only operations listed under Available
-  room tools in the private room mirror are real for this turn.{floor_note}{random_note}{provider_note}"""
 
 
 def automatic_turn_orientation() -> str:
@@ -241,6 +131,7 @@ class RoomPortal:
         self._participants: dict[str, str] = {}
         self._participant_roles: dict[str, str] = {}
         self._tool_mode = CHAT_TOOL_MODE
+        self._activity_plugin_id = ""
         self._media: dict[str, dict[str, object]] = {}
         self._active_media_ids: tuple[str, ...] = ()
         self._active_messages: tuple[dict[str, object], ...] | None = None
@@ -261,6 +152,11 @@ class RoomPortal:
             record_activity=self._record_activity,
             require_tool=self._require_tool,
             messages=lambda: self._messages,
+        )
+        self._activity_plugin = ActivityPluginPortal(
+            self.root,
+            participant_id=self.participant_id,
+            write_json=self._write_json_atomic,
         )
 
     def prepare(self) -> None:
@@ -296,6 +192,7 @@ class RoomPortal:
         attachments: list[dict[str, object]] = []
         with self._lock:
             self._ingest_identity(frame)
+            self._activity_plugin.ingest_frame(frame)
             for event in _frame_events(frame):
                 self._ingest_identity(event)
                 if clean_room_text(event.get("type"), limit=64) != "message_final":
@@ -354,13 +251,25 @@ class RoomPortal:
                 for message in self._messages
                 if int(message.get("seq") or 0) <= assigned_seq
             )
+            room_tools = room_tool_names(self._tool_mode)
+            plugin_fields = self._activity_plugin.begin_observation(
+                plugin_id=self._activity_plugin_id,
+                participant_ids=self._participants,
+            )
+            plugin_tools = plugin_fields.get("activity_plugin_tools")
+            allowed_tools = set(room_tools)
+            if isinstance(plugin_tools, list):
+                allowed_tools.update(
+                    value for value in plugin_tools if isinstance(value, str)
+                )
             self._write_json_atomic(
                 self.turn_path,
                 {
                     "turn_id": clean_turn_id,
                     "input_up_to_seq": assigned_seq,
                     "tool_mode": self._tool_mode,
-                    "allowed_tools": sorted(room_tool_names(self._tool_mode)),
+                    "allowed_tools": sorted(allowed_tools),
+                    **plugin_fields,
                     "activity_offset": (
                         self.activity_path.stat().st_size
                         if self.activity_path.exists()
@@ -514,6 +423,7 @@ class RoomPortal:
                 return
             self.turn_path.unlink(missing_ok=True)
             self.outbox_path.unlink(missing_ok=True)
+            self._activity_plugin.end_observation()
             self._active_media_ids = ()
             self._active_messages = None
             self._write_view()
@@ -553,7 +463,12 @@ class RoomPortal:
         except ValueError:
             return CORE_ROOM_TOOLS
         allowed_for_mode = room_tool_names(tool_mode)
-        return frozenset(value for value in values if value in allowed_for_mode)
+        plugin_tools = self._activity_plugin.active_tool_names(turn)
+        return frozenset(
+            value
+            for value in values
+            if value in allowed_for_mode or value in plugin_tools
+        )
 
     def tool_allowed(self, name: object) -> bool:
         return clean_room_text(name, limit=64) in self.active_tool_names()
@@ -672,6 +587,53 @@ class RoomPortal:
         )
         return result
 
+    def activity_plugin_observe(self) -> dict[str, object]:
+        try:
+            return self._activity_plugin.observe()
+        except ActivityPluginPortalError as error:
+            raise RoomPortalError(str(error)) from error
+
+    def activity_plugin_inspect(
+        self,
+        arguments: dict[str, object],
+    ) -> dict[str, object]:
+        try:
+            return self._activity_plugin.inspect(arguments)
+        except ActivityPluginPortalError as error:
+            raise RoomPortalError(str(error)) from error
+
+    def activity_plugin_act(
+        self,
+        action: object,
+        action_args: object,
+    ) -> dict[str, object]:
+        try:
+            return self._activity_plugin.stage_action(action, action_args)
+        except ActivityPluginPortalError as error:
+            raise RoomPortalError(str(error)) from error
+
+    def activity_plugin_speak(self, text: object) -> dict[str, object]:
+        try:
+            return self._activity_plugin.stage_speech(text)
+        except ActivityPluginPortalError as error:
+            raise RoomPortalError(str(error)) from error
+
+    def activity_plugin_command_batch(self, turn_id: str) -> dict[str, object]:
+        try:
+            return self._activity_plugin.command_batch(turn_id)
+        except ActivityPluginPortalError as error:
+            raise RoomPortalError(str(error)) from error
+
+    def activity_plugin_model_error_batch(
+        self,
+        turn_id: str,
+        error_kind: object,
+    ) -> dict[str, object]:
+        try:
+            return self._activity_plugin.model_error_batch(turn_id, error_kind)
+        except ActivityPluginPortalError as error:
+            raise RoomPortalError(str(error)) from error
+
     def stage_attachment(
         self,
         metadata: dict[str, object],
@@ -749,11 +711,16 @@ class RoomPortal:
 
     def _ingest_identity(self, value: dict[str, object]) -> None:
         settings = value.get("room_settings")
-        if isinstance(settings, dict) and "tool_mode" in settings:
-            try:
-                self._tool_mode = validate_room_tool_mode(settings["tool_mode"])
-            except ValueError:
-                self._tool_mode = CHAT_TOOL_MODE
+        if isinstance(settings, dict):
+            if "tool_mode" in settings:
+                try:
+                    self._tool_mode = validate_room_tool_mode(settings["tool_mode"])
+                except ValueError:
+                    self._tool_mode = CHAT_TOOL_MODE
+            if "activity_plugin" in settings:
+                self._activity_plugin_id = clean_room_text(
+                    settings.get("activity_plugin"), limit=64
+                )
         participants = (
             value.get("participants")
             if isinstance(value.get("participants"), list)
@@ -833,7 +800,7 @@ class RoomPortal:
             "# Shared room",
             f"Your display name: {self._display_name or self.participant_id}",
             f"Your room role: {self._participant_roles.get(self.participant_id, 'agent')}",
-            f"Available room tools: {', '.join(sorted(room_tool_names(self._tool_mode)))}",
+            f"Available room tools: {', '.join(sorted(self.active_tool_names()))}",
             "",
         ]
         peers = [

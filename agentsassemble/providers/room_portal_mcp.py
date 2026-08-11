@@ -74,6 +74,41 @@ def serve_room_portal_mcp(root: str | Path) -> None:
         """Choose one item from 2 to 50 options using server-side randomness."""
         return portal.choose_random(options, reason=reason)
 
+    @server.tool(name="rimworld.observe")
+    def rimworld_observe() -> dict[str, object]:
+        """Observe colony-wide state for this session's assigned colonist."""
+        return portal.activity_plugin_observe()
+
+    @server.tool(name="rimworld.inspect")
+    def rimworld_inspect(
+        target_type: str,
+        target_id: str = "",
+        x: int = 0,
+        y: int = 0,
+    ) -> dict[str, object]:
+        """Inspect one colonist, structure collection, or map cell."""
+        return portal.activity_plugin_inspect(
+            {
+                "target_type": target_type,
+                "target_id": target_id,
+                "x": x,
+                "y": y,
+            }
+        )
+
+    @server.tool(name="rimworld.act")
+    def rimworld_act(
+        action: str,
+        action_args: dict[str, object] | None = None,
+    ) -> dict[str, object]:
+        """Stage one structured action for this session's colonist."""
+        return portal.activity_plugin_act(action, action_args or {})
+
+    @server.tool(name="rimworld.speak")
+    def rimworld_speak(text: str) -> dict[str, object]:
+        """Stage one in-character colony side-chat line."""
+        return portal.activity_plugin_speak(text)
+
     server.run(transport="stdio")
 
 

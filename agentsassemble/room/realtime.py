@@ -9,6 +9,8 @@ from typing import Callable, Protocol
 from uuid import uuid4
 
 from agentsassemble.diagnostics.cleanup import CleanupReport, emit_cleanup_failure
+from agentsassemble.plugin.activity_wakes import ActivityPluginWakeRouter
+from agentsassemble.plugin.host_service import add_plugin_event_listener
 from agentsassemble.providers.launch_specs import (
     NativeCliProviderSpec,
     default_native_cli_provider_specs,
@@ -602,6 +604,12 @@ class RoomRealtimeController:
             self.store
         ).reconcile()
         self._attention_reconciliation_report = RoomAttentionReconciler(self.store).reconcile()
+        plugin_wakes = ActivityPluginWakeRouter(
+            active_plugin=lambda room_id: str(self.store.room_settings(room_id).get("activity_plugin") or ""),
+            provider_ids=lambda room_id: self._room_providers(room_id),
+            request_observation=lambda room_id, agent_id: self._turn_coordinator.request_room_check({}, room_id, agent_id=agent_id, allow_non_ambient=True).get("assigned"),
+        )
+        self._remove_plugin_event_listener = add_plugin_event_listener(plugin_wakes.handle)
 
     def create_provider_session(self, room_id: str, spec: NativeCliProviderSpec) -> dict[str, object]:
         return self._provider_sessions.create_provider_session(room_id, spec)
@@ -1212,6 +1220,8 @@ class RoomRealtimeController:
             provider_agents = self._provider_registry.provider_agents()
             remove_provider_catalog_listener = self._provider_catalog_remove
             self._provider_catalog_remove = lambda: None
+            remove_plugin_event_listener = self._remove_plugin_event_listener
+            self._remove_plugin_event_listener = lambda: None
         cleanup = CleanupReport("room_realtime_controller")
         for remove in removers:
             try:
@@ -1224,6 +1234,11 @@ class RoomRealtimeController:
             cleanup.record_success()
         except Exception as error:
             cleanup.record_failure("provider_catalog_listener.remove", error)
+        try:
+            remove_plugin_event_listener()
+            cleanup.record_success()
+        except Exception as error:
+            cleanup.record_failure("plugin_event_listener.remove", error)
         cleanup.merge(self._deferred_cleanup.close())
         cleanup.merge(self._turn_coordinator.close())
         cleanup.merge(

@@ -132,6 +132,8 @@ class PluginRegistry:
             "plugin_id": plugin_id,
             "payload": event.get("payload") if isinstance(event.get("payload"), dict) else event,
         }
+        if isinstance(event.get("agent_wakes"), list):
+            envelope["agent_wakes"] = list(event["agent_wakes"])
         # High-frequency game state is coalesced into plugin storage every
         # 200ms and never written into the official room transcript path.
         if event_type in {"plugin.snapshot", "plugin.delta"}:

@@ -2,8 +2,10 @@
 
 from __future__ import annotations
 
+import logging
 import threading
 from collections import deque
+from collections.abc import Callable
 from pathlib import Path
 
 from agentsassemble.plugin.registry import PluginRegistry
@@ -15,6 +17,8 @@ _REGISTRY: PluginRegistry | None = None
 _EVENT_LIMIT = 512
 _EVENTS: dict[str, deque[tuple[int, dict[str, object]]]] = {}
 _NEXT_SEQUENCE: dict[str, int] = {}
+_EVENT_LISTENERS: set[Callable[[str, dict[str, object]], None]] = set()
+_LOGGER = logging.getLogger(__name__)
 
 
 class PluginCommandRejected(ValueError):
@@ -43,6 +47,44 @@ def _broadcast(room_id: str, envelope: dict[str, object]) -> None:
         public_envelope["plugin_seq"] = sequence
         events = _EVENTS.setdefault(room_id, deque(maxlen=_EVENT_LIMIT))
         events.append((sequence, public_envelope))
+        listeners = tuple(_EVENT_LISTENERS)
+    for listener in listeners:
+        try:
+            listener(room_id, dict(public_envelope))
+        except Exception:
+            _LOGGER.exception("Activity plugin event listener failed")
+            with _LOCK:
+                sequence = _NEXT_SEQUENCE.get(room_id, 0) + 1
+                _NEXT_SEQUENCE[room_id] = sequence
+                _EVENTS.setdefault(room_id, deque(maxlen=_EVENT_LIMIT)).append(
+                    (
+                        sequence,
+                        {
+                            "v": 1,
+                            "type": "plugin.error",
+                            "room_id": room_id,
+                            "plugin_id": public_envelope.get("plugin_id", ""),
+                            "plugin_seq": sequence,
+                            "payload": {
+                                "code": "plugin_wake_failed",
+                                "message": "The plugin could not schedule an Agent Session wake.",
+                            },
+                        },
+                    )
+                )
+
+
+def add_plugin_event_listener(
+    listener: Callable[[str, dict[str, object]], None],
+) -> Callable[[], None]:
+    with _LOCK:
+        _EVENT_LISTENERS.add(listener)
+
+    def remove() -> None:
+        with _LOCK:
+            _EVENT_LISTENERS.discard(listener)
+
+    return remove
 
 
 def read_plugin_events(
@@ -129,6 +171,7 @@ def handle_ws_plugin_message(
 
 
 __all__ = [
+    "add_plugin_event_listener",
     "handle_ws_plugin_message",
     "plugin_registry",
     "read_plugin_events",
