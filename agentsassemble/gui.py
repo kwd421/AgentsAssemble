@@ -1797,6 +1797,18 @@ def _make_handler(
             identity_backend=services.identity_backend,
         )
 
+    def execute_room_runtime_command(
+        identity: dict[str, object],
+        command: dict[str, object],
+        server_url: str,
+    ) -> dict[str, object]:
+        return room_realtime_controller.handle_command(
+            identity,
+            command,
+            server_url=server_url,
+            ticket_issuer=services.issue_bridge_connection,
+        )
+
     ws_room_deps_factory = build_ws_room_deps_factory(
         output_root=output_root,
         services=services,
@@ -1810,6 +1822,7 @@ def _make_handler(
             payload_signature=_payload_signature,
             mark_thinking=mark_thinking,
             local_server_url=_local_server_url,
+            execute_room_command=execute_room_runtime_command,
         ),
     )
     # R2: route-table dispatcher. Migrated domains register here; do_GET/do_POST
@@ -1830,6 +1843,7 @@ def _make_handler(
             identity,
             command,
         ),
+        room_runtime_command_handler=execute_room_runtime_command,
         process_supervisor=live_agent_process_supervisor,
         read_lobby=read_lobby,
         read_lobby_before=read_lobby_before,

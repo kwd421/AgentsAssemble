@@ -94,6 +94,12 @@ def _invite_route_dependencies(root: Path) -> GuiDeps:
         deps,
         command,
     )
+    deps.room_runtime_command_handler = (
+        lambda identity, command, _server_url: deps.handle_room_command(
+            identity,
+            command,
+        )
+    )
     return deps
 
 
@@ -671,6 +677,7 @@ class GuiServerRoomRouteTests(unittest.TestCase):
             deps = _invite_route_dependencies(root)
             deps.rooms.create_room("session-room")
             commands: list[tuple[dict[str, object], dict[str, object]]] = []
+            server_urls: list[str] = []
 
             def handle_command(
                 identity: dict[str, object],
@@ -688,6 +695,12 @@ class GuiServerRoomRouteTests(unittest.TestCase):
                 }
 
             deps.room_command_handler = handle_command
+            deps.room_runtime_command_handler = (
+                lambda identity, command, server_url: (
+                    server_urls.append(server_url)
+                    or handle_command(identity, command)
+                )
+            )
             response = _dispatch_room_route(
                 root,
                 path="/api/agent-sessions",
@@ -704,6 +717,7 @@ class GuiServerRoomRouteTests(unittest.TestCase):
 
             self.assertEqual(response.sent_json["status"], "created")
             self.assertEqual(len(commands), 1)
+            self.assertEqual(server_urls, ["http://127.0.0.1:8765"])
             identity, command = commands[0]
             self.assertEqual(identity["principal_user_id"], "operator-local-user")
             self.assertEqual(command["action"], "agent.create")

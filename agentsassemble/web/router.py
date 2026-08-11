@@ -90,6 +90,9 @@ class GuiDeps:
     room_command_handler: Callable[
         [dict[str, object], dict[str, object]], dict[str, object]
     ] | None = None
+    room_runtime_command_handler: Callable[
+        [dict[str, object], dict[str, object], str], dict[str, object]
+    ] | None = None
     process_supervisor: Any = None
     read_lobby: Callable[..., list[dict[str, object]]] | None = None
     read_lobby_before: Callable[..., dict[str, object]] | None = None
@@ -182,6 +185,18 @@ class GuiDeps:
         if handler is None:
             raise RuntimeError("GUI room command handler is not configured.")
         return handler(identity, command)
+
+    def handle_room_runtime_command(
+        self,
+        identity: dict[str, object],
+        command: dict[str, object],
+        *,
+        server_url: str,
+    ) -> dict[str, object]:
+        handler = self.room_runtime_command_handler
+        if handler is None:
+            raise RuntimeError("GUI room runtime command handler is not configured.")
+        return handler(identity, command, server_url)
 
 
 class RequestContext:

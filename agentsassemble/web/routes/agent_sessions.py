@@ -61,13 +61,14 @@ def register_agent_session_routes(router: Router) -> None:
             if key not in _CLIENT_OWNED_IDENTITY_FIELDS
         }
         try:
-            ack = ctx.deps.handle_room_command(
+            ack = ctx.deps.handle_room_runtime_command(
                 identity,
                 {
                     "request_id": str(payload.get("request_id") or uuid4()),
                     "action": action,
                     "payload": command_payload,
                 },
+                server_url=ctx.local_server_url(),
             )
         except RoomCommandRejected as error:
             ctx.send_error(
