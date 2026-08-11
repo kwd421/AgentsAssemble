@@ -59,9 +59,19 @@ class GuiResponseMethods:
     def end_headers(self) -> None:
         # These are response-level browser boundaries, so they must also cover
         # framework errors and routes that do not use the JSON helpers below.
-        self.send_header("X-Frame-Options", "DENY")
-        self.send_header("Content-Security-Policy", "frame-ancestors 'none'")
-        super().end_headers()
+        try:
+            if getattr(self, "_allow_same_origin_frame", False):
+                self.send_header("X-Frame-Options", "SAMEORIGIN")
+                self.send_header("Content-Security-Policy", "frame-ancestors 'self'")
+            else:
+                self.send_header("X-Frame-Options", "DENY")
+                self.send_header("Content-Security-Policy", "frame-ancestors 'none'")
+            super().end_headers()
+        finally:
+            # A BaseHTTPRequestHandler instance can serve another request on
+            # the same keep-alive connection. The frame exception belongs to
+            # one response, not to that connection.
+            self._allow_same_origin_frame = False
 
     def handle(self) -> None:
         try:
@@ -92,6 +102,7 @@ class GuiResponseMethods:
         content_type: str | None = None,
         *,
         cache_control: str = "no-store",
+        allow_same_origin_frame: bool = False,
     ) -> None:
         if not path.exists() or not path.is_file():
             self._send_error(HTTPStatus.NOT_FOUND, "File not found")
@@ -102,6 +113,7 @@ class GuiResponseMethods:
             or "application/octet-stream"
         )
         data = path.read_bytes()
+        self._allow_same_origin_frame = bool(allow_same_origin_frame)
         self._send_bytes(data, guessed, cache_control=cache_control)
 
     def _send_bytes(

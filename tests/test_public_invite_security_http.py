@@ -116,6 +116,29 @@ class PublicInviteSecurityHttpTests(unittest.TestCase):
                 server.shutdown()
                 server.server_close()
 
+    def test_first_party_plugin_web_asset_allows_only_same_origin_embedding(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir) / "room"
+            RoomStore(root).create_room("plugin-room", label="Plugin room")
+            server = self._start_server(root)
+            try:
+                base = f"http://127.0.0.1:{server.server_port}"
+                with urlopen(
+                    f"{base}/plugins/rimworld/web/index.html",
+                    timeout=4,
+                ) as response:
+                    self.assertEqual(
+                        response.headers.get("X-Frame-Options"),
+                        "SAMEORIGIN",
+                    )
+                    self.assertIn(
+                        "frame-ancestors 'self'",
+                        response.headers.get("Content-Security-Policy", ""),
+                    )
+            finally:
+                server.shutdown()
+                server.server_close()
+
     def test_public_room_request_cannot_reach_unclassified_compatibility_mutation(self):
         with tempfile.TemporaryDirectory() as temp_dir:
             root = Path(temp_dir) / "room"

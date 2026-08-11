@@ -122,6 +122,7 @@ class ReactStaticTransport:
                     plugin_path,
                     react_app_content_type(plugin_path),
                     cache_control="no-store",
+                    allow_same_origin_frame=True,
                 )
             return True
         return False

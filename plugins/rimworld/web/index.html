@@ -134,6 +134,8 @@
       const channel = new MessageChannel();
       let state = null;
       let selectedCell = null;
+      let mapDimensions = "";
+      const mapCells = [];
       const port = channel.port1;
       let readyPosted = false;
 
@@ -177,16 +179,59 @@
         });
       });
 
+      const map = document.getElementById("map");
+      function selectMapCell(cell) {
+        const x = Number(cell.dataset.x);
+        const y = Number(cell.dataset.y);
+        if (!Number.isInteger(x) || !Number.isInteger(y)) return;
+        selectedCell = { x, y };
+        render();
+      }
+      map.addEventListener("click", (event) => {
+        const cell = event.target.closest(".cell");
+        if (cell && map.contains(cell)) selectMapCell(cell);
+      });
+      map.addEventListener("keydown", (event) => {
+        if (event.key !== "Enter" && event.key !== " ") return;
+        const cell = event.target.closest(".cell");
+        if (!cell || !map.contains(cell)) return;
+        event.preventDefault();
+        selectMapCell(cell);
+      });
+
+      function ensureMapCells(width, height) {
+        const dimensions = `${width}x${height}`;
+        if (mapDimensions === dimensions) return;
+        mapDimensions = dimensions;
+        mapCells.length = 0;
+        map.replaceChildren();
+        map.style.gridTemplateColumns = `repeat(${width}, minmax(0, 1fr))`;
+        const fragment = document.createDocumentFragment();
+        for (let y = 0; y < height; y += 1) {
+          for (let x = 0; x < width; x += 1) {
+            const cell = document.createElement("div");
+            cell.className = "cell";
+            cell.tabIndex = 0;
+            cell.dataset.x = String(x);
+            cell.dataset.y = String(y);
+            cell.setAttribute("role", "button");
+            cell.setAttribute("aria-label", `Map cell ${x}, ${y}`);
+            mapCells.push(cell);
+            fragment.appendChild(cell);
+          }
+        }
+        map.appendChild(fragment);
+      }
+
       function render() {
         if (!state) return;
         document.getElementById("tick").textContent = `tick ${state.tick} · speed ${state.speed}×`;
         const resources = state.resources || {};
         document.getElementById("resources").textContent =
           `wood ${resources.wood ?? 0} · steel ${resources.steel ?? 0} · food ${resources.food ?? 0}`;
-        const map = document.getElementById("map");
-        map.innerHTML = "";
         const width = state.map?.width || 48;
         const height = state.map?.height || 32;
+        ensureMapCells(width, height);
         const structureAt = new Map();
         for (const structure of state.structures || []) {
           structureAt.set(`${structure.x},${structure.y}`, structure.kind);
@@ -201,25 +246,12 @@
         }
         for (let y = 0; y < height; y += 1) {
           for (let x = 0; x < width; x += 1) {
-            const cell = document.createElement("div");
+            const cell = mapCells[(y * width) + x];
             const kind = structureAt.get(`${x},${y}`);
             const blueprint = blueprintAt.get(`${x},${y}`);
             cell.className = kind ? `cell ${kind}` : blueprint ? "cell blueprint" : "cell";
             if (selectedCell?.x === x && selectedCell?.y === y) cell.classList.add("selected");
-            cell.tabIndex = 0;
-            cell.setAttribute("role", "button");
-            cell.setAttribute("aria-label", `Map cell ${x}, ${y}`);
-            const select = () => {
-              selectedCell = { x, y };
-              render();
-            };
-            cell.addEventListener("click", select);
-            cell.addEventListener("keydown", (event) => {
-              if (event.key === "Enter" || event.key === " ") {
-                event.preventDefault();
-                select();
-              }
-            });
+            cell.replaceChildren();
             const pawn = pawnAt.get(`${x},${y}`);
             if (pawn) {
               const mark = document.createElement("div");
@@ -228,7 +260,6 @@
               mark.title = pawn.name;
               cell.appendChild(mark);
             }
-            map.appendChild(cell);
           }
         }
         const list = document.getElementById("colonists");
