@@ -48,7 +48,14 @@ class PluginServer:
                 payload = self.sim.snapshot()
                 self._emit({"type": "plugin.snapshot", "payload": payload, "id": message.get("id")})
                 return
-            if revision and revision != str(self.sim.revision):
+            if not revision:
+                self._emit_error(
+                    "revision_required",
+                    "A current simulation revision is required for state changes.",
+                    command_id=str(message.get("id") or ""),
+                )
+                return
+            if revision != str(self.sim.revision):
                 self._emit_error(
                     "revision_conflict",
                     f"Stale revision {revision}; current {self.sim.revision}",

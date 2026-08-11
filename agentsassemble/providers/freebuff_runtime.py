@@ -217,7 +217,7 @@ class FreebuffRuntime:
         index, label = match
         with _CACHE_LOCK:
             _LABEL_CACHE.setdefault(cache_key, {})[label.casefold()] = index
-            self._persist_cache()
+        self._persist_cache()
         # Prefer arrow navigation from current focus rather than absolute digits.
         self._navigate_to_index(index, labels)
         self._submit_selection()

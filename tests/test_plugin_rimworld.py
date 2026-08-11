@@ -7,12 +7,28 @@ import unittest
 from pathlib import Path
 
 from agentsassemble.plugin.manifest import load_first_party_manifests, load_manifest
+from agentsassemble.plugin.host_service import handle_ws_plugin_message, plugin_registry
 from agentsassemble.plugin.registry import PluginRegistry
 from agentsassemble.plugin.settings import clean_activity_plugin
 from agentsassemble.plugin.storage import PluginStorage
 
 
 class PluginRimworldTests(unittest.TestCase):
+    def test_read_only_room_identity_cannot_activate_plugin_process(self) -> None:
+        try:
+            with self.assertRaisesRegex(Exception, "permission"):
+                handle_ws_plugin_message(
+                    room_id="room-read-only",
+                    identity={
+                        "client_type": "browser",
+                        "invite_scope": "read_only",
+                        "operator": False,
+                    },
+                    message={"plugin_id": "rimworld", "action": "activate"},
+                )
+        finally:
+            plugin_registry().deactivate("room-read-only", "rimworld")
+
     def test_first_party_manifest_loads_with_restricted_permissions(self) -> None:
         manifests = load_first_party_manifests()
         rimworld = next(item for item in manifests if item.id == "rimworld")
@@ -93,6 +109,24 @@ class PluginRimworldTests(unittest.TestCase):
                 time.sleep(0.05)
             self.assertTrue(any(item.get("type") == "plugin.error" for item in events))
             registry.deactivate("room-sim", "rimworld")
+
+    def test_plugin_command_requires_current_revision(self) -> None:
+        from plugins.rimworld.server.main import PluginServer
+
+        server = PluginServer()
+        events: list[dict[str, object]] = []
+        server._emit = lambda event: events.append(event)
+        server.handle(
+            {
+                "type": "plugin.command",
+                "id": "missing-revision",
+                "command": "set_speed",
+                "args": {"speed": 1},
+            }
+        )
+        self.assertEqual(server.sim.speed, 0)
+        self.assertEqual(events[-1].get("type"), "plugin.error")
+        self.assertEqual(events[-1].get("code"), "revision_required")
 
     def test_simulation_mental_break_and_model_error_wait(self) -> None:
         from plugins.rimworld.server.sim import ColonySimulation, EXTREME_BREAK

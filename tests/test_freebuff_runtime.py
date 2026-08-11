@@ -1,8 +1,12 @@
 from __future__ import annotations
 
 import unittest
+import tempfile
+import threading
+from pathlib import Path
 
 from agentsassemble.providers.freebuff_runtime import (
+    FreebuffRuntime,
     _extract_model_labels,
     _match_model_label,
 )
@@ -12,6 +16,38 @@ from agentsassemble.providers.runtime_config import ProviderRuntimeConfig
 
 
 class FreebuffRuntimeTests(unittest.TestCase):
+    def test_successful_model_selection_returns_and_submits_the_visible_label(self) -> None:
+        class Terminal:
+            def __init__(self) -> None:
+                self.keys: list[str] = []
+
+            def health(self) -> dict[str, object]:
+                return {"terminal_tail": "Select a model\nDeepSeek V4 Flash 07/31\n"}
+
+            def send_keys(self, value: str) -> None:
+                self.keys.append(value)
+
+        with tempfile.TemporaryDirectory() as temp_dir:
+            runtime = FreebuffRuntime(
+                "freebuff-deadlock-regression",
+                workspace=temp_dir,
+                state_dir=Path(temp_dir) / "state",
+            )
+            terminal = Terminal()
+            runtime._terminal = terminal
+            runtime._version = "test-version"
+            completed: dict[str, object] = {}
+
+            def select() -> None:
+                completed["label"] = runtime._select_model_by_label()
+
+            worker = threading.Thread(target=select, daemon=True)
+            worker.start()
+            worker.join(timeout=6.0)
+            self.assertFalse(worker.is_alive(), "successful label selection deadlocked")
+            self.assertIn("DeepSeek", str(completed.get("label") or ""))
+            self.assertEqual(terminal.keys[-1], "\r")
+
     def test_catalog_registers_freebuff_subscription_provider(self) -> None:
         definition = native_cli_provider_definition("freebuff")
         self.assertIsNotNone(definition)

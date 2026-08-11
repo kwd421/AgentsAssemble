@@ -106,6 +106,9 @@ def build_ws_room_deps_factory(
             ),
             execute_command=execute_command,
             on_subscribe=lambda identity, streams, after_seq: channel.subscribe(streams),
+            active_plugin_id=lambda meeting_id: str(
+                room_repository.room_settings(meeting_id).get("activity_plugin") or ""
+            ),
         )
 
     return ws_room_deps

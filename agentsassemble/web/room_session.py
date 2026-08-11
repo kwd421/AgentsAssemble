@@ -42,7 +42,7 @@ WS_TICKET_TTL_SECONDS = 30.0
 WS_MAX_PENDING_TICKETS_TOTAL = 2048
 WS_PENDING_TICKET_RESERVE_DIVISOR = 8
 WS_MAX_PENDING_TICKETS_PER_SESSION = 8
-WS_STREAMS = ("lobby", "roster", "side_chat", "room_events")
+WS_STREAMS = ("lobby", "roster", "side_chat", "room_events", "plugin")
 WS_DEFAULT_STREAMS = ("lobby", "roster", "side_chat")
 WS_SESSION_TOKEN_KEY = "_ws_session_token"
 WS_SESSION_REVOKED_CATEGORY = "session_revoked"
@@ -195,6 +195,7 @@ class WsRoomDeps:
     room_snapshot: Callable[[dict, int], dict[str, object]] = lambda identity, after_seq: {}
     execute_command: Callable[[dict, dict], dict[str, object]] = lambda identity, message: {}
     on_subscribe: Callable[[dict, set[str], int], None] = lambda identity, streams, after_seq: None
+    active_plugin_id: Callable[[str], str] = lambda room_id: ""
 
 
 @dataclass
@@ -210,6 +211,7 @@ class WsRoomSession:
     _cursors: dict = field(default_factory=dict)
     _roster_sig: str = ""
     _room_after_seq: int = 0
+    _plugin_after_seq: int = 0
     handshake_complete: bool = False
     closed: bool = False
     ingress_clock: Callable[[], float] = time.monotonic
@@ -318,6 +320,7 @@ class WsRoomSession:
         self.subscribed = set(streams)
         self.handshake_complete = True
         self._room_after_seq = _safe_nonnegative_int(msg.get("resume_from_seq"))
+        self._plugin_after_seq = _safe_nonnegative_int(msg.get("plugin_resume_from_seq"))
         for stream in streams:
             resume = str(msg.get("resume_from_id") or "") if stream in {"lobby", "side_chat"} else ""
             self._cursors[stream] = resume
@@ -354,6 +357,7 @@ class WsRoomSession:
                 room_id=self.meeting_id,
                 identity=self.identity,
                 message=msg,
+                active_plugin_id=self.deps.active_plugin_id(self.meeting_id),
             )
         except Exception as error:  # explicit plugin errors stay on the plugin channel
             return [
@@ -430,10 +434,35 @@ class WsRoomSession:
             payload["op"] = "snapshot"
             payload["stream"] = "room_events"
             frames.append(encode_text(json.dumps(payload)))
-        from agentsassemble.plugin.host_service import drain_plugin_events
+        if "plugin" not in self.subscribed:
+            return frames
+        from agentsassemble.plugin.host_service import read_plugin_events
 
-        plugin_events = drain_plugin_events(self.meeting_id)
+        plugin_events, latest_sequence, gap = read_plugin_events(
+            self.meeting_id,
+            after_sequence=self._plugin_after_seq,
+        )
+        if gap:
+            frames.append(
+                encode_text(
+                    json.dumps(
+                        {
+                            "op": "event",
+                            "stream": "plugin",
+                            "events": [
+                                {
+                                    "type": "plugin.error",
+                                    "code": "plugin_event_gap",
+                                    "message": "Plugin events were missed; request a fresh snapshot.",
+                                    "room_id": self.meeting_id,
+                                }
+                            ],
+                        }
+                    )
+                )
+            )
         if plugin_events:
+            self._plugin_after_seq = latest_sequence
             frames.append(
                 encode_text(
                     json.dumps(
@@ -441,6 +470,23 @@ class WsRoomSession:
                             "op": "event",
                             "stream": "plugin",
                             "events": plugin_events,
+                            "latest_seq": latest_sequence,
+                            "snapshot": snapshot,
+                        }
+                    )
+                )
+            )
+        elif snapshot:
+            self._plugin_after_seq = latest_sequence
+            frames.append(
+                encode_text(
+                    json.dumps(
+                        {
+                            "op": "event",
+                            "stream": "plugin",
+                            "events": [],
+                            "latest_seq": latest_sequence,
+                            "snapshot": True,
                         }
                     )
                 )

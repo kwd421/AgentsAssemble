@@ -65,7 +65,7 @@ class PluginRegistry:
             keys = (
                 [(room, plugin)]
                 if plugin
-                else [key for key in self._hosts if key[0] == room]
+                else [key for key in self._hosts if not room or key[0] == room]
             )
             for key in keys:
                 host = self._hosts.pop(key, None)
@@ -84,8 +84,7 @@ class PluginRegistry:
         with self._lock:
             host = self._hosts.get((room, plugin_id))
             if host is None:
-                self.activate(room, plugin_id)
-                host = self._hosts[(room, plugin_id)]
+                raise RuntimeError("Plugin is not active for this room.")
             assert host is not None
             command_id = host.send_command(
                 {

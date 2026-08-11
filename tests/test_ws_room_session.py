@@ -4,6 +4,7 @@ import threading
 import unittest
 
 import agentsassemble.web.room_session as room_session_module
+from agentsassemble.plugin.host_service import _broadcast, reset_plugin_host_for_tests
 from agentsassemble.web.websocket_codec import (
     CLOSE_MESSAGE_TOO_BIG,
     CLOSE_POLICY_VIOLATION,
@@ -229,6 +230,36 @@ def _session(deps, *, session_token="", **identity_over):
 
 
 class SubscribeTests(unittest.TestCase):
+    def setUp(self):
+        reset_plugin_host_for_tests()
+
+    def tearDown(self):
+        reset_plugin_host_for_tests()
+
+    def test_plugin_event_is_delivered_once_to_each_subscribed_connection(self):
+        left = _session(FakeDeps())
+        right = _session(FakeDeps())
+        subscribe = json.dumps({"op": "subscribe", "streams": ["plugin"]}).encode()
+        left.handle_frame(OP_TEXT, subscribe)
+        right.handle_frame(OP_TEXT, subscribe)
+
+        _broadcast(
+            "room-1",
+            {
+                "type": "plugin.delta",
+                "room_id": "room-1",
+                "plugin_id": "rimworld",
+                "payload": {"revision": 3},
+            },
+        )
+
+        left_events = text_messages(left.poll())[0]["events"]
+        right_events = text_messages(right.poll())[0]["events"]
+        self.assertEqual(left_events[0]["payload"]["revision"], 3)
+        self.assertEqual(right_events[0]["payload"]["revision"], 3)
+        self.assertEqual(left.poll(), [])
+        self.assertEqual(right.poll(), [])
+
     def test_room_events_subscription_returns_canonical_snapshot_and_resume_sequence(self):
         deps = FakeDeps()
         sess = _session(deps)
