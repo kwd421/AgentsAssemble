@@ -18,6 +18,9 @@ from agentsassemble.providers.bridge_protocol import (
     TurnAssignmentEnvelope,
 )
 from agentsassemble.providers.bridge_report_tracker import BridgeReportTracker
+from agentsassemble.providers.activity_plugin_publication import (
+    publish_activity_plugin_batch,
+)
 from agentsassemble.providers.bridge_failure_reporting import (
     report_bridge_start_failure,
     report_failure_allows_reconnect,
@@ -73,14 +76,6 @@ class BridgeRoomClient(Protocol):
         request_id: str = "",
     ) -> str: ...
     def close(self) -> None: ...
-
-
-class ActivityPluginPublicationError(RuntimeError):
-    """An activity-plugin action was not confirmed by its isolated process."""
-
-    def __init__(self, message: str, *, code: str) -> None:
-        super().__init__(message)
-        self.code = clean_lobby_text(code, limit=128) or "plugin_command_failed"
 
 
 class RoomAgentBridge:
@@ -487,7 +482,13 @@ class RoomAgentBridge:
             except Exception as error:
                 provider_error = error
                 try:
-                    self._publish_activity_plugin_error(portal, turn_id, error)
+                    self._publish_activity_plugin_batch(
+                        portal.activity_plugin_model_error_batch(
+                            turn_id,
+                            type(error).__name__,
+                        ),
+                        request_id=f"bridge-plugin-error-{turn_id}",
+                    )
                     self._publish_observation_results(portal, turn_id)
                 except Exception as publish_error:
                     print(
@@ -503,7 +504,10 @@ class RoomAgentBridge:
                             f"{getattr(publish_error, 'code', type(publish_error).__name__)}"
                         )
             else:
-                self._publish_activity_plugin_commands(portal, turn_id)
+                self._publish_activity_plugin_batch(
+                    portal.activity_plugin_command_batch(turn_id),
+                    request_id=f"bridge-plugin-{turn_id}",
+                )
                 self._publish_observation_results(portal, turn_id)
             raw_observation_receipt = portal.observation_receipt(turn_id)
             if provider_error is not None and (
@@ -650,67 +654,31 @@ class RoomAgentBridge:
                 retry_on_timeout=True,
             )
 
-    def _publish_activity_plugin_commands(
-        self,
-        portal: RoomPortal,
-        turn_id: str,
-    ) -> None:
-        batch = portal.activity_plugin_command_batch(turn_id)
-        if not batch:
-            return
-        self._publish_activity_plugin_batch(
-            batch,
-            request_id=f"bridge-plugin-{turn_id}",
-        )
-
-    def _publish_activity_plugin_error(
-        self,
-        portal: RoomPortal,
-        turn_id: str,
-        error: Exception,
-    ) -> None:
-        batch = portal.activity_plugin_model_error_batch(
-            turn_id,
-            type(error).__name__,
-        )
-        if not batch:
-            return
-        self._publish_activity_plugin_batch(
-            batch,
-            request_id=f"bridge-plugin-error-{turn_id}",
-        )
-
     def _publish_activity_plugin_batch(
         self,
         batch: dict[str, object],
         *,
         request_id: str,
-    ) -> dict[str, object]:
-        plugin_id = clean_lobby_text(batch.get("plugin_id"), limit=64)
-        action = clean_lobby_text(batch.get("action"), limit=64)
-        args = batch.get("args") if isinstance(batch.get("args"), dict) else {}
-        revision = clean_lobby_text(batch.get("revision"), limit=64)
+    ) -> None:
+        if not batch:
+            return
         pump = self._pump_report_messages if threading.current_thread() is self._run_thread else None
-        try:
-            return self._report_tracker.request(
-                f"plugin.{action}",
-                send=lambda correlated_id: self.client.plugin(
-                    plugin_id,
-                    action,
-                    args,
-                    revision=revision,
-                    request_id=correlated_id,
-                ),
-                pump=pump,
-                is_closed=lambda: self.client.closed,
-                wait_interval_seconds=self.receive_sleep_seconds,
-                request_id=request_id,
+        publication = publish_activity_plugin_batch(
+            batch,
+            client=self.client,
+            report_tracker=self._report_tracker,
+            pump=pump,
+            is_closed=lambda: self.client.closed,
+            wait_interval_seconds=self.receive_sleep_seconds,
+            request_id=request_id,
+        )
+        if not publication.accepted:
+            print(
+                "Agent Bridge activity plugin rejected the staged action "
+                f"({publication.code}): {publication.message}",
+                file=sys.stderr,
+                flush=True,
             )
-        except (BridgeReportRejected, BridgeReportTimeout) as error:
-            raise ActivityPluginPublicationError(
-                str(error),
-                code=error.code,
-            ) from error
 
     def _run_turn(self, assignment: TurnAssignmentEnvelope) -> None:
         turn_id = assignment.turn_id

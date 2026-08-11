@@ -206,7 +206,7 @@ class RoomAgentBridgeActivityPluginTests(unittest.TestCase):
             )
             thread = threading.Thread(target=bridge.run, daemon=True)
             thread.start()
-            terminal_action = "turn.failed" if fail or reject_plugin else "turn.decline"
+            terminal_action = "turn.failed" if fail else "turn.decline"
             _wait_for(
                 lambda: any(action == terminal_action for action, _, _ in client.commands)
             )
@@ -244,16 +244,16 @@ class RoomAgentBridgeActivityPluginTests(unittest.TestCase):
         self.assertEqual(command["args"]["colonist_id"], "c2")
         self.assertIn("RuntimeError", command["args"]["message"])
 
-    def test_room_wake_reports_rejected_plugin_action_as_turn_failure(self) -> None:
+    def test_room_wake_keeps_provider_usable_when_game_action_is_rejected(self) -> None:
         client, _snapshot = self._run(fail=False, reject_plugin=True)
 
-        failed = next(
-            payload
-            for action, payload, _request_id in client.commands
-            if action == "turn.failed"
+        self.assertTrue(
+            any(action == "turn.decline" for action, _payload, _request_id in client.commands)
         )
-        self.assertEqual(failed["error_code"], "command_failed")
-        self.assertIn("Invalid colony action", failed["message"])
+        self.assertFalse(
+            any(action == "turn.failed" for action, _payload, _request_id in client.commands)
+        )
+        self.assertEqual(len(client.plugin_commands), 1)
 
 
 if __name__ == "__main__":
