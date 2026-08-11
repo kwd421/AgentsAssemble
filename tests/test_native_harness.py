@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import io
 import tempfile
 import threading
 import unittest
@@ -16,6 +17,24 @@ from agentsassemble.providers.capabilities import ProviderCapabilityCatalog
 from agentsassemble.providers.native_harness import NativeHarnessRuntime
 from agentsassemble.providers.native_harness import native_harness_runtime
 from agentsassemble.providers.native_harness_gateway import NativeModelGateway
+from agentsassemble.providers.harness_pi import PiHarnessRuntime
+
+
+class _RunningProcess:
+    def __init__(self) -> None:
+        self.stdin = io.StringIO()
+        self.pid = 1234
+
+    def poll(self):
+        return None
+
+
+class _FakeGateway:
+    def start(self) -> None:
+        pass
+
+    def health(self) -> dict[str, object]:
+        return {}
 
 
 class _FailingDelegate:
@@ -163,6 +182,127 @@ class NativeHarnessGatewayTests(unittest.TestCase):
 
         self.assertEqual(response.status, 413)
         self.assertEqual(upstream.requests, [])
+
+    def test_opencode_chat_stream_reaches_the_upstream_and_preserves_tool_calls(self) -> None:
+        upstream_response = {
+            "id": "chat-opencode",
+            "model": "deepseek-test",
+            "choices": [
+                {
+                    "message": {
+                        "role": "assistant",
+                        "content": None,
+                        "tool_calls": [
+                            {
+                                "id": "call-edit",
+                                "type": "function",
+                                "function": {
+                                    "name": "edit",
+                                    "arguments": '{"path":"input.txt"}',
+                                },
+                            }
+                        ],
+                    },
+                    "finish_reason": "tool_calls",
+                }
+            ],
+            "usage": {"prompt_tokens": 12, "completion_tokens": 4},
+        }
+        with _UpstreamServer([upstream_response]) as upstream:
+            gateway = NativeModelGateway(
+                upstream_base_url=upstream.endpoint,
+                upstream_api_key="secret",
+                model="deepseek-test",
+                provider_kind="deepseek_api",
+            )
+            gateway.start()
+            try:
+                request = Request(
+                    f"{gateway.endpoint}/chat/completions",
+                    data=json.dumps(
+                        {
+                            "model": "client-alias",
+                            "messages": [{"role": "user", "content": "edit it"}],
+                            "tools": [
+                                {
+                                    "type": "function",
+                                    "function": {
+                                        "name": "edit",
+                                        "parameters": {"type": "object"},
+                                    },
+                                }
+                            ],
+                            "stream": True,
+                            "stream_options": {"include_usage": True},
+                        }
+                    ).encode("utf-8"),
+                    headers={"Content-Type": "application/json"},
+                    method="POST",
+                )
+                with urlopen(request, timeout=5.0) as response:
+                    body = response.read().decode("utf-8")
+            finally:
+                gateway.stop()
+
+        self.assertFalse(upstream.requests[0]["stream"])
+        self.assertNotIn("stream_options", upstream.requests[0])
+        self.assertEqual(upstream.requests[0]["model"], "deepseek-test")
+        self.assertIn('"name":"edit"', body)
+        self.assertIn('"finish_reason":"tool_calls"', body)
+        self.assertTrue(body.endswith("data: [DONE]\n\n"))
+
+    def test_pi_waits_for_the_agent_after_an_intermediate_tool_turn(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            runtime = PiHarnessRuntime(
+                agent_id="pi-test",
+                executable="pi",
+                workspace=temp_dir,
+                state_dir=Path(temp_dir) / "state",
+                model="deepseek-test",
+                gateway=_FakeGateway(),
+            )
+            runtime._process = _RunningProcess()
+            runtime._running = True
+            runtime._pending = "Edit the file and report completion."
+            runtime._events.put(
+                {
+                    "type": "turn_end",
+                    "message": {
+                        "role": "assistant",
+                        "content": [
+                            {
+                                "type": "toolCall",
+                                "id": "call-edit",
+                                "name": "edit",
+                            }
+                        ],
+                    },
+                }
+            )
+            runtime._events.put(
+                {
+                    "type": "message_update",
+                    "assistantMessageEvent": {
+                        "type": "text_delta",
+                        "delta": "PI_DONE",
+                    },
+                }
+            )
+            runtime._events.put(
+                {
+                    "type": "turn_end",
+                    "message": {
+                        "role": "assistant",
+                        "content": [{"type": "text", "text": "PI_DONE"}],
+                    },
+                }
+            )
+            runtime._events.put({"type": "agent_end", "messages": []})
+            runtime._events.put({"type": "agent_settled"})
+
+            result = runtime.read_output(timeout_seconds=1.0)
+
+        self.assertEqual(result["content"], "PI_DONE")
 
     def test_codex_gateway_compacts_only_tool_results_delivered_before_this_request(self) -> None:
         upstream_responses = [

@@ -245,9 +245,9 @@ class PiHarnessRuntime:
             }
         )
         emitted = ""
-        turn_finished = False
+        agent_settled = False
         provider_error = ""
-        while not turn_finished:
+        while not agent_settled:
             if progress.expired():
                 self.interrupt()
                 raise TimeoutError(f"Pi harness timed out after {timeout_seconds} seconds.")
@@ -331,7 +331,7 @@ class PiHarnessRuntime:
                 provider_error = str(event.get("error") or event.get("message") or "Pi agent error")
                 if on_activity is not None:
                     on_activity(error_activity(message=provider_error))
-                turn_finished = True
+                agent_settled = True
                 continue
             if event_type == "turn_end":
                 message = event.get("message")
@@ -346,7 +346,12 @@ class PiHarnessRuntime:
                         emitted = text
                         if on_delta is not None:
                             on_delta(text)
-                turn_finished = True
+                # A Pi agent run may contain several turns. A tool-use turn is
+                # followed by tool execution and another model turn, so only
+                # agent_settled is the completion boundary of an RPC prompt.
+                continue
+            if event_type == "agent_settled":
+                agent_settled = True
                 continue
         if provider_error:
             raise RuntimeError(provider_error)

@@ -91,8 +91,9 @@ class FreebuffRuntime:
             [resolved, "--cwd", str(self.workspace)],
             cwd=str(self.workspace),
             env=self._environment,
-            input_mode="raw",
+            input_mode="bracketed_paste",
             submit_newline="\r",
+            idle_quiet_seconds=5.0,
             startup_quiet_seconds=0.5,
             startup_timeout_seconds=30.0,
             profile_settings={
@@ -198,15 +199,20 @@ class FreebuffRuntime:
 
         target = self.model
         cache_key = self._version or "unknown"
-        with _CACHE_LOCK:
-            cached = dict(_LABEL_CACHE.get(cache_key) or {})
-        screen = self._capture_screen(seconds=2.5)
-        labels = _extract_model_labels(screen)
-        if not labels and cached:
-            # Retry once; freebuff may still be drawing.
-            screen = self._capture_screen(seconds=2.0)
+        deadline = time.monotonic() + 30.0
+        screen = ""
+        labels: list[str] = []
+        match = None
+        while time.monotonic() < deadline and match is None:
+            screen += self._capture_screen(
+                seconds=min(1.0, max(0.2, deadline - time.monotonic()))
+            )
+            startup_error = _freebuff_startup_error(screen)
+            if startup_error:
+                self._last_error = startup_error
+                raise FreebuffUnavailable(startup_error)
             labels = _extract_model_labels(screen)
-        match = _match_model_label(labels, target)
+            match = _match_model_label(labels, target)
         if match is None:
             self._last_error = (
                 f"Could not find model label matching {target!r} on the Freebuff "
@@ -227,10 +233,26 @@ class FreebuffRuntime:
         deadline = time.monotonic() + max(0.2, seconds)
         last = ""
         while time.monotonic() < deadline:
+            reader = getattr(self._terminal, "read_available", None)
+            if callable(reader):
+                available = reader(
+                    timeout_seconds=min(
+                        0.15,
+                        max(0.0, deadline - time.monotonic()),
+                    )
+                )
+                if isinstance(available, dict):
+                    visible = str(
+                        available.get("content")
+                        or available.get("terminal_output")
+                        or ""
+                    )
+                    if visible:
+                        last += visible
             health = self._terminal.health() if self._terminal is not None else {}
             tail = str(health.get("terminal_tail") or "")
             if tail:
-                last = tail
+                last += tail
             time.sleep(0.15)
         return _strip_ansi(last)
 
@@ -276,6 +298,15 @@ def _freebuff_version(executable: str) -> str:
     return match.group(0) if match else (text.splitlines()[0] if text else "unknown")
 
 
+def _freebuff_startup_error(screen: str) -> str:
+    clean = " ".join(str(screen or "").split())
+    marker = "freebuff session GET failed:"
+    start = clean.casefold().find(marker.casefold())
+    if start < 0:
+        return ""
+    return clean_room_text(clean[start : start + 500], limit=500)
+
+
 def _strip_ansi(text: str) -> str:
     return _ANSI_RE.sub("", text)
 
@@ -285,6 +316,8 @@ def _extract_model_labels(screen: str) -> list[str]:
     for raw_line in screen.splitlines():
         line = " ".join(raw_line.strip().split())
         if not line or len(line) > 120:
+            continue
+        if "›" in line and line.count("│") >= 2:
             continue
         folded = line.casefold()
         if any(
@@ -305,6 +338,21 @@ def _extract_model_labels(screen: str) -> list[str]:
             if folded in {"model", "models", "select a model", "choose model"}:
                 continue
             labels.append(line)
+    if not labels:
+        # Full-screen TUIs repaint with cursor-position escape sequences rather
+        # than newlines. After stripping ANSI the cards can be one flattened
+        # line, but each model label still begins at a selected marker or card
+        # edge and ends at the padding before its description.
+        matches = []
+        for pattern in (
+            re.compile(r"›\s*([A-Za-z][A-Za-z0-9 .:/_-]{1,60}?)(?=\s{2,})"),
+            re.compile(r"│\s{2}([A-Za-z][A-Za-z0-9 .:/_-]{1,60}?)(?=\s{2,})"),
+        ):
+            matches.extend(
+                (match.start(), " ".join(match.group(1).split()))
+                for match in pattern.finditer(screen)
+            )
+        labels.extend(label for _position, label in sorted(matches))
     # Preserve screen order, unique by casefold.
     seen: set[str] = set()
     ordered: list[str] = []

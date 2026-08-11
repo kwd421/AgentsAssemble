@@ -227,6 +227,9 @@ class CerebrasRoomObservationTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as temp_dir:
             portal = RoomPortal(Path(temp_dir) / "portal", participant_id="cerebras")
             portal.prepare()
+            portal.ingest_frame(
+                {"room_settings": {"tool_mode": "tabletop"}, "events": []}
+            )
             portal.begin_observation("cerebras-turn", input_up_to_seq=1)
             runtime = CerebrasApiRuntime(
                 "cerebras",

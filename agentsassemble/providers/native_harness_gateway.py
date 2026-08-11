@@ -245,6 +245,23 @@ class NativeModelGateway:
                     )
                 return
             if request_path in {
+                "/v1/chat/completions",
+                "/chat/completions",
+            }:
+                self._record_request("chat_completions")
+                downstream_stream = bool(request.get("stream"))
+                payload = dict(request)
+                payload["model"] = self.model
+                payload["stream"] = False
+                payload.pop("stream_options", None)
+                payload.update(self._provider_payload())
+                response = self._complete(payload)
+                if downstream_stream:
+                    _write_openai_chat_sse(handler, response, model=self.model)
+                else:
+                    _write_json(handler, 200, response)
+                return
+            if request_path in {
                 "/v1/messages/count_tokens",
                 "/messages/count_tokens",
             }:
@@ -455,6 +472,76 @@ def _write_sse(
         ).encode("utf-8")
         for event in events
     )
+    handler.send_response(200)
+    handler.send_header("Content-Type", "text/event-stream; charset=utf-8")
+    handler.send_header("Cache-Control", "no-cache")
+    handler.send_header("Content-Length", str(len(body)))
+    handler.send_header("Connection", "close")
+    handler.end_headers()
+    handler.wfile.write(body)
+
+
+def _write_openai_chat_sse(
+    handler: BaseHTTPRequestHandler,
+    response: dict[str, object],
+    *,
+    model: str,
+) -> None:
+    """Stream one non-stream upstream result through the OpenAI chat contract."""
+
+    choices = response.get("choices") if isinstance(response.get("choices"), list) else []
+    choice = choices[0] if choices and isinstance(choices[0], dict) else {}
+    message = choice.get("message") if isinstance(choice.get("message"), dict) else {}
+    response_id = clean_room_text(response.get("id"), limit=128) or "chatcmpl-agentsassemble"
+    created = response.get("created") if isinstance(response.get("created"), int) else 0
+    chunks: list[dict[str, object]] = []
+
+    def append_delta(delta: dict[str, object], *, finish_reason: object = None) -> None:
+        chunks.append(
+            {
+                "id": response_id,
+                "object": "chat.completion.chunk",
+                "created": created,
+                "model": clean_room_text(response.get("model"), limit=256) or model,
+                "choices": [
+                    {
+                        "index": 0,
+                        "delta": delta,
+                        "finish_reason": finish_reason,
+                    }
+                ],
+            }
+        )
+
+    append_delta({"role": "assistant"})
+    reasoning = message.get("reasoning_content") or message.get("reasoning")
+    if isinstance(reasoning, str) and reasoning:
+        append_delta({"reasoning_content": reasoning})
+    content = message.get("content")
+    if isinstance(content, str) and content:
+        append_delta({"content": content})
+    tool_calls = message.get("tool_calls")
+    if isinstance(tool_calls, list) and tool_calls:
+        append_delta({"tool_calls": tool_calls})
+    append_delta({}, finish_reason=choice.get("finish_reason") or "stop")
+    usage = response.get("usage")
+    if isinstance(usage, dict):
+        chunks.append(
+            {
+                "id": response_id,
+                "object": "chat.completion.chunk",
+                "created": created,
+                "model": clean_room_text(response.get("model"), limit=256) or model,
+                "choices": [],
+                "usage": usage,
+            }
+        )
+    body = b"".join(
+        f"data: {json.dumps(chunk, ensure_ascii=False, separators=(',', ':'))}\n\n".encode(
+            "utf-8"
+        )
+        for chunk in chunks
+    ) + b"data: [DONE]\n\n"
     handler.send_response(200)
     handler.send_header("Content-Type", "text/event-stream; charset=utf-8")
     handler.send_header("Cache-Control", "no-cache")
