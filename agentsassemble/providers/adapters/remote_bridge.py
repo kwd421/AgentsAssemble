@@ -4,7 +4,12 @@ import json
 from typing import Any
 
 from agentsassemble.providers.adapters.base import ProviderAdapter
-from agentsassemble.providers.adapters.http_llm import JsonRequester, parse_json_object, request_json
+from agentsassemble.providers.adapters.http_llm import (
+    JsonRequester,
+    parse_json_object,
+    request_json,
+    request_local_json,
+)
 from agentsassemble.models import ProviderConfig, ResearchDepth, ResearchSteering, Role
 from agentsassemble.providers.remote_bridge_config import remote_bridge_auth_ref_value, remote_bridge_endpoint_error
 from agentsassemble.providers.speech_policy import ROUND_RESPONSE_SCHEMA, ROUND_SPEECH_POLICY
@@ -19,7 +24,7 @@ class RemoteBridgeAdapter(ProviderAdapter):
         requester: JsonRequester | None = None,
     ) -> None:
         self.provider = provider
-        self.requester = requester or request_json
+        self._requester_override = requester
 
     def start_session(self, role: Role, meeting_context: dict[str, Any]) -> dict[str, Any]:
         endpoint = self._safe_endpoint()
@@ -201,7 +206,10 @@ class RemoteBridgeAdapter(ProviderAdapter):
             raise ValueError(f"Provider {self.provider.id} requires an available auth_ref for remote bridge use.")
         if token:
             headers["Authorization"] = f"Bearer {token}"
-        response = self.requester(
+        requester = self._requester_override or (
+            request_local_json if endpoint.startswith("http://") else request_json
+        )
+        response = requester(
             f"{endpoint.rstrip('/')}/agentsassemble/run",
             headers,
             envelope,

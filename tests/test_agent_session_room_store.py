@@ -545,11 +545,16 @@ class AgentSessionRoomStoreTests(unittest.TestCase):
         events = store.read_events("room-a")
         event_types = [event["type"] for event in events]
         self.assertIn("turn_started", event_types)
-        self.assertIn("thinking_delta", event_types)
+        self.assertNotIn("thinking_delta", event_types)
         self.assertIn("message_delta", event_types)
         self.assertIn("message_final", event_types)
         self.assertIn("turn_finished", event_types)
         self.assertEqual(events[-2]["content"], "Final answer")
+        self.assertEqual(
+            [event["visibility"] for event in store.read_events("room-a", include_hidden=True)
+             if event["type"] == "thinking_delta"],
+            ["owner"],
+        )
 
     def test_resume_without_turn_and_turn_dry_run_do_not_append_message_final(self):
         resume_agent_session_payload(
@@ -656,16 +661,16 @@ class AgentSessionRoomStoreTests(unittest.TestCase):
             "session_id": "session-1",
             "sandbox": "read-only",
         }
-
         class Completed:
             returncode = 7
             stdout = "ignored"
             stderr = "safe stderr"
 
-        runner = agent_session_command_turn_runner(
-            session,
-            command_runner=lambda command, prompt, timeout_seconds: Completed(),
-        )
+        def command_runner(command, prompt, timeout_seconds):
+            self.assertEqual(json.loads(prompt.partition("\n\n")[2].rsplit("\n", 1)[0])["current_turn_instruction"], "x")
+            return Completed()
+
+        runner = agent_session_command_turn_runner(session, command_runner=command_runner)
 
         chunks = list(runner({"room_id": "room-a", "current_turn_instruction": "x"}))
 

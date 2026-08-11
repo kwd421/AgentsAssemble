@@ -40,6 +40,7 @@ from agentsassemble.providers.sync_cursor import (
 )
 from agentsassemble.room.repository import RoomRepository
 from agentsassemble.room.text import clean_room_text as clean_lobby_text
+from agentsassemble.room.visibility import OWNER, VISIBLE
 from agentsassemble.room.turn_context import (
     _agent_turn_prompt,
     _nonnegative_int,
@@ -274,10 +275,8 @@ def run_agent_session_turn_payload(
                     turn_id=turn_id,
                     owner_id=session.get("owner_id") or session.get("created_by") or "",
                     visibility=(
-                        "public"
-                        if session.get("share_activity")
-                        else "owner"
-                    ) if event_type == "thinking_delta" else "public",
+                        VISIBLE if session.get("share_activity") else OWNER
+                    ) if event_type == "thinking_delta" else VISIBLE,
                     content=content,
                     diagnostics=diagnostics,
                 )

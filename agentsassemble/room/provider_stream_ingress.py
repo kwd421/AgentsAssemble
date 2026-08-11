@@ -14,6 +14,7 @@ from agentsassemble.room.projection import (
 )
 from agentsassemble.room.repository import RoomRepository
 from agentsassemble.room.text import clean_room_text, has_room_visible_text
+from agentsassemble.room.visibility import OWNER, VISIBLE
 
 
 class RoomProviderStreamIngress:
@@ -176,7 +177,7 @@ class RoomProviderStreamIngress:
             session_id=session["session_id"],
             turn_id=session["active_turn_id"],
             owner_id=session.get("owner_id") or session.get("created_by") or "",
-            visibility="public" if session.get("share_activity") else "owner",
+            visibility=VISIBLE if session.get("share_activity") else OWNER,
             activity_kind=activity_kind,
             category=category,
             status=status,
