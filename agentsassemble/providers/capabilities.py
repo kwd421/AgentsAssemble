@@ -1167,6 +1167,10 @@ def _antigravity_model_variant(value: str) -> tuple[str, str] | None:
     normalized = str(value or "").strip()
     if not normalized:
         return None
+    # `agy models` emits two tab-separated columns: the launchable model ID and
+    # a human label.  Only the first column is a protocol value; treating the
+    # whole row as an ID produces selections that the CLI cannot launch.
+    normalized = normalized.split("\t", 1)[0].strip()
     display_match = re.fullmatch(r"(.+?)\s+\((Low|Medium|High)\)", normalized, flags=re.IGNORECASE)
     if display_match:
         model = re.sub(r"[^a-z0-9.]+", "-", display_match.group(1).casefold()).strip("-")

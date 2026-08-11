@@ -536,10 +536,10 @@ class ProviderRuntimeControlTests(unittest.TestCase):
         def runner(command: list[str], _timeout: float):
             if command[0].endswith("agy"):
                 return 0, (
-                    "gemini-3.6-flash-high\n"
-                    "gemini-3.6-flash-low\n"
-                    "claude-sonnet-4-6\n"
-                    "gpt-oss-120b-medium\n"
+                    "gemini-3.6-flash-high\tGemini 3.6 Flash (High)\n"
+                    "gemini-3.6-flash-low\tGemini 3.6 Flash (Low)\n"
+                    "claude-sonnet-4-6\tClaude Sonnet 4.6 (Thinking)\n"
+                    "gpt-oss-120b-medium\tGPT-OSS 120B (Medium)\n"
                 ), ""
             return 1, "", "unsupported"
 
