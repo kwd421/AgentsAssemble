@@ -71,6 +71,7 @@ class OpenAICompatibleApiRuntime:
         message_source: str,
         variant: str = "",
         include_reasoning_in_messages: bool = False,
+        supports_tool_choice: bool = True,
         request_payload: dict[str, object] | None = None,
         request_headers: dict[str, str] | None = None,
         require_api_key: bool = True,
@@ -103,6 +104,7 @@ class OpenAICompatibleApiRuntime:
         self._include_reasoning_in_messages = bool(
             include_reasoning_in_messages
         )
+        self._supports_tool_choice = bool(supports_tool_choice)
         self.base_url = str(base_url or "").rstrip("/")
         self.message_source = clean_room_text(message_source, limit=64)
         self._request_payload = dict(request_payload or {})
@@ -477,11 +479,12 @@ class OpenAICompatibleApiRuntime:
                     raise RuntimeError(
                         "Room observation requires the read_discussion tool."
                     )
-                payload["tool_choice"] = {
-                    "type": "function",
-                    "function": {"name": "read_discussion"},
-                }
-            else:
+                if self._supports_tool_choice:
+                    payload["tool_choice"] = {
+                        "type": "function",
+                        "function": {"name": "read_discussion"},
+                    }
+            elif self._supports_tool_choice:
                 payload["tool_choice"] = "auto"
         initial_size = self._context_policy.encoded_size(payload)
         compaction_started = initial_size > self._context_policy.hard_limit_bytes

@@ -202,11 +202,8 @@ class DeepSeekRoomObservationTests(unittest.TestCase):
         self.assertEqual(random_results[0]["operation"], "roll_dice")
         self.assertEqual(random_results[0]["details"]["notation"], "1d6")
         self.assertTrue(request_bodies[0]["tools"])
-        self.assertEqual(
-            request_bodies[0]["tool_choice"],
-            {"type": "function", "function": {"name": "read_discussion"}},
-        )
-        self.assertEqual(request_bodies[1]["tool_choice"], "auto")
+        self.assertNotIn("tool_choice", request_bodies[0])
+        self.assertNotIn("tool_choice", request_bodies[1])
         self.assertEqual(request_bodies[0]["stream_options"], {"include_usage": True})
         self.assertEqual(len(request_bodies), 2)
 

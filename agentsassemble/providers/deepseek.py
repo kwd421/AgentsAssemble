@@ -35,6 +35,10 @@ class DeepSeekApiRuntime(OpenAICompatibleApiRuntime):
             message_source="deepseek_sse",
             variant="thinking" if thinking else "non_thinking",
             include_reasoning_in_messages=True,
+            # DeepSeek V4 thinking mode supports tools but rejects the
+            # OpenAI-format tool_choice field. The runtime still verifies that
+            # the first observation round actually read the room.
+            supports_tool_choice=not thinking,
             request_payload={
                 "thinking": {"type": "enabled" if thinking else "disabled"},
             },
