@@ -306,7 +306,9 @@ class PluginRimworldTests(unittest.TestCase):
                 item.get("type") == "plugin.error" for item in events
             ):
                 time.sleep(0.05)
-            self.assertTrue(any(item.get("type") == "plugin.error" for item in events))
+            error = next(item for item in events if item.get("type") == "plugin.error")
+            self.assertEqual(error.get("code"), "revision_required")
+            self.assertIn("revision", str(error.get("message") or "").lower())
             registry.deactivate("room-sim", "rimworld")
 
     def test_plugin_command_requires_current_revision(self) -> None:
@@ -326,6 +328,32 @@ class PluginRimworldTests(unittest.TestCase):
         self.assertEqual(server.sim.speed, 0)
         self.assertEqual(events[-1].get("type"), "plugin.error")
         self.assertEqual(events[-1].get("code"), "revision_required")
+
+    def test_distinct_colonists_can_act_from_the_same_observed_snapshot(self) -> None:
+        from plugins.rimworld.server.main import PluginServer
+
+        server = PluginServer()
+        events: list[dict[str, object]] = []
+        server._emit = lambda event: events.append(event)
+        observed_revision = str(server.sim.revision)
+
+        for colonist_id, action in (("c1", "eat"), ("c2", "sleep")):
+            server.handle(
+                {
+                    "type": "plugin.command",
+                    "id": f"turn-{colonist_id}",
+                    "command": "agent_turn",
+                    "revision": observed_revision,
+                    "args": {
+                        "colonist_id": colonist_id,
+                        "act": {"action": action, "action_args": {}},
+                    },
+                }
+            )
+
+        self.assertEqual(server.sim.colonists[0].current_job["kind"], "eat")
+        self.assertEqual(server.sim.colonists[1].current_job["kind"], "sleep")
+        self.assertFalse(any(event.get("type") == "plugin.error" for event in events))
 
     def test_plugin_delta_emits_need_wake_once_until_the_need_recovers(self) -> None:
         from plugins.rimworld.server.main import PluginServer
@@ -426,6 +454,50 @@ class PluginRimworldTests(unittest.TestCase):
         self.assertTrue(colonist.waiting)
         with self.assertRaisesRegex(RuntimeError, "waiting"):
             sim.apply_act(colonist.id, "eat", {})
+
+    def test_work_selection_uses_priority_then_job_order_and_distance(self) -> None:
+        from plugins.rimworld.server.sim import ColonySimulation
+
+        sim = ColonySimulation(seed=5)
+        colonist = sim.colonists[0]
+        colonist.hunger = 0.2
+        colonist.rest = 0.2
+        colonist.job_priorities.update({"eat": 2, "sleep": 1})
+
+        result = sim.apply_act(colonist.id, "choose_work", {})
+        self.assertEqual(result["job"]["kind"], "sleep")
+
+        colonist.current_job = None
+        colonist.job_priorities.update({"eat": 1, "sleep": 1})
+        result = sim.apply_act(colonist.id, "choose_work", {})
+        self.assertEqual(result["job"]["kind"], "eat")
+
+        colonist.current_job = None
+        colonist.job_priorities.update({"eat": 4, "sleep": 4, "construct": 1})
+        sim.blueprints.extend(
+            [
+                {"id": "far", "kind": "wall", "x": 30, "y": 20, "progress": 0.0},
+                {"id": "near", "kind": "wall", "x": 9, "y": 8, "progress": 0.0},
+            ]
+        )
+        result = sim.apply_act(colonist.id, "choose_work", {})
+        self.assertEqual(result["job"]["target"]["blueprint_id"], "near")
+
+    def test_colonist_moves_to_job_target_before_work_progresses(self) -> None:
+        from plugins.rimworld.server.sim import ColonySimulation
+
+        sim = ColonySimulation(seed=9)
+        sim.set_speed(1)
+        colonist = sim.colonists[0]
+        sim.apply_act(colonist.id, "build", {"kind": "wall", "x": 11, "y": 8})
+
+        sim.step(1)
+        self.assertEqual((colonist.x, colonist.y), (9, 8))
+        self.assertEqual(colonist.current_job["progress"], 0.0)
+
+        sim.step(20)
+        self.assertIsNone(colonist.current_job)
+        self.assertIn({"kind": "wall", "x": 11, "y": 8}, sim.structures)
 
 
 if __name__ == "__main__":

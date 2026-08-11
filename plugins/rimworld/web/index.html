@@ -59,7 +59,12 @@
         aspect-ratio: 1;
         background: var(--tile);
         position: relative;
+        cursor: pointer;
+        outline: 0;
       }
+      .cell:hover { box-shadow: inset 0 0 0 1px #90a982; }
+      .cell:focus-visible, .cell.selected { box-shadow: inset 0 0 0 2px #d4efb8; }
+      .cell.blueprint { background: #3c4a31; box-shadow: inset 0 0 0 1px #a7c56e; }
       .cell.wall { background: #6d5d4b; }
       .cell.bed { background: #5c7cfa; }
       .cell.table { background: #d4a373; }
@@ -87,6 +92,11 @@
         gap: 0.5rem;
         flex-wrap: wrap;
       }
+      .selection-detail {
+        margin-left: auto;
+        color: var(--muted);
+        font-size: 0.8rem;
+      }
       .card {
         background: #1c261b;
         border: 1px solid #31422e;
@@ -110,17 +120,20 @@
         <button data-speed="3" type="button">3×</button>
         <span class="status" id="tick">tick 0</span>
         <span class="status" id="resources">wood 0 · steel 0 · food 0</span>
+        <span class="status" id="selection">no cell selected</span>
         <span class="status error" id="error"></span>
       </header>
       <div class="map" id="map" aria-label="Colony map"></div>
       <footer>
         <div class="colonist-list" id="colonists"></div>
+        <div class="selection-detail" id="selection-detail">Select a map cell to inspect it.</div>
       </footer>
     </div>
     <script>
       const parent = window.parent;
       const channel = new MessageChannel();
       let state = null;
+      let selectedCell = null;
       const port = channel.port1;
       let readyPosted = false;
 
@@ -182,11 +195,31 @@
         for (const colonist of state.colonists || []) {
           pawnAt.set(`${colonist.x},${colonist.y}`, colonist);
         }
+        const blueprintAt = new Map();
+        for (const blueprint of state.blueprints || []) {
+          blueprintAt.set(`${blueprint.x},${blueprint.y}`, blueprint);
+        }
         for (let y = 0; y < height; y += 1) {
           for (let x = 0; x < width; x += 1) {
             const cell = document.createElement("div");
             const kind = structureAt.get(`${x},${y}`);
-            cell.className = kind ? `cell ${kind}` : "cell";
+            const blueprint = blueprintAt.get(`${x},${y}`);
+            cell.className = kind ? `cell ${kind}` : blueprint ? "cell blueprint" : "cell";
+            if (selectedCell?.x === x && selectedCell?.y === y) cell.classList.add("selected");
+            cell.tabIndex = 0;
+            cell.setAttribute("role", "button");
+            cell.setAttribute("aria-label", `Map cell ${x}, ${y}`);
+            const select = () => {
+              selectedCell = { x, y };
+              render();
+            };
+            cell.addEventListener("click", select);
+            cell.addEventListener("keydown", (event) => {
+              if (event.key === "Enter" || event.key === " ") {
+                event.preventDefault();
+                select();
+              }
+            });
             const pawn = pawnAt.get(`${x},${y}`);
             if (pawn) {
               const mark = document.createElement("div");
@@ -204,13 +237,46 @@
           const card = document.createElement("div");
           card.className = "card";
           const needs = colonist.needs || {};
-          card.innerHTML = `<strong>${colonist.name}</strong><br/>
-            mood ${(needs.mood * 100).toFixed(0)}% · food ${(needs.hunger * 100).toFixed(0)}% · rest ${(needs.rest * 100).toFixed(0)}%<br/>
-            job ${colonist.current_job?.kind || "idle"}
-            ${colonist.mental_break ? `<br/><span class="error">break: ${colonist.mental_break}</span>` : ""}
-            ${colonist.error ? `<br/><span class="error">${colonist.error}</span>` : ""}
-            ${colonist.waiting ? `<br/><span class="error">waiting on model</span>` : ""}`;
+          const title = document.createElement("strong");
+          title.textContent = String(colonist.name || "Unknown");
+          card.append(title, document.createElement("br"));
+          card.append(
+            document.createTextNode(
+              `mood ${(needs.mood * 100).toFixed(0)}% · food ${(needs.hunger * 100).toFixed(0)}% · rest ${(needs.rest * 100).toFixed(0)}%`
+            ),
+            document.createElement("br"),
+            document.createTextNode(`job ${colonist.current_job?.kind || "idle"}`)
+          );
+          for (const message of [
+            colonist.mental_break ? `break: ${colonist.mental_break}` : "",
+            colonist.error || "",
+            colonist.waiting ? "waiting on model" : "",
+          ]) {
+            if (!message) continue;
+            const line = document.createElement("span");
+            line.className = "error";
+            line.textContent = String(message);
+            card.append(document.createElement("br"), line);
+          }
           list.appendChild(card);
+        }
+        const selectionLabel = document.getElementById("selection");
+        const detail = document.getElementById("selection-detail");
+        if (selectedCell) {
+          const key = `${selectedCell.x},${selectedCell.y}`;
+          const structure = structureAt.get(key);
+          const blueprint = blueprintAt.get(key);
+          const pawn = pawnAt.get(key);
+          selectionLabel.textContent = `cell ${key}`;
+          detail.textContent = [
+            `Cell ${key}`,
+            structure ? `structure ${structure}` : "",
+            blueprint ? `blueprint ${blueprint.kind} ${Math.round(Number(blueprint.progress || 0) * 100)}%` : "",
+            pawn ? `colonist ${pawn.name}` : "",
+          ].filter(Boolean).join(" · ");
+        } else {
+          selectionLabel.textContent = "no cell selected";
+          detail.textContent = "Select a map cell to inspect it.";
         }
         if (state.raid) {
           document.getElementById("error").textContent = `Raid active (hp ${Number(state.raid.hp).toFixed(1)})`;

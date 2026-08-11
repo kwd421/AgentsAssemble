@@ -62,7 +62,14 @@ class PluginServer:
                     command_id=str(message.get("id") or ""),
                 )
                 return
-            if revision != str(self.sim.revision):
+            # Agent turns are scheduled from one shared snapshot. Distinct
+            # providers may therefore return after an earlier colonist has
+            # already advanced the global simulation revision. Room routing
+            # guarantees one active observation per assigned colonist, so a
+            # stale global revision must not discard an unrelated colonist's
+            # decision. Interactive host commands remain strict optimistic
+            # writes and fail on any stale revision.
+            if command not in {"agent_turn", "model_error"} and revision != str(self.sim.revision):
                 self._emit_error(
                     "revision_conflict",
                     f"Stale revision {revision}; current {self.sim.revision}",

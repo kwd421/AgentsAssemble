@@ -132,6 +132,9 @@ class PluginRegistry:
             "plugin_id": plugin_id,
             "payload": event.get("payload") if isinstance(event.get("payload"), dict) else event,
         }
+        if event_type == "plugin.error":
+            envelope["code"] = clean_room_text(event.get("code"), limit=96)
+            envelope["message"] = clean_room_text(event.get("message"), limit=2000)
         if isinstance(event.get("agent_wakes"), list):
             envelope["agent_wakes"] = list(event["agent_wakes"])
         # High-frequency game state is coalesced into plugin storage every

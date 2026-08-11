@@ -47,6 +47,8 @@ TOOL_SCHEMAS = [
                     "type": "string",
                     "enum": [
                         "set_job",
+                        "choose_work",
+                        "set_priorities",
                         "build",
                         "haul",
                         "eat",

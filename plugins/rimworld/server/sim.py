@@ -11,19 +11,13 @@ from copy import deepcopy
 from dataclasses import dataclass, field
 from typing import Any
 
+try:
+    from .jobs import JOB_ORDER, choose_next_job, job_target_position, move_toward
+except ImportError:  # Executed as the isolated plugin entrypoint.
+    from jobs import JOB_ORDER, choose_next_job, job_target_position, move_toward
+
 MAP_WIDTH = 48
 MAP_HEIGHT = 32
-JOB_ORDER = (
-    "fight",
-    "tend",
-    "construct",
-    "haul",
-    "eat",
-    "sleep",
-    "recreation",
-    "social",
-    "work",
-)
 BUILDABLES = {
     "bed": {"wood": 20},
     "wall": {"wood": 5},
@@ -200,7 +194,20 @@ class ColonySimulation:
         if colonist.mental_break:
             raise RuntimeError(f"{colonist.name} is in a mental break: {colonist.mental_break}")
         action = str(action or "").strip().lower()
-        if action == "set_job":
+        if action == "choose_work":
+            colonist.current_job = choose_next_job(self, colonist)
+        elif action == "set_priorities":
+            priorities = args.get("priorities")
+            if not isinstance(priorities, dict) or not priorities:
+                raise ValueError("priorities must be a non-empty object")
+            for job, priority in priorities.items():
+                name = str(job or "").strip().lower()
+                value = int(priority)
+                if name not in JOB_ORDER or value not in {1, 2, 3, 4}:
+                    raise ValueError("Job priorities must map known jobs to 1-4.")
+                colonist.job_priorities[name] = value
+            colonist.current_job = choose_next_job(self, colonist)
+        elif action == "set_job":
             job = str(args.get("job") or "").strip().lower()
             if job not in JOB_ORDER:
                 raise ValueError(f"Unsupported job: {job}")
@@ -210,11 +217,16 @@ class ColonySimulation:
             kind = str(args.get("kind") or "").strip().lower()
             x = int(args.get("x"))
             y = int(args.get("y"))
-            self._queue_blueprint(kind, x, y)
+            blueprint = self._queue_blueprint(kind, x, y)
             colonist.current_job = {
                 "kind": "construct",
                 "progress": 0.0,
-                "target": {"kind": kind, "x": x, "y": y},
+                "target": {
+                    "blueprint_id": blueprint["id"],
+                    "kind": kind,
+                    "x": x,
+                    "y": y,
+                },
             }
         elif action == "haul":
             colonist.current_job = {"kind": "haul", "progress": 0.0, "target": args}
@@ -265,7 +277,7 @@ class ColonySimulation:
                 return colonist
         raise KeyError(colonist_id)
 
-    def _queue_blueprint(self, kind: str, x: int, y: int) -> None:
+    def _queue_blueprint(self, kind: str, x: int, y: int) -> dict[str, Any]:
         if kind not in BUILDABLES:
             raise ValueError(f"Unknown buildable: {kind}")
         if not (0 <= x < MAP_WIDTH and 0 <= y < MAP_HEIGHT):
@@ -276,9 +288,15 @@ class ColonySimulation:
                 raise ValueError(f"Insufficient {resource}")
         for resource, amount in cost.items():
             self.resources[resource] -= amount
-        self.blueprints.append(
-            {"id": f"bp-{self.tick}-{len(self.blueprints)}", "kind": kind, "x": x, "y": y, "progress": 0.0}
-        )
+        blueprint = {
+            "id": f"bp-{self.tick}-{len(self.blueprints)}",
+            "kind": kind,
+            "x": x,
+            "y": y,
+            "progress": 0.0,
+        }
+        self.blueprints.append(blueprint)
+        return blueprint
 
     def _decay_needs(self) -> None:
         for colonist in self.colonists:
@@ -312,6 +330,12 @@ class ColonySimulation:
             if not job or colonist.waiting:
                 continue
             kind = str(job.get("kind") or "")
+            target_position = job_target_position(self, colonist, job)
+            if target_position is not None and (
+                colonist.x != target_position[0] or colonist.y != target_position[1]
+            ):
+                move_toward(colonist, target_position)
+                continue
             progress = float(job.get("progress") or 0.0)
             skill_bonus = 1.0
             if kind == "construct":
@@ -320,6 +344,13 @@ class ColonySimulation:
                 )
             progress += 0.08 * skill_bonus
             job["progress"] = progress
+            if kind == "construct":
+                target = job.get("target") if isinstance(job.get("target"), dict) else {}
+                blueprint_id = str(target.get("blueprint_id") or "")
+                for blueprint in self.blueprints:
+                    if str(blueprint.get("id") or "") == blueprint_id:
+                        blueprint["progress"] = min(1.0, progress)
+                        break
             if kind == "eat" and progress >= 1.0:
                 if self.resources.get("food", 0) > 0:
                     self.resources["food"] -= 1
@@ -343,10 +374,19 @@ class ColonySimulation:
                 kind_name = str(target.get("kind") or "")
                 x = int(target.get("x") or 0)
                 y = int(target.get("y") or 0)
+                blueprint_id = str(target.get("blueprint_id") or "")
                 self.blueprints = [
                     item
                     for item in self.blueprints
-                    if not (item.get("kind") == kind_name and item.get("x") == x and item.get("y") == y)
+                    if not (
+                        (blueprint_id and item.get("id") == blueprint_id)
+                        or (
+                            not blueprint_id
+                            and item.get("kind") == kind_name
+                            and item.get("x") == x
+                            and item.get("y") == y
+                        )
+                    )
                 ]
                 self.structures.append({"kind": kind_name, "x": x, "y": y})
                 colonist.current_job = None
@@ -427,6 +467,8 @@ class ColonySimulation:
                 "id": f"raid-{self.tick}",
                 "hp": 3.0 + wealth / 40.0,
                 "started_tick": self.tick,
+                "x": MAP_WIDTH - 2,
+                "y": MAP_HEIGHT // 2,
             }
             self.events.append({"tick": self.tick, "kind": "raid_started", "raid": dict(self.raid)})
             self.last_threat_tick = self.tick
