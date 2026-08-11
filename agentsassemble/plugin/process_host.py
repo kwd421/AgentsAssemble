@@ -144,6 +144,14 @@ class PluginProcessHost:
         except subprocess.TimeoutExpired:
             process.kill()
             process.wait(timeout=1.0)
+        for stream in (process.stdout, process.stderr):
+            if stream is not None:
+                stream.close()
+        for reader in (self._reader, self._stderr_reader):
+            if reader is not None and reader is not threading.current_thread():
+                reader.join(timeout=0.5)
+        self._reader = None
+        self._stderr_reader = None
 
     def health(self) -> dict[str, object]:
         process = self._process

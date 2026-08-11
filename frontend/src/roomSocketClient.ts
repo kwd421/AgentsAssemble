@@ -14,8 +14,14 @@ import type {
   PublicProviderRequest,
   PublicRoomGlobalSettings,
 } from "./types/generatedRoomEvent";
+import {
+  parsePluginEnvelopeBatch,
+  PluginStreamProtocolError,
+  type PluginEnvelope,
+} from "./pluginSocketProtocol";
 
 export type { RoomSocketAuth } from "./api";
+export type { PluginEnvelope } from "./pluginSocketProtocol";
 
 export interface RoomSocketHandlers {
   onLobby?: (events: LobbyEvent[]) => void;
@@ -24,6 +30,7 @@ export interface RoomSocketHandlers {
   onRoomSnapshot?: (snapshot: RoomSocketSnapshot) => boolean | void;
   onProviderCatalog?: (catalog: ProviderCatalogSnapshot) => void;
   onRoomEvents?: (events: RoomEvent[]) => void;
+  onPlugin?: (events: PluginEnvelope[], snapshot: boolean) => void;
   onRoomDeleted?: (roomId: string, roomName: string) => void;
   onOpen?: () => void;
   onClose?: () => void;
@@ -382,6 +389,7 @@ export function openRoomSocket(
   let reconnectTimer = 0;
   let reconnectAttempt = 0;
   let lastSeq = 0;
+  let lastPluginSeq = 0;
   let roomSnapshotAccepted = false;
   let canonicalRoomId = auth.kind === "host" ? auth.meetingId : "";
   let requestCounter = 0;
@@ -450,6 +458,8 @@ export function openRoomSocket(
       catalog?: ProviderCatalogSnapshot;
       room_id?: string;
       room_name?: string;
+      latest_seq?: number;
+      snapshot?: boolean;
     };
     if ((msg.op === "ack" || msg.op === "nack") && msg.request_id) {
       const command = pending.get(msg.request_id);
@@ -612,6 +622,26 @@ export function openRoomSocket(
       if (freshEvents.length) handlers.onRoomEvents?.(freshEvents);
       return;
     }
+    if (msg.op === "event" && msg.stream === "plugin" && Array.isArray(msg.events)) {
+      let parsed: { events: PluginEnvelope[]; latestSequence: number };
+      try {
+        parsed = parsePluginEnvelopeBatch(msg.events, {
+          currentSequence: lastPluginSeq,
+          advertisedLatestSequence: msg.latest_seq,
+        });
+      } catch (error) {
+        if (!(error instanceof PluginStreamProtocolError)) throw error;
+        reconnectForProtocolError(
+          new RoomSocketSayError(error.message, error.code)
+        );
+        return;
+      }
+      lastPluginSeq = parsed.latestSequence;
+      if (parsed.events.length || msg.snapshot) {
+        handlers.onPlugin?.(parsed.events, Boolean(msg.snapshot));
+      }
+      return;
+    }
     if (msg.op === "event" && msg.stream === "lobby" && Array.isArray(msg.events)) {
       handlers.onLobby?.(msg.events);
     } else if (msg.op === "event" && msg.stream === "roster" && Array.isArray(msg.members)) {
@@ -630,7 +660,15 @@ export function openRoomSocket(
       roomSnapshotAccepted = false;
       currentSocket.onopen = () => {
         reconnectAttempt = 0;
-        currentSocket.send(JSON.stringify({ op: "subscribe", streams, resume_from_seq: lastSeq }));
+        const subscription: Record<string, unknown> = {
+          op: "subscribe",
+          streams,
+          resume_from_seq: lastSeq,
+        };
+        if (streams.includes("plugin")) {
+          subscription.plugin_resume_from_seq = lastPluginSeq;
+        }
+        currentSocket.send(JSON.stringify(subscription));
         sendPending();
         handlers.onOpen?.();
       };

@@ -121,13 +121,19 @@
       const parent = window.parent;
       const channel = new MessageChannel();
       let state = null;
-      let port = null;
+      const port = channel.port1;
+      let readyPosted = false;
 
       function postReady() {
+        if (readyPosted) return;
+        readyPosted = true;
         parent.postMessage({ type: "plugin.web.ready", plugin_id: "rimworld" }, "*", [channel.port2]);
-        port = channel.port1;
         port.onmessage = (event) => {
           const data = event.data || {};
+          if (data.type === "plugin.host.hello") {
+            port.postMessage({ type: "plugin.command", command: "snapshot", args: {} });
+            return;
+          }
           if (data.type === "plugin.snapshot" || data.type === "plugin.delta") {
             state = data.payload || data.payload?.payload || data.payload;
             if (data.payload?.colonists) state = data.payload;
@@ -138,7 +144,6 @@
           }
         };
         port.start();
-        port.postMessage({ type: "plugin.command", command: "snapshot", args: {} });
       }
 
       function sendCommand(command, args = {}) {
@@ -214,11 +219,6 @@
         }
       }
 
-      window.addEventListener("message", (event) => {
-        if (event.data?.type === "plugin.host.hello") {
-          postReady();
-        }
-      });
       postReady();
     </script>
   </body>

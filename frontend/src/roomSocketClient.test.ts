@@ -45,6 +45,92 @@ afterEach(() => {
 });
 
 describe("canonical room socket client", () => {
+  it("delivers plugin envelopes and resumes from their independent sequence", async () => {
+    vi.useFakeTimers();
+    const sockets: FakeWebSocket[] = [];
+    const onPlugin = vi.fn();
+    const handle = openRoomSocket(
+      { kind: "host", meetingId: "general" },
+      ["room_events", "plugin"],
+      { onPlugin },
+      {
+        getTicket: async () => `ticket-${sockets.length + 1}`,
+        createSocket: () => {
+          const socket = new FakeWebSocket();
+          sockets.push(socket);
+          return socket as unknown as WebSocket;
+        },
+      }
+    );
+    await flushPromises();
+    sockets[0].open();
+    sockets[0].receive({
+      op: "event",
+      stream: "plugin",
+      latest_seq: 4,
+      events: [
+        {
+          type: "plugin.delta",
+          plugin_id: "rimworld",
+          plugin_seq: 4,
+          payload: { revision: 7 },
+        },
+      ],
+    });
+
+    expect(onPlugin).toHaveBeenCalledWith(
+      [expect.objectContaining({ plugin_seq: 4, payload: { revision: 7 } })],
+      false
+    );
+    sockets[0].close();
+    await vi.advanceTimersByTimeAsync(500);
+    await flushPromises();
+    sockets[1].open();
+    expect(sockets[1].sent[0]).toMatchObject({
+      op: "subscribe",
+      plugin_resume_from_seq: 4,
+    });
+    handle.close();
+  });
+
+  it("delivers an immediate plugin command error without corrupting the resume cursor", async () => {
+    const sockets: FakeWebSocket[] = [];
+    const onPlugin = vi.fn();
+    const handle = openRoomSocket(
+      { kind: "host", meetingId: "general" },
+      ["room_events", "plugin"],
+      { onPlugin },
+      {
+        getTicket: async () => "ticket-plugin-error",
+        createSocket: () => {
+          const socket = new FakeWebSocket();
+          sockets.push(socket);
+          return socket as unknown as WebSocket;
+        },
+      }
+    );
+    await flushPromises();
+    sockets[0].open();
+    sockets[0].receive({
+      op: "event",
+      stream: "plugin",
+      events: [
+        {
+          type: "plugin.error",
+          code: "permission_denied",
+          message: "Plugin activation requires room management permission.",
+        },
+      ],
+    });
+
+    expect(onPlugin).toHaveBeenCalledWith(
+      [expect.objectContaining({ type: "plugin.error", code: "permission_denied" })],
+      false
+    );
+    expect(sockets).toHaveLength(1);
+    handle.close();
+  });
+
   it("pushes provider catalog revisions without reconnecting", async () => {
     const sockets: FakeWebSocket[] = [];
     const onProviderCatalog = vi.fn();

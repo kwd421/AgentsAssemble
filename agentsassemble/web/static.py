@@ -9,6 +9,7 @@ from pathlib import Path
 from typing import Any
 from urllib.parse import unquote
 
+from agentsassemble.plugin.manifest import load_first_party_manifests
 from agentsassemble.web.router import request_server_url
 
 
@@ -112,11 +113,8 @@ class ReactStaticTransport:
             )
             return True
         if path.startswith("/plugins/"):
-            plugins_root = (
-                Path(__file__).resolve().parent.parent.parent / "plugins"
-            ).resolve()
             relative_path = unquote(path.removeprefix("/plugins/"))
-            plugin_path = safe_static_path(plugins_root, relative_path)
+            plugin_path = public_plugin_asset_path(relative_path)
             if plugin_path is None or not plugin_path.is_file():
                 handler._send_error(HTTPStatus.NOT_FOUND, "Plugin asset not found")
             else:
@@ -137,6 +135,32 @@ def safe_static_path(static_root: Path, relative_path: str) -> Path | None:
     except ValueError:
         return None
     return candidate
+
+
+def public_plugin_asset_path(relative_path: str) -> Path | None:
+    """Resolve only a declared plugin's web asset directory.
+
+    Server entrypoints, manifests, and agent tool source live beside the web
+    directory but are not public HTTP assets.
+    """
+
+    plugin_id, separator, asset_path = relative_path.partition("/")
+    if not separator or not plugin_id or not asset_path:
+        return None
+    manifest = next(
+        (item for item in load_first_party_manifests() if item.id == plugin_id),
+        None,
+    )
+    if manifest is None:
+        return None
+    web_root = (manifest.root / manifest.web_entry).resolve().parent
+    web_prefix = Path(manifest.web_entry).parent.as_posix().strip("/")
+    if web_prefix:
+        prefix = f"{web_prefix}/"
+        if not asset_path.startswith(prefix):
+            return None
+        asset_path = asset_path.removeprefix(prefix)
+    return safe_static_path(web_root, asset_path)
 
 
 def react_app_content_type(path: Path) -> str:

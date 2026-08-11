@@ -1,13 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-
-type PluginEnvelope = {
-  type: string;
-  plugin_id?: string;
-  payload?: Record<string, unknown>;
-  message?: string;
-  code?: string;
-  revision?: string;
-};
+import type { PluginEnvelope } from "../../../roomSocketClient";
 
 type RimWorldPluginViewProps = {
   roomId: string;
@@ -19,6 +11,7 @@ type RimWorldPluginViewProps = {
   }) => void;
   envelopes: PluginEnvelope[];
   onOpenSideChat: () => void;
+  canManage: boolean;
 };
 
 export default function RimWorldPluginView({
@@ -26,10 +19,22 @@ export default function RimWorldPluginView({
   onCommand,
   envelopes,
   onOpenSideChat,
+  canManage,
 }: RimWorldPluginViewProps) {
   const iframeRef = useRef<HTMLIFrameElement | null>(null);
   const portRef = useRef<MessagePort | null>(null);
+  const envelopesRef = useRef(envelopes);
+  const lastSentSequenceRef = useRef(0);
+  const activationRoomRef = useRef("");
   const [error, setError] = useState("");
+  envelopesRef.current = envelopes;
+
+  useEffect(() => {
+    if (canManage && activationRoomRef.current !== roomId) {
+      activationRoomRef.current = roomId;
+      onCommand({ plugin_id: "rimworld", command: "activate" });
+    }
+  }, [canManage, onCommand, roomId]);
 
   useEffect(() => {
     function onWindowMessage(event: MessageEvent) {
@@ -39,22 +44,28 @@ export default function RimWorldPluginView({
       const port = event.ports[0];
       if (!port) return;
       portRef.current = port;
+      lastSentSequenceRef.current = 0;
       port.onmessage = (portEvent: MessageEvent) => {
-        const message = portEvent.data as PluginEnvelope;
+        const message = portEvent.data as Record<string, unknown>;
         if (message?.type === "plugin.command") {
           onCommand({
             plugin_id: "rimworld",
-            command: String((message as { command?: string }).command || ""),
-            args: (message as { args?: Record<string, unknown> }).args,
-            revision: (message as { revision?: string }).revision,
+            command: String(message.command || ""),
+            args: message.args as Record<string, unknown> | undefined,
+            revision: typeof message.revision === "string" ? message.revision : undefined,
           });
         }
       };
       port.start();
-      iframeRef.current?.contentWindow?.postMessage(
-        { type: "plugin.host.hello", room_id: roomId },
-        "*"
-      );
+      port.postMessage({ type: "plugin.host.hello", room_id: roomId });
+      envelopesRef.current.forEach((envelope) => {
+        port.postMessage(envelope);
+        if (!envelope.plugin_seq) return;
+        lastSentSequenceRef.current = Math.max(
+          lastSentSequenceRef.current,
+          envelope.plugin_seq
+        );
+      });
     }
     window.addEventListener("message", onWindowMessage);
     return () => window.removeEventListener("message", onWindowMessage);
@@ -66,7 +77,11 @@ export default function RimWorldPluginView({
     if (latest.type === "plugin.error") {
       setError(latest.message || latest.code || "plugin error");
     }
-    portRef.current.postMessage(latest);
+    envelopes.forEach((envelope) => {
+      if (envelope.plugin_seq && envelope.plugin_seq <= lastSentSequenceRef.current) return;
+      portRef.current?.postMessage(envelope);
+      if (envelope.plugin_seq) lastSentSequenceRef.current = envelope.plugin_seq;
+    });
   }, [envelopes]);
 
   return (

@@ -4,6 +4,7 @@ import json
 import tempfile
 import time
 import unittest
+from http import HTTPStatus
 from pathlib import Path
 
 from agentsassemble.plugin.manifest import load_first_party_manifests, load_manifest
@@ -12,9 +13,51 @@ from agentsassemble.plugin.process_host import PluginProcessHost
 from agentsassemble.plugin.registry import PluginRegistry
 from agentsassemble.plugin.settings import clean_activity_plugin
 from agentsassemble.plugin.storage import PluginStorage
+from agentsassemble.web.static import ReactStaticTransport
 
 
 class PluginRimworldTests(unittest.TestCase):
+    def test_public_plugin_assets_do_not_expose_server_source(self) -> None:
+        class Handler:
+            headers: dict[str, str] = {}
+
+            def __init__(self) -> None:
+                self.file: Path | None = None
+                self.status: HTTPStatus | None = None
+
+            def _send_file(self, path: Path, *_args, **_kwargs) -> None:
+                self.file = path
+
+            def _send_error(self, status: HTTPStatus, _message: str) -> None:
+                self.status = status
+
+        transport = ReactStaticTransport(
+            frontend_root=Path("missing"),
+            pre_join_guide_payload=lambda _url: {},
+            api_catalog_payload=lambda _url: {},
+        )
+        handler = Handler()
+
+        handled = transport.dispatch_get(
+            handler,
+            path="/plugins/rimworld/server/main.py",
+            query={},
+        )
+
+        self.assertTrue(handled)
+        self.assertEqual(handler.status, HTTPStatus.NOT_FOUND)
+        self.assertIsNone(handler.file)
+
+        public_handler = Handler()
+        handled = transport.dispatch_get(
+            public_handler,
+            path="/plugins/rimworld/web/index.html",
+            query={},
+        )
+        self.assertTrue(handled)
+        self.assertIsNone(public_handler.status)
+        self.assertEqual(public_handler.file.name, "index.html")
+
     def test_read_only_room_identity_cannot_activate_plugin_process(self) -> None:
         try:
             with self.assertRaisesRegex(Exception, "permission"):

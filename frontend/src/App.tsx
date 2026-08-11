@@ -1818,9 +1818,17 @@ export default function App() {
             canonicalRoom.roomSettings?.activityPlugin === "rimworld" ? (
               <RimWorldPluginView
                 roomId={activeRoom.id}
-                envelopes={[]}
+                envelopes={canonicalRoom.pluginEnvelopes}
+                canManage={Boolean(canonicalRoom.capabilities["room.manage"])}
                 onOpenSideChat={() => {
-                  /* side chat remains available as an auxiliary panel */
+                  if (mobileViewportIsActive()) {
+                    setMobileSidebarOpen(false);
+                    setMobileRoomInfoInitialMode("side-chat");
+                    setMobileRoomInfoOpen(true);
+                  } else {
+                    setMembersOpen(true);
+                    setRightPanelMode("side-chat");
+                  }
                 }}
                 onCommand={(command) => {
                   if (!roomSocket?.ready() || !roomSocket.plugin) return;

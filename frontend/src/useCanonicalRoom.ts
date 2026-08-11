@@ -14,6 +14,7 @@ import {
   openRoomSocket,
   RoomSocketSayError,
   type NativeCliProviderAvailability,
+  type PluginEnvelope,
   type ProviderCatalogSnapshot,
   type RoomSocketAuth,
   type RoomSocketHandle,
@@ -205,6 +206,9 @@ export function useCanonicalRoom(options: UseCanonicalRoomOptions) {
   const [progressByRoom, setProgressByRoom] = useState<
     Record<string, AgentSessionProgress | null>
   >({});
+  const [pluginEnvelopesByRoom, setPluginEnvelopesByRoom] = useState<
+    Record<string, PluginEnvelope[]>
+  >({});
   const [socket, setSocket] = useState<RoomSocketHandle | null>(null);
   const [connectionState, setConnectionState] = useState<"disconnected" | "connecting" | "connected">(
     "disconnected"
@@ -332,7 +336,7 @@ export function useCanonicalRoom(options: UseCanonicalRoomOptions) {
     connectionGenerationRef.current = connectionGeneration;
     const connectionIsCurrent = () => connectionGenerationRef.current === connectionGeneration;
     setConnectionState("connecting");
-    const currentSocket = openSocket(auth, ["room_events", "side_chat"], {
+    const currentSocket = openSocket(auth, ["room_events", "side_chat", "plugin"], {
       onRoomSnapshot: (snapshot) => {
         if (!connectionIsCurrent()) return false;
         const snapshotSettings = normalizeRoomGlobalSettings(
@@ -412,6 +416,15 @@ export function useCanonicalRoom(options: UseCanonicalRoomOptions) {
       },
       onRoomEvents: (events) => {
         if (connectionIsCurrent()) applyEvents(roomId, events);
+      },
+      onPlugin: (envelopes, snapshot) => {
+        if (!connectionIsCurrent()) return;
+        setPluginEnvelopesByRoom((previous) => ({
+          ...previous,
+          [roomId]: snapshot
+            ? envelopes.slice(-512)
+            : [...(previous[roomId] || []), ...envelopes].slice(-512),
+        }));
       },
       onProviderCatalog: (catalog) => {
         if (!connectionIsCurrent()) return;
@@ -751,6 +764,7 @@ export function useCanonicalRoom(options: UseCanonicalRoomOptions) {
     providerCatalog: providerCatalogByRoom[roomId] || EMPTY_PROVIDER_CATALOG,
     providerRequests: providerRequestsByRoom[roomId] || [],
     agentSessionProgress: progressByRoom[roomId] || null,
+    pluginEnvelopes: pluginEnvelopesByRoom[roomId] || [],
     history: historyByRoom[roomId] || EMPTY_HISTORY,
     loadHistory,
     sendAgentControl,
