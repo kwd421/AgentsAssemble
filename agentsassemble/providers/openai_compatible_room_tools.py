@@ -3,10 +3,53 @@
 from __future__ import annotations
 
 import json
+import re
 from dataclasses import dataclass, field
 
 from agentsassemble.plugin.agent_tools import plugin_agent_tool_schemas
 from agentsassemble.providers.room_portal import RoomPortal
+
+
+_OPENAI_TOOL_NAME_PATTERN = re.compile(r"^[a-zA-Z0-9_-]+$")
+
+
+def openai_room_tool_name(name: object) -> str:
+    """Encode a canonical room tool name for strict OpenAI-compatible APIs.
+
+    Activity plugins intentionally namespace tools with a dot (for example
+    ``rimworld.observe``), while OpenAI-compatible function names only accept
+    letters, numbers, underscores, and hyphens. The canonical name remains
+    authoritative inside AgentsAssemble; this alias exists only at the
+    provider protocol boundary.
+    """
+
+    canonical = str(name or "")
+    if _OPENAI_TOOL_NAME_PATTERN.fullmatch(canonical):
+        return canonical
+    return re.sub(r"[^a-zA-Z0-9_-]", "_", canonical)
+
+
+def canonical_room_tool_name(name: object, active_names: object) -> str:
+    """Resolve a provider-safe alias back to one active canonical room tool."""
+
+    provider_name = str(name or "")
+    active = (
+        tuple(str(item) for item in active_names if isinstance(item, str) and item)
+        if isinstance(active_names, (set, frozenset, list, tuple))
+        else ()
+    )
+    if provider_name in active:
+        return provider_name
+    matches = [
+        canonical
+        for canonical in active
+        if openai_room_tool_name(canonical) == provider_name
+    ]
+    if len(matches) == 1:
+        return matches[0]
+    if len(matches) > 1:
+        raise RuntimeError(f"OpenAI room tool alias is ambiguous: {provider_name}.")
+    return provider_name
 
 
 ROOM_TOOL_SCHEMAS: tuple[dict[str, object], ...] = (
@@ -191,7 +234,7 @@ def room_tool_schemas(tool_names: object) -> tuple[dict[str, object], ...]:
         {
             "type": "function",
             "function": {
-                "name": schema["name"],
+                "name": openai_room_tool_name(schema["name"]),
                 "description": schema["description"],
                 "parameters": schema["parameters"],
             },
@@ -265,7 +308,8 @@ def execute_room_tool(
     function = tool_call.get("function")
     if not isinstance(function, dict):
         raise RuntimeError("Provider returned a malformed room tool call.")
-    name = str(function.get("name") or "")
+    provider_name = str(function.get("name") or "")
+    name = canonical_room_tool_name(provider_name, portal.active_tool_names())
     raw_arguments = function.get("arguments")
     try:
         arguments = json.loads(raw_arguments or "{}")
@@ -333,7 +377,9 @@ __all__ = [
     "ROOM_TOOL_SCHEMAS",
     "StreamingToolCall",
     "accumulate_streaming_tool_calls",
+    "canonical_room_tool_name",
     "complete_tool_calls",
     "execute_room_tool",
+    "openai_room_tool_name",
     "room_tool_schemas",
 ]

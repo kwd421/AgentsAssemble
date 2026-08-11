@@ -28,6 +28,7 @@ from agentsassemble.providers.api_work_tools import (
 )
 from agentsassemble.providers.openai_compatible_room_tools import (
     accumulate_streaming_tool_calls,
+    canonical_room_tool_name,
     complete_tool_calls,
     execute_room_tool,
     room_tool_schemas,
@@ -361,7 +362,7 @@ class OpenAICompatibleApiRuntime:
                         {
                             "role": "tool",
                             "tool_call_id": tool_call_id,
-                            "name": executed_name,
+                            "name": tool_name,
                             "content": tool_result,
                         }
                     )
@@ -711,6 +712,8 @@ def _tool_activity(
     if not isinstance(function, dict):
         return "도구", ""
     name = clean_room_text(function.get("name"), limit=120)
+    if room_portal is not None:
+        name = canonical_room_tool_name(name, room_portal.active_tool_names())
     title = _tool_title(name)
     try:
         arguments = json.loads(function.get("arguments") or "{}")

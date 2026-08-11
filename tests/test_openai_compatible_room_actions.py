@@ -37,18 +37,18 @@ class OpenAICompatibleRoomActionTests(unittest.TestCase):
             if len(requests) == 1:
                 return _tool_call_response("call-read", "read_discussion", {})
             if len(requests) == 2:
-                return _tool_call_response("call-observe", "rimworld.observe", {})
+                return _tool_call_response("call-observe", "rimworld_observe", {})
             if len(requests) == 3:
                 return _tool_calls_response(
                     [
                         (
                             "call-act",
-                            "rimworld.act",
+                            "rimworld_act",
                             {"action": "eat", "action_args": {}},
                         ),
                         (
                             "call-speak",
-                            "rimworld.speak",
+                            "rimworld_speak",
                             {"text": "식량을 확인합니다."},
                         ),
                     ]
@@ -99,8 +99,16 @@ class OpenAICompatibleRoomActionTests(unittest.TestCase):
             for tool in requests[0]["tools"]
         }
         self.assertTrue(
-            {"rimworld.observe", "rimworld.inspect", "rimworld.act", "rimworld.speak"}
+            {"rimworld_observe", "rimworld_inspect", "rimworld_act", "rimworld_speak"}
             .issubset(offered_names)
+        )
+        self.assertTrue(
+            all(
+                message.get("name", "").replace("_", "").isalnum()
+                for request in requests[1:]
+                for message in request["messages"]
+                if message.get("role") == "tool"
+            )
         )
         self.assertEqual(result["content"], "colony action staged")
         self.assertEqual(batch["args"]["colonist_id"], "c1")
