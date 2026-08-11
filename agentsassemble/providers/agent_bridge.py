@@ -75,6 +75,14 @@ class BridgeRoomClient(Protocol):
     def close(self) -> None: ...
 
 
+class ActivityPluginPublicationError(RuntimeError):
+    """An activity-plugin action was not confirmed by its isolated process."""
+
+    def __init__(self, message: str, *, code: str) -> None:
+        super().__init__(message)
+        self.code = clean_lobby_text(code, limit=128) or "plugin_command_failed"
+
+
 class RoomAgentBridge:
     """Own one persistent provider CLI and report it over the room WebSocket."""
 
@@ -650,11 +658,8 @@ class RoomAgentBridge:
         batch = portal.activity_plugin_command_batch(turn_id)
         if not batch:
             return
-        self.client.plugin(
-            clean_lobby_text(batch.get("plugin_id"), limit=64),
-            clean_lobby_text(batch.get("action"), limit=64),
-            batch.get("args") if isinstance(batch.get("args"), dict) else {},
-            revision=clean_lobby_text(batch.get("revision"), limit=64),
+        self._publish_activity_plugin_batch(
+            batch,
             request_id=f"bridge-plugin-{turn_id}",
         )
 
@@ -670,13 +675,42 @@ class RoomAgentBridge:
         )
         if not batch:
             return
-        self.client.plugin(
-            clean_lobby_text(batch.get("plugin_id"), limit=64),
-            clean_lobby_text(batch.get("action"), limit=64),
-            batch.get("args") if isinstance(batch.get("args"), dict) else {},
-            revision=clean_lobby_text(batch.get("revision"), limit=64),
+        self._publish_activity_plugin_batch(
+            batch,
             request_id=f"bridge-plugin-error-{turn_id}",
         )
+
+    def _publish_activity_plugin_batch(
+        self,
+        batch: dict[str, object],
+        *,
+        request_id: str,
+    ) -> dict[str, object]:
+        plugin_id = clean_lobby_text(batch.get("plugin_id"), limit=64)
+        action = clean_lobby_text(batch.get("action"), limit=64)
+        args = batch.get("args") if isinstance(batch.get("args"), dict) else {}
+        revision = clean_lobby_text(batch.get("revision"), limit=64)
+        pump = self._pump_report_messages if threading.current_thread() is self._run_thread else None
+        try:
+            return self._report_tracker.request(
+                f"plugin.{action}",
+                send=lambda correlated_id: self.client.plugin(
+                    plugin_id,
+                    action,
+                    args,
+                    revision=revision,
+                    request_id=correlated_id,
+                ),
+                pump=pump,
+                is_closed=lambda: self.client.closed,
+                wait_interval_seconds=self.receive_sleep_seconds,
+                request_id=request_id,
+            )
+        except (BridgeReportRejected, BridgeReportTimeout) as error:
+            raise ActivityPluginPublicationError(
+                str(error),
+                code=error.code,
+            ) from error
 
     def _run_turn(self, assignment: TurnAssignmentEnvelope) -> None:
         turn_id = assignment.turn_id

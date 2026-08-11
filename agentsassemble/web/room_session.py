@@ -352,6 +352,9 @@ class WsRoomSession:
 
         from agentsassemble.plugin.host_service import handle_ws_plugin_message
 
+        request_id = str(msg.get("request_id") or "").strip()[:128]
+        if not request_id:
+            return [self._plugin_nack("", "bad_request", "request_id is required.")]
         try:
             response = handle_ws_plugin_message(
                 room_id=self.meeting_id,
@@ -359,28 +362,36 @@ class WsRoomSession:
                 message=msg,
                 active_plugin_id=self.deps.active_plugin_id(self.meeting_id),
             )
-        except Exception as error:  # explicit plugin errors stay on the plugin channel
+        except Exception as error:
             return [
-                encode_text(
-                    json.dumps(
-                        {
-                            "op": "event",
-                            "stream": "plugin",
-                            "events": [
-                                {
-                                    "type": "plugin.error",
-                                    "code": str(getattr(error, "code", "plugin_error") or "plugin_error"),
-                                    "message": str(error) or "Plugin command failed.",
-                                    "room_id": self.meeting_id,
-                                }
-                            ],
-                        }
-                    )
+                self._plugin_nack(
+                    request_id,
+                    str(getattr(error, "code", "plugin_error") or "plugin_error"),
+                    str(error) or "Plugin command failed.",
                 )
             ]
         if not isinstance(response, dict):
-            return []
+            return [
+                self._plugin_nack(
+                    request_id,
+                    "plugin_error",
+                    "Plugin command returned an invalid response.",
+                )
+            ]
+        response["request_id"] = request_id
         return [encode_text(json.dumps(response))]
+
+    @staticmethod
+    def _plugin_nack(request_id: str, code: str, message: str) -> bytes:
+        return encode_text(
+            json.dumps(
+                {
+                    "op": "plugin_nack",
+                    "request_id": request_id,
+                    "error": {"code": code, "message": message},
+                }
+            )
+        )
 
     # -- delivery ---------------------------------------------------------- #
     def poll(self, *, snapshot: bool = False) -> list[bytes]:

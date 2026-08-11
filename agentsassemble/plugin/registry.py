@@ -94,16 +94,21 @@ class PluginRegistry:
             host = self._hosts.get((room, plugin_id))
             if host is None:
                 raise RuntimeError("Plugin is not active for this room.")
-            assert host is not None
-            command_id = host.send_command(
-                {
-                    "type": "plugin.command",
-                    "command": clean_room_text(payload.get("command"), limit=64),
-                    "args": payload.get("args") if isinstance(payload.get("args"), dict) else {},
-                    "revision": clean_room_text(payload.get("revision"), limit=64),
-                }
-            )
-            return {"accepted": True, "command_id": command_id, "plugin_id": plugin_id}
+        assert host is not None
+        command_id, result = host.send_command_and_wait(
+            {
+                "type": "plugin.command",
+                "command": clean_room_text(payload.get("command"), limit=64),
+                "args": payload.get("args") if isinstance(payload.get("args"), dict) else {},
+                "revision": clean_room_text(payload.get("revision"), limit=64),
+            }
+        )
+        return {
+            "accepted": True,
+            "command_id": command_id,
+            "plugin_id": plugin_id,
+            "result": result,
+        }
 
     def request_snapshot(self, room_id: str, plugin_id: str) -> dict[str, object]:
         return self.handle_command(
@@ -132,6 +137,12 @@ class PluginRegistry:
             "plugin_id": plugin_id,
             "payload": event.get("payload") if isinstance(event.get("payload"), dict) else event,
         }
+        command_id = clean_room_text(
+            event.get("command_id") or event.get("id"),
+            limit=64,
+        )
+        if command_id:
+            envelope["command_id"] = command_id
         if event_type == "plugin.error":
             envelope["code"] = clean_room_text(event.get("code"), limit=96)
             envelope["message"] = clean_room_text(event.get("message"), limit=2000)

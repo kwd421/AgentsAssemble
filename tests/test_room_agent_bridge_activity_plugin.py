@@ -12,8 +12,14 @@ from plugins.rimworld.server.sim import ColonySimulation
 
 
 class PluginBridgeClient:
-    def __init__(self, messages: list[dict[str, object]]) -> None:
+    def __init__(
+        self,
+        messages: list[dict[str, object]],
+        *,
+        reject_plugin: bool = False,
+    ) -> None:
         self.messages = list(messages)
+        self.reject_plugin = reject_plugin
         self.commands: list[tuple[str, dict[str, object], str]] = []
         self.plugin_commands: list[dict[str, object]] = []
         self.closed = False
@@ -64,6 +70,18 @@ class PluginBridgeClient:
                     "args": dict(args or {}),
                     "revision": revision,
                     "request_id": request_id,
+                }
+            )
+            self.messages.append(
+                {
+                    "op": "plugin_nack" if self.reject_plugin else "plugin_ack",
+                    "request_id": request_id,
+                    "error": {
+                        "code": "command_failed",
+                        "message": "Invalid colony action.",
+                    }
+                    if self.reject_plugin
+                    else None,
                 }
             )
         return request_id
@@ -162,10 +180,18 @@ def _wait_for(predicate, timeout: float = 2.0) -> None:
 
 
 class RoomAgentBridgeActivityPluginTests(unittest.TestCase):
-    def _run(self, *, fail: bool) -> tuple[PluginBridgeClient, dict[str, object]]:
+    def _run(
+        self,
+        *,
+        fail: bool,
+        reject_plugin: bool = False,
+    ) -> tuple[PluginBridgeClient, dict[str, object]]:
         snapshot = ColonySimulation(seed=12).snapshot()
         turn_id = "wake-plugin-failure" if fail else "wake-plugin"
-        client = PluginBridgeClient(_wake_frames(snapshot, turn_id))
+        client = PluginBridgeClient(
+            _wake_frames(snapshot, turn_id),
+            reject_plugin=reject_plugin,
+        )
         with tempfile.TemporaryDirectory() as temp_dir:
             portal = RoomPortal(Path(temp_dir) / "portal", participant_id="agent-b")
             portal.prepare()
@@ -180,7 +206,7 @@ class RoomAgentBridgeActivityPluginTests(unittest.TestCase):
             )
             thread = threading.Thread(target=bridge.run, daemon=True)
             thread.start()
-            terminal_action = "turn.failed" if fail else "turn.decline"
+            terminal_action = "turn.failed" if fail or reject_plugin else "turn.decline"
             _wait_for(
                 lambda: any(action == terminal_action for action, _, _ in client.commands)
             )
@@ -217,6 +243,17 @@ class RoomAgentBridgeActivityPluginTests(unittest.TestCase):
         self.assertEqual(command["action"], "model_error")
         self.assertEqual(command["args"]["colonist_id"], "c2")
         self.assertIn("RuntimeError", command["args"]["message"])
+
+    def test_room_wake_reports_rejected_plugin_action_as_turn_failure(self) -> None:
+        client, _snapshot = self._run(fail=False, reject_plugin=True)
+
+        failed = next(
+            payload
+            for action, payload, _request_id in client.commands
+            if action == "turn.failed"
+        )
+        self.assertEqual(failed["error_code"], "command_failed")
+        self.assertIn("Invalid colony action", failed["message"])
 
 
 if __name__ == "__main__":

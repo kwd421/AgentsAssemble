@@ -9,6 +9,7 @@ import sys
 import threading
 import time
 from collections.abc import Callable
+from dataclasses import dataclass, field
 from pathlib import Path
 
 from agentsassemble.plugin.manifest import PluginManifest
@@ -21,6 +22,21 @@ except ImportError:  # Windows does not expose POSIX resource limits.
     resource = None
 
 EventHandler = Callable[[dict[str, object]], None]
+
+
+class PluginProcessCommandError(RuntimeError):
+    """The isolated plugin process explicitly rejected one command."""
+
+    def __init__(self, message: str, *, code: str, command_id: str) -> None:
+        super().__init__(message)
+        self.code = clean_room_text(code, limit=96) or "plugin_command_failed"
+        self.command_id = clean_room_text(command_id, limit=64)
+
+
+@dataclass
+class _PendingPluginCommand:
+    event: threading.Event = field(default_factory=threading.Event)
+    result: dict[str, object] | None = None
 
 
 class PluginProcessHost:
@@ -46,6 +62,7 @@ class PluginProcessHost:
         self._lock = threading.RLock()
         self._command_id = 0
         self._last_error = ""
+        self._pending_commands: dict[str, _PendingPluginCommand] = {}
 
     def start(self, *, initial_state: dict[str, object] | None = None) -> dict[str, object]:
         with self._lock:
@@ -115,15 +132,59 @@ class PluginProcessHost:
             return self.health()
 
     def send_command(self, payload: dict[str, object]) -> str:
+        return self._send_command(payload)
+
+    def send_command_and_wait(
+        self,
+        payload: dict[str, object],
+        *,
+        timeout_seconds: float = 5.0,
+    ) -> tuple[str, dict[str, object]]:
+        pending = _PendingPluginCommand()
+        command_id = self._send_command(payload, pending=pending)
+        try:
+            if not pending.event.wait(max(0.1, float(timeout_seconds))):
+                raise TimeoutError(
+                    f"Plugin command {command_id} timed out waiting for a process result."
+                )
+            result = pending.result
+            if not isinstance(result, dict):
+                raise RuntimeError(
+                    f"Plugin command {command_id} completed without a structured result."
+                )
+            if clean_room_text(result.get("type"), limit=64) == "plugin.error":
+                raise PluginProcessCommandError(
+                    clean_room_text(result.get("message"), limit=2000)
+                    or "Plugin command failed.",
+                    code=clean_room_text(result.get("code"), limit=96),
+                    command_id=command_id,
+                )
+            return command_id, result
+        finally:
+            with self._lock:
+                self._pending_commands.pop(command_id, None)
+
+    def _send_command(
+        self,
+        payload: dict[str, object],
+        *,
+        pending: _PendingPluginCommand | None = None,
+    ) -> str:
         with self._lock:
             process = self._process
             if process is None or process.stdin is None or process.poll() is not None:
                 raise RuntimeError("Plugin process is not running.")
             self._command_id += 1
             command_id = f"cmd-{self._command_id}"
+            if pending is not None:
+                self._pending_commands[command_id] = pending
             message = {"id": command_id, **payload}
-            process.stdin.write(json.dumps(message, ensure_ascii=False) + "\n")
-            process.stdin.flush()
+            try:
+                process.stdin.write(json.dumps(message, ensure_ascii=False) + "\n")
+                process.stdin.flush()
+            except Exception:
+                self._pending_commands.pop(command_id, None)
+                raise
             return command_id
 
     def stop(self, *, timeout_seconds: float = 2.0) -> None:
@@ -182,6 +243,7 @@ class PluginProcessHost:
                 continue
             if str(event.get("type") or "") == "plugin.error":
                 self._last_error = str(event.get("message") or "plugin error")
+            self._resolve_pending_command(event)
             if self._on_event is not None:
                 try:
                     self._on_event(event)
@@ -197,6 +259,20 @@ class PluginProcessHost:
                     "room_id": self.room_id,
                 }
             )
+
+    def _resolve_pending_command(self, event: dict[str, object]) -> None:
+        command_id = clean_room_text(
+            event.get("command_id") or event.get("id"),
+            limit=64,
+        )
+        if not command_id:
+            return
+        with self._lock:
+            pending = self._pending_commands.get(command_id)
+            if pending is None:
+                return
+            pending.result = dict(event)
+            pending.event.set()
 
     def _read_stderr(self) -> None:
         process = self._process
@@ -234,4 +310,4 @@ def _limit_plugin_process() -> None:
             pass
 
 
-__all__ = ["PluginProcessHost"]
+__all__ = ["PluginProcessCommandError", "PluginProcessHost"]

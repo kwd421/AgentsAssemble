@@ -262,12 +262,17 @@ class BridgeReportResponse:
 
     @classmethod
     def parse(cls, value: object) -> BridgeReportResponse | None:
-        if not isinstance(value, dict) or value.get("op") not in {"ack", "nack"}:
+        if not isinstance(value, dict) or value.get("op") not in {
+            "ack",
+            "nack",
+            "plugin_ack",
+            "plugin_nack",
+        }:
             return None
         request_id = clean_room_text(value.get("request_id"), limit=128)
         if not request_id:
             return None
-        if value.get("op") == "ack":
+        if value.get("op") in {"ack", "plugin_ack"}:
             return cls(request_id=request_id, accepted=True, code="", message="", frame=dict(value))
         error = value.get("error") if isinstance(value.get("error"), dict) else {}
         code = clean_room_text(error.get("code"), limit=128) or "bridge_report_rejected"

@@ -2,9 +2,14 @@ import json
 import struct
 import threading
 import unittest
+from uuid import uuid4
 
 import agentsassemble.web.room_session as room_session_module
-from agentsassemble.plugin.host_service import _broadcast, reset_plugin_host_for_tests
+from agentsassemble.plugin.host_service import (
+    _broadcast,
+    plugin_registry,
+    reset_plugin_host_for_tests,
+)
 from agentsassemble.web.websocket_codec import (
     CLOSE_MESSAGE_TOO_BIG,
     CLOSE_POLICY_VIOLATION,
@@ -185,6 +190,7 @@ class FakeDeps:
         }
         self.commands = []
         self.subscriptions = []
+        self.activity_plugin = ""
 
     def make(self):
         return WsRoomDeps(
@@ -196,6 +202,7 @@ class FakeDeps:
             room_snapshot=lambda identity, after_seq: {**self.room_snapshot, "after_seq": after_seq},
             execute_command=self._execute_command,
             on_subscribe=lambda identity, streams, after_seq: self.subscriptions.append((identity, streams, after_seq)),
+            active_plugin_id=lambda _meeting_id: self.activity_plugin,
         )
 
     def _read_lobby_after(self, meeting_id, after):
@@ -292,6 +299,71 @@ class SubscribeTests(unittest.TestCase):
             [400],
         )
         self.assertEqual(plugin_frame["latest_seq"], 400)
+
+    def test_plugin_command_acknowledges_the_applied_process_result(self):
+        room_id = f"plugin-ack-{uuid4().hex}"
+        deps = FakeDeps()
+        deps.activity_plugin = "rimworld"
+        plugin_registry().activate(room_id, "rimworld")
+        session = _session(deps, meeting_id=room_id)
+
+        frames = session.handle_frame(
+            OP_TEXT,
+            json.dumps(
+                {
+                    "op": "plugin",
+                    "request_id": "plugin-request-1",
+                    "plugin_id": "rimworld",
+                    "action": "agent_turn",
+                    "revision": "0",
+                    "args": {
+                        "colonist_id": "c1",
+                        "act": {"action": "eat", "action_args": {}},
+                    },
+                }
+            ).encode(),
+        )
+
+        response = text_messages(frames)[0]
+        self.assertEqual(response["op"], "plugin_ack")
+        self.assertEqual(response["request_id"], "plugin-request-1")
+        self.assertEqual(response["result"]["type"], "plugin.delta")
+        colonist = response["result"]["payload"]["colonists"][0]
+        self.assertEqual(colonist["current_job"]["kind"], "eat")
+
+    def test_plugin_command_rejection_is_correlated_and_does_not_mutate_state(self):
+        room_id = f"plugin-nack-{uuid4().hex}"
+        deps = FakeDeps()
+        deps.activity_plugin = "rimworld"
+        plugin_registry().activate(room_id, "rimworld")
+        session = _session(deps, meeting_id=room_id)
+
+        frames = session.handle_frame(
+            OP_TEXT,
+            json.dumps(
+                {
+                    "op": "plugin",
+                    "request_id": "plugin-request-invalid",
+                    "plugin_id": "rimworld",
+                    "action": "agent_turn",
+                    "revision": "0",
+                    "args": {
+                        "colonist_id": "c1",
+                        "act": {
+                            "action": "build",
+                            "action_args": {"type": "shelter", "x": 14, "y": 8},
+                        },
+                    },
+                }
+            ).encode(),
+        )
+
+        response = text_messages(frames)[0]
+        self.assertEqual(response["op"], "plugin_nack")
+        self.assertEqual(response["request_id"], "plugin-request-invalid")
+        self.assertEqual(response["error"]["code"], "command_failed")
+        snapshot_result = plugin_registry().request_snapshot(room_id, "rimworld")
+        self.assertEqual(snapshot_result["result"]["payload"]["revision"], 0)
 
     def test_room_events_subscription_returns_canonical_snapshot_and_resume_sequence(self):
         deps = FakeDeps()

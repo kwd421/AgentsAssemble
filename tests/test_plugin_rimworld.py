@@ -10,7 +10,10 @@ from pathlib import Path
 from agentsassemble.plugin.manifest import load_first_party_manifests, load_manifest
 from agentsassemble.plugin.activity_wakes import ActivityPluginWakeRouter
 from agentsassemble.plugin.host_service import handle_ws_plugin_message, plugin_registry
-from agentsassemble.plugin.process_host import PluginProcessHost
+from agentsassemble.plugin.process_host import (
+    PluginProcessCommandError,
+    PluginProcessHost,
+)
 from agentsassemble.plugin.registry import PluginRegistry
 from agentsassemble.plugin.settings import clean_activity_plugin
 from agentsassemble.plugin.storage import PluginStorage
@@ -337,10 +340,12 @@ class PluginRimworldTests(unittest.TestCase):
                 msg=f"events={events!r}",
             )
             # Unauthorized/unknown command should produce an explicit plugin.error.
-            registry.handle_command(
-                "room-sim",
-                {"plugin_id": "rimworld", "command": "drop_database", "args": {}},
-            )
+            with self.assertRaises(PluginProcessCommandError) as rejected:
+                registry.handle_command(
+                    "room-sim",
+                    {"plugin_id": "rimworld", "command": "drop_database", "args": {}},
+                )
+            self.assertEqual(rejected.exception.code, "revision_required")
             deadline = time.monotonic() + 5.0
             while time.monotonic() < deadline and not any(
                 item.get("type") == "plugin.error" for item in events
