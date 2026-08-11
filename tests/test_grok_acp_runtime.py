@@ -142,6 +142,24 @@ class GrokAcpRuntimeTests(unittest.TestCase):
                         **common,
                     )
                 )
+
+        plugin_common = {
+            **common,
+            "allowed_tool_names": frozenset({"rimworld.observe"}),
+        }
+        for name in (
+            "rimworld_observe",
+            "agentsassemble_room_rimworld_observe",
+            "agentsassemble_room__rimworld_observe",
+        ):
+            with self.subTest(plugin_tool=name):
+                self.assertTrue(
+                    permission_is_room_mcp_tool(
+                        {"sessionId": "session-1", "toolCallId": "call-1"},
+                        {"name": name},
+                        **plugin_common,
+                    )
+                )
         for name in (
             "evil_agentsassemble_room_publish_message",
             "agentsassemble_room_delete_everything",

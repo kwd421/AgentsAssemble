@@ -6,6 +6,7 @@ import argparse
 from pathlib import Path
 
 from agentsassemble.providers.room_portal import RoomPortal
+from agentsassemble.providers.room_tool_names import provider_room_tool_name
 
 
 def serve_room_portal_mcp(root: str | Path) -> None:
@@ -74,12 +75,12 @@ def serve_room_portal_mcp(root: str | Path) -> None:
         """Choose one item from 2 to 50 options using server-side randomness."""
         return portal.choose_random(options, reason=reason)
 
-    @server.tool(name="rimworld.observe")
+    @server.tool(name=provider_room_tool_name("rimworld.observe"))
     def rimworld_observe() -> dict[str, object]:
         """Observe colony-wide state for this session's assigned colonist."""
         return portal.activity_plugin_observe()
 
-    @server.tool(name="rimworld.inspect")
+    @server.tool(name=provider_room_tool_name("rimworld.inspect"))
     def rimworld_inspect(
         target_type: str,
         target_id: str = "",
@@ -96,7 +97,7 @@ def serve_room_portal_mcp(root: str | Path) -> None:
             }
         )
 
-    @server.tool(name="rimworld.act")
+    @server.tool(name=provider_room_tool_name("rimworld.act"))
     def rimworld_act(
         action: str,
         action_args: dict[str, object] | None = None,
@@ -104,7 +105,7 @@ def serve_room_portal_mcp(root: str | Path) -> None:
         """Stage one structured action for this session's colonist."""
         return portal.activity_plugin_act(action, action_args or {})
 
-    @server.tool(name="rimworld.speak")
+    @server.tool(name=provider_room_tool_name("rimworld.speak"))
     def rimworld_speak(text: str) -> dict[str, object]:
         """Stage one in-character colony side-chat line."""
         return portal.activity_plugin_speak(text)

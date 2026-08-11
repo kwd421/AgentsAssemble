@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from agentsassemble.providers.room_tool_names import provider_room_tool_name
 from agentsassemble.room.text import clean_room_text
 
 
@@ -51,9 +52,12 @@ def permission_is_room_mcp_tool(
         )
         if value
     ]
-    allowed_permission_names = frozenset(allowed_tool_names) | frozenset(
+    provider_names = frozenset(
+        provider_room_tool_name(name) for name in allowed_tool_names
+    )
+    allowed_permission_names = frozenset(allowed_tool_names) | provider_names | frozenset(
         f"{_ROOM_MCP_SERVER_NAME}{separator}{name}"
-        for name in allowed_tool_names
+        for name in frozenset(allowed_tool_names) | provider_names
         for separator in ("_", "__")
     )
     return any(identity in allowed_permission_names for identity in identities)
