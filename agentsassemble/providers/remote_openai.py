@@ -56,6 +56,7 @@ class RemoteOpenAIProfile:
     request_headers: tuple[tuple[str, str], ...] = ()
     max_output_tokens: int = 0
     custom_endpoint: bool = False
+    tool_choice_unsupported_variants: frozenset[str] = frozenset()
 
 
 REMOTE_OPENAI_PROFILES = (
@@ -95,6 +96,7 @@ REMOTE_OPENAI_PROFILES = (
         variants=(("thinking", "사용"), ("non_thinking", "사용 안 함")),
         default_variant="thinking",
         max_output_tokens=4096,
+        tool_choice_unsupported_variants=frozenset({"thinking"}),
     ),
     RemoteOpenAIProfile(
         provider_id="cerebras",
@@ -525,6 +527,10 @@ class RemoteOpenAICompatibleRuntime(OpenAICompatibleApiRuntime):
             message_source=f"{profile.provider_id}_sse",
             variant=variant,
             include_reasoning_in_messages=include_reasoning,
+            supports_tool_choice=(
+                (variant or profile.default_variant)
+                not in profile.tool_choice_unsupported_variants
+            ),
             request_payload=request_payload,
             request_headers=dict(profile.request_headers),
             opener=opener,

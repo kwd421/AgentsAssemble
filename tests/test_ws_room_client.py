@@ -141,6 +141,20 @@ class SendUnitTests(unittest.TestCase):
             },
         )
 
+    def test_plugin_command_preserves_initial_zero_revision(self):
+        client, sock = self._opened()
+
+        client.plugin(
+            "rimworld",
+            "set_speed",
+            {"speed": 3},
+            revision=0,
+            request_id="plugin-initial",
+        )
+
+        sent = sock.sent_messages()[-1]
+        self.assertEqual(sent["revision"], "0")
+
     def test_say_can_wait_for_ack(self):
         client, sock = self._opened()
         with patch("agentsassemble.web.room_client.uuid4") as fake_uuid:

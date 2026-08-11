@@ -154,7 +154,7 @@ class WsRoomClient:
         action: str,
         args: dict[str, object] | None = None,
         *,
-        revision: str = "",
+        revision: str | int = "",
         request_id: str = "",
     ) -> str:
         correlated_id = str(request_id or f"plugin-{uuid4().hex[:16]}")
@@ -165,7 +165,7 @@ class WsRoomClient:
                 "plugin_id": str(plugin_id or ""),
                 "action": str(action or ""),
                 "args": dict(args or {}),
-                "revision": str(revision or ""),
+                "revision": "" if revision is None else str(revision),
             }
         )
         return correlated_id

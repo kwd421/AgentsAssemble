@@ -50,6 +50,51 @@ class _SlowResponse:
 
 
 class RemoteOpenAIProviderTests(unittest.TestCase):
+    def test_deepseek_thinking_room_turn_omits_unsupported_tool_choice(self):
+        profile = remote_openai_profile("deepseek")
+        self.assertIsNotNone(profile)
+        requests: list[dict[str, object]] = []
+
+        def opener(request: Request, timeout: float):
+            del timeout
+            requests.append(json.loads(request.data))
+            if len(requests) == 1:
+                return _tool_call_response("call-read", "read_discussion", {})
+            return _content_response("deepseek-v4-flash", "확인했습니다.")
+
+        with tempfile.TemporaryDirectory() as temp_dir:
+            portal = RoomPortal(Path(temp_dir), participant_id="deepseek-agent")
+            portal.prepare()
+            portal.ingest_frame(
+                {
+                    "events": [
+                        {
+                            "seq": 1,
+                            "type": "message",
+                            "content": "상태를 확인해 줘.",
+                        }
+                    ]
+                }
+            )
+            portal.begin_observation("deepseek-thinking-turn", input_up_to_seq=1)
+            runtime = RemoteOpenAICompatibleRuntime(
+                "deepseek-agent",
+                profile=profile,
+                api_key="test-key",
+                model="deepseek-v4-flash",
+                variant="thinking",
+                max_output_tokens=4096,
+                opener=opener,
+                room_portal=portal,
+            )
+
+            runtime.send_room_observation("room.wake deepseek-thinking-turn")
+            result = runtime.read_output(timeout_seconds=2)
+
+        self.assertEqual(result["content"], "확인했습니다.")
+        self.assertNotIn("tool_choice", requests[0])
+        self.assertNotIn("tool_choice", requests[1])
+
     def test_public_catalog_never_reflects_the_provider_credential_from_failure_text(self):
         secret = "catalog-secret-credential-918273645"
 
