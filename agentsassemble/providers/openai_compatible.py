@@ -46,7 +46,7 @@ from agentsassemble.providers.turn_progress import (
     ProviderTurnProgress,
     run_during_provider_wait,
 )
-from agentsassemble.providers.room_portal import RoomPortal
+from agentsassemble.providers.room_portal import RoomPortal, RoomPortalError
 from agentsassemble.providers.provider_errors import provider_http_error
 from agentsassemble.room.text import clean_room_text
 
@@ -321,6 +321,7 @@ class OpenAICompatibleApiRuntime:
                     }
                     if on_activity is not None:
                         on_activity({**activity_fields, "status": "running"})
+                    tool_failed = False
                     try:
                         if tool_name in _work_tool_names():
                             executed_name, arguments = parse_work_tool_arguments(tool_call)
@@ -354,6 +355,24 @@ class OpenAICompatibleApiRuntime:
                             raise RuntimeError(
                                 f"{self.provider_name} requested a room tool outside a room observation."
                             )
+                    except RoomPortalError as error:
+                        if not room_observation or self._room_portal is None:
+                            raise
+                        executed_name = canonical_room_tool_name(
+                            tool_name,
+                            self._room_portal.active_tool_names(),
+                        )
+                        tool_result = json.dumps(
+                            {
+                                "ok": False,
+                                "error": {
+                                    "code": "room_tool_rejected",
+                                    "message": str(error),
+                                },
+                            },
+                            ensure_ascii=False,
+                        )
+                        tool_failed = True
                     except Exception:
                         if on_activity is not None:
                             on_activity({**activity_fields, "status": "failed"})
@@ -376,7 +395,12 @@ class OpenAICompatibleApiRuntime:
                             )
                         )
                     if on_activity is not None:
-                        on_activity({**activity_fields, "status": "completed"})
+                        on_activity(
+                            {
+                                **activity_fields,
+                                "status": "failed" if tool_failed else "completed",
+                            }
+                        )
                     progress.record()
                     if room_action_completed:
                         discarded_after_terminal_tool_calls += (

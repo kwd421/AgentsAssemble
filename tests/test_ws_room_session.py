@@ -331,6 +331,41 @@ class SubscribeTests(unittest.TestCase):
         colonist = response["result"]["payload"]["colonists"][0]
         self.assertEqual(colonist["current_job"]["kind"], "eat")
 
+    def test_agent_bridge_can_apply_its_staged_plugin_turn(self):
+        room_id = f"plugin-bridge-{uuid4().hex}"
+        deps = FakeDeps()
+        deps.activity_plugin = "rimworld"
+        plugin_registry().activate(room_id, "rimworld")
+        session = _session(
+            deps,
+            meeting_id=room_id,
+            agent_id="agent-bridge-1",
+            participant_type="agent",
+            client_type="agent_bridge",
+        )
+
+        frames = session.handle_frame(
+            OP_TEXT,
+            json.dumps(
+                {
+                    "op": "plugin",
+                    "request_id": "bridge-plugin-request-1",
+                    "plugin_id": "rimworld",
+                    "action": "agent_turn",
+                    "revision": "0",
+                    "args": {
+                        "colonist_id": "c1",
+                        "act": {"action": "eat", "action_args": {}},
+                    },
+                }
+            ).encode(),
+        )
+
+        response = text_messages(frames)[0]
+        self.assertEqual(response["op"], "plugin_ack")
+        colonist = response["result"]["payload"]["colonists"][0]
+        self.assertEqual(colonist["current_job"]["kind"], "eat")
+
     def test_plugin_command_rejection_is_correlated_and_does_not_mutate_state(self):
         room_id = f"plugin-nack-{uuid4().hex}"
         deps = FakeDeps()

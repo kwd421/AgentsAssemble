@@ -153,7 +153,10 @@ def handle_ws_plugin_message(
     if action == "snapshot":
         result = registry.request_snapshot(room_id, plugin_id)
         return {"op": "plugin_ack", "action": "snapshot", **result}
-    if not capabilities.get("message.send"):
+    if not (
+        capabilities.get("message.send")
+        or capabilities.get("bridge.publish")
+    ):
         raise PluginCommandRejected(
             "Plugin commands require room write permission.",
             code="permission_denied",

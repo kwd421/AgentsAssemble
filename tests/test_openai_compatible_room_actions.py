@@ -115,6 +115,91 @@ class OpenAICompatibleRoomActionTests(unittest.TestCase):
         self.assertEqual(batch["args"]["act"]["action"], "eat")
         self.assertEqual(batch["args"]["speak"], "식량을 확인합니다.")
 
+    def test_plugin_tool_rejection_is_returned_to_model_without_losing_first_action(self):
+        from plugins.rimworld.server.sim import ColonySimulation
+
+        profile = remote_openai_profile("openrouter")
+        self.assertIsNotNone(profile)
+        requests: list[dict[str, object]] = []
+
+        def opener(request: Request, timeout: float):
+            del timeout
+            body = json.loads(request.data)
+            requests.append(body)
+            if len(requests) == 1:
+                return _tool_call_response("call-read", "read_discussion", {})
+            if len(requests) == 2:
+                return _tool_call_response("call-observe", "rimworld_observe", {})
+            if len(requests) == 3:
+                return _tool_calls_response(
+                    [
+                        (
+                            "call-first-act",
+                            "rimworld_act",
+                            {"action": "eat", "action_args": {}},
+                        ),
+                        (
+                            "call-second-act",
+                            "rimworld_act",
+                            {"action": "sleep", "action_args": {}},
+                        ),
+                    ]
+                )
+            if len(requests) == 4:
+                return _tool_call_response(
+                    "call-speak",
+                    "rimworld_speak",
+                    {"text": "먼저 식사하겠습니다."},
+                )
+            return _content_response("openai/test", "first action retained")
+
+        with tempfile.TemporaryDirectory() as temp_dir:
+            portal = RoomPortal(Path(temp_dir), participant_id="agent-a")
+            portal.prepare()
+            portal.ingest_frame(
+                {
+                    "room_settings": {"activity_plugin": "rimworld"},
+                    "participants": [
+                        {"participant_id": "agent-a", "participant_type": "agent"},
+                    ],
+                }
+            )
+            portal.ingest_frame(
+                {
+                    "stream": "plugin",
+                    "events": [
+                        {
+                            "type": "plugin.snapshot",
+                            "plugin_id": "rimworld",
+                            "payload": ColonySimulation(seed=3).snapshot(),
+                        }
+                    ],
+                }
+            )
+            portal.begin_observation("turn-plugin", input_up_to_seq=0)
+            runtime = RemoteOpenAICompatibleRuntime(
+                "agent-a",
+                profile=profile,
+                api_key="test-key",
+                model="openai/test",
+                opener=opener,
+                room_portal=portal,
+            )
+
+            runtime.send_room_observation("room.wake turn-plugin")
+            result = runtime.read_output(timeout_seconds=2)
+            batch = portal.activity_plugin_command_batch("turn-plugin")
+
+        duplicate_result = next(
+            message["content"]
+            for message in requests[3]["messages"]
+            if message.get("tool_call_id") == "call-second-act"
+        )
+        self.assertIn("Only one colony action", duplicate_result)
+        self.assertEqual(result["content"], "first action retained")
+        self.assertEqual(batch["args"]["act"]["action"], "eat")
+        self.assertEqual(batch["args"]["speak"], "먼저 식사하겠습니다.")
+
     def test_runtime_reads_and_publishes_through_room_tools(self):
         profile = remote_openai_profile("openrouter")
         self.assertIsNotNone(profile)
