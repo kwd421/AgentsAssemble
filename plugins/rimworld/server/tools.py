@@ -39,7 +39,13 @@ TOOL_SCHEMAS = [
     },
     {
         "name": "rimworld.act",
-        "description": "Issue a structured colonist action.",
+        "description": (
+            "Stage one colonist action. action_args formats: build requires "
+            "{kind: bed|wall|door|table|campfire|workbench|storage, x: 0-47, y: 0-31}; "
+            "set_priorities requires {priorities: {job: 1-4}}; set_job requires "
+            "{job, target?}; social uses {other_id}; tend uses {patient_id}. "
+            "choose_work, eat, sleep, and recreation use {}."
+        ),
         "parameters": {
             "type": "object",
             "properties": {
@@ -59,7 +65,56 @@ TOOL_SCHEMAS = [
                         "tend",
                     ],
                 },
-                "action_args": {"type": "object"},
+                "action_args": {
+                    "type": "object",
+                    "description": "Arguments matching the selected action; use {} when none are required.",
+                    "properties": {
+                        "kind": {
+                            "type": "string",
+                            "enum": [
+                                "bed",
+                                "wall",
+                                "door",
+                                "table",
+                                "campfire",
+                                "workbench",
+                                "storage",
+                            ],
+                        },
+                        "x": {"type": "integer", "minimum": 0, "maximum": 47},
+                        "y": {"type": "integer", "minimum": 0, "maximum": 31},
+                        "priorities": {
+                            "type": "object",
+                            "description": (
+                                "Map known jobs (fight, tend, construct, haul, eat, sleep, "
+                                "recreation, social, work) to priority 1-4."
+                            ),
+                            "additionalProperties": {
+                                "type": "integer",
+                                "minimum": 1,
+                                "maximum": 4,
+                            },
+                        },
+                        "job": {
+                            "type": "string",
+                            "enum": [
+                                "fight",
+                                "tend",
+                                "construct",
+                                "haul",
+                                "eat",
+                                "sleep",
+                                "recreation",
+                                "social",
+                                "work",
+                            ],
+                        },
+                        "target": {"type": "object"},
+                        "other_id": {"type": "string"},
+                        "patient_id": {"type": "string"},
+                    },
+                    "additionalProperties": True,
+                },
             },
             "required": ["action"],
             "additionalProperties": False,

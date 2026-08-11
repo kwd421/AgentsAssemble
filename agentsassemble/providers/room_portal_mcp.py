@@ -102,7 +102,10 @@ def serve_room_portal_mcp(root: str | Path) -> None:
         action: str,
         action_args: dict[str, object] | None = None,
     ) -> dict[str, object]:
-        """Stage one structured action for this session's colonist."""
+        """Stage one action. build uses kind/x/y; valid kinds: bed, wall, door,
+        table, campfire, workbench, storage. set_priorities uses a priorities
+        map of known jobs to 1-4; set_job uses job and optional target. eat,
+        sleep, recreation, and choose_work use an empty action_args object."""
         return portal.activity_plugin_act(action, action_args or {})
 
     @server.tool(name=provider_room_tool_name("rimworld.speak"))

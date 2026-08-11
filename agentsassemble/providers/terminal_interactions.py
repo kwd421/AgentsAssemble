@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 import re
 import shlex
 import threading
@@ -16,6 +17,7 @@ _PERMISSION_BLOCK = re.compile(
 )
 _ATTACHMENT_ID = re.compile(r"^[A-Za-z0-9_-]{8,64}$")
 _AGENT_ID = re.compile(r"^[A-Za-z0-9_.-]{1,128}$")
+_PLUGIN_ACTION = re.compile(r"^[a-z][a-z0-9_-]{0,63}$")
 _DICE_NOTATION = re.compile(
     r"^(?P<count>\d{0,3})d(?P<sides>\d{1,4})(?P<modifier>[+-]\d{1,5})?$",
     re.IGNORECASE,
@@ -152,6 +154,8 @@ def is_safe_room_portal_command(command: str) -> bool:
         return False
     action = parts[1]
     arguments = parts[2:]
+    if action.startswith("rim-"):
+        return _is_safe_rimworld_command(action, arguments, command)
     if action == "read":
         return not arguments
     if action == "media":
@@ -172,6 +176,49 @@ def is_safe_room_portal_command(command: str) -> bool:
         argument.startswith("~")
         for argument in arguments
     )
+
+
+def _is_safe_rimworld_command(
+    action: str,
+    arguments: list[str],
+    command: str,
+) -> bool:
+    if action == "rim-observe":
+        return not arguments
+    if action == "rim-inspect":
+        if not arguments:
+            return False
+        target_type = arguments[0]
+        if target_type == "structure":
+            return len(arguments) == 1
+        if target_type == "colonist":
+            return len(arguments) in {1, 2} and (
+                len(arguments) == 1 or _AGENT_ID.fullmatch(arguments[1]) is not None
+            )
+        if target_type == "cell" and len(arguments) == 3:
+            try:
+                x, y = int(arguments[1]), int(arguments[2])
+            except ValueError:
+                return False
+            return 0 <= x <= 47 and 0 <= y <= 31
+        return False
+    if action == "rim-act":
+        if len(arguments) != 2 or _PLUGIN_ACTION.fullmatch(arguments[0]) is None:
+            return False
+        if _has_shell_expansion_outside_single_quotes(command):
+            return False
+        try:
+            action_args = json.loads(arguments[1])
+        except (json.JSONDecodeError, ValueError):
+            return False
+        return isinstance(action_args, dict)
+    if action == "rim-speak":
+        return bool(
+            arguments
+            and not _has_shell_expansion_outside_single_quotes(command)
+            and not any(argument.startswith("~") for argument in arguments)
+        )
+    return False
 
 
 def is_safe_room_roll_command(command: str) -> bool:

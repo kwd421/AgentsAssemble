@@ -118,7 +118,10 @@ def room_wake_orientation(
 - RimWorld activity tools use `agentsassemble-room rim-observe`,
   `rim-inspect <colonist|structure|cell>`, `rim-act <action> '<json-args>'`,
   and `rim-speak '<text>'`. Stage at most one action and one speech line in a
-  wake; the bridge sends them together against the observed game revision."""
+  wake; the bridge sends them together against the observed game revision.
+- For `rim-act build`, use JSON keys `kind`, `x`, and `y`. Valid kinds are
+  bed, wall, door, table, campfire, workbench, and storage. There is no
+  `shelter` kind and the key is not `type`."""
     return f"""Current turn contract: room wake
 - `room.wake <turn-id>` is only a content-free signal that assigned, finalized
   room activity is available.
