@@ -3,9 +3,6 @@ import unittest
 from pathlib import Path
 from urllib.parse import urlparse
 
-from agentsassemble.gui_legacy_live_agent_preflight_http import (
-    register_legacy_live_agent_preflight_route as compatibility_register,
-)
 from agentsassemble.legacy.live_agent.http.preflight import (
     LegacyLiveAgentPreflightHttpDeps,
     register_legacy_live_agent_preflight_route,
@@ -57,8 +54,6 @@ def _dispatch(router: Router) -> FakeHandler:
 
 
 class LegacyLiveAgentPreflightRouteTests(unittest.TestCase):
-    def test_root_module_exports_owned_registrar(self) -> None:
-        self.assertIs(compatibility_register, register_legacy_live_agent_preflight_route)
 
     def test_registers_only_preflight(self) -> None:
         router = Router()

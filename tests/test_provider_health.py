@@ -7,13 +7,7 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from unittest.mock import patch
 
-from agentsassemble.provider_health import provider_health_report as compatibility_report
 from agentsassemble.diagnostics.provider_health import provider_health_report
-
-
-class ProviderHealthPackageTests(unittest.TestCase):
-    def test_root_module_exports_owned_report(self) -> None:
-        self.assertIs(compatibility_report, provider_health_report)
 
 
 class ProviderHealthTests(unittest.TestCase):

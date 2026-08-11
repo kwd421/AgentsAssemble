@@ -3,9 +3,6 @@ from http import HTTPStatus
 from pathlib import Path
 from urllib.parse import parse_qs, urlparse
 
-from agentsassemble.gui_legacy_live_agent_official_reply_http import (
-    register_legacy_live_agent_official_reply_route as compatibility_register,
-)
 from agentsassemble.legacy.live_agent.http.official_reply import (
     LegacyLiveAgentOfficialReplyHttpDeps,
     register_legacy_live_agent_official_reply_route,
@@ -40,8 +37,6 @@ class FakeReplyService:
 
 
 class LegacyLiveAgentOfficialReplyRouteTests(unittest.TestCase):
-    def test_root_module_exports_owned_registrar(self) -> None:
-        self.assertIs(compatibility_register, register_legacy_live_agent_official_reply_route)
 
     def setUp(self) -> None:
         self.service = FakeReplyService()

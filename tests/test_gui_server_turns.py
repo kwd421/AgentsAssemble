@@ -909,6 +909,12 @@ class GuiServerTurnTests(unittest.TestCase):
             self.assertEqual(rounds_result["answered_round_count"], 1)
             self.assertEqual(rounds_result["results"][0]["round_id"], "round_2")
             self.assertEqual(rounds_result["results"][0]["role_ids"], ["critic"])
+            request_events = [
+                event
+                for event in read_live_events(meeting_dir, limit=None)
+                if event.get("kind") == "live_agent_turn_request"
+            ]
+            self.assertEqual([event["content"] for event in request_events], ["Next"])
             live_state = json.loads((meeting_dir / "live_state.json").read_text(encoding="utf-8"))
             self.assertEqual([round_item["id"] for round_item in live_state["debate_rounds"]], ["round_1", "round_2"])
             operations_text = json.dumps(operations["operations"], ensure_ascii=False)
@@ -1339,7 +1345,7 @@ class GuiServerTurnTests(unittest.TestCase):
                     **base_meeting,
                     "debate_rounds": [
                         {
-                            "id": "round_1",
+                            "round": "round_1",
                             "status": "answered",
                             "role_ids": ["architect"],
                             "turn_count": 1,

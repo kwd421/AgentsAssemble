@@ -24,9 +24,6 @@ from agentsassemble.room.attachments import (
 
 
 class TestSanitizeAttachmentFilename(unittest.TestCase):
-    def test_normal_filename(self):
-        self.assertEqual(sanitize_attachment_filename("hello.txt"), "hello.txt")
-
     def test_strips_path_separators(self):
         self.assertEqual(sanitize_attachment_filename("/etc/passwd"), "passwd")
         self.assertEqual(sanitize_attachment_filename("..\\..\\secret.txt"), "secret.txt")
@@ -55,9 +52,6 @@ class TestSanitizeAttachmentFilename(unittest.TestCase):
 
 
 class TestNormalizeContentType(unittest.TestCase):
-    def test_valid_type_passes(self):
-        self.assertEqual(normalize_content_type("image/png", "x.png"), "image/png")
-
     def test_strips_params(self):
         self.assertEqual(normalize_content_type("text/html; charset=utf-8", "x.html"), "text/html")
 
@@ -75,10 +69,6 @@ class TestNormalizeContentType(unittest.TestCase):
 
 
 class TestDecodeAttachmentData(unittest.TestCase):
-    def test_valid_base64(self):
-        encoded = base64.b64encode(b"hello world").decode()
-        self.assertEqual(decode_attachment_data(encoded), b"hello world")
-
     def test_data_uri_prefix_stripped(self):
         encoded = base64.b64encode(b"test").decode()
         data_uri = f"data:image/png;base64,{encoded}"

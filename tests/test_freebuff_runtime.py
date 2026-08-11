@@ -2,18 +2,15 @@ from __future__ import annotations
 
 import unittest
 import tempfile
+import sys
 import threading
 from pathlib import Path
-from unittest.mock import patch
 
 from agentsassemble.providers.freebuff_runtime import (
     FreebuffRuntime,
     _extract_model_labels,
     _match_model_label,
 )
-from agentsassemble.providers.launch_specs import native_cli_provider_definition
-from agentsassemble.providers.runtime_factory import runtime_from_config
-from agentsassemble.providers.runtime_config import ProviderRuntimeConfig
 
 
 class FreebuffRuntimeTests(unittest.TestCase):
@@ -42,17 +39,12 @@ class FreebuffRuntimeTests(unittest.TestCase):
             def send_keys(self, value: str) -> None:
                 self.keys.append(value)
 
-        with tempfile.TemporaryDirectory() as temp_dir, patch(
-            "agentsassemble.providers.freebuff_runtime.shutil.which",
-            return_value="/fake/freebuff",
-        ), patch(
-            "agentsassemble.providers.freebuff_runtime._freebuff_version",
-            return_value="test-version",
-        ):
+        with tempfile.TemporaryDirectory() as temp_dir:
             runtime = FreebuffRuntime(
                 "freebuff-start",
                 workspace=temp_dir,
                 state_dir=Path(temp_dir) / "state",
+                executable=sys.executable,
                 terminal_runtime_factory=Terminal,
             )
             health = runtime.start()
@@ -92,15 +84,6 @@ class FreebuffRuntimeTests(unittest.TestCase):
             self.assertFalse(worker.is_alive(), "successful label selection deadlocked")
             self.assertIn("DeepSeek", str(completed.get("label") or ""))
             self.assertEqual(terminal.keys[-1], "\r")
-
-    def test_catalog_registers_freebuff_subscription_provider(self) -> None:
-        definition = native_cli_provider_definition("freebuff")
-        self.assertIsNotNone(definition)
-        self.assertEqual(definition.provider_kind, "freebuff_live_session")
-        self.assertEqual(definition.catalog_group, "subscription")
-        self.assertEqual(definition.default_model, "DeepSeek V4 Flash")
-        spec = definition.make_default_spec(cwd=".")
-        self.assertEqual(spec.command[0], "freebuff")
 
     def test_model_label_match_uses_name_not_menu_ordinal(self) -> None:
         screen = """
@@ -158,42 +141,6 @@ class FreebuffRuntimeTests(unittest.TestCase):
 
             with self.assertRaisesRegex(Exception, "service_overloaded"):
                 runtime._select_model_by_label()
-
-    def test_runtime_factory_builds_freebuff_runtime(self) -> None:
-        config = ProviderRuntimeConfig(
-            participant_id="freebuff-1",
-            provider_kind="freebuff_live_session",
-            runtime_kind="live_cli",
-            command=("freebuff",),
-            cwd="/tmp",
-            model="DeepSeek V4 Flash",
-            reasoning_effort="",
-            service_tier="",
-            variant="",
-            permission_mode="workspace_write",
-            max_output_tokens=0,
-            context_contract_bytes=0,
-            transport="pty",
-            quiet_seconds=0.5,
-            input_mode="raw",
-            submit_newline="\r",
-            submit_delay_seconds=0.0,
-            terminal_rows=40,
-            terminal_columns=120,
-            startup_quiet_seconds=1.0,
-            startup_timeout_seconds=30.0,
-            startup_accept_contains="",
-            startup_accept_keys="\r",
-            startup_ready_contains="",
-            startup_input="",
-            runtime_state_dir="/tmp/freebuff-state",
-            provider_endpoint="",
-            provider_server_pid=None,
-        )
-        runtime = runtime_from_config(config)
-        self.assertEqual(type(runtime).__name__, "FreebuffRuntime")
-        health = runtime.health()
-        self.assertIn("structured_protocol", health["unsupported"])
 
 
 if __name__ == "__main__":

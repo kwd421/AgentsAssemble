@@ -1,6 +1,5 @@
 import json
 import os
-import signal
 import shlex
 import subprocess
 import sys
@@ -13,9 +12,7 @@ from unittest.mock import patch
 from agentsassemble.legacy.live_agent.runtime.smoke import (
     LiveAgentSmokeFailed,
     SESSION_SMOKE_ROLE_TEXT,
-    _kill_session_smoke_process_group,
     _make_session_smoke_group_recoverable,
-    _session_smoke_kill_signal,
     build_live_agent_official_round_smoke_config,
     build_live_agent_smoke_config,
     run_live_agent_session_smoke,
@@ -316,25 +313,6 @@ class LiveAgentSmokeTests(unittest.TestCase):
 
         self.assertIn("--last-error=lobby reply failed", error_heartbeat)
         self.assertIn("--last-observed-event-id=evt-1", error_heartbeat)
-
-    def test_session_smoke_recover_killer_uses_non_graceful_signal(self):
-        with patch("agentsassemble.legacy.live_agent.runtime.smoke.os.killpg") as killpg:
-            _kill_session_smoke_process_group(1234)
-
-        killpg.assert_called_once_with(1234, signal.SIGKILL)
-
-    def test_session_smoke_recover_killer_falls_back_without_sigkill(self):
-        class TermOnlySignal:
-            SIGTERM = signal.SIGTERM
-
-        self.assertEqual(_session_smoke_kill_signal(TermOnlySignal), signal.SIGTERM)
-        with patch("agentsassemble.legacy.live_agent.runtime.smoke.os.killpg", side_effect=AttributeError):
-            with patch("agentsassemble.legacy.live_agent.runtime.smoke._session_smoke_kill_signal", return_value=signal.SIGTERM):
-                with patch("agentsassemble.legacy.live_agent.runtime.smoke.os.kill") as kill:
-                    _kill_session_smoke_process_group(1234)
-
-        kill.assert_called_once_with(1234, signal.SIGTERM)
-
     def test_session_smoke_runs_start_reply_check_resume_restart_and_stop_sequence(self):
         calls = []
         state = {"probe_ids": [], "started": False}

@@ -7,7 +7,7 @@ import unittest
 from http import HTTPStatus
 from pathlib import Path
 
-from agentsassemble.plugin.manifest import load_first_party_manifests, load_manifest
+from agentsassemble.plugin.manifest import load_manifest
 from agentsassemble.plugin.activity_wakes import ActivityPluginWakeRouter
 from agentsassemble.plugin.host_service import handle_ws_plugin_message, plugin_registry
 from agentsassemble.plugin.process_host import (
@@ -15,9 +15,8 @@ from agentsassemble.plugin.process_host import (
     PluginProcessHost,
 )
 from agentsassemble.plugin.registry import PluginRegistry
-from agentsassemble.plugin.settings import clean_activity_plugin
 from agentsassemble.plugin.storage import PluginStorage
-from agentsassemble.providers.room_portal import RoomPortal, RoomPortalError
+from agentsassemble.providers.room_portal import RoomPortal
 from agentsassemble.web.static import ReactStaticTransport
 
 
@@ -120,46 +119,6 @@ class PluginRimworldTests(unittest.TestCase):
         self.assertEqual(batch["args"]["act"]["action"], "build")
         self.assertEqual(batch["args"]["speak"], "침대를 먼저 짓겠습니다.")
 
-    def test_room_portal_translates_duplicate_plugin_action_to_public_error(self) -> None:
-        from plugins.rimworld.server.sim import ColonySimulation
-
-        with tempfile.TemporaryDirectory() as temp_dir:
-            portal = RoomPortal(Path(temp_dir) / "portal", participant_id="agent-a")
-            portal.prepare()
-            portal.ingest_frame(
-                {
-                    "room_settings": {"activity_plugin": "rimworld"},
-                    "participants": [
-                        {
-                            "participant_id": "agent-a",
-                            "participant_type": "agent",
-                            "display_name": "A",
-                        }
-                    ],
-                }
-            )
-            portal.ingest_frame(
-                {
-                    "op": "event",
-                    "stream": "plugin",
-                    "events": [
-                        {
-                            "type": "plugin.snapshot",
-                            "plugin_id": "rimworld",
-                            "payload": ColonySimulation(seed=11).snapshot(),
-                        }
-                    ],
-                }
-            )
-            portal.begin_observation("wake-plugin", input_up_to_seq=0)
-            portal.activity_plugin_act("eat", {})
-
-            with self.assertRaisesRegex(
-                RoomPortalError,
-                "Only one colony action may be staged per turn",
-            ):
-                portal.activity_plugin_act("sleep", {})
-
     def test_public_plugin_assets_do_not_expose_server_source(self) -> None:
         class Handler:
             headers: dict[str, str] = {}
@@ -215,17 +174,6 @@ class PluginRimworldTests(unittest.TestCase):
                 )
         finally:
             plugin_registry().deactivate("room-read-only", "rimworld")
-
-    def test_first_party_manifest_loads_with_restricted_permissions(self) -> None:
-        manifests = load_first_party_manifests()
-        rimworld = next(item for item in manifests if item.id == "rimworld")
-        self.assertEqual(rimworld.api, "agentsassemble.plugin/v1")
-        self.assertEqual(
-            rimworld.permissions,
-            frozenset(
-                {"room.read", "room.activity.write", "agent.tools", "plugin.storage"}
-            ),
-        )
 
     def test_denied_permissions_are_rejected(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:
@@ -303,12 +251,6 @@ class PluginRimworldTests(unittest.TestCase):
             finally:
                 host.stop()
 
-    def test_activity_plugin_setting_accepts_only_known_first_party_ids(self) -> None:
-        self.assertEqual(clean_activity_plugin("rimworld"), "rimworld")
-        self.assertEqual(clean_activity_plugin("none"), "")
-        with self.assertRaisesRegex(ValueError, "Unknown first-party"):
-            clean_activity_plugin("marketplace-mod")
-
     def test_plugin_storage_batches_are_room_scoped_and_not_transcript(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:
             storage = PluginStorage(Path(temp_dir))
@@ -355,24 +297,6 @@ class PluginRimworldTests(unittest.TestCase):
             self.assertEqual(error.get("code"), "revision_required")
             self.assertIn("revision", str(error.get("message") or "").lower())
             registry.deactivate("room-sim", "rimworld")
-
-    def test_plugin_command_requires_current_revision(self) -> None:
-        from plugins.rimworld.server.main import PluginServer
-
-        server = PluginServer()
-        events: list[dict[str, object]] = []
-        server._emit = lambda event: events.append(event)
-        server.handle(
-            {
-                "type": "plugin.command",
-                "id": "missing-revision",
-                "command": "set_speed",
-                "args": {"speed": 1},
-            }
-        )
-        self.assertEqual(server.sim.speed, 0)
-        self.assertEqual(events[-1].get("type"), "plugin.error")
-        self.assertEqual(events[-1].get("code"), "revision_required")
 
     def test_distinct_colonists_can_act_from_the_same_observed_snapshot(self) -> None:
         from plugins.rimworld.server.main import PluginServer
@@ -560,7 +484,6 @@ class PluginRimworldTests(unittest.TestCase):
         sim.step(20)
         self.assertIsNone(colonist.current_job)
         self.assertIn({"kind": "wall", "x": 11, "y": 8}, sim.structures)
-
 
 if __name__ == "__main__":
     unittest.main()

@@ -209,7 +209,10 @@ class SessionLabelTests(unittest.TestCase):
                     },
                     {
                         "type": "event_msg",
-                        "payload": {"type": "user_message", "message": "실제로 친 말"},
+                        "payload": {
+                            "type": "user_message",
+                            "message": "typed-by-the-person-7",
+                        },
                     },
                 ],
             )
@@ -218,7 +221,7 @@ class SessionLabelTests(unittest.TestCase):
                 "codex_live_session", home=home, workspace="/w/wanted"
             )
 
-            self.assertEqual(sessions[0]["label"], "실제로 친 말")
+            self.assertEqual(sessions[0]["label"], "typed-by-the-person-7")
 
 
 class OpenCodeAndOllamaSessionTests(unittest.TestCase):

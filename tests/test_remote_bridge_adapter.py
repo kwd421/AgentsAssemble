@@ -1,6 +1,8 @@
 import json
+import threading
 import time
 import unittest
+from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from unittest.mock import patch
 
 from agentsassemble.providers.adapters.remote_bridge import RemoteBridgeAdapter
@@ -25,6 +27,60 @@ class FakeRequester:
 
 
 class RemoteBridgeAdapterTests(unittest.TestCase):
+    def test_loopback_http_bridge_uses_local_transport_and_returns_reply(self):
+        received: list[dict[str, object]] = []
+
+        class Handler(BaseHTTPRequestHandler):
+            def do_POST(self):
+                size = int(self.headers.get("Content-Length") or 0)
+                received.append(
+                    {
+                        "path": self.path,
+                        "payload": json.loads(self.rfile.read(size)),
+                    }
+                )
+                body = json.dumps(
+                    {
+                        "text": json.dumps(
+                            {"message": "loopback reply", "kind": "message"}
+                        ),
+                        "metadata": {"bridge": "loopback"},
+                    }
+                ).encode("utf-8")
+                self.send_response(200)
+                self.send_header("Content-Type", "application/json")
+                self.send_header("Content-Length", str(len(body)))
+                self.end_headers()
+                self.wfile.write(body)
+
+            def log_message(self, _format, *_args):
+                return
+
+        server = ThreadingHTTPServer(("127.0.0.1", 0), Handler)
+        thread = threading.Thread(target=server.serve_forever, daemon=True)
+        thread.start()
+        try:
+            adapter = RemoteBridgeAdapter(
+                ProviderConfig(
+                    id="loopback-bridge",
+                    kind="remote_http_bridge",
+                    display_name="Loopback Bridge",
+                    endpoint=f"http://127.0.0.1:{server.server_port}",
+                )
+            )
+            role = Role("agent", "Loopback", "Agent", "Local bridge")
+
+            event = adapter.run_lobby_prompt(role, {"role_id": role.id}, "reply")
+
+            self.assertEqual(event["message"], "loopback reply")
+            self.assertEqual(event["bridge"]["bridge"], "loopback")
+            self.assertEqual(received[0]["path"], "/agentsassemble/run")
+            self.assertEqual(received[0]["payload"]["step"], "lobby")
+        finally:
+            server.shutdown()
+            server.server_close()
+            thread.join(timeout=2)
+
     def test_remote_bridge_round_participates_as_meeting_agent(self):
         bridge_content = f"bridge-content-{time.time_ns()}"
         requester = FakeRequester(

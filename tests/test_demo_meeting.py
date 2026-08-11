@@ -639,13 +639,21 @@ class DemoMeetingTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as temp_dir:
             result = run_demo_meeting(adapter_name="mock", output_root=Path(temp_dir))
             meeting = json.loads((result.meeting_dir / "meeting.json").read_text(encoding="utf-8"))
+            transcript = (result.meeting_dir / "transcript.md").read_text(encoding="utf-8")
 
             round_one = meeting["debate_rounds"][0]["messages"]
             for message in round_one:
                 own_role = message["role_id"]
+                own_research = json.loads(
+                    (result.meeting_dir / "private_research" / own_role / "research.json").read_text(
+                        encoding="utf-8"
+                    )
+                )
                 self.assertEqual(message["stance_status"], "held")
                 self.assertTrue(message["position"])
                 self.assertTrue(message["change_conditions"])
+                self.assertNotIn(own_research["summary"], message["content"])
+                self.assertNotIn(own_research["summary"], transcript)
                 for other_role in ("lore_lawyer", "show_me_the_feats", "fanboard_skeptic"):
                     if other_role != own_role:
                         self.assertNotIn(f"private_research/{other_role}", message["content"])

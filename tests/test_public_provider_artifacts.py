@@ -36,22 +36,36 @@ class PublicProviderArtifactTests(unittest.TestCase):
 
         self.assertEqual(public["auth_ref"], "<redacted>")
 
-    def test_provider_public_dict_scrubs_endpoint_and_notes(self):
-        provider = ProviderConfig(
-            id="bridge",
-            kind="remote_http_bridge",
-            display_name="Bridge",
-            endpoint="https://user:secret-pass@example.com:8777/run?token=secret-token&room=public",
-            notes="Bearer secret-token for testing",
+    def test_provider_public_dict_scrubs_isolated_endpoint_and_note_secrets(self):
+        secret_cases = (
+            {"endpoint": "https://example.com/run?token=token-value"},
+            {"endpoint": "https://example.com/run?secret=secret-value"},
+            {"endpoint": "https://example.com/run?authorization=auth-value"},
+            {"endpoint": "https://example.com/run?password=password-value"},
+            {"endpoint": "https://example.com/run?refresh_token=refresh-value"},
+            {"endpoint": "https://user:user-password@example.com/run"},
+            {"endpoint": "bearer endpoint-value"},
+            {"notes": "Bearer note-value"},
+            {"notes": "x-api-key: note-value"},
+            {"notes": "token=note-value"},
+            {"notes": "password=note-value"},
+            {"notes": "client_secret=note-value"},
+            {"notes": "AUTHORIZATION note-value"},
         )
+        for fields in secret_cases:
+            with self.subTest(fields=fields):
+                provider = ProviderConfig(
+                    id="bridge",
+                    kind="remote_http_bridge",
+                    display_name="Bridge",
+                    **fields,
+                )
 
-        public = provider.public_dict()
-        payload = json.dumps(public, ensure_ascii=False)
+                public = provider.public_dict()
+                payload = json.dumps(public, ensure_ascii=False)
 
-        self.assertNotIn("secret-pass", payload)
-        self.assertNotIn("secret-token", payload)
-        self.assertEqual(public["notes"], "<redacted>")
-        self.assertEqual(public["endpoint"], "<redacted>")
+                self.assertNotIn(next(iter(fields.values())), payload)
+                self.assertEqual(public[next(iter(fields))], "<redacted>")
 
     def test_provider_public_dict_scrubs_common_endpoint_key_params(self):
         for query in ("api_key=sk_live_abc123", "key=AIzaSyABC123", "access_key=abc123"):
@@ -68,6 +82,22 @@ class PublicProviderArtifactTests(unittest.TestCase):
 
                 self.assertNotIn(query.split("=", 1)[1], payload)
                 self.assertEqual(public["endpoint"], "<redacted>")
+
+    def test_provider_public_dict_preserves_safe_metadata_and_env_auth_reference(self):
+        provider = ProviderConfig(
+            id="local-bridge",
+            kind="remote_http_bridge",
+            display_name="Local Bridge",
+            endpoint="http://localhost:8080/v1?model=gpt-4&version=2",
+            auth_ref="env:LOCAL_BRIDGE_API_KEY",
+            notes="Uses a local model",
+        )
+
+        public = provider.public_dict()
+
+        self.assertEqual(public["endpoint"], provider.endpoint)
+        self.assertEqual(public["auth_ref"], provider.auth_ref)
+        self.assertEqual(public["notes"], provider.notes)
 
     def test_meeting_artifacts_do_not_expose_provider_secrets(self):
         with tempfile.TemporaryDirectory() as temp_dir:

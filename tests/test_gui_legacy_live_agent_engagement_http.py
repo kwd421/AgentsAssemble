@@ -4,9 +4,6 @@ from http import HTTPStatus
 from pathlib import Path
 from urllib.parse import parse_qs, urlparse
 
-from agentsassemble.gui_legacy_live_agent_engagement_http import (
-    register_legacy_live_agent_engagement_route as compatibility_register,
-)
 from agentsassemble.legacy.live_agent.http.engagement import (
     register_legacy_live_agent_engagement_route,
 )
@@ -45,8 +42,6 @@ class FakeService:
 
 
 class LegacyLiveAgentEngagementRouteTests(unittest.TestCase):
-    def test_root_module_exports_owned_registrar(self) -> None:
-        self.assertIs(compatibility_register, register_legacy_live_agent_engagement_route)
 
     def setUp(self) -> None:
         self.service = FakeService()

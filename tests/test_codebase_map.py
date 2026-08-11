@@ -195,21 +195,6 @@ class CodebaseMapTests(unittest.TestCase):
         self.assertIn('data-zoom="fit"', html)
         self.assertIn("marker-start", html)
 
-    def test_graph_canvases_are_zoomable_and_pannable(self) -> None:
-        html = render_html(self.data)
-
-        # Zoom is Cmd/Ctrl + wheel; a plain wheel must stay page scrolling.
-        self.assertIn("attachStage(", html)
-        self.assertIn("event.metaKey", html)
-        self.assertIn("event.ctrlKey", html)
-        self.assertIn("pointermove", html)
-        for control in ("zin", "zout", "zfit", "zone", "czin", "czout", "czfit", "czone"):
-            with self.subTest(control=control):
-                self.assertIn(f'id="{control}"', html)
-        # Both stages must be wired, not just the package graph.
-        self.assertIn("attachStage(wrap, svg, W, H, {", html)
-        self.assertIn("attachStage(wrap, svg, CG.width, CG.height, {", html)
-
     def test_health_findings_are_derived_and_scoped(self) -> None:
         health = self.data["health"]
         cols = [

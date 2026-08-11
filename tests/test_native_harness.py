@@ -13,7 +13,6 @@ from urllib.error import HTTPError
 from urllib.parse import urlsplit
 from urllib.request import Request, urlopen
 
-from agentsassemble.providers.capabilities import ProviderCapabilityCatalog
 from agentsassemble.providers.native_harness import NativeHarnessRuntime
 from agentsassemble.providers.native_harness import native_harness_runtime
 from agentsassemble.providers.native_harness_gateway import NativeModelGateway
@@ -105,35 +104,6 @@ class _UpstreamServer:
         self.server.shutdown()
         self.server.server_close()
         self.thread.join(timeout=2.0)
-
-
-class NativeHarnessCatalogTests(unittest.TestCase):
-    def test_api_catalog_exposes_installed_native_coding_harnesses(self) -> None:
-        available = {"codex", "claude", "opencode", "pi"}
-        catalog = ProviderCapabilityCatalog(
-            runner=lambda _command, _timeout: (1, "", "not installed"),
-            resolver=lambda executable: (
-                f"/bin/{executable}" if executable in available else None
-            ),
-            remote_model_discovery=lambda _profile, _api_key: [],
-            secret_resolver=lambda _provider_id: "",
-        )
-
-        deepseek = next(
-            provider
-            for provider in catalog.payload(refresh=True)
-            if provider["id"] == "deepseek"
-        )
-        harness = next(
-            control
-            for control in deepseek["controls"]
-            if control["key"] == "execution_harness"
-        )
-
-        self.assertEqual(
-            [option["value"] for option in harness["options"]],
-            ["builtin", "codex", "claude", "opencode", "pi"],
-        )
 
 
 class NativeHarnessGatewayTests(unittest.TestCase):

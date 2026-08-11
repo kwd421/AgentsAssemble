@@ -4,9 +4,6 @@ import urllib.error
 from pathlib import Path
 from urllib.parse import urlparse
 
-from agentsassemble.gui_legacy_live_agent_smoke_http import (
-    register_legacy_live_agent_smoke_routes as compatibility_register,
-)
 from agentsassemble.legacy.live_agent.http.smoke import (
     LegacyLiveAgentSmokeHttpDeps,
     register_legacy_live_agent_smoke_routes,
@@ -95,8 +92,6 @@ def _dispatch(router: Router, path: str) -> FakeHandler:
 
 
 class LegacyLiveAgentSmokeRouteTests(unittest.TestCase):
-    def test_root_module_exports_owned_registrar(self) -> None:
-        self.assertIs(compatibility_register, register_legacy_live_agent_smoke_routes)
 
     def test_registers_only_credential_free_smoke_routes(self) -> None:
         router = Router()

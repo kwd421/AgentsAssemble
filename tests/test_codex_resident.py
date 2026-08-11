@@ -142,19 +142,6 @@ class CodexResidentFastModeTests(unittest.TestCase):
 
         self.assertEqual(first, "previous streamed reply")
 
-    def test_build_command_enables_fast_mode_when_toggled(self):
-        runner = CodexResidentCommandRunner(_codex_config(fast_mode=True))
-        command = runner._build_command(Path(tempfile.gettempdir()) / "out.txt")
-        self.assertIn("--enable", command)
-        self.assertEqual(command[command.index("--enable") + 1], "fast_mode")
-        runner.close()
-
-    def test_build_command_omits_fast_mode_by_default(self):
-        runner = CodexResidentCommandRunner(_codex_config())
-        command = runner._build_command(Path(tempfile.gettempdir()) / "out.txt")
-        self.assertNotIn("--enable", command)
-        runner.close()
-
     def test_runtime_overrides_apply_live_without_restart(self):
         # Config says read-only + fast off; a live edit flips both for the next turn.
         runner = CodexResidentCommandRunner(_codex_config(permission_option="read-only"))

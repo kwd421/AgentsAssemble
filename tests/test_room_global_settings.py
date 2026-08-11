@@ -109,6 +109,11 @@ class RoomGlobalSettingsTests(unittest.TestCase):
                         }
                     )
 
+        with self.assertRaisesRegex(ValueError, "Unknown first-party"):
+            validate_room_global_settings(
+                {**source, "activity_plugin": "marketplace-mod"}
+            )
+
     def test_channels_must_be_canonical_and_ordered(self) -> None:
         source = _settings()
         channel = dict(source["channels"][0])

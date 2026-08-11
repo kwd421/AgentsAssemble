@@ -10,16 +10,12 @@ from io import StringIO
 from pathlib import Path
 
 from tests.run_postgres_contracts import (
-    POSTGRES_REQUIRED_MODULES,
     POSTGRES_TEST_DSN_ENV,
-    missing_postgres_contract_requirements,
     run_postgres_contract_suite,
 )
 
 
-def _suite_with(
-    test_method: Callable[[unittest.TestCase], None],
-) -> unittest.TestSuite:
+def _suite_with(test_method: Callable[[unittest.TestCase], None]) -> unittest.TestSuite:
     class ContractCase(unittest.TestCase):
         def runTest(self) -> None:
             test_method(self)
@@ -83,69 +79,64 @@ class PostgresContractRunnerTests(unittest.TestCase):
 
         self.assertEqual(probe.returncode, 0, probe.stdout + probe.stderr)
 
-    def test_preflight_requires_dsn_and_every_postgres_module(self) -> None:
-        missing = missing_postgres_contract_requirements(
-            {},
-            find_module=lambda _name: None,
+    def test_preflight_fails_closed_without_requirements_and_redacts_dsn(self) -> None:
+        project_root = Path(__file__).resolve().parents[1]
+        missing_dsn_environment = dict(os.environ)
+        missing_dsn_environment.pop(POSTGRES_TEST_DSN_ENV, None)
+        missing_dsn = subprocess.run(
+            [sys.executable, "-S", "-m", "tests.run_postgres_contracts"],
+            cwd=project_root,
+            env=missing_dsn_environment,
+            capture_output=True,
+            text=True,
         )
 
-        self.assertEqual(
-            missing,
-            (POSTGRES_TEST_DSN_ENV, *POSTGRES_REQUIRED_MODULES),
-        )
+        self.assertEqual(missing_dsn.returncode, 2)
+        self.assertIn(POSTGRES_TEST_DSN_ENV, missing_dsn.stderr)
 
-    def test_preflight_never_returns_the_dsn_value(self) -> None:
         secret_dsn = "postgresql://secret-user:secret-password@example.invalid/rooms"
-
-        missing = missing_postgres_contract_requirements(
-            {POSTGRES_TEST_DSN_ENV: secret_dsn},
-            find_module=lambda _name: object(),
+        missing_drivers_environment = {
+            **missing_dsn_environment,
+            POSTGRES_TEST_DSN_ENV: secret_dsn,
+        }
+        missing_drivers = subprocess.run(
+            [sys.executable, "-S", "-m", "tests.run_postgres_contracts"],
+            cwd=project_root,
+            env=missing_drivers_environment,
+            capture_output=True,
+            text=True,
         )
 
-        self.assertEqual(missing, ())
-        self.assertNotIn(secret_dsn, repr(missing))
+        self.assertEqual(missing_drivers.returncode, 2)
+        for module_name in ("alembic", "psycopg", "psycopg_pool", "sqlalchemy"):
+            self.assertIn(module_name, missing_drivers.stderr)
+        self.assertNotIn(secret_dsn, missing_drivers.stderr)
 
-    def test_strict_runner_accepts_a_successful_unskipped_suite(self) -> None:
+    def test_strict_runner_rejects_skipped_empty_and_failing_suites(self) -> None:
         def passing(_self) -> None:
             return None
 
-        output = StringIO()
-
-        exit_code = run_postgres_contract_suite(_suite_with(passing), stream=output)
-
-        self.assertEqual(exit_code, 0)
-        self.assertIn("OK", output.getvalue())
-
-    def test_strict_runner_rejects_any_skipped_contract(self) -> None:
         def skipped(self) -> None:
             self.skipTest("database unavailable")
 
-        output = StringIO()
-
-        exit_code = run_postgres_contract_suite(_suite_with(skipped), stream=output)
-
-        self.assertEqual(exit_code, 1)
-        self.assertIn("requires every selected contract to run", output.getvalue())
-        self.assertIn("database unavailable", output.getvalue())
-
-    def test_strict_runner_rejects_an_empty_suite(self) -> None:
-        output = StringIO()
-
-        exit_code = run_postgres_contract_suite(unittest.TestSuite(), stream=output)
-
-        self.assertEqual(exit_code, 1)
-        self.assertIn("did not discover any tests", output.getvalue())
-
-    def test_strict_runner_preserves_test_failures(self) -> None:
         def failing(self) -> None:
             self.fail("contract failed")
 
-        output = StringIO()
+        cases = (
+            ("passing", _suite_with(passing), 0, "OK"),
+            ("skipped", _suite_with(skipped), 1, "database unavailable"),
+            ("empty", unittest.TestSuite(), 1, "did not discover any tests"),
+            ("failing", _suite_with(failing), 1, "contract failed"),
+        )
+        for label, suite, expected_exit, expected_evidence in cases:
+            with self.subTest(label=label):
+                output = StringIO()
 
-        exit_code = run_postgres_contract_suite(_suite_with(failing), stream=output)
+                exit_code = run_postgres_contract_suite(suite, stream=output)
 
-        self.assertEqual(exit_code, 1)
-        self.assertIn("contract failed", output.getvalue())
+                self.assertEqual(exit_code, expected_exit)
+                self.assertIn(expected_evidence, output.getvalue())
+
 
 if __name__ == "__main__":
     unittest.main()
