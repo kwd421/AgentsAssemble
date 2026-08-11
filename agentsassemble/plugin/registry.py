@@ -32,6 +32,8 @@ class PluginRegistry:
         self._hosts: dict[tuple[str, str], PluginProcessHost] = {}
         self._lock = threading.RLock()
         self._last_batch_at: dict[tuple[str, str], float] = {}
+        self._pending_storage: dict[tuple[str, str], dict[str, object]] = {}
+        self._storage_timers: dict[tuple[str, str], threading.Timer] = {}
 
     def list_public(self) -> list[dict[str, object]]:
         return [manifest.public_payload() for manifest in self._manifests.values()]
@@ -56,7 +58,13 @@ class PluginRegistry:
                     on_event=lambda event: self._handle_plugin_event(room, plugin, event),
                 )
                 self._hosts[key] = host
-            return host.start()
+            persisted = self._storage.read_json(room, plugin, "latest")
+            initial_state = (
+                persisted.get("payload")
+                if isinstance(persisted, dict) and isinstance(persisted.get("payload"), dict)
+                else None
+            )
+            return host.start(initial_state=initial_state)
 
     def deactivate(self, room_id: str, plugin_id: str = "") -> None:
         room = clean_room_text(room_id, limit=128)
@@ -68,6 +76,7 @@ class PluginRegistry:
                 else [key for key in self._hosts if not room or key[0] == room]
             )
             for key in keys:
+                self._flush_storage(key)
                 host = self._hosts.pop(key, None)
                 if host is not None:
                     host.stop()
@@ -123,17 +132,33 @@ class PluginRegistry:
             "plugin_id": plugin_id,
             "payload": event.get("payload") if isinstance(event.get("payload"), dict) else event,
         }
-        # High-frequency game state is batched into plugin storage every 200ms
-        # and never written into the official room transcript path.
+        # High-frequency game state is coalesced into plugin storage every
+        # 200ms and never written into the official room transcript path.
         if event_type in {"plugin.snapshot", "plugin.delta"}:
             key = (room_id, plugin_id)
-            now = time.monotonic()
-            last = self._last_batch_at.get(key, 0.0)
-            if now - last >= 0.2 or event_type == "plugin.snapshot":
-                self._last_batch_at[key] = now
-                self._storage.write_json(room_id, plugin_id, "latest", envelope)
+            with self._lock:
+                self._pending_storage[key] = envelope
+                if event_type == "plugin.snapshot":
+                    self._flush_storage(key)
+                elif key not in self._storage_timers:
+                    timer = threading.Timer(0.2, self._flush_storage, args=(key,))
+                    timer.daemon = True
+                    self._storage_timers[key] = timer
+                    timer.start()
         if self._broadcast is not None:
             self._broadcast(room_id, envelope)
+
+    def _flush_storage(self, key: tuple[str, str]) -> None:
+        with self._lock:
+            timer = self._storage_timers.pop(key, None)
+            if timer is not None and timer is not threading.current_thread():
+                timer.cancel()
+            envelope = self._pending_storage.pop(key, None)
+            if envelope is None:
+                return
+            self._last_batch_at[key] = time.monotonic()
+            room_id, plugin_id = key
+            self._storage.write_json(room_id, plugin_id, "latest", envelope)
 
 
 __all__ = ["PluginRegistry"]

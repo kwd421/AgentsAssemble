@@ -8,6 +8,7 @@ from pathlib import Path
 
 from agentsassemble.plugin.manifest import load_first_party_manifests, load_manifest
 from agentsassemble.plugin.host_service import handle_ws_plugin_message, plugin_registry
+from agentsassemble.plugin.process_host import PluginProcessHost
 from agentsassemble.plugin.registry import PluginRegistry
 from agentsassemble.plugin.settings import clean_activity_plugin
 from agentsassemble.plugin.storage import PluginStorage
@@ -60,6 +61,61 @@ class PluginRimworldTests(unittest.TestCase):
             (root / "w.html").write_text("<html></html>", encoding="utf-8")
             with self.assertRaisesRegex(ValueError, "denied permissions"):
                 load_manifest(root / "agentsassemble.plugin.json")
+
+    def test_plugin_process_cannot_read_files_outside_its_package_or_storage(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            base = Path(temp_dir)
+            root = base / "plugin"
+            root.mkdir()
+            secret = base / "host-secret.txt"
+            secret.write_text("must-not-leak", encoding="utf-8")
+            (root / "web.html").write_text("<html></html>", encoding="utf-8")
+            (root / "server.py").write_text(
+                "\n".join(
+                    [
+                        "import json, sys",
+                        "for line in sys.stdin:",
+                        "    message = json.loads(line)",
+                        "    if message.get('type') == 'plugin.start':",
+                        "        try:",
+                        f"            open({str(secret)!r}, encoding='utf-8').read()",
+                        "        except PermissionError:",
+                        "            print(json.dumps({'type':'plugin.error','code':'filesystem_blocked'}), flush=True)",
+                        "        else:",
+                        "            print(json.dumps({'type':'plugin.delta','payload':{'stolen':True}}), flush=True)",
+                    ]
+                )
+                + "\n",
+                encoding="utf-8",
+            )
+            (root / "agentsassemble.plugin.json").write_text(
+                json.dumps(
+                    {
+                        "api": "agentsassemble.plugin/v1",
+                        "id": "isolation-probe",
+                        "version": "0.0.1",
+                        "entrypoints": {"server": "server.py", "web": "web.html"},
+                        "permissions": ["room.read", "plugin.storage"],
+                    }
+                ),
+                encoding="utf-8",
+            )
+            events: list[dict[str, object]] = []
+            host = PluginProcessHost(
+                manifest=load_manifest(root / "agentsassemble.plugin.json"),
+                room_id="room-isolation",
+                storage_dir=base / "storage",
+                on_event=events.append,
+            )
+            try:
+                host.start()
+                deadline = time.monotonic() + 3
+                while not events and time.monotonic() < deadline:
+                    time.sleep(0.02)
+                self.assertFalse(any((event.get("payload") or {}).get("stolen") for event in events))
+                self.assertTrue(any(event.get("code") == "filesystem_blocked" for event in events))
+            finally:
+                host.stop()
 
     def test_activity_plugin_setting_accepts_only_known_first_party_ids(self) -> None:
         self.assertEqual(clean_activity_plugin("rimworld"), "rimworld")
@@ -127,6 +183,49 @@ class PluginRimworldTests(unittest.TestCase):
         self.assertEqual(server.sim.speed, 0)
         self.assertEqual(events[-1].get("type"), "plugin.error")
         self.assertEqual(events[-1].get("code"), "revision_required")
+
+    def test_plugin_restart_restores_the_last_accepted_state(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            first_events: list[dict[str, object]] = []
+            first = PluginRegistry(
+                storage_root=Path(temp_dir),
+                broadcast=lambda _room_id, event: first_events.append(event),
+            )
+            first.activate("room-restore", "rimworld")
+            deadline = time.monotonic() + 3
+            while not first_events and time.monotonic() < deadline:
+                time.sleep(0.02)
+            first.handle_command(
+                "room-restore",
+                {
+                    "plugin_id": "rimworld",
+                    "command": "set_speed",
+                    "revision": "0",
+                    "args": {"speed": 1},
+                },
+            )
+            deadline = time.monotonic() + 3
+            while (
+                not any((event.get("payload") or {}).get("speed") == 1 for event in first_events)
+                and time.monotonic() < deadline
+            ):
+                time.sleep(0.02)
+            first.deactivate("room-restore", "rimworld")
+
+            restored_events: list[dict[str, object]] = []
+            restored = PluginRegistry(
+                storage_root=Path(temp_dir),
+                broadcast=lambda _room_id, event: restored_events.append(event),
+            )
+            try:
+                restored.activate("room-restore", "rimworld")
+                deadline = time.monotonic() + 3
+                while not restored_events and time.monotonic() < deadline:
+                    time.sleep(0.02)
+                self.assertEqual(restored_events[0]["payload"]["speed"], 1)
+                self.assertEqual(restored_events[0]["payload"]["revision"], 1)
+            finally:
+                restored.deactivate("room-restore", "rimworld")
 
     def test_simulation_mental_break_and_model_error_wait(self) -> None:
         from plugins.rimworld.server.sim import ColonySimulation, EXTREME_BREAK

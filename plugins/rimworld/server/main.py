@@ -14,6 +14,7 @@ if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
 from sim import ColonySimulation  # noqa: E402
+from state import restore_simulation  # noqa: E402
 
 
 class PluginServer:
@@ -29,6 +30,12 @@ class PluginServer:
             self._running = False
             return
         if message_type == "plugin.start":
+            initial_state = message.get("initial_state")
+            if isinstance(initial_state, dict) and initial_state:
+                try:
+                    restore_simulation(self.sim, initial_state)
+                except (KeyError, TypeError, ValueError) as error:
+                    self._emit_error("restore_failed", str(error))
             self._ensure_ticker()
             self._emit(
                 {
