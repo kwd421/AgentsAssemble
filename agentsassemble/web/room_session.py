@@ -442,6 +442,23 @@ class WsRoomSession:
             self.meeting_id,
             after_sequence=self._plugin_after_seq,
         )
+        if snapshot and self._plugin_after_seq == 0 and plugin_events:
+            # A zero cursor means the browser has no resumable plugin state.
+            # Replaying the retained 200ms simulation history makes a fresh
+            # room open render hundreds of obsolete frames before it reaches
+            # the current game. Start at the newest complete state instead;
+            # non-zero cursors still receive the contiguous resume stream and
+            # its gap checks below.
+            newest_state_index = next(
+                (
+                    index
+                    for index in range(len(plugin_events) - 1, -1, -1)
+                    if plugin_events[index].get("type")
+                    in {"plugin.snapshot", "plugin.delta"}
+                ),
+                len(plugin_events) - 1,
+            )
+            plugin_events = plugin_events[newest_state_index:]
         if gap:
             frames.append(
                 encode_text(

@@ -260,6 +260,39 @@ class SubscribeTests(unittest.TestCase):
         self.assertEqual(left.poll(), [])
         self.assertEqual(right.poll(), [])
 
+    def test_fresh_plugin_subscription_starts_from_latest_complete_state(self):
+        for revision in range(1, 401):
+            _broadcast(
+                "room-1",
+                {
+                    "type": "plugin.delta",
+                    "room_id": "room-1",
+                    "plugin_id": "rimworld",
+                    "payload": {"revision": revision},
+                },
+            )
+
+        session = _session(FakeDeps())
+        messages = text_messages(
+            session.handle_frame(
+                OP_TEXT,
+                json.dumps(
+                    {
+                        "op": "subscribe",
+                        "streams": ["plugin"],
+                        "plugin_resume_from_seq": 0,
+                    }
+                ).encode(),
+            )
+        )
+
+        plugin_frame = next(message for message in messages if message.get("stream") == "plugin")
+        self.assertEqual(
+            [event["payload"]["revision"] for event in plugin_frame["events"]],
+            [400],
+        )
+        self.assertEqual(plugin_frame["latest_seq"], 400)
+
     def test_room_events_subscription_returns_canonical_snapshot_and_resume_sequence(self):
         deps = FakeDeps()
         sess = _session(deps)
