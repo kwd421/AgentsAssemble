@@ -156,6 +156,8 @@ def is_safe_room_portal_command(command: str) -> bool:
     arguments = parts[2:]
     if action.startswith("rim-"):
         return _is_safe_rimworld_command(action, arguments, command)
+    if action == "help":
+        return not arguments
     if action == "read":
         return not arguments
     if action == "media":

@@ -198,7 +198,7 @@ class AntigravityProviderHookTests(unittest.TestCase):
         )
         self.assertEqual(requests[2]["questions"][0]["options"][1]["label"], "둘째 안")
 
-    def test_room_portal_command_is_allowed_without_opening_a_room_request(self) -> None:
+    def test_read_only_room_portal_commands_are_allowed_without_opening_a_room_request(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:
             runtime = AntigravityHookRuntime(
                 "agy-agent",
@@ -210,18 +210,24 @@ class AntigravityProviderHookTests(unittest.TestCase):
             runtime.set_request_handler(lambda request, _respond: requests.append(request))
             runtime.start()
             try:
-                result = runtime.handle_hook(
-                    {
-                        "toolCall": {
-                            "name": "run_command",
-                            "args": {"CommandLine": "agentsassemble-room read", "Cwd": temp_dir},
+                results = [
+                    runtime.handle_hook(
+                        {
+                            "toolCall": {
+                                "name": "run_command",
+                                "args": {"CommandLine": command, "Cwd": temp_dir},
+                            }
                         }
-                    }
-                )
+                    )
+                    for command in (
+                        "agentsassemble-room help",
+                        "agentsassemble-room read",
+                    )
+                ]
             finally:
                 runtime.stop()
 
-        self.assertEqual(result["decision"], "allow")
+        self.assertTrue(all(result["decision"] == "allow" for result in results))
         self.assertEqual(requests, [])
 
     def test_rimworld_room_tools_are_allowed_without_opening_a_room_request(self) -> None:
