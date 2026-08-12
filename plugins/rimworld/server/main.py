@@ -23,6 +23,7 @@ class PluginServer:
         self._running = True
         self._lock = threading.RLock()
         self._ticker: threading.Thread | None = None
+        self._speed_changed_at_revision = 0
 
     def handle(self, message: dict[str, object]) -> None:
         message_type = str(message.get("type") or "")
@@ -36,6 +37,9 @@ class PluginServer:
                     restore_simulation(self.sim, initial_state)
                 except (KeyError, TypeError, ValueError) as error:
                     self._emit_error("restore_failed", str(error))
+            # A restarted process cannot safely accept a speed command from a
+            # snapshot older than the state it restored.
+            self._speed_changed_at_revision = self.sim.revision
             self._ensure_ticker()
             self._emit(
                 {
@@ -69,7 +73,21 @@ class PluginServer:
             # stale global revision must not discard an unrelated colonist's
             # decision. Interactive host commands remain strict optimistic
             # writes and fail on any stale revision.
-            if command not in {"agent_turn", "model_error"} and revision != str(self.sim.revision):
+            revision_conflict = False
+            if command == "set_speed":
+                try:
+                    observed_revision = int(revision)
+                except ValueError:
+                    revision_conflict = True
+                else:
+                    revision_conflict = not (
+                        self._speed_changed_at_revision
+                        <= observed_revision
+                        <= self.sim.revision
+                    )
+            elif command not in {"agent_turn", "model_error"}:
+                revision_conflict = revision != str(self.sim.revision)
+            if revision_conflict:
                 self._emit_error(
                     "revision_conflict",
                     f"Stale revision {revision}; current {self.sim.revision}",
@@ -79,6 +97,7 @@ class PluginServer:
             agent_wakes: list[dict[str, object]] = []
             if command == "set_speed":
                 self.sim.set_speed(int(args.get("speed", 0)))
+                self._speed_changed_at_revision = self.sim.revision
             elif command == "step":
                 agent_wakes = self.sim.step(int(args.get("steps") or 1))
             elif command == "act":

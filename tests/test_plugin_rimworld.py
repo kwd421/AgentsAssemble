@@ -324,6 +324,62 @@ class PluginRimworldTests(unittest.TestCase):
         self.assertEqual(server.sim.colonists[1].current_job["kind"], "sleep")
         self.assertFalse(any(event.get("type") == "plugin.error" for event in events))
 
+    def test_speed_control_survives_game_ticks_after_the_observed_snapshot(self) -> None:
+        from plugins.rimworld.server.main import PluginServer
+
+        server = PluginServer()
+        events: list[dict[str, object]] = []
+        server._emit = lambda event: events.append(event)
+        server.handle(
+            {
+                "type": "plugin.command",
+                "id": "start-fast",
+                "command": "set_speed",
+                "revision": "0",
+                "args": {"speed": 3},
+            }
+        )
+        observed_revision = str(server.sim.revision)
+        server.sim.step(1)
+
+        server.handle(
+            {
+                "type": "plugin.command",
+                "id": "pause-after-tick",
+                "command": "set_speed",
+                "revision": observed_revision,
+                "args": {"speed": 0},
+            }
+        )
+
+        self.assertEqual(server.sim.speed, 0)
+        self.assertEqual(events[-1]["type"], "plugin.delta")
+        self.assertEqual(events[-1]["payload"]["speed"], 0)
+
+        pause_revision = str(server.sim.revision)
+        server.handle(
+            {
+                "type": "plugin.command",
+                "id": "resume-newer-control",
+                "command": "set_speed",
+                "revision": pause_revision,
+                "args": {"speed": 1},
+            }
+        )
+        server.handle(
+            {
+                "type": "plugin.command",
+                "id": "stale-control",
+                "command": "set_speed",
+                "revision": observed_revision,
+                "args": {"speed": 3},
+            }
+        )
+
+        self.assertEqual(server.sim.speed, 1)
+        self.assertEqual(events[-1]["type"], "plugin.error")
+        self.assertEqual(events[-1]["code"], "revision_conflict")
+
     def test_plugin_delta_emits_need_wake_once_until_the_need_recovers(self) -> None:
         from plugins.rimworld.server.main import PluginServer
 
