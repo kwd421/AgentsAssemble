@@ -215,4 +215,39 @@ describe("useCanonicalRoom synchronization", () => {
     );
     expect(result.current.syncIssue).toBeNull();
   });
+
+  it("keeps a plugin gap visible until the plugin snapshot recovers it", async () => {
+    const harness = socketHarness();
+    const { result } = renderHook(() =>
+      useCanonicalRoom({
+        roomId: "general",
+        auth: { kind: "host", meetingId: "general" },
+        openSocket: harness.openSocket,
+      })
+    );
+    await waitFor(() => expect(harness.openSocket).toHaveBeenCalledOnce());
+
+    act(() =>
+      harness.handlers()?.onError?.(
+        new RoomSocketSayError(
+          "Plugin event sequence gap detected.",
+          "plugin_event_gap"
+        )
+      )
+    );
+    expect(result.current.syncIssue?.category).toBe("plugin_event_gap");
+
+    act(() =>
+      harness.handlers()?.onRoomSnapshot?.(snapshot([event(8, "message_final")]))
+    );
+    expect(result.current.syncIssue?.category).toBe("plugin_event_gap");
+
+    act(() =>
+      harness.handlers()?.onPlugin?.(
+        [{ type: "plugin.snapshot", plugin_id: "rimworld", plugin_seq: 20 }],
+        true
+      )
+    );
+    expect(result.current.syncIssue).toBeNull();
+  });
 });

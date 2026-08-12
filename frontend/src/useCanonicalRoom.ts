@@ -411,7 +411,12 @@ export function useCanonicalRoom(options: UseCanonicalRoomOptions) {
           [roomId]: normalizePendingProviderRequests(snapshot.provider_requests || []),
         }));
         setMembershipRevision((previous) => previous + 1);
-        setLastError(null);
+        setLastError((previous) =>
+          previous instanceof RoomSocketSayError &&
+          previous.category === "plugin_event_gap"
+            ? previous
+            : null
+        );
         return true;
       },
       onRoomEvents: (events) => {
@@ -425,6 +430,14 @@ export function useCanonicalRoom(options: UseCanonicalRoomOptions) {
             ? envelopes.slice(-512)
             : [...(previous[roomId] || []), ...envelopes].slice(-512),
         }));
+        if (snapshot) {
+          setLastError((previous) =>
+            previous instanceof RoomSocketSayError &&
+            previous.category === "plugin_event_gap"
+              ? null
+              : previous
+          );
+        }
       },
       onProviderCatalog: (catalog) => {
         if (!connectionIsCurrent()) return;
@@ -743,6 +756,7 @@ export function useCanonicalRoom(options: UseCanonicalRoomOptions) {
       [
         "event_sequence_gap",
         "event_sequence_invalid",
+        "plugin_event_gap",
         "resync_required",
         "settings_ack_invalid",
         "settings_conflict",

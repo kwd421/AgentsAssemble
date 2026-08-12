@@ -646,6 +646,7 @@ export function openRoomSocket(
         });
       } catch (error) {
         if (!(error instanceof PluginStreamProtocolError)) throw error;
+        if (error.code === "plugin_event_gap") lastPluginSeq = 0;
         reconnectForProtocolError(
           new RoomSocketSayError(error.message, error.code)
         );
