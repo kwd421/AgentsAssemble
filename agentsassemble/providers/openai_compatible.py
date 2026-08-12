@@ -403,9 +403,8 @@ class OpenAICompatibleApiRuntime:
                         )
                     progress.record()
                     if room_action_completed:
-                        discarded_after_terminal_tool_calls += (
-                            len(tool_calls) - tool_index - 1
-                        )
+                        discarded_after_terminal_tool_calls += len(tool_calls) - tool_index - 1
+                        assistant_message["tool_calls"] = tool_calls[: tool_index + 1]
                         break
                 if room_action_completed:
                     content = "RoomPortal action completed."

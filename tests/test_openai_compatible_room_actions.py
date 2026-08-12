@@ -270,7 +270,7 @@ class OpenAICompatibleRoomActionTests(unittest.TestCase):
 
         calls = 0
 
-        def opener(_request: Request, timeout: float):
+        def opener(request: Request, timeout: float):
             nonlocal calls
             del timeout
             calls += 1
@@ -285,19 +285,44 @@ class OpenAICompatibleRoomActionTests(unittest.TestCase):
                         ),
                     ]
                 )
-            return _tool_calls_response(
-                [
-                    (
-                        "call-publish-first",
-                        "publish_message",
-                        {"content": "첫 공개 발언"},
-                    ),
-                    (
-                        "call-publish-extra",
-                        "publish_message",
-                        {"content": "실행되면 안 되는 추가 발언"},
-                    ),
-                ]
+            if calls == 2:
+                return _tool_calls_response(
+                    [
+                        (
+                            "call-publish-first",
+                            "publish_message",
+                            {"content": "첫 공개 발언"},
+                        ),
+                        (
+                            "call-publish-extra",
+                            "publish_message",
+                            {"content": "실행되면 안 되는 추가 발언"},
+                        ),
+                    ]
+                )
+            if calls == 3:
+                messages = json.loads(request.data)["messages"]
+                requested = {
+                    str(tool_call.get("id") or "")
+                    for message in messages
+                    for tool_call in message.get("tool_calls", [])
+                }
+                answered = {
+                    str(message.get("tool_call_id") or "")
+                    for message in messages
+                    if message.get("role") == "tool"
+                }
+                if not requested.issubset(answered):
+                    raise RuntimeError("provider rejected unmatched tool calls")
+                return _tool_call_response(
+                    "call-read-next",
+                    "read_discussion",
+                    {},
+                )
+            return _tool_call_response(
+                "call-publish-next",
+                "publish_message",
+                {"content": "다음 공개 발언"},
             )
 
         with tempfile.TemporaryDirectory() as temp_dir:
@@ -311,14 +336,21 @@ class OpenAICompatibleRoomActionTests(unittest.TestCase):
                 model="openai/gpt-oss-20b:free",
                 opener=opener,
                 room_portal=portal,
+                state_dir=str(Path(temp_dir) / "provider-state"),
             )
 
             runtime.send_room_observation("room.wake turn-1")
             result = runtime.read_output(timeout_seconds=2)
             publication = portal.consume_publication("turn-1")
+            portal.begin_observation("turn-2", input_up_to_seq=0)
+            runtime.send_room_observation("room.wake turn-2")
+            next_result = runtime.read_output(timeout_seconds=2)
+            next_publication = portal.consume_publication("turn-2")
 
         self.assertEqual(publication, "첫 공개 발언")
+        self.assertEqual(next_publication, "다음 공개 발언")
         self.assertEqual(result["metadata"]["room_tool_rounds"], 2)
+        self.assertEqual(next_result["metadata"]["room_tool_rounds"], 2)
         self.assertEqual(
             result["metadata"]["discarded_after_terminal_tool_calls"],
             2,
