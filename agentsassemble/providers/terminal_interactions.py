@@ -18,6 +18,7 @@ _PERMISSION_BLOCK = re.compile(
 _ATTACHMENT_ID = re.compile(r"^[A-Za-z0-9_-]{8,64}$")
 _AGENT_ID = re.compile(r"^[A-Za-z0-9_.-]{1,128}$")
 _PLUGIN_ACTION = re.compile(r"^[a-z][a-z0-9_-]{0,63}$")
+_DECLINE_REASON_CODES = frozenset({"nothing_useful_to_add", "not_addressed", "duplicate"})
 _DICE_NOTATION = re.compile(
     r"^(?P<count>\d{0,3})d(?P<sides>\d{1,4})(?P<modifier>[+-]\d{1,5})?$",
     re.IGNORECASE,
@@ -160,6 +161,8 @@ def is_safe_room_portal_command(command: str) -> bool:
         return not arguments
     if action == "read":
         return not arguments
+    if action == "decline":
+        return len(arguments) == 1 and arguments[0] in _DECLINE_REASON_CODES
     if action == "media":
         return len(arguments) == 1 and bool(_ATTACHMENT_ID.fullmatch(arguments[0]))
     if action == "roll":

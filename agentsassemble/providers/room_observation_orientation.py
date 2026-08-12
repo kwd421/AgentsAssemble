@@ -1,4 +1,4 @@
-"""Provider-specific instructions for one content-free room observation."""
+"""Provider-specific instructions for the first content-free room observation."""
 
 from __future__ import annotations
 
@@ -48,6 +48,12 @@ def _room_interfaces(provider_kind: object = "") -> tuple[str, str, str]:
   collaboration, and `speak` commands directly. `agentsassemble-room help`
   lists their syntax; do not try to locate or inspect the helper with `which`,
   `find`, or other discovery commands.
+- On this first room observation, run `agentsassemble-room help` once before
+  `agentsassemble-room read`. Later `room.wake` inputs are content-free signals;
+  use the commands you learned here without waiting for another instruction.
+- Run exactly one `agentsassemble-room` command in each terminal tool call and
+  wait for its result before running the next one. Shell chaining such as `&&`,
+  `;`, or `|` is rejected.
 - The terminal command is shell-parsed. Wrap the whole public message in one
   pair of ASCII double quotes. Inside the message, use Unicode quotation marks
   such as `「」` and Unicode arrows such as `→`; do not use ASCII `"`, `$`, or
@@ -119,9 +125,24 @@ def room_wake_orientation(
   `rim-inspect <colonist|structure|cell>`, `rim-act <action> '<json-args>'`,
   and `rim-speak '<text>'`. Stage at most one action and one speech line in a
   wake; the bridge sends them together against the observed game revision.
+- Use `rim-speak`, not the general room `speak` command, for the assigned
+  colonist's in-game speech or action rationale. General `speak` is room chat
+  and does not stage plugin speech.
 - For `rim-act build`, use JSON keys `kind`, `x`, and `y`. Valid kinds are
   bed, wall, door, table, campfire, workbench, and storage. There is no
   `shelter` kind and the key is not `type`."""
+    elif "rimworld.observe" in available_tools and kind == "grok_live_session":
+        activity_note = """
+- RimWorld activity is available through the room MCP tools
+  `rimworld_observe`, `rimworld_inspect`, `rimworld_act`, and
+  `rimworld_speak`. Use Grok's `search_tool` to discover those exact room-tool
+  names and `use_tool` to invoke them.
+- Do not inspect the workspace or use terminal/file tools to find RimWorld
+  commands or documentation. The room MCP schemas are the authoritative tool
+  help for this turn.
+- Stage at most one action and one speech line in a wake. For a build action,
+  use `kind`, `x`, and `y`; valid kinds are bed, wall, door, table, campfire,
+  workbench, and storage."""
     return f"""Current turn contract: room wake
 - `room.wake <turn-id>` is only a content-free signal that assigned, finalized
   room activity is available.
@@ -133,4 +154,22 @@ def room_wake_orientation(
   room tools in the private room mirror are real for this turn.{floor_note}{random_note}{activity_note}{provider_note}"""
 
 
-__all__ = ["room_wake_orientation"]
+def first_room_wake_input(
+    orientation_sent: bool,
+    wake_signal: str,
+    provider_kind: object,
+    observation_kind: RoomObservationKind,
+    tool_names: Iterable[str],
+) -> tuple[str, bool]:
+    """Attach provider/tool orientation once, leaving later wakes content-free."""
+    if orientation_sent:
+        return wake_signal, True
+    orientation = room_wake_orientation(
+        provider_kind,
+        observation_kind=observation_kind,
+        tool_names=tool_names,
+    )
+    return f"{orientation}\n\n{wake_signal}", True
+
+
+__all__ = ["first_room_wake_input", "room_wake_orientation"]

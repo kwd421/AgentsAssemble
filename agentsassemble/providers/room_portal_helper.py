@@ -401,7 +401,7 @@ elif command == "rim-speak":
     atomic_json(PLUGIN_SPEECH, {"text": text})
     print(json.dumps({"queued": True, "colonist_id": colonist_id, "text": text}, ensure_ascii=False))
 elif command == "help":
-    print("agentsassemble-room read | participants | speak [text] | speak-to <agent-id> [text] | decline <reason> | vote-create <question> <json-options> [duration] | vote-cast <vote-id> <choice> | vote-summary <vote-id> | media <id> | roll <NdS+M> | choose <json-options> | rim-observe | rim-inspect <type> | rim-act <action> <json-args> | rim-speak <text>")
+    print("agentsassemble-room read | participants | speak [text] | speak-to <agent-id> [text] | decline <nothing_useful_to_add|not_addressed|duplicate> | vote-create <question> <json-options> [duration] | vote-cast <vote-id> <choice> | vote-summary <vote-id> | media <id> | roll <NdS+M> | choose <json-options> | rim-observe | rim-inspect <type> | rim-act <action> <json-args> | rim-speak <text>")
 else:
     fail("unknown command")
 """

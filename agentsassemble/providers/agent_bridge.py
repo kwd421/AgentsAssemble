@@ -49,8 +49,8 @@ from agentsassemble.providers.room_portal import (
     RoomPortal,
     RoomPortalError,
     automatic_turn_orientation,
-    room_wake_orientation,
 )
+from agentsassemble.providers.room_observation_orientation import first_room_wake_input
 from agentsassemble.providers.provider_requests import BridgeProviderRequestRouter
 from agentsassemble.providers.provider_errors import provider_failure_code
 
@@ -108,6 +108,7 @@ class RoomAgentBridge:
         self.receive_sleep_seconds = max(0.001, float(receive_sleep_seconds))
         self.receive_timeout_seconds = max(0.05, float(receive_timeout_seconds))
         self._initial_orientation = str(initial_orientation or "").strip()
+        self._room_wake_orientation_sent = False
         self._stop_runtime_on_exit = bool(stop_runtime_on_exit)
         self._stop = threading.Event()
         self._worker_lock = threading.RLock()
@@ -410,12 +411,16 @@ class RoomAgentBridge:
         if portal is None:
             return
         turn_id = wake.turn_id
-        provider_input = self._with_initial_orientation(
-            (
-                f"{room_wake_orientation(self._provider_kind(), observation_kind=wake.observation_kind, tool_names=portal.active_tool_names())}"
-                f"\n\nroom.wake {turn_id}"
+        wake_signal = f"room.wake {turn_id}"
+        with self._worker_lock:
+            wake_signal, self._room_wake_orientation_sent = first_room_wake_input(
+                self._room_wake_orientation_sent,
+                wake_signal,
+                self._provider_kind(),
+                wake.observation_kind,
+                portal.active_tool_names(),
             )
-        )
+        provider_input = self._with_initial_orientation(wake_signal)
         started = time.monotonic()
         input_started_at = _now()
         first_output_at = ""

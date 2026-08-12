@@ -222,6 +222,7 @@ class AntigravityProviderHookTests(unittest.TestCase):
                     for command in (
                         "agentsassemble-room help",
                         "agentsassemble-room read",
+                        "agentsassemble-room decline nothing_useful_to_add",
                     )
                 ]
             finally:
@@ -286,6 +287,7 @@ class AntigravityProviderHookTests(unittest.TestCase):
                 "agentsassemble-room read *",
                 "agentsassemble-room read %PATH%",
                 "agentsassemble-room read !PATH!",
+                'agentsassemble-room decline "No finalized messages require a response"',
             ):
                 with self.subTest(command=command[:80]):
                     result = runtime.handle_hook(
@@ -298,7 +300,7 @@ class AntigravityProviderHookTests(unittest.TestCase):
                     )
                     self.assertEqual(result["decision"], "deny")
 
-        self.assertEqual(len(requests), 5)
+        self.assertEqual(len(requests), 6)
 
     def test_symlinked_agents_directory_cannot_redirect_hook_registration(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:
