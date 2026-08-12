@@ -111,16 +111,21 @@ describe("canonical room socket client", () => {
     );
     await flushPromises();
     sockets[0].open();
+    handle.plugin?.({ plugin_id: "rimworld", action: "activate" });
+    const pluginCommand = sockets[0].sent.at(-1);
+    expect(pluginCommand).toMatchObject({
+      op: "plugin",
+      plugin_id: "rimworld",
+      action: "activate",
+    });
+    expect(pluginCommand?.request_id).toEqual(expect.any(String));
     sockets[0].receive({
-      op: "event",
-      stream: "plugin",
-      events: [
-        {
-          type: "plugin.error",
-          code: "permission_denied",
-          message: "Plugin activation requires room management permission.",
-        },
-      ],
+      op: "plugin_nack",
+      request_id: pluginCommand?.request_id,
+      error: {
+        code: "permission_denied",
+        message: "Plugin activation requires room management permission.",
+      },
     });
 
     expect(onPlugin).toHaveBeenCalledWith(

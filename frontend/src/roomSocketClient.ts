@@ -507,6 +507,21 @@ export function openRoomSocket(
       command.resolve(msg as RoomCommandAck);
       return;
     }
+    if (msg.op === "plugin_nack") {
+      handlers.onPlugin?.(
+        [
+          {
+            type: "plugin.error",
+            code: String(msg.error?.code || msg.category || "plugin_rejected"),
+            message: String(
+              msg.error?.message || msg.message || "Plugin command was rejected."
+            ),
+          },
+        ],
+        false
+      );
+      return;
+    }
     if (msg.op === "error") {
       handlers.onError?.(
         new RoomSocketSayError(
@@ -743,7 +758,9 @@ export function openRoomSocket(
       if (socket?.readyState !== WebSocket.OPEN) {
         throw new RoomSocketSayError("Room socket is closed.", "socket_closed");
       }
-      socket.send(JSON.stringify({ op: "plugin", ...payload }));
+      socket.send(
+        JSON.stringify({ op: "plugin", ...payload, request_id: nextRequestId() })
+      );
     },
     historyBefore: async (beforeSeq, limit = 200) => {
       const ack = await command("room.history", { before_seq: beforeSeq, limit });
