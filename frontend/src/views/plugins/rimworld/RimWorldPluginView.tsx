@@ -76,6 +76,8 @@ export default function RimWorldPluginView({
     if (!latest || !portRef.current) return;
     if (latest.type === "plugin.error") {
       setError(latest.message || latest.code || "plugin error");
+    } else if (latest.type === "plugin.snapshot") {
+      setError("");
     }
     envelopes.forEach((envelope) => {
       if (envelope.plugin_seq && envelope.plugin_seq <= lastSentSequenceRef.current) return;

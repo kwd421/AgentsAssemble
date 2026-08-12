@@ -379,6 +379,7 @@
           if (data.type === "plugin.snapshot" || data.type === "plugin.delta") {
             const payload = data.payload?.payload || data.payload;
             if (payload?.colonists) {
+              if (data.type === "plugin.snapshot") bridgeError = "";
               state = payload;
               pendingSpeed = null;
               render();
