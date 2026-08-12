@@ -4,7 +4,6 @@ import unittest
 from pathlib import Path
 
 from agentsassemble.legacy.meeting.official_turns import LegacyOfficialTurnService
-from agentsassemble.legacy.meeting.turn_scheduler import meeting_turn_lock
 from agentsassemble.legacy.live_agent.runtime.operations import read_live_agent_operations
 from agentsassemble.legacy.live_agent.state import connect_live_agent
 from agentsassemble.legacy.meeting.core.events import read_live_events, write_live_state
@@ -76,11 +75,6 @@ class LegacyOfficialTurnServiceTests(unittest.TestCase):
         self.assertEqual(operation["target_id"], "agent-a")
         self.assertEqual(operation["details"]["target_agent_id"], "agent-a")
         self.assertNotIn("SECRET REQUEST PROMPT", json.dumps(operation, ensure_ascii=False))
-
-    def test_meeting_scheduler_reuses_lock_per_meeting(self) -> None:
-        self.assertIs(meeting_turn_lock("room-a"), meeting_turn_lock("room-a"))
-        self.assertIsNot(meeting_turn_lock("room-a"), meeting_turn_lock("room-b"))
-
 
 if __name__ == "__main__":
     unittest.main()

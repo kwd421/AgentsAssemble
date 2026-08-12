@@ -54,17 +54,6 @@ def _dispatch(router: Router) -> FakeHandler:
 
 
 class LegacyLiveAgentPreflightRouteTests(unittest.TestCase):
-
-    def test_registers_only_preflight(self) -> None:
-        router = Router()
-        register_legacy_live_agent_preflight_route(
-            router,
-            deps=self._deps(FakePreflight()),
-        )
-
-        self.assertEqual(router.routes(), [("POST", "/api/live-agent-preflight")])
-        self.assertEqual(router.dynamic_routes(), [])
-
     def test_runs_preflight_records_summary_and_redacts_sensitive_report(self) -> None:
         report = {
             "status": "failed",

@@ -12,7 +12,6 @@ from agentsassemble.persistence.local.identity.registry import (
     reset_identity_store_registry,
 )
 from agentsassemble.legacy.live_agent.runtime.frontend_create import (
-    _clean_reply_char_limit,
     ensure_frontend_meeting,
     frontend_live_agent_check_payload,
     frontend_live_agent_create_payload,
@@ -218,14 +217,6 @@ class FrontendLiveAgentCreateTests(unittest.TestCase):
             )
             config = json.loads(Path(str(result["live_agent_config_path"])).read_text(encoding="utf-8"))
             self.assertNotIn("fast_mode", config["agents"][0])
-
-    def test_clean_reply_char_limit_snaps_to_menu(self):
-        self.assertEqual(_clean_reply_char_limit(0), 0)
-        self.assertEqual(_clean_reply_char_limit(""), 0)
-        self.assertEqual(_clean_reply_char_limit(-5), 0)
-        self.assertEqual(_clean_reply_char_limit(250), 250)
-        self.assertEqual(_clean_reply_char_limit(300), 250)  # nearest menu choice
-        self.assertEqual(_clean_reply_char_limit(99999), 1000)
 
     def test_create_materializes_missing_meeting_for_localstorage_room(self):
         # A UI room (localStorage) has no server meeting yet; adding an agent

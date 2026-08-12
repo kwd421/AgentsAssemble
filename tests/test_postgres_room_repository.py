@@ -11,7 +11,6 @@ from unittest.mock import MagicMock, patch
 from urllib.parse import quote
 from uuid import uuid4
 
-from agentsassemble.room.repository import RoomRepository
 from agentsassemble.room.command_uow import RoomCommandUnitOfWork
 from agentsassemble.application.room_repository_factory import RoomRepositorySettings, build_room_repository
 from tests.room_repository_contract import RoomRepositoryContractMixin
@@ -221,9 +220,6 @@ class PostgresRoomRepositoryContractTests(
 
     def tearDown(self) -> None:
         self.repository.close()
-
-    def test_postgres_repository_implements_repository_protocol(self) -> None:
-        self.assertIsInstance(self.repository, RoomRepository)
 
     def test_ensure_room_rejects_missing_or_invalid_settings(self) -> None:
         self.repository.create_room("missing-settings", label="Missing")

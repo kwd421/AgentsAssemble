@@ -19,7 +19,6 @@ if _PSYCOPG_AVAILABLE:
     import psycopg
     from psycopg import sql
 
-    from agentsassemble.identity.repository import IdentityBackend
     from agentsassemble.postgres_identity_repository import PostgresIdentityRepository
     from agentsassemble.postgres_room_schema import upgrade_postgres_room_schema
 
@@ -116,9 +115,6 @@ class PostgresIdentityRepositoryContractTests(
 
     def tearDown(self) -> None:
         self.repository.close()
-
-    def test_repository_implements_identity_protocol(self) -> None:
-        self.assertIsInstance(self.repository, IdentityBackend)
 
     def test_concurrent_credential_resolution_creates_one_user(self) -> None:
         def resolve(_index: int) -> str:

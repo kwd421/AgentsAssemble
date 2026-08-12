@@ -12,7 +12,6 @@ from agentsassemble.persistence.local.room.database import (
     open_room_database,
 )
 from agentsassemble.persistence.local.room.repository import _VOTE_BALLOT_EVENTS_QUERY
-from agentsassemble.room.repository import RoomRepository
 from agentsassemble.room_store import RoomStore
 from tests.room_repository_contract import RoomRepositoryContractMixin
 from tests.room_write_budget_contract import RoomWriteBudgetRepositoryContractMixin
@@ -29,9 +28,6 @@ class SQLiteRoomRepositoryContractTests(
 
     def tearDown(self) -> None:
         self._temporary_directory.cleanup()
-
-    def test_room_store_implements_repository_protocol(self) -> None:
-        self.assertIsInstance(self.repository, RoomRepository)
 
     def test_ensure_room_rejects_missing_or_invalid_settings(self) -> None:
         self.repository.create_room("missing-settings", label="Missing")

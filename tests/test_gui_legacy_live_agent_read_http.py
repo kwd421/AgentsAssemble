@@ -117,31 +117,6 @@ def _dispatch(router: Router, path: str) -> FakeHandler:
 
 
 class LegacyLiveAgentReadRoutesTests(unittest.TestCase):
-
-    def test_registers_only_the_legacy_read_projection_routes(self) -> None:
-        router = Router()
-        register_legacy_live_agent_read_routes(router, deps=_deps())
-
-        self.assertEqual(
-            set(router.routes()),
-            {
-                ("GET", "/api/live-agents"),
-                ("GET", "/api/live-agent-health"),
-                ("GET", "/api/live-agent-sessions/readiness"),
-                ("GET", "/api/live-agent-processes"),
-                ("GET", "/api/live-agent-process-events"),
-                ("GET", "/api/live-agent-operations"),
-                ("GET", "/api/live-agent-session-runs"),
-            },
-        )
-        self.assertEqual(
-            set(router.dynamic_routes()),
-            {
-                ("GET", "/api/live-agents/{agent_id}/return-packet"),
-                ("GET", "/api/live-agents/{agent_id}/room"),
-            },
-        )
-
     def test_forwards_dynamic_room_and_return_packet_queries(self) -> None:
         queries = FakeLegacyLiveAgentQueries()
         router = Router()

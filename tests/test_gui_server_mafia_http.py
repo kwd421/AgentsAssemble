@@ -55,19 +55,6 @@ class MafiaHttpRegistrarTests(unittest.TestCase):
         self.assertTrue(self.router.dispatch(method, context))
         return handler
 
-    def test_registers_exactly_the_six_mafia_routes(self) -> None:
-        self.assertEqual(
-            set(self.router.routes()),
-            {
-                ("GET", "/api/play/mafia"),
-                ("POST", "/api/play/mafia/start"),
-                ("POST", "/api/play/mafia/chat"),
-                ("POST", "/api/play/mafia/vote"),
-                ("POST", "/api/play/mafia/action"),
-                ("POST", "/api/play/mafia/resolve"),
-            },
-        )
-
     def test_operation_reader_receives_each_exact_post_operation_name(self) -> None:
         with patch.multiple(
             mafia_http,

@@ -5,7 +5,6 @@ import unittest
 from pathlib import Path
 
 from agentsassemble.web.frontend_runtime import (
-    default_frontend_dist_root,
     frontend_build_version,
     frontend_dist_status,
     materialize_frontend_release,
@@ -13,11 +12,6 @@ from agentsassemble.web.frontend_runtime import (
 
 
 class FrontendRuntimeTests(unittest.TestCase):
-    def test_default_root_still_points_to_repository_frontend_dist(self) -> None:
-        expected = Path(__file__).resolve().parents[1] / "frontend" / "dist"
-
-        self.assertEqual(default_frontend_dist_root(), expected)
-
     def test_missing_build_reports_missing(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:
             status = frontend_dist_status(Path(temp_dir) / "dist")

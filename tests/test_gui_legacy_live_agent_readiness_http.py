@@ -58,17 +58,6 @@ def _dispatch(router: Router) -> FakeHandler:
 
 
 class LegacyLiveAgentReadinessRouteTests(unittest.TestCase):
-
-    def test_registers_only_readiness(self) -> None:
-        router = Router()
-        register_legacy_live_agent_readiness_route(
-            router,
-            deps=self._deps(FakeReadiness({})),
-        )
-
-        self.assertEqual(router.routes(), [("POST", "/api/live-agent-readiness")])
-        self.assertEqual(router.dynamic_routes(), [])
-
     def test_records_ready_result_with_bounded_details(self) -> None:
         result = {
             "status": "ready",

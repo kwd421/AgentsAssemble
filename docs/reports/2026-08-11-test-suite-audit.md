@@ -23,25 +23,56 @@
 
 fake나 patch를 썼다는 사실만으로 제거하지 않았다. 최종 oracle이 실제 HTTP 응답, provider 결과, process 종료, durable row/event, public projection 또는 권한 거부를 확인하면 유지했다. 반대로 이름이 `integration`, `contract`, `legacy`인지는 판정 근거로 쓰지 않았다.
 
-## 최종 판정
+## 1차 판정(역사적 기준선)
 
 | 판정 | 함수 수 | 의미 |
 | --- | ---: | --- |
-| KEEP | 2,083 | 현재 계약을 직접 보호 |
-| CONSOLIDATE | 965 | 의미는 있으나 중복·재배치 후보 |
+| KEEP | 2,085 | 현재 계약을 직접 보호 |
+| CONSOLIDATE | 963 | 의미는 있으나 중복·재배치 후보 |
 | REMOVE | 1,227 | 현행 제품 회귀에 민감하지 않은 후보 |
 | 합계 | 4,275 | 비교 커밋의 전체 테스트 함수 |
 
-이 표는 자동 삭제 목록이 아니다. 특히 `REMOVE` 1,227개를 한꺼번에 지우지 않았다. 삭제 후보는 production consumer, 생성 문서, release/CI 명령, 대체 테스트를 다시 역추적한 뒤에만 적용했다.
+이 표는 최초 함수 단위 분류이며 자동 삭제 목록이 아니다. 특히 `REMOVE` 1,227개를 한꺼번에 지우지 않았다. 삭제 후보는 production consumer, 생성 문서, release/CI 명령, 대체 테스트를 다시 역추적한 뒤에만 적용했다.
 
-## 이번에 적용한 보수적 첫 정리
+## 남은 1,865개 후보 전수 역검토
 
-- 비교 커밋의 기존 테스트 함수 323개를 제거하거나 더 강한 경계에 흡수했다.
-  - 288개는 역검토까지 마친 `REMOVE`
-  - 35개는 더 강한 경계로 합치거나 재배치한 `CONSOLIDATE`
-- 통합 경계 테스트 5개를 새로 정의했으므로 함수 수의 순감은 318개다(`4,275 → 3,957`).
-- 파일 전체가 symbol/export/package wrapper 또는 대체된 legacy registrar뿐인 테스트 파일 30개를 제거했다.
-- 현재 남은 930개 `CONSOLIDATE`와 939개 `REMOVE` 후보는 이번에 자동 삭제하지 않았다. 다음 정리는 다시 consumer와 대체 oracle을 확인해야 한다.
+HEAD `a383ea36`에서 보류 중이던 `CONSOLIDATE` 926개와 `REMOVE` 939개를 모두 다시 읽었다. 함수 본문과 직접 fixture/helper, production consumer와 공개 compatibility export, CI/release 호출 경로, 현재 남아 있는 대표 테스트를 대조했다. 상세 근거는 `2026-08-11-test-suite-reverse-review.tsv`의 1,865개 행에 있다. 원장의 `initial_*` 열은 1차 근거를 보존하고, `reverse_review_*`와 마지막 evidence 열은 이번 보정 판정을 기록한다.
+
+이번 역검토는 다음처럼 더 엄격하게 판정했다.
+
+- `KEEP_RESTORE`: 현재 제품·호환 경계의 독립 분기이며, 같은 회귀를 잡는 현재 대표가 없다.
+- `SAFE_CONSOLIDATE`: 현재 남아 있는 exact representative가 같은 입력과 production 분기를 이미 실행하고, 그 assertion이 행에 적은 mutation에서 실패해야 함을 소스 수준으로 확인했다. 나중에 case를 추가하거나 parameterize할 수 있다는 가능성은 포함하지 않았다.
+- `SAFE_REMOVE`: live consumer가 없거나, 이름·copy·상수·protocol identity·mock 전달만 확인하고 독립 제품 경계에는 기여하지 않는다. 중요한 실제 계약이 따로 미검증이면 그 공백도 행별 근거에 명시했다.
+- `UNRESOLVED`: 계약은 중요하지만 현재 테스트의 oracle이 prompt/copy/private helper/mock call에 머물고, 이를 대신할 public/durable/process/browser 경계도 아직 없다. 테스트는 보존하지만 성공 증거로 세지 않는다.
+
+| 역검토 판정 | 함수 수 | 현재 조치 |
+| --- | ---: | --- |
+| KEEP_RESTORE | 1,639 | 유지 |
+| SAFE_CONSOLIDATE | 74 | exact 대표는 확인했지만 이번에는 삭제·흡수하지 않음 |
+| SAFE_REMOVE | 49 | 46개 제거, 품질 게이트에 걸린 3개 유지 |
+| UNRESOLVED | 103 | 유지하되 실제 계약은 미검증으로 기록 |
+| 합계 | 1,865 | 보류 후보 전부 |
+
+초기 판정이 역검토에서 어떻게 바뀌었는지는 다음과 같다.
+
+| 1차 판정 | KEEP_RESTORE | SAFE_CONSOLIDATE | SAFE_REMOVE | UNRESOLVED | 합계 |
+| --- | ---: | ---: | ---: | ---: | ---: |
+| CONSOLIDATE | 873 | 28 | 0 | 25 | 926 |
+| REMOVE | 766 | 46 | 49 | 78 | 939 |
+
+따라서 1차 후보 1,865개 중 1,639개는 독립 계약이 있거나 현재 대체 oracle이 없어 유지로 되돌렸다. 103개는 “필요 없음”도 “검증됨”도 아니다. 실제 경계가 없는 약한 테스트라서 보존과 검증 상태를 분리했다. 전수조사 직후 삭제·흡수를 검토할 수 있었던 것은 123개뿐이었다. 이후 사용자의 명시적 지시에 따라 그중 `SAFE_REMOVE` 49개만 적용 대상으로 삼았고, 46개를 제거했다. `SAFE_CONSOLIDATE` 74개와 `UNRESOLVED` 103개는 수정하지 않았다.
+
+`SAFE_CONSOLIDATE` 74개 각각에 controlled production mutation을 실제 실행한 것은 아니다. 이번 판정은 현재 fixture·입력·production branch·assertion을 역추적한 정적 근거다. 따라서 이번 삭제에서 전부 제외했다. 이후 실제 흡수·삭제를 적용한다면 행별 mutation proof를 그 변경 단위에서 다시 남긴다.
+
+## 현재까지 적용한 보수적 정리
+
+- 비교 커밋의 기존 테스트 함수 371개를 제거하거나 더 강한 경계에 흡수했다.
+  - 334개는 역검토까지 마친 `REMOVE`
+  - 37개는 더 강한 경계로 합치거나 재배치한 `CONSOLIDATE`
+- 통합 경계 테스트 5개를 새로 정의했으므로 함수 수의 순감은 366개다(`4,275 → 3,909`).
+- 파일 전체가 symbol/export/package wrapper 또는 대체된 legacy registrar뿐인 테스트 파일 36개를 제거했다.
+- 역검토의 `SAFE_REMOVE` 49개 중 46개를 추가 제거했다. `SAFE_CONSOLIDATE` 74개는 controlled mutation 증거가 없어 그대로 두었고, `UNRESOLVED` 103개도 그대로 두었다.
+- 나머지 `SAFE_REMOVE` 3개는 삭제 자체보다 같은 파일의 기존 테스트가 품질 게이트에 걸려 유지했다. `test_live_agent_flow.py`의 parser/default 두 후보와 `test_room_repository_factory.py`의 default repository type 후보이며, 게이트를 우회하거나 관계없는 기존 테스트를 함께 고치지 않았다.
 
 명시적으로 추가한 통합 oracle은 다음 다섯 개다.
 
@@ -65,6 +96,9 @@ fake나 patch를 썼다는 사실만으로 제거하지 않았다. 최종 oracle
 - model credential marker와 public artifact redaction은 `test_models.py` 전체 삭제 전에 consumer-visible artifact 테스트로 옮겼다.
 - PostgreSQL contract runner는 CI/Makefile의 실제 consumer가 있으므로 wrapper 파일처럼 통째로 삭제하지 않고 fail-closed outcome만 남겼다.
 - `agentsassemble.room_users`는 동작 모듈이 아니라 호출자 0명의 최상위 re-export shim이었다. 이를 문자열로 참조하던 import-ban 테스트가 생성 지도에서 가짜 coverage를 만들고 있어 shim·문자열 테스트·호환 메타데이터를 함께 제거했다. 실제 current identity 동작은 `agentsassemble.application.room_users`의 HTTP/durable 테스트가 계속 보호한다.
+- Claude bridge의 token 없는 startup 거부는 endpoint 인증과 별개인 fail-closed 계약이었다. `require_bridge_token`을 무력화한 controlled mutation에서 startup 테스트만 정확히 실패했으므로 초기 `CONSOLIDATE` 판정을 취소하고 `KEEP`으로 보정했다. 반면 production startup이 만들 수 없는 `_handler(token=None)` HTTP fixture는 실제 loopback 인증 대표 테스트와 중복이었다. GET 인증 조건을 무력화했을 때 대표 테스트가 401 누락으로 실패함을 확인한 뒤 이 fixture 하나만 흡수했다.
+- Antigravity의 일반 `help/read` 허용과 RimWorld `rim-observe/inspect/act/speak` 허용은 같은 permission 결과를 내지만 production allowlist 분기가 다르다. `rim-*` 분기만 거부하도록 바꾼 controlled mutation에서 일반 read-only 테스트는 통과하고 RimWorld 테스트만 실패했다. 실제 provider/plugin 경로의 고유 회귀를 잡으므로 초기 `CONSOLIDATE` 판정을 취소하고 `KEEP`으로 보정했다.
+- Claude print-mode compatibility bridge의 두 disabled-result 테스트 중 하나는 `returncode`와 `stderr` 기본값만 반복했다. provider runner를 호출하도록 controlled mutation했을 때 public disabled 결과와 runner side effect를 함께 보는 대표 테스트가 실패함을 확인했으므로 세부 metadata fixture 테스트 하나를 대표 경계에 흡수했다.
 
 ## 감사가 찾아낸 실제 제품 회귀
 
@@ -77,11 +111,16 @@ fake나 patch를 썼다는 사실만으로 제거하지 않았다. 최종 oracle
 
 ## 검증 원칙과 현재 한계
 
-- 수정한 영역은 표적 테스트, test-quality gate, generated map check, architecture gate로 검증한다.
+- 역검토 원장은 1,865개 고유 ID와 원 감사표의 대상 ID를 전부 대조했다. 누락·추가·중복은 0개였고, `SAFE_CONSOLIDATE` 74개가 가리키는 representative 참조 87개는 모두 현재 소스에 존재하며 최종 유지 상태임을 확인했다.
+- `python3 -m pytest tests/test_claude_code_bridge.py tests/test_antigravity_provider_hooks.py tests/test_gui_room_repository_injection.py::GuiRoomRepositoryInjectionTests::test_handler_shares_one_explicit_repository_with_controller_and_routes -q`는 11개 테스트와 5개 subtest가 통과했다.
+- 추가 제거 영역의 표적 테스트는 변경 모듈 묶음별로 재실행했다. frontend create를 제외한 세 묶음은 각각 `39 passed, 7 subtests passed`, `124 passed, 23 subtests passed`, `224 passed, 51 skipped, 47 subtests passed`로 통과했다.
+- `tests/test_live_agent_frontend_create.py`는 현재와 HEAD 원본 모두 같은 12개가 `InviteRepositoryNotConfigured`로 실패했다. HEAD 원본은 11개 통과, 현재는 제거한 private helper 테스트 하나가 빠져 10개 통과했다. 이번 삭제가 만든 실패는 아니지만 해당 모듈은 여전히 통과 상태가 아니다.
+- WebSocket composition의 `room_snapshot` callback은 동일 controller를 호출하고 snapshot을 반환하는 one-off smoke로 확인했다. 이 검사는 실제 WebSocket 연결·gap recovery 증거는 아니다.
+- `python3 scripts/check_test_quality.py --base a383ea36`, `make architecture-check`, `git diff --check`가 통과했다.
 - 사용자가 명시적으로 제외한 전체 4천여 개 재실행은 하지 않는다.
 - PostgreSQL contract 중 일부는 실제 DSN/driver가 없으면 skip된다. SQLite 통과를 PostgreSQL 실측으로 과장하지 않는다.
 - 이번 테스트 정리는 RimWorld의 Grok·Antigravity 재실행, 세 provider 15분 실증, 실제 브라우저·자원 계측을 대체하지 않는다.
-- TSV의 `current_disposition`은 실제 적용 여부를 구분한다. `retained_pending_*`는 감사 후보일 뿐 삭제 승인이나 완료를 뜻하지 않는다.
+- 기존 TSV의 1차 `verdict`는 역사적 판정으로 보존했다. 원 감사표의 `current_disposition`과 역검토 원장의 `application_disposition`은 역검토 후 유지, 미해결 유지, 미적용 exact 통합 후보, 실제 제거, 게이트 때문에 유지한 제거 후보를 구분한다.
 
 ## 후속 원칙
 

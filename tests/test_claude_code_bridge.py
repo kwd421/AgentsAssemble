@@ -31,16 +31,6 @@ class ClaudeCodeBridgeTests(unittest.TestCase):
         self.assertEqual(response["metadata"]["role_id"], "fanboard_skeptic")
         runner.assert_not_called()
 
-    def test_bridge_reports_disabled_for_all_run_requests(self):
-        runner = Mock()
-
-        response = run_bridge_request({"prompt": "hello"}, runner=runner)
-
-        self.assertEqual(response["text"], CLAUDE_PRINT_MODE_DISABLED_MESSAGE)
-        self.assertEqual(response["metadata"]["returncode"], None)
-        self.assertEqual(response["metadata"]["stderr"], "")
-        runner.assert_not_called()
-
     def test_bridge_requires_token_before_serving(self):
         with self.assertRaisesRegex(ValueError, "requires --token"):
             require_bridge_token(None)
@@ -73,22 +63,6 @@ class ClaudeCodeBridgeTests(unittest.TestCase):
         self.assertEqual(payload["bridge"], "claude_code")
         self.assertEqual(payload["health_endpoint"], "/agentsassemble/health")
         self.assertEqual(payload["run_endpoint"], "/agentsassemble/run")
-
-    def test_bridge_handler_without_token_rejects_health_requests(self):
-        server = ThreadingHTTPServer(("127.0.0.1", 0), _handler(token=None, command="claude"))
-        thread = threading.Thread(target=server.serve_forever, daemon=True)
-        thread.start()
-        try:
-            health_url = f"http://127.0.0.1:{server.server_port}/agentsassemble/health"
-            with self.assertRaises(HTTPError) as unauthorized:
-                urlopen(health_url, timeout=4)
-            self.assertEqual(unauthorized.exception.code, 401)
-            unauthorized.exception.read()
-            unauthorized.exception.close()
-        finally:
-            server.shutdown()
-            server.server_close()
-
 
 if __name__ == "__main__":
     unittest.main()

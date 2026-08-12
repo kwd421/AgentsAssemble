@@ -92,22 +92,6 @@ def _dispatch(router: Router, path: str) -> FakeHandler:
 
 
 class LegacyLiveAgentSmokeRouteTests(unittest.TestCase):
-
-    def test_registers_only_credential_free_smoke_routes(self) -> None:
-        router = Router()
-        register_legacy_live_agent_smoke_routes(router, deps=self._deps(FakeSmoke()))
-
-        self.assertEqual(
-            router.routes(),
-            [
-                ("POST", "/api/live-agent-official-round-smoke"),
-                ("POST", "/api/live-agent-real-session-smoke"),
-                ("POST", "/api/live-agent-session-smoke"),
-                ("POST", "/api/live-agent-smoke"),
-            ],
-        )
-        self.assertEqual(router.dynamic_routes(), [])
-
     def test_basic_smoke_runs_and_records_bounded_result(self) -> None:
         result = {"status": "ok", "group_id": "smoke-crew", "credential": "not-audited"}
         smoke = FakeSmoke(basic=result)

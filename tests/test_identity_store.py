@@ -20,7 +20,6 @@ from agentsassemble.persistence.local.identity.registry import (
     identity_store_for_output_root,
     make_identity_backend,
     register_identity_store_for_output_root,
-    register_identity_backend,
     reset_identity_store_registry,
     unregister_identity_store_for_output_root,
 )
@@ -405,10 +404,6 @@ class UsageAccountingTests(IdentityStoreTestCase):
 
 
 class BackendAbstractionTests(IdentityStoreTestCase):
-    def test_sqlite_store_satisfies_backend_protocol(self):
-        self.assertIsInstance(self.store, IdentityBackend)
-        self.assertIs(SqliteIdentityStore, IdentityStore)
-
     def test_make_identity_backend_builds_sqlite(self):
         backend = make_identity_backend("sqlite", db_path=self.root / "made.db")
         self.assertIsInstance(backend, IdentityBackend)
@@ -421,19 +416,6 @@ class BackendAbstractionTests(IdentityStoreTestCase):
             make_identity_backend("postgres")
         self.assertIn("postgres", str(ctx.exception))
         self.assertIn("register_identity_backend", str(ctx.exception))
-
-    def test_a_custom_backend_can_be_registered_and_selected(self):
-        # Proves the swap point: a non-sqlite backend slots in by registration,
-        # and consumers selecting via make_identity_backend get it unchanged.
-        sentinel = self.store
-        register_identity_backend("memory-test", lambda **_: sentinel)
-        try:
-            self.assertIs(make_identity_backend("memory-test"), sentinel)
-        finally:
-            # don't leak the test backend into the global registry
-            from agentsassemble.persistence.local.identity import registry as mod
-
-            mod._BACKEND_FACTORIES.pop("memory-test", None)
 
     def test_output_root_binding_prevents_an_implicit_sqlite_fallback(self):
         hosted_root = self.root / "hosted"

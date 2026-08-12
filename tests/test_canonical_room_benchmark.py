@@ -6,19 +6,9 @@ from agentsassemble.canonical_room_benchmark import (
     CanonicalRoomBenchmarkOptions,
     run_canonical_room_benchmark,
 )
-from agentsassemble.cli import build_parser
 
 
 class CanonicalRoomBenchmarkTests(unittest.TestCase):
-    def test_room_benchmark_cli_defaults_to_long_room_cardinality(self):
-        args = build_parser().parse_args(["room", "benchmark"])
-
-        self.assertEqual(args.events, 100_000)
-        self.assertEqual(args.agent_count, 10)
-        self.assertEqual(args.read_window, 200)
-        self.assertEqual(args.samples, 50)
-        self.assertFalse(args.keep_output)
-
     def test_benchmark_uses_indexed_bounded_canonical_reads(self):
         with tempfile.TemporaryDirectory() as temp_dir:
             result = run_canonical_room_benchmark(

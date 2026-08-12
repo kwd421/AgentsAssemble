@@ -2,8 +2,6 @@ import unittest
 
 from agentsassemble.legacy.live_agent.session_control import (
     session_check_operation_status,
-    session_ensure_operation_summary,
-    session_recover_operation_summary,
     session_start_error_details,
     session_start_error_message,
     session_start_operation_status,
@@ -34,16 +32,6 @@ class LegacyLiveAgentSessionControlTests(unittest.TestCase):
         )
         self.assertEqual(session_check_operation_status({"status": "connecting"}), "degraded")
         self.assertEqual(session_stop_operation_status({"status": "stopping"}), "degraded")
-
-    def test_ensure_and_recovery_summaries_preserve_existing_copy(self) -> None:
-        self.assertEqual(
-            session_ensure_operation_summary({"status": "ready", "action": "none"}),
-            "resident live-agent session already ready",
-        )
-        self.assertEqual(
-            session_recover_operation_summary({"status": "connecting"}),
-            "resident live-agent session is still reconnecting after recovery",
-        )
 
     def test_session_error_redacts_paths_and_commands(self) -> None:
         self.assertEqual(

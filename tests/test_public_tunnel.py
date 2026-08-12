@@ -50,9 +50,6 @@ class PublicTunnelTests(unittest.TestCase):
             "https://soft-river-demo.trycloudflare.com",
         )
 
-    def test_extract_trycloudflare_url_returns_empty_for_noise(self):
-        self.assertEqual(extract_trycloudflare_url("starting quick tunnel"), "")
-
     def test_start_reports_unavailable_when_cloudflared_is_missing(self):
         manager = PublicTunnelManager(
             public_invite_runtime=self.runtime,

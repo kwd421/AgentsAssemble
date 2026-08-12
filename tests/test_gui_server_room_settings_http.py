@@ -122,15 +122,6 @@ class RoomSettingsHttpTests(unittest.TestCase):
         self.assertTrue(self.router.dispatch(method, context))
         return handler
 
-    def test_registers_exactly_the_two_room_settings_routes(self) -> None:
-        self.assertEqual(
-            set(self.router.routes()),
-            {
-                ("GET", "/api/room-settings"),
-                ("POST", "/api/room-settings"),
-            },
-        )
-
     def test_post_then_get_roundtrip_persists_user_preferences(self) -> None:
         preferences = {
             "room_id": "room-1",

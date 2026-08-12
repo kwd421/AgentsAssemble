@@ -8,7 +8,6 @@ import unittest
 from http import HTTPStatus
 from http.server import ThreadingHTTPServer
 from pathlib import Path
-from unittest.mock import patch
 from urllib.error import HTTPError
 from urllib.parse import parse_qs, urlparse
 from urllib.request import Request, urlopen
@@ -63,20 +62,6 @@ class SocialHttpRegistrarTests(unittest.TestCase):
         self.assertTrue(self.router.dispatch(method, context))
         return handler
 
-    def test_registers_exactly_the_seven_social_routes(self) -> None:
-        self.assertEqual(
-            set(self.router.routes()),
-            {
-                ("GET", "/api/room-friends"),
-                ("POST", "/api/room-friends"),
-                ("DELETE", "/api/room-friends"),
-                ("GET", "/api/room-friends/dm"),
-                ("POST", "/api/room-friends/dm"),
-                ("GET", "/api/user-profile"),
-                ("POST", "/api/user-profile"),
-            },
-        )
-
     def test_friend_routes_use_the_output_root(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:
             root = Path(temp_dir)
@@ -114,24 +99,6 @@ class SocialHttpRegistrarTests(unittest.TestCase):
                     response = self._dispatch(root, path, method)
                     self.assertEqual(response.sent_error, (HTTPStatus.BAD_REQUEST, message))
 
-    def test_injected_direct_dm_callback_receives_context_and_payload(self) -> None:
-        with tempfile.TemporaryDirectory() as temp_dir:
-            root = Path(temp_dir)
-            payload = {"friend_id": "friend:sei", "message": "hello"}
-            response = self._dispatch(
-                root,
-                "/api/room-friends/dm",
-                "POST",
-                body=json.dumps(payload).encode(),
-            )
-
-        self.assertEqual(response.sent_json, {"accepted": True})
-        context, received_payload = self.direct_dm_calls[0]
-        self.assertIsInstance(context, RequestContext)
-        self.assertIs(context.deps.output_root, root)
-        self.assertEqual(received_payload, payload)
-
-
 class SocialHttpHandlerTests(unittest.TestCase):
     def setUp(self) -> None:
         reset_state()
@@ -155,42 +122,6 @@ class SocialHttpHandlerTests(unittest.TestCase):
                 return error.code, json.loads(error.read().decode())
             finally:
                 error.close()
-
-    def test_late_direct_dm_adapter_resolves_gui_global_after_handler_construction(self) -> None:
-        supervisor = object()
-        calls: list[tuple[Path, object, dict[str, object], str]] = []
-
-        def patched_direct_dm(
-            output_root: Path,
-            received_supervisor: object,
-            payload: dict[str, object],
-            *,
-            default_server: str,
-        ) -> dict[str, object]:
-            calls.append((output_root, received_supervisor, payload, default_server))
-            return {"patched": True}
-
-        with tempfile.TemporaryDirectory() as temp_dir:
-            root = Path(temp_dir)
-            handler_class = _make_handler(root, process_supervisor=supervisor)
-            with patch("agentsassemble.gui.room_friend_direct_dm_payload", patched_direct_dm):
-                server = ThreadingHTTPServer(("127.0.0.1", 0), handler_class)
-                thread = threading.Thread(target=server.serve_forever, daemon=True)
-                thread.start()
-                try:
-                    base = f"http://127.0.0.1:{server.server_port}"
-                    status, payload = self._request(
-                        f"{base}/api/room-friends/dm",
-                        method="POST",
-                        payload={"friend_id": "friend:sei", "message": "hello"},
-                    )
-                finally:
-                    server.shutdown()
-                    server.server_close()
-
-        self.assertEqual(status, HTTPStatus.OK)
-        self.assertEqual(payload, {"patched": True})
-        self.assertEqual(calls, [(root, supervisor, {"friend_id": "friend:sei", "message": "hello"}, base)])
 
     def test_public_host_rejects_friends_and_requires_profile_authentication(self) -> None:
         set_runtime_public_url("https://public.example.test")

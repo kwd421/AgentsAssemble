@@ -4,25 +4,12 @@ import unittest
 
 from agentsassemble.providers.capabilities import ProviderCapabilityCatalog
 from agentsassemble.providers.harness_registry import (
-    PUBLIC_HARNESS_IDS,
     catalog_harness_options,
-    is_public_harness_id,
-    require_harness_definition,
 )
 from agentsassemble.providers.launch_specs import native_cli_provider_definition
 
 
 class HarnessRegistryTests(unittest.TestCase):
-    def test_public_harness_ids_match_product_contract(self) -> None:
-        self.assertEqual(
-            PUBLIC_HARNESS_IDS,
-            ("builtin", "codex", "claude", "opencode", "pi"),
-        )
-        for harness_id in PUBLIC_HARNESS_IDS:
-            self.assertTrue(is_public_harness_id(harness_id))
-            definition = require_harness_definition(harness_id)
-            self.assertEqual(definition.id, harness_id)
-
     def test_catalog_lists_installed_harnesses_without_fallback_labels(self) -> None:
         available = {"codex", "claude", "opencode", "pi"}
         options = catalog_harness_options(

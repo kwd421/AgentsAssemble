@@ -10,20 +10,6 @@ from agentsassemble.persistence.local.admission import repository as owned_repos
 
 
 class LocalAdmissionPersistencePackageTests(unittest.TestCase):
-    def test_root_module_exports_owned_local_adapters(self) -> None:
-        self.assertIs(
-            compatibility_repository.MemoryInviteSessionRepository,
-            owned_repository.MemoryInviteSessionRepository,
-        )
-        self.assertIs(
-            compatibility_repository.JsonInviteSessionRepository,
-            owned_repository.JsonInviteSessionRepository,
-        )
-        self.assertEqual(
-            compatibility_repository.ROOM_INVITE_STORE_SCHEMA,
-            owned_repository.ROOM_INVITE_STORE_SCHEMA,
-        )
-
     def test_compatibility_and_owned_paths_share_the_json_schema(self) -> None:
         now = datetime.now(UTC)
         invite = {

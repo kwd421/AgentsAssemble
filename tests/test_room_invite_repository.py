@@ -17,7 +17,6 @@ from agentsassemble.admission.repository import (
     InviteRepositoryNotConfigured,
     InviteRepositoryUnavailable,
     InviteRepositoryWriteFailed,
-    InviteSessionRepository,
     UnconfiguredInviteSessionRepository,
 )
 from agentsassemble.admission.maintenance import (
@@ -101,9 +100,6 @@ def _workflow(*, workflow_id: str = "workflow-1") -> dict[str, object]:
 class UnconfiguredInviteSessionRepositoryTests(unittest.TestCase):
     def setUp(self) -> None:
         self.repository = UnconfiguredInviteSessionRepository()
-
-    def test_implements_repository_contract(self) -> None:
-        self.assertIsInstance(self.repository, InviteSessionRepository)
 
     def test_all_storage_operations_fail_with_configuration_error(self) -> None:
         operations = [

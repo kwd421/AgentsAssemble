@@ -16,19 +16,6 @@ from agentsassemble.models import normalize_engagement_mode
 
 
 class ConfigTests(unittest.TestCase):
-    def test_load_demo_council_config(self):
-        config = load_council_config()
-
-        self.assertEqual(config.topic, "One Piece admiral strength debate")
-        self.assertEqual(config.display_topic, "원피스 3대장 최강자 토론")
-        self.assertEqual(config.display_question, "원피스 3대장 중 누가 제일 센가?")
-        self.assertEqual([role.id for role in config.roles], ["lore_lawyer", "show_me_the_feats", "fanboard_skeptic"])
-        self.assertEqual(config.roles[0].personality["preset"], "pedantic_lore_nerd")
-        self.assertIn("dcinside", config.roles[2].source_preferences[0])
-        self.assertEqual(config.meeting_mode, "debate")
-        self.assertTrue(config.moderator.enabled)
-        self.assertEqual([round_definition.id for round_definition in config.rounds], ["round_1", "round_2"])
-
     def test_load_council_config_with_meeting_mode_and_moderator(self):
         with tempfile.TemporaryDirectory() as temp_dir:
             path = Path(temp_dir) / "council.json"

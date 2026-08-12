@@ -40,17 +40,6 @@ def _dispatch(router: Router) -> FakeHandler:
 
 
 class LegacyLiveAgentDiscoveryRouteTests(unittest.TestCase):
-
-    def test_registers_only_discovery(self) -> None:
-        router = Router()
-        register_legacy_live_agent_discovery_route(
-            router,
-            deps=self._deps(FakeDiscovery({})),
-        )
-
-        self.assertEqual(router.routes(), [("POST", "/api/live-agent-discovery")])
-        self.assertEqual(router.dynamic_routes(), [])
-
     def test_runs_discovery_and_records_only_safe_approval_evidence(self) -> None:
         report = {
             "status": "ok",

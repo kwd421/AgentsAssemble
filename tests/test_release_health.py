@@ -202,12 +202,6 @@ class ReleaseHealthTests(unittest.TestCase):
         self.assertEqual(report_path.name, "latest.json")
         self.assertEqual(loaded, report)
 
-    def test_each_release_check_uses_an_allowed_safety_class(self):
-        from agentsassemble.diagnostics.release_health import RELEASE_HEALTH_CHECKS, RELEASE_HEALTH_SAFETY_CLASSES
-
-        for check in RELEASE_HEALTH_CHECKS:
-            self.assertIn(check.safety_class, RELEASE_HEALTH_SAFETY_CLASSES)
-
     def test_default_release_health_selection_excludes_optional_room_event_benchmark(self):
         from agentsassemble.diagnostics.release_health import RELEASE_HEALTH_CHECKS, validate_release_health_check_selection
 

@@ -134,32 +134,6 @@ class CodexAdapterTests(unittest.TestCase):
 
             self.assertNotIn("--search", seen_commands[0])
 
-    def test_codex_round_prompt_separates_research_from_spoken_message(self):
-        with tempfile.TemporaryDirectory() as temp_dir:
-            meeting_dir = Path(temp_dir)
-            (meeting_dir / "roles" / "lore_lawyer").mkdir(parents=True)
-            seen_inputs = []
-
-            def fake_runner(command, input, text, capture_output, timeout, check):
-                seen_inputs.append(input)
-                output_path = Path(command[command.index("--output-last-message") + 1])
-                output_path.write_text('{"content":"짧은 발언","confidence":"medium"}', encoding="utf-8")
-                return subprocess.CompletedProcess(command, 0, stdout="", stderr="")
-
-            adapter = CodexAdapter(command_runner=fake_runner)
-            role = Role("lore_lawyer", "설정충", "Canon Analyst", "canon")
-            session = adapter.start_session(role, {"meeting_dir": str(meeting_dir)})
-
-            adapter.run_round(role, session, "round_2", "반박", {"round_1": [{"display_name": "공식이뭘알아"}]})
-
-            self.assertIn("Research is raw material, not your spoken message", seen_inputs[0])
-            self.assertIn("4-8 Korean sentences", seen_inputs[0])
-            self.assertIn("at most 2 short paragraphs", seen_inputs[0])
-            self.assertIn("reference at least one previous speaker by name", seen_inputs[0])
-            self.assertIn("held|qualified|reframed|revised|conceded", seen_inputs[0])
-            self.assertIn("stance_delta", seen_inputs[0])
-            self.assertIn("changed_by", seen_inputs[0])
-
     def test_codex_round_returns_stance_and_persona_dynamics(self):
         with tempfile.TemporaryDirectory() as temp_dir:
             meeting_dir = Path(temp_dir)

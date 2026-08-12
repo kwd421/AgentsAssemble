@@ -35,6 +35,8 @@ def build_ws_room_deps_factory(
     room_repository: RoomRepository,
     composition: RoomWsComposition,
 ) -> Callable[..., WsRoomDeps]:
+    room_realtime_controller = services.room_realtime_controller
+
     def ws_room_deps(channel, handler) -> WsRoomDeps:
         def read_lobby_after(meeting_id: str, after_id: str) -> tuple[list, str]:
             payload = composition.stream_snapshot_payload(
