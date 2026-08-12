@@ -16,12 +16,14 @@ from agentsassemble.providers.api_context import ApiContextLimitError, ApiContex
 from agentsassemble.providers.api_session import ApiToolResultStore
 from agentsassemble.providers.remote_http import safe_loopback_urlopen, safe_remote_urlopen
 from agentsassemble.providers.native_harness_protocol import (
+    ROOM_TOOL_NAMESPACE,
     anthropic_request_to_chat,
     approximate_anthropic_input_tokens,
     chat_response_to_anthropic_events,
     chat_response_to_anthropic_message,
     chat_response_to_responses_events,
     responses_request_to_chat,
+    responses_namespace_tool_map,
 )
 from agentsassemble.providers.turn_progress import (
     DEFAULT_PROVIDER_INACTIVITY_TIMEOUT_SECONDS,
@@ -206,6 +208,10 @@ class NativeModelGateway:
             )
             if request_path in {"/v1/responses", "/responses"}:
                 self._record_request("responses")
+                namespace_tools = responses_namespace_tool_map(
+                    request.get("tools"),
+                    allowed_namespaces={ROOM_TOOL_NAMESPACE},
+                )
                 payload = responses_request_to_chat(
                     request,
                     model=self.model,
@@ -216,7 +222,11 @@ class NativeModelGateway:
                 response = self._complete(payload)
                 _write_sse(
                     handler,
-                    chat_response_to_responses_events(response, model=self.model),
+                    chat_response_to_responses_events(
+                        response,
+                        model=self.model,
+                        namespace_tools=namespace_tools,
+                    ),
                 )
                 return
             if request_path in {"/v1/messages", "/messages"}:

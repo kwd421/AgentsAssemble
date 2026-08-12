@@ -141,7 +141,7 @@ class CodexAppServerLiveRuntime:
             elif chunk_type == "message_final":
                 final = str(chunk.get("content") or final)
             elif chunk_type == "error":
-                errors.append(str(chunk.get("diagnostics") or "Codex app-server turn failed."))
+                errors.append(_codex_error_message(chunk.get("diagnostics")))
         diagnostics = self.runtime.diagnose(self.handle)
         if errors:
             raise RuntimeError(errors[-1])
@@ -207,6 +207,29 @@ class CodexAppServerLiveRuntime:
             "permission_mode": "workspace_write" if self.profile["sandbox"] == "workspace-write" else "meeting_read_only",
             **diagnostics,
         }
+
+
+def _codex_error_message(value: object) -> str:
+    diagnostics = value if isinstance(value, list) else [value]
+    for diagnostic in diagnostics:
+        if not isinstance(diagnostic, dict):
+            continue
+        message = clean_room_text(diagnostic.get("message"), limit=4000)
+        status = clean_room_text(diagnostic.get("status"), limit=64).casefold()
+        if message and status in {
+            "error",
+            "failed",
+            "stopped",
+            "start_failed",
+            "resume_failed",
+        }:
+            return message
+    for diagnostic in diagnostics:
+        if isinstance(diagnostic, dict):
+            message = clean_room_text(diagnostic.get("message"), limit=4000)
+            if message:
+                return message
+    return clean_room_text(value, limit=4000) or "Codex app-server turn failed."
 
 
 def _codex_activity(value: object) -> dict[str, str]:

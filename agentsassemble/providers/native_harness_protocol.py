@@ -9,7 +9,10 @@ from __future__ import annotations
 
 import json
 import uuid
-from collections.abc import Iterable
+from collections.abc import Iterable, Mapping
+
+
+ROOM_TOOL_NAMESPACE = "mcp__agentsassemble_room"
 
 
 def responses_request_to_chat(
@@ -21,6 +24,20 @@ def responses_request_to_chat(
     extra_payload: dict[str, object] | None = None,
 ) -> dict[str, object]:
     messages: list[dict[str, object]] = []
+    pending_tool_calls: list[dict[str, object]] = []
+
+    def flush_tool_calls() -> None:
+        if not pending_tool_calls:
+            return
+        messages.append(
+            {
+                "role": "assistant",
+                "content": None,
+                "tool_calls": list(pending_tool_calls),
+            }
+        )
+        pending_tool_calls.clear()
+
     instructions = _text(request.get("instructions"))
     if instructions:
         messages.append({"role": "system", "content": instructions})
@@ -29,6 +46,7 @@ def responses_request_to_chat(
             continue
         item_type = _text(item.get("type"))
         if item_type == "message":
+            flush_tool_calls()
             role = _text(item.get("role")) or "user"
             if role == "developer":
                 role = "system"
@@ -40,22 +58,20 @@ def responses_request_to_chat(
             )
         elif item_type in {"function_call", "custom_tool_call"}:
             name = _text(item.get("name")) or item_type
+            namespace = _text(item.get("namespace"))
+            if namespace:
+                name = _flattened_namespace_tool_name(namespace, name)
             arguments = _text(item.get("arguments") or item.get("input")) or "{}"
-            messages.append(
+            pending_tool_calls.append(
                 {
-                    "role": "assistant",
-                    "content": None,
-                    "tool_calls": [
-                        {
-                            "id": _text(item.get("call_id") or item.get("id"))
-                            or f"call_{uuid.uuid4().hex}",
-                            "type": "function",
-                            "function": {"name": name, "arguments": arguments},
-                        }
-                    ],
+                    "id": _text(item.get("call_id") or item.get("id"))
+                    or f"call_{uuid.uuid4().hex}",
+                    "type": "function",
+                    "function": {"name": name, "arguments": arguments},
                 }
             )
         elif item_type in {"function_call_output", "custom_tool_call_output"}:
+            flush_tool_calls()
             messages.append(
                 {
                     "role": "tool",
@@ -64,26 +80,21 @@ def responses_request_to_chat(
                 }
             )
         elif item_type == "local_shell_call":
-            messages.append(
+            pending_tool_calls.append(
                 {
-                    "role": "assistant",
-                    "content": None,
-                    "tool_calls": [
-                        {
-                            "id": _text(item.get("call_id") or item.get("id"))
-                            or f"call_{uuid.uuid4().hex}",
-                            "type": "function",
-                            "function": {
-                                "name": "local_shell",
-                                "arguments": json.dumps(
-                                    item.get("action") or {}, ensure_ascii=False
-                                ),
-                            },
-                        }
-                    ],
+                    "id": _text(item.get("call_id") or item.get("id"))
+                    or f"call_{uuid.uuid4().hex}",
+                    "type": "function",
+                    "function": {
+                        "name": "local_shell",
+                        "arguments": json.dumps(
+                            item.get("action") or {}, ensure_ascii=False
+                        ),
+                    },
                 }
             )
         elif item_type == "local_shell_call_output":
+            flush_tool_calls()
             messages.append(
                 {
                     "role": "tool",
@@ -91,14 +102,21 @@ def responses_request_to_chat(
                     "content": _tool_output_text(item.get("output")),
                 }
             )
+    flush_tool_calls()
     payload: dict[str, object] = {
         "model": model,
         "messages": messages,
         "stream": False,
         **dict(extra_payload or {}),
     }
-    tools = [_responses_tool_to_chat(tool) for tool in _list(request.get("tools"))]
-    tools = [tool for tool in tools if tool is not None]
+    tools = [
+        tool
+        for source in _list(request.get("tools"))
+        for tool in _responses_tools_to_chat(
+            source,
+            allowed_namespaces={ROOM_TOOL_NAMESPACE},
+        )
+    ]
     if tools:
         payload["tools"] = tools
         payload["tool_choice"] = "auto"
@@ -195,7 +213,10 @@ def anthropic_request_to_chat(
 
 
 def chat_response_to_responses_events(
-    response: dict[str, object], *, model: str
+    response: dict[str, object],
+    *,
+    model: str,
+    namespace_tools: Mapping[str, tuple[str, str]] | None = None,
 ) -> list[dict[str, object]]:
     response_id = _text(response.get("id")) or f"resp_{uuid.uuid4().hex}"
     message = _first_choice_message(response)
@@ -224,6 +245,11 @@ def chat_response_to_responses_events(
         }
         events.extend(
             [
+                {
+                    "type": "response.output_item.added",
+                    "output_index": len(output),
+                    "item": reasoning_item,
+                },
                 {
                     "type": "response.reasoning_summary_part.added",
                     "item_id": reasoning_id,
@@ -266,6 +292,14 @@ def chat_response_to_responses_events(
         events.extend(
             [
                 {
+                    "type": "response.output_item.added",
+                    "output_index": len(output),
+                    "item": {
+                        **item,
+                        "content": [],
+                    },
+                },
+                {
                     "type": "response.output_text.delta",
                     "item_id": item_id,
                     "output_index": len(output),
@@ -286,13 +320,28 @@ def chat_response_to_responses_events(
         function = tool_call.get("function")
         if not isinstance(function, dict):
             continue
+        provider_name = _text(function.get("name")) or "tool"
+        namespace, name = dict(namespace_tools or {}).get(
+            provider_name,
+            ("", provider_name),
+        )
         item = {
             "type": "function_call",
             "id": f"fc_{uuid.uuid4().hex}",
             "call_id": _text(tool_call.get("id")) or f"call_{uuid.uuid4().hex}",
-            "name": _text(function.get("name")) or "tool",
+            "name": name,
             "arguments": _text(function.get("arguments")) or "{}",
         }
+        if namespace:
+            item["namespace"] = namespace
+        added_item = {**item, "arguments": ""}
+        events.append(
+            {
+                "type": "response.output_item.added",
+                "output_index": len(output),
+                "item": added_item,
+            }
+        )
         events.append(
             {
                 "type": "response.output_item.done",
@@ -466,6 +515,62 @@ def approximate_anthropic_input_tokens(request: dict[str, object]) -> int:
     return max(1, (len(encoded) + 3) // 4)
 
 
+def responses_namespace_tool_map(
+    values: object,
+    *,
+    allowed_namespaces: set[str] | frozenset[str] | None = None,
+) -> dict[str, tuple[str, str]]:
+    mapping: dict[str, tuple[str, str]] = {}
+    for value in _list(values):
+        if not isinstance(value, dict) or _text(value.get("type")) != "namespace":
+            continue
+        namespace = _text(value.get("name"))
+        if not namespace or (
+            allowed_namespaces is not None and namespace not in allowed_namespaces
+        ):
+            continue
+        for child in _list(value.get("tools")):
+            if not isinstance(child, dict):
+                continue
+            name = _text(child.get("name"))
+            if name:
+                mapping[_flattened_namespace_tool_name(namespace, name)] = (
+                    namespace,
+                    name,
+                )
+    return mapping
+
+
+def _responses_tools_to_chat(
+    value: object,
+    *,
+    allowed_namespaces: set[str] | frozenset[str] | None = None,
+) -> list[dict[str, object]]:
+    if not isinstance(value, dict):
+        return []
+    tool_type = _text(value.get("type"))
+    if tool_type == "namespace":
+        namespace = _text(value.get("name"))
+        if not namespace or (
+            allowed_namespaces is not None and namespace not in allowed_namespaces
+        ):
+            return []
+        tools: list[dict[str, object]] = []
+        for child in _list(value.get("tools")):
+            converted = _responses_tool_to_chat(child)
+            if converted is None:
+                continue
+            function = converted["function"]
+            function["name"] = _flattened_namespace_tool_name(
+                namespace,
+                _text(function.get("name")),
+            )
+            tools.append(converted)
+        return tools
+    converted = _responses_tool_to_chat(value)
+    return [converted] if converted is not None else []
+
+
 def _responses_tool_to_chat(value: object) -> dict[str, object] | None:
     if not isinstance(value, dict):
         return None
@@ -504,6 +609,10 @@ def _responses_tool_to_chat(value: object) -> dict[str, object] | None:
             "parameters": parameters,
         },
     }
+
+
+def _flattened_namespace_tool_name(namespace: str, name: str) -> str:
+    return f"{namespace}__{name}"
 
 
 def _anthropic_tool_to_chat(value: object) -> dict[str, object] | None:

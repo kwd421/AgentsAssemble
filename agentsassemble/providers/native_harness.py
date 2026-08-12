@@ -8,6 +8,7 @@ registered harnesses through ``harness_registry``.
 from __future__ import annotations
 
 import shutil
+from pathlib import Path
 
 from agentsassemble.providers.claude_command import claude_interactive_command
 from agentsassemble.providers.claude_hooks import ClaudeHookRuntime
@@ -203,6 +204,15 @@ def create_codex_or_claude_harness(
             "ollama_api": "ollama",
             "lmstudio_api": "lmstudio",
         }.get(provider_kind, "agentsassemble_harness")
+        state_root = clean_room_text(runtime_state_dir, limit=1000)
+        if not state_root:
+            raise NativeHarnessUnavailable(
+                "Codex harness requires an isolated runtime state directory."
+            )
+        codex_home = Path(state_root).expanduser().resolve() / "codex-home"
+        codex_home.mkdir(parents=True, exist_ok=True, mode=0o700)
+        codex_environment = dict(environment or {})
+        codex_environment["CODEX_HOME"] = str(codex_home)
         delegate = CodexAppServerLiveRuntime(
             agent_id,
             workspace=workspace,
@@ -211,7 +221,7 @@ def create_codex_or_claude_harness(
             permission_mode=permission_mode,
             service_tier=service_tier,
             executable=executable,
-            environment=environment,
+            environment=codex_environment,
             room_portal=room_portal,
             model_provider=model_provider,
             provider_base_url=(
