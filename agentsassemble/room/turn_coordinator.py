@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-from dataclasses import dataclass
 from datetime import UTC, datetime
 import logging
 from pathlib import Path
@@ -13,6 +12,9 @@ from agentsassemble.room import bridge_diagnostics
 from agentsassemble.room.text import (
     clean_room_text as clean_lobby_text,
     has_room_visible_text,
+)
+from agentsassemble.room.turn_assignment_serialization import (
+    serialized_observation_assignment,
 )
 from agentsassemble.providers.launch_specs import NativeCliProviderSpec
 from agentsassemble.providers.model_verification import (
@@ -64,7 +66,12 @@ from agentsassemble.room.structured_messages import (
     room_message_text,
 )
 from agentsassemble.room_turn_attention import RoomTurnAttention
-from agentsassemble.room.types import RoomEvent, TurnAssignment
+from agentsassemble.room.types import (
+    PendingEventPartition,
+    PreparedFinalMessage,
+    RoomEvent,
+    TurnAssignment,
+)
 
 
 RecoveryScheduler = Callable[[float, Callable[[], None]], object]
@@ -77,24 +84,6 @@ _LOGGER = logging.getLogger(__name__)
 FLOOR_PROGRESSION_PUBLIC_ERROR = (
     "Pending room work could not be assigned. Check the server diagnostics."
 )
-
-
-@dataclass(frozen=True)
-class PendingEventPartition:
-    inflight: list[str]
-    deferred: list[str]
-    already_synced: list[str]
-    invalid: list[str]
-
-
-@dataclass(frozen=True)
-class PreparedFinalMessage:
-    content: str
-    target_agent_id: str
-    latency: dict[str, object]
-    diagnostics: dict[str, object]
-    observed_model_id: str
-    structured: StructuredRoomMessage
 
 
 class RoomTurnCoordinator:
@@ -802,6 +791,7 @@ class RoomTurnCoordinator:
         )
         return {"assigned": assigned}
 
+    @serialized_observation_assignment
     def _assign_room_observation(
         self,
         room_id: str,
@@ -815,6 +805,10 @@ class RoomTurnCoordinator:
         observation_kind: RoomObservationKind | None = None,
         allow_empty: bool = False,
     ) -> bool:
+        current_session = self.store.session(room_id, agent_id)
+        if not current_session:
+            return False
+        session = current_session
         preserved_pending = dedupe_event_ids(list(preserved_pending or []))
         event_modes = event_modes or pending_event_modes(
             session,

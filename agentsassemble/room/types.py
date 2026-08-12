@@ -2,12 +2,32 @@
 
 from __future__ import annotations
 
+from dataclasses import dataclass
 from typing import NotRequired, TypedDict
 
 from agentsassemble.room.public_event_contract import (
     PublicRoomActor as RoomActor,
     PublicRoomEvent as RoomEvent,
 )
+from agentsassemble.room.structured_messages import StructuredRoomMessage
+
+
+@dataclass(frozen=True)
+class PendingEventPartition:
+    inflight: list[str]
+    deferred: list[str]
+    already_synced: list[str]
+    invalid: list[str]
+
+
+@dataclass(frozen=True)
+class PreparedFinalMessage:
+    content: str
+    target_agent_id: str
+    latency: dict[str, object]
+    diagnostics: dict[str, object]
+    observed_model_id: str
+    structured: StructuredRoomMessage
 
 
 class RoomParticipant(TypedDict):
