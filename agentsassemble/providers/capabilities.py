@@ -569,6 +569,9 @@ class ProviderCapabilityCatalog:
         if provider_id == "cursor":
             output = self._model_probe(provider_id, [executable, "models"], 8.0)
             return _cursor_controls(output)
+        if provider_id == "freebuff":
+            # Freebuff has no models CLI; the runtime picks by live screen label.
+            return _freebuff_controls()
         return []
 
     def _claude_ultracode_available(self, executable: str) -> bool:
@@ -966,6 +969,26 @@ def _control(
     }
 
 
+def _freebuff_controls() -> list[dict[str, object]]:
+    """Expose Freebuff's default selectable model without a models CLI."""
+
+    return [
+        _control(
+            "model",
+            "모델",
+            [
+                _option(
+                    "DeepSeek V4 Flash",
+                    "DeepSeek V4 Flash",
+                    description="Freebuff interactive model picker label.",
+                )
+            ],
+            "DeepSeek V4 Flash",
+        ),
+        _permission_control("freebuff"),
+    ]
+
+
 def _permission_control(provider_id: str = "") -> dict[str, object]:
     native_labels = {
         "codex": {
@@ -991,6 +1014,10 @@ def _permission_control(provider_id: str = "") -> dict[str, object]:
         "grok": {
             "meeting_read_only": "Grok · approval reject / RoomPortal only",
             "workspace_write": "Grok · permission acceptEdits",
+        },
+        "freebuff": {
+            "meeting_read_only": "Freebuff · read-only room tools",
+            "workspace_write": "Freebuff · workspace edits",
         },
     }.get(provider_id, {})
 

@@ -66,6 +66,10 @@ def serve_gui_runtime(
     live_agent_stale_restart_after_seconds: float = 0.0,
     frontend_dist_root: Path | None = None,
 ) -> None:
+    # Install user-local CLI dirs before catalog discovery or provider spawn.
+    from agentsassemble.providers.process_environment import ensure_provider_cli_search_path
+
+    ensure_provider_cli_search_path()
     rolling_bootstrap = RollingChildBootstrap.from_environment()
     runtime_instance_id = f"gui-{uuid4().hex[:16]}"
     if not dependencies.is_loopback_host(host) and not unsafe_expose_control_plane:

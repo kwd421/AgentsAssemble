@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import os
 from collections.abc import Mapping
+from pathlib import Path
 
 
 _PLATFORM_ENV_KEYS = frozenset(
@@ -44,6 +45,48 @@ _PROVIDER_INTERNAL_ENV_KEYS = frozenset(
 )
 
 
+def provider_cli_search_directories(*, home: Path | None = None) -> list[Path]:
+    """User-local directories that commonly hold subscription provider CLIs."""
+
+    root = Path(home or Path.home()).expanduser()
+    return [
+        root / ".local" / "bin",
+        root / ".grok" / "bin",
+        root / ".antigravity" / "antigravity" / "bin",
+        root / ".antigravity-ide" / "antigravity-ide" / "bin",
+    ]
+
+
+def ensure_provider_cli_search_path(
+    environ: dict[str, str] | None = None,
+    *,
+    home: Path | None = None,
+) -> str:
+    """Prepend known provider CLI directories to PATH when they exist.
+
+    Desktop launchers and some shell wrappers start the GUI with a minimal PATH
+    that includes Homebrew but omits ``~/.local/bin`` and ``~/.grok/bin``. Catalog
+    discovery and provider process launch both use PATH, so those CLIs would
+    otherwise appear as ``command_missing`` even when installed.
+    """
+
+    target = environ if environ is not None else os.environ
+    current = str(target.get("PATH") or "")
+    parts = [part for part in current.split(os.pathsep) if part]
+    seen = {part for part in parts}
+    for directory in reversed(provider_cli_search_directories(home=home)):
+        if not directory.is_dir():
+            continue
+        rendered = str(directory)
+        if rendered in seen:
+            continue
+        parts.insert(0, rendered)
+        seen.add(rendered)
+    updated = os.pathsep.join(parts)
+    target["PATH"] = updated
+    return updated
+
+
 def sanitized_child_environment(
     extra: Mapping[str, object] | None = None,
     *,
@@ -56,6 +99,8 @@ def sanitized_child_environment(
         for key in _PLATFORM_ENV_KEYS
         if key in parent and str(parent[key])
     }
+    # Provider children must see the same CLI search path the catalog used.
+    ensure_provider_cli_search_path(environment, home=Path(environment["HOME"]).expanduser() if environment.get("HOME") else None)
     for key, value in dict(extra or {}).items():
         clean_key = str(key or "").strip()
         if clean_key and value is not None:
