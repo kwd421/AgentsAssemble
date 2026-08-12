@@ -412,7 +412,7 @@ class RoomAgentBridge:
         turn_id = wake.turn_id
         provider_input = self._orientation.for_room_wake(
             f"room.wake {turn_id}",
-            self._provider_kind(),
+            self._room_orientation_provider_kind(),
             wake.observation_kind,
             portal.active_tool_names(),
         )
@@ -798,9 +798,11 @@ class RoomAgentBridge:
                 if self._worker is threading.current_thread():
                     self._worker = None
 
-    def _provider_kind(self) -> str:
+    def _room_orientation_provider_kind(self) -> str:
         if self._runtime_profile is None:
             return ""
+        if self._runtime_profile.execution_harness == "claude":
+            return "claude_code"
         return clean_lobby_text(self._runtime_profile.provider_kind, limit=64)
 
     def _command(
