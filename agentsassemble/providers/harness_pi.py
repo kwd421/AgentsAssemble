@@ -19,6 +19,10 @@ from agentsassemble.providers.harness_events import (
 )
 from agentsassemble.providers.native_harness import NativeHarnessRuntime, NativeHarnessUnavailable
 from agentsassemble.providers.native_harness_gateway import NativeModelGateway
+from agentsassemble.providers.pi_room_extension import (
+    PI_READ_ONLY_TOOLS,
+    write_pi_room_extension,
+)
 from agentsassemble.providers.process_environment import sanitized_provider_environment
 from agentsassemble.providers.provider_requests import ProviderRequestHandler
 from agentsassemble.providers.room_portal import RoomPortal
@@ -45,12 +49,20 @@ def create_pi_harness_runtime(
     max_output_tokens: int = 0,
     context_contract_bytes: int = 256_000,
 ) -> NativeHarnessRuntime:
-    del permission_mode, room_portal  # Pi RPC has no AA approval/choice bridge yet.
+    del permission_mode  # Pi exposes no interactive approval bridge yet.
     executable = shutil.which("pi")
     if not executable:
         raise NativeHarnessUnavailable("Pi CLI is not installed.")
     state_dir = Path(runtime_state_dir).expanduser().resolve()
     state_dir.mkdir(parents=True, exist_ok=True)
+    if room_portal is None:
+        raise NativeHarnessUnavailable("Pi room sessions require a RoomPortal.")
+    room_portal.prepare()
+    extension_path = write_pi_room_extension(
+        state_dir / "pi-room-extension.ts",
+        workspace=workspace,
+        room_helper=room_portal.helper_path,
+    )
     gateway = NativeModelGateway(
         upstream_base_url=provider_endpoint,
         upstream_api_key=credential,
@@ -72,6 +84,7 @@ def create_pi_harness_runtime(
         reasoning_effort=reasoning_effort,
         environment=environment,
         gateway=gateway,
+        extension_path=extension_path,
     )
     return NativeHarnessRuntime(
         delegate,
@@ -95,6 +108,7 @@ class PiHarnessRuntime:
         reasoning_effort: str = "",
         environment: dict[str, str] | None = None,
         gateway: NativeModelGateway,
+        extension_path: str | Path | None = None,
         popen_factory=subprocess.Popen,
     ) -> None:
         self.agent_id = clean_room_text(agent_id, limit=128)
@@ -105,6 +119,11 @@ class PiHarnessRuntime:
         self.reasoning_effort = clean_room_text(reasoning_effort, limit=32)
         self._environment = dict(environment or {})
         self._gateway = gateway
+        self._extension_path = (
+            Path(extension_path).expanduser().resolve()
+            if extension_path is not None
+            else None
+        )
         self._popen_factory = popen_factory
         self._process: subprocess.Popen[str] | None = None
         self._reader: threading.Thread | None = None
@@ -180,7 +199,11 @@ class PiHarnessRuntime:
             "--session-dir",
             str(session_dir),
             "--no-extensions",
+            "--tools",
+            ",".join(PI_READ_ONLY_TOOLS),
         ]
+        if self._extension_path is not None:
+            command.extend(("--extension", str(self._extension_path)))
         if self.reasoning_effort:
             command.extend(("--thinking", self.reasoning_effort))
         env = sanitized_provider_environment(
@@ -355,12 +378,23 @@ class PiHarnessRuntime:
                 continue
         if provider_error:
             raise RuntimeError(provider_error)
-        return {
-            "content": emitted.strip(),
+        content = emitted.strip()
+        metadata = {
             "observed_model_id": self.model,
             "runtime_kind": "api",
             "execution_harness": "pi",
             "unsupported": ["approvals", "choices"],
+        }
+        if content:
+            return {
+                "outcome": "message",
+                "content": content,
+                "metadata": metadata,
+            }
+        return {
+            "outcome": "decline",
+            "reason_code": "nothing_useful_to_add",
+            "metadata": metadata,
         }
 
     def interrupt(self) -> None:
@@ -391,8 +425,11 @@ class PiHarnessRuntime:
 
     def health(self) -> dict[str, object]:
         process = self._process
+        running = bool(process is not None and process.poll() is None)
         return {
-            "running": bool(process is not None and process.poll() is None),
+            "running": running,
+            "transport": "stdio_jsonl",
+            "provider_session_active": running,
             "runtime_kind": "api",
             "execution_harness": "pi",
             "pid": process.pid if process is not None else None,
