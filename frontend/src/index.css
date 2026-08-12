@@ -7115,3 +7115,8 @@ body[data-sidebar-resizing="true"] {
 .dc-plugin-stage-toolbar{display:flex;gap:.75rem;align-items:center;padding:.5rem .75rem;border-bottom:1px solid #2a3528}
 .dc-plugin-frame{flex:1;width:100%;border:0;background:#0d120d;min-height:0}
 .dc-plugin-error{color:#e57373}
+.dc-plugin-stage[data-plugin="rimworld"]{flex:1;min-height:0}
+.dc-plugin-stage[data-plugin="rimworld"] .dc-plugin-stage-toolbar{min-height:42px;padding:.4rem .75rem;background:#171d1b}
+.dc-plugin-stage[data-plugin="rimworld"] .dc-plugin-stage-toolbar strong{font-size:.8rem;letter-spacing:.035em}
+.dc-plugin-stage[data-plugin="rimworld"] .dc-plugin-stage-toolbar button{margin-left:auto}
+.dc-plugin-stage[data-plugin="rimworld"] .dc-plugin-frame{display:block;height:100%}

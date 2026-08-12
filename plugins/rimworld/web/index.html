@@ -7,142 +7,369 @@
     <style>
       :root {
         color-scheme: dark;
-        --bg: #1a1f18;
-        --panel: #243022;
-        --ink: #e7f0dc;
-        --muted: #9bb08a;
-        --accent: #8bc34a;
-        --danger: #e57373;
-        --tile: #2f3b2a;
+        --bg: #0c1010;
+        --panel: #151a19;
+        --panel-raised: #202725;
+        --line: #39423f;
+        --ink: #eaede5;
+        --muted: #a8b0a8;
+        --accent: #e4a641;
+        --danger: #e25d50;
+        --good: #78b95b;
       }
       * { box-sizing: border-box; }
+      html, body { height: 100%; }
       body {
         margin: 0;
-        font-family: ui-sans-serif, system-ui, sans-serif;
+        overflow: hidden;
         background: var(--bg);
         color: var(--ink);
+        font: 14px/1.4 Inter, ui-sans-serif, system-ui, sans-serif;
       }
-      .layout {
+      button { font: inherit; }
+      .game {
+        height: 100%;
+        min-height: 540px;
         display: grid;
-        grid-template-rows: auto 1fr auto;
-        min-height: 100vh;
+        grid-template-rows: 54px minmax(0, 1fr);
       }
-      header, footer {
+      .topbar {
         display: flex;
-        gap: 0.75rem;
+        align-items: stretch;
+        min-width: 0;
+        background: #121716;
+        border-bottom: 1px solid var(--line);
+      }
+      .brand,
+      .resource,
+      .clock,
+      .speed {
+        display: flex;
         align-items: center;
-        flex-wrap: wrap;
-        padding: 0.6rem 0.8rem;
-        background: var(--panel);
-        border-bottom: 1px solid #31422e;
+        border-right: 1px solid #343c39;
       }
-      footer { border-bottom: 0; border-top: 1px solid #31422e; }
-      button, select {
-        background: #31422e;
-        color: var(--ink);
-        border: 1px solid #40563a;
-        border-radius: 0.4rem;
-        padding: 0.35rem 0.65rem;
-        cursor: pointer;
+      .brand {
+        gap: 9px;
+        padding: 0 16px;
+        font-size: .82rem;
+        font-weight: 850;
+        letter-spacing: .055em;
+        white-space: nowrap;
       }
-      button.active { outline: 2px solid var(--accent); }
-      .map {
-        display: grid;
-        grid-template-columns: repeat(48, minmax(0, 1fr));
-        gap: 1px;
-        padding: 0.5rem;
-        background: #10140f;
-        overflow: auto;
-        min-height: 0;
-      }
-      .cell {
-        aspect-ratio: 1;
-        background: var(--tile);
-        position: relative;
-        cursor: pointer;
-        outline: 0;
-      }
-      .cell:hover { box-shadow: inset 0 0 0 1px #90a982; }
-      .cell:focus-visible, .cell.selected { box-shadow: inset 0 0 0 2px #d4efb8; }
-      .cell.blueprint { background: #3c4a31; box-shadow: inset 0 0 0 1px #a7c56e; }
-      .cell.wall { background: #6d5d4b; }
-      .cell.bed { background: #5c7cfa; }
-      .cell.table { background: #d4a373; }
-      .cell.campfire { background: #ff922b; }
-      .cell.workbench { background: #748ffc; }
-      .cell.door { background: #adb5bd; }
-      .cell.storage { background: #868e96; }
-      .pawn {
-        position: absolute;
-        inset: 15%;
+      .brand-mark {
+        width: 21px;
+        height: 21px;
+        border: 3px solid var(--accent);
         border-radius: 50%;
-        background: var(--accent);
-        display: grid;
-        place-items: center;
-        font-size: 0.55rem;
-        font-weight: 700;
-        color: #10210a;
+        position: relative;
       }
-      .pawn.break { background: var(--danger); }
-      .pawn.wait { background: #fab005; }
-      .status { color: var(--muted); font-size: 0.85rem; }
-      .error { color: var(--danger); }
-      .colonist-list {
-        display: flex;
-        gap: 0.5rem;
-        flex-wrap: wrap;
+      .brand-mark::after {
+        content: "";
+        position: absolute;
+        inset: 4px;
+        border: solid var(--accent);
+        border-width: 0 2px 2px 0;
+        transform: rotate(45deg);
       }
-      .selection-detail {
+      .resource {
+        min-width: 112px;
+        gap: 10px;
+        padding: 0 14px;
+      }
+      .resource-icon {
+        width: 20px;
+        height: 20px;
+        border: 2px solid #10131180;
+        border-radius: 4px;
+        background: var(--resource);
+        box-shadow: inset 2px 2px #ffffff26, 1px 2px 2px #0008;
+        transform: rotate(7deg);
+      }
+      .resource-copy { display: grid; line-height: 1.05; }
+      .resource-copy span { color: var(--muted); font-size: .66rem; letter-spacing: .12em; }
+      .resource-copy strong { font-size: 1rem; margin-top: 4px; }
+      .clock {
+        min-width: 0;
         margin-left: auto;
+        padding: 0 15px;
+        justify-content: center;
+        flex-direction: column;
+        align-items: flex-end;
+        line-height: 1.2;
+      }
+      .clock span { color: var(--muted); font-size: .67rem; letter-spacing: .1em; }
+      .clock strong { font-size: .82rem; }
+      .speed { gap: 6px; padding: 0 10px; border-right: 0; }
+      .speed button {
+        min-width: 44px;
+        padding: 7px 9px;
+        border: 1px solid #4a5450;
+        border-radius: 6px;
+        background: #242b29;
+        color: var(--ink);
+        cursor: pointer;
+      }
+      .speed button.active {
+        border-color: #c78625;
+        background: #4b3516;
+        color: #ffd992;
+      }
+      .speed button.pending { opacity: .7; }
+      .speed button:focus-visible,
+      .colonist-card:focus-visible,
+      canvas:focus-visible {
+        outline: 2px solid #ffe09a;
+        outline-offset: -3px;
+      }
+      .workspace {
+        min-height: 0;
+        display: grid;
+        grid-template-columns: minmax(0, 1fr) clamp(260px, 27vw, 370px);
+      }
+      .map-shell {
+        min-width: 0;
+        min-height: 0;
+        position: relative;
+        overflow: hidden;
+        background: #111713;
+      }
+      #map {
+        width: 100%;
+        height: 100%;
+        display: block;
+        cursor: crosshair;
+        image-rendering: auto;
+      }
+      .raid-badge,
+      .cell-badge,
+      .bridge-error {
+        position: absolute;
+        z-index: 2;
+        border-radius: 6px;
+        box-shadow: 0 4px 16px #0007;
+      }
+      .raid-badge {
+        top: 14px;
+        right: 14px;
+        padding: 9px 12px;
+        border: 1px solid #ec6659;
+        background: #74251fd9;
+        color: #ffd8d2;
+        font-weight: 800;
+        letter-spacing: .06em;
+      }
+      .raid-badge[hidden], .bridge-error[hidden] { display: none; }
+      .cell-badge {
+        left: 12px;
+        bottom: 12px;
+        max-width: min(520px, calc(100% - 24px));
+        padding: 8px 10px;
+        border: 1px solid #4b5853;
+        background: #111716e8;
         color: var(--muted);
-        font-size: 0.8rem;
+        font: 12px/1.45 ui-monospace, SFMono-Regular, Menlo, monospace;
       }
-      .card {
-        background: #1c261b;
-        border: 1px solid #31422e;
-        border-radius: 0.45rem;
-        padding: 0.4rem 0.55rem;
-        min-width: 9rem;
-        font-size: 0.8rem;
+      .bridge-error {
+        left: 12px;
+        top: 12px;
+        max-width: calc(100% - 160px);
+        padding: 8px 10px;
+        border: 1px solid #e25d50;
+        background: #4e1b18ef;
+        color: #ffd5d0;
       }
-      @media (max-width: 720px) {
-        .map { grid-template-columns: repeat(48, 10px); }
-        header, footer { font-size: 0.85rem; }
+      .side {
+        min-height: 0;
+        display: grid;
+        grid-template-rows: auto minmax(0, 1fr);
+        border-left: 1px solid var(--line);
+        background: var(--panel);
+      }
+      .panel {
+        min-height: 0;
+        padding: 13px;
+        border-bottom: 1px solid var(--line);
+      }
+      .panel:last-child { border-bottom: 0; }
+      .section-title {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        margin-bottom: 10px;
+        color: #dce1da;
+        font-size: .72rem;
+        font-weight: 850;
+        letter-spacing: .12em;
+      }
+      .colonist-list { display: grid; gap: 7px; }
+      .colonist-card {
+        width: 100%;
+        display: grid;
+        grid-template-columns: 28px minmax(0, 1fr) auto;
+        gap: 9px;
+        align-items: center;
+        padding: 9px;
+        border: 1px solid #3b4642;
+        border-radius: 7px;
+        background: var(--panel-raised);
+        color: var(--ink);
+        text-align: left;
+        cursor: pointer;
+      }
+      .colonist-card.selected { border-color: #d79a37; background: #332a1d; }
+      .colonist-card.has-error { border-color: #c04e45; }
+      .mini-pawn {
+        width: 19px;
+        height: 25px;
+        border: 2px solid #111716;
+        border-radius: 8px 8px 4px 4px;
+        background: var(--pawn);
+        position: relative;
+        box-shadow: 1px 2px #0006;
+      }
+      .mini-pawn::before {
+        content: "";
+        position: absolute;
+        width: 12px;
+        height: 12px;
+        left: 1px;
+        top: -8px;
+        border: 2px solid #111716;
+        border-radius: 50%;
+        background: #efc38f;
+      }
+      .colonist-meta { min-width: 0; display: grid; }
+      .colonist-meta strong { font-size: .9rem; }
+      .colonist-meta span {
+        overflow: hidden;
+        color: var(--muted);
+        font-size: .71rem;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+      }
+      .bar {
+        height: 5px;
+        margin-top: 6px;
+        overflow: hidden;
+        border-radius: 4px;
+        background: #080b0a;
+      }
+      .bar i { display: block; width: var(--value); height: 100%; background: var(--bar-color, var(--good)); }
+      .mood { font-size: 1.1rem; }
+      .activity-panel { display: flex; flex-direction: column; overflow: hidden; }
+      .activity-list { min-height: 0; overflow: auto; display: grid; align-content: start; gap: 8px; }
+      .event {
+        display: grid;
+        grid-template-columns: 48px minmax(0, 1fr);
+        gap: 8px;
+        padding-bottom: 8px;
+        border-bottom: 1px solid #29312f;
+        font-size: .77rem;
+      }
+      .event time { color: #7f8b85; }
+      .event span { color: #cbd1ca; overflow-wrap: anywhere; }
+      .event.alert span { color: #ff8b80; }
+      .empty { color: var(--muted); font-size: .8rem; }
+      @media (max-width: 820px) {
+        body { overflow: auto; }
+        .game { min-height: 850px; height: auto; grid-template-rows: auto auto; }
+        .brand { padding: 0 10px; }
+        .brand span { display: none; }
+        .resource { min-width: 70px; padding: 0 8px; }
+        .resource-copy span { display: none; }
+        .clock { display: none; }
+        .topbar { min-height: 52px; }
+        .speed { margin-left: auto; }
+        .workspace { grid-template-columns: 1fr; grid-template-rows: 58vh auto; }
+        .side { border-left: 0; border-top: 1px solid var(--line); }
+        .colonist-list { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+        .colonist-card { grid-template-columns: 24px minmax(0, 1fr); }
+        .mood { display: none; }
+        .activity-panel { min-height: 230px; }
+      }
+      @media (max-width: 540px) {
+        .resource-icon { width: 17px; height: 17px; }
+        .resource { min-width: 55px; gap: 5px; }
+        .speed button { min-width: 38px; padding-inline: 6px; }
+        .colonist-list { grid-template-columns: 1fr; }
       }
     </style>
   </head>
   <body>
-    <div class="layout">
-      <header>
-        <strong>Colony Slice</strong>
-        <button data-speed="0" type="button">Pause</button>
-        <button data-speed="1" type="button" class="active">1×</button>
-        <button data-speed="3" type="button">3×</button>
-        <span class="status" id="tick">tick 0</span>
-        <span class="status" id="resources">wood 0 · steel 0 · food 0</span>
-        <span class="status" id="selection">no cell selected</span>
-        <span class="status error" id="error"></span>
+    <main class="game">
+      <header class="topbar">
+        <div class="brand"><i class="brand-mark"></i><span>COLONY ROOM</span></div>
+        <div class="resource" style="--resource:#d4a251">
+          <i class="resource-icon"></i><span class="resource-copy"><span>FOOD</span><strong id="food">0</strong></span>
+        </div>
+        <div class="resource" style="--resource:#875b35">
+          <i class="resource-icon"></i><span class="resource-copy"><span>WOOD</span><strong id="wood">0</strong></span>
+        </div>
+        <div class="resource" style="--resource:#9ca5a4">
+          <i class="resource-icon"></i><span class="resource-copy"><span>STEEL</span><strong id="steel">0</strong></span>
+        </div>
+        <div class="clock"><span>COLONY TIME</span><strong id="tick">TICK 0</strong></div>
+        <div class="speed" aria-label="Simulation speed">
+          <button data-speed="0" type="button">PAUSE</button>
+          <button data-speed="1" type="button">1×</button>
+          <button data-speed="3" type="button">3×</button>
+        </div>
       </header>
-      <div class="map" id="map" aria-label="Colony map"></div>
-      <footer>
-        <div class="colonist-list" id="colonists"></div>
-        <div class="selection-detail" id="selection-detail">Select a map cell to inspect it.</div>
-      </footer>
-    </div>
+      <section class="workspace">
+        <div class="map-shell" id="map-shell">
+          <canvas id="map" tabindex="0" aria-label="Colony map"></canvas>
+          <div class="raid-badge" id="raid" hidden></div>
+          <div class="bridge-error" id="error" role="alert" hidden></div>
+          <div class="cell-badge" id="selection">Select a map cell to inspect it.</div>
+        </div>
+        <aside class="side">
+          <section class="panel">
+            <div class="section-title"><span>COLONISTS</span><span id="colonist-count">0 / 0</span></div>
+            <div class="colonist-list" id="colonists"></div>
+          </section>
+          <section class="panel activity-panel">
+            <div class="section-title"><span>COLONY ACTIVITY</span><span id="revision">REV 0</span></div>
+            <div class="activity-list" id="events"></div>
+          </section>
+        </aside>
+      </section>
+    </main>
+    <script src="./canvas-renderer.js"></script>
     <script>
-      const parent = window.parent;
+      const parentWindow = window.parent;
       const channel = new MessageChannel();
+      const port = channel.port1;
+      const canvas = document.getElementById("map");
+      const mapShell = document.getElementById("map-shell");
+      const renderer = new window.ColonyCanvasRenderer(canvas);
+      const elements = {
+        food: document.getElementById("food"),
+        wood: document.getElementById("wood"),
+        steel: document.getElementById("steel"),
+        tick: document.getElementById("tick"),
+        raid: document.getElementById("raid"),
+        error: document.getElementById("error"),
+        selection: document.getElementById("selection"),
+        colonists: document.getElementById("colonists"),
+        colonistCount: document.getElementById("colonist-count"),
+        events: document.getElementById("events"),
+        revision: document.getElementById("revision"),
+      };
       let state = null;
       let selectedCell = null;
-      let mapDimensions = "";
-      const mapCells = [];
-      const port = channel.port1;
+      let selectedColonistId = "";
+      let bridgeError = "";
+      let pendingSpeed = null;
       let readyPosted = false;
 
       function postReady() {
         if (readyPosted) return;
         readyPosted = true;
-        parent.postMessage({ type: "plugin.web.ready", plugin_id: "rimworld" }, "*", [channel.port2]);
+        parentWindow.postMessage(
+          { type: "plugin.web.ready", plugin_id: "rimworld" },
+          "*",
+          [channel.port2]
+        );
         port.onmessage = (event) => {
           const data = event.data || {};
           if (data.type === "plugin.host.hello") {
@@ -150,19 +377,23 @@
             return;
           }
           if (data.type === "plugin.snapshot" || data.type === "plugin.delta") {
-            state = data.payload || data.payload?.payload || data.payload;
-            if (data.payload?.colonists) state = data.payload;
-            render();
+            const payload = data.payload?.payload || data.payload;
+            if (payload?.colonists) {
+              state = payload;
+              pendingSpeed = null;
+              render();
+            }
           }
           if (data.type === "plugin.error") {
-            document.getElementById("error").textContent = data.message || "plugin error";
+            bridgeError = String(data.message || data.code || "plugin error");
+            renderError();
           }
         };
         port.start();
       }
 
       function sendCommand(command, args = {}) {
-        if (!port || !state) return;
+        if (!state) return;
         port.postMessage({
           type: "plugin.command",
           command,
@@ -171,151 +402,182 @@
         });
       }
 
-      document.querySelectorAll("button[data-speed]").forEach((button) => {
-        button.addEventListener("click", () => {
-          document.querySelectorAll("button[data-speed]").forEach((item) => item.classList.remove("active"));
-          button.classList.add("active");
-          sendCommand("set_speed", { speed: Number(button.dataset.speed) });
-        });
-      });
-
-      const map = document.getElementById("map");
-      function selectMapCell(cell) {
-        const x = Number(cell.dataset.x);
-        const y = Number(cell.dataset.y);
-        if (!Number.isInteger(x) || !Number.isInteger(y)) return;
-        selectedCell = { x, y };
-        render();
+      function drawMap() {
+        if (!state) return;
+        renderer.draw(state, { cell: selectedCell, colonistId: selectedColonistId });
       }
-      map.addEventListener("click", (event) => {
-        const cell = event.target.closest(".cell");
-        if (cell && map.contains(cell)) selectMapCell(cell);
-      });
-      map.addEventListener("keydown", (event) => {
-        if (event.key !== "Enter" && event.key !== " ") return;
-        const cell = event.target.closest(".cell");
-        if (!cell || !map.contains(cell)) return;
-        event.preventDefault();
-        selectMapCell(cell);
-      });
 
-      function ensureMapCells(width, height) {
-        const dimensions = `${width}x${height}`;
-        if (mapDimensions === dimensions) return;
-        mapDimensions = dimensions;
-        mapCells.length = 0;
-        map.replaceChildren();
-        map.style.gridTemplateColumns = `repeat(${width}, minmax(0, 1fr))`;
-        const fragment = document.createDocumentFragment();
-        for (let y = 0; y < height; y += 1) {
-          for (let x = 0; x < width; x += 1) {
-            const cell = document.createElement("div");
-            cell.className = "cell";
-            cell.tabIndex = 0;
-            cell.dataset.x = String(x);
-            cell.dataset.y = String(y);
-            cell.setAttribute("role", "button");
-            cell.setAttribute("aria-label", `Map cell ${x}, ${y}`);
-            mapCells.push(cell);
-            fragment.appendChild(cell);
-          }
+      function jobLabel(colonist) {
+        if (colonist.waiting) return "Waiting on model";
+        if (colonist.mental_break) return `Mental break · ${colonist.mental_break}`;
+        if (colonist.error) return String(colonist.error);
+        return String(colonist.current_job?.kind || "Idle");
+      }
+
+      function moodIcon(value) {
+        if (value >= .65) return "🙂";
+        if (value >= .4) return "😐";
+        return "☹️";
+      }
+
+      function renderColonists() {
+        const colonists = state.colonists || [];
+        elements.colonistCount.textContent = `${colonists.length} / ${colonists.length}`;
+        elements.colonists.replaceChildren();
+        colonists.forEach((colonist, index) => {
+          const needs = colonist.needs || {};
+          const mood = Math.max(0, Math.min(1, Number(needs.mood || 0)));
+          const card = document.createElement("button");
+          card.type = "button";
+          card.className = "colonist-card";
+          if (selectedColonistId === String(colonist.id || "")) card.classList.add("selected");
+          if (colonist.error || colonist.waiting || colonist.mental_break) card.classList.add("has-error");
+          card.dataset.colonist = String(colonist.id || "");
+          card.innerHTML = `
+            <i class="mini-pawn" style="--pawn:${renderer.pawnColor(index)}"></i>
+            <span class="colonist-meta">
+              <strong></strong><span></span>
+              <span class="bar" style="--value:${Math.round(mood * 100)}%;--bar-color:${mood < .35 ? "#df5c4f" : "#78b95b"}"><i></i></span>
+            </span>
+            <span class="mood">${moodIcon(mood)}</span>`;
+          card.querySelector("strong").textContent = String(colonist.name || "Unknown");
+          card.querySelector(".colonist-meta > span").textContent = jobLabel(colonist);
+          card.setAttribute("aria-label", `${colonist.name || "Colonist"}, ${jobLabel(colonist)}`);
+          card.addEventListener("click", () => {
+            selectedColonistId = String(colonist.id || "");
+            selectedCell = { x: Number(colonist.x || 0), y: Number(colonist.y || 0) };
+            renderColonists();
+            renderSelection();
+            drawMap();
+          });
+          elements.colonists.appendChild(card);
+        });
+      }
+
+      function eventLabel(event) {
+        const kind = String(event.kind || "event").replaceAll("_", " ");
+        const subject = event.colonist_id ? ` · ${event.colonist_id}` : "";
+        const detail = event.break ? ` · ${event.break}` : "";
+        return `${kind}${subject}${detail}`;
+      }
+
+      function renderEvents() {
+        const events = (state.events || []).slice(-12).reverse();
+        elements.events.replaceChildren();
+        if (!events.length) {
+          const empty = document.createElement("p");
+          empty.className = "empty";
+          empty.textContent = "No colony events yet.";
+          elements.events.appendChild(empty);
+          return;
         }
-        map.appendChild(fragment);
+        for (const event of events) {
+          const row = document.createElement("div");
+          row.className = `event ${String(event.kind || "").includes("raid") || String(event.kind || "").includes("break") ? "alert" : ""}`;
+          const time = document.createElement("time");
+          time.textContent = `T${Number(event.tick || 0)}`;
+          const text = document.createElement("span");
+          text.textContent = eventLabel(event);
+          row.append(time, text);
+          elements.events.appendChild(row);
+        }
+      }
+
+      function selectedObjects() {
+        if (!selectedCell) return [];
+        const keyMatches = (item) => Number(item.x) === selectedCell.x && Number(item.y) === selectedCell.y;
+        const structure = (state.structures || []).find(keyMatches);
+        const blueprint = (state.blueprints || []).find(keyMatches);
+        const colonist = (state.colonists || []).find(keyMatches);
+        const raid = state.raid && keyMatches(state.raid) ? state.raid : null;
+        return [
+          structure ? `structure ${structure.kind}` : "",
+          blueprint ? `blueprint ${blueprint.kind} ${Math.round(Number(blueprint.progress || 0) * 100)}%` : "",
+          colonist ? `colonist ${colonist.name}` : "",
+          raid ? `raider hp ${Number(raid.hp || 0).toFixed(1)}` : "",
+        ].filter(Boolean);
+      }
+
+      function renderSelection() {
+        if (!selectedCell) {
+          elements.selection.textContent = "Select a map cell to inspect it.";
+          canvas.setAttribute("aria-label", "Colony map, no cell selected");
+          return;
+        }
+        const details = selectedObjects();
+        const label = `Cell ${selectedCell.x},${selectedCell.y}${details.length ? ` · ${details.join(" · ")}` : " · open ground"}`;
+        elements.selection.textContent = label;
+        canvas.setAttribute("aria-label", `Colony map, ${label}`);
+      }
+
+      function renderSpeed() {
+        document.querySelectorAll("button[data-speed]").forEach((button) => {
+          const speed = Number(button.dataset.speed);
+          button.classList.toggle("active", speed === Number(state.speed));
+          button.classList.toggle("pending", pendingSpeed === speed);
+          button.setAttribute("aria-pressed", String(speed === Number(state.speed)));
+        });
+      }
+
+      function renderError() {
+        elements.error.textContent = bridgeError;
+        elements.error.hidden = !bridgeError;
       }
 
       function render() {
         if (!state) return;
-        document.getElementById("tick").textContent = `tick ${state.tick} · speed ${state.speed}×`;
         const resources = state.resources || {};
-        document.getElementById("resources").textContent =
-          `wood ${resources.wood ?? 0} · steel ${resources.steel ?? 0} · food ${resources.food ?? 0}`;
-        const width = state.map?.width || 48;
-        const height = state.map?.height || 32;
-        ensureMapCells(width, height);
-        const structureAt = new Map();
-        for (const structure of state.structures || []) {
-          structureAt.set(`${structure.x},${structure.y}`, structure.kind);
-        }
-        const pawnAt = new Map();
-        for (const colonist of state.colonists || []) {
-          pawnAt.set(`${colonist.x},${colonist.y}`, colonist);
-        }
-        const blueprintAt = new Map();
-        for (const blueprint of state.blueprints || []) {
-          blueprintAt.set(`${blueprint.x},${blueprint.y}`, blueprint);
-        }
-        for (let y = 0; y < height; y += 1) {
-          for (let x = 0; x < width; x += 1) {
-            const cell = mapCells[(y * width) + x];
-            const kind = structureAt.get(`${x},${y}`);
-            const blueprint = blueprintAt.get(`${x},${y}`);
-            cell.className = kind ? `cell ${kind}` : blueprint ? "cell blueprint" : "cell";
-            if (selectedCell?.x === x && selectedCell?.y === y) cell.classList.add("selected");
-            cell.replaceChildren();
-            const pawn = pawnAt.get(`${x},${y}`);
-            if (pawn) {
-              const mark = document.createElement("div");
-              mark.className = "pawn" + (pawn.mental_break ? " break" : "") + (pawn.waiting ? " wait" : "");
-              mark.textContent = (pawn.name || "?").slice(0, 1);
-              mark.title = pawn.name;
-              cell.appendChild(mark);
-            }
-          }
-        }
-        const list = document.getElementById("colonists");
-        list.innerHTML = "";
-        for (const colonist of state.colonists || []) {
-          const card = document.createElement("div");
-          card.className = "card";
-          const needs = colonist.needs || {};
-          const title = document.createElement("strong");
-          title.textContent = String(colonist.name || "Unknown");
-          card.append(title, document.createElement("br"));
-          card.append(
-            document.createTextNode(
-              `mood ${(needs.mood * 100).toFixed(0)}% · food ${(needs.hunger * 100).toFixed(0)}% · rest ${(needs.rest * 100).toFixed(0)}%`
-            ),
-            document.createElement("br"),
-            document.createTextNode(`job ${colonist.current_job?.kind || "idle"}`)
-          );
-          for (const message of [
-            colonist.mental_break ? `break: ${colonist.mental_break}` : "",
-            colonist.error || "",
-            colonist.waiting ? "waiting on model" : "",
-          ]) {
-            if (!message) continue;
-            const line = document.createElement("span");
-            line.className = "error";
-            line.textContent = String(message);
-            card.append(document.createElement("br"), line);
-          }
-          list.appendChild(card);
-        }
-        const selectionLabel = document.getElementById("selection");
-        const detail = document.getElementById("selection-detail");
-        if (selectedCell) {
-          const key = `${selectedCell.x},${selectedCell.y}`;
-          const structure = structureAt.get(key);
-          const blueprint = blueprintAt.get(key);
-          const pawn = pawnAt.get(key);
-          selectionLabel.textContent = `cell ${key}`;
-          detail.textContent = [
-            `Cell ${key}`,
-            structure ? `structure ${structure}` : "",
-            blueprint ? `blueprint ${blueprint.kind} ${Math.round(Number(blueprint.progress || 0) * 100)}%` : "",
-            pawn ? `colonist ${pawn.name}` : "",
-          ].filter(Boolean).join(" · ");
-        } else {
-          selectionLabel.textContent = "no cell selected";
-          detail.textContent = "Select a map cell to inspect it.";
-        }
-        if (state.raid) {
-          document.getElementById("error").textContent = `Raid active (hp ${Number(state.raid.hp).toFixed(1)})`;
-        } else if (!document.getElementById("error").textContent.includes("plugin")) {
-          document.getElementById("error").textContent = "";
-        }
+        elements.food.textContent = String(resources.food ?? 0);
+        elements.wood.textContent = String(resources.wood ?? 0);
+        elements.steel.textContent = String(resources.steel ?? 0);
+        elements.tick.textContent = `TICK ${Number(state.tick || 0)}`;
+        elements.revision.textContent = `REV ${String(state.revision ?? 0)}`;
+        elements.raid.hidden = !state.raid;
+        elements.raid.textContent = state.raid ? `⚔ RAID · HP ${Number(state.raid.hp || 0).toFixed(1)}` : "";
+        if (!selectedColonistId && state.colonists?.length) selectedColonistId = String(state.colonists[0].id || "");
+        renderSpeed();
+        renderColonists();
+        renderEvents();
+        renderSelection();
+        renderError();
+        drawMap();
       }
 
+      document.querySelectorAll("button[data-speed]").forEach((button) => {
+        button.addEventListener("click", () => {
+          pendingSpeed = Number(button.dataset.speed);
+          renderSpeed();
+          sendCommand("set_speed", { speed: pendingSpeed });
+        });
+      });
+
+      function selectFromPointer(clientX, clientY) {
+        if (!state) return;
+        selectedCell = renderer.cellAt(clientX, clientY, state);
+        const { x, y } = selectedCell;
+        const colonist = (state.colonists || []).find((item) => Number(item.x) === x && Number(item.y) === y);
+        if (colonist) selectedColonistId = String(colonist.id || "");
+        renderColonists();
+        renderSelection();
+        drawMap();
+      }
+
+      canvas.addEventListener("click", (event) => selectFromPointer(event.clientX, event.clientY));
+      canvas.addEventListener("keydown", (event) => {
+        if (!state || !["ArrowLeft", "ArrowRight", "ArrowUp", "ArrowDown"].includes(event.key)) return;
+        event.preventDefault();
+        const width = Number(state.map?.width || 48);
+        const height = Number(state.map?.height || 32);
+        selectedCell ||= { x: 0, y: 0 };
+        if (event.key === "ArrowLeft") selectedCell.x = Math.max(0, selectedCell.x - 1);
+        if (event.key === "ArrowRight") selectedCell.x = Math.min(width - 1, selectedCell.x + 1);
+        if (event.key === "ArrowUp") selectedCell.y = Math.max(0, selectedCell.y - 1);
+        if (event.key === "ArrowDown") selectedCell.y = Math.min(height - 1, selectedCell.y + 1);
+        renderSelection();
+        drawMap();
+      });
+
+      new ResizeObserver(() => requestAnimationFrame(drawMap)).observe(mapShell);
       postReady();
     </script>
   </body>
