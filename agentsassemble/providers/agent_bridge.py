@@ -50,7 +50,7 @@ from agentsassemble.providers.room_portal import (
     RoomPortalError,
     automatic_turn_orientation,
 )
-from agentsassemble.providers.room_observation_orientation import first_room_wake_input
+from agentsassemble.providers.room_observation_orientation import ProviderInputOrientation
 from agentsassemble.providers.provider_requests import BridgeProviderRequestRouter
 from agentsassemble.providers.provider_errors import provider_failure_code
 
@@ -107,8 +107,7 @@ class RoomAgentBridge:
         self.bridge_launch_id = clean_lobby_text(bridge_launch_id, limit=128)
         self.receive_sleep_seconds = max(0.001, float(receive_sleep_seconds))
         self.receive_timeout_seconds = max(0.05, float(receive_timeout_seconds))
-        self._initial_orientation = str(initial_orientation or "").strip()
-        self._room_wake_orientation_sent = False
+        self._orientation = ProviderInputOrientation(initial_orientation)
         self._stop_runtime_on_exit = bool(stop_runtime_on_exit)
         self._stop = threading.Event()
         self._worker_lock = threading.RLock()
@@ -411,16 +410,12 @@ class RoomAgentBridge:
         if portal is None:
             return
         turn_id = wake.turn_id
-        wake_signal = f"room.wake {turn_id}"
-        with self._worker_lock:
-            wake_signal, self._room_wake_orientation_sent = first_room_wake_input(
-                self._room_wake_orientation_sent,
-                wake_signal,
-                self._provider_kind(),
-                wake.observation_kind,
-                portal.active_tool_names(),
-            )
-        provider_input = self._with_initial_orientation(wake_signal)
+        provider_input = self._orientation.for_room_wake(
+            f"room.wake {turn_id}",
+            self._provider_kind(),
+            wake.observation_kind,
+            portal.active_tool_names(),
+        )
         started = time.monotonic()
         input_started_at = _now()
         first_output_at = ""
@@ -687,7 +682,7 @@ class RoomAgentBridge:
 
     def _run_turn(self, assignment: TurnAssignmentEnvelope) -> None:
         turn_id = assignment.turn_id
-        provider_input = self._with_initial_orientation(
+        provider_input = self._orientation.for_assigned_turn(
             f"{automatic_turn_orientation()}\n\n{assignment.provider_input}"
         )
         timeout_seconds = assignment.timeout_seconds
@@ -802,14 +797,6 @@ class RoomAgentBridge:
             with self._worker_lock:
                 if self._worker is threading.current_thread():
                     self._worker = None
-
-    def _with_initial_orientation(self, provider_input: str) -> str:
-        with self._worker_lock:
-            orientation = self._initial_orientation
-            self._initial_orientation = ""
-        if not orientation:
-            return provider_input
-        return f"{orientation}\n\n{provider_input}".strip()
 
     def _provider_kind(self) -> str:
         if self._runtime_profile is None:

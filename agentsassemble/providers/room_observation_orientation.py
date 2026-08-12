@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import threading
 from collections.abc import Iterable
 
 from agentsassemble.providers.runtime_contracts import (
@@ -172,4 +173,45 @@ def first_room_wake_input(
     return f"{orientation}\n\n{wake_signal}", True
 
 
-__all__ = ["first_room_wake_input", "room_wake_orientation"]
+class ProviderInputOrientation:
+    """Own the one-time session and first-room-wake orientation state."""
+
+    def __init__(self, initial_orientation: str = "") -> None:
+        self._initial_orientation = str(initial_orientation or "").strip()
+        self._room_wake_orientation_sent = False
+        self._lock = threading.Lock()
+
+    def for_room_wake(
+        self,
+        wake_signal: str,
+        provider_kind: object,
+        observation_kind: RoomObservationKind,
+        tool_names: Iterable[str],
+    ) -> str:
+        with self._lock:
+            wake_input, self._room_wake_orientation_sent = first_room_wake_input(
+                self._room_wake_orientation_sent,
+                wake_signal,
+                provider_kind,
+                observation_kind,
+                tool_names,
+            )
+            return self._with_initial_orientation(wake_input)
+
+    def for_assigned_turn(self, provider_input: str) -> str:
+        with self._lock:
+            return self._with_initial_orientation(provider_input)
+
+    def _with_initial_orientation(self, provider_input: str) -> str:
+        orientation = self._initial_orientation
+        self._initial_orientation = ""
+        if not orientation:
+            return provider_input
+        return f"{orientation}\n\n{provider_input}".strip()
+
+
+__all__ = [
+    "ProviderInputOrientation",
+    "first_room_wake_input",
+    "room_wake_orientation",
+]
