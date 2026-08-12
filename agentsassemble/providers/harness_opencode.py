@@ -89,6 +89,7 @@ def create_opencode_harness_runtime(
         config_path=config_path,
         config_dir=config_dir,
         model=f"agentsassemble/{opencode_model}",
+        upstream_model=model,
         variant=variant,
         permission_mode=permission_mode,
         environment=environment,
@@ -116,6 +117,7 @@ class _OpenCodeHarnessDelegate:
         config_path: Path,
         config_dir: Path,
         model: str,
+        upstream_model: str,
         variant: str,
         permission_mode: str,
         environment: dict[str, str] | None,
@@ -130,6 +132,7 @@ class _OpenCodeHarnessDelegate:
         self._config_path = config_path
         self._config_dir = config_dir
         self._model = model
+        self._upstream_model = clean_room_text(upstream_model, limit=256)
         self._variant = variant
         self._permission_mode = permission_mode
         self._environment = dict(environment or {})
@@ -193,11 +196,24 @@ class _OpenCodeHarnessDelegate:
     def read_output(self, *, timeout_seconds: float, on_delta=None, on_activity=None):
         self.start()
         assert self._runtime is not None
-        return self._runtime.read_output(
+        result = self._runtime.read_output(
             timeout_seconds=timeout_seconds,
             on_delta=on_delta,
             on_activity=on_activity,
         )
+        metadata = result.get("metadata")
+        if (
+            isinstance(metadata, dict)
+            and metadata.get("observed_model_id") == self._model
+        ):
+            result = {
+                **result,
+                "metadata": {
+                    **metadata,
+                    "observed_model_id": self._upstream_model,
+                },
+            }
+        return result
 
     def interrupt(self) -> None:
         if self._runtime is not None:

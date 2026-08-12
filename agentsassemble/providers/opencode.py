@@ -61,11 +61,7 @@ class OpenCodeRuntime:
         self.server_pid = server_pid
         self._opener = opener
         self._room_portal = room_portal
-        self._request_directory = (
-            self.state_dir / "room-workspace"
-            if room_portal is not None
-            else self.workspace
-        )
+        self._request_directory = self.workspace
         self._room_mcp_status = ""
         self._session_id = ""
         self._running = False
@@ -490,6 +486,15 @@ class OpenCodeRuntime:
         permission_action = "deny" if self.permission_mode == "meeting_read_only" else "ask"
         permissions = [
             {"permission": "*", "pattern": "*", "action": permission_action},
+            {"permission": "read", "pattern": "*", "action": "allow"},
+            {"permission": "glob", "pattern": "*", "action": "allow"},
+            {"permission": "grep", "pattern": "*", "action": "allow"},
+            {"permission": "list", "pattern": "*", "action": "allow"},
+            {
+                "permission": "external_directory",
+                "pattern": "*",
+                "action": "deny",
+            },
         ]
         if self._room_portal is not None:
             permissions.append(
