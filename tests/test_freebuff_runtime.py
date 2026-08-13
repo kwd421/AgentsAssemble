@@ -8,12 +8,61 @@ from pathlib import Path
 
 from agentsassemble.providers.freebuff_runtime import (
     FreebuffRuntime,
+    FreebuffUnavailable,
     _extract_model_labels,
     _match_model_label,
 )
+from agentsassemble.providers.runtime_contracts import ProviderTurnResult
 
 
 class FreebuffRuntimeTests(unittest.TestCase):
+    def test_read_only_session_fails_before_launching_an_unrestricted_cli(self) -> None:
+        launched = []
+
+        with tempfile.TemporaryDirectory() as temp_dir:
+            runtime = FreebuffRuntime(
+                "freebuff-read-only",
+                workspace=temp_dir,
+                state_dir=Path(temp_dir) / "state",
+                executable=sys.executable,
+                permission_mode="meeting_read_only",
+                terminal_runtime_factory=lambda *_args, **_kwargs: launched.append(True),
+            )
+
+            with self.assertRaisesRegex(
+                FreebuffUnavailable,
+                "does not provide an enforceable read-only mode",
+            ):
+                runtime.start()
+
+        self.assertEqual(launched, [])
+
+    def test_completed_turn_satisfies_the_agent_bridge_result_contract(self) -> None:
+        class Terminal:
+            def read_output(self, **_kwargs):
+                return {"outcome": "message", "content": "작업을 마쳤습니다.", "metadata": {}}
+
+        with tempfile.TemporaryDirectory() as temp_dir:
+            runtime = FreebuffRuntime(
+                "freebuff-result-contract",
+                workspace=temp_dir,
+                state_dir=Path(temp_dir) / "state",
+            )
+            runtime._terminal = Terminal()
+            runtime._pending = "파일을 확인해 줘."
+            runtime._selected_model = "DeepSeek V4 Flash 07/31"
+
+            parsed = ProviderTurnResult.parse(
+                runtime.read_output(timeout_seconds=2)
+            )
+
+        self.assertEqual(parsed.outcome, "message")
+        self.assertEqual(parsed.content, "작업을 마쳤습니다.")
+        self.assertEqual(
+            parsed.metadata["observed_model_id"],
+            "DeepSeek V4 Flash 07/31",
+        )
+
     def test_runtime_start_reaches_model_selection_with_a_supported_input_transport(self) -> None:
         terminals = []
 

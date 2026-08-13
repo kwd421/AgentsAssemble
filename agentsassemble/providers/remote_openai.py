@@ -163,7 +163,8 @@ REMOTE_OPENAI_PROFILES = (
                 pricing="free",
             ),
         ),
-        discovery_path="/models",
+        discovery_path="/backend-api/api/pricing?sort_type=5",
+        discovery_base_url="https://tokenrouter-backend-api.tokenrouter.com",
         max_output_tokens=4096,
     ),
     RemoteOpenAIProfile(
@@ -283,11 +284,16 @@ def discover_remote_openai_models(
     entries = payload.get("data") if isinstance(payload, dict) else None
     if not isinstance(entries, list):
         raise ValueError(f"{profile.display_name} returned an invalid model catalog.")
+    option_builder = (
+        _tokenrouter_model_option
+        if profile.provider_id == "tokenrouter"
+        else _gateway_model_option
+    )
     models = [
         option
         for entry in entries
         if isinstance(entry, dict)
-        and (option := _gateway_model_option(entry)) is not None
+        and (option := option_builder(entry)) is not None
     ]
     return enforce_remote_openai_catalog_policy(models)
 
@@ -640,6 +646,37 @@ def _gateway_model_option(entry: dict[str, object]) -> dict[str, object] | None:
         model_id,
         clean_room_text(entry.get("name"), limit=160) or model_id,
         **metadata,
+    )
+
+
+def _tokenrouter_model_option(entry: dict[str, object]) -> dict[str, object] | None:
+    """Project TokenRouter's public pricing catalog into chat model choices."""
+
+    model_id = clean_room_text(entry.get("model_name"), limit=128)
+    tags = clean_room_text(entry.get("tags"), limit=64).casefold()
+    endpoint_types = {
+        clean_room_text(value, limit=64).casefold()
+        for value in list(entry.get("supported_endpoint_types") or [])
+    }
+    enabled_groups = {
+        clean_room_text(value, limit=64).casefold()
+        for value in list(entry.get("enable_groups") or [])
+    }
+    if (
+        not model_id
+        or tags != "text"
+        or "openai" not in endpoint_types
+        or "default" not in enabled_groups
+    ):
+        return None
+    return _model_option(
+        model_id,
+        model_id,
+        selection_kind="exact",
+        relation_scope="global",
+        family=_model_family(model_id),
+        compatibility_evidence="tokenrouter_public_pricing_catalog",
+        description="TokenRouter 공개 catalog · OpenAI chat",
     )
 
 

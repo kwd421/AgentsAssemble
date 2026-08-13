@@ -42,10 +42,14 @@ class ProviderCliSearchPathTests(unittest.TestCase):
         self.assertEqual(environment["PATH"], "/bin")
         self.assertNotIn("CEREBRAS_API_KEY", environment)
 
-    def test_freebuff_catalog_is_startable_without_models_cli(self) -> None:
+    def test_freebuff_catalog_uses_live_tui_model_labels(self) -> None:
         catalog = ProviderCapabilityCatalog(
             resolver=lambda name: f"/fake/{name}" if name == "freebuff" else None,
             runner=lambda _command, _timeout: (1, "", "not used"),
+            freebuff_model_discovery=lambda _executable: [
+                "DeepSeek V4 Flash 07/31",
+                "MiMo 2.5",
+            ],
         )
         definition = native_cli_provider_definition("freebuff")
         assert definition is not None
@@ -58,7 +62,22 @@ class ProviderCliSearchPathTests(unittest.TestCase):
         model = next(
             control for control in payload["controls"] if control["key"] == "model"
         )
-        self.assertEqual(model["default_value"], "DeepSeek V4 Flash")
+        self.assertEqual(
+            [option["value"] for option in model["options"]],
+            ["DeepSeek V4 Flash 07/31", "MiMo 2.5"],
+        )
+        self.assertEqual(model["default_value"], "DeepSeek V4 Flash 07/31")
+        permission = next(
+            control
+            for control in payload["controls"]
+            if control["key"] == "permission_mode"
+        )
+        self.assertEqual(
+            [option["value"] for option in permission["options"]],
+            ["workspace_write"],
+        )
+        self.assertEqual(permission["default_value"], "workspace_write")
+        self.assertEqual(definition.default_permission_mode, "workspace_write")
 
 
 if __name__ == "__main__":

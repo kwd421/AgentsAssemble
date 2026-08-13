@@ -14,6 +14,7 @@ import json
 import re
 import shutil
 import subprocess
+import tempfile
 import threading
 import time
 from pathlib import Path
@@ -76,6 +77,11 @@ class FreebuffRuntime:
         with self._lock:
             if self._running and self._terminal is not None:
                 return self.health()
+        if self.permission_mode != "workspace_write":
+            raise FreebuffUnavailable(
+                "Freebuff does not provide an enforceable read-only mode; "
+                "select workspace write explicitly before starting it."
+            )
         resolved = (
             self.executable
             if Path(self.executable).is_absolute()
@@ -144,17 +150,20 @@ class FreebuffRuntime:
         elif isinstance(result, str):
             content = result.strip()
         return {
+            "outcome": "message",
             "content": content,
-            "observed_model_id": self._selected_model or self.model,
-            "runtime_kind": "live_cli",
-            "execution_harness": "builtin",
-            "unsupported": [
-                "tool_events",
-                "public_reasoning",
-                "approvals",
-                "choices",
-                "structured_protocol",
-            ],
+            "metadata": {
+                "observed_model_id": self._selected_model or self.model,
+                "runtime_kind": "live_cli",
+                "execution_harness": "builtin",
+                "unsupported": [
+                    "tool_events",
+                    "public_reasoning",
+                    "approvals",
+                    "choices",
+                    "structured_protocol",
+                ],
+            },
         }
 
     def interrupt(self) -> None:
@@ -230,31 +239,7 @@ class FreebuffRuntime:
         return label
 
     def _capture_screen(self, *, seconds: float) -> str:
-        deadline = time.monotonic() + max(0.2, seconds)
-        last = ""
-        while time.monotonic() < deadline:
-            reader = getattr(self._terminal, "read_available", None)
-            if callable(reader):
-                available = reader(
-                    timeout_seconds=min(
-                        0.15,
-                        max(0.0, deadline - time.monotonic()),
-                    )
-                )
-                if isinstance(available, dict):
-                    visible = str(
-                        available.get("content")
-                        or available.get("terminal_output")
-                        or ""
-                    )
-                    if visible:
-                        last += visible
-            health = self._terminal.health() if self._terminal is not None else {}
-            tail = str(health.get("terminal_tail") or "")
-            if tail:
-                last += tail
-            time.sleep(0.15)
-        return _strip_ansi(last)
+        return _capture_terminal_screen(self._terminal, seconds=seconds)
 
     def _navigate_to_index(self, index: int, labels: list[str]) -> None:
         del labels
@@ -280,6 +265,91 @@ class FreebuffRuntime:
                 path.write_text(json.dumps(_LABEL_CACHE, indent=2) + "\n", encoding="utf-8")
         except OSError:
             pass
+
+
+def _capture_terminal_screen(terminal, *, seconds: float) -> str:
+    if terminal is None:
+        return ""
+    deadline = time.monotonic() + max(0.2, seconds)
+    captured = ""
+    while time.monotonic() < deadline:
+        reader = getattr(terminal, "read_available", None)
+        if callable(reader):
+            available = reader(
+                timeout_seconds=min(
+                    0.15,
+                    max(0.0, deadline - time.monotonic()),
+                )
+            )
+            if isinstance(available, dict):
+                visible = str(
+                    available.get("content")
+                    or available.get("terminal_output")
+                    or ""
+                )
+                if visible:
+                    captured += visible
+        health = terminal.health()
+        tail = str(health.get("terminal_tail") or "")
+        if tail:
+            captured += tail
+        time.sleep(0.15)
+    return _strip_ansi(captured)
+
+
+def discover_freebuff_model_labels(
+    executable: str,
+    *,
+    timeout_seconds: float = 15.0,
+    terminal_runtime_factory=LiveCliRuntime,
+) -> list[str]:
+    """Read Freebuff's live model picker without starting a model session."""
+
+    with tempfile.TemporaryDirectory(prefix="agentsassemble-freebuff-catalog-") as temp_dir:
+        terminal = terminal_runtime_factory(
+            "freebuff-catalog-discovery",
+            [executable, "--cwd", temp_dir],
+            cwd=temp_dir,
+            input_mode="bracketed_paste",
+            submit_newline="\r",
+            idle_quiet_seconds=5.0,
+            startup_quiet_seconds=0.5,
+            startup_timeout_seconds=max(1.0, timeout_seconds),
+            profile_settings={},
+        )
+        screen = ""
+        labels: list[str] = []
+        first_seen_at = 0.0
+        terminal.start()
+        try:
+            deadline = time.monotonic() + max(1.0, timeout_seconds)
+            while time.monotonic() < deadline:
+                screen += _capture_terminal_screen(
+                    terminal,
+                    seconds=min(0.5, max(0.2, deadline - time.monotonic())),
+                )
+                startup_error = _freebuff_startup_error(screen)
+                if startup_error:
+                    raise FreebuffUnavailable(startup_error)
+                discovered = _extract_model_labels(screen)
+                if discovered:
+                    labels = discovered
+                    if not first_seen_at:
+                        first_seen_at = time.monotonic()
+                    if time.monotonic() - first_seen_at >= 1.0:
+                        break
+            if not labels:
+                raise FreebuffUnavailable(
+                    "Freebuff did not expose any model labels on its live selection screen."
+                )
+            return labels
+        finally:
+            terminal.stop()
+
+
+def freebuff_default_model_label(labels: list[str], requested: str) -> str:
+    match = _match_model_label(labels, requested)
+    return match[1] if match is not None else (labels[0] if labels else "")
 
 
 def _freebuff_version(executable: str) -> str:
@@ -417,6 +487,8 @@ def freebuff_command(
 __all__ = [
     "FreebuffRuntime",
     "FreebuffUnavailable",
+    "discover_freebuff_model_labels",
+    "freebuff_default_model_label",
     "freebuff_command",
     "load_freebuff_label_cache",
 ]

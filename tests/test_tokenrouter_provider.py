@@ -46,35 +46,55 @@ class TokenRouterProviderTests(unittest.TestCase):
     def test_provider_catalog_uses_tokenrouter_models_instead_of_one_bundled_choice(self):
         profile = remote_openai_profile("tokenrouter")
         self.assertIsNotNone(profile)
+        requests: list[Request] = []
         response = {
             "data": [
                 {
-                    "id": "moonshotai/kimi-k3-free",
-                    "name": "Kimi K3 Free",
-                    "supported_parameters": ["tools"],
-                    "input_modalities": ["text"],
-                    "free": True,
+                    "model_name": "moonshotai/kimi-k3",
+                    "tags": "Text",
+                    "enable_groups": ["default", "vip"],
+                    "supported_endpoint_types": ["openai"],
                 },
                 {
-                    "id": "moonshotai/kimi-k2.6",
-                    "name": "Kimi K2.6",
-                    "supported_parameters": ["tools"],
-                    "input_modalities": ["text"],
-                    "pricing": {"prompt": "0.4", "completion": "2.0"},
+                    "model_name": "deepseek/deepseek-v4-flash-0731",
+                    "tags": "Text",
+                    "enable_groups": ["default", "svip"],
+                    "supported_endpoint_types": ["openai"],
+                },
+                {
+                    "model_name": "openai/gpt-5.6-luna",
+                    "tags": "Text",
+                    "enable_groups": ["default"],
+                    "supported_endpoint_types": ["openai-response"],
+                },
+                {
+                    "model_name": "happyhorse-1.0-t2v",
+                    "tags": "Video",
+                    "enable_groups": ["default"],
+                    "supported_endpoint_types": ["video-generation"],
                 },
             ]
         }
 
+        def opener(request: Request, timeout: float):
+            del timeout
+            requests.append(request)
+            return _Response(json.dumps(response).encode())
+
         models = discover_remote_openai_models(
             profile,
-            api_key="configured-key",
-            opener=lambda _request, timeout: _Response(json.dumps(response).encode()),
+            opener=opener,
         )
         payload = remote_openai_catalog_payload(profile, discovered_models=models)
 
         self.assertEqual(
+            requests[0].full_url,
+            "https://tokenrouter-backend-api.tokenrouter.com/backend-api/api/pricing?sort_type=5",
+        )
+        self.assertIsNone(requests[0].get_header("Authorization"))
+        self.assertEqual(
             [option["value"] for option in payload["controls"][0]["options"]],
-            ["moonshotai/kimi-k3-free", "moonshotai/kimi-k2.6"],
+            ["moonshotai/kimi-k3", "deepseek/deepseek-v4-flash-0731"],
         )
 
     def test_exhausted_tokenrouter_key_is_reported_as_quota_not_credentials(self):

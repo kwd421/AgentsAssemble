@@ -765,6 +765,7 @@ NATIVE_CLI_PROVIDER_CATALOG: tuple[NativeCliProviderDefinition, ...] = (
         command_builder=freebuff_command,
         aliases=("freebuff_cli", "freebuff_live_session"),
         default_model="DeepSeek V4 Flash",
+        default_permission_mode="workspace_write",
         model_observation_policy="unavailable",
         input_mode="raw",
         startup_quiet_seconds=1.0,

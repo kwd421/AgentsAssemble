@@ -21,6 +21,11 @@ from agentsassemble.providers.catalog_provenance import (
 )
 from agentsassemble.providers.catalog_revision import catalog_revision
 from agentsassemble.providers.grok_catalog import classify_grok_models, discover_grok_custom_model_ids
+from agentsassemble.providers.freebuff_runtime import (
+    FreebuffUnavailable,
+    discover_freebuff_model_labels,
+    freebuff_default_model_label,
+)
 from agentsassemble.providers.launch_specs import (
     NATIVE_CLI_PROVIDER_CATALOG,
     native_cli_provider_definition,
@@ -47,6 +52,7 @@ from agentsassemble.providers.selection import (
 ProbeRunner = Callable[[list[str], float], tuple[int, str, str]]
 ClaudeModelDiscovery = Callable[[str], list[str]]
 RemoteModelDiscovery = Callable[[RemoteOpenAIProfile, str], list[dict[str, object]]]
+FreebuffModelDiscovery = Callable[[str], list[str]]
 CatalogListener = Callable[[dict[str, object]], None]
 
 
@@ -81,6 +87,7 @@ class ProviderCapabilityCatalog:
                 api_key=api_key,
             )
         ),
+        freebuff_model_discovery: FreebuffModelDiscovery = discover_freebuff_model_labels,
         grok_custom_model_discovery: Callable[[], set[str]] = discover_grok_custom_model_ids,
         ttl_seconds: float = DEFAULT_CATALOG_TTL_SECONDS,
     ) -> None:
@@ -89,6 +96,7 @@ class ProviderCapabilityCatalog:
         self._claude_model_discovery = claude_model_discovery
         self._claude_xhigh_model_discovery = claude_xhigh_model_discovery
         self._remote_model_discovery = remote_model_discovery
+        self._freebuff_model_discovery = freebuff_model_discovery
         self._grok_custom_model_discovery = grok_custom_model_discovery
         self._ttl_seconds = max(1.0, float(ttl_seconds))
         self._lock = threading.RLock()
@@ -566,8 +574,14 @@ class ProviderCapabilityCatalog:
             output = self._model_probe(provider_id, [executable, "models"], 8.0)
             return _cursor_controls(output)
         if provider_id == "freebuff":
-            # Freebuff has no models CLI; the runtime picks by live screen label.
-            return _freebuff_controls()
+            try:
+                labels = self._freebuff_model_discovery(executable)
+            except FreebuffUnavailable as error:
+                raise _ProviderDiscoveryError(
+                    str(error),
+                    code="freebuff_discovery_failed",
+                ) from error
+            return _freebuff_controls(labels)
         return []
 
     def _claude_ultracode_available(self, executable: str) -> bool:
@@ -951,8 +965,10 @@ def _control(
     }
 
 
-def _freebuff_controls() -> list[dict[str, object]]:
-    """Expose Freebuff's default selectable model without a models CLI."""
+def _freebuff_controls(labels: list[str]) -> list[dict[str, object]]:
+    """Expose the model labels read from Freebuff's live selection screen."""
+
+    default_model = freebuff_default_model_label(labels, "DeepSeek V4 Flash")
 
     return [
         _control(
@@ -960,14 +976,28 @@ def _freebuff_controls() -> list[dict[str, object]]:
             "모델",
             [
                 _option(
-                    "DeepSeek V4 Flash",
-                    "DeepSeek V4 Flash",
-                    description="Freebuff interactive model picker label.",
+                    label,
+                    label,
+                    description="Freebuff live model picker label.",
+                )
+                for label in labels
+            ],
+            default_model,
+        ),
+        _control(
+            "permission_mode",
+            "권한",
+            [
+                _option(
+                    "workspace_write",
+                    "작업 폴더 쓰기",
+                    description=(
+                        "Freebuff는 강제 가능한 읽기 전용 모드를 제공하지 않습니다."
+                    ),
                 )
             ],
-            "DeepSeek V4 Flash",
+            "workspace_write",
         ),
-        _permission_control("freebuff"),
     ]
 
 
@@ -996,10 +1026,6 @@ def _permission_control(provider_id: str = "") -> dict[str, object]:
         "grok": {
             "meeting_read_only": "Grok · approval reject / RoomPortal only",
             "workspace_write": "Grok · permission acceptEdits",
-        },
-        "freebuff": {
-            "meeting_read_only": "Freebuff · read-only room tools",
-            "workspace_write": "Freebuff · workspace edits",
         },
     }.get(provider_id, {})
 

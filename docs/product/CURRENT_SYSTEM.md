@@ -488,7 +488,12 @@ zero-price or free-tier; the UI does not infer free status from a model name.
 Every Subscription provider has an explicit model-catalog provenance policy in
 `providers/catalog_provenance.py`. Codex uses its bundled registry, Claude uses
 its embedded registry, and the other managed CLIs use their own reported
-catalogs. Mixed outputs are narrowed at the adapter boundary: Grok models
+catalogs. Freebuff has no model-list command, so its adapter opens the installed
+CLI in an isolated temporary workspace, reads the current live model picker,
+and publishes every visible label without starting a model session or relying
+on a fixed menu position. Freebuff exposes only workspace_write because its
+CLI does not provide an enforceable read-only mode. Mixed outputs are narrowed
+at the adapter boundary: Grok models
 registered in the user's local config are excluded, and OpenCode exposes only
 its managed `opencode` and `opencode-go` namespaces. Ollama's installed model
 inventory intentionally includes both local and cloud execution locations. A
@@ -509,6 +514,15 @@ only discovered models and controls. Cerebras discovers its current
 tool-capable text models from the provider's unauthenticated public model
 catalog and offers low, medium, and high reasoning effort; `gpt-oss-120b`
 remains the default.
+
+The authenticated TokenRouter /v1/models endpoint cannot be used during public
+catalog refresh. Its adapter instead reads the unauthenticated public pricing
+catalog and keeps default-group Text entries that advertise the OpenAI Chat
+Completions endpoint. That evidence establishes the selectable model ID and
+wire shape, not that every listed model has completed an actual room-tool turn;
+provider failures remain visible and must not trigger a model substitution. If
+the public catalog fails, the same-provider static fallback is shown together
+with the discovery error rather than presented as a successful live lookup.
 
 `Custom API` uses the same server-owned OpenAI-compatible runtime for an
 operator-supplied model ID and direct HTTPS endpoint. It accepts either a base
