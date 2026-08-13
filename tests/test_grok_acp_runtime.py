@@ -21,6 +21,7 @@ class GrokAcpRuntimeTests(unittest.TestCase):
             [sys.executable, "-u", str(FAKE_ACP)],
             cwd=ROOT,
             state_dir=root / "grok-home",
+            model="fake-grok",
             auth_path=root / "auth.json",
             startup_timeout_seconds=5,
         )
@@ -47,6 +48,7 @@ class GrokAcpRuntimeTests(unittest.TestCase):
         self.assertFalse(first_health["pty"])
         self.assertEqual(first_health["transport"], "acp_stdio")
         self.assertEqual(first["metadata"]["message_source"], "grok_acp")
+        self.assertEqual(first["metadata"]["observed_model_id"], "fake-grok")
         self.assertGreaterEqual(second_health["stderr_line_count"], 3000)
         self.assertGreater(second_health["stderr_byte_count"], 0)
         self.assertTrue(second_health["stderr_tail_truncated"])

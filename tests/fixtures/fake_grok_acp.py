@@ -25,6 +25,7 @@ except (FileNotFoundError, OSError, json.JSONDecodeError):
 if not isinstance(provider_sessions, dict):
     provider_sessions = {}
 session_id = ""
+current_model = "fake-grok-cli"
 room_mcp_configured = False
 filesystem_disabled = False
 
@@ -62,7 +63,7 @@ for line in sys.stdin:
                 "result": {
                     "protocolVersion": 1,
                     "agentCapabilities": {"loadSession": True},
-                    "_meta": {"modelState": {"currentModelId": "fake-grok"}},
+                    "_meta": {"modelState": {"currentModelId": current_model}},
                 },
             }
         )
@@ -77,6 +78,7 @@ for line in sys.stdin:
             for server in (mcp_servers if isinstance(mcp_servers, list) else [])
         )
         session_id = f"fake-{uuid4().hex}"
+        current_model = "fake-grok-default"
         provider_sessions[session_id] = {"last_text": ""}
         save_provider_sessions()
         send({"jsonrpc": "2.0", "id": request_id, "result": {"sessionId": session_id}})
@@ -88,6 +90,10 @@ for line in sys.stdin:
                     "params": {"upserted": [{"sessionId": session_id, "yolo": True}]},
                 }
             )
+        continue
+    if method == "session/set_model":
+        current_model = str(params.get("modelId") or "")
+        send({"jsonrpc": "2.0", "id": request_id, "result": {}})
         continue
     if method == "session/load":
         requested_session_id = str(params.get("sessionId") or "")
@@ -357,7 +363,7 @@ for line in sys.stdin:
             "id": request_id,
             "result": {
                 "stopReason": "end_turn",
-                "_meta": {"modelId": "fake-grok"},
+                "_meta": {"modelId": current_model},
             },
         }
     )

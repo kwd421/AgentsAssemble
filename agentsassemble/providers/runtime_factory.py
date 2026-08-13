@@ -193,6 +193,7 @@ def runtime_from_config(
             command,
             cwd=config.cwd,
             state_dir=config.runtime_state_dir,
+            model=config.model,
             env=environment,
             room_portal=room_portal,
             startup_timeout_seconds=config.startup_timeout_seconds,

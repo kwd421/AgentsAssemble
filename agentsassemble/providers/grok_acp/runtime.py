@@ -61,6 +61,7 @@ class GrokAcpRuntime(GrokAcpTransportMixin, GrokAcpTurnProjectionMixin):
         *,
         cwd: str | Path,
         state_dir: str | Path,
+        model: str = "",
         env: dict[str, str] | None = None,
         auth_path: str | Path | None = None,
         room_portal: RoomPortal | None = None,
@@ -74,6 +75,7 @@ class GrokAcpRuntime(GrokAcpTransportMixin, GrokAcpTurnProjectionMixin):
         self.command = list(command)
         self.cwd = Path(cwd).expanduser().resolve()
         self.state_dir = Path(state_dir).expanduser().resolve()
+        self._requested_model = clean_room_text(model, limit=128)
         self._session_store = GrokAcpSessionStore(self.state_dir, self.cwd)
         self.env = dict(env or {})
         self.room_portal = room_portal
@@ -256,6 +258,16 @@ class GrokAcpRuntime(GrokAcpTransportMixin, GrokAcpTurnProjectionMixin):
                 session_id = clean_room_text(created.get("sessionId"), limit=128)
             if not session_id:
                 raise RuntimeError("Grok ACP did not return a provider session id.")
+            if self._requested_model:
+                self._request(
+                    "session/set_model",
+                    {
+                        "sessionId": session_id,
+                        "modelId": self._requested_model,
+                    },
+                    timeout_seconds=self.startup_timeout_seconds,
+                )
+                self._model = self._requested_model
             self._persist_provider_session(session_id)
             with self._lock:
                 self._session_id = session_id

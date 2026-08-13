@@ -119,22 +119,29 @@ def serve_room_portal_mcp(root: str | Path) -> None:
 def room_portal_mcp_settings(root: str | Path) -> dict[str, object]:
     import sys
 
-    return {
-        "command": sys.executable,
-        "args": [
+    arguments = [
+        "--root",
+        str(Path(root).expanduser().resolve()),
+    ]
+    if getattr(sys, "frozen", False):
+        command_arguments = ["--internal-room-portal-mcp", *arguments]
+    else:
+        command_arguments = [
             "-m",
             "agentsassemble.providers.room_portal_mcp",
-            "--root",
-            str(Path(root).expanduser().resolve()),
-        ],
+            *arguments,
+        ]
+    return {
+        "command": sys.executable,
+        "args": command_arguments,
         "cwd": str(Path(__file__).resolve().parents[2]),
     }
 
 
-def main() -> None:
+def main(argv: list[str] | None = None) -> None:
     parser = argparse.ArgumentParser()
     parser.add_argument("--root", required=True)
-    args = parser.parse_args()
+    args = parser.parse_args(argv)
     serve_room_portal_mcp(args.root)
 
 
