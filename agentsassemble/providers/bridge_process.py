@@ -43,6 +43,12 @@ BridgeExitListener = Callable[[str, str, int, str], None]
 _PERSISTED_STDERR_LIMIT = 16_000
 
 
+def _agent_bridge_command() -> list[str]:
+    if getattr(sys, "frozen", False):
+        return [sys.executable, "--internal-agent-bridge"]
+    return [sys.executable, "-m", "agentsassemble.application.agent_bridge_entrypoint"]
+
+
 def _raw_stderr_tail_limit(handle: _BridgeHandle) -> int:
     longest_sensitive_value = max(
         (
@@ -381,11 +387,7 @@ class NativeCliBridgeProcessManager:
         )
         package_root = str(Path(__file__).resolve().parents[2])
         env["PYTHONPATH"] = os.pathsep.join(part for part in (package_root, env.get("PYTHONPATH", "")) if part)
-        command = [
-            sys.executable,
-            "-m",
-            "agentsassemble.application.agent_bridge_entrypoint",
-        ]
+        command = _agent_bridge_command()
         secure_launch_required = bool(credential or session_token)
         secure_launch_payload = (
             encode_secure_launch_payload(
