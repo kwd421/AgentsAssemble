@@ -5,8 +5,8 @@
   "version": "0.1.0",
   "scripts": {
     "tauri": "tauri",
-    "dev": "npm run backend:build && tauri dev",
-    "build": "npm run backend:build && tauri build",
+    "dev": "python3 scripts/build_desktop.py dev",
+    "build": "python3 scripts/build_desktop.py build",
     "build:release": "python3 scripts/build_release.py",
     "mobile:ios:init": "python3 scripts/mobile_build.py ios init",
     "mobile:ios:build": "python3 scripts/mobile_build.py ios build",

@@ -34,7 +34,13 @@ make desktop-build
 ```
 
 Sidecars are built natively. A Windows installer must therefore be produced on
-Windows and a macOS installer on macOS.
+Windows and a macOS installer on macOS. On macOS, local development and
+installer builds use the first valid `Developer ID Application` identity in
+the login keychain when one is installed. The exact certificate fingerprint is
+passed to both PyInstaller and Tauri, so duplicate certificate display names do
+not make signing ambiguous and rebuilt sidecars retain a stable Keychain code
+requirement. Machines without that identity still produce an ad-hoc local
+build and print a warning; signed release builds continue to require it.
 
 ## Signed releases and desktop updates
 

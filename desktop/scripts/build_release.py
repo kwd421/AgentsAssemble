@@ -5,9 +5,10 @@ from __future__ import annotations
 import os
 from pathlib import Path
 import platform
-import re
 import subprocess
 from urllib.parse import urlsplit
+
+from macos_signing import signing_environment
 
 
 DESKTOP_ROOT = Path(__file__).resolve().parent.parent
@@ -20,22 +21,6 @@ def required_environment(name: str) -> str:
     if not value:
         raise SystemExit(f"{name} must be supplied through the release environment")
     return value
-
-
-def signing_identity() -> str:
-    explicit = str(os.environ.get("APPLE_SIGNING_IDENTITY") or "").strip()
-    if explicit:
-        return explicit
-    result = subprocess.run(
-        ["security", "find-identity", "-v", "-p", "codesigning"],
-        check=True,
-        capture_output=True,
-        text=True,
-    )
-    matches = re.findall(r'"(Developer ID Application: [^"]+)"', result.stdout)
-    if not matches:
-        raise SystemExit("No Developer ID Application identity is available in the keychain")
-    return matches[0]
 
 
 def newest_dmg() -> Path:
@@ -53,9 +38,7 @@ def main() -> int:
     if parsed.scheme != "https" or not parsed.netloc:
         raise SystemExit("AGENTSASSEMBLE_UPDATE_ENDPOINT must be an HTTPS URL")
 
-    environment = dict(os.environ)
-    if platform.system() == "Darwin":
-        environment["APPLE_SIGNING_IDENTITY"] = signing_identity()
+    environment = signing_environment(required=True)
     subprocess.run(["npm", "run", "backend:build"], cwd=DESKTOP_ROOT, env=environment, check=True)
     subprocess.run(
         [

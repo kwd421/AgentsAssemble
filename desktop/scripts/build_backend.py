@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import os
 from pathlib import Path
+import platform
 import shutil
 import subprocess
 import sys
@@ -45,8 +46,11 @@ def main() -> int:
         f"{frontend_dist}{os.pathsep}frontend/dist",
         "--add-data",
         f"{PROJECT_ROOT / 'plugins'}{os.pathsep}plugins",
-        str(DESKTOP_ROOT / "server_entry.py"),
     ]
+    signing_identity = str(os.environ.get("APPLE_SIGNING_IDENTITY") or "").strip()
+    if platform.system() == "Darwin" and signing_identity:
+        command.extend(["--codesign-identity", signing_identity])
+    command.append(str(DESKTOP_ROOT / "server_entry.py"))
     subprocess.run(command, cwd=PROJECT_ROOT, check=True)
     executable = DIST_ROOT / EXECUTABLE_NAME
     if not executable.is_file():
