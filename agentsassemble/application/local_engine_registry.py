@@ -10,19 +10,81 @@ from __future__ import annotations
 import json
 import os
 import time
+import uuid
+from contextlib import contextmanager
+from collections.abc import Iterator
 from pathlib import Path
 from typing import Any
 from urllib.error import URLError
 from urllib.request import Request, urlopen
 
 REGISTRY_RELATIVE = Path("runtime") / "local-engine.json"
+STARTUP_CLAIM_RELATIVE = Path("runtime") / "local-engine.starting.json"
 REGISTRY_SCHEMA = 1
 READY_PATH = "/api/runtime/version"
 READY_TIMEOUT_SECONDS = 0.8
+STARTUP_CLAIM_WAIT_SECONDS = 45.0
+STARTUP_CLAIM_POLL_SECONDS = 0.05
+
+
+class LocalEngineStartupTimeout(RuntimeError):
+    pass
 
 
 def registry_path(output_root: Path) -> Path:
     return Path(output_root).expanduser() / REGISTRY_RELATIVE
+
+
+@contextmanager
+def claim_local_engine_startup(
+    output_root: Path,
+    *,
+    wait_seconds: float = STARTUP_CLAIM_WAIT_SECONDS,
+) -> Iterator[str | None]:
+    """Own startup for one data root or reuse the engine another owner publishes."""
+
+    root = Path(output_root).expanduser()
+    path = root / STARTUP_CLAIM_RELATIVE
+    path.parent.mkdir(parents=True, exist_ok=True)
+    owner_id = f"{os.getpid()}-{uuid.uuid4().hex}"
+    deadline = time.monotonic() + max(0.1, float(wait_seconds))
+    while True:
+        existing = discover_reusable_local_engine(root)
+        if existing is not None:
+            yield existing
+            return
+        try:
+            descriptor = os.open(
+                path,
+                os.O_WRONLY | os.O_CREAT | os.O_EXCL,
+                0o600,
+            )
+        except FileExistsError:
+            _clear_stale_startup_claim(path)
+            if time.monotonic() >= deadline:
+                raise LocalEngineStartupTimeout(
+                    f"Timed out waiting for the local engine for {root}."
+                )
+            time.sleep(STARTUP_CLAIM_POLL_SECONDS)
+            continue
+        try:
+            payload = json.dumps(
+                {
+                    "schema": REGISTRY_SCHEMA,
+                    "owner_id": owner_id,
+                    "pid": os.getpid(),
+                    "created_at": time.time(),
+                },
+                sort_keys=True,
+            ).encode("utf-8")
+            os.write(descriptor, payload)
+        finally:
+            os.close(descriptor)
+        try:
+            yield None
+        finally:
+            _clear_startup_claim(path, owner_id=owner_id)
+        return
 
 
 def write_local_engine_registry(
@@ -161,3 +223,29 @@ def _pid_is_running(pid: int) -> bool:
     except OSError:
         return False
     return True
+
+
+def _clear_stale_startup_claim(path: Path) -> None:
+    try:
+        payload = json.loads(path.read_text(encoding="utf-8"))
+    except (FileNotFoundError, OSError, json.JSONDecodeError):
+        return
+    if not isinstance(payload, dict):
+        return
+    pid = int(payload.get("pid") or 0)
+    owner_id = str(payload.get("owner_id") or "")
+    if pid > 0 and owner_id and not _pid_is_running(pid):
+        _clear_startup_claim(path, owner_id=owner_id)
+
+
+def _clear_startup_claim(path: Path, *, owner_id: str) -> None:
+    try:
+        payload = json.loads(path.read_text(encoding="utf-8"))
+    except (FileNotFoundError, OSError, json.JSONDecodeError):
+        return
+    if not isinstance(payload, dict) or str(payload.get("owner_id") or "") != owner_id:
+        return
+    try:
+        path.unlink()
+    except FileNotFoundError:
+        return

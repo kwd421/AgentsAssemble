@@ -54,42 +54,49 @@ def run_gui_command(
     serve_gui: Callable[..., object],
 ) -> int:
     from agentsassemble.application.local_engine_registry import (
-        discover_reusable_local_engine,
+        LocalEngineStartupTimeout,
+        claim_local_engine_startup,
     )
     from agentsassemble.application.user_data_root import resolve_output_root
 
     output_root = resolve_output_root(getattr(args, "output_root", None))
-    existing = discover_reusable_local_engine(output_root)
-    if existing is not None:
-        print(
-            f"AgentsAssemble local engine already running for {output_root}: {existing}",
-            flush=True,
-        )
-        print(
-            "Reusing the existing engine instead of starting a second process.",
-            flush=True,
-        )
-        return 0
     try:
-        serve_gui(
-            host=args.host,
-            port=args.port,
-            output_root=output_root,
-            room_repository_backend=args.room_repository_backend,
-            room_postgres_dsn_env=args.room_postgres_dsn_env,
-            attention_shadow_mode=args.attention_shadow_mode,
-            public_url=args.public_url,
-            host_token=args.host_token,
-            unsafe_expose_control_plane=args.unsafe_expose_control_plane,
-            start_public_tunnel=args.start_public_tunnel,
-            live_agent_config=Path(args.live_agent_config) if args.live_agent_config else None,
-            live_agent_group_id=args.live_agent_group_id,
-            live_agent_auto_restart=args.live_agent_auto_restart,
-            live_agent_max_restarts=args.live_agent_max_restarts,
-            live_agent_restart_backoff_seconds=args.live_agent_restart_backoff_seconds,
-            live_agent_stale_restart_after_seconds=args.live_agent_stale_restart_after_seconds,
-        )
-    except (ValueError, RoomRepositoryUnavailable) as error:
+        with claim_local_engine_startup(output_root) as existing:
+            if existing is not None:
+                if os.environ.get("AGENTSASSEMBLE_DESKTOP_RUNTIME") == "1":
+                    from agentsassemble.application.gui_runtime import (
+                        DESKTOP_RUNTIME_URL_PREFIX,
+                    )
+
+                    print(f"{DESKTOP_RUNTIME_URL_PREFIX}{existing}", flush=True)
+                print(
+                    f"AgentsAssemble local engine already running for {output_root}: {existing}",
+                    flush=True,
+                )
+                print(
+                    "Reusing the existing engine instead of starting a second process.",
+                    flush=True,
+                )
+                return 0
+            serve_gui(
+                host=args.host,
+                port=args.port,
+                output_root=output_root,
+                room_repository_backend=args.room_repository_backend,
+                room_postgres_dsn_env=args.room_postgres_dsn_env,
+                attention_shadow_mode=args.attention_shadow_mode,
+                public_url=args.public_url,
+                host_token=args.host_token,
+                unsafe_expose_control_plane=args.unsafe_expose_control_plane,
+                start_public_tunnel=args.start_public_tunnel,
+                live_agent_config=Path(args.live_agent_config) if args.live_agent_config else None,
+                live_agent_group_id=args.live_agent_group_id,
+                live_agent_auto_restart=args.live_agent_auto_restart,
+                live_agent_max_restarts=args.live_agent_max_restarts,
+                live_agent_restart_backoff_seconds=args.live_agent_restart_backoff_seconds,
+                live_agent_stale_restart_after_seconds=args.live_agent_stale_restart_after_seconds,
+            )
+    except (ValueError, RoomRepositoryUnavailable, LocalEngineStartupTimeout) as error:
         print(f"error: {error}", file=sys.stderr)
         if "non-loopback GUI bind" in str(error):
             print("hint: bind to 127.0.0.1 and use the authenticated public tunnel", file=sys.stderr)
