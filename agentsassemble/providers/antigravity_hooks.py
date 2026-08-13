@@ -124,10 +124,12 @@ class AntigravityHookRuntime:
                 return {
                     "decision": "allow",
                     "reason": "AgentsAssemble room tool command.",
-                    "permissionOverrides": [
-                        "command(agentsassemble-room)",
-                        "unsandboxed(agentsassemble-room)",
-                    ],
+                    # The private RoomPortal lives outside the provider's code
+                    # workspace. Antigravity's official hook overwrite applies
+                    # the bypass only to this already-validated single helper
+                    # command, without granting unsandboxed access to any other
+                    # terminal invocation.
+                    "overwrite": {"BypassSandbox": True},
                 }
             result = self._resolve_permission(
                 title="Antigravity 터미널 명령",
@@ -268,7 +270,10 @@ class AntigravityHookRuntime:
 
 
 def _hook_command() -> str:
-    parts = [sys.executable, str(Path(__file__).with_name("antigravity_hook_client.py"))]
+    if getattr(sys, "frozen", False):
+        parts = [sys.executable, "--internal-antigravity-hook-client"]
+    else:
+        parts = [sys.executable, str(Path(__file__).with_name("antigravity_hook_client.py"))]
     return subprocess.list2cmdline(parts) if os.name == "nt" else shlex.join(parts)
 
 

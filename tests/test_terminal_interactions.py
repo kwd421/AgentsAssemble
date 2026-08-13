@@ -14,7 +14,9 @@ class AntigravityRoomPortalInteractionTests(unittest.TestCase):
             [
                 b"Requesting permission for:",
                 b"   agentsassemble-room read",
-                b"Do you want to proceed?",
+                "🔓 Allow sandbox bypass for command execution?".encode(),
+                b"> 1. Yes",
+                b"  2. Yes, and always allow in this conversation for commands that start with 'agentsassemble-room'",
             ]
         )
 

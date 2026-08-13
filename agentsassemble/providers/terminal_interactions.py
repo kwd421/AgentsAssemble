@@ -12,7 +12,8 @@ from agentsassemble.providers.runtime_contracts import AdapterContractError
 
 
 _PERMISSION_BLOCK = re.compile(
-    r"Requesting permission for:\s*(?P<command>.+?)\s*Do you want to proceed\?",
+    r"Requesting permission for:\s*(?P<command>.+?)\s*"
+    r"(?:Do you want to proceed\?|(?:🔓\s*)?Allow sandbox bypass for command execution\?)",
     flags=re.IGNORECASE | re.DOTALL,
 )
 _ATTACHMENT_ID = re.compile(r"^[A-Za-z0-9_-]{8,64}$")

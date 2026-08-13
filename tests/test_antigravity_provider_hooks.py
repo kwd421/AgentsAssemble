@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 import os
 import subprocess
+import sys
 import tempfile
 import unittest
 from pathlib import Path
@@ -180,6 +181,31 @@ class AntigravityProviderHookTests(unittest.TestCase):
                     timeout=5,
                     check=True,
                 )
+                bundled_entrypoint = subprocess.run(
+                    [
+                        sys.executable,
+                        "-m",
+                        "desktop.server_entry",
+                        "--internal-antigravity-hook-client",
+                    ],
+                    input=json.dumps(
+                        {
+                            "toolCall": {
+                                "name": "run_command",
+                                "args": {
+                                    "CommandLine": "agentsassemble-room read",
+                                    "Cwd": temp_dir,
+                                },
+                            },
+                            "conversationId": "agy-conversation",
+                        }
+                    ),
+                    text=True,
+                    capture_output=True,
+                    env={**os.environ, **runtime_environment},
+                    timeout=5,
+                    check=True,
+                )
             finally:
                 runtime.stop()
 
@@ -192,6 +218,14 @@ class AntigravityProviderHookTests(unittest.TestCase):
         question_result = json.loads(question.stdout)
         self.assertEqual(question_result["decision"], "deny")
         self.assertIn("둘째 안", question_result["reason"])
+        self.assertEqual(
+            json.loads(bundled_entrypoint.stdout),
+            {
+                "decision": "allow",
+                "reason": "AgentsAssemble room tool command.",
+                "overwrite": {"BypassSandbox": True},
+            },
+        )
         self.assertEqual(
             [request["request_kind"] for request in requests],
             ["permission", "permission", "user_input"],
@@ -229,6 +263,12 @@ class AntigravityProviderHookTests(unittest.TestCase):
                 runtime.stop()
 
         self.assertTrue(all(result["decision"] == "allow" for result in results))
+        self.assertTrue(
+            all(
+                result.get("overwrite") == {"BypassSandbox": True}
+                for result in results
+            )
+        )
         self.assertEqual(requests, [])
 
     def test_rimworld_room_tools_are_allowed_without_opening_a_room_request(self) -> None:
@@ -264,6 +304,12 @@ class AntigravityProviderHookTests(unittest.TestCase):
                 runtime.stop()
 
         self.assertTrue(all(result["decision"] == "allow" for result in results))
+        self.assertTrue(
+            all(
+                result.get("overwrite") == {"BypassSandbox": True}
+                for result in results
+            )
+        )
         self.assertEqual(requests, [])
 
     def test_room_portal_auto_approval_rejects_the_exact_unsafe_command(self) -> None:
