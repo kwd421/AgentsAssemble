@@ -207,20 +207,27 @@ async function initializeClient() {
     return;
   }
   clientPlatformLabel.textContent = "AGENTSASSEMBLE DESKTOP";
-  await listen("desktop-update-progress", (event) => {
-    const payload = event.payload || {};
-    if (payload.phase === "finished") {
-      showUpdateProgress("업데이트 설치를 마쳤습니다. 다시 시작하는 중…", 1, 1);
-      return;
-    }
-    showUpdateProgress(
-      "앱 업데이트를 내려받는 중…",
-      Number(payload.downloaded || 0),
-      Number(payload.total || 0)
-    );
-  });
+  // Event ACL or plugin gaps must not block the local room engine.
+  try {
+    await listen("desktop-update-progress", (event) => {
+      const payload = event.payload || {};
+      if (payload.phase === "finished") {
+        showUpdateProgress("업데이트 설치를 마쳤습니다. 다시 시작하는 중…", 1, 1);
+        return;
+      }
+      showUpdateProgress(
+        "앱 업데이트를 내려받는 중…",
+        Number(payload.downloaded || 0),
+        Number(payload.total || 0)
+      );
+    });
+  } catch {
+    // Continue without update progress events.
+  }
   void loadCachedRooms();
   await updateBeforeStartup();
 }
 
-void initializeClient();
+void initializeClient().catch((error) => {
+  showError(error);
+});

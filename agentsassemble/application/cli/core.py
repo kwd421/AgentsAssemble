@@ -56,7 +56,15 @@ def register_core_parsers(subparsers: argparse._SubParsersAction) -> None:
     gui = subparsers.add_parser("gui", help="Run the local browser GUI.")
     gui.add_argument("--host", default="127.0.0.1")
     gui.add_argument("--port", type=int, default=8765)
-    gui.add_argument("--output-root", default=".agentsassemble")
+    gui.add_argument(
+        "--output-root",
+        default="",
+        help=(
+            "Local product data directory (identity, rooms). "
+            "Default: AGENTSASSEMBLE_OUTPUT_ROOT or the platform user data root "
+            "(same default as the desktop app)."
+        ),
+    )
     gui.add_argument(
         "--room-repository-backend",
         choices=sorted(ROOM_REPOSITORY_BACKENDS),

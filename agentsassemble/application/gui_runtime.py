@@ -78,7 +78,10 @@ def serve_gui_runtime(
             "Use a loopback bind with the public tunnel, or pass --unsafe-expose-control-plane "
             "only on an isolated trusted network."
         )
-    root = output_root or Path(".agentsassemble")
+    from agentsassemble.application.user_data_root import resolve_output_root
+
+    root = resolve_output_root(output_root)
+
     served_frontend_root = materialize_frontend_release(
         frontend_dist_root,
         release_root=root / "runtime" / "frontend-releases",

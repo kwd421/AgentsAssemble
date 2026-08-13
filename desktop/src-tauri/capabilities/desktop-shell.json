@@ -6,9 +6,12 @@
   "local": true,
   "permissions": [
     "allow-client-platform",
+    "allow-check-desktop-update",
+    "allow-install-desktop-update",
     "allow-start-local-runtime",
     "allow-open-server",
     "allow-open-server-link",
-    "allow-load-cached-room-directory"
+    "allow-load-cached-room-directory",
+    "core:event:default"
   ]
 }

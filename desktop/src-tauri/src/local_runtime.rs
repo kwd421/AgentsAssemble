@@ -32,11 +32,9 @@ pub struct LocalRuntime {
 impl LocalRuntime {
     pub fn ensure_running(&self, app: &AppHandle) -> Result<Url, String> {
         let _startup = self.startup.lock().expect("local runtime startup lock");
-        let data_root = app
-            .path()
-            .app_local_data_dir()
-            .map_err(|error| format!("cannot locate desktop data directory: {error}"))?;
-        let runtime_root = data_root.join("local-runtime");
+        // Same absolute product data root as CLI `gui` (identity, rooms).
+        // Port/process ownership stay separate; only on-disk state is shared.
+        let runtime_root = default_user_data_root();
         fs::create_dir_all(&runtime_root)
             .map_err(|error| format!("cannot create local runtime directory: {error}"))?;
         let stderr_path = runtime_root.join("server.stderr.log");
@@ -59,8 +57,29 @@ impl LocalRuntime {
         configure_process_group(&mut command);
         let stdout_path = runtime_root.join("server.stdout.log");
         let stdout_log = create_log(&stdout_path)?;
+        // Breadcrumb so empty logs mean "spawn never returned" rather than
+        // "child started and produced no output".
+        {
+            let mut breadcrumb = stdout_log.try_clone().map_err(|error| {
+                format!("cannot clone startup log {}: {error}", stdout_path.display())
+            })?;
+            writeln!(
+                breadcrumb,
+                "AgentsAssemble desktop: launching {description}"
+            )
+            .map_err(|error| {
+                format!(
+                    "cannot write startup log {}: {error}",
+                    stdout_path.display()
+                )
+            })?;
+        }
         command
             .env("AGENTSASSEMBLE_DESKTOP_RUNTIME", "1")
+            .env(
+                "PATH",
+                prepend_user_cli_path(env::var_os("PATH").unwrap_or_default()),
+            )
             .stdout(Stdio::piped());
         command.stderr(Stdio::from(create_log(&stderr_path)?));
         let mut child = command
@@ -319,6 +338,76 @@ fn source_python(source_root: &Path) -> PathBuf {
         return virtualenv;
     }
     PathBuf::from(if cfg!(windows) { "python" } else { "python3" })
+}
+
+/// Shared with Python `agentsassemble.application.user_data_root.default_output_root`.
+fn default_user_data_root() -> PathBuf {
+    if let Ok(override_root) = env::var("AGENTSASSEMBLE_OUTPUT_ROOT") {
+        let trimmed = override_root.trim();
+        if !trimmed.is_empty() {
+            return PathBuf::from(trimmed);
+        }
+    }
+    let home = env::var_os("HOME")
+        .or_else(|| env::var_os("USERPROFILE"))
+        .map(PathBuf::from);
+    #[cfg(target_os = "macos")]
+    {
+        if let Some(home) = home {
+            return home.join("Library/Application Support/AgentsAssemble");
+        }
+    }
+    #[cfg(target_os = "windows")]
+    {
+        if let Some(appdata) = env::var_os("APPDATA").map(PathBuf::from) {
+            return appdata.join("AgentsAssemble");
+        }
+        if let Some(home) = home {
+            return home.join("AppData/Roaming/AgentsAssemble");
+        }
+    }
+    #[cfg(not(any(target_os = "macos", target_os = "windows")))]
+    {
+        if let Some(xdg) = env::var_os("XDG_DATA_HOME").map(PathBuf::from) {
+            return xdg.join("AgentsAssemble");
+        }
+        if let Some(home) = home {
+            return home.join(".local/share/AgentsAssemble");
+        }
+    }
+    PathBuf::from("AgentsAssemble")
+}
+
+/// GUI-launched apps often inherit a short PATH. Prepend the same user CLI
+/// locations the Python catalog uses so subscription providers stay discoverable.
+fn prepend_user_cli_path(existing: std::ffi::OsString) -> std::ffi::OsString {
+    use std::ffi::OsString;
+
+    let mut parts: Vec<PathBuf> = Vec::new();
+    let mut seen = std::collections::BTreeSet::new();
+    let push = |parts: &mut Vec<PathBuf>, seen: &mut std::collections::BTreeSet<PathBuf>, path: PathBuf| {
+        if path.is_dir() && seen.insert(path.clone()) {
+            parts.push(path);
+        }
+    };
+
+    if let Some(home) = env::var_os("HOME").map(PathBuf::from) {
+        push(&mut parts, &mut seen, home.join(".local/bin"));
+        push(&mut parts, &mut seen, home.join(".grok/bin"));
+        push(&mut parts, &mut seen, home.join(".cargo/bin"));
+    }
+    #[cfg(target_os = "macos")]
+    {
+        push(&mut parts, &mut seen, PathBuf::from("/opt/homebrew/bin"));
+        push(&mut parts, &mut seen, PathBuf::from("/usr/local/bin"));
+    }
+
+    for part in env::split_paths(&existing) {
+        if !part.as_os_str().is_empty() && seen.insert(part.clone()) {
+            parts.push(part);
+        }
+    }
+    env::join_paths(parts).unwrap_or_else(|_| OsString::from(existing))
 }
 
 #[cfg(unix)]

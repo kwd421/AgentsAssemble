@@ -53,11 +53,13 @@ def run_gui_command(
     *,
     serve_gui: Callable[..., object],
 ) -> int:
+    from agentsassemble.application.user_data_root import resolve_output_root
+
     try:
         serve_gui(
             host=args.host,
             port=args.port,
-            output_root=Path(args.output_root),
+            output_root=resolve_output_root(getattr(args, "output_root", None)),
             room_repository_backend=args.room_repository_backend,
             room_postgres_dsn_env=args.room_postgres_dsn_env,
             attention_shadow_mode=args.attention_shadow_mode,
