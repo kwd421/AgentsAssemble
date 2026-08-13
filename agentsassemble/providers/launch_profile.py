@@ -32,6 +32,7 @@ class NativeCliProviderSpec:
     execution_harness: str = "builtin"
     permission_mode: str = "meeting_read_only"
     max_output_tokens: int = 0
+    provider_call_limit: int = 0
     context_contract_bytes: int = 0
     provider_endpoint: str = ""
     persona_card_id: str = ""

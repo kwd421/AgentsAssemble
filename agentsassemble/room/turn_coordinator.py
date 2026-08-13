@@ -32,6 +32,7 @@ from agentsassemble.providers.runtime_contracts import (
     SUPPORTED_DECLINE_REASONS,
 )
 from agentsassemble.room.errors import RoomCommandRejected
+from agentsassemble.room.provider_call_budget import pause_at_provider_call_limit, record_provider_call
 from agentsassemble.room.tool_authorization import require_room_random_tools
 from agentsassemble.room_attention import AttentionLeaseConflict
 from agentsassemble.room.command_uow import RoomCommandUnitOfWork
@@ -486,6 +487,8 @@ class RoomTurnCoordinator:
             or not self.broker.has_bridge(room_id, agent_id)
         ):
             return False
+        if pause_at_provider_call_limit(self.store, self._publish_session_state, room_id, session):
+            return False
         if (
             self.store.room_settings(room_id).get("conversation_mode") == "ordered"
             and self._ordered_turn_is_active(room_id)
@@ -744,6 +747,7 @@ class RoomTurnCoordinator:
             "publication_mode": AUTOMATIC_FINAL,
         }
         if self.broker.direct_to_bridge(room_id, agent_id, assignment):
+            record_provider_call(self.store, self._publish_session_state, room_id, updated)
             return True
         self.store.update_session_fields(
             room_id,
@@ -838,6 +842,8 @@ class RoomTurnCoordinator:
             or session.get("runtime_status") != "idle"
             or not self.broker.has_bridge(room_id, agent_id)
         ):
+            return False
+        if pause_at_provider_call_limit(self.store, self._publish_session_state, room_id, session):
             return False
         try:
             canonical_sync_seq = canonical_provider_sync_seq(
@@ -996,6 +1002,7 @@ class RoomTurnCoordinator:
             "publication_mode": EXPLICIT_ROOM_PORTAL,
         }
         if self.broker.direct_to_bridge(room_id, agent_id, wake):
+            record_provider_call(self.store, self._publish_session_state, room_id, updated)
             return True
         restored_pending = ordered_pending_subset(
             all_pending,

@@ -59,6 +59,8 @@ export interface RoomAgentSession {
   execution_harness?: string;
   permission_mode?: string;
   max_output_tokens?: number;
+  provider_call_limit?: number;
+  provider_call_count?: number;
   context_contract_bytes?: number;
   share_activity?: boolean;
   persona_card_id?: string;

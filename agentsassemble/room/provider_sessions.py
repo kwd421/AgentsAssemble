@@ -468,6 +468,8 @@ class RoomProviderSessionService:
                     "execution_harness": spec.execution_harness,
                     "permission_mode": spec.permission_mode,
                     "max_output_tokens": spec.max_output_tokens,
+                    "provider_call_limit": spec.provider_call_limit,
+                    "provider_call_count": 0,
                     "context_contract_bytes": spec.context_contract_bytes,
                     "share_activity": False,
                     "provider_endpoint": spec.provider_endpoint,

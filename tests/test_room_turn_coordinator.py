@@ -134,6 +134,21 @@ class RoomTurnCoordinatorTests(unittest.TestCase):
         assignment = next(message for message in self.channel.drain() if message.get("op") == "turn.assign")
         self.assertEqual(assignment["turn_id"], session["active_turn_id"])
         self.assertEqual(assignment["provider_context_event_ids"], [included["id"]])
+        self.assertEqual(session["provider_call_count"], 1)
+
+    def test_room_observation_assignment_records_a_provider_call(self):
+        result = self.coordinator.request_room_check(
+            self.identity,
+            "general",
+            allow_non_ambient=True,
+        )
+
+        self.assertTrue(result["assigned"])
+        session = self.store.session("general", "codex")
+        self.assertEqual(session["provider_call_count"], 1)
+        self.assertTrue(
+            any(message.get("op") == "room.wake" for message in self.channel.drain())
+        )
 
     def test_delivery_failure_preserves_relay_depth_for_retry(self):
         source = self._message("relay source")
@@ -152,6 +167,38 @@ class RoomTurnCoordinatorTests(unittest.TestCase):
         self.assertEqual(session["pending_event_ids"], [source["id"]])
         self.assertEqual(session["pending_relay_depth"], 2)
         self.assertEqual(session.get("active_relay_depth", 0), 0)
+
+    def test_provider_call_limit_pauses_before_dispatch_and_records_public_error(self):
+        source = self._message("must remain pending")
+        self._set_packet(source)
+        self.store.update_session_fields(
+            "general",
+            "codex",
+            pending_event_ids=[source["id"]],
+            provider_call_limit=1,
+            provider_call_count=1,
+            turn_count=1,
+        )
+
+        assigned = self.coordinator.assign_pending("general", "codex")
+
+        self.assertFalse(assigned)
+        self.assertFalse(
+            any(message.get("op") == "turn.assign" for message in self.channel.drain())
+        )
+        session = self.store.session("general", "codex")
+        self.assertFalse(session["enabled"])
+        self.assertEqual(session["runtime_status"], "idle")
+        self.assertEqual(session["turn_count"], 1)
+        self.assertEqual(session["pending_event_ids"], [source["id"]])
+        self.assertEqual(session["provider_call_count"], 1)
+        self.assertEqual(session["last_error_code"], "provider_call_limit_reached")
+        errors = [
+            event
+            for event in self.store.read_events("general")
+            if event.get("type") == "error"
+        ]
+        self.assertEqual(errors[-1]["error_code"], "provider_call_limit_reached")
 
     def test_final_message_advances_cursor_and_clears_active_turn_atomically(self):
         source = self._message("source")

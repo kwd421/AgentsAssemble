@@ -12,6 +12,7 @@ from agentsassemble.providers.launch_specs import (
 )
 from agentsassemble.room.agent_runtime_profiles import ProviderSelectionCatalog
 from agentsassemble.room.errors import RoomCommandRejected
+from agentsassemble.room.provider_call_budget import apply_provider_call_limit
 from agentsassemble.room.projection import public_session
 from agentsassemble.room.repository import RoomRepository
 from agentsassemble.room.text import clean_room_text
@@ -110,30 +111,33 @@ class RoomAgentCreationService:
             operation_id,
         )
         try:
-            spec = native_cli_provider_spec_from_payload(
-                {
-                    "provider_id": selection.provider_id,
-                    "agent_id": agent_id,
-                    "display_name": payload.get("display_name"),
-                    "workspace": (
-                        payload.get("workspace")
-                        or payload.get("workspace_path")
-                        or payload.get("cwd")
-                    ),
-                    "model": selection.model,
-                    "model_selection_kind": selection.model_selection_kind,
-                    "catalog_revision": selection.catalog_revision,
-                    "reasoning_effort": selection.reasoning_effort,
-                    "service_tier": selection.service_tier,
-                    "variant": selection.variant,
-                    "execution_harness": selection.execution_harness,
-                    "permission_mode": selection.permission_mode,
-                    "max_output_tokens": selection.max_output_tokens,
-                    "context_contract_bytes": selection.context_contract_bytes,
-                    "provider_endpoint": selection.provider_endpoint,
-                    "persona_card_id": persona_card.get("id", ""),
-                    "persona_card": persona_card,
-                }
+            spec = apply_provider_call_limit(
+                native_cli_provider_spec_from_payload(
+                    {
+                        "provider_id": selection.provider_id,
+                        "agent_id": agent_id,
+                        "display_name": payload.get("display_name"),
+                        "workspace": (
+                            payload.get("workspace")
+                            or payload.get("workspace_path")
+                            or payload.get("cwd")
+                        ),
+                        "model": selection.model,
+                        "model_selection_kind": selection.model_selection_kind,
+                        "catalog_revision": selection.catalog_revision,
+                        "reasoning_effort": selection.reasoning_effort,
+                        "service_tier": selection.service_tier,
+                        "variant": selection.variant,
+                        "execution_harness": selection.execution_harness,
+                        "permission_mode": selection.permission_mode,
+                        "max_output_tokens": selection.max_output_tokens,
+                        "context_contract_bytes": selection.context_contract_bytes,
+                        "provider_endpoint": selection.provider_endpoint,
+                        "persona_card_id": persona_card.get("id", ""),
+                        "persona_card": persona_card,
+                    }
+                ),
+                payload,
             )
         except UnsupportedNativeCliProvider as error:
             raise RoomCommandRejected(

@@ -83,6 +83,8 @@ class AgentSession(TypedDict):
     stderr_warning_count: NotRequired[int]
     notification_drop_count: NotRequired[int]
     max_output_tokens: NotRequired[int]
+    provider_call_limit: NotRequired[int]
+    provider_call_count: NotRequired[int]
     context_contract_bytes: NotRequired[int]
     execution_harness: NotRequired[str]
     persona_card_id: NotRequired[str]

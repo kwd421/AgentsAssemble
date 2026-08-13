@@ -134,6 +134,7 @@ class RoomAgentCreationServiceTests(unittest.TestCase):
                 "variant": self.selection.variant,
                 "permission_mode": self.selection.permission_mode,
                 "max_output_tokens": self.selection.max_output_tokens,
+                "provider_call_limit": 30,
                 "catalog_revision": "revision-1",
                 "start_now": True,
             },
@@ -149,6 +150,7 @@ class RoomAgentCreationServiceTests(unittest.TestCase):
         self.assertEqual(spec.display_name, "Luna")
         self.assertEqual(spec.model, self.selection.model)
         self.assertEqual(spec.max_output_tokens, 8192)
+        self.assertEqual(spec.provider_call_limit, 30)
         self.assertEqual(spec.context_contract_bytes, 1_000_000)
         self.assertEqual(result["participant"]["display_name"], "Luna")
         self.assertEqual(result["start"]["status"], "starting")
