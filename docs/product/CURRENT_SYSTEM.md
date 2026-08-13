@@ -584,9 +584,12 @@ mapping. Grok ACP currently exposes native permission requests but no generic
 user-choice request event, so the UI must not claim that Grok supports choices.
 
 API-provider credentials are server-owned and read from the OS keyring (or the
-provider's explicit process environment fallback), then sent to the bridge
-once over inherited stdin. They are not written to the bridge config, room
-state, provider transcript, or public diagnostics. Remote native-harness
+provider's explicit process environment fallback) only when the selected
+provider runtime starts, then sent to the bridge once over inherited stdin.
+Public model-catalog discovery is unauthenticated and never reads the keyring;
+this keeps app startup and catalog refresh from triggering credential prompts.
+Credentials are not written to the bridge config, room state, provider
+transcript, or public diagnostics. Remote native-harness
 translation writes only an environment-variable reference to
 its private `0600` config; the credential exists only in the sanitized child
 environment and the translator remains bound to loopback. Remote

@@ -30,7 +30,6 @@ class HarnessRegistryTests(unittest.TestCase):
                 f"/bin/{executable}" if executable in available else None
             ),
             remote_model_discovery=lambda _profile, _api_key: [],
-            secret_resolver=lambda _provider_id: "",
         )
         deepseek = next(
             provider

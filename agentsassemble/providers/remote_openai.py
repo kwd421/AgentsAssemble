@@ -350,10 +350,9 @@ def remote_openai_catalog_payload(
     discovery_error: str = "",
     discovery_error_code: str = "",
 ) -> dict[str, object]:
+    using_static_manifest = discovered_models is None
     options = (
-        list(discovered_models or [])
-        if profile.discovery_path
-        else [
+        [
             # A profile declares one reasoning-effort list for every model it
             # serves, so the relation is global. Without the scope the catalog
             # validator rejects any effort the user picks -- including the
@@ -365,6 +364,8 @@ def remote_openai_catalog_payload(
             )
             for model in profile.static_models
         ]
+        if using_static_manifest
+        else list(discovered_models)
     )
     default_model = (
         profile.default_model
@@ -442,9 +443,9 @@ def remote_openai_catalog_payload(
         "available": True,
         "startable": ready,
         "discovery_status": "ready" if ready else "failed",
-        "discovery_error": "" if ready else discovery_error,
-        "discovery_error_code": "" if ready else discovery_error_code,
-        "catalog_source": "discovered" if profile.discovery_path else "static_manifest",
+        "discovery_error": discovery_error,
+        "discovery_error_code": discovery_error_code,
+        "catalog_source": "static_manifest" if using_static_manifest else "discovered",
         "fixed_values": {},
         "controls": controls,
         "workspace_required": False,

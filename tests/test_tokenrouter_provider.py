@@ -10,6 +10,7 @@ from agentsassemble.providers.remote_openai import (
     RemoteOpenAICompatibleRuntime,
     discover_remote_openai_models,
     remote_openai_catalog_payload,
+    remote_openai_discovery_failure_payload,
     remote_openai_profile,
 )
 
@@ -23,6 +24,25 @@ class _Response(io.BytesIO):
 
 
 class TokenRouterProviderTests(unittest.TestCase):
+    def test_public_catalog_failure_keeps_the_static_free_model_startable(self):
+        profile = remote_openai_profile("tokenrouter")
+        self.assertIsNotNone(profile)
+
+        class PublicCatalogRejected(RuntimeError):
+            code = "provider_turn_failed"
+
+        payload = remote_openai_discovery_failure_payload(
+            profile,
+            PublicCatalogRejected("authentication required"),
+        )
+
+        self.assertTrue(payload["startable"])
+        self.assertEqual(payload["discovery_error_code"], "provider_turn_failed")
+        self.assertEqual(
+            [option["value"] for option in payload["controls"][0]["options"]],
+            ["moonshotai/kimi-k3-free"],
+        )
+
     def test_provider_catalog_uses_tokenrouter_models_instead_of_one_bundled_choice(self):
         profile = remote_openai_profile("tokenrouter")
         self.assertIsNotNone(profile)

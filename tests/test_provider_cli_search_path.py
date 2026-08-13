@@ -46,7 +46,6 @@ class ProviderCliSearchPathTests(unittest.TestCase):
         catalog = ProviderCapabilityCatalog(
             resolver=lambda name: f"/fake/{name}" if name == "freebuff" else None,
             runner=lambda _command, _timeout: (1, "", "not used"),
-            secret_resolver=lambda _provider_id: "",
         )
         definition = native_cli_provider_definition("freebuff")
         assert definition is not None

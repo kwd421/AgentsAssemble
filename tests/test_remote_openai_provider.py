@@ -106,7 +106,6 @@ class RemoteOpenAIProviderTests(unittest.TestCase):
             resolver=lambda _executable: None,
             claude_model_discovery=lambda _executable: [],
             claude_xhigh_model_discovery=lambda _executable: [],
-            secret_resolver=lambda provider_id: secret if provider_id == "openrouter" else "",
             remote_model_discovery=lambda profile, _api_key: (
                 (_ for _ in ()).throw(
                     ReflectedProviderError(f"Authorization: Bearer {secret}")
@@ -140,7 +139,6 @@ class RemoteOpenAIProviderTests(unittest.TestCase):
             resolver=lambda _executable: None,
             claude_model_discovery=lambda _executable: [],
             claude_xhigh_model_discovery=lambda _executable: [],
-            secret_resolver=lambda provider_id: secret if provider_id == "openrouter" else "",
             remote_model_discovery=lambda profile, _api_key: (
                 models if profile.provider_id == "openrouter" else []
             ),

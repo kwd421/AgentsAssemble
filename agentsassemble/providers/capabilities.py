@@ -38,7 +38,6 @@ from agentsassemble.providers.remote_openai import (
     remote_openai_discovery_failure_payload,
     remote_openai_profiles,
 )
-from agentsassemble.providers.secrets import PROVIDER_SECRETS, validate_provider_secret
 from agentsassemble.providers.selection import (
     ProviderCatalogSelectionError,
     ValidatedProviderSelection,
@@ -48,7 +47,6 @@ from agentsassemble.providers.selection import (
 ProbeRunner = Callable[[list[str], float], tuple[int, str, str]]
 ClaudeModelDiscovery = Callable[[str], list[str]]
 RemoteModelDiscovery = Callable[[RemoteOpenAIProfile, str], list[dict[str, object]]]
-SecretResolver = Callable[[str], str]
 CatalogListener = Callable[[dict[str, object]], None]
 
 
@@ -83,7 +81,6 @@ class ProviderCapabilityCatalog:
                 api_key=api_key,
             )
         ),
-        secret_resolver: SecretResolver = lambda _provider_id: "",
         grok_custom_model_discovery: Callable[[], set[str]] = discover_grok_custom_model_ids,
         ttl_seconds: float = DEFAULT_CATALOG_TTL_SECONDS,
     ) -> None:
@@ -92,7 +89,6 @@ class ProviderCapabilityCatalog:
         self._claude_model_discovery = claude_model_discovery
         self._claude_xhigh_model_discovery = claude_xhigh_model_discovery
         self._remote_model_discovery = remote_model_discovery
-        self._secret_resolver = secret_resolver
         self._grok_custom_model_discovery = grok_custom_model_discovery
         self._ttl_seconds = max(1.0, float(ttl_seconds))
         self._lock = threading.RLock()
@@ -813,25 +809,11 @@ class ProviderCapabilityCatalog:
     ) -> dict[str, object]:
         if not profile.discovery_path:
             return remote_openai_catalog_payload(profile)
-        credential = ""
         try:
-            resolved_credential = self._secret_resolver(profile.provider_id)
-            if resolved_credential:
-                credential = validate_provider_secret(resolved_credential)
-            models = self._remote_model_discovery(
-                profile,
-                credential,
-            )
-            models = enforce_remote_openai_catalog_policy(
-                models,
-                exact_sensitive_values=(credential,) if credential else (),
-            )
+            models = self._remote_model_discovery(profile, "")
+            models = enforce_remote_openai_catalog_policy(models)
         except Exception as error:
-            return remote_openai_discovery_failure_payload(
-                profile,
-                error,
-                exact_sensitive_values=(credential,) if credential else (),
-            )
+            return remote_openai_discovery_failure_payload(profile, error)
         if not models:
             return remote_openai_catalog_payload(
                 profile,
@@ -1576,9 +1558,7 @@ def _unique(values: list[str]) -> list[str]:
     return list(dict.fromkeys(value for value in values if value))
 
 
-PROVIDER_CAPABILITIES = ProviderCapabilityCatalog(
-    secret_resolver=PROVIDER_SECRETS.get,
-)
+PROVIDER_CAPABILITIES = ProviderCapabilityCatalog()
 
 
 def provider_catalog_payload(*, refresh: bool = False) -> list[dict[str, object]]:
