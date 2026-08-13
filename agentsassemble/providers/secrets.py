@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import os
+import platform
 from typing import Protocol
 
 from agentsassemble.diagnostics.sensitive_text import (
@@ -59,6 +60,9 @@ class ProviderSecretStore:
         environment: dict[str, str] | None = None,
         service_name: str = "AgentsAssemble",
     ) -> None:
+        self._metadata_probe = (
+            _macos_keyring_item_exists if backend is None else None
+        )
         self._backend = backend if backend is not None else _load_keyring_backend()
         self._environment = environment if environment is not None else os.environ
         self._service_name = service_name
@@ -72,11 +76,17 @@ class ProviderSecretStore:
 
     def status(self, provider_id: str) -> dict[str, object]:
         clean_provider = _provider_id(provider_id)
-        keyring_value = self._keyring_value(clean_provider)
+        keyring_configured = self._keyring_has_value(clean_provider)
         environment_configured = bool(
             str(self._environment.get(_environment_key(clean_provider)) or "").strip()
         )
-        source = "keyring" if keyring_value else "environment" if environment_configured else "missing"
+        source = (
+            "keyring"
+            if keyring_configured
+            else "environment"
+            if environment_configured
+            else "missing"
+        )
         return {
             "configured": source != "missing",
             "source": source,
@@ -112,6 +122,18 @@ class ProviderSecretStore:
         except Exception as error:
             raise ProviderSecretStoreUnavailable("secure_store_unavailable") from error
 
+    def _keyring_has_value(self, provider_id: str) -> bool:
+        if self._backend is None:
+            return False
+        if self._metadata_probe is not None:
+            try:
+                configured = self._metadata_probe(self._service_name, provider_id)
+            except Exception as error:
+                raise ProviderSecretStoreUnavailable("secure_store_unavailable") from error
+            if configured is not None:
+                return configured
+        return bool(self._keyring_value(provider_id))
+
 
 def _load_keyring_backend() -> KeyringBackend | None:
     try:
@@ -126,6 +148,30 @@ def _load_keyring_backend() -> KeyringBackend | None:
         return keyring
     except Exception as error:
         return _UnavailableKeyringBackend(error)
+
+
+def _macos_keyring_item_exists(service_name: str, username: str) -> bool | None:
+    """Check Keychain metadata without requesting secret data or an ACL prompt."""
+
+    if platform.system() != "Darwin":
+        return None
+    try:
+        from keyring.backends.macOS import api
+    except (ImportError, RuntimeError):
+        return None
+    query = api.create_query(
+        kSecClass=api.k_("kSecClassGenericPassword"),
+        kSecMatchLimit=api.k_("kSecMatchLimitOne"),
+        kSecAttrService=service_name,
+        kSecAttrAccount=username,
+    )
+    status = api.SecItemCopyMatching(query, None)
+    if status == 0:
+        return True
+    if status == api.error.item_not_found:
+        return False
+    api.Error.raise_for_status(status)
+    return None
 
 
 def _provider_id(value: object) -> str:
