@@ -14,7 +14,7 @@ class SubscriptionCatalogProvenance:
 
 
 SUBSCRIPTION_CATALOG_PROVENANCE: dict[str, SubscriptionCatalogProvenance] = {
-    "codex": SubscriptionCatalogProvenance(source="bundled_registry"),
+    "codex": SubscriptionCatalogProvenance(source="managed_cli_catalog"),
     "antigravity": SubscriptionCatalogProvenance(source="managed_cli_catalog"),
     "grok": SubscriptionCatalogProvenance(
         source="managed_cli_catalog",

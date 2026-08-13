@@ -548,7 +548,7 @@ class ProviderCapabilityCatalog:
         if provider_id == "codex":
             output = self._model_probe(
                 provider_id,
-                [executable, "debug", "models", "--bundled"],
+                [executable, "debug", "models"],
                 6.0,
             )
             return _codex_controls(output)
