@@ -8,6 +8,11 @@ import runpy
 import sys
 from pathlib import Path
 
+try:
+    import resource
+except ImportError:  # Windows does not expose POSIX resource limits.
+    resource = None
+
 
 def _inside(path: Path, roots: tuple[Path, ...]) -> bool:
     resolved = path.resolve(strict=False)
@@ -52,6 +57,21 @@ def _install_audit_policy(*, plugin_root: Path, storage_root: Path) -> None:
     sys.addaudithook(audit)
 
 
+def _install_resource_limits() -> None:
+    if resource is None:
+        return
+    resource.setrlimit(resource.RLIMIT_NOFILE, (64, 64))
+    resource.setrlimit(resource.RLIMIT_FSIZE, (16 * 1024 * 1024, 16 * 1024 * 1024))
+    if hasattr(resource, "RLIMIT_AS"):
+        try:
+            resource.setrlimit(
+                resource.RLIMIT_AS,
+                (512 * 1024 * 1024, 512 * 1024 * 1024),
+            )
+        except (OSError, ValueError):
+            pass
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(add_help=False)
     parser.add_argument("--plugin-root", required=True)
@@ -78,6 +98,7 @@ def main() -> int:
     sys.path[:] = [str(entry.parent)] + [
         value for value in sys.path if value and _inside(Path(value), (Path(sys.base_prefix),))
     ]
+    _install_resource_limits()
     _install_audit_policy(plugin_root=plugin_root, storage_root=storage)
     runpy.run_path(str(entry), run_name="__main__")
     return 0

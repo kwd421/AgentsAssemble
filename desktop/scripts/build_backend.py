@@ -43,6 +43,8 @@ def main() -> int:
         "agentsassemble",
         "--add-data",
         f"{frontend_dist}{os.pathsep}frontend/dist",
+        "--add-data",
+        f"{PROJECT_ROOT / 'plugins'}{os.pathsep}plugins",
         str(DESKTOP_ROOT / "server_entry.py"),
     ]
     subprocess.run(command, cwd=PROJECT_ROOT, check=True)

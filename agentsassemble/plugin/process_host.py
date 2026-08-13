@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import json
-import os
 import subprocess
 import sys
 import threading
@@ -16,11 +15,6 @@ from agentsassemble.plugin.manifest import PluginManifest
 from agentsassemble.providers.process_environment import sanitized_child_environment
 from agentsassemble.room.text import clean_room_text
 
-try:
-    import resource
-except ImportError:  # Windows does not expose POSIX resource limits.
-    resource = None
-
 EventHandler = Callable[[dict[str, object]], None]
 
 
@@ -31,6 +25,26 @@ class PluginProcessCommandError(RuntimeError):
         super().__init__(message)
         self.code = clean_room_text(code, limit=96) or "plugin_command_failed"
         self.command_id = clean_room_text(command_id, limit=64)
+
+
+def _plugin_runner_command(
+    *,
+    plugin_root: Path,
+    entry: Path,
+    storage_dir: Path,
+) -> list[str]:
+    arguments = [
+        "--plugin-root",
+        str(plugin_root),
+        "--entry",
+        str(entry),
+        "--storage",
+        str(storage_dir),
+    ]
+    if getattr(sys, "frozen", False):
+        return [sys.executable, "--internal-plugin-runner", *arguments]
+    runner = Path(__file__).with_name("isolated_runner.py").resolve()
+    return [sys.executable, "-I", "-u", str(runner), *arguments]
 
 
 @dataclass
@@ -79,23 +93,12 @@ class PluginProcessHost:
                     "TMPDIR": str(self.storage_dir),
                 }
             )
-            runner = Path(__file__).with_name("isolated_runner.py").resolve()
-            process_options: dict[str, object] = {}
-            if os.name == "posix":
-                process_options["preexec_fn"] = _limit_plugin_process
             process = self._popen_factory(
-                [
-                    sys.executable,
-                    "-I",
-                    "-u",
-                    str(runner),
-                    "--plugin-root",
-                    str(self.manifest.root),
-                    "--entry",
-                    str(entry),
-                    "--storage",
-                    str(self.storage_dir),
-                ],
+                _plugin_runner_command(
+                    plugin_root=self.manifest.root,
+                    entry=entry,
+                    storage_dir=self.storage_dir,
+                ),
                 stdin=subprocess.PIPE,
                 stdout=subprocess.PIPE,
                 stderr=subprocess.PIPE,
@@ -104,7 +107,6 @@ class PluginProcessHost:
                 cwd=str(self.manifest.root),
                 env=env,
                 start_new_session=True,
-                **process_options,
             )
             self._process = process
             self._reader = threading.Thread(
@@ -296,18 +298,5 @@ class PluginProcessHost:
                     "room_id": self.room_id,
                 }
             )
-
-
-def _limit_plugin_process() -> None:
-    if resource is None:
-        return
-    resource.setrlimit(resource.RLIMIT_NOFILE, (64, 64))
-    resource.setrlimit(resource.RLIMIT_FSIZE, (16 * 1024 * 1024, 16 * 1024 * 1024))
-    if hasattr(resource, "RLIMIT_AS"):
-        try:
-            resource.setrlimit(resource.RLIMIT_AS, (512 * 1024 * 1024, 512 * 1024 * 1024))
-        except (OSError, ValueError):
-            pass
-
 
 __all__ = ["PluginProcessCommandError", "PluginProcessHost"]

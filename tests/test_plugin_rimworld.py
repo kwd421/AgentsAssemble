@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 import json
+import subprocess
+import sys
 import tempfile
 import time
 import unittest
@@ -21,6 +23,51 @@ from agentsassemble.web.static import ReactStaticTransport
 
 
 class PluginRimworldTests(unittest.TestCase):
+    def test_desktop_internal_runner_starts_the_bundled_plugin_process(self) -> None:
+        project_root = Path(__file__).resolve().parents[1]
+        plugin_root = project_root / "plugins" / "rimworld"
+        entry = plugin_root / "server" / "main.py"
+        with tempfile.TemporaryDirectory() as temp_dir:
+            completed = subprocess.run(
+                [
+                    sys.executable,
+                    "-m",
+                    "desktop.server_entry",
+                    "--internal-plugin-runner",
+                    "--plugin-root",
+                    str(plugin_root),
+                    "--entry",
+                    str(entry),
+                    "--storage",
+                    temp_dir,
+                ],
+                input=(
+                    json.dumps(
+                        {
+                            "type": "plugin.start",
+                            "room_id": "bundled-room",
+                            "plugin_id": "rimworld",
+                            "storage_dir": temp_dir,
+                            "initial_state": {},
+                        }
+                    )
+                    + "\n"
+                    + json.dumps({"type": "plugin.stop"})
+                    + "\n"
+                ),
+                text=True,
+                capture_output=True,
+                timeout=10,
+                check=False,
+                cwd=project_root,
+            )
+
+        self.assertEqual(completed.returncode, 0, msg=completed.stderr)
+        events = [json.loads(line) for line in completed.stdout.splitlines()]
+        snapshot = next(event for event in events if event.get("type") == "plugin.snapshot")
+        self.assertEqual(snapshot["payload"]["revision"], 0)
+        self.assertEqual(len(snapshot["payload"]["colonists"]), 3)
+
     def test_story_event_wakes_only_the_colonists_assigned_provider(self) -> None:
         requested: list[tuple[str, str]] = []
         router = ActivityPluginWakeRouter(
