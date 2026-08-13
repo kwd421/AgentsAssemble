@@ -53,13 +53,28 @@ def run_gui_command(
     *,
     serve_gui: Callable[..., object],
 ) -> int:
+    from agentsassemble.application.local_engine_registry import (
+        discover_reusable_local_engine,
+    )
     from agentsassemble.application.user_data_root import resolve_output_root
 
+    output_root = resolve_output_root(getattr(args, "output_root", None))
+    existing = discover_reusable_local_engine(output_root)
+    if existing is not None:
+        print(
+            f"AgentsAssemble local engine already running for {output_root}: {existing}",
+            flush=True,
+        )
+        print(
+            "Reusing the existing engine instead of starting a second process.",
+            flush=True,
+        )
+        return 0
     try:
         serve_gui(
             host=args.host,
             port=args.port,
-            output_root=resolve_output_root(getattr(args, "output_root", None)),
+            output_root=output_root,
             room_repository_backend=args.room_repository_backend,
             room_postgres_dsn_env=args.room_postgres_dsn_env,
             attention_shadow_mode=args.attention_shadow_mode,

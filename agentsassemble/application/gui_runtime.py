@@ -81,6 +81,7 @@ def serve_gui_runtime(
     from agentsassemble.application.user_data_root import resolve_output_root
 
     root = resolve_output_root(output_root)
+    advertised_server_url = ""
 
     served_frontend_root = materialize_frontend_release(
         frontend_dist_root,
@@ -311,6 +312,17 @@ def serve_gui_runtime(
             frontend_dist_root=served_frontend_root,
             room_repository_backend=room_repository_settings.backend,
         )
+        from agentsassemble.application.local_engine_registry import (
+            write_local_engine_registry,
+        )
+
+        write_local_engine_registry(
+            root,
+            server_url=server_url,
+            pid=os.getpid(),
+            instance_id=runtime_instance_id,
+        )
+        advertised_server_url = server_url
         server.serve_forever()
     except KeyboardInterrupt:
         print("\nStopping AgentsAssemble GUI")
@@ -332,5 +344,18 @@ def serve_gui_runtime(
             else:
                 services.shutdown(transport_close=server.server_close)
         finally:
+            try:
+                from agentsassemble.application.local_engine_registry import (
+                    clear_local_engine_registry,
+                )
+
+                if advertised_server_url:
+                    clear_local_engine_registry(
+                        root,
+                        expected_pid=os.getpid(),
+                        expected_url=advertised_server_url,
+                    )
+            except Exception:
+                pass
             if stable_entry_configured:
                 reset_stable_entry_publisher()

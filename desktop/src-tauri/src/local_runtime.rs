@@ -45,6 +45,12 @@ impl LocalRuntime {
                 .ok_or_else(|| "The owned local runtime did not report its address.".to_owned())?;
             return self.wait_until_ready(&server, &stderr_path);
         }
+        // Prefer one engine per shared data root: attach to a healthy registry
+        // entry instead of starting a second process.
+        if let Some(existing) = discover_reusable_engine(&runtime_root) {
+            *self.server.lock().expect("local runtime server lock") = Some(existing.clone());
+            return Ok(existing);
+        }
         if let Some(mut stale_child) = self.child.lock().expect("local runtime lock").take() {
             terminate_process_tree(&mut stale_child);
         }
@@ -97,7 +103,11 @@ impl LocalRuntime {
 
         let server = self.wait_for_reported_server(reported_server, &stderr_path)?;
         *self.server.lock().expect("local runtime server lock") = Some(server.clone());
-        self.wait_until_ready(&server, &stderr_path)
+        let ready = self.wait_until_ready(&server, &stderr_path)?;
+        if let Some(child) = self.child.lock().expect("local runtime lock").as_ref() {
+            let _ = write_local_engine_registry(&runtime_root, &ready, child.id());
+        }
+        Ok(ready)
     }
 
     fn wait_for_reported_server(
@@ -196,6 +206,13 @@ impl LocalRuntime {
     }
 
     pub fn stop(&self) {
+        let owned_url = self.current_server();
+        let owned_pid = self
+            .child
+            .lock()
+            .expect("local runtime lock")
+            .as_ref()
+            .map(Child::id);
         if let Some(mut child) = self.child.lock().expect("local runtime lock").take() {
             terminate_process_tree(&mut child);
         }
@@ -203,6 +220,9 @@ impl LocalRuntime {
             .lock()
             .expect("local runtime server lock")
             .take();
+        if let (Some(url), Some(pid)) = (owned_url, owned_pid) {
+            clear_local_engine_registry(&default_user_data_root(), &url, pid);
+        }
     }
 }
 
@@ -338,6 +358,89 @@ fn source_python(source_root: &Path) -> PathBuf {
         return virtualenv;
     }
     PathBuf::from(if cfg!(windows) { "python" } else { "python3" })
+}
+
+fn write_local_engine_registry(output_root: &Path, server: &Url, pid: u32) -> Result<(), String> {
+    let path = output_root.join("runtime/local-engine.json");
+    if let Some(parent) = path.parent() {
+        fs::create_dir_all(parent)
+            .map_err(|error| format!("cannot create {}: {error}", parent.display()))?;
+    }
+    let payload = serde_json::json!({
+        "schema": 1,
+        "server_url": server.as_str(),
+        "pid": pid,
+        "instance_id": format!("desktop-{pid}"),
+        "updated_at": std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map(|value| value.as_secs_f64())
+            .unwrap_or(0.0),
+    });
+    let encoded = serde_json::to_string_pretty(&payload)
+        .map_err(|error| format!("cannot encode local engine registry: {error}"))?;
+    fs::write(&path, encoded + "\n")
+        .map_err(|error| format!("cannot write {}: {error}", path.display()))
+}
+
+fn clear_local_engine_registry(output_root: &Path, server: &Url, pid: u32) {
+    let path = output_root.join("runtime/local-engine.json");
+    let Ok(raw) = fs::read_to_string(&path) else {
+        return;
+    };
+    let Ok(value) = serde_json::from_str::<serde_json::Value>(&raw) else {
+        return;
+    };
+    let file_pid = value.get("pid").and_then(|v| v.as_u64()).unwrap_or(0);
+    let file_url = value
+        .get("server_url")
+        .and_then(|v| v.as_str())
+        .unwrap_or("")
+        .trim()
+        .trim_end_matches('/');
+    let want = server.as_str().trim_end_matches('/');
+    if file_pid == u64::from(pid) && file_url == want {
+        let _ = fs::remove_file(path);
+    }
+}
+
+/// Read `runtime/local-engine.json` written by a live GUI for this data root.
+fn discover_reusable_engine(output_root: &Path) -> Option<Url> {
+    let path = output_root.join("runtime/local-engine.json");
+    let raw = fs::read_to_string(path).ok()?;
+    let value: serde_json::Value = serde_json::from_str(&raw).ok()?;
+    if value.get("schema").and_then(|v| v.as_u64()) != Some(1) {
+        return None;
+    }
+    let server_url = value.get("server_url")?.as_str()?.trim();
+    if server_url.is_empty() {
+        return None;
+    }
+    if let Some(pid) = value.get("pid").and_then(|v| v.as_u64()) {
+        if pid > 0 && !process_is_running(pid as u32) {
+            return None;
+        }
+    }
+    let server = validate_reported_server(server_url).ok()?;
+    if !agentsassemble_server_is_ready(&server) {
+        return None;
+    }
+    Some(server)
+}
+
+#[cfg(unix)]
+fn process_is_running(pid: u32) -> bool {
+    if pid == 0 {
+        return false;
+    }
+    let result = unsafe { libc::kill(pid as i32, 0) };
+    result == 0 || std::io::Error::last_os_error().raw_os_error() == Some(libc::EPERM)
+}
+
+#[cfg(windows)]
+fn process_is_running(pid: u32) -> bool {
+    // Best-effort: absence of a cheap cross-check still allows readiness probe.
+    let _ = pid;
+    true
 }
 
 /// Shared with Python `agentsassemble.application.user_data_root.default_output_root`.
