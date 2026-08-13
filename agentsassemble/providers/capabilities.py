@@ -975,7 +975,7 @@ def _freebuff_controls(labels: list[str]) -> list[dict[str, object]]:
             "model",
             "모델",
             [
-                _option(
+                _model_option(
                     label,
                     label,
                     description="Freebuff live model picker label.",

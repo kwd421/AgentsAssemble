@@ -37,7 +37,11 @@ def _room_interfaces(provider_kind: object = "") -> tuple[str, str, str]:
             "the `publish_message` MCP tool with `content` and, when deliberately "
             "handing the floor to one participant, `next_agent_id`"
         )
-    elif kind in {"claude_code", "antigravity_live_session"}:
+    elif kind in {
+        "claude_code",
+        "antigravity_live_session",
+        "freebuff_live_session",
+    }:
         read_interface = "terminal command `agentsassemble-room read`"
         speak_interface = (
             'terminal command `agentsassemble-room speak "<message>"`, or '

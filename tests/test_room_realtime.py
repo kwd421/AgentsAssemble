@@ -152,6 +152,10 @@ def _test_provider_catalog() -> ProviderCapabilityCatalog:
         runner=runner,
         resolver=lambda executable: f"/bin/{executable}",
         claude_model_discovery=lambda _executable: ["claude-haiku-4-5"],
+        freebuff_model_discovery=lambda _executable: [
+            "DeepSeek V4 Flash 07/31",
+            "MiMo 2.5",
+        ],
     )
     catalog.snapshot(refresh=True)
     return catalog
@@ -3861,6 +3865,29 @@ class RoomRealtimeControllerTests(
         self.assertTrue(session["runtime_profile_key"])
         self.assertNotIn("-p", session["command_configured"])
         self.assertNotIn("--print", session["command_configured"])
+
+    def test_agent_create_accepts_a_discovered_freebuff_model_and_persists_exact_selection(self):
+        created = self._command(
+            "req-create-freebuff",
+            "agent.create",
+            {
+                "provider_id": "freebuff",
+                "display_name": "Freebuff DeepSeek",
+                "workspace": str(self.root),
+                "model": "DeepSeek V4 Flash 07/31",
+                "permission_mode": "workspace_write",
+                "start": True,
+            },
+        )
+        agent_id = created["result"]["agent_session"]["session_id"]
+        session = RoomStore(self.root).session("general", agent_id)
+
+        self.assertTrue(created["accepted"])
+        self.assertEqual(self.manager.starts[-1], ("general", agent_id))
+        self.assertEqual(session["provider_kind"], "freebuff_live_session")
+        self.assertEqual(session["model"], "DeepSeek V4 Flash 07/31")
+        self.assertEqual(session["model_selection_kind"], "exact")
+        self.assertEqual(session["permission_mode"], "workspace_write")
 
     def test_agent_create_rejects_stale_catalog_and_unknown_model(self):
         with self.assertRaises(RoomCommandRejected) as stale:
