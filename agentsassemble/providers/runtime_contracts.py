@@ -15,6 +15,11 @@ AMBIENT_OBSERVATION: RoomObservationKind = "ambient_observation"
 ROOM_OBSERVATION_KINDS = frozenset({ORDERED_FLOOR, AMBIENT_OBSERVATION})
 
 
+DeclineReason = Literal[
+    "nothing_useful_to_add",
+    "not_addressed",
+    "duplicate",
+]
 SUPPORTED_DECLINE_REASONS = frozenset(
     {"nothing_useful_to_add", "not_addressed", "duplicate"}
 )
@@ -152,6 +157,7 @@ __all__ = [
     "AUTOMATIC_FINAL",
     "AdapterContractError",
     "BridgeRuntime",
+    "DeclineReason",
     "EXPLICIT_ROOM_PORTAL",
     "ORDERED_FLOOR",
     "PublicationMode",

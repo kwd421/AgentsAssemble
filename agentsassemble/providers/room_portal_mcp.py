@@ -7,6 +7,7 @@ from pathlib import Path
 
 from agentsassemble.providers.room_portal import RoomPortal
 from agentsassemble.providers.room_tool_names import provider_room_tool_name
+from agentsassemble.providers.runtime_contracts import DeclineReason
 
 
 def serve_room_portal_mcp(root: str | Path) -> None:
@@ -38,8 +39,8 @@ def serve_room_portal_mcp(root: str | Path) -> None:
         return "Published to the shared room."
 
     @server.tool()
-    def decline_to_speak(reason_code: str) -> dict[str, object]:
-        """End this wake without posting when speaking would add no value."""
+    def decline_to_speak(reason_code: DeclineReason) -> dict[str, object]:
+        """End this wake without posting, using one advertised reason code."""
         return portal.decline_to_speak(reason_code)
 
     @server.tool()

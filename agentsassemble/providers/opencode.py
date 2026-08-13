@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import json
-import secrets
 import threading
 import time
 from collections.abc import Callable
@@ -16,6 +15,10 @@ from agentsassemble.providers.opencode_provider_requests import (
     opencode_error_message,
 )
 from agentsassemble.providers.opencode_server import OpenCodeServerProcess
+from agentsassemble.providers.opencode_transcript import (
+    assistant_parent_id,
+    assistant_text,
+)
 from agentsassemble.providers.provider_requests import ProviderRequestHandler
 from agentsassemble.providers.remote_http import safe_loopback_urlopen
 from agentsassemble.providers.turn_progress import (
@@ -137,6 +140,8 @@ class OpenCodeRuntime:
         reasoning_last_emitted: dict[str, str] = {}
         active_reasoning_ids: set[str] = set()
         provider_error = ""
+        prompt_result: dict[str, object] = {}
+        prompt_thread: threading.Thread | None = None
 
         def handle_provider_request(callback: Callable[[], None]) -> None:
             run_during_provider_wait(progress, callback)
@@ -240,13 +245,28 @@ class OpenCodeRuntime:
             event_response = self._open("GET", "/event", timeout_seconds=timeout_seconds, stream=True)
             with self._lock:
                 self._response = event_response
-            request_message_id = _new_message_id()
-            self._prompt_async(
-                session_id,
-                prompt,
-                message_id=request_message_id,
-                timeout_seconds=min(10.0, timeout_seconds),
+            request_message_id = ""
+
+            def run_prompt() -> None:
+                try:
+                    prompt_result["message"] = self._prompt(
+                        session_id,
+                        prompt,
+                        timeout_seconds=timeout_seconds,
+                    )
+                except Exception as error:
+                    prompt_result["error"] = error
+
+            # OpenCode's prompt_async endpoint can persist a follow-up user
+            # message without waking an idle session. Keep consuming the SSE
+            # stream on this thread for tools and deltas while the waking,
+            # synchronous prompt request runs alongside it.
+            prompt_thread = threading.Thread(
+                target=run_prompt,
+                name=f"opencode-prompt-{self.agent_id}",
+                daemon=True,
             )
+            prompt_thread.start()
             for raw_line in event_response:
                 if self._interrupted.is_set():
                     raise RuntimeError("OpenCode turn interrupted.")
@@ -298,8 +318,13 @@ class OpenCodeRuntime:
                     progress.record()
                     info = properties.get("info") if isinstance(properties.get("info"), dict) else {}
                     message_id = str(info.get("id") or "")
-                    if str(info.get("role") or "") == "assistant" and message_id:
-                        if str(info.get("parentID") or "") != request_message_id:
+                    role = str(info.get("role") or "")
+                    if role == "user" and message_id and not request_message_id:
+                        request_message_id = message_id
+                        continue
+                    if role == "assistant" and message_id:
+                        parent_message_id = str(info.get("parentID") or "")
+                        if not request_message_id or parent_message_id != request_message_id:
                             ignored_assistant_message_ids.add(message_id)
                             pending_parts.pop(message_id, None)
                             for key in tuple(buffered_deltas):
@@ -375,11 +400,12 @@ class OpenCodeRuntime:
                     continue
                 if event_type == "session.idle":
                     progress.record()
-                    current_final = self._assistant_text_for_parent(
-                        session_id,
-                        request_message_id,
-                        timeout_seconds=max(1.0, progress.remaining()),
-                    )
+                    if request_message_id:
+                        current_final = self._assistant_text_for_parent(
+                            session_id,
+                            request_message_id,
+                            timeout_seconds=max(1.0, progress.remaining()),
+                        )
                     if not assistant_message_ids and not current_final:
                         if provider_error:
                             raise RuntimeError(provider_error)
@@ -387,11 +413,25 @@ class OpenCodeRuntime:
                     for reasoning_id in active_reasoning_ids:
                         emit_reasoning(reasoning_id, completed=True)
                     break
-            final = current_final or self._assistant_text_for_parent(
-                session_id,
-                request_message_id,
-                timeout_seconds=max(1.0, progress.remaining()),
-            )
+            prompt_thread.join(timeout=min(5.0, max(1.0, progress.remaining())))
+            if prompt_thread.is_alive():
+                raise TimeoutError("OpenCode prompt response did not settle after the session became idle.")
+            prompt_error = prompt_result.get("error")
+            if isinstance(prompt_error, Exception):
+                raise prompt_error
+            prompt_message = prompt_result.get("message")
+            prompt_parent_id = assistant_parent_id(prompt_message)
+            if prompt_parent_id:
+                if request_message_id and prompt_parent_id != request_message_id:
+                    raise RuntimeError("OpenCode prompt response did not match the observed user turn.")
+                request_message_id = prompt_parent_id
+            final = current_final or assistant_text(prompt_message)
+            if not final and request_message_id:
+                final = self._assistant_text_for_parent(
+                    session_id,
+                    request_message_id,
+                    timeout_seconds=max(1.0, progress.remaining()),
+                )
             content = final or emitted.strip()
             if not content:
                 if provider_error:
@@ -419,6 +459,10 @@ class OpenCodeRuntime:
         except Exception as error:
             with self._lock:
                 self._last_error = type(error).__name__
+            # OpenCode can continue the prompt after the event subscriber
+            # disconnects. Abort the owning session so a failed room turn does
+            # not keep issuing hidden provider requests in the background.
+            self.interrupt()
             raise
         finally:
             with self._lock:
@@ -429,6 +473,9 @@ class OpenCodeRuntime:
                     response.close()
                 except Exception:
                     pass
+            if prompt_thread is not None and prompt_thread.is_alive():
+                prompt_thread.join(timeout=5.0)
+
     def interrupt(self) -> None:
         self._interrupted.set()
         with self._lock:
@@ -517,16 +564,14 @@ class OpenCodeRuntime:
             raise RuntimeError("OpenCode did not return a session id.")
         return session_id
 
-    def _prompt_async(
+    def _prompt(
         self,
         session_id: str,
         prompt: str,
         *,
-        message_id: str,
         timeout_seconds: float,
-    ) -> None:
+    ) -> dict[str, object]:
         payload = {
-            "messageID": message_id,
             "model": {"providerID": self.provider_id, "modelID": self.model_id},
             "parts": [{"type": "text", "text": prompt}],
         }
@@ -534,11 +579,15 @@ class OpenCodeRuntime:
             payload["variant"] = self.variant
         response = self._open(
             "POST",
-            f"/session/{quote(session_id)}/prompt_async",
+            f"/session/{quote(session_id)}/message",
             payload=payload,
             timeout_seconds=timeout_seconds,
         )
+        result = json.loads(response.read().decode("utf-8", errors="replace"))
         response.close()
+        if not isinstance(result, dict):
+            raise RuntimeError("OpenCode prompt response was not an assistant message.")
+        return result
 
     def _post_json(
         self,
@@ -734,7 +783,3 @@ def _now() -> str:
     from datetime import UTC, datetime
 
     return datetime.now(UTC).isoformat()
-
-
-def _new_message_id() -> str:
-    return f"msg_{secrets.token_hex(13)}"

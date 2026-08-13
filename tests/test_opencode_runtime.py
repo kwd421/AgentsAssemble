@@ -30,6 +30,45 @@ def _event(event_type, properties):
 
 
 class OpenCodeRuntimeTests(unittest.TestCase):
+    def test_event_stream_failure_aborts_the_remote_session(self):
+        session_id = "session-1"
+        state = {"abort_count": 0}
+
+        class FailingStream:
+            def __iter__(self):
+                raise TimeoutError("timed out")
+
+            def close(self):
+                return None
+
+        def opener(request, timeout):
+            del timeout
+            if "/event?" in request.full_url:
+                return FailingStream()
+            if "/message?" in request.full_url and request.get_method() == "POST":
+                return _Response(payload={})
+            if "/abort?" in request.full_url:
+                state["abort_count"] += 1
+                return _Response(payload=True)
+            raise AssertionError(request.full_url)
+
+        with tempfile.TemporaryDirectory() as temp_dir:
+            runtime = OpenCodeRuntime(
+                "opencode",
+                endpoint="http://127.0.0.1:1",
+                workspace="/tmp",
+                state_dir=Path(temp_dir),
+                opener=opener,
+            )
+            runtime._session_id = session_id
+            runtime._running = True
+            runtime.send("reply")
+
+            with self.assertRaisesRegex(TimeoutError, "timed out"):
+                runtime.read_output(timeout_seconds=5)
+
+        self.assertEqual(state["abort_count"], 1)
+
     def test_default_transport_rejects_an_oversized_json_response(self):
         class OversizedJsonHandler(BaseHTTPRequestHandler):
             def do_POST(self) -> None:
@@ -75,6 +114,13 @@ class OpenCodeRuntimeTests(unittest.TestCase):
                         "message.updated",
                         {
                             "sessionID": session_id,
+                            "info": {"id": state["request_message_id"], "role": "user"},
+                        },
+                    ),
+                    _event(
+                        "message.updated",
+                        {
+                            "sessionID": session_id,
                             "info": {
                                 "id": message_id,
                                 "parentID": state["request_message_id"],
@@ -112,8 +158,8 @@ class OpenCodeRuntimeTests(unittest.TestCase):
             del timeout
             if "/event?" in request.full_url:
                 return SlowStructuredStream()
-            if "/prompt_async?" in request.full_url:
-                state["request_message_id"] = json.loads(request.data.decode("utf-8"))["messageID"]
+            if "/message?" in request.full_url and request.get_method() == "POST":
+                state["request_message_id"] = "msg_server_generated_slow"
                 return _Response(payload={})
             if "/message?" in request.full_url:
                 return _Response(
@@ -154,9 +200,16 @@ class OpenCodeRuntimeTests(unittest.TestCase):
             del timeout
             if "/event?" in request.full_url:
                 return stream
-            if "/prompt_async?" in request.full_url:
-                state["request_message_id"] = json.loads(request.data.decode("utf-8"))["messageID"]
+            if "/message?" in request.full_url and request.get_method() == "POST":
+                state["request_message_id"] = "msg_server_generated_permission"
                 stream._lines = [
+                    _event(
+                        "message.updated",
+                        {
+                            "sessionID": session_id,
+                            "info": {"id": state["request_message_id"], "role": "user"},
+                        },
+                    ),
                     _event(
                         "permission.asked",
                         {
@@ -243,9 +296,16 @@ class OpenCodeRuntimeTests(unittest.TestCase):
             del timeout
             if "/event?" in request.full_url:
                 return stream
-            if "/prompt_async?" in request.full_url:
-                state["request_message_id"] = json.loads(request.data.decode("utf-8"))["messageID"]
+            if "/message?" in request.full_url and request.get_method() == "POST":
+                state["request_message_id"] = "msg_server_generated_question"
                 stream._lines = [
+                    _event(
+                        "message.updated",
+                        {
+                            "sessionID": session_id,
+                            "info": {"id": state["request_message_id"], "role": "user"},
+                        },
+                    ),
                     _event(
                         "question.asked",
                         {
@@ -333,7 +393,7 @@ class OpenCodeRuntimeTests(unittest.TestCase):
             del timeout
             if "/event?" in request.full_url:
                 return stream
-            if "/prompt_async?" in request.full_url:
+            if "/message?" in request.full_url and request.get_method() == "POST":
                 stream._lines = [
                     _event(
                         "session.error",
@@ -432,6 +492,13 @@ class OpenCodeRuntimeTests(unittest.TestCase):
                     "message.updated",
                     {
                         "sessionID": session_id,
+                        "info": {"id": state["request_message_id"], "role": "user"},
+                    },
+                )
+                yield _event(
+                    "message.updated",
+                    {
+                        "sessionID": session_id,
                         "info": {
                             "id": current_message_id,
                             "parentID": state["request_message_id"],
@@ -493,9 +560,8 @@ class OpenCodeRuntimeTests(unittest.TestCase):
             del timeout
             if "/event?" in request.full_url:
                 return DelayedTurnStream()
-            if "/prompt_async?" in request.full_url:
-                payload = json.loads(request.data.decode("utf-8"))
-                state["request_message_id"] = str(payload["messageID"])
+            if "/message?" in request.full_url and request.get_method() == "POST":
+                state["request_message_id"] = "msg_server_generated_current"
                 return _Response(payload={})
             if "/message?" in request.full_url:
                 return _Response(payload=message_history())
@@ -530,6 +596,13 @@ class OpenCodeRuntimeTests(unittest.TestCase):
         message_id = "message-1"
         stream = _Response(
             lines=[
+                _event(
+                    "message.updated",
+                    {
+                        "sessionID": session_id,
+                        "info": {"id": "msg_current_request", "role": "user"},
+                    },
+                ),
                 _event(
                     "message.updated",
                     {
@@ -620,14 +693,7 @@ class OpenCodeRuntimeTests(unittest.TestCase):
             del timeout
             if "/event?" in request.full_url:
                 return stream
-            if "/prompt_async?" in request.full_url:
-                payload = json.loads(request.data.decode("utf-8"))
-                request_message_id = str(payload["messageID"])
-                stream._lines = [
-                    line.replace(b"msg_current_request", request_message_id.encode("utf-8"))
-                    for line in stream._lines
-                ]
-                final._payload[0]["info"]["parentID"] = request_message_id
+            if "/message?" in request.full_url and request.get_method() == "POST":
                 return _Response(payload={})
             if "/message?" in request.full_url:
                 return final

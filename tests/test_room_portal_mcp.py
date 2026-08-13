@@ -9,9 +9,25 @@ from mcp.client.stdio import StdioServerParameters, stdio_client
 
 from agentsassemble.providers.room_portal import RoomPortal
 from agentsassemble.providers.room_portal_mcp import room_portal_mcp_settings
+from agentsassemble.providers.runtime_contracts import SUPPORTED_DECLINE_REASONS
 
 
 class RoomPortalMcpTests(unittest.TestCase):
+    def test_decline_tool_advertises_only_reason_codes_the_room_accepts(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            portal = RoomPortal(Path(temp_dir) / "portal", participant_id="codex")
+            portal.prepare()
+
+            schema = anyio.run(
+                self._decline_tool_schema,
+                room_portal_mcp_settings(portal.root),
+            )
+
+        self.assertEqual(
+            set(schema["properties"]["reason_code"]["enum"]),
+            SUPPORTED_DECLINE_REASONS,
+        )
+
     def test_stdio_tools_read_and_publish_through_private_portal(self):
         with tempfile.TemporaryDirectory() as temp_dir:
             portal = RoomPortal(Path(temp_dir) / "portal", participant_id="codex")
@@ -116,6 +132,20 @@ class RoomPortalMcpTests(unittest.TestCase):
             roll_result,
             choice_result,
         )
+
+    async def _decline_tool_schema(self, settings):
+        parameters = StdioServerParameters(
+            command=settings["command"],
+            args=settings["args"],
+            cwd=settings["cwd"],
+        )
+        with tempfile.TemporaryFile(mode="w+") as stderr:
+            async with stdio_client(parameters, errlog=stderr) as (read_stream, write_stream):
+                async with ClientSession(read_stream, write_stream) as session:
+                    await session.initialize()
+                    tools = await session.list_tools()
+        decline = next(tool for tool in tools.tools if tool.name == "decline_to_speak")
+        return decline.inputSchema
 
 
 if __name__ == "__main__":
