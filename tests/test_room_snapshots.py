@@ -77,6 +77,57 @@ class RoomSnapshotServiceTests(unittest.TestCase):
         self.assertEqual(snapshot["capabilities"], {"message.send": True})
         self.assertEqual(self.catalog.current_snapshot_calls, 1)
 
+    def test_browser_snapshot_preserves_sequence_across_owner_activity(self) -> None:
+        self.store.append_event(
+            "general",
+            "message_final",
+            participant_id="member",
+            content="before",
+        )
+        hidden = self.store.append_event(
+            "general",
+            "activity_delta",
+            participant_id="provider-agent",
+            owner_id="provider-agent",
+            visibility="owner",
+            activity_id="private-reasoning",
+            category="reasoning",
+            status="running",
+        )
+        self.store.append_event(
+            "general",
+            "message_final",
+            participant_id="member",
+            content="after",
+        )
+
+        identity = {
+            "meeting_id": "general",
+            "agent_id": "member",
+            "client_type": "browser",
+        }
+        snapshot = self.service.snapshot(identity)
+        history = self.service.history_page(
+            "general",
+            identity=identity,
+            before_seq=int(snapshot["last_seq"]) + 1,
+        )
+
+        snapshot_sequences = [int(event["seq"]) for event in snapshot["events"]]
+        self.assertEqual(
+            snapshot_sequences,
+            list(range(snapshot_sequences[0], snapshot_sequences[-1] + 1)),
+        )
+        projected_hidden = next(
+            event for event in snapshot["events"] if event["id"] == hidden["id"]
+        )
+        self.assertEqual(projected_hidden["type"], "event_hidden")
+        self.assertNotIn("activity_id", projected_hidden)
+        self.assertEqual(
+            [int(event["seq"]) for event in history["events"]],
+            snapshot_sequences,
+        )
+
     def test_bridge_snapshot_only_contains_its_own_participant_and_session(self) -> None:
         for participant_id in ("bridge", "other"):
             self.store.upsert_participant(

@@ -79,6 +79,7 @@ class RoomSnapshotService:
                     room_id,
                     limit=ROOM_SNAPSHOT_EVENT_LIMIT,
                     newest=True,
+                    include_hidden=True,
                 )
                 snapshot_mode = "gap"
             else:
@@ -86,6 +87,7 @@ class RoomSnapshotService:
                     room_id,
                     after_seq=requested_after_seq,
                     limit=ROOM_SNAPSHOT_EVENT_LIMIT,
+                    include_hidden=True,
                 )
                 snapshot_mode = "resume"
         else:
@@ -93,6 +95,7 @@ class RoomSnapshotService:
                 room_id,
                 limit=ROOM_SNAPSHOT_EVENT_LIMIT,
                 newest=True,
+                include_hidden=True,
             )
             snapshot_mode = "initial"
         oldest_seq = int(events[0].get("seq") or 0) if events else 0
@@ -211,6 +214,7 @@ class RoomSnapshotService:
             before_seq=clean_before_seq,
             limit=clean_limit,
             newest=True,
+            include_hidden=True,
         )
         oldest_seq = int(events[0].get("seq") or 0) if events else 0
         return {
