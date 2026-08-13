@@ -87,7 +87,10 @@ engine only when the registry entry still names a live pid and the loopback
 runtime-version probe succeeds. Arbitrary listeners on fixed ports (for
 example 8765) are not trusted without that root-scoped readiness path. The
 product is not a hard OS singleton, but one healthy engine per shared data root
-is the intended steady state.
+is the intended steady state. A desktop-owned sidecar also watches the native
+shell process that launched it and follows the normal server cleanup path if
+that parent disappears, so an app crash or forced exit does not leave an
+orphan listener or reusable-engine registry behind.
 
 The bundled desktop startup surface can start or attach that local runtime,
 open its validated HTTP(S) origin, and read the bounded public room-summary

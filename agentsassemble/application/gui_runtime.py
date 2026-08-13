@@ -9,6 +9,10 @@ from uuid import uuid4
 
 from agentsassemble.admission.repository import InviteSessionRepository
 from agentsassemble.application.gui import ApplicationDatabase, GuiApplicationServices
+from agentsassemble.application.desktop_parent_watchdog import (
+    DESKTOP_PARENT_PID_ENV,
+    start_desktop_parent_watchdog,
+)
 from agentsassemble.application.rolling_restart import (
     RollingChildBootstrap,
     RollingRestartCoordinator,
@@ -323,6 +327,7 @@ def serve_gui_runtime(
             instance_id=runtime_instance_id,
         )
         advertised_server_url = server_url
+        start_desktop_parent_watchdog(lambda: server.shutdown())
         server.serve_forever()
     except KeyboardInterrupt:
         print("\nStopping AgentsAssemble GUI")
@@ -352,7 +357,11 @@ def serve_gui_runtime(
                 if advertised_server_url:
                     clear_local_engine_registry(
                         root,
-                        expected_pid=os.getpid(),
+                        expected_pid=(
+                            None
+                            if os.environ.get(DESKTOP_PARENT_PID_ENV)
+                            else os.getpid()
+                        ),
                         expected_url=advertised_server_url,
                     )
             except Exception:

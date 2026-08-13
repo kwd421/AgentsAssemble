@@ -83,6 +83,10 @@ impl LocalRuntime {
         command
             .env("AGENTSASSEMBLE_DESKTOP_RUNTIME", "1")
             .env(
+                "AGENTSASSEMBLE_DESKTOP_PARENT_PID",
+                std::process::id().to_string(),
+            )
+            .env(
                 "PATH",
                 prepend_user_cli_path(env::var_os("PATH").unwrap_or_default()),
             )
