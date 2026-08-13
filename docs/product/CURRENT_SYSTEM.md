@@ -75,21 +75,30 @@ Local and hosted use are two exposure states of the same canonical room
 runtime. The runtime remains bound to loopback; hosting is an explicit
 authenticated public-invite action inside the room UI, not a direct
 non-loopback control-plane bind. Stopping public access returns the rooms to
-local-only use without moving their records. A desktop-owned runtime stores its
-data under the operating system application-data directory and exits with its
-owner application. A valid server already listening on the default local
-address is reused but not adopted or stopped.
+local-only use without moving their records.
 
-The bundled desktop startup surface can start the owned local runtime, open its
-validated HTTP(S) origin, and read the bounded public room-summary cache. The
-native client refreshes local room summaries after the runtime is ready and
-again before graceful shutdown. A room webview at the explicitly selected
-server origin may update that server's room summaries in the native cache, but
-it has no runtime-lifecycle privilege and cannot rewrite entries owned by a
-different server. The cache accepts only bounded room labels, appearance,
-origin, and timestamps; it drops unknown fields so bearer credentials cannot be
-persisted through this path. The webview keeps its own persistent browser
-storage, separate from Safari or Chrome.
+CLI `gui` and the desktop sidecar share one default product data root
+(identity, rooms, runtime state): the platform user application-data directory
+for AgentsAssemble (`~/Library/Application Support/AgentsAssemble` on macOS),
+overridable with `AGENTSASSEMBLE_OUTPUT_ROOT` or an explicit `--output-root`.
+Port numbers are not product identity; a bound engine advertises itself for
+that data root in `runtime/local-engine.json`. Desktop and CLI `gui` reuse that
+engine only when the registry entry still names a live pid and the loopback
+runtime-version probe succeeds. Arbitrary listeners on fixed ports (for
+example 8765) are not trusted without that root-scoped readiness path. The
+product is not a hard OS singleton, but one healthy engine per shared data root
+is the intended steady state.
+
+The bundled desktop startup surface can start or attach that local runtime,
+open its validated HTTP(S) origin, and read the bounded public room-summary
+cache. The native client refreshes local room summaries after the runtime is
+ready and again before graceful shutdown. A room webview at the explicitly
+selected server origin may update that server's room summaries in the native
+cache, but it has no runtime-lifecycle privilege and cannot rewrite entries
+owned by a different server. The cache accepts only bounded room labels,
+appearance, origin, and timestamps; it drops unknown fields so bearer
+credentials cannot be persisted through this path. The webview keeps its own
+persistent browser storage, separate from Safari or Chrome.
 
 The iOS and Android applications use the same Tauri shell and room protocol but
 do not package or start the Python room runtime. They open without a server,
@@ -111,11 +120,16 @@ release endpoint, verification key, updater signing key, and platform signing
 credentials are build/release inputs and are not persisted in the repository.
 
 A public account identity is distinct from the private per-client device
-credential. Before host-room connections begin, first use requires an explicit
-choice between a linked public account and a device-local guest profile. Local
-rooms remain usable without a public account or Internet connection. A
-verified Google subject produces a stable opaque `acct-...` ID; the raw Google
-subject and ID token are not stored. Linking is an explicit account action and
+credential. The client generates a durable device token once (browser or
+desktop WebView `localStorage`) and the server maps its fingerprint to a stable
+`user_id` / guest participant for that server identity store. The same device
+token on the same client storage therefore keeps the same guest identity across
+restarts; a different browser or WebView partition is a different device unless
+the user links a public account or completes guest recovery. Before host-room
+connections begin, first use requires an explicit choice between a linked public
+account and a device-local guest profile. Local rooms remain usable without a
+public account or Internet connection. A verified Google subject produces a
+stable opaque `acct-...` ID; the raw Google subject and ID token are not stored. Linking is an explicit account action and
 never silently merges two identities. When the selected Google account already
 belongs to another server user, the client must warn that the current guest
 profile, recovery material, and active participation will be discarded. Only
