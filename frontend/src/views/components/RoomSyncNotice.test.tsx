@@ -25,4 +25,19 @@ describe("RoomSyncNotice", () => {
 
     expect(screen.queryByRole("status")).toBeNull();
   });
+
+  it("shows a failed room connection instead of leaving the room loading silently", () => {
+    render(
+      <RoomSyncNotice
+        issue={{
+          category: "socket_connection_failed",
+          message: "Room WebSocket connection failed.",
+        }}
+      />
+    );
+
+    expect(screen.getByRole("status").textContent).toContain(
+      "방 서버에 연결하지 못했습니다"
+    );
+  });
 });

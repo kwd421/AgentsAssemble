@@ -464,9 +464,20 @@ export function useCanonicalRoom(options: UseCanonicalRoomOptions) {
       },
       onError: (errorValue) => {
         if (!connectionIsCurrent()) return;
-        const error = errorValue instanceof Error ? errorValue : new Error("Room connection failed.");
+        const unauthorized = isUnauthorizedApiError(errorValue);
+        const message = unauthorized
+          ? "Room authorization failed. Rejoin the room or request a new invite."
+          : errorValue instanceof Error
+            ? errorValue.message || "Room connection failed."
+            : "Room WebSocket connection failed.";
+        const error = errorValue instanceof RoomSocketSayError
+          ? errorValue
+          : new RoomSocketSayError(
+              message,
+              unauthorized ? "authorization_failed" : "socket_connection_failed"
+            );
         setLastError(error);
-        if (isUnauthorizedApiError(error)) callbacksRef.current.onUnauthorized?.();
+        if (unauthorized) callbacksRef.current.onUnauthorized?.();
         callbacksRef.current.onError?.(errorValue);
       },
     });
@@ -754,13 +765,10 @@ export function useCanonicalRoom(options: UseCanonicalRoomOptions) {
     syncIssue:
       lastError instanceof RoomSocketSayError &&
       [
-        "event_sequence_gap",
-        "event_sequence_invalid",
-        "plugin_event_gap",
-        "resync_required",
-        "settings_ack_invalid",
-        "settings_conflict",
-        "settings_snapshot_invalid",
+        "event_sequence_gap", "event_sequence_invalid",
+        "plugin_event_gap", "resync_required",
+        "settings_ack_invalid", "settings_conflict", "settings_snapshot_invalid",
+        "authorization_failed", "socket_connection_failed",
       ].includes(lastError.category)
         ? {
             category: lastError.category,
