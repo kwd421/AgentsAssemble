@@ -64,8 +64,12 @@ def main() -> int:
         runtime = FailedBridgeRuntime(error)
     stop_requested = threading.Event()
     current_bridge: list[RoomAgentBridge | None] = [None]
+    signal_stop_started = [False]
 
     def stop_bridge(_signum, _frame) -> None:
+        if signal_stop_started[0]:
+            return
+        signal_stop_started[0] = True
         stop_requested.set()
         bridge = current_bridge[0]
         if bridge is not None:

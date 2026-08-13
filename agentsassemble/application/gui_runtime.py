@@ -11,6 +11,7 @@ from agentsassemble.admission.repository import InviteSessionRepository
 from agentsassemble.application.gui import ApplicationDatabase, GuiApplicationServices
 from agentsassemble.application.desktop_parent_watchdog import (
     DESKTOP_PARENT_PID_ENV,
+    install_desktop_shutdown_signal_handler,
     start_desktop_parent_watchdog,
 )
 from agentsassemble.application.rolling_restart import (
@@ -327,6 +328,7 @@ def serve_gui_runtime(
             instance_id=runtime_instance_id,
         )
         advertised_server_url = server_url
+        install_desktop_shutdown_signal_handler(lambda: server.shutdown())
         start_desktop_parent_watchdog(lambda: server.shutdown())
         server.serve_forever()
     except KeyboardInterrupt:

@@ -20,6 +20,8 @@ use std::os::windows::process::CommandExt;
 use crate::server_url::{agentsassemble_server_is_ready, normalized_server_url};
 
 const STARTUP_TIMEOUT: Duration = Duration::from_secs(45);
+const SHUTDOWN_GRACE_TIMEOUT: Duration = Duration::from_secs(10);
+const SHUTDOWN_POLL_INTERVAL: Duration = Duration::from_millis(50);
 const DESKTOP_RUNTIME_URL_PREFIX: &str = "AgentsAssemble desktop runtime: ";
 
 #[derive(Default)]
@@ -533,9 +535,22 @@ fn configure_process_group(command: &mut Command) {
 fn terminate_process_tree(child: &mut Child) {
     let process_group = -(child.id() as i32);
     unsafe {
-        libc::kill(process_group, libc::SIGTERM);
+        // Signal only the owned top-level process first. A frozen Python
+        // executable forwards that signal to its interpreter child; sending
+        // to the whole group as well can deliver SIGTERM twice and re-enter a
+        // Python signal handler. The group remains the bounded hard-stop
+        // target if normal application cleanup cannot finish.
+        libc::kill(child.id() as i32, libc::SIGTERM);
     }
-    thread::sleep(Duration::from_millis(250));
+    let deadline = Instant::now() + SHUTDOWN_GRACE_TIMEOUT;
+    while Instant::now() < deadline {
+        let _ = child.try_wait();
+        if !owned_process_group_is_running(child) {
+            let _ = child.wait();
+            return;
+        }
+        thread::sleep(SHUTDOWN_POLL_INTERVAL);
+    }
     if owned_process_group_is_running(child) {
         unsafe {
             libc::kill(process_group, libc::SIGKILL);

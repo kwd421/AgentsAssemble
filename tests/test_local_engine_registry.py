@@ -42,6 +42,57 @@ class _ReadyHandler(BaseHTTPRequestHandler):
 
 
 class LocalEngineRegistryTests(unittest.TestCase):
+    def test_desktop_runtime_sigterm_runs_normal_shutdown_cleanup(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            output_root = Path(tmp)
+            environment = os.environ.copy()
+            environment.update(
+                {
+                    "AGENTSASSEMBLE_DESKTOP_RUNTIME": "1",
+                    "AGENTSASSEMBLE_DESKTOP_PARENT_PID": str(os.getpid()),
+                }
+            )
+            runtime = subprocess.Popen(
+                [
+                    sys.executable,
+                    "-m",
+                    "agentsassemble.cli",
+                    "gui",
+                    "--host",
+                    "127.0.0.1",
+                    "--port",
+                    "0",
+                    "--output-root",
+                    str(output_root),
+                ],
+                cwd=Path(__file__).resolve().parents[1],
+                env=environment,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                text=True,
+            )
+            try:
+                registry = output_root / "runtime" / "local-engine.json"
+                deadline = time.monotonic() + 4
+                while not registry.exists() and time.monotonic() < deadline:
+                    time.sleep(0.05)
+                self.assertTrue(registry.exists(), "desktop runtime did not become ready")
+
+                runtime.terminate()
+                returncode = runtime.wait(timeout=15)
+                assert runtime.stderr is not None
+                stderr = runtime.stderr.read()
+            finally:
+                if runtime.poll() is None:
+                    runtime.kill()
+                    runtime.wait(timeout=2)
+
+            self.assertEqual(returncode, 0, stderr)
+            self.assertFalse(registry.exists())
+            self.assertFalse(
+                (output_root / "runtime" / "local-engine.starting.json").exists()
+            )
+
     def test_desktop_runtime_exits_and_clears_registry_after_parent_dies(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             output_root = Path(tmp)

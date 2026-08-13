@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import os
+import signal
 import sys
 import threading
 import time
@@ -12,6 +13,36 @@ from collections.abc import Callable, Mapping
 DESKTOP_RUNTIME_ENV = "AGENTSASSEMBLE_DESKTOP_RUNTIME"
 DESKTOP_PARENT_PID_ENV = "AGENTSASSEMBLE_DESKTOP_PARENT_PID"
 DESKTOP_PARENT_POLL_SECONDS = 0.25
+
+
+def install_desktop_shutdown_signal_handler(
+    shutdown: Callable[[], None],
+    *,
+    environ: Mapping[str, str] | None = None,
+) -> bool:
+    """Turn the desktop sidecar's SIGTERM into the normal server shutdown path."""
+
+    values = os.environ if environ is None else environ
+    if values.get(DESKTOP_RUNTIME_ENV) != "1":
+        return False
+
+    shutdown_started = [False]
+
+    def request_shutdown(_signum: int, _frame: object) -> None:
+        if shutdown_started[0]:
+            return
+        # A frozen executable has a bootloader parent that can forward the
+        # same signal received by its process. Guard before touching any
+        # threading primitive so a duplicate signal cannot re-enter a lock.
+        shutdown_started[0] = True
+        threading.Thread(
+            target=shutdown,
+            name="agentsassemble-desktop-signal-shutdown",
+            daemon=True,
+        ).start()
+
+    signal.signal(signal.SIGTERM, request_shutdown)
+    return True
 
 
 def start_desktop_parent_watchdog(
