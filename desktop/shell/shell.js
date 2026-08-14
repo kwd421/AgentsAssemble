@@ -12,11 +12,13 @@ import {
   bootstrapCentral,
   CentralAuthenticationError,
   clearCentralSession,
+  clearPendingRecoveryCode,
   configureCentralDirectory,
   createCentralGuest,
   fetchCentralConfig,
   loadCentralServers,
   loadCentralSession,
+  loadPendingRecoveryCode,
   loginCentralGoogle,
   logoutCentral,
   recoverCentralGuest,
@@ -200,6 +202,7 @@ function showCentralPanel(panel) {
 
 function showCentralLoading(message) {
   showCentralPanel("loading");
+  centralOffline.classList.add("hidden");
   centralLoadingText.textContent = message;
   centralState.textContent = "확인 중";
   setCentralMessage();
@@ -212,19 +215,24 @@ function resetCentralLoginForms() {
   centralRecoveryInput.value = "";
 }
 
-function showCentralLogin(message = "") {
+function showCentralLogin(message = "", { allowOffline = false } = {}) {
   showCentralPanel("login");
   resetCentralLoginForms();
   centralState.textContent = "로그인 필요";
   centralGoogle.disabled = !googleEnabled;
+  centralOffline.classList.toggle("hidden", !allowOffline);
   setCentralMessage(
-    message || (googleEnabled ? "" : "Google 로그인이 아직 중앙 Worker에 설정되지 않았습니다."),
+    message ||
+      (googleEnabled
+        ? ""
+        : "Google 로그인이 아직 중앙 Worker에 설정되지 않았습니다."),
     message ? "error" : ""
   );
 }
 
 function showRecoveryCode(code) {
   showCentralPanel("recovery");
+  centralOffline.classList.add("hidden");
   centralState.textContent = "코드 보관 필요";
   centralIssuedCode.value = String(code || "");
   centralCodeSaved.checked = false;
@@ -309,6 +317,7 @@ function showCentralHome(payload, { stale = false } = {}) {
   const person = payload?.person || session?.person || {};
   const servers = payload?.servers || loadCentralServers();
   showCentralPanel("home");
+  centralOffline.classList.add("hidden");
   centralState.textContent = stale ? "캐시 사용 중" : "동기화됨";
   centralPersonName.textContent = String(person.display_name || "사용자");
   centralPersonKind.textContent =
@@ -355,21 +364,39 @@ async function initializeCentralIdentity() {
   try {
     configureCentralDirectory(await invoke("central_directory_url"));
   } catch (error) {
-    showCentralLogin(String(error?.message || error));
-    centralOffline.classList.remove("hidden");
+    showCentralLogin(String(error?.message || error), { allowOffline: true });
     return;
   }
 
+  let centralReachable = true;
   try {
     const config = await fetchCentralConfig();
     googleEnabled = Boolean(config.google_enabled);
   } catch {
+    centralReachable = false;
     googleEnabled = true;
+  }
+
+  const pendingRecoveryCode = loadPendingRecoveryCode();
+  if (pendingRecoveryCode) {
+    showRecoveryCode(pendingRecoveryCode);
+    if (!centralReachable) {
+      setCentralMessage(
+        "중앙에 연결할 수 없지만 아직 저장 확인하지 않은 복구 코드를 먼저 보여드립니다.",
+        "error"
+      );
+    }
+    return;
   }
 
   const session = loadCentralSession();
   if (!session) {
-    showCentralLogin();
+    showCentralLogin(
+      centralReachable
+        ? ""
+        : "중앙 디렉터리에 연결하지 못했습니다. 재시도하거나 오프라인으로 저장된 룸만 볼 수 있습니다.",
+      { allowOffline: !centralReachable }
+    );
     return;
   }
 
@@ -472,7 +499,11 @@ centralGuestForm.addEventListener("submit", (event) => {
   showCentralLoading("복구 가능한 게스트 신원을 만드는 중…");
   void createCentralGuest(displayName)
     .then((result) => showRecoveryCode(result.recovery_code))
-    .catch((error) => showCentralLogin(String(error?.message || error)))
+    .catch((error) => {
+      const pending = loadPendingRecoveryCode();
+      if (pending) showRecoveryCode(pending);
+      else showCentralLogin(String(error?.message || error));
+    })
     .finally(() => {
       centralBusy = false;
     });
@@ -486,7 +517,11 @@ centralRecoverForm.addEventListener("submit", (event) => {
   showCentralLoading("게스트 신원을 복구하고 이전 코드를 폐기하는 중…");
   void recoverCentralGuest(recoveryCode)
     .then((result) => showRecoveryCode(result.recovery_code))
-    .catch((error) => showCentralLogin(String(error?.message || error)))
+    .catch((error) => {
+      const pending = loadPendingRecoveryCode();
+      if (pending) showRecoveryCode(pending);
+      else showCentralLogin(String(error?.message || error));
+    })
     .finally(() => {
       centralBusy = false;
     });
@@ -502,7 +537,10 @@ centralGoogle.addEventListener("click", () => {
       centralLoadingText.textContent = message;
     }
   )
-    .then(() => refreshCentralHome())
+    .then(async () => {
+      centralBusy = false;
+      await refreshCentralHome();
+    })
     .catch((error) => showCentralLogin(String(error?.message || error)))
     .finally(() => {
       centralBusy = false;
@@ -526,6 +564,7 @@ centralCodeSaved.addEventListener("change", () => {
 
 centralRecoveryContinue.addEventListener("click", () => {
   if (!centralCodeSaved.checked || centralBusy) return;
+  clearPendingRecoveryCode();
   void refreshCentralHome();
 });
 
@@ -538,7 +577,10 @@ centralLogout.addEventListener("click", () => {
   centralBusy = true;
   showCentralLoading("중앙 세션을 종료하는 중…");
   void logoutCentral()
-    .catch(() => clearCentralSession())
+    .catch(() => {
+      clearCentralSession();
+      clearPendingRecoveryCode();
+    })
     .finally(() => {
       centralBusy = false;
       cachedRooms.classList.add("hidden");
