@@ -26,6 +26,7 @@ from agentsassemble.web.security import (
     _host_header_is_trusted,
     _origin_matches_public_url,
     _public_invite_route_allowed,
+    _public_server_identity_route_allowed,
     _request_trusted,
     _split_authority_host_port,
 )
@@ -106,6 +107,8 @@ def make_gui_http_handler(
                 method = str(self.headers.get("Access-Control-Request-Method") or "").upper()
             if not method or not _public_invite_route_allowed(path, method):
                 return ""
+            if _public_server_identity_route_allowed(path, method):
+                return "*"
             if _origin_matches_public_url(
                 origin,
                 public_url=services.public_invite.public_url(),
@@ -118,10 +121,14 @@ def make_gui_http_handler(
             if not allow_origin:
                 return
             self.send_header("Access-Control-Allow-Origin", allow_origin)
-            self.send_header("Access-Control-Allow-Methods", _PUBLIC_INVITE_CORS_METHODS)
-            self.send_header("Access-Control-Allow-Headers", _PUBLIC_INVITE_CORS_HEADERS)
+            if allow_origin == "*":
+                self.send_header("Access-Control-Allow-Methods", "GET, POST, OPTIONS")
+                self.send_header("Access-Control-Allow-Headers", "Content-Type")
+            else:
+                self.send_header("Access-Control-Allow-Methods", _PUBLIC_INVITE_CORS_METHODS)
+                self.send_header("Access-Control-Allow-Headers", _PUBLIC_INVITE_CORS_HEADERS)
+                self.send_header("Vary", "Origin")
             self.send_header("Access-Control-Max-Age", "600")
-            self.send_header("Vary", "Origin")
 
         def do_GET(self) -> None:
             parsed = urlparse(self.path)
