@@ -80,6 +80,10 @@ def register_public_invite_admin_routes(
             proof = signed_server_identity_challenge(
                 host_identity(ctx),
                 payload.get("challenge"),
+                origin=(
+                    ctx.deps.public_invite.public_url()
+                    or ctx.request_server_url()
+                ),
             )
         except ValueError as error:
             ctx.send_error(HTTPStatus.BAD_REQUEST, str(error))
