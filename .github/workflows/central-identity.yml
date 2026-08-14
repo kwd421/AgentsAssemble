@@ -1,0 +1,83 @@
+name: central-identity
+
+on:
+  push:
+    branches:
+      - agent/cloudflare-identity-directory
+    paths:
+      - ".github/workflows/central-identity.yml"
+      - "infra/identity-directory/**"
+      - "desktop/**"
+      - "agentsassemble/application/central_directory_host.py"
+      - "agentsassemble/application/gui.py"
+      - "agentsassemble/web/routes/public_invite.py"
+      - "agentsassemble/web/security.py"
+      - "frontend/src/lib/centralIdentity.ts"
+      - "frontend/src/main.tsx"
+      - "frontend/src/views/components/StartupIdentityBoundary.tsx"
+      - "frontend/src/views/components/StartupIdentityGate.tsx"
+      - "tests/test_central_directory_host.py"
+      - "tests/test_startup_identity_source.py"
+  pull_request:
+    paths:
+      - ".github/workflows/central-identity.yml"
+      - "infra/identity-directory/**"
+      - "desktop/**"
+      - "agentsassemble/application/central_directory_host.py"
+      - "agentsassemble/application/gui.py"
+      - "agentsassemble/web/routes/public_invite.py"
+      - "agentsassemble/web/security.py"
+      - "frontend/src/lib/centralIdentity.ts"
+      - "frontend/src/main.tsx"
+      - "frontend/src/views/components/StartupIdentityBoundary.tsx"
+      - "frontend/src/views/components/StartupIdentityGate.tsx"
+      - "tests/test_central_directory_host.py"
+      - "tests/test_startup_identity_source.py"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: central-identity-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  worker:
+    name: Worker and D1 contract
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+      - name: Check Worker JavaScript syntax
+        run: npm --prefix infra/identity-directory run check
+      - name: Run Worker and D1 contract tests
+        run: npm --prefix infra/identity-directory test
+      - name: Validate Wrangler configuration and bundle
+        working-directory: infra/identity-directory
+        run: npx --yes wrangler@4 deploy --dry-run --outdir .wrangler-dist
+
+  tauri-macos:
+    name: Tauri shell on macOS
+    runs-on: macos-latest
+    timeout-minutes: 30
+    env:
+      CARGO_TERM_COLOR: always
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: desktop/package-lock.json
+      - name: Install desktop dependencies
+        run: npm --prefix desktop ci
+      - name: Show Rust toolchain
+        run: |
+          rustc --version
+          cargo --version
+      - name: Build trusted shell and run Rust tests
+        run: npm --prefix desktop run check
