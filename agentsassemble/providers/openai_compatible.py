@@ -444,7 +444,7 @@ class OpenAICompatibleApiRuntime:
                 "metadata": {
                     "message_source": self.message_source,
                     "model": self.model,
-                    "observed_model_id": observed_model_id,
+                    "observed_model_id": observed_model_id or self.model,
                     "room_tool_rounds": tool_rounds,
                     "discarded_after_terminal_tool_calls": (
                         discarded_after_terminal_tool_calls

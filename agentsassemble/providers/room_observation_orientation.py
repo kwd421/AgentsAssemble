@@ -40,7 +40,6 @@ def _room_interfaces(provider_kind: object = "") -> tuple[str, str, str]:
     elif kind in {
         "claude_code",
         "antigravity_live_session",
-        "freebuff_live_session",
     }:
         read_interface = "terminal command `agentsassemble-room read`"
         speak_interface = (
@@ -63,6 +62,13 @@ def _room_interfaces(provider_kind: object = "") -> tuple[str, str, str]:
   pair of ASCII double quotes. Inside the message, use Unicode quotation marks
   such as `「」` and Unicode arrows such as `→`; do not use ASCII `"`, `$`, or
   backticks. This keeps ordinary room prose inside the one approved command."""
+    elif kind == "freebuff_live_session":
+        read_interface = "the room transcript the adapter pastes into this session"
+        speak_interface = "ordinary chat replies; the adapter publishes them to the room"
+        provider_note = """
+- This session cannot run shell or MCP room commands. Reply in plain chat.
+- The adapter already attached the current room transcript. Do not hunt for
+  `agentsassemble-room` or other helpers."""
     else:
         read_interface = (
             "the provider's private room read interface: Codex `read_discussion` MCP, "

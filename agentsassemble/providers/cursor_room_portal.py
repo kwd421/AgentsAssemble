@@ -42,6 +42,7 @@ class CursorRoomPortalRuntime:
         self._server_name = f"agentsassemble_room_{digest}"
         self._mcp_status = ""
         self._workspace.mkdir(parents=True, exist_ok=True)
+        self._awaiting_room_receipt = False
         self._write_mcp_config()
         command = [
             *config.command,
@@ -91,14 +92,50 @@ class CursorRoomPortalRuntime:
         *,
         media_blocks: list[dict[str, str]] | None = None,
     ) -> None:
-        self._runtime.send_room_observation(text, media_blocks=media_blocks)
+        self._awaiting_room_receipt = True
+        prompt = (
+            "Before any other action, call the `read_discussion` MCP tool. "
+            "Then call `publish_message` if you have something to say, or decline. "
+            "Do not finish this turn without `read_discussion`.\n\n"
+            f"{str(text or '').strip()}"
+        ).strip()
+        self._runtime.send_room_observation(prompt, media_blocks=media_blocks)
 
     def read_output(self, *, timeout_seconds: float, on_delta=None, on_activity=None):
-        return self._runtime.read_output(
-            timeout_seconds=timeout_seconds,
+        first_budget = max(5.0, float(timeout_seconds) * 0.6)
+        result = self._runtime.read_output(
+            timeout_seconds=first_budget,
             on_delta=on_delta,
             on_activity=on_activity,
         )
+        if getattr(self, "_awaiting_room_receipt", False) and not self._has_room_receipt():
+            remaining = max(5.0, float(timeout_seconds) - first_budget)
+            self._runtime.send(
+                "You finished without calling `read_discussion`. "
+                "Call `read_discussion` now, then `publish_message` or decline."
+            )
+            result = self._runtime.read_output(
+                timeout_seconds=remaining,
+                on_delta=on_delta,
+                on_activity=on_activity,
+            )
+        self._awaiting_room_receipt = False
+        return result
+
+    def _has_room_receipt(self) -> bool:
+        turn_id = self._active_turn_id()
+        if not turn_id:
+            return False
+        return self._room_portal.observation_receipt(turn_id) is not None
+
+    def _active_turn_id(self) -> str:
+        try:
+            payload = json.loads(self._room_portal.turn_path.read_text(encoding="utf-8"))
+        except (OSError, json.JSONDecodeError, AttributeError):
+            return ""
+        if not isinstance(payload, dict):
+            return ""
+        return str(payload.get("turn_id") or "").strip()
 
     def interrupt(self) -> None:
         self._runtime.interrupt()

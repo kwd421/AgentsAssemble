@@ -245,5 +245,46 @@ def _initialize_git_workspace(workspace: Path, files: dict[str, str]) -> None:
         )
 
 
+class ApiConversationCheckpointTests(unittest.TestCase):
+    def test_persist_rebuilds_missing_tool_result_backing_files(self) -> None:
+        from agentsassemble.providers.api_session import ApiConversationStore
+
+        with tempfile.TemporaryDirectory() as temp_dir:
+            store = ApiConversationStore(
+                temp_dir,
+                agent_id="deepseek-session",
+                provider_name="DeepSeek",
+                model="deepseek-v4-flash",
+                workspace=temp_dir,
+                permission_mode="meeting_read_only",
+            )
+            messages = [
+                {"role": "user", "content": "read the file"},
+                {
+                    "role": "assistant",
+                    "content": "",
+                    "tool_calls": [
+                        {
+                            "id": "call-1",
+                            "type": "function",
+                            "function": {"name": "read_discussion", "arguments": "{}"},
+                        }
+                    ],
+                },
+                {
+                    "role": "tool",
+                    "tool_call_id": "call-1",
+                    "name": "read_discussion",
+                    "content": '{"ok":true}',
+                },
+            ]
+            persisted = store.persist(messages, {"call-1"}, {})
+            tool = next(item for item in persisted if item.get("role") == "tool")
+            self.assertIn("aa-tool-result://sha256/", tool["content"])
+            loaded_messages, delivered, references = store.load()
+            self.assertIn("call-1", delivered)
+            self.assertIn("call-1", references)
+
+
 if __name__ == "__main__":
     unittest.main()

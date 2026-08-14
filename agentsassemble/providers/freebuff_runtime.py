@@ -130,7 +130,20 @@ class FreebuffRuntime:
 
     def send_room_observation(self, text: str, *, media_blocks=None) -> None:
         del media_blocks
-        self.send(text)
+        prompt = str(text or "").strip()
+        if self._room_portal is not None:
+            try:
+                room_view = self._room_portal.read_discussion()
+            except Exception as error:
+                raise FreebuffUnavailable(
+                    f"Freebuff could not read the assigned room state: {error}"
+                ) from error
+            prompt = (
+                "Current room transcript (already read for you):\n"
+                f"{room_view.strip()}\n\n"
+                f"{prompt}".strip()
+            )
+        self.send(prompt)
 
     def read_output(self, *, timeout_seconds: float, on_delta=None, on_activity=None):
         del on_activity  # Do not invent tool/reasoning events from PTY noise.
@@ -149,8 +162,15 @@ class FreebuffRuntime:
             content = str(result.get("content") or result.get("text") or "").strip()
         elif isinstance(result, str):
             content = result.strip()
+        content = _freebuff_public_reply(content)
+        if content and self._room_portal is not None:
+            try:
+                self._room_portal.publish_message(content)
+            except Exception:
+                # Keep the turn result; the bridge still has the adapter content.
+                pass
         return {
-            "outcome": "message",
+            "outcome": "message" if content else "decline",
             "content": content,
             "metadata": {
                 "observed_model_id": self._selected_model or self.model,
@@ -345,6 +365,21 @@ def discover_freebuff_model_labels(
             return labels
         finally:
             terminal.stop()
+
+
+def _freebuff_public_reply(content: str) -> str:
+    """Keep only the last assistant-looking block from noisy PTY output."""
+
+    text = str(content or "").strip()
+    if not text:
+        return ""
+    lines = [line.rstrip() for line in text.splitlines()]
+    # Drop empty chrome at the ends; keep the body the model typed last.
+    while lines and not lines[-1].strip():
+        lines.pop()
+    if len(lines) > 40:
+        lines = lines[-40:]
+    return "\n".join(lines).strip()
 
 
 def freebuff_default_model_label(labels: list[str], requested: str) -> str:

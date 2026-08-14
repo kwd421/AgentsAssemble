@@ -13,6 +13,18 @@ class ApiConversationStateError(RuntimeError):
     code = "api_context_checkpoint_invalid"
 
 
+def _looks_like_tool_result_marker(content: str) -> bool:
+    try:
+        value = json.loads(content)
+    except json.JSONDecodeError:
+        return False
+    return (
+        isinstance(value, dict)
+        and value.get("agentsassemble") == "delivered_tool_result_elided"
+        and str(value.get("ref") or "").startswith("aa-tool-result://sha256/")
+    )
+
+
 class ApiContextCheckpointMissing(RuntimeError):
     code = "api_context_checkpoint_missing"
 
@@ -239,9 +251,21 @@ class ApiConversationStore:
             if message.get("role") != "tool":
                 continue
             tool_call_id = str(message.get("tool_call_id") or "")
+            if not tool_call_id:
+                continue
+            content = str(message.get("content") or "")
+            marker = tool_result_references.get(tool_call_id)
+            if not marker and content:
+                # Session reuse can reload full tool text after a previous
+                # persist omitted the id from delivered_tool_call_ids.
+                if _looks_like_tool_result_marker(content):
+                    marker = content
+                else:
+                    marker = self.tool_results.record(content)
+                tool_result_references[tool_call_id] = marker
+                delivered_tool_call_ids.add(tool_call_id)
             if tool_call_id not in delivered_tool_call_ids:
                 continue
-            marker = tool_result_references.get(tool_call_id)
             if not marker:
                 raise ApiConversationStateError(
                     "Cannot checkpoint a delivered tool result without its private backing file."

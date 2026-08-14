@@ -63,6 +63,45 @@ class FreebuffRuntimeTests(unittest.TestCase):
             "DeepSeek V4 Flash 07/31",
         )
 
+    def test_room_observation_reads_and_publishes_through_the_room_portal(self) -> None:
+        class Portal:
+            def __init__(self) -> None:
+                self.published: list[str] = []
+
+            def read_discussion(self) -> str:
+                return "operator: 안녕"
+
+            def publish_message(self, content: object, *, next_agent_id: object = "") -> None:
+                del next_agent_id
+                self.published.append(str(content))
+
+        class Terminal:
+            def send(self, text: str) -> None:
+                self.last = text
+
+            def read_output(self, **_kwargs):
+                return {"content": "반갑습니다."}
+
+        portal = Portal()
+        with tempfile.TemporaryDirectory() as temp_dir:
+            runtime = FreebuffRuntime(
+                "freebuff-portal",
+                workspace=temp_dir,
+                state_dir=Path(temp_dir) / "state",
+                room_portal=portal,
+            )
+            runtime._terminal = Terminal()
+            runtime._running = True
+            runtime.send_room_observation("room.wake")
+            parsed = ProviderTurnResult.parse(
+                runtime.read_output(timeout_seconds=2)
+            )
+
+        self.assertIn("operator: 안녕", runtime._terminal.last)
+        self.assertEqual(parsed.outcome, "message")
+        self.assertEqual(parsed.content, "반갑습니다.")
+        self.assertEqual(portal.published, ["반갑습니다."])
+
     def test_runtime_start_reaches_model_selection_with_a_supported_input_transport(self) -> None:
         terminals = []
 
