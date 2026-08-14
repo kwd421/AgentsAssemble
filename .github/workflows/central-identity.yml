@@ -9,7 +9,9 @@ on:
       - "infra/identity-directory/**"
       - "desktop/**"
       - "agentsassemble/application/central_directory_host.py"
+      - "agentsassemble/application/server_identity_challenge.py"
       - "agentsassemble/application/gui.py"
+      - "agentsassemble/web/gui_server.py"
       - "agentsassemble/web/routes/public_invite.py"
       - "agentsassemble/web/security.py"
       - "frontend/src/lib/centralIdentity.ts"
@@ -17,6 +19,7 @@ on:
       - "frontend/src/views/components/StartupIdentityBoundary.tsx"
       - "frontend/src/views/components/StartupIdentityGate.tsx"
       - "tests/test_central_directory_host.py"
+      - "tests/test_server_identity_challenge.py"
       - "tests/test_startup_identity_source.py"
   pull_request:
     paths:
@@ -24,7 +27,9 @@ on:
       - "infra/identity-directory/**"
       - "desktop/**"
       - "agentsassemble/application/central_directory_host.py"
+      - "agentsassemble/application/server_identity_challenge.py"
       - "agentsassemble/application/gui.py"
+      - "agentsassemble/web/gui_server.py"
       - "agentsassemble/web/routes/public_invite.py"
       - "agentsassemble/web/security.py"
       - "frontend/src/lib/centralIdentity.ts"
@@ -32,6 +37,7 @@ on:
       - "frontend/src/views/components/StartupIdentityBoundary.tsx"
       - "frontend/src/views/components/StartupIdentityGate.tsx"
       - "tests/test_central_directory_host.py"
+      - "tests/test_server_identity_challenge.py"
       - "tests/test_startup_identity_source.py"
   workflow_dispatch:
 
@@ -82,6 +88,7 @@ jobs:
         run: >-
           python -m unittest
           tests.test_central_directory_host
+          tests.test_server_identity_challenge
           tests.test_startup_identity_source
       - name: Build login-first frontend
         run: npm --prefix frontend run build
