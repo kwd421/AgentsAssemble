@@ -55,6 +55,34 @@ fn caller_selected_server(
     Ok(server.clone())
 }
 
+fn server_is_loopback(server: &Url) -> bool {
+    let Some(host) = server.host_str() else {
+        return false;
+    };
+    host.eq_ignore_ascii_case("localhost")
+        || host
+            .trim_matches(['[', ']'])
+            .parse::<std::net::IpAddr>()
+            .is_ok_and(|address| address.is_loopback())
+}
+
+fn caller_can_open_central_google(
+    window: &WebviewWindow,
+    navigation: &NavigationState,
+) -> Result<(), String> {
+    if caller_is_local_shell(window).is_ok() {
+        return Ok(());
+    }
+    let selected = caller_selected_server(window, navigation)?;
+    if selected.scheme() == "http" && server_is_loopback(&selected) {
+        return Ok(());
+    }
+    Err(
+        "Central Google login is available only from the bundled shell or local engine."
+            .to_owned(),
+    )
+}
+
 #[tauri::command]
 fn client_platform(window: WebviewWindow) -> Result<&'static str, String> {
     caller_is_local_shell(&window)?;
@@ -75,9 +103,10 @@ fn central_directory_url(window: WebviewWindow) -> Result<&'static str, String> 
 #[tauri::command]
 fn open_central_google_login(
     window: WebviewWindow,
+    navigation: State<'_, NavigationState>,
     url: String,
 ) -> Result<(), String> {
-    caller_is_local_shell(&window)?;
+    caller_can_open_central_google(&window, &navigation)?;
     let handoff = central_google_handoff_url(&url)?;
     tauri_plugin_opener::open_url(handoff.as_str(), None::<&str>)
         .map_err(|error| format!("cannot open the system browser: {error}"))
