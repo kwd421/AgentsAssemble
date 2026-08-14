@@ -18,6 +18,7 @@ import {
   issueSession,
   json,
   parseJson,
+  requireCompatibleDevice,
 } from "./http.js";
 
 const HANDOFF_TTL_SECONDS = 600;
@@ -104,34 +105,26 @@ export async function googleBrowserChallenge(env, text, now) {
   });
 }
 
-export async function completeGoogleHandoff(env, text, now) {
-  const body = parseJson(text);
-  const row = await handoffByBrowserToken(env, body, now);
-  let identity;
-  try {
-    identity = await verifyGoogleIdToken(body.credential, {
-      clientId: String(env.GOOGLE_CLIENT_ID),
-      nonce: row.google_nonce,
-      nowSeconds: now,
-      env,
-    });
-  } catch {
-    throw new HttpError(401, "invalid_google_credential");
-  }
-  const issuer = "https://accounts.google.com";
-  const subjectHmac = await hmacBase64Url(
-    envSecret(env, "IDENTITY_PEPPER"),
-    `${issuer}\u0000${identity.subject}`
-  );
-  const external = await env.DB
+async function findExternalPerson(env, issuer, subjectHmac) {
+  return env.DB
     .prepare(
       "SELECT person_id FROM external_identities WHERE issuer = ? AND subject_hmac = ?"
     )
     .bind(issuer, subjectHmac)
     .first();
-  let personId = external?.person_id;
-  if (!personId) {
-    personId = `per_${randomBase64Url(18)}`;
+}
+
+async function resolveGooglePerson(env, identity, now) {
+  const issuer = "https://accounts.google.com";
+  const subjectHmac = await hmacBase64Url(
+    envSecret(env, "IDENTITY_PEPPER"),
+    `${issuer}\u0000${identity.subject}`
+  );
+  let external = await findExternalPerson(env, issuer, subjectHmac);
+  if (external?.person_id) return external.person_id;
+
+  const personId = `per_${randomBase64Url(18)}`;
+  try {
     await env.DB.batch([
       env.DB
         .prepare(
@@ -155,14 +148,43 @@ export async function completeGoogleHandoff(env, text, now) {
           now
         ),
     ]);
+    return personId;
+  } catch (error) {
+    external = await findExternalPerson(env, issuer, subjectHmac);
+    if (external?.person_id) return external.person_id;
+    throw error;
   }
-  await env.DB
+}
+
+export async function completeGoogleHandoff(env, text, now) {
+  const body = parseJson(text);
+  const row = await handoffByBrowserToken(env, body, now);
+  let identity;
+  try {
+    identity = await verifyGoogleIdToken(body.credential, {
+      clientId: String(env.GOOGLE_CLIENT_ID),
+      nonce: row.google_nonce,
+      nowSeconds: now,
+      env,
+    });
+  } catch {
+    throw new HttpError(401, "invalid_google_credential");
+  }
+  const personId = await resolveGooglePerson(env, identity, now);
+  // A device identifier and its signing key are one central identity slot. Do
+  // not let a completed Google flow silently replace a guest or another Google
+  // identity already bound to that slot; an explicit merge flow belongs later.
+  await requireCompatibleDevice(env.DB, row.device_id, personId);
+  const ready = await env.DB
     .prepare(
       `UPDATE google_handoffs SET status = 'ready', person_id = ?
        WHERE handoff_id = ? AND status = 'pending'`
     )
     .bind(personId, row.handoff_id)
     .run();
+  if (Number(ready.meta?.changes || 0) !== 1) {
+    throw new HttpError(409, "handoff_consumed");
+  }
   return json({ status: "ready" });
 }
 
@@ -187,6 +209,7 @@ export async function pollGoogleHandoff(env, text, now) {
   if (row.status !== "ready" || !row.person_id) {
     throw new HttpError(409, "handoff_consumed");
   }
+  await requireCompatibleDevice(env.DB, row.device_id, row.person_id);
   const claimed = await env.DB
     .prepare(
       `UPDATE google_handoffs SET status = 'consumed', consumed_at = ?
@@ -197,26 +220,43 @@ export async function pollGoogleHandoff(env, text, now) {
   if (Number(claimed.meta?.changes || 0) !== 1) {
     throw new HttpError(409, "handoff_consumed");
   }
-  await bindDevice(env.DB, {
-    personId: row.person_id,
-    deviceId: row.device_id,
-    publicKeyJwk: JSON.parse(row.device_public_key_jwk),
-    label: row.device_label,
-    now,
-  });
-  const session = await issueSession(env.DB, {
-    personId: row.person_id,
-    deviceId: row.device_id,
-    now,
-    env,
-  });
-  const person = await env.DB
-    .prepare(
-      "SELECT person_id, identity_kind, display_name FROM persons WHERE person_id = ?"
-    )
-    .bind(row.person_id)
-    .first();
-  return json({ status: "complete", person, session });
+  try {
+    await bindDevice(env.DB, {
+      personId: row.person_id,
+      deviceId: row.device_id,
+      publicKeyJwk: JSON.parse(row.device_public_key_jwk),
+      label: row.device_label,
+      now,
+    });
+    const session = await issueSession(env.DB, {
+      personId: row.person_id,
+      deviceId: row.device_id,
+      now,
+      env,
+    });
+    const person = await env.DB
+      .prepare(
+        "SELECT person_id, identity_kind, display_name FROM persons WHERE person_id = ?"
+      )
+      .bind(row.person_id)
+      .first();
+    return json({ status: "complete", person, session });
+  } catch (error) {
+    // Preserve recoverability if a transient D1 failure happens after the
+    // one-time poll claim but before the session can be returned.
+    try {
+      await env.DB
+        .prepare(
+          `UPDATE google_handoffs SET status = 'ready', consumed_at = NULL
+           WHERE handoff_id = ? AND status = 'consumed' AND consumed_at = ?`
+        )
+        .bind(handoffId, now)
+        .run();
+    } catch {
+      // The original error remains the useful failure signal.
+    }
+    throw error;
+  }
 }
 
 export function googleHandoffPage() {
@@ -229,6 +269,7 @@ const status = document.getElementById('status');
 async function post(path, body) {
   const response = await fetch(path, {
     method: 'POST',
+    cache: 'no-store',
     headers: {'content-type': 'application/json'},
     body: JSON.stringify(body)
   });
@@ -278,7 +319,7 @@ async function post(path, body) {
   }
 })();`;
   const nonce = randomBase64Url(18);
-  const html = `<!doctype html><html lang="ko"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>AgentsAssemble 로그인</title><script src="https://accounts.google.com/gsi/client" async defer></script><style>body{margin:0;background:#101114;color:#f2f3f5;font:15px system-ui;display:grid;min-height:100vh;place-items:center}.card{width:min(420px,calc(100vw - 40px));background:#202126;border:1px solid #ffffff18;border-radius:14px;padding:28px;box-sizing:border-box;box-shadow:0 24px 70px #0008}h1{font-size:24px;margin:0 0 10px}p{color:#b5bac1;line-height:1.5}#google-button{margin-top:22px;min-height:44px}</style></head><body><main class="card"><h1>AgentsAssemble</h1><p id="status">Google 로그인을 준비하는 중…</p><div id="google-button"></div></main><script nonce="${nonce}">${script}</script></body></html>`;
+  const html = `<!doctype html><html lang="ko"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>AgentsAssemble 로그인</title><script src="https://accounts.google.com/gsi/client"></script><style nonce="${nonce}">body{margin:0;background:#101114;color:#f2f3f5;font:15px system-ui;display:grid;min-height:100vh;place-items:center}.card{width:min(420px,calc(100vw - 40px));background:#202126;border:1px solid #ffffff18;border-radius:14px;padding:28px;box-sizing:border-box;box-shadow:0 24px 70px #0008}h1{font-size:24px;margin:0 0 10px}p{color:#b5bac1;line-height:1.5}#google-button{margin-top:22px;min-height:44px}</style></head><body><main class="card"><h1>AgentsAssemble</h1><p id="status">Google 로그인을 준비하는 중…</p><div id="google-button"></div></main><script nonce="${nonce}">${script}</script></body></html>`;
   return new Response(html, {
     headers: {
       "content-type": "text/html; charset=utf-8",
@@ -288,9 +329,11 @@ async function post(path, body) {
         "https://accounts.google.com/gsi/client; " +
         "frame-src https://accounts.google.com; " +
         "connect-src 'self' https://accounts.google.com; " +
-        "style-src 'unsafe-inline'; " +
+        `style-src 'nonce-${nonce}'; ` +
         "img-src data: https://*.googleusercontent.com; " +
         "base-uri 'none'; frame-ancestors 'none'; form-action 'none'",
+      "cross-origin-opener-policy": "same-origin-allow-popups",
+      "permissions-policy": "camera=(), microphone=(), geolocation=()",
       "referrer-policy": "no-referrer",
       "x-content-type-options": "nosniff",
     },
