@@ -45,7 +45,7 @@ permissions:
   contents: read
 
 concurrency:
-  group: central-identity-${{ github.workflow }}-${{ github.ref }}
+  group: central-identity-${{ github.head_ref || github.ref_name }}
   cancel-in-progress: true
 
 jobs:
@@ -112,8 +112,20 @@ jobs:
         run: |
           rustc --version
           cargo --version
-      - name: Build trusted connection shell
-        run: npm --prefix desktop run shell:build
+      - name: Check trusted shell JavaScript syntax
+        run: |
+          node --check desktop/shell/shell.js
+          node --check desktop/shell/central-identity.js
+      - name: Bundle trusted shell with esbuild for parser diagnostics
+        working-directory: desktop
+        run: >-
+          npx --yes esbuild@0.25.10 shell/shell.js
+          --bundle --platform=browser --outfile=/tmp/agentsassemble-shell.js
+      - name: Build trusted connection shell with Vite diagnostics
+        working-directory: desktop
+        env:
+          DEBUG: "vite:*"
+        run: npm run shell:build
       - name: Prepare non-shipping CI sidecar placeholder
         shell: bash
         run: |
