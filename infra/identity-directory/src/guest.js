@@ -83,12 +83,30 @@ export async function createGuest(request, env, text, now) {
       )
       .bind(credentialId, personId, verifier, now),
   ]);
-  const session = await issueSession(env.DB, {
-    personId,
-    deviceId,
-    now,
-    env,
-  });
+
+  let session;
+  try {
+    session = await issueSession(env.DB, {
+      personId,
+      deviceId,
+      now,
+      env,
+    });
+  } catch (error) {
+    // The recovery code has not been returned yet. Remove the newly-created
+    // identity so a transient session-write failure cannot strand an account
+    // whose only recovery secret was never delivered.
+    try {
+      await env.DB
+        .prepare("DELETE FROM persons WHERE person_id = ?")
+        .bind(personId)
+        .run();
+    } catch {
+      console.error("failed to clean up incomplete guest identity");
+    }
+    throw error;
+  }
+
   return json(
     {
       person: {
@@ -161,6 +179,7 @@ export async function recoverGuest(request, env, text, now) {
       "This device is already linked to another central identity."
     );
   }
+
   const replacementCode = createRecoveryCode();
   const replacementVerifier = await hmacBase64Url(
     envSecret(env, "RECOVERY_PEPPER"),
@@ -180,27 +199,51 @@ export async function recoverGuest(request, env, text, now) {
       "The recovery code is invalid or expired."
     );
   }
-  await bindDevice(env.DB, {
-    personId: credential.person_id,
-    deviceId,
-    publicKeyJwk,
-    label: body.device_label,
-    now,
-  });
-  const session = await issueSession(env.DB, {
-    personId: credential.person_id,
-    deviceId,
-    now,
-    env,
-  });
-  return json({
-    person: {
-      person_id: credential.person_id,
-      display_name: credential.display_name,
-      identity_kind: "guest",
-    },
-    session,
-    recovery_code: replacementCode,
-    previous_code_revoked: true,
-  });
+
+  try {
+    await bindDevice(env.DB, {
+      personId: credential.person_id,
+      deviceId,
+      publicKeyJwk,
+      label: body.device_label,
+      now,
+    });
+    const session = await issueSession(env.DB, {
+      personId: credential.person_id,
+      deviceId,
+      now,
+      env,
+    });
+    return json({
+      person: {
+        person_id: credential.person_id,
+        display_name: credential.display_name,
+        identity_kind: "guest",
+      },
+      session,
+      recovery_code: replacementCode,
+      previous_code_revoked: true,
+    });
+  } catch (error) {
+    // Rotation happens before device/session writes so concurrent use of the
+    // old code has a single winner. If the winner cannot finish, restore the
+    // old verifier conditionally so the user is not locked out by a transient
+    // D1 failure. Any same-person device update is safe to repeat on retry.
+    try {
+      const restored = await env.DB
+        .prepare(
+          `UPDATE recovery_credentials SET verifier = ?, rotated_at = NULL
+           WHERE person_id = ? AND verifier = ? AND rotated_at = ?
+             AND revoked_at IS NULL`
+        )
+        .bind(verifier, credential.person_id, replacementVerifier, now)
+        .run();
+      if (Number(restored.meta?.changes || 0) !== 1) {
+        console.error("failed to restore guest recovery verifier after partial recovery");
+      }
+    } catch {
+      console.error("failed to restore guest recovery verifier after D1 error");
+    }
+    throw error;
+  }
 }
