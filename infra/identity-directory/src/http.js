@@ -9,6 +9,8 @@ import {
 export const JSON_HEADERS = {
   "content-type": "application/json; charset=utf-8",
   "cache-control": "no-store",
+  "x-content-type-options": "nosniff",
+  "referrer-policy": "no-referrer",
 };
 
 export class HttpError extends Error {
@@ -65,6 +67,10 @@ export function errorResponse(error) {
 }
 
 export async function bodyText(request, maxBytes = 32_768) {
+  const declaredLength = Number(request.headers.get("content-length"));
+  if (Number.isFinite(declaredLength) && declaredLength > maxBytes) {
+    throw new HttpError(413, "request_too_large");
+  }
   const text = await request.text();
   if (new TextEncoder().encode(text).byteLength > maxBytes) {
     throw new HttpError(413, "request_too_large");
@@ -162,14 +168,15 @@ export async function issueSession(
   return { token, expires_at: expiresAt, device_id: deviceId };
 }
 
-export async function bindDevice(
-  db,
-  { personId, deviceId, publicKeyJwk, label, now }
-) {
-  const existing = await db
+export async function deviceOwner(db, deviceId) {
+  return db
     .prepare("SELECT person_id FROM devices WHERE device_id = ?")
     .bind(deviceId)
     .first();
+}
+
+export async function requireCompatibleDevice(db, deviceId, personId) {
+  const existing = await deviceOwner(db, deviceId);
   if (existing && existing.person_id !== personId) {
     throw new HttpError(
       409,
@@ -177,6 +184,14 @@ export async function bindDevice(
       "This device is already linked to another central identity."
     );
   }
+  return existing;
+}
+
+export async function bindDevice(
+  db,
+  { personId, deviceId, publicKeyJwk, label, now }
+) {
+  const existing = await requireCompatibleDevice(db, deviceId, personId);
   const keyText = canonicalJson(validateDevicePublicJwk(publicKeyJwk));
   if (existing) {
     await db
