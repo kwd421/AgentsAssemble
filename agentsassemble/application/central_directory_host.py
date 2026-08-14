@@ -23,6 +23,8 @@ CENTRAL_HEARTBEAT_SECONDS_ENV = "AGENTSASSEMBLE_CENTRAL_HEARTBEAT_SECONDS"
 CENTRAL_LEASE_SECONDS_ENV = "AGENTSASSEMBLE_CENTRAL_LEASE_SECONDS"
 CENTRAL_HOST_LABEL_ENV = "AGENTSASSEMBLE_CENTRAL_HOST_LABEL"
 
+_HOST_IDENTITY_FILE_LOCK = threading.RLock()
+
 
 def _base64url(value: bytes) -> str:
     return base64.urlsafe_b64encode(value).rstrip(b"=").decode("ascii")
@@ -32,12 +34,16 @@ def _canonical_json(value: object) -> str:
     return json.dumps(value, ensure_ascii=False, sort_keys=True, separators=(",", ":"))
 
 
-def _atomic_write(path: Path, payload: bytes, *, mode: int = 0o600) -> None:
-    path.parent.mkdir(parents=True, exist_ok=True, mode=0o700)
+def _ensure_private_directory(path: Path) -> None:
+    path.mkdir(parents=True, exist_ok=True, mode=0o700)
     try:
-        os.chmod(path.parent, 0o700)
+        os.chmod(path, 0o700)
     except OSError:
         pass
+
+
+def _atomic_write(path: Path, payload: bytes, *, mode: int = 0o600) -> None:
+    _ensure_private_directory(path.parent)
     temporary = path.with_name(f".{path.name}.{os.getpid()}.{secrets.token_hex(6)}.tmp")
     try:
         with temporary.open("xb") as stream:
@@ -55,6 +61,35 @@ def _atomic_write(path: Path, payload: bytes, *, mode: int = 0o600) -> None:
             temporary.unlink()
         except FileNotFoundError:
             pass
+
+
+def _write_once(path: Path, payload: bytes, *, mode: int = 0o600) -> bool:
+    """Create a secret file without ever replacing an existing identity."""
+
+    _ensure_private_directory(path.parent)
+    flags = os.O_WRONLY | os.O_CREAT | os.O_EXCL
+    if hasattr(os, "O_BINARY"):
+        flags |= os.O_BINARY
+    try:
+        descriptor = os.open(path, flags, mode)
+    except FileExistsError:
+        return False
+    try:
+        with os.fdopen(descriptor, "wb", closefd=True) as stream:
+            stream.write(payload)
+            stream.flush()
+            os.fsync(stream.fileno())
+        try:
+            os.chmod(path, mode)
+        except OSError:
+            pass
+        return True
+    except BaseException:
+        try:
+            path.unlink()
+        except FileNotFoundError:
+            pass
+        raise
 
 
 def normalize_central_url(value: str) -> str:
@@ -106,26 +141,35 @@ class HostIdentity:
         self._lock = threading.RLock()
         self._private_key = self._load_or_create_private_key()
 
-    def _load_or_create_private_key(self) -> Ed25519PrivateKey:
-        try:
-            payload = self._key_path.read_bytes()
-        except FileNotFoundError:
-            key = Ed25519PrivateKey.generate()
-            payload = key.private_bytes(
-                serialization.Encoding.PEM,
-                serialization.PrivateFormat.PKCS8,
-                serialization.NoEncryption(),
-            )
-            _atomic_write(self._key_path, payload)
-            return key
-        try:
-            os.chmod(self._key_path, 0o600)
-        except OSError:
-            pass
+    @staticmethod
+    def _parse_private_key(payload: bytes) -> Ed25519PrivateKey:
         key = serialization.load_pem_private_key(payload, password=None)
         if not isinstance(key, Ed25519PrivateKey):
             raise ValueError("central directory host key is not Ed25519")
         return key
+
+    def _load_or_create_private_key(self) -> Ed25519PrivateKey:
+        # Multiple HTTP handlers can ask for public server identity on first
+        # startup. Serialize within the process and use O_EXCL at the filesystem
+        # boundary so no caller can replace a key another caller just created.
+        with _HOST_IDENTITY_FILE_LOCK:
+            try:
+                payload = self._key_path.read_bytes()
+            except FileNotFoundError:
+                generated = Ed25519PrivateKey.generate()
+                payload = generated.private_bytes(
+                    serialization.Encoding.PEM,
+                    serialization.PrivateFormat.PKCS8,
+                    serialization.NoEncryption(),
+                )
+                if _write_once(self._key_path, payload):
+                    return generated
+                payload = self._key_path.read_bytes()
+            try:
+                os.chmod(self._key_path, 0o600)
+            except OSError:
+                pass
+            return self._parse_private_key(payload)
 
     def public_jwk(self) -> dict[str, object]:
         public_bytes = self._private_key.public_key().public_bytes(
@@ -143,7 +187,11 @@ class HostIdentity:
     def fingerprint(self) -> str:
         return _base64url(hashlib.sha256(_canonical_json(self.public_jwk()).encode()).digest())
 
-    def server_info(self, *, central_status: Mapping[str, object] | None = None) -> dict[str, object]:
+    def server_info(
+        self,
+        *,
+        central_status: Mapping[str, object] | None = None,
+    ) -> dict[str, object]:
         return {
             "server_id": self.server_id,
             "host_public_key_jwk": self.public_jwk(),
@@ -154,7 +202,7 @@ class HostIdentity:
         }
 
     def next_generation(self) -> int:
-        with self._lock:
+        with _HOST_IDENTITY_FILE_LOCK, self._lock:
             current = 0
             try:
                 stored = json.loads(self._generation_path.read_text(encoding="utf-8"))
