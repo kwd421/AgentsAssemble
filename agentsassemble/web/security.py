@@ -10,6 +10,10 @@ _PUBLIC_INVITE_CORS_METHODS = "GET, POST, DELETE, OPTIONS"
 _PUBLIC_INVITE_CORS_HEADERS = "Authorization, Content-Type, Last-Event-ID, X-Device-Token"
 TRUSTED_PROXY_TOKEN_HEADER = "X-AgentsAssemble-Proxy-Token"
 TRUSTED_PROXY_CLIENT_IP_HEADER = "X-AgentsAssemble-Client-IP"
+_PUBLIC_SERVER_IDENTITY_ROUTES = {
+    ("GET", "/api/server-info"),
+    ("POST", "/api/server-info/challenge"),
+}
 _PROVIDER_CREDENTIAL_PATHS = {
     f"/api/provider-credentials/{provider_id}"
     for provider_id in remote_openai_credential_ids()
@@ -74,11 +78,9 @@ def _request_uses_trusted_public_https_proxy(
 ) -> bool:
     """Accept proxy HTTPS claims only from an authenticated ingress.
 
-    The GUI server itself speaks HTTP.  A public HTTPS request is therefore
+    The GUI server itself speaks HTTP. A public HTTPS request is therefore
     trustworthy only when the server has registered its managed Cloudflare
-    tunnel or a user-managed proxy presents the configured shared token.  A
-    loopback process cannot establish HTTPS provenance with forwarding headers
-    alone.
+    tunnel or a user-managed proxy presents the configured shared token.
     """
     parsed_public_url = urlparse(str(public_url or "").strip())
     public_hostname = (parsed_public_url.hostname or "").lower()
@@ -97,6 +99,13 @@ def _request_uses_trusted_public_https_proxy(
         and request_hostname == public_hostname
         and str(forwarded_proto or "").strip().lower() == "https"
     )
+
+
+def _public_server_identity_route_allowed(path: str, method: str) -> bool:
+    clean_method = str(method or "").upper()
+    if clean_method == "OPTIONS":
+        return path in {route_path for _, route_path in _PUBLIC_SERVER_IDENTITY_ROUTES}
+    return (clean_method, path) in _PUBLIC_SERVER_IDENTITY_ROUTES
 
 
 def _public_invite_route_allowed(path: str, method: str) -> bool:
@@ -138,6 +147,7 @@ def _public_invite_route_allowed(path: str, method: str) -> bool:
         )
     if method == "POST":
         return path in {
+            "/api/server-info/challenge",
             "/api/attachments",
             "/api/ws-ticket",
             "/api/room-invite/admission",
@@ -197,6 +207,12 @@ def _request_trusted(
         return False
     if host_is_public and not _public_invite_route_allowed(path, method):
         return False
+    # These endpoints disclose only public server identity metadata and a
+    # domain-separated signature over a caller nonce. They deliberately accept
+    # cross-origin probes so a trusted client shell can verify a pinned host key
+    # before navigating to an otherwise untrusted endpoint.
+    if host_is_public and _public_server_identity_route_allowed(path, method):
+        return True
     origin_text = str(origin or "").strip()
     if not origin_text:
         return True
