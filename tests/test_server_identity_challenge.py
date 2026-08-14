@@ -11,6 +11,7 @@ from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PublicKey
 from agentsassemble.application.central_directory_host import HostIdentity
 from agentsassemble.application.server_identity_challenge import (
     SERVER_CHALLENGE_DOMAIN,
+    normalize_server_identity_origin,
     signed_server_identity_challenge,
 )
 from agentsassemble.web.security import (
@@ -24,20 +25,23 @@ def _decode_base64url(value: str) -> bytes:
 
 
 class ServerIdentityChallengeTests(unittest.TestCase):
-    def test_challenge_is_domain_separated_and_verifiable(self) -> None:
+    def test_challenge_is_bound_to_server_origin_and_verifiable(self) -> None:
         with TemporaryDirectory() as directory:
             identity = HostIdentity(
                 output_root=Path(directory),
                 server_id="server-home-mac-0001",
             )
+            origin = "https://home-mac.trycloudflare.com"
             challenge = "Q2hhbGxlbmdlX2Zvcl9waW5uaW5nXzAx"
             proof = signed_server_identity_challenge(
                 identity,
                 challenge,
+                origin=origin,
                 clock=lambda: 1_700_000_000.0,
             )
 
             self.assertEqual(proof["server_id"], identity.server_id)
+            self.assertEqual(proof["origin"], origin)
             self.assertEqual(proof["challenge"], challenge)
             self.assertEqual(proof["issued_at"], 1_700_000_000)
             self.assertEqual(proof["host_key_fingerprint"], identity.fingerprint())
@@ -49,23 +53,32 @@ class ServerIdentityChallengeTests(unittest.TestCase):
                 [
                     SERVER_CHALLENGE_DOMAIN,
                     identity.server_id,
+                    origin,
                     challenge,
                     "1700000000",
                 ]
             ).encode()
             public_key.verify(_decode_base64url(str(proof["signature"])), canonical)
 
-            tampered = canonical.replace(
-                challenge.encode(),
-                b"Q2hhbGxlbmdlX3RhbXBlcmVkXzAx",
-            )
-            with self.assertRaises(InvalidSignature):
-                public_key.verify(
-                    _decode_base64url(str(proof["signature"])),
-                    tampered,
-                )
+            for tampered in [
+                canonical.replace(
+                    challenge.encode(),
+                    b"Q2hhbGxlbmdlX3RhbXBlcmVkXzAx",
+                ),
+                canonical.replace(
+                    origin.encode(),
+                    b"https://attacker.trycloudflare.com",
+                ),
+            ]:
+                with self.subTest(tampered=tampered), self.assertRaises(
+                    InvalidSignature
+                ):
+                    public_key.verify(
+                        _decode_base64url(str(proof["signature"])),
+                        tampered,
+                    )
 
-    def test_challenge_rejects_weak_or_malformed_values(self) -> None:
+    def test_challenge_rejects_weak_values_and_unsafe_origins(self) -> None:
         with TemporaryDirectory() as directory:
             identity = HostIdentity(
                 output_root=Path(directory),
@@ -77,7 +90,28 @@ class ServerIdentityChallengeTests(unittest.TestCase):
                 "x" * 129,
             ]:
                 with self.subTest(challenge=challenge), self.assertRaises(ValueError):
-                    signed_server_identity_challenge(identity, challenge)
+                    signed_server_identity_challenge(
+                        identity,
+                        challenge,
+                        origin="https://home-mac.trycloudflare.com",
+                    )
+            for origin in [
+                "http://public.example",
+                "https://user:secret@home-mac.trycloudflare.com",
+                "https://home-mac.trycloudflare.com/path",
+                "https://home-mac.trycloudflare.com/?token=secret",
+            ]:
+                with self.subTest(origin=origin), self.assertRaises(ValueError):
+                    signed_server_identity_challenge(
+                        identity,
+                        "Q2hhbGxlbmdlX2Zvcl9waW5uaW5nXzAy",
+                        origin=origin,
+                    )
+
+        self.assertEqual(
+            normalize_server_identity_origin("http://127.0.0.1:8765/"),
+            "http://127.0.0.1:8765",
+        )
 
     def test_only_public_identity_routes_accept_cross_origin_probes(self) -> None:
         public_url = "https://home-mac.trycloudflare.com"
