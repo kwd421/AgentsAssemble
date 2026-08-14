@@ -16,17 +16,17 @@
         <div>
           <p class="eyebrow" id="client-platform-label">AGENTSASSEMBLE CLIENT</p>
           <h1 id="startup-title">AgentsAssemble을 여는 중</h1>
-          <p class="lead">로컬 룸과 저장된 서버 룸을 준비하고 있습니다.</p>
+          <p class="lead">신원과 로컬 룸 엔진을 준비하고 있습니다.</p>
         </div>
       </header>
 
-      <section class="cached-rooms" aria-labelledby="cached-rooms-title">
+      <section id="cached-rooms" class="cached-rooms hidden" aria-labelledby="cached-rooms-title">
         <div class="section-heading">
           <h2 id="cached-rooms-title">저장된 룸</h2>
           <span id="cached-room-count">불러오는 중</span>
         </div>
         <div id="cached-room-list" class="cached-room-list" aria-live="polite">
-          <p class="cached-room-empty">이 컴퓨터의 룸 기록을 확인하고 있습니다.</p>
+          <p class="cached-room-empty">이 기기의 룸 기록을 확인하고 있습니다.</p>
         </div>
       </section>
 
@@ -57,16 +57,15 @@
         <span class="spinner" aria-hidden="true"></span>
         <div>
           <strong id="launcher-status" role="status" aria-live="polite">
-            로컬 기록을 불러오는 중…
+            시작 구성을 확인하는 중…
           </strong>
           <p id="startup-detail">처음 실행은 구성 요소 준비에 시간이 조금 걸릴 수 있습니다.</p>
         </div>
         <time id="startup-elapsed" aria-label="경과 시간">0초</time>
       </section>
 
-      <p class="startup-note">
-        인터넷 연결이 없어도 저장된 룸 목록은 표시됩니다. 연결이 필요한 룸은 서버가
-        다시 열리면 같은 항목에서 이어서 들어갈 수 있습니다.
+      <p id="startup-note" class="startup-note">
+        준비가 끝나기 전에는 이전 룸 화면을 표시하지 않습니다.
       </p>
       <button id="retry-startup" class="retry hidden" type="button">다시 시도</button>
     </main>
