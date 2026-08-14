@@ -10,8 +10,8 @@ use std::sync::{Arc, RwLock};
 #[cfg(desktop)]
 use local_runtime::LocalRuntime;
 use server_url::{
-    google_account_handoff_url, is_local_app_url, normalized_navigation_url, normalized_server_url,
-    same_origin,
+    central_directory_origin, central_google_handoff_url, google_account_handoff_url,
+    is_local_app_url, normalized_navigation_url, normalized_server_url, same_origin,
 };
 use tauri::Manager;
 #[cfg(desktop)]
@@ -62,6 +62,25 @@ fn client_platform(window: WebviewWindow) -> Result<&'static str, String> {
     return Ok("mobile");
     #[cfg(not(mobile))]
     Ok("desktop")
+}
+
+#[tauri::command]
+fn central_directory_url(window: WebviewWindow) -> Result<&'static str, String> {
+    caller_is_local_shell(&window)?;
+    normalized_server_url(central_directory_origin())
+        .map_err(|error| format!("central directory configuration is invalid: {error}"))?;
+    Ok(central_directory_origin())
+}
+
+#[tauri::command]
+fn open_central_google_login(
+    window: WebviewWindow,
+    url: String,
+) -> Result<(), String> {
+    caller_is_local_shell(&window)?;
+    let handoff = central_google_handoff_url(&url)?;
+    tauri_plugin_opener::open_url(handoff.as_str(), None::<&str>)
+        .map_err(|error| format!("cannot open the system browser: {error}"))
 }
 
 #[cfg(desktop)]
@@ -246,6 +265,8 @@ pub fn run() {
             app_update::check_desktop_update,
             app_update::install_desktop_update,
             client_platform,
+            central_directory_url,
+            open_central_google_login,
             start_local_runtime,
             open_server,
             open_server_link,
@@ -259,6 +280,8 @@ pub fn run() {
         .plugin(tauri_plugin_barcode_scanner::init())
         .invoke_handler(tauri::generate_handler![
             client_platform,
+            central_directory_url,
+            open_central_google_login,
             open_server,
             open_server_link,
             load_cached_room_directory,
