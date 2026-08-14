@@ -12,9 +12,11 @@ const detail = document.querySelector("#startup-detail");
 const elapsed = document.querySelector("#startup-elapsed");
 const progress = document.querySelector(".startup-progress");
 const retry = document.querySelector("#retry-startup");
+const cachedRooms = document.querySelector("#cached-rooms");
 const cachedRoomList = document.querySelector("#cached-room-list");
 const cachedRoomCount = document.querySelector("#cached-room-count");
 const clientPlatformLabel = document.querySelector("#client-platform-label");
+const startupNote = document.querySelector("#startup-note");
 const mobileConnect = document.querySelector("#mobile-connect");
 const mobileConnectStatus = document.querySelector("#mobile-connect-status");
 const serverLinkForm = document.querySelector("#server-link-form");
@@ -28,7 +30,7 @@ function showProgress(message) {
   retry.classList.add("hidden");
   progress.classList.remove("error");
   status.textContent = message;
-  detail.textContent = "앱은 멈춘 것이 아닙니다. 준비가 끝나면 룸 목록으로 자동 이동합니다.";
+  detail.textContent = "앱은 멈춘 것이 아닙니다. 준비가 끝나면 로그인 또는 룸 화면으로 자동 이동합니다.";
 }
 
 function showUpdateProgress(message, downloaded = 0, total = 0) {
@@ -79,7 +81,7 @@ function renderCachedRooms(rooms) {
   if (!rooms.length) {
     const empty = document.createElement("p");
     empty.className = "cached-room-empty";
-    empty.textContent = "아직 이 컴퓨터에 저장된 룸이 없습니다.";
+    empty.textContent = "아직 이 기기에 저장된 룸이 없습니다.";
     cachedRoomList.append(empty);
     return;
   }
@@ -119,8 +121,10 @@ async function loadCachedRooms() {
     renderCachedRooms(Array.isArray(rooms) ? rooms : []);
   } catch {
     cachedRoomCount.textContent = "확인 불가";
-    cachedRoomList.querySelector(".cached-room-empty").textContent =
-      "저장된 룸 기록을 읽지 못했습니다. 로컬 엔진은 계속 시작합니다.";
+    const empty = cachedRoomList.querySelector(".cached-room-empty");
+    if (empty) {
+      empty.textContent = "저장된 룸 기록을 읽지 못했습니다.";
+    }
   }
 }
 
@@ -134,7 +138,7 @@ async function startClient() {
   showProgress("로컬 룸 엔진을 시작하는 중…");
   try {
     const server = await invoke("start_local_runtime");
-    showProgress("저장된 룸을 불러오는 중…");
+    showProgress("로그인과 룸 목록을 준비하는 중…");
     await openServer(server);
   } catch (error) {
     showError(error);
@@ -147,7 +151,10 @@ async function initializeMobile() {
   document.querySelector(".lead").textContent =
     "저장된 룸을 다시 열거나 새 초대·복구 링크로 연결하세요.";
   progress.classList.add("hidden");
+  cachedRooms.classList.remove("hidden");
   mobileConnect.classList.remove("hidden");
+  startupNote.textContent =
+    "인터넷 연결이 없어도 저장된 룸 요약은 남습니다. 실제 내용은 해당 서버가 다시 열려야 불러올 수 있습니다.";
   await loadCachedRooms();
 }
 
@@ -207,6 +214,8 @@ async function initializeClient() {
     return;
   }
   clientPlatformLabel.textContent = "AGENTSASSEMBLE DESKTOP";
+  cachedRooms.classList.add("hidden");
+  startupNote.textContent = "준비가 끝나기 전에는 이전 룸 화면을 표시하지 않습니다.";
   // Event ACL or plugin gaps must not block the local room engine.
   try {
     await listen("desktop-update-progress", (event) => {
@@ -224,7 +233,6 @@ async function initializeClient() {
   } catch {
     // Continue without update progress events.
   }
-  void loadCachedRooms();
   await updateBeforeStartup();
 }
 
