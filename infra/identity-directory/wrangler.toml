@@ -18,3 +18,6 @@ ALLOW_TRYCLOUDFLARE_ORIGINS = "true"
 #   RECOVERY_PEPPER
 #   IDENTITY_PEPPER
 #   GOOGLE_CLIENT_ID
+
+[triggers]
+crons = ["17 3 * * *"]

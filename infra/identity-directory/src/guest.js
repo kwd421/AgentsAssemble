@@ -33,6 +33,18 @@ export async function createGuest(request, env, text, now) {
   const displayName = cleanText(body.display_name, 80);
   if (!displayName) throw new HttpError(400, "display_name_required");
 
+  const existingDevice = await env.DB
+    .prepare("SELECT person_id FROM devices WHERE device_id = ?")
+    .bind(deviceId)
+    .first();
+  if (existingDevice) {
+    throw new HttpError(
+      409,
+      "device_identity_conflict",
+      "This device is already linked to another central identity."
+    );
+  }
+
   const personId = `per_${randomBase64Url(18)}`;
   const credentialId = `rec_${randomBase64Url(18)}`;
   const recoveryCode = createRecoveryCode();
@@ -138,6 +150,17 @@ export async function recoverGuest(request, env, text, now) {
 
   const deviceId = cleanIdentifier(body.device_id, "device_id");
   const publicKeyJwk = validateDevicePublicJwk(body.device_public_key_jwk);
+  const existingDevice = await env.DB
+    .prepare("SELECT person_id FROM devices WHERE device_id = ?")
+    .bind(deviceId)
+    .first();
+  if (existingDevice && existingDevice.person_id !== credential.person_id) {
+    throw new HttpError(
+      409,
+      "device_identity_conflict",
+      "This device is already linked to another central identity."
+    );
+  }
   const replacementCode = createRecoveryCode();
   const replacementVerifier = await hmacBase64Url(
     envSecret(env, "RECOVERY_PEPPER"),
