@@ -137,6 +137,17 @@ export async function deviceRequestCanonical({ method, pathname, timestamp, nonc
   ].join("\n");
 }
 
+
+export function hostRegistrationCanonical({ serverId, ownerPersonId, issuedAt, nonce }) {
+  return [
+    "AA-HOST-REGISTER-1",
+    serverId,
+    ownerPersonId,
+    String(issuedAt),
+    nonce,
+  ].join("\n");
+}
+
 export async function hostRequestCanonical({ method, pathname, timestamp, nonce, bodyText }) {
   return [
     "AA-HOST-1",

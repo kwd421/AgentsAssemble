@@ -4,6 +4,7 @@ import App from "./App";
 import GoogleAccountHandoffPage, {
   consumeGoogleAccountHandoffToken,
 } from "./views/GoogleAccountHandoffPage";
+import StartupIdentityBoundary from "./views/components/StartupIdentityBoundary";
 import "./index.css";
 
 const googleAccountHandoffToken = consumeGoogleAccountHandoffToken();
@@ -13,7 +14,9 @@ ReactDOM.createRoot(document.getElementById("root")!).render(
     {googleAccountHandoffToken ? (
       <GoogleAccountHandoffPage token={googleAccountHandoffToken} />
     ) : (
-      <App />
+      <StartupIdentityBoundary>
+        <App />
+      </StartupIdentityBoundary>
     )}
   </React.StrictMode>
 );

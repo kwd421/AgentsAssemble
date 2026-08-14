@@ -2,6 +2,8 @@
 from __future__ import annotations
 
 import os
+import secrets
+import time
 from collections.abc import Callable
 from http import HTTPStatus
 from typing import Protocol
@@ -62,6 +64,58 @@ def register_public_invite_admin_routes(
             identity.server_info(
                 central_status={"enabled": bool(os.environ.get(CENTRAL_URL_ENV))}
             )
+        )
+
+    @router.post("/api/central-directory/registration-proof")
+    def central_directory_registration_proof(ctx: RequestContext) -> None:
+        if not is_local_operator(ctx):
+            ctx.send_error(
+                HTTPStatus.FORBIDDEN,
+                "server registration proof is available only to the local operator",
+                code="local_operator_required",
+            )
+            return
+        payload = ctx.read_json_body()
+        if payload is None:
+            return
+        owner_person_id = str(payload.get("owner_person_id") or "").strip()
+        if (
+            len(owner_person_id) < 8
+            or len(owner_person_id) > 128
+            or not all(
+                character.isalnum() or character in "._:-"
+                for character in owner_person_id
+            )
+        ):
+            ctx.send_error(HTTPStatus.BAD_REQUEST, "owner_person_id is invalid")
+            return
+        identity = HostIdentity(
+            output_root=ctx.deps.output_root,
+            server_id=ctx.deps.identities.server_id(),
+        )
+        issued_at = int(time.time())
+        nonce = secrets.token_urlsafe(18)
+        canonical = "\n".join(
+            [
+                "AA-HOST-REGISTER-1",
+                identity.server_id,
+                owner_person_id,
+                str(issued_at),
+                nonce,
+            ]
+        ).encode()
+        ctx.send_json(
+            {
+                "server_id": identity.server_id,
+                "host_public_key_jwk": identity.public_jwk(),
+                "host_key_fingerprint": identity.fingerprint(),
+                "host_registration_proof": {
+                    "owner_person_id": owner_person_id,
+                    "issued_at": issued_at,
+                    "nonce": nonce,
+                    "signature": identity.sign(canonical),
+                },
+            }
         )
 
     @router.get("/api/public-invite/status")

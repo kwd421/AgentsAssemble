@@ -6,6 +6,7 @@ import worker from "../src/index.js";
 import {
   bytesToBase64Url,
   deviceRequestCanonical,
+  hostRegistrationCanonical,
   hostRequestCanonical,
   randomBase64Url,
   utf8,
@@ -32,22 +33,14 @@ class PreparedStatement {
 
   async run() {
     const result = this.database.prepare(this.sql).run(...this.values);
-    return {
-      success: true,
-      meta: { changes: Number(result.changes || 0) },
-    };
+    return { success: true, meta: { changes: Number(result.changes || 0) } };
   }
 }
 
 export class TestD1 {
   constructor() {
     this.database = new DatabaseSync(":memory:");
-    this.database.exec(
-      readFileSync(
-        new URL("../migrations/0001_initial.sql", import.meta.url),
-        "utf8"
-      )
-    );
+    this.database.exec(readFileSync(new URL("../migrations/0001_initial.sql", import.meta.url), "utf8"));
   }
 
   prepare(sql) {
@@ -83,81 +76,34 @@ export function environment(overrides = {}) {
 
 export async function request(env, path, init = {}) {
   const headers = new Headers(init.headers || {});
-  if (init.body && !headers.has("content-type")) {
-    headers.set("content-type", "application/json");
-  }
-  if (!headers.has("origin")) {
-    headers.set("origin", "http://127.0.0.1:43123");
-  }
-  headers.set(
-    "cf-connecting-ip",
-    headers.get("cf-connecting-ip") || "203.0.113.8"
-  );
-  return worker.fetch(
-    new Request(`https://central.example${path}`, { ...init, headers }),
-    env,
-    {}
-  );
+  if (init.body && !headers.has("content-type")) headers.set("content-type", "application/json");
+  if (!headers.has("origin")) headers.set("origin", "http://127.0.0.1:43123");
+  headers.set("cf-connecting-ip", headers.get("cf-connecting-ip") || "203.0.113.8");
+  return worker.fetch(new Request(`https://central.example${path}`, { ...init, headers }), env, {});
 }
 
 export async function payload(response) {
   const body = await response.json();
-  if (!response.ok) {
-    throw Object.assign(new Error(JSON.stringify(body)), { response, body });
-  }
+  if (!response.ok) throw Object.assign(new Error(JSON.stringify(body)), { response, body });
   return body;
 }
 
 export async function deviceKey() {
-  const pair = await crypto.subtle.generateKey(
-    { name: "ECDSA", namedCurve: "P-256" },
-    true,
-    ["sign", "verify"]
-  );
-  return {
-    pair,
-    publicJwk: await crypto.subtle.exportKey("jwk", pair.publicKey),
-  };
+  const pair = await crypto.subtle.generateKey({ name: "ECDSA", namedCurve: "P-256" }, true, ["sign", "verify"]);
+  return { pair, publicJwk: await crypto.subtle.exportKey("jwk", pair.publicKey) };
 }
 
 export async function hostKey() {
-  const pair = await crypto.subtle.generateKey(
-    { name: "Ed25519" },
-    true,
-    ["sign", "verify"]
-  );
-  return {
-    pair,
-    publicJwk: await crypto.subtle.exportKey("jwk", pair.publicKey),
-  };
+  const pair = await crypto.subtle.generateKey({ name: "Ed25519" }, true, ["sign", "verify"]);
+  return { pair, publicJwk: await crypto.subtle.exportKey("jwk", pair.publicKey) };
 }
 
-export async function signedDeviceRequest(
-  env,
-  session,
-  keyPair,
-  path,
-  method = "GET",
-  bodyValue = undefined,
-  options = {}
-) {
+export async function signedDeviceRequest(env, session, keyPair, path, method = "GET", bodyValue = undefined, options = {}) {
   const body = bodyValue === undefined ? "" : JSON.stringify(bodyValue);
   const timestamp = Math.floor(Date.now() / 1000);
   const nonce = options.nonce || randomBase64Url(18);
-  const canonical = await deviceRequestCanonical({
-    method,
-    pathname: path,
-    timestamp,
-    nonce,
-    bodyText: body,
-    token: session.token,
-    deviceId: session.device_id,
-  });
-  const signature = await crypto.subtle.sign(
-    { name: "ECDSA", hash: "SHA-256" },
-    keyPair.privateKey,
-    utf8(canonical)
-  );
+  const canonical = await deviceRequestCanonical({ method, pathname: path, timestamp, nonce, bodyText: body, token: session.token, deviceId: session.device_id });
+  const signature = await crypto.subtle.sign({ name: "ECDSA", hash: "SHA-256" }, keyPair.privateKey, utf8(canonical));
   return request(env, path, {
     method,
     body: body || undefined,
@@ -172,35 +118,16 @@ export async function signedDeviceRequest(
   });
 }
 
-export async function signedHostRequest(
-  env,
-  serverId,
-  keyPair,
-  method,
-  bodyValue,
-  options = {}
-) {
+export async function signedHostRequest(env, serverId, keyPair, method, bodyValue, options = {}) {
   const path = `/v1/servers/${encodeURIComponent(serverId)}/endpoint`;
   const body = JSON.stringify(bodyValue);
   const timestamp = Math.floor(Date.now() / 1000);
   const nonce = options.nonce || randomBase64Url(18);
-  const canonical = await hostRequestCanonical({
-    method,
-    pathname: path,
-    timestamp,
-    nonce,
-    bodyText: body,
-  });
-  const signature = await crypto.subtle.sign(
-    "Ed25519",
-    keyPair.privateKey,
-    utf8(canonical)
-  );
+  const canonical = await hostRequestCanonical({ method, pathname: path, timestamp, nonce, bodyText: body });
+  const signature = await crypto.subtle.sign("Ed25519", keyPair.privateKey, utf8(canonical));
   return request(env, path, {
     method,
-    body: options.replacementBody
-      ? JSON.stringify(options.replacementBody)
-      : body,
+    body: options.replacementBody ? JSON.stringify(options.replacementBody) : body,
     headers: {
       "x-aa-host-timestamp": String(timestamp),
       "x-aa-host-nonce": nonce,
@@ -209,20 +136,20 @@ export async function signedHostRequest(
   });
 }
 
-export async function createGuestIdentity(
-  env,
-  { deviceId = "device-primary-0001", displayName = "Local Guest" } = {}
-) {
+export async function createGuestIdentity(env, { deviceId = "device-primary-0001", displayName = "Local Guest" } = {}) {
   const key = await deviceKey();
   const response = await request(env, "/v1/auth/guest", {
     method: "POST",
-    body: JSON.stringify({
-      device_id: deviceId,
-      device_public_key_jwk: key.publicJwk,
-      device_label: "Test browser",
-      display_name: displayName,
-    }),
+    body: JSON.stringify({ device_id: deviceId, device_public_key_jwk: key.publicJwk, device_label: "Test browser", display_name: displayName }),
   });
   assert.equal(response.status, 201);
   return { key, created: await payload(response) };
+}
+
+export async function hostRegistrationProof(hostPair, serverId, ownerPersonId) {
+  const issuedAt = Math.floor(Date.now() / 1000);
+  const nonce = randomBase64Url(18);
+  const canonical = hostRegistrationCanonical({ serverId, ownerPersonId, issuedAt, nonce });
+  const signature = await crypto.subtle.sign("Ed25519", hostPair.privateKey, utf8(canonical));
+  return { owner_person_id: ownerPersonId, issued_at: issuedAt, nonce, signature: bytesToBase64Url(signature) };
 }

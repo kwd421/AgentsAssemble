@@ -1,5 +1,6 @@
 import {
   canonicalJson,
+  hostRegistrationCanonical,
   hostRequestCanonical,
   sha256Base64Url,
   validateHostPublicJwk,
@@ -21,6 +22,35 @@ export async function registerServer(session, env, text, now) {
   const body = parseJson(text);
   const serverId = cleanIdentifier(body.server_id, "server_id");
   const hostJwk = validateHostPublicJwk(body.host_public_key_jwk);
+  const proof = body.host_registration_proof;
+  const issuedAt = Number(proof?.issued_at);
+  const nonce = String(proof?.nonce || "");
+  const ownerPersonId = String(proof?.owner_person_id || "");
+  const signature = String(proof?.signature || "");
+  if (
+    ownerPersonId !== session.person_id ||
+    !Number.isInteger(issuedAt) ||
+    Math.abs(now - issuedAt) > CLOCK_SKEW_SECONDS ||
+    nonce.length < 16 ||
+    nonce.length > 128 ||
+    !/^[A-Za-z0-9_-]+$/.test(nonce) ||
+    !signature
+  ) {
+    throw new HttpError(401, "invalid_host_registration_proof");
+  }
+  const registrationValid = await verifyHostSignature(
+    hostJwk,
+    signature,
+    hostRegistrationCanonical({
+      serverId,
+      ownerPersonId,
+      issuedAt,
+      nonce,
+    })
+  );
+  if (!registrationValid) {
+    throw new HttpError(401, "invalid_host_registration_proof");
+  }
   const fingerprint = await sha256Base64Url(canonicalJson(hostJwk));
   const existing = await env.DB
     .prepare(
