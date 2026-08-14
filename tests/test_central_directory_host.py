@@ -5,6 +5,7 @@ import json
 import os
 import tempfile
 import unittest
+from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 
 from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PublicKey
@@ -49,6 +50,31 @@ class CentralDirectoryHostTests(unittest.TestCase):
             self.assertEqual(second.key_file_mode() & 0o077, 0)
             self.assertGreater(second.next_generation(), generation)
 
+    def test_concurrent_first_use_keeps_one_host_key_and_unique_generations(self) -> None:
+        with tempfile.TemporaryDirectory() as root:
+            output_root = Path(root)
+
+            def create_identity(_index: int) -> HostIdentity:
+                return HostIdentity(
+                    output_root=output_root,
+                    server_id="srv-concurrent",
+                )
+
+            with ThreadPoolExecutor(max_workers=12) as executor:
+                identities = list(executor.map(create_identity, range(24)))
+
+            public_keys = {str(identity.public_jwk()["x"]) for identity in identities}
+            self.assertEqual(len(public_keys), 1)
+            self.assertTrue(
+                all(identity.key_file_mode() & 0o077 == 0 for identity in identities)
+            )
+
+            with ThreadPoolExecutor(max_workers=12) as executor:
+                generations = list(
+                    executor.map(lambda identity: identity.next_generation(), identities)
+                )
+            self.assertEqual(len(set(generations)), len(generations))
+
     def test_signed_online_and_offline_requests_verify_with_advertised_key(self) -> None:
         calls = []
 
@@ -71,7 +97,9 @@ class CentralDirectoryHostTests(unittest.TestCase):
             host.sync_once()
 
         self.assertEqual([call[0].method for call in calls], ["PUT", "DELETE"])
-        public_key = Ed25519PublicKey.from_public_bytes(decode64(identity.public_jwk()["x"]))
+        public_key = Ed25519PublicKey.from_public_bytes(
+            decode64(str(identity.public_jwk()["x"]))
+        )
         for request, timeout in calls:
             self.assertEqual(timeout, 5.0)
             body = request.data
@@ -79,7 +107,11 @@ class CentralDirectoryHostTests(unittest.TestCase):
             timestamp = request.headers["X-aa-host-timestamp"]
             signature = decode64(request.headers["X-aa-host-signature"])
             path = "/v1/servers/srv-test/endpoint"
-            body_hash = base64.urlsafe_b64encode(__import__("hashlib").sha256(body).digest()).rstrip(b"=").decode()
+            body_hash = (
+                base64.urlsafe_b64encode(__import__("hashlib").sha256(body).digest())
+                .rstrip(b"=")
+                .decode()
+            )
             canonical = "\n".join(
                 ["AA-HOST-1", request.method, path, timestamp, nonce, body_hash]
             ).encode()
@@ -111,8 +143,14 @@ class CentralDirectoryHostTests(unittest.TestCase):
         self.assertFalse(_public_invite_route_allowed("/api/server-info", "DELETE"))
 
     def test_central_url_is_https_except_for_loopback_development(self) -> None:
-        self.assertEqual(normalize_central_url("https://central.example/"), "https://central.example")
-        self.assertEqual(normalize_central_url("http://127.0.0.1:8787"), "http://127.0.0.1:8787")
+        self.assertEqual(
+            normalize_central_url("https://central.example/"),
+            "https://central.example",
+        )
+        self.assertEqual(
+            normalize_central_url("http://127.0.0.1:8787"),
+            "http://127.0.0.1:8787",
+        )
         with self.assertRaises(ValueError):
             normalize_central_url("http://central.example")
         with self.assertRaises(ValueError):
