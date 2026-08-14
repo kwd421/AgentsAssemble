@@ -149,9 +149,6 @@ class HostIdentity:
         return key
 
     def _load_or_create_private_key(self) -> Ed25519PrivateKey:
-        # Multiple HTTP handlers can ask for public server identity on first
-        # startup. Serialize within the process and use O_EXCL at the filesystem
-        # boundary so no caller can replace a key another caller just created.
         with _HOST_IDENTITY_FILE_LOCK:
             try:
                 payload = self._key_path.read_bytes()
@@ -295,6 +292,11 @@ class CentralDirectoryHost:
             self._thread.start()
 
     def wake(self) -> None:
+        """Retry promptly after a local ownership or tunnel-state transition."""
+
+        with self._lock:
+            self._failure_count = 0
+            self._next_attempt_at = 0.0
         self._wake_event.set()
 
     def close(self) -> None:
