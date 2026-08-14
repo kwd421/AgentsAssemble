@@ -30,7 +30,7 @@ async function googleSigner(env) {
   return pair;
 }
 
-async function googleToken(pair, env, nonce) {
+async function googleToken(pair, env, nonce, subject = "raw-google-subject-must-not-be-stored") {
   const now = Math.floor(Date.now() / 1000);
   const header = bytesToBase64Url(
     utf8(
@@ -46,7 +46,7 @@ async function googleToken(pair, env, nonce) {
       JSON.stringify({
         iss: "https://accounts.google.com",
         aud: env.GOOGLE_CLIENT_ID,
-        sub: "raw-google-subject-must-not-be-stored",
+        sub: subject,
         nonce,
         name: "Google User",
         iat: now,
@@ -63,41 +63,55 @@ async function googleToken(pair, env, nonce) {
   return `${signingInput}.${bytesToBase64Url(signature)}`;
 }
 
-
-test("Google handoff separates browser/poll secrets and stores only a subject HMAC", async () => {
-  const env = environment();
-  const signer = await googleSigner(env);
-  const device = await deviceKey();
-  const startedResponse = await request(
+async function startHandoff(env, device, deviceId) {
+  const response = await request(
     env,
     "/v1/auth/google/handoff/start",
     {
       method: "POST",
       body: JSON.stringify({
-        device_id: "google-device-0001",
+        device_id: deviceId,
         device_public_key_jwk: device.publicJwk,
         device_label: "Desktop",
       }),
     }
   );
-  assert.equal(startedResponse.status, 201);
-  const started = await payload(startedResponse);
+  assert.equal(response.status, 201);
+  const started = await payload(response);
   const fragmentParams = new URLSearchParams(
     new URL(started.handoff_url).hash.slice(1)
   );
-  const browserToken = fragmentParams.get("browser");
-  assert.ok(browserToken);
-  assert.notEqual(browserToken, started.poll_token);
+  return {
+    ...started,
+    browserToken: fragmentParams.get("browser"),
+  };
+}
 
-  const challenge = await payload(
-    await request(env, "/v1/auth/google/handoff/browser-challenge", {
+async function browserChallenge(env, started) {
+  const response = await request(
+    env,
+    "/v1/auth/google/handoff/browser-challenge",
+    {
       method: "POST",
       body: JSON.stringify({
         handoff_id: started.handoff_id,
-        browser_token: browserToken,
+        browser_token: started.browserToken,
       }),
-    })
+    }
   );
+  assert.equal(response.status, 200);
+  return payload(response);
+}
+
+test("Google handoff separates browser/poll secrets and stores only a subject HMAC", async () => {
+  const env = environment();
+  const signer = await googleSigner(env);
+  const device = await deviceKey();
+  const started = await startHandoff(env, device, "google-device-0001");
+  assert.ok(started.browserToken);
+  assert.notEqual(started.browserToken, started.poll_token);
+
+  const challenge = await browserChallenge(env, started);
   const credential = await googleToken(signer, env, challenge.nonce);
   const completed = await request(
     env,
@@ -106,7 +120,7 @@ test("Google handoff separates browser/poll secrets and stores only a subject HM
       method: "POST",
       body: JSON.stringify({
         handoff_id: started.handoff_id,
-        browser_token: browserToken,
+        browser_token: started.browserToken,
         credential,
       }),
     }
@@ -120,7 +134,7 @@ test("Google handoff separates browser/poll secrets and stores only a subject HM
       method: "POST",
       body: JSON.stringify({
         handoff_id: started.handoff_id,
-        poll_token: browserToken,
+        poll_token: started.browserToken,
       }),
     }
   );
@@ -166,5 +180,71 @@ test("Google handoff separates browser/poll secrets and stores only a subject HM
   assert.equal(
     serialized.includes("raw-google-subject-must-not-be-stored"),
     false
+  );
+});
+
+test("Google handoff cannot replace a different identity already bound to the device", async () => {
+  const env = environment();
+  const signer = await googleSigner(env);
+  const device = await deviceKey();
+  const deviceId = "google-conflict-device-0002";
+
+  const guest = await request(env, "/v1/auth/guest", {
+    method: "POST",
+    body: JSON.stringify({
+      device_id: deviceId,
+      device_public_key_jwk: device.publicJwk,
+      display_name: "Existing guest",
+    }),
+  });
+  assert.equal(guest.status, 201);
+
+  const started = await startHandoff(env, device, deviceId);
+  const challenge = await browserChallenge(env, started);
+  const credential = await googleToken(
+    signer,
+    env,
+    challenge.nonce,
+    "different-google-person"
+  );
+  const completed = await request(
+    env,
+    "/v1/auth/google/handoff/complete",
+    {
+      method: "POST",
+      body: JSON.stringify({
+        handoff_id: started.handoff_id,
+        browser_token: started.browserToken,
+        credential,
+      }),
+    }
+  );
+  assert.equal(completed.status, 409);
+  assert.equal(
+    (await completed.json()).error.code,
+    "device_identity_conflict"
+  );
+  const handoff = env.DB.database
+    .prepare("SELECT status FROM google_handoffs WHERE handoff_id = ?")
+    .get(started.handoff_id);
+  assert.equal(handoff.status, "pending");
+});
+
+test("Google handoff page loads GIS before initialization and isolates its opener", async () => {
+  const env = environment();
+  const response = await request(env, "/auth/google");
+  assert.equal(response.status, 200);
+  const html = await response.text();
+  assert.ok(
+    html.indexOf('src="https://accounts.google.com/gsi/client"') <
+      html.indexOf("google.accounts.id.initialize")
+  );
+  assert.match(
+    response.headers.get("content-security-policy") || "",
+    /style-src 'nonce-/
+  );
+  assert.equal(
+    response.headers.get("cross-origin-opener-policy"),
+    "same-origin-allow-popups"
   );
 });
