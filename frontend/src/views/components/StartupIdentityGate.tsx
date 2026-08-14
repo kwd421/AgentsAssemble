@@ -12,9 +12,15 @@ import {
   loginCentralGoogle,
   recoverCentralGuest,
   registerLocalServer,
-  waitForLocalDirectory,
 } from "../../lib/centralIdentity";
 import { rememberGuestProfile, rememberStartupIdentitySelection } from "../../lib/deviceIdentity";
+import {
+  hydratePersistedRoom,
+  mergeServerRoomsIntoDock,
+  persistableRoom,
+  type ServerRoomDockSource,
+} from "../../lib/roomDockModel";
+import { loadRoomDockItems, persistRoomDockItems } from "../../lib/roomDockPersistence";
 import { DEFAULT_USER_PROFILE } from "../../lib/userProfileModel";
 import GoogleAccountSettings from "./GoogleAccountSettings";
 
@@ -51,9 +57,22 @@ export default function StartupIdentityGate({ deviceToken, onComplete }: { devic
     setChecking(true);
     setStatus("로컬 엔진과 방 목록을 준비하는 중");
     try {
-      await waitForLocalDirectory();
+      const response = await fetch("/api/rooms", { cache: "no-store" });
+      if (!response.ok) throw new Error(`HTTP ${response.status}`);
+      const payload = (await response.json()) as {
+        rooms?: ServerRoomDockSource[];
+        server_id?: string;
+      };
+      const current = loadRoomDockItems().map(hydratePersistedRoom);
+      const synchronized = mergeServerRoomsIntoDock(
+        current,
+        payload.rooms || [],
+        window.location.origin,
+        String(payload.server_id || "")
+      );
+      persistRoomDockItems(synchronized.map(persistableRoom));
     } catch {
-      // Cached/local-first state remains available when synchronization fails.
+      // The cached/local-first application still opens when synchronization fails.
     }
     rememberStartupIdentitySelection();
     onComplete();
@@ -80,7 +99,7 @@ export default function StartupIdentityGate({ deviceToken, onComplete }: { devic
             }
             return;
           }
-          // A remembered identity must not make local startup depend on central uptime.
+          // Once a device has a valid remembered identity, central downtime must not prevent local startup.
         }
         if (active) await enterApplication();
         return;
