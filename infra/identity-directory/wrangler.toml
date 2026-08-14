@@ -6,7 +6,7 @@ workers_dev = true
 [[d1_databases]]
 binding = "DB"
 database_name = "agentsassemble-identity"
-database_id = "REPLACE_WITH_D1_DATABASE_ID"
+database_id = "9f6ce9f8-79cf-47a8-81c7-691ddb48a59b"
 migrations_dir = "migrations"
 
 [vars]
