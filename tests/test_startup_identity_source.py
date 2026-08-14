@@ -36,3 +36,13 @@ def test_server_registration_proof_is_not_a_public_tunnel_route() -> None:
     source = read("agentsassemble/web/security.py")
     assert '"/api/server-info"' in source
     assert '"/api/central-directory/registration-proof"' not in source
+
+
+def test_desktop_startup_does_not_render_cached_rooms_before_ready() -> None:
+    markup = read("desktop/shell/index.html")
+    source = read("desktop/shell/shell.js")
+    assert 'id="cached-rooms" class="cached-rooms hidden"' in markup
+    desktop_start = source.index('clientPlatformLabel.textContent = "AGENTSASSEMBLE DESKTOP"')
+    assert 'cachedRooms.classList.add("hidden")' in source[desktop_start:]
+    assert "void loadCachedRooms();" not in source[desktop_start:]
+    assert "await loadCachedRooms();" in source[:desktop_start]
