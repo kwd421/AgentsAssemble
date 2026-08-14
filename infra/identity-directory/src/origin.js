@@ -10,16 +10,31 @@ function configuredOrigins(env) {
 }
 
 export function allowedBrowserOrigin(origin, env = {}) {
-  if (!origin) return "";
+  const cleanOrigin = String(origin || "").trim();
+  if (!cleanOrigin) return "";
+  const configured = configuredOrigins(env);
+  // Tauri's bundled custom-protocol pages can serialize as tauri://localhost
+  // rather than a standard URL origin. It is accepted only by exact explicit
+  // configuration; opaque "null" origins are never allowed.
+  if (configured.has(cleanOrigin)) return cleanOrigin;
   let parsed;
   try {
-    parsed = new URL(origin);
+    parsed = new URL(cleanOrigin);
   } catch {
     return "";
   }
-  if (parsed.origin !== origin || parsed.username || parsed.password) return "";
-  if (configuredOrigins(env).has(parsed.origin)) return parsed.origin;
-  if (parsed.protocol === "http:" && LOOPBACK_HOSTS.has(parsed.hostname)) return parsed.origin;
+  if (
+    parsed.origin !== cleanOrigin ||
+    parsed.username ||
+    parsed.password ||
+    parsed.origin === "null"
+  ) {
+    return "";
+  }
+  if (configured.has(parsed.origin)) return parsed.origin;
+  if (parsed.protocol === "http:" && LOOPBACK_HOSTS.has(parsed.hostname)) {
+    return parsed.origin;
+  }
   if (
     env.ALLOW_TRYCLOUDFLARE_ORIGINS !== "false" &&
     parsed.protocol === "https:" &&
@@ -45,7 +60,9 @@ export function normalizeServerOrigin(value, env = {}) {
     parsed.hash ||
     parsed.pathname !== "/"
   ) {
-    throw new Error("server origin must be an HTTPS origin without credentials, path, query, or fragment");
+    throw new Error(
+      "server origin must be an HTTPS origin without credentials, path, query, or fragment"
+    );
   }
   const customHosts = new Set(
     String(env.ALLOWED_SERVER_HOSTS || "")
