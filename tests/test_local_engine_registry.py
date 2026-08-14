@@ -190,6 +190,79 @@ class LocalEngineRegistryTests(unittest.TestCase):
                 server.server_close()
                 thread.join(timeout=2)
 
+    def test_gui_reuse_rejects_an_explicit_conflicting_port(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            output_root = Path(tmp)
+            server = ThreadingHTTPServer(("127.0.0.1", 0), _ReadyHandler)
+            thread = threading.Thread(target=server.serve_forever, daemon=True)
+            thread.start()
+            try:
+                host, port = server.server_address[:2]
+                url = f"http://{host}:{port}/"
+                write_local_engine_registry(
+                    output_root,
+                    server_url=url,
+                    pid=os.getpid(),
+                )
+                stderr = StringIO()
+                with (
+                    patch("sys.stderr", stderr),
+                    patch("agentsassemble.cli.serve_gui") as serve_gui,
+                ):
+                    exit_code = main(
+                        [
+                            "gui",
+                            "--output-root",
+                            str(output_root),
+                            "--port",
+                            "9999",
+                        ]
+                    )
+                self.assertEqual(exit_code, 2)
+                self.assertIn("--port 9999", stderr.getvalue())
+                serve_gui.assert_not_called()
+            finally:
+                clear_local_engine_registry(output_root, expected_url=url)
+                server.shutdown()
+                server.server_close()
+                thread.join(timeout=2)
+
+    def test_gui_reuse_rejects_an_explicit_public_tunnel(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            output_root = Path(tmp)
+            server = ThreadingHTTPServer(("127.0.0.1", 0), _ReadyHandler)
+            thread = threading.Thread(target=server.serve_forever, daemon=True)
+            thread.start()
+            try:
+                host, port = server.server_address[:2]
+                url = f"http://{host}:{port}/"
+                write_local_engine_registry(
+                    output_root,
+                    server_url=url,
+                    pid=os.getpid(),
+                )
+                stderr = StringIO()
+                with (
+                    patch("sys.stderr", stderr),
+                    patch("agentsassemble.cli.serve_gui") as serve_gui,
+                ):
+                    exit_code = main(
+                        [
+                            "gui",
+                            "--output-root",
+                            str(output_root),
+                            "--start-public-tunnel",
+                        ]
+                    )
+                self.assertEqual(exit_code, 2)
+                self.assertIn("--start-public-tunnel", stderr.getvalue())
+                serve_gui.assert_not_called()
+            finally:
+                clear_local_engine_registry(output_root, expected_url=url)
+                server.shutdown()
+                server.server_close()
+                thread.join(timeout=2)
+
     def test_startup_waiter_reuses_the_engine_published_by_the_claim_owner(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             output_root = Path(tmp)

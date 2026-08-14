@@ -55,7 +55,12 @@ def register_core_parsers(subparsers: argparse._SubParsersAction) -> None:
 
     gui = subparsers.add_parser("gui", help="Run the local browser GUI.")
     gui.add_argument("--host", default="127.0.0.1")
-    gui.add_argument("--port", type=int, default=8765)
+    gui.add_argument(
+        "--port",
+        type=int,
+        default=None,
+        help="Loopback port to bind. Omit to use 8765, or 0 to let the OS choose.",
+    )
     gui.add_argument(
         "--output-root",
         default="",

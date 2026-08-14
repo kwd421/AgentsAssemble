@@ -48,6 +48,64 @@ def run_demo_command(
     return 0
 
 
+def gui_reuse_conflicts(args: argparse.Namespace, existing_url: str) -> list[str]:
+    """Return explicit gui flags that cannot be applied to a running engine."""
+
+    from urllib.parse import urlparse
+
+    parsed = urlparse(str(existing_url or "").strip())
+    conflicts: list[str] = []
+    requested_port = getattr(args, "port", None)
+    if requested_port not in (None, 0):
+        existing_port = parsed.port
+        if existing_port is None:
+            existing_port = 80 if parsed.scheme == "http" else 443
+        if int(requested_port) != int(existing_port):
+            conflicts.append(
+                f"--port {requested_port} does not match the running engine at port {existing_port}"
+            )
+    requested_host = str(getattr(args, "host", "") or "").strip()
+    if requested_host and requested_host not in {"127.0.0.1", "localhost", "::1"}:
+        conflicts.append(
+            f"--host {requested_host} cannot be applied to the running loopback engine"
+        )
+    backend = str(getattr(args, "room_repository_backend", "sqlite") or "sqlite")
+    if backend != "sqlite":
+        conflicts.append(
+            f"--room-repository-backend {backend} cannot be applied to an already running engine"
+        )
+    if str(getattr(args, "public_url", "") or "").strip():
+        conflicts.append("--public-url cannot be applied to an already running engine")
+    if str(getattr(args, "host_token", "") or "").strip():
+        conflicts.append("--host-token cannot be applied to an already running engine")
+    if bool(getattr(args, "unsafe_expose_control_plane", False)):
+        conflicts.append(
+            "--unsafe-expose-control-plane cannot be applied to an already running engine"
+        )
+    if bool(getattr(args, "start_public_tunnel", False)):
+        conflicts.append(
+            "--start-public-tunnel cannot be applied to an already running engine"
+        )
+    if str(getattr(args, "live_agent_config", "") or "").strip():
+        conflicts.append(
+            "--live-agent-config cannot be applied to an already running engine"
+        )
+    if str(getattr(args, "live_agent_group_id", "") or "").strip():
+        conflicts.append(
+            "--live-agent-group-id cannot be applied to an already running engine"
+        )
+    if bool(getattr(args, "live_agent_auto_restart", False)):
+        conflicts.append(
+            "--live-agent-auto-restart cannot be applied to an already running engine"
+        )
+    shadow = str(getattr(args, "attention_shadow_mode", "off") or "off")
+    if shadow not in {"", "off"}:
+        conflicts.append(
+            f"--attention-shadow-mode {shadow} cannot be applied to an already running engine"
+        )
+    return conflicts
+
+
 def run_gui_command(
     args: argparse.Namespace,
     *,
@@ -60,9 +118,19 @@ def run_gui_command(
     from agentsassemble.application.user_data_root import resolve_output_root
 
     output_root = resolve_output_root(getattr(args, "output_root", None))
+    bind_port = 8765 if getattr(args, "port", None) is None else int(args.port)
     try:
         with claim_local_engine_startup(output_root) as existing:
             if existing is not None:
+                conflicts = gui_reuse_conflicts(args, existing)
+                if conflicts:
+                    print(
+                        "error: an AgentsAssemble engine is already running for "
+                        f"{output_root} at {existing}. Refusing to ignore: "
+                        + "; ".join(conflicts),
+                        file=sys.stderr,
+                    )
+                    return 2
                 if os.environ.get("AGENTSASSEMBLE_DESKTOP_RUNTIME") == "1":
                     from agentsassemble.application.gui_runtime import (
                         DESKTOP_RUNTIME_URL_PREFIX,
@@ -80,7 +148,7 @@ def run_gui_command(
                 return 0
             serve_gui(
                 host=args.host,
-                port=args.port,
+                port=bind_port,
                 output_root=output_root,
                 room_repository_backend=args.room_repository_backend,
                 room_postgres_dsn_env=args.room_postgres_dsn_env,
