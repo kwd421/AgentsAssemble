@@ -20,6 +20,85 @@
         </div>
       </header>
 
+      <section id="central-identity" class="central-identity hidden" aria-labelledby="central-title">
+        <div class="section-heading">
+          <h2 id="central-title">중앙 신원과 서버 목록</h2>
+          <span id="central-state">확인 중</span>
+        </div>
+
+        <div id="central-loading" class="central-loading">
+          <span class="small-spinner" aria-hidden="true"></span>
+          <p id="central-loading-text">저장된 중앙 로그인을 확인하는 중…</p>
+        </div>
+
+        <div id="central-login" class="central-login hidden">
+          <p class="central-explainer">
+            같은 Google 계정이나 게스트 복구 코드로 로그인하면 다른 기기에서도 같은 서버 목록을 봅니다. 방 권한은 각 서버가 따로 확인합니다.
+          </p>
+          <div class="central-auth-actions">
+            <button id="central-google" class="primary" type="button">Google로 계속</button>
+            <button id="central-new-guest" type="button">새 게스트 만들기</button>
+            <button id="central-existing-guest" type="button">복구 코드가 있습니다</button>
+          </div>
+
+          <form id="central-guest-form" class="central-form hidden">
+            <label for="central-guest-name">게스트 표시 이름</label>
+            <input id="central-guest-name" maxlength="80" autocomplete="nickname" placeholder="다른 참가자에게 보일 이름" />
+            <div class="form-actions">
+              <button data-central-back type="button">뒤로</button>
+              <button class="primary" type="submit">게스트 만들기</button>
+            </div>
+          </form>
+
+          <form id="central-recover-form" class="central-form hidden">
+            <label for="central-recovery-input">게스트 복구 코드</label>
+            <input id="central-recovery-input" maxlength="39" autocomplete="one-time-code" spellcheck="false" placeholder="XXXX-XXXX-…" />
+            <div class="form-actions">
+              <button data-central-back type="button">뒤로</button>
+              <button class="primary" type="submit">같은 게스트로 로그인</button>
+            </div>
+          </form>
+
+          <button id="central-offline" class="central-offline hidden" type="button">
+            중앙 없이 저장된 서버·룸만 보기
+          </button>
+        </div>
+
+        <div id="central-recovery" class="central-recovery hidden">
+          <p class="recovery-warning">
+            이 코드는 다른 기기에서 같은 게스트 신원과 서버 목록을 복구하는 유일한 비밀입니다. 중앙에는 원문이 저장되지 않습니다.
+          </p>
+          <label for="central-issued-code">새 복구 코드</label>
+          <div class="recovery-code-row">
+            <input id="central-issued-code" readonly />
+            <button id="central-copy-code" type="button">복사</button>
+          </div>
+          <label class="recovery-ack">
+            <input id="central-code-saved" type="checkbox" />
+            복구 코드를 비밀번호 관리자나 안전한 장소에 저장했습니다.
+          </label>
+          <button id="central-recovery-continue" class="primary" type="button" disabled>
+            계속
+          </button>
+        </div>
+
+        <div id="central-home" class="central-home hidden">
+          <div class="central-account-row">
+            <div>
+              <strong id="central-person-name">사용자</strong>
+              <span id="central-person-kind">중앙 로그인</span>
+            </div>
+            <div>
+              <button id="central-refresh" type="button">새로고침</button>
+              <button id="central-logout" type="button">로그아웃</button>
+            </div>
+          </div>
+          <div id="central-server-list" class="central-server-list" aria-live="polite"></div>
+        </div>
+
+        <p id="central-message" class="central-message" role="status" aria-live="polite"></p>
+      </section>
+
       <section id="cached-rooms" class="cached-rooms hidden" aria-labelledby="cached-rooms-title">
         <div class="section-heading">
           <h2 id="cached-rooms-title">저장된 룸</h2>
@@ -32,8 +111,8 @@
 
       <section id="mobile-connect" class="mobile-connect hidden" aria-labelledby="mobile-connect-title">
         <div class="section-heading">
-          <h2 id="mobile-connect-title">룸 서버 연결</h2>
-          <span>초대·복구 링크 지원</span>
+          <h2 id="mobile-connect-title">초대 링크로 연결</h2>
+          <span>직접 받은 링크·QR</span>
         </div>
         <form id="server-link-form" class="server-link-form">
           <label for="server-link">서버 주소, 초대 링크 또는 복구 링크</label>
