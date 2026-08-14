@@ -25,6 +25,7 @@ READY_PATH = "/api/runtime/version"
 READY_TIMEOUT_SECONDS = 0.8
 STARTUP_CLAIM_WAIT_SECONDS = 45.0
 STARTUP_CLAIM_POLL_SECONDS = 0.05
+PARENT_STARTUP_CLAIM_ENV = "AGENTSASSEMBLE_ENGINE_STARTUP_CLAIMED"
 
 
 class LocalEngineStartupTimeout(RuntimeError):
@@ -44,6 +45,10 @@ def claim_local_engine_startup(
     """Own startup for one data root or reuse the engine another owner publishes."""
 
     root = Path(output_root).expanduser()
+    if str(os.environ.get(PARENT_STARTUP_CLAIM_ENV) or "").strip() == "1":
+        existing = discover_reusable_local_engine(root)
+        yield existing
+        return
     path = root / STARTUP_CLAIM_RELATIVE
     path.parent.mkdir(parents=True, exist_ok=True)
     owner_id = f"{os.getpid()}-{uuid.uuid4().hex}"

@@ -45,23 +45,36 @@ impl LocalRuntime {
             let server = self
                 .current_server()
                 .ok_or_else(|| "The owned local runtime did not report its address.".to_owned())?;
-            return self.wait_until_ready(&server, &stderr_path);
+            return self.wait_until_ready(&server, &stderr_path, true);
         }
-        // Prefer one engine per shared data root: attach to a healthy registry
-        // entry instead of starting a second process.
-        if let Some(existing) = discover_reusable_engine(&runtime_root) {
-            *self.server.lock().expect("local runtime server lock") = Some(existing.clone());
-            return Ok(existing);
+        match wait_for_reusable_or_claim(&runtime_root, STARTUP_TIMEOUT)? {
+            EngineStartup::Reuse(existing) => {
+                *self.server.lock().expect("local runtime server lock") = Some(existing.clone());
+                return Ok(existing);
+            }
+            EngineStartup::Claim(claim) => {
+                if let Some(mut stale_child) = self.child.lock().expect("local runtime lock").take()
+                {
+                    terminate_process_tree(&mut stale_child);
+                }
+                self.server
+                    .lock()
+                    .expect("local runtime server lock")
+                    .take();
+                let started = self.spawn_owned_runtime(app, &runtime_root, &stderr_path);
+                claim.release();
+                started
+            }
         }
-        if let Some(mut stale_child) = self.child.lock().expect("local runtime lock").take() {
-            terminate_process_tree(&mut stale_child);
-        }
-        self.server
-            .lock()
-            .expect("local runtime server lock")
-            .take();
+    }
 
-        let (mut command, description) = local_server_command(app, &runtime_root)?;
+    fn spawn_owned_runtime(
+        &self,
+        app: &AppHandle,
+        runtime_root: &Path,
+        stderr_path: &Path,
+    ) -> Result<Url, String> {
+        let (mut command, description) = local_server_command(app, runtime_root)?;
         configure_process_group(&mut command);
         let stdout_path = runtime_root.join("server.stdout.log");
         let stdout_log = create_log(&stdout_path)?;
@@ -88,12 +101,13 @@ impl LocalRuntime {
                 "AGENTSASSEMBLE_DESKTOP_PARENT_PID",
                 std::process::id().to_string(),
             )
+            .env("AGENTSASSEMBLE_ENGINE_STARTUP_CLAIMED", "1")
             .env(
                 "PATH",
                 prepend_user_cli_path(env::var_os("PATH").unwrap_or_default()),
             )
             .stdout(Stdio::piped());
-        command.stderr(Stdio::from(create_log(&stderr_path)?));
+        command.stderr(Stdio::from(create_log(stderr_path)?));
         let mut child = command
             .spawn()
             .map_err(|error| format!("cannot start {description}: {error}"))?;
@@ -107,11 +121,24 @@ impl LocalRuntime {
         let reported_server = capture_reported_server(stdout, stdout_log);
         *self.child.lock().expect("local runtime lock") = Some(child);
 
-        let server = self.wait_for_reported_server(reported_server, &stderr_path)?;
+        let server = self.wait_for_reported_server(reported_server, stderr_path)?;
         *self.server.lock().expect("local runtime server lock") = Some(server.clone());
-        let ready = self.wait_until_ready(&server, &stderr_path)?;
+        let ready = self.wait_until_ready(&server, stderr_path, true)?;
+        if let Some(status) = self.owned_child_status()? {
+            // Sidecar reused another engine and exited after reporting the URL.
+            if status.success() && agentsassemble_server_is_ready(&ready) {
+                if let Some(mut child) = self.child.lock().expect("local runtime lock").take() {
+                    let _ = child.wait();
+                }
+                return Ok(ready);
+            }
+            return self.fail_startup(
+                &format!("The local runtime exited with {status}."),
+                stderr_path,
+            );
+        }
         if let Some(child) = self.child.lock().expect("local runtime lock").as_ref() {
-            let _ = write_local_engine_registry(&runtime_root, &ready, child.id());
+            let _ = write_local_engine_registry(runtime_root, &ready, child.id());
         }
         Ok(ready)
     }
@@ -147,14 +174,29 @@ impl LocalRuntime {
         )
     }
 
-    fn wait_until_ready(&self, server: &Url, stderr_path: &Path) -> Result<Url, String> {
+    fn wait_until_ready(
+        &self,
+        server: &Url,
+        stderr_path: &Path,
+        require_owned_child: bool,
+    ) -> Result<Url, String> {
         let deadline = Instant::now() + STARTUP_TIMEOUT;
         while Instant::now() < deadline {
-            if let Some(status) = self.owned_child_status()? {
-                return self.fail_startup(
-                    &format!("The local runtime exited with {status}."),
-                    stderr_path,
-                );
+            if require_owned_child {
+                if let Some(status) = self.owned_child_status()? {
+                    if status.success() && agentsassemble_server_is_ready(server) {
+                        if let Some(mut child) =
+                            self.child.lock().expect("local runtime lock").take()
+                        {
+                            let _ = child.wait();
+                        }
+                        return Ok(server.clone());
+                    }
+                    return self.fail_startup(
+                        &format!("The local runtime exited with {status}."),
+                        stderr_path,
+                    );
+                }
             }
             if agentsassemble_server_is_ready(server) {
                 return Ok(server.clone());
@@ -405,6 +447,107 @@ fn clear_local_engine_registry(output_root: &Path, server: &Url, pid: u32) {
         .trim_end_matches('/');
     let want = server.as_str().trim_end_matches('/');
     if file_pid == u64::from(pid) && file_url == want {
+        let _ = fs::remove_file(path);
+    }
+}
+
+enum EngineStartup {
+    Reuse(Url),
+    Claim(StartupClaim),
+}
+
+struct StartupClaim {
+    path: PathBuf,
+    owner_id: String,
+}
+
+impl StartupClaim {
+    fn release(self) {
+        clear_startup_claim(&self.path, &self.owner_id);
+    }
+}
+
+fn wait_for_reusable_or_claim(
+    output_root: &Path,
+    timeout: Duration,
+) -> Result<EngineStartup, String> {
+    let path = output_root.join("runtime/local-engine.starting.json");
+    if let Some(parent) = path.parent() {
+        fs::create_dir_all(parent)
+            .map_err(|error| format!("cannot create {}: {error}", parent.display()))?;
+    }
+    let owner_id = format!("{}-desktop", std::process::id());
+    let deadline = Instant::now() + timeout;
+    loop {
+        if let Some(existing) = discover_reusable_engine(output_root) {
+            return Ok(EngineStartup::Reuse(existing));
+        }
+        match fs::OpenOptions::new()
+            .write(true)
+            .create_new(true)
+            .open(&path)
+        {
+            Ok(mut file) => {
+                let payload = serde_json::json!({
+                    "schema": 1,
+                    "owner_id": owner_id,
+                    "pid": std::process::id(),
+                    "created_at": std::time::SystemTime::now()
+                        .duration_since(std::time::UNIX_EPOCH)
+                        .map(|value| value.as_secs_f64())
+                        .unwrap_or(0.0),
+                });
+                let _ = writeln!(file, "{payload}");
+                return Ok(EngineStartup::Claim(StartupClaim {
+                    path,
+                    owner_id,
+                }));
+            }
+            Err(error) if error.kind() == std::io::ErrorKind::AlreadyExists => {
+                clear_stale_startup_claim(&path);
+                if Instant::now() >= deadline {
+                    return Err(format!(
+                        "Timed out waiting for the local engine for {}.",
+                        output_root.display()
+                    ));
+                }
+                thread::sleep(Duration::from_millis(50));
+            }
+            Err(error) => {
+                return Err(format!(
+                    "cannot claim local engine startup {}: {error}",
+                    path.display()
+                ));
+            }
+        }
+    }
+}
+
+fn clear_stale_startup_claim(path: &Path) {
+    let Ok(raw) = fs::read_to_string(path) else {
+        return;
+    };
+    let Ok(value) = serde_json::from_str::<serde_json::Value>(&raw) else {
+        return;
+    };
+    let pid = value.get("pid").and_then(|v| v.as_u64()).unwrap_or(0);
+    let owner_id = value
+        .get("owner_id")
+        .and_then(|v| v.as_str())
+        .unwrap_or("");
+    if pid > 0 && !owner_id.is_empty() && !process_is_running(pid as u32) {
+        clear_startup_claim(path, owner_id);
+    }
+}
+
+fn clear_startup_claim(path: &Path, owner_id: &str) {
+    let Ok(raw) = fs::read_to_string(path) else {
+        return;
+    };
+    let Ok(value) = serde_json::from_str::<serde_json::Value>(&raw) else {
+        return;
+    };
+    if value.get("owner_id").and_then(|v| v.as_str()) == Some(owner_id) {
         let _ = fs::remove_file(path);
     }
 }
