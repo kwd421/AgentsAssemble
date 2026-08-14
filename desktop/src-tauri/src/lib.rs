@@ -250,6 +250,14 @@ fn build_main_window(
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
+    #[cfg(desktop)]
+    if std::env::var_os("AGENTSASSEMBLE_CENTRAL_URL").is_none() {
+        // The URL is public configuration, not a credential. Passing it via
+        // the parent process lets the bundled Python engine enable the same
+        // central identity directory without persisting any central bearer.
+        std::env::set_var("AGENTSASSEMBLE_CENTRAL_URL", central_directory_origin());
+    }
+
     let navigation = NavigationState::default();
     let navigation_guard = navigation.server_origin.clone();
     let builder = tauri::Builder::default()
