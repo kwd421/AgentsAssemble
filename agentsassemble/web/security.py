@@ -112,6 +112,7 @@ def _public_invite_route_allowed(path: str, method: str) -> bool:
                 "/ws",
                 "/api",
                 "/api/",
+                "/api/server-info",
                 "/api/room/vote",
                 "/api/rooms",
                 "/api/room-settings",

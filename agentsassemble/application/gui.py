@@ -11,6 +11,7 @@ from agentsassemble.admission.invite_service import InviteApplicationService
 from agentsassemble.admission.preflight import RoomAdmissionService
 from agentsassemble.admission.repository import InviteSessionRepository
 from agentsassemble.admission.session_service import RoomSessionService
+from agentsassemble.application.central_directory_host import CentralDirectoryHost
 from agentsassemble.application.transaction import ApplicationTransactionBoundary
 from agentsassemble.room.attachments import FileAttachmentStore
 from agentsassemble.identity.pairing import OperatorPairingService
@@ -86,12 +87,14 @@ class GuiApplicationServices:
     provider_usage_service: object | None = None
     application_database: ApplicationDatabase | None = None
     identity_registry_cleanup: Callable[[], object] | None = None
+    central_directory_host: CentralDirectoryHost | None = None
     owns_room_repository: bool = True
     owns_invite_repository: bool = True
     owns_identity_backend: bool = False
     owns_process_supervisor: bool = True
     owns_session_run_monitor: bool = True
     owns_public_tunnel_manager: bool = True
+    owns_central_directory_host: bool = True
     owns_room_realtime_controller: bool = True
     owns_application_database: bool = False
     _state: str = field(default="new", init=False, repr=False)
@@ -124,6 +127,17 @@ class GuiApplicationServices:
                 )
                 self.process_supervisor.start_monitor()
                 self.public_tunnel_manager.set_local_url(clean_server_url)
+                if self.central_directory_host is None:
+                    self.central_directory_host = CentralDirectoryHost.from_environment(
+                        output_root=self.output_root,
+                        server_id=self.identity_backend.server_id(),
+                        public_url_runtime=self.public_invite,
+                    )
+                if self.central_directory_host is not None:
+                    rollback_actions.append(
+                        ("central_directory_host", self.central_directory_host.close)
+                    )
+                    self.central_directory_host.start()
                 self.session_run_monitor.default_server = clean_server_url
                 if before_session_monitor is not None:
                     before_session_monitor(clean_server_url)
@@ -196,6 +210,8 @@ class GuiApplicationServices:
             attempt(self.session_run_monitor.stop)
         if self.owns_public_tunnel_manager:
             attempt(self.public_tunnel_manager.stop)
+        if self.owns_central_directory_host and self.central_directory_host is not None:
+            attempt(self.central_directory_host.close)
         if self.owns_process_supervisor and not preserve_provider_runtimes:
             attempt(self.process_supervisor.close)
         if self.owns_room_realtime_controller:

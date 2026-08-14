@@ -4,6 +4,7 @@ version = "0.1.0"
 description = "Local-first multi-agent council orchestrator."
 requires-python = ">=3.11"
 dependencies = [
+    "cryptography>=42,<46",
     "google-auth[requests]>=2.40,<3",
     "keyring>=25,<26",
     "mcp>=1,<2",

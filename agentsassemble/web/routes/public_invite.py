@@ -1,10 +1,15 @@
 """Public invite host-token, URL, and tunnel administration routes."""
 from __future__ import annotations
 
+import os
 from collections.abc import Callable
 from http import HTTPStatus
 from typing import Protocol
 
+from agentsassemble.application.central_directory_host import (
+    CENTRAL_URL_ENV,
+    HostIdentity,
+)
 from agentsassemble.web.router import RequestContext, Router
 
 
@@ -27,7 +32,7 @@ def register_public_invite_admin_routes(
     is_local_operator: Callable[[RequestContext], bool],
     local_server_url: Callable[[RequestContext], str],
 ) -> None:
-    """Register local-operator controls for making room invites public."""
+    """Register public identity metadata and local public-invite controls."""
 
     def status_payload(
         ctx: RequestContext,
@@ -46,6 +51,18 @@ def register_public_invite_admin_routes(
                 or (runtime.has_runtime_host_token() and is_local_operator(ctx))
             ),
         }
+
+    @router.get("/api/server-info")
+    def public_server_info(ctx: RequestContext) -> None:
+        identity = HostIdentity(
+            output_root=ctx.deps.output_root,
+            server_id=ctx.deps.identities.server_id(),
+        )
+        ctx.send_json(
+            identity.server_info(
+                central_status={"enabled": bool(os.environ.get(CENTRAL_URL_ENV))}
+            )
+        )
 
     @router.get("/api/public-invite/status")
     def public_invite_status(ctx: RequestContext) -> None:
