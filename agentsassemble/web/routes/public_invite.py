@@ -12,6 +12,9 @@ from agentsassemble.application.central_directory_host import (
     CENTRAL_URL_ENV,
     HostIdentity,
 )
+from agentsassemble.application.server_identity_challenge import (
+    signed_server_identity_challenge,
+)
 from agentsassemble.web.router import RequestContext, Router
 
 
@@ -36,6 +39,12 @@ def register_public_invite_admin_routes(
 ) -> None:
     """Register public identity metadata and local public-invite controls."""
 
+    def host_identity(ctx: RequestContext) -> HostIdentity:
+        return HostIdentity(
+            output_root=ctx.deps.output_root,
+            server_id=ctx.deps.identities.server_id(),
+        )
+
     def status_payload(
         ctx: RequestContext,
         tunnel_status: dict[str, object] | None = None,
@@ -56,15 +65,26 @@ def register_public_invite_admin_routes(
 
     @router.get("/api/server-info")
     def public_server_info(ctx: RequestContext) -> None:
-        identity = HostIdentity(
-            output_root=ctx.deps.output_root,
-            server_id=ctx.deps.identities.server_id(),
-        )
         ctx.send_json(
-            identity.server_info(
+            host_identity(ctx).server_info(
                 central_status={"enabled": bool(os.environ.get(CENTRAL_URL_ENV))}
             )
         )
+
+    @router.post("/api/server-info/challenge")
+    def public_server_info_challenge(ctx: RequestContext) -> None:
+        payload = ctx.read_json_body()
+        if payload is None:
+            return
+        try:
+            proof = signed_server_identity_challenge(
+                host_identity(ctx),
+                payload.get("challenge"),
+            )
+        except ValueError as error:
+            ctx.send_error(HTTPStatus.BAD_REQUEST, str(error))
+            return
+        ctx.send_json(proof)
 
     @router.post("/api/central-directory/registration-proof")
     def central_directory_registration_proof(ctx: RequestContext) -> None:
@@ -89,10 +109,7 @@ def register_public_invite_admin_routes(
         ):
             ctx.send_error(HTTPStatus.BAD_REQUEST, "owner_person_id is invalid")
             return
-        identity = HostIdentity(
-            output_root=ctx.deps.output_root,
-            server_id=ctx.deps.identities.server_id(),
-        )
+        identity = host_identity(ctx)
         issued_at = int(time.time())
         nonce = secrets.token_urlsafe(18)
         canonical = "\n".join(
