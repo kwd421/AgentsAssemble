@@ -2,9 +2,11 @@ import { isDesktopWebview, openDesktopGoogleLogin } from "./desktopBridge";
 
 const SESSION_KEY = "agentsassemble.centralSession.v1";
 const SERVERS_KEY = "agentsassemble.centralServers.v1";
+const PENDING_RECOVERY_KEY = "agentsassemble.pendingRecoveryCode.v1";
 const DB_NAME = "agentsassemble-central-identity-v1";
 const STORE_NAME = "credentials";
 const DEVICE_KEY = "device-v1";
+const RECOVERY_CODE_PATTERN = /^(?:[ABCDEFGHJKLMNPQRSTUVWXYZ23456789]{4}-){7}[ABCDEFGHJKLMNPQRSTUVWXYZ23456789]{4}$/;
 
 type ImportMetaWithEnv = ImportMeta & {
   env?: Record<string, string | undefined>;
@@ -68,7 +70,13 @@ function configuredUrl(): string {
   try {
     const parsed = new URL(raw);
     const loopback = ["localhost", "127.0.0.1", "::1"].includes(parsed.hostname);
-    if (parsed.username || parsed.password || parsed.search || parsed.hash || parsed.pathname !== "/") {
+    if (
+      parsed.username ||
+      parsed.password ||
+      parsed.search ||
+      parsed.hash ||
+      parsed.pathname !== "/"
+    ) {
       return "";
     }
     if (parsed.protocol !== "https:" && !(parsed.protocol === "http:" && loopback)) return "";
@@ -112,7 +120,8 @@ function openCredentialDb(): Promise<IDBDatabase> {
       }
     };
     request.onsuccess = () => resolve(request.result);
-    request.onerror = () => reject(request.error || new Error("기기 보안 저장소를 열지 못했습니다."));
+    request.onerror = () =>
+      reject(request.error || new Error("기기 보안 저장소를 열지 못했습니다."));
   });
 }
 
@@ -120,7 +129,10 @@ async function storedDevice(): Promise<StoredDevice> {
   const db = await openCredentialDb();
   try {
     const existing = await new Promise<StoredDevice | undefined>((resolve, reject) => {
-      const request = db.transaction(STORE_NAME, "readonly").objectStore(STORE_NAME).get(DEVICE_KEY);
+      const request = db
+        .transaction(STORE_NAME, "readonly")
+        .objectStore(STORE_NAME)
+        .get(DEVICE_KEY);
       request.onsuccess = () => resolve(request.result as StoredDevice | undefined);
       request.onerror = () => reject(request.error);
     });
@@ -146,7 +158,10 @@ async function storedDevice(): Promise<StoredDevice> {
       publicJwk,
     };
     await new Promise<void>((resolve, reject) => {
-      const request = db.transaction(STORE_NAME, "readwrite").objectStore(STORE_NAME).put(created, DEVICE_KEY);
+      const request = db
+        .transaction(STORE_NAME, "readwrite")
+        .objectStore(STORE_NAME)
+        .put(created, DEVICE_KEY);
       request.onsuccess = () => resolve();
       request.onerror = () => reject(request.error);
     });
@@ -156,15 +171,53 @@ async function storedDevice(): Promise<StoredDevice> {
   }
 }
 
-function saveSession(result: CentralGuestResult | { person: CentralPerson; session: Omit<CentralSession, "person"> }): CentralSession {
+function saveSession(
+  result:
+    | CentralGuestResult
+    | { person: CentralPerson; session: Omit<CentralSession, "person"> }
+): CentralSession {
   const session: CentralSession = { ...result.session, person: result.person };
   localStorage.setItem(SESSION_KEY, JSON.stringify(session));
   return session;
 }
 
+function saveGuestResult(result: CentralGuestResult): CentralGuestResult {
+  const recoveryCode = String(result.recovery_code || "").trim().toUpperCase();
+  if (!RECOVERY_CODE_PATTERN.test(recoveryCode)) {
+    throw new Error("중앙 서버가 올바른 형식의 복구 코드를 반환하지 않았습니다.");
+  }
+  // Keep the sole plaintext copy only on this client until the user confirms
+  // saving it. A restart must return to the warning screen instead of silently
+  // entering the application with an unacknowledged recovery secret.
+  localStorage.setItem(PENDING_RECOVERY_KEY, recoveryCode);
+  saveSession(result);
+  return result;
+}
+
+export function loadPendingCentralRecoveryCode(): string {
+  try {
+    const value = String(localStorage.getItem(PENDING_RECOVERY_KEY) || "")
+      .trim()
+      .toUpperCase();
+    if (!RECOVERY_CODE_PATTERN.test(value)) {
+      localStorage.removeItem(PENDING_RECOVERY_KEY);
+      return "";
+    }
+    return value;
+  } catch {
+    return "";
+  }
+}
+
+export function clearPendingCentralRecoveryCode(): void {
+  localStorage.removeItem(PENDING_RECOVERY_KEY);
+}
+
 export function loadCentralSession(): CentralSession | null {
   try {
-    const parsed = JSON.parse(localStorage.getItem(SESSION_KEY) || "null") as CentralSession | null;
+    const parsed = JSON.parse(
+      localStorage.getItem(SESSION_KEY) || "null"
+    ) as CentralSession | null;
     if (!parsed?.token || !parsed.device_id || !parsed.person?.person_id) return null;
     if (parsed.expires_at <= Math.floor(Date.now() / 1000)) {
       localStorage.removeItem(SESSION_KEY);
@@ -183,7 +236,9 @@ export function clearCentralSession(): void {
 
 export function loadCentralServers(): CentralServer[] {
   try {
-    const value = JSON.parse(localStorage.getItem(SERVERS_KEY) || "[]") as CentralServer[];
+    const value = JSON.parse(
+      localStorage.getItem(SERVERS_KEY) || "[]"
+    ) as CentralServer[];
     return Array.isArray(value) ? value : [];
   } catch {
     return [];
@@ -195,7 +250,8 @@ async function responsePayload<T>(response: Response): Promise<T> {
     error?: { code?: string; message?: string };
   } & T;
   if (!response.ok) {
-    const message = payload.error?.message || `중앙 서버가 HTTP ${response.status}을 반환했습니다.`;
+    const message =
+      payload.error?.message || `중앙 서버가 HTTP ${response.status}을 반환했습니다.`;
     if (response.status === 401) throw new CentralAuthError(message);
     throw new Error(message);
   }
@@ -205,8 +261,11 @@ async function responsePayload<T>(response: Response): Promise<T> {
 async function unsignedPost<T>(path: string, body: Record<string, unknown>): Promise<T> {
   const response = await fetch(`${configuredUrl()}${path}`, {
     method: "POST",
+    mode: "cors",
     cache: "no-store",
     credentials: "omit",
+    redirect: "error",
+    referrerPolicy: "no-referrer",
     headers: { "content-type": "application/json" },
     body: JSON.stringify(body),
   });
@@ -222,7 +281,9 @@ async function signedRequest<T>(
   const device = await storedDevice();
   if (device.deviceId !== session.device_id) {
     clearCentralSession();
-    throw new CentralAuthError("이 기기의 중앙 로그인 키가 바뀌었습니다. 다시 로그인해 주세요.");
+    throw new CentralAuthError(
+      "이 기기의 중앙 로그인 키가 바뀌었습니다. 다시 로그인해 주세요."
+    );
   }
   const body = bodyValue ? JSON.stringify(bodyValue) : "";
   const timestamp = Math.floor(Date.now() / 1000);
@@ -244,8 +305,11 @@ async function signedRequest<T>(
   );
   const response = await fetch(`${configuredUrl()}${path}`, {
     method,
+    mode: "cors",
     cache: "no-store",
     credentials: "omit",
+    redirect: "error",
+    referrerPolicy: "no-referrer",
     headers: {
       authorization: `Bearer ${session.token}`,
       "content-type": "application/json",
@@ -270,21 +334,26 @@ async function authDeviceBody(displayName?: string): Promise<Record<string, unkn
 }
 
 export async function createCentralGuest(displayName: string): Promise<CentralGuestResult> {
-  const result = await unsignedPost<CentralGuestResult>("/v1/auth/guest", await authDeviceBody(displayName));
-  saveSession(result);
-  return result;
+  const result = await unsignedPost<CentralGuestResult>(
+    "/v1/auth/guest",
+    await authDeviceBody(displayName)
+  );
+  return saveGuestResult(result);
 }
 
-export async function recoverCentralGuest(recoveryCode: string): Promise<CentralGuestResult> {
+export async function recoverCentralGuest(
+  recoveryCode: string
+): Promise<CentralGuestResult> {
   const result = await unsignedPost<CentralGuestResult>("/v1/auth/recover", {
     ...(await authDeviceBody()),
     recovery_code: recoveryCode,
   });
-  saveSession(result);
-  return result;
+  return saveGuestResult(result);
 }
 
-export async function loginCentralGoogle(status?: (message: string) => void): Promise<CentralSession> {
+export async function loginCentralGoogle(
+  status?: (message: string) => void
+): Promise<CentralSession> {
   const started = await unsignedPost<{
     handoff_id: string;
     handoff_url: string;
@@ -296,7 +365,9 @@ export async function loginCentralGoogle(status?: (message: string) => void): Pr
     await openDesktopGoogleLogin(started.handoff_url);
   } else {
     const popup = window.open(started.handoff_url, "_blank");
-    if (!popup) throw new Error("브라우저 팝업이 차단됐습니다. 팝업을 허용하고 다시 시도해 주세요.");
+    if (!popup) {
+      throw new Error("브라우저 팝업이 차단됐습니다. 팝업을 허용하고 다시 시도해 주세요.");
+    }
     try {
       popup.opener = null;
     } catch {
@@ -307,7 +378,11 @@ export async function loginCentralGoogle(status?: (message: string) => void): Pr
     await new Promise((resolve) => window.setTimeout(resolve, 1500));
     const polled = await unsignedPost<
       | { status: "pending"; expires_at: number }
-      | { status: "complete"; person: CentralPerson; session: Omit<CentralSession, "person"> }
+      | {
+          status: "complete";
+          person: CentralPerson;
+          session: Omit<CentralSession, "person">;
+        }
     >("/v1/auth/google/handoff/poll", {
       handoff_id: started.handoff_id,
       poll_token: started.poll_token,
@@ -321,7 +396,11 @@ export async function bootstrapCentral(): Promise<CentralBootstrap | null> {
   const session = loadCentralSession();
   if (!session) return null;
   try {
-    const payload = await signedRequest<CentralBootstrap>(session, "/v1/bootstrap", "GET");
+    const payload = await signedRequest<CentralBootstrap>(
+      session,
+      "/v1/bootstrap",
+      "GET"
+    );
     localStorage.setItem(SERVERS_KEY, JSON.stringify(payload.servers || []));
     return payload;
   } catch (error) {
