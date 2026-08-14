@@ -19,6 +19,9 @@ and invite credentials remain on each AgentsAssemble engine.
   Endpoint generations are monotonic, and leases expire automatically.
 - A central login never grants room membership. Clients still authenticate directly
   to the selected engine and its room ACLs.
+- Public Quick Tunnel origins are valid server endpoints, but are not trusted central
+  login origins in production. This prevents a server page from receiving central
+  session or recovery responses.
 
 ## Setup
 
@@ -36,14 +39,16 @@ wrangler deploy
 Use independently generated 32-byte-or-longer values for both peppers. Do not reuse
 Cloudflare account API tokens, tunnel tokens, host tokens, or room credentials.
 
-`CENTRAL_ALLOWED_ORIGINS` may contain a comma-separated allowlist of production app
-origins. Loopback HTTP origins and HTTPS `*.trycloudflare.com` origins are accepted by
-default for the desktop and quick-tunnel prototype. Set
-`ALLOW_TRYCLOUDFLARE_ORIGINS = "false"` when a fixed production origin is available.
+`CENTRAL_ALLOWED_ORIGINS` is the exact comma-separated allowlist for trusted bundled
+client origins. Loopback HTTP origins are also accepted so the local desktop engine
+can complete first-run setup. Production keeps
+`ALLOW_TRYCLOUDFLARE_ORIGINS = "false"`; switch it on only for an isolated development
+experiment, never for the public identity Worker.
 
 `ALLOWED_SERVER_HOSTS` is a comma-separated list of fixed custom hostnames allowed as
-server endpoints. Quick Tunnel `*.trycloudflare.com` endpoints are accepted without
-adding them to that list.
+server endpoints. Quick Tunnel `*.trycloudflare.com` endpoints remain accepted without
+adding them to that list. Endpoint acceptance and central-login CORS are deliberately
+separate policies.
 
 ## Tests
 

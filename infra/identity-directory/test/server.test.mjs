@@ -107,17 +107,17 @@ test("host-signed endpoint leases are monotonic and immediately revocable", asyn
   assert.equal((await payload(afterStop)).servers[0].endpoint.status, "offline");
 });
 
-test("CORS reflects only approved app, loopback, and quick-tunnel origins", async () => {
+test("CORS reflects only approved shell and loopback origins in production", async () => {
   const env = environment({
     CENTRAL_ALLOWED_ORIGINS:
       "tauri://localhost,http://tauri.localhost,https://tauri.localhost",
+    ALLOW_TRYCLOUDFLARE_ORIGINS: "false",
   });
   for (const origin of [
     "tauri://localhost",
     "http://tauri.localhost",
     "https://tauri.localhost",
     "http://127.0.0.1:43123",
-    "https://safe-name.trycloudflare.com",
   ]) {
     const allowed = await worker.fetch(
       new Request("https://central.example/healthz", {
@@ -137,6 +137,7 @@ test("CORS reflects only approved app, loopback, and quick-tunnel origins", asyn
     "null",
     "asset://localhost",
     "https://attacker.example",
+    "https://safe-name.trycloudflare.com",
   ]) {
     const denied = await worker.fetch(
       new Request("https://central.example/healthz", {
@@ -148,6 +149,20 @@ test("CORS reflects only approved app, loopback, and quick-tunnel origins", asyn
     assert.equal(denied.status, 403, `accepted ${origin}`);
     assert.equal(denied.headers.get("access-control-allow-origin"), null);
   }
+});
+
+test("Quick Tunnel CORS can be enabled only as an explicit development override", async () => {
+  const env = environment({ ALLOW_TRYCLOUDFLARE_ORIGINS: "true" });
+  const origin = "https://prototype-only.trycloudflare.com";
+  const response = await worker.fetch(
+    new Request("https://central.example/healthz", {
+      headers: { origin },
+    }),
+    env,
+    {}
+  );
+  assert.equal(response.status, 200);
+  assert.equal(response.headers.get("access-control-allow-origin"), origin);
 });
 
 test("CORS preflight permits signed device headers only for an approved shell origin", async () => {

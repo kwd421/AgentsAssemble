@@ -77,6 +77,14 @@ class StartupIdentitySourceTests(unittest.TestCase):
         self.assertNotIn("void loadCachedRooms();", desktop_source)
         self.assertIn("void loadCachedRooms();", source[:desktop_start])
 
+    def test_remote_engine_origin_never_runs_the_central_login_gate(self) -> None:
+        boundary = read("frontend/src/views/components/StartupIdentityBoundary.tsx")
+        self.assertIn("startupIdentityRunsOnThisOrigin", boundary)
+        self.assertIn("loopbackHosts.has(hostname)", boundary)
+        self.assertIn("url.origin === centralOrigin", boundary)
+        self.assertIn("!startupIdentityRunsOnThisOrigin()", boundary)
+        self.assertNotIn("trycloudflare.com", boundary)
+
     def test_mobile_known_server_is_verified_before_navigation(self) -> None:
         source = read("desktop/shell/shell.js")
         client = read("desktop/shell/central-identity.js")
