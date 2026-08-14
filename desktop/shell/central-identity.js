@@ -1,9 +1,11 @@
 const SESSION_KEY = "agentsassemble.mobile.centralSession.v1";
 const SERVERS_KEY = "agentsassemble.mobile.centralServers.v1";
+const PENDING_RECOVERY_KEY = "agentsassemble.mobile.pendingRecoveryCode.v1";
 const DB_NAME = "agentsassemble-mobile-central-identity-v1";
 const STORE_NAME = "credentials";
 const DEVICE_KEY = "device-v1";
 const SERVER_CHALLENGE_DOMAIN = "AA-SERVER-CHALLENGE-1";
+const RECOVERY_CODE_PATTERN = /^(?:[ABCDEFGHJKLMNPQRSTUVWXYZ23456789]{4}-){7}[ABCDEFGHJKLMNPQRSTUVWXYZ23456789]{4}$/;
 
 let centralUrl = "";
 let devicePromise;
@@ -144,6 +146,38 @@ function saveSession(result) {
   return session;
 }
 
+function saveGuestResult(result) {
+  const recoveryCode = String(result?.recovery_code || "").trim().toUpperCase();
+  if (!RECOVERY_CODE_PATTERN.test(recoveryCode)) {
+    throw new Error("중앙 디렉터리가 올바른 형식의 복구 코드를 반환하지 않았습니다.");
+  }
+  // Keep the one-time plaintext only on this trusted local shell until the
+  // user explicitly acknowledges saving it. This prevents an app restart from
+  // silently bypassing the only-copy warning.
+  localStorage.setItem(PENDING_RECOVERY_KEY, recoveryCode);
+  saveSession(result);
+  return result;
+}
+
+export function loadPendingRecoveryCode() {
+  try {
+    const value = String(localStorage.getItem(PENDING_RECOVERY_KEY) || "")
+      .trim()
+      .toUpperCase();
+    if (!RECOVERY_CODE_PATTERN.test(value)) {
+      localStorage.removeItem(PENDING_RECOVERY_KEY);
+      return "";
+    }
+    return value;
+  } catch {
+    return "";
+  }
+}
+
+export function clearPendingRecoveryCode() {
+  localStorage.removeItem(PENDING_RECOVERY_KEY);
+}
+
 export function loadCentralSession() {
   try {
     const parsed = JSON.parse(localStorage.getItem(SESSION_KEY) || "null");
@@ -265,8 +299,7 @@ export async function createCentralGuest(displayName) {
     "POST",
     await authDeviceBody(String(displayName || "").trim())
   );
-  saveSession(result);
-  return result;
+  return saveGuestResult(result);
 }
 
 export async function recoverCentralGuest(recoveryCode) {
@@ -274,8 +307,7 @@ export async function recoverCentralGuest(recoveryCode) {
     ...(await authDeviceBody()),
     recovery_code: String(recoveryCode || "").trim(),
   });
-  saveSession(result);
-  return result;
+  return saveGuestResult(result);
 }
 
 export async function loginCentralGoogle(openSystemBrowser, status) {
@@ -322,6 +354,7 @@ export async function logoutCentral() {
     if (session) await signedRequest(session, "/v1/logout", "POST", {});
   } finally {
     clearCentralSession();
+    clearPendingRecoveryCode();
   }
 }
 
