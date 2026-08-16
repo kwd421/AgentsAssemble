@@ -180,19 +180,5 @@ class ServerIdentityChallengeTests(unittest.TestCase):
             )
         )
 
-    def test_transport_uses_wildcard_cors_only_for_identity_probes(self) -> None:
-        source = (
-            Path(__file__).resolve().parents[1]
-            / "agentsassemble/web/gui_server.py"
-        ).read_text(encoding="utf-8")
-        self.assertIn("_public_server_identity_route_allowed(path, method)", source)
-        self.assertIn('return "*"', source)
-        self.assertIn(
-            'self.send_header("Access-Control-Allow-Headers", "Content-Type")',
-            source,
-        )
-        self.assertIn('allow_origin == "*"', source)
-
-
 if __name__ == "__main__":
     unittest.main()

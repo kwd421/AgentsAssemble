@@ -894,12 +894,61 @@ class GuiServerStreamsHttpTests(unittest.TestCase):
                 csrf_code = csrf.exception.code
                 csrf.exception.close()
                 self.assertEqual(csrf_code, 403)
-                # Loopback host with a non-matching port and loopback origin remain allowed.
-                with urlopen(
-                    Request(f"{base}/api/lobby", headers={"Host": "localhost:1", "Origin": base}),
-                    timeout=4,
-                ) as ok:
-                    self.assertEqual(ok.status, 200)
+                with self.assertRaises(HTTPError) as mismatched_loopback:
+                    urlopen(
+                        Request(
+                            f"{base}/api/lobby",
+                            headers={"Host": "localhost:1", "Origin": base},
+                        ),
+                        timeout=4,
+                    )
+                mismatched_code = mismatched_loopback.exception.code
+                mismatched_loopback.exception.close()
+                self.assertEqual(mismatched_code, 403)
+            finally:
+                server.shutdown()
+                server.server_close()
+
+    def test_identity_probe_options_use_wildcard_cors(self):
+        public_url = "https://home-mac.trycloudflare.com"
+        with tempfile.TemporaryDirectory() as temp_dir, patch.dict(
+            os.environ,
+            {"AGENTSASSEMBLE_PUBLIC_URL": public_url},
+        ):
+            root = Path(temp_dir)
+            server = ThreadingHTTPServer(("127.0.0.1", 0), _make_handler(root))
+            thread = threading.Thread(target=server.serve_forever, daemon=True)
+            thread.start()
+            try:
+                base = f"http://127.0.0.1:{server.server_port}"
+                probe = Request(
+                    f"{base}/api/server-info",
+                    method="OPTIONS",
+                    headers={
+                        "Host": "home-mac.trycloudflare.com",
+                        "Origin": "https://central.example.workers.dev",
+                        "Access-Control-Request-Method": "GET",
+                    },
+                )
+                with urlopen(probe, timeout=4) as response:
+                    self.assertEqual(response.status, 204)
+                    self.assertEqual(
+                        response.headers.get("Access-Control-Allow-Origin"),
+                        "*",
+                    )
+                privileged = Request(
+                    f"{base}/api/central-directory/registration-proof",
+                    method="OPTIONS",
+                    headers={
+                        "Host": "home-mac.trycloudflare.com",
+                        "Origin": "https://central.example.workers.dev",
+                        "Access-Control-Request-Method": "POST",
+                    },
+                )
+                with self.assertRaises(HTTPError) as blocked:
+                    urlopen(privileged, timeout=4)
+                blocked.exception.close()
+                self.assertEqual(blocked.exception.code, 403)
             finally:
                 server.shutdown()
                 server.server_close()
@@ -909,7 +958,8 @@ class GuiServerStreamsHttpTests(unittest.TestCase):
         # Loopback bind: strict loopback-only Host/Origin allowlist.
         self.assertFalse(_request_trusted("127.0.0.1", "evil.example.com", None))
         self.assertFalse(_request_trusted("127.0.0.1", "127.0.0.1:8765", "http://evil.example.com"))
-        self.assertTrue(_request_trusted("127.0.0.1", "localhost:1", "http://127.0.0.1:8765"))
+        self.assertFalse(_request_trusted("127.0.0.1", "localhost:1", "http://127.0.0.1:8765"))
+        self.assertTrue(_request_trusted("127.0.0.1", "127.0.0.1:8765", "http://127.0.0.1:8765"))
         self.assertTrue(_request_trusted("127.0.0.1", "127.0.0.1:8765", None))
         public_url = "https://room.example.com"
         with patch.dict(os.environ, {"AGENTSASSEMBLE_PUBLIC_URL": public_url}):
