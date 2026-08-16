@@ -100,6 +100,15 @@ class RoomScopeIsolationTests(unittest.TestCase):
 
     def test_payload_cannot_redirect_a_member_write_to_another_room(self) -> None:
         member_in_room_b = _identity("room-b", operator=False)
+        self.controller.store.upsert_participant(
+            "room-b",
+            {
+                "participant_id": member_in_room_b["agent_id"],
+                "display_name": member_in_room_b["display_name"],
+                "participant_type": "human",
+                "status": "joined",
+            },
+        )
 
         response = self.controller.handle_command(
             member_in_room_b,

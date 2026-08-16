@@ -94,7 +94,7 @@ class EngineInstanceLockTests(unittest.TestCase):
             path = root / ENGINE_LOCK_FILENAME
             path.write_text("stale metadata\n", encoding="utf-8")
             with EngineInstanceLock.acquire(root) as lock:
-                self.assertEqual(lock.path, path)
+                self.assertEqual(lock.path, path.resolve())
             self.assertTrue(path.exists())
 
 

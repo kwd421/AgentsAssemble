@@ -3,6 +3,7 @@ import unittest
 from dataclasses import replace
 
 from agentsassemble.providers.launch_specs import (
+    NATIVE_CLI_PROVIDER_CATALOG,
     NativeCliProviderSpec,
     StoredProviderProfileError,
     UnsupportedNativeCliProvider,
@@ -22,7 +23,10 @@ class NativeCliProviderCatalogTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as temp_dir:
             specs = {spec.agent_id: spec for spec in default_native_cli_provider_specs(workspace=temp_dir)}
 
-        self.assertEqual(list(specs), ["codex", "antigravity", "grok", "claude", "cursor"])
+        self.assertEqual(
+            list(specs),
+            [definition.provider_id for definition in NATIVE_CLI_PROVIDER_CATALOG],
+        )
         self.assertEqual(specs["codex"].model, "gpt-5.6-luna")
         self.assertEqual(specs["codex"].reasoning_effort, "low")
         self.assertEqual(specs["claude"].model, "claude-haiku-4-5")

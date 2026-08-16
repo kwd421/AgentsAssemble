@@ -91,6 +91,7 @@ class UserProfileRoomSyncTests(unittest.TestCase):
                 "participant_type": "human",
                 "client_type": "browser",
                 "invite_scope": "read_write",
+                "principal_user_id": user["user_id"],
             }
         )
         return user, token

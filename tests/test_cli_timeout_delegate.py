@@ -391,7 +391,7 @@ class CliTimeoutDelegateTests(unittest.TestCase):
                 "lan-invite",
                 "create",
                 "--server",
-                "http://192.168.1.50:8765",
+                "https://192.168.1.50:8765",
                 "--meeting-id",
                 "resident-m1",
                 "--agent-id",
@@ -410,7 +410,7 @@ class CliTimeoutDelegateTests(unittest.TestCase):
 
         self.assertEqual(args.live_agent_command, "lan-invite")
         self.assertEqual(args.lan_invite_command, "create")
-        self.assertEqual(args.server, "http://192.168.1.50:8765")
+        self.assertEqual(args.server, "https://192.168.1.50:8765")
         self.assertEqual(args.agent_id, "friend-claude")
         self.assertEqual(args.secret_ref, "env:LAN_INVITE_SECRET")
         self.assertEqual(args.ttl_seconds, 60)
@@ -424,7 +424,7 @@ class CliTimeoutDelegateTests(unittest.TestCase):
                         "lan-invite",
                         "create",
                         "--server",
-                        "http://192.168.1.50:8765",
+                        "https://192.168.1.50:8765",
                         "--meeting-id",
                         "resident-m1",
                         "--agent-id",
