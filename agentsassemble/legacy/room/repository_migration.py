@@ -7,6 +7,7 @@ from dataclasses import dataclass
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
+from uuid import uuid5, NAMESPACE_URL
 
 from agentsassemble.persistence.postgres.schema import (
     POSTGRES_ROOM_AUTHORITY_ID,
@@ -35,7 +36,7 @@ class _TableSpec:
 _TABLES = (
     _TableSpec(
         "rooms",
-        ("room_id", "label", "status", "archived", "updated_at", "data_json"),
+        ("room_id", "room_uid", "label", "status", "archived", "updated_at", "data_json"),
         ("room_id",),
         json_columns=frozenset({"data_json"}),
         boolean_columns=frozenset({"archived"}),
@@ -442,14 +443,34 @@ def _write_postgres_snapshot(
     return target
 
 
+def _row_value(row: Any, column: str) -> object:
+    try:
+        return row[column]
+    except (KeyError, IndexError, TypeError):
+        return None
+
+
 def _normalized_rows(rows: list[Any], spec: _TableSpec) -> list[dict[str, object]]:
     normalized = [
         {
-            column: _normalize_value(spec, column, row[column])
+            column: _normalize_value(spec, column, _row_value(row, column))
             for column in spec.columns
         }
         for row in rows
     ]
+    if spec.name == "rooms":
+        for row in normalized:
+            payload = row.get("data_json")
+            payload_uid = ""
+            if isinstance(payload, dict):
+                payload_uid = str(payload.get("room_uid") or "")
+            room_id = str(row.get("room_id") or "")
+            room_uid = str(row.get("room_uid") or payload_uid or "")
+            if not room_uid and room_id:
+                room_uid = str(uuid5(NAMESPACE_URL, f"agentsassemble:room:{room_id}"))
+            row["room_uid"] = room_uid
+            if isinstance(payload, dict) and not payload.get("room_uid"):
+                row["data_json"] = {**payload, "room_uid": room_uid}
     normalized.sort(
         key=lambda row: tuple(_canonical_sort_value(row[column]) for column in spec.key_columns)
     )

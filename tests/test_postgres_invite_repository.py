@@ -112,9 +112,9 @@ class PostgresInviteSessionRepositoryContractTests(
             for room_id in ("room-a", "room-b"):
                 connection.execute(
                     """INSERT INTO rooms(
-                           room_id, label, status, archived, updated_at, data_json
-                       ) VALUES(%s, %s, 'active', FALSE, NOW(), '{}'::jsonb)""",
-                    (room_id, room_id),
+                           room_id, room_uid, label, status, archived, updated_at, data_json
+                       ) VALUES(%s, %s, %s, 'active', FALSE, NOW(), '{}'::jsonb)""",
+                    (room_id, f"{room_id}-uid", room_id),
                 )
         self.repository = PostgresInviteSessionRepository(self.test_dsn)
 
