@@ -36,12 +36,15 @@ class StartupIdentitySourceTests(unittest.TestCase):
     def test_mobile_shell_restores_unacknowledged_recovery_code_before_bootstrap(self) -> None:
         source = read("desktop/shell/shell.js")
         client = read("desktop/shell/central-identity.js")
-        self.assertIn("loadPendingRecoveryCode", source)
-        self.assertIn("clearPendingRecoveryCode", source)
+        start = source.index("async function initializeCentralIdentity()")
+        end = source.index("async function updateBeforeStartup()", start)
+        initialization = source[start:end]
+        self.assertIn("loadPendingRecoveryCode", initialization)
+        self.assertIn("loadCentralSession", initialization)
         self.assertIn("PENDING_RECOVERY_KEY", client)
         self.assertLess(
-            source.index("const pendingRecoveryCode = loadPendingRecoveryCode()"),
-            source.index("const session = loadCentralSession()"),
+            initialization.index("const pendingRecoveryCode = loadPendingRecoveryCode()"),
+            initialization.index("const session = loadCentralSession()"),
         )
         self.assertLess(
             client.index("localStorage.setItem(PENDING_RECOVERY_KEY"),
@@ -59,6 +62,13 @@ class StartupIdentitySourceTests(unittest.TestCase):
                 self.assertIn("localStorage.setItem(SESSION_KEY", source)
                 self.assertNotIn("localStorage.setItem(DEVICE_KEY", source)
                 self.assertIn("AA-DEVICE-1", source)
+
+    def test_react_central_device_creation_is_serialized(self) -> None:
+        source = read("frontend/src/lib/centralIdentity.ts")
+        self.assertIn("let devicePromise: Promise<StoredDevice> | undefined", source)
+        self.assertIn("async function loadOrCreateDevice()", source)
+        self.assertIn("devicePromise = loadOrCreateDevice().catch", source)
+        self.assertIn("return devicePromise", source)
 
     def test_server_registration_proof_is_not_a_public_tunnel_route(self) -> None:
         source = read("agentsassemble/web/security.py")

@@ -9,9 +9,10 @@ function configuredOrigins(env) {
   );
 }
 
-export function allowedBrowserOrigin(origin, env = {}) {
+export function allowedBrowserOrigin(origin, env = {}, serviceOrigin = "") {
   const cleanOrigin = String(origin || "").trim();
   if (!cleanOrigin) return "";
+  if (cleanOrigin === String(serviceOrigin || "").trim()) return cleanOrigin;
   const configured = configuredOrigins(env);
   // Tauri's bundled custom-protocol pages can serialize as tauri://localhost
   // rather than a standard URL origin. It is accepted only by exact explicit
@@ -36,7 +37,7 @@ export function allowedBrowserOrigin(origin, env = {}) {
     return parsed.origin;
   }
   if (
-    env.ALLOW_TRYCLOUDFLARE_ORIGINS !== "false" &&
+    env.ALLOW_TRYCLOUDFLARE_ORIGINS === "true" &&
     parsed.protocol === "https:" &&
     parsed.hostname.endsWith(".trycloudflare.com")
   ) {

@@ -1,7 +1,7 @@
 import fs from "node:fs";
 import path from "node:path";
+import { DatabaseSync } from "node:sqlite";
 import { fileURLToPath } from "node:url";
-import { createRequire } from "node:module";
 
 import {
   bytesToBase64Url,
@@ -13,8 +13,6 @@ import {
 } from "../src/crypto.js";
 import worker from "../src/index.js";
 
-const require = createRequire(import.meta.url);
-const Database = require("better-sqlite3");
 const directory = path.dirname(fileURLToPath(import.meta.url));
 const migration = fs.readFileSync(
   path.join(directory, "../migrations/0001_initial.sql"),
@@ -40,7 +38,7 @@ class D1Prepared {
     const info = this.database.prepare(this.sql).run(...this.values);
     return {
       meta: {
-        changes: info.changes,
+        changes: Number(info.changes || 0),
         last_row_id: Number(info.lastInsertRowid || 0),
       },
     };
@@ -49,22 +47,27 @@ class D1Prepared {
 
 class D1Database {
   constructor() {
-    this.database = new Database(":memory:");
+    this.database = new DatabaseSync(":memory:");
     this.database.exec(migration);
   }
   prepare(sql) {
     return new D1Prepared(this.database, sql);
   }
   async batch(statements) {
-    const run = this.database.transaction(() =>
-      statements.map((statement) => {
+    this.database.exec("BEGIN IMMEDIATE");
+    try {
+      const results = statements.map((statement) => {
         const info = statement.database
           .prepare(statement.sql)
           .run(...statement.values);
-        return { meta: { changes: info.changes } };
-      })
-    );
-    return run();
+        return { meta: { changes: Number(info.changes || 0) } };
+      });
+      this.database.exec("COMMIT");
+      return results;
+    } catch (error) {
+      this.database.exec("ROLLBACK");
+      throw error;
+    }
   }
 }
 

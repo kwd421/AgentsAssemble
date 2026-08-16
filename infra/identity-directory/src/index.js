@@ -132,7 +132,11 @@ async function route(request, env) {
 
 function corsHeaders(request, env) {
   const origin = request.headers.get("origin") || "";
-  const allowed = allowedBrowserOrigin(origin, env);
+  const allowed = allowedBrowserOrigin(
+    origin,
+    env,
+    new URL(request.url).origin
+  );
   if (origin && !allowed) {
     throw new HttpError(403, "origin_not_allowed");
   }

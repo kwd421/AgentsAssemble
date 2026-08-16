@@ -151,6 +151,34 @@ test("CORS reflects only approved shell and loopback origins in production", asy
   }
 });
 
+test("the Worker accepts its exact own origin for the Google handoff page", async () => {
+  const origin = "https://central.example";
+  const response = await worker.fetch(
+    new Request(`${origin}/healthz`, {
+      headers: { origin },
+    }),
+    environment(),
+    {}
+  );
+  assert.equal(response.status, 200);
+  assert.equal(response.headers.get("access-control-allow-origin"), origin);
+});
+
+test("Quick Tunnel CORS fails closed when the override is missing", async () => {
+  const env = environment();
+  delete env.ALLOW_TRYCLOUDFLARE_ORIGINS;
+  const origin = "https://prototype-only.trycloudflare.com";
+  const response = await worker.fetch(
+    new Request("https://central.example/healthz", {
+      headers: { origin },
+    }),
+    env,
+    {}
+  );
+  assert.equal(response.status, 403);
+  assert.equal(response.headers.get("access-control-allow-origin"), null);
+});
+
 test("Quick Tunnel CORS can be enabled only as an explicit development override", async () => {
   const env = environment({ ALLOW_TRYCLOUDFLARE_ORIGINS: "true" });
   const origin = "https://prototype-only.trycloudflare.com";

@@ -60,6 +60,8 @@ type StoredDevice = {
 
 class CentralAuthError extends Error {}
 
+let devicePromise: Promise<StoredDevice> | undefined;
+
 function configuredUrl(): string {
   const raw = String(
     (import.meta as ImportMetaWithEnv).env?.VITE_AGENTSASSEMBLE_CENTRAL_URL || ""
@@ -125,7 +127,7 @@ function openCredentialDb(): Promise<IDBDatabase> {
   });
 }
 
-async function storedDevice(): Promise<StoredDevice> {
+async function loadOrCreateDevice(): Promise<StoredDevice> {
   const db = await openCredentialDb();
   try {
     const existing = await new Promise<StoredDevice | undefined>((resolve, reject) => {
@@ -169,6 +171,16 @@ async function storedDevice(): Promise<StoredDevice> {
   } finally {
     db.close();
   }
+}
+
+function storedDevice(): Promise<StoredDevice> {
+  if (!devicePromise) {
+    devicePromise = loadOrCreateDevice().catch((error) => {
+      devicePromise = undefined;
+      throw error;
+    });
+  }
+  return devicePromise;
 }
 
 function saveSession(
