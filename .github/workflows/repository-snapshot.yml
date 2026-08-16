@@ -1,0 +1,26 @@
+name: repository-snapshot
+
+on:
+  push:
+    branches:
+      - agent/cloudflare-identity-directory
+    paths:
+      - ".github/workflows/repository-snapshot.yml"
+
+permissions:
+  contents: read
+
+jobs:
+  snapshot:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - name: Package checked-out source
+        run: tar --exclude=.git -czf /tmp/AgentsAssemble-source.tar.gz .
+      - uses: actions/upload-artifact@v4
+        with:
+          name: agentsassemble-source
+          path: /tmp/AgentsAssemble-source.tar.gz
+          if-no-files-found: error
+          retention-days: 1
