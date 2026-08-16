@@ -8,6 +8,7 @@ from typing import Any, Callable
 from uuid import uuid4
 
 from agentsassemble.admission.repository import InviteSessionRepository
+from agentsassemble.application.engine_instance_lock import EngineInstanceLock
 from agentsassemble.application.gui import ApplicationDatabase, GuiApplicationServices
 from agentsassemble.application.desktop_parent_watchdog import (
     DESKTOP_PARENT_PID_ENV,
@@ -86,16 +87,26 @@ def serve_gui_runtime(
     from agentsassemble.application.user_data_root import resolve_output_root
 
     root = resolve_output_root(output_root)
+    engine_instance_lock = EngineInstanceLock.acquire(
+        root,
+        inherited_fd=(
+            rolling_bootstrap.engine_lock_fd if rolling_bootstrap is not None else None
+        ),
+    )
     advertised_server_url = ""
 
-    served_frontend_root = materialize_frontend_release(
-        frontend_dist_root,
-        release_root=root / "runtime" / "frontend-releases",
-    )
-    room_repository_settings = dependencies.room_repository_settings(
-        backend=room_repository_backend,
-        postgres_dsn_env=room_postgres_dsn_env,
-    )
+    try:
+        served_frontend_root = materialize_frontend_release(
+            frontend_dist_root,
+            release_root=root / "runtime" / "frontend-releases",
+        )
+        room_repository_settings = dependencies.room_repository_settings(
+            backend=room_repository_backend,
+            postgres_dsn_env=room_postgres_dsn_env,
+        )
+    except BaseException:
+        engine_instance_lock.close()
+        raise
     application_database: ApplicationDatabase | None = None
     room_repository: RoomRepository | None = None
     invite_repository: InviteSessionRepository | None = None
@@ -240,6 +251,7 @@ def serve_gui_runtime(
                         "PostgreSQL application database cleanup after startup failure failed: "
                         f"{cleanup_error}"
                     )
+        engine_instance_lock.close()
         raise
     if not dependencies.is_loopback_host(host):
         print(
@@ -276,6 +288,7 @@ def serve_gui_runtime(
         rolling_restart = RollingRestartCoordinator(
             server,
             output_root=root,
+            engine_lock_fd=engine_instance_lock.fileno(),
             generation=rolling_bootstrap.generation if rolling_bootstrap else 0,
             instance_id=runtime_instance_id,
             frontend_version=frontend_build_version(served_frontend_root),
@@ -370,3 +383,4 @@ def serve_gui_runtime(
                 pass
             if stable_entry_configured:
                 reset_stable_entry_publisher()
+            engine_instance_lock.close()
