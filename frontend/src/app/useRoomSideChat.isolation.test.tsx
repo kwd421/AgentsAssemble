@@ -108,7 +108,7 @@ describe("useRoomSideChat principal isolation", () => {
     expect(hook.result.current.events).toEqual([]);
     expect(hook.result.current.sideChatEvents).toEqual([]);
     expect(hook.result.current.threadEvents).toEqual([]);
-    expect(hook.result.current.threadSummaries).toEqual([]);
+    expect(hook.result.current.threadSummaries).toEqual({});
     expect(hook.result.current.selectedThread).toBeNull();
     expect(hook.result.current.draftsByContext).toEqual({});
     expect(hook.result.current.error).toBeNull();

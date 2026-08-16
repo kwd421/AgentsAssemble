@@ -16,6 +16,18 @@ vi.mock("../../lib/deviceIdentity", () => ({
   rememberGuestProfile: vi.fn(),
   rememberStartupIdentitySelection: vi.fn(),
 }));
+vi.mock("../../lib/centralIdentity", () => ({
+  centralIdentityConfigured: () => false,
+  bootstrapCentral: vi.fn(),
+  clearPendingCentralRecoveryCode: vi.fn(),
+  createCentralGuest: vi.fn(),
+  isCentralAuthenticationError: () => false,
+  loadCentralSession: () => null,
+  loadPendingCentralRecoveryCode: () => "",
+  loginCentralGoogle: vi.fn(),
+  recoverCentralGuest: vi.fn(),
+  registerLocalServer: vi.fn(),
+}));
 vi.mock("./GoogleAccountSettings", () => ({
   default: () => <section aria-label="공개 계정 연결" />,
 }));
@@ -45,7 +57,7 @@ describe("StartupIdentityGate", () => {
 
     render(<StartupIdentityGate deviceToken="device-1" onComplete={onComplete} />);
 
-    const name = await screen.findByRole("textbox", { name: "표시 이름" });
+    const name = await screen.findByRole("textbox", { name: "게스트 표시 이름" });
     expect(onComplete).not.toHaveBeenCalled();
     await userEvent.type(name, "Local Guest");
     await userEvent.click(screen.getByRole("button", { name: "게스트로 계속" }));

@@ -193,7 +193,7 @@ function saveSession(
   return session;
 }
 
-function saveGuestResult(result: CentralGuestResult): CentralGuestResult {
+export function saveGuestResult(result: CentralGuestResult): CentralGuestResult {
   const recoveryCode = String(result.recovery_code || "").trim().toUpperCase();
   if (!RECOVERY_CODE_PATTERN.test(recoveryCode)) {
     throw new Error("중앙 서버가 올바른 형식의 복구 코드를 반환하지 않았습니다.");

@@ -141,6 +141,10 @@ describe("useCanonicalRoom projection isolation", () => {
         return handle;
       }
     );
+    const initialProps: HookProps = {
+      auth: { kind: "host", meetingId: "general" },
+      viewerParticipantId: "operator-local",
+    };
     const hook = renderHook(
       ({ auth, viewerParticipantId }: HookProps) =>
         useCanonicalRoom({
@@ -149,12 +153,7 @@ describe("useCanonicalRoom projection isolation", () => {
           viewerParticipantId,
           openSocket,
         }),
-      {
-        initialProps: {
-          auth: { kind: "host", meetingId: "general" },
-          viewerParticipantId: "operator-local",
-        } satisfies HookProps,
-      }
+      { initialProps }
     );
     await waitFor(() => expect(connections).toHaveLength(1));
 

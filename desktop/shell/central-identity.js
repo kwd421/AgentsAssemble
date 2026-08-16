@@ -146,7 +146,7 @@ function saveSession(result) {
   return session;
 }
 
-function saveGuestResult(result) {
+export function saveGuestResult(result) {
   const recoveryCode = String(result?.recovery_code || "").trim().toUpperCase();
   if (!RECOVERY_CODE_PATTERN.test(recoveryCode)) {
     throw new Error("중앙 디렉터리가 올바른 형식의 복구 코드를 반환하지 않았습니다.");

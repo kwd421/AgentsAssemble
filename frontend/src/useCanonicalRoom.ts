@@ -27,19 +27,25 @@ import {
 } from "./lib/roomEventProjection";
 import { isUnauthorizedApiError } from "./lib/apiErrors";
 import {
+  applyParticipantEvents,
+  canonicalRoomProjectionScopeKey,
+  EMPTY_CANONICAL_HISTORY,
+  EMPTY_PROVIDER_CATALOG,
+  mergeRoomEvents,
+  normalizeRoomParticipant,
+  participantIsActive,
+  upsertAgentSessions,
+  upsertRoomParticipants,
+} from "./lib/canonicalRoomProjection";
+import type { CanonicalRoomHistoryState } from "./lib/canonicalRoomProjection";
+import {
   applyProviderRequestEvents,
   normalizePendingProviderRequests,
   type PendingProviderRequest,
   type ProviderRequestResolution,
 } from "./lib/providerRequestModel";
 
-export type CanonicalRoomHistoryState = {
-  initialized: boolean;
-  oldestSeq: number;
-  lastSeq: number;
-  hasMoreBefore: boolean;
-  resumeGap: boolean;
-};
+export type { CanonicalRoomHistoryState } from "./lib/canonicalRoomProjection";
 
 type OpenRoomSocket = (
   auth: RoomSocketAuth,
@@ -60,109 +66,6 @@ export type UseCanonicalRoomOptions = CanonicalRoomCallbacks & {
   viewerParticipantId?: string;
   openSocket?: OpenRoomSocket;
 };
-
-const EMPTY_HISTORY: CanonicalRoomHistoryState = {
-  initialized: false,
-  oldestSeq: 0,
-  lastSeq: 0,
-  hasMoreBefore: false,
-  resumeGap: false,
-};
-
-const EMPTY_PROVIDER_CATALOG: ProviderCatalogSnapshot = {
-  status: "loading",
-  catalog_revision: "",
-  providers: [],
-};
-
-function mergeRoomEvents(current: RoomEvent[], incoming: RoomEvent[], replace: boolean) {
-  const byId = new Map((replace ? [] : current).map((event) => [event.id, event]));
-  incoming.forEach((event) => {
-    if (event.id) byId.set(event.id, event);
-  });
-  return [...byId.values()].sort(
-    (left, right) => Number(left.seq || 0) - Number(right.seq || 0)
-  );
-}
-
-function upsertAgentSessions(current: RoomAgentSession[], incoming: RoomAgentSession[]) {
-  const byId = new Map(current.map((session) => [session.session_id, session]));
-  incoming.forEach((session) => byId.set(session.session_id, session));
-  return [...byId.values()];
-}
-
-function normalizeRoomParticipant(participant: RoomMember, roomId: string): RoomMember {
-  return {
-    ...participant,
-    meeting_id: participant.meeting_id || roomId,
-    provider_kind: participant.provider_kind || "",
-    connection_kind: participant.connection_kind || "",
-    source:
-      participant.source ||
-      (participant.role !== "human" ? "agent_session" : "room"),
-    created_at: participant.created_at || "",
-    updated_at: participant.updated_at || "",
-  };
-}
-
-function participantIsActive(participant: RoomMember) {
-  return !["left", "kicked"].includes(String(participant.status || ""));
-}
-
-function upsertRoomParticipants(
-  current: RoomMember[],
-  incoming: RoomMember[],
-  roomId: string
-) {
-  const byId = new Map(current.map((participant) => [participant.participant_id, participant]));
-  incoming.forEach((participant) => {
-    const existing = byId.get(participant.participant_id);
-    byId.set(
-      participant.participant_id,
-      normalizeRoomParticipant({ ...existing, ...participant }, roomId)
-    );
-  });
-  return [...byId.values()];
-}
-
-function applyParticipantEvents(current: RoomMember[], incoming: RoomEvent[]) {
-  const updatesByParticipant = new Map<string, RoomEvent>();
-  const latestMembershipEvent = new Map<string, RoomEvent["type"]>();
-  incoming.forEach((event) => {
-    if (event.type === "participant_updated" && event.participant_id) {
-      updatesByParticipant.set(event.participant_id, event);
-    }
-    if (
-      event.participant_id &&
-      ["participant_joined", "participant_left", "participant_kicked"].includes(event.type)
-    ) {
-      latestMembershipEvent.set(event.participant_id, event.type);
-    }
-  });
-  if (!updatesByParticipant.size && !latestMembershipEvent.size) return current;
-  let changed = false;
-  const next = current.flatMap((participant) => {
-    const membershipEvent = latestMembershipEvent.get(participant.participant_id);
-    if (membershipEvent === "participant_left" || membershipEvent === "participant_kicked") {
-      changed = true;
-      return [];
-    }
-    const update = updatesByParticipant.get(participant.participant_id);
-    if (!update) return [participant];
-    changed = true;
-    return [{
-      ...participant,
-      display_name: String(update.display_name || participant.display_name),
-      role: String(update.role || participant.role) as RoomMember["role"],
-      avatar_image_url:
-        "avatar_image_url" in update
-          ? String(update.avatar_image_url || "") || undefined
-          : participant.avatar_image_url,
-      updated_at: update.created_at || participant.updated_at,
-    }];
-  });
-  return changed ? next : current;
-}
 
 type ApplyRoomEventsOptions = {
   replace?: boolean;
@@ -322,19 +225,12 @@ export function useCanonicalRoom(options: UseCanonicalRoomOptions) {
     }
   }, []);
 
-  const authKey = auth
-    ? auth.kind === "host"
-      ? `host:${auth.meetingId}`
-      : `session:${auth.sessionToken}`
-    : "";
-  const projectionScopeKey = roomId && authKey
-    ? JSON.stringify([
-        typeof window !== "undefined" ? window.location.origin : "",
-        roomId,
-        authKey,
-        viewerParticipantId,
-      ])
-    : "";
+  const projectionScopeKey = canonicalRoomProjectionScopeKey(
+    roomId,
+    auth,
+    viewerParticipantId
+  );
+  const authKey = projectionScopeKey;
   const projectionIsCurrent =
     Boolean(projectionScopeKey) && acceptedProjectionScope === projectionScopeKey;
 
@@ -354,6 +250,7 @@ export function useCanonicalRoom(options: UseCanonicalRoomOptions) {
     const connectionGeneration = connectionGenerationRef.current + 1;
     connectionGenerationRef.current = connectionGeneration;
     const connectionIsCurrent = () => connectionGenerationRef.current === connectionGeneration;
+    setLastError(null);
     setConnectionState("connecting");
     const currentSocket = openSocket(auth, ["room_events", "side_chat", "plugin"], {
       onRoomSnapshot: (snapshot) => {
@@ -511,11 +408,7 @@ export function useCanonicalRoom(options: UseCanonicalRoomOptions) {
         }
       },
       onRoomDeleted: (deletedRoomId, roomName) => {
-        if (
-          connectionIsCurrent() &&
-          acceptedProjectionScopeRef.current === projectionScopeKey &&
-          acceptedSocketRef.current === currentSocket
-        ) {
+        if (connectionIsCurrent()) {
           callbacksRef.current.onRoomDeleted?.(
             deletedRoomId || roomId,
             roomName
@@ -858,14 +751,10 @@ export function useCanonicalRoom(options: UseCanonicalRoomOptions) {
   return {
     socket: projectionIsCurrent ? socket : null,
     connectionState:
-      !roomId || !auth
-        ? "disconnected" as const
-        : projectionIsCurrent
-          ? connectionState
-          : "connecting" as const,
-    lastError: projectionIsCurrent ? lastError : null,
+      !roomId || !auth ? "disconnected" as const : connectionState,
+    lastError: roomId && auth ? lastError : null,
     syncIssue:
-      projectionIsCurrent &&
+      Boolean(roomId && auth) &&
       lastError instanceof RoomSocketSayError &&
       [
         "event_sequence_gap", "event_sequence_invalid",
@@ -892,7 +781,9 @@ export function useCanonicalRoom(options: UseCanonicalRoomOptions) {
     providerRequests: projectionIsCurrent ? providerRequestsByRoom[roomId] || [] : [],
     agentSessionProgress: projectionIsCurrent ? progressByRoom[roomId] || null : null,
     pluginEnvelopes: projectionIsCurrent ? pluginEnvelopesByRoom[roomId] || [] : [],
-    history: projectionIsCurrent ? historyByRoom[roomId] || EMPTY_HISTORY : EMPTY_HISTORY,
+    history: projectionIsCurrent
+      ? historyByRoom[roomId] || EMPTY_CANONICAL_HISTORY
+      : EMPTY_CANONICAL_HISTORY,
     loadHistory,
     sendAgentControl,
     sendAgentConfigure,
