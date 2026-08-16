@@ -41,6 +41,9 @@ class _IdentityRepository:
     def __init__(self, events: list[str]) -> None:
         self.events = events
 
+    def server_id(self) -> str:
+        return "test-server-id"
+
     def close(self) -> None:
         self.events.append("identity.close")
 

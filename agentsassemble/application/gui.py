@@ -128,11 +128,15 @@ class GuiApplicationServices:
                 self.process_supervisor.start_monitor()
                 self.public_tunnel_manager.set_local_url(clean_server_url)
                 if self.central_directory_host is None:
-                    self.central_directory_host = CentralDirectoryHost.from_environment(
-                        output_root=self.output_root,
-                        server_id=self.identity_backend.server_id(),
-                        public_url_runtime=self.public_invite,
-                    )
+                    try:
+                        server_id = self.identity_backend.server_id()
+                        self.central_directory_host = CentralDirectoryHost.from_environment(
+                            output_root=self.output_root,
+                            server_id=server_id,
+                            public_url_runtime=self.public_invite,
+                        )
+                    except Exception:
+                        self.central_directory_host = None
                 if self.central_directory_host is not None:
                     rollback_actions.append(
                         ("central_directory_host", self.central_directory_host.close)
