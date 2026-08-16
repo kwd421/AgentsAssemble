@@ -17,76 +17,90 @@ export function useRoomMembers({
   sessionToken,
   enabled = true,
 }: UseRoomMembersOptions) {
-  const [membersByRoom, setMembersByRoom] = useState<Record<string, RoomMember[]>>({});
-  const [departedIdsByRoom, setDepartedIdsByRoom] = useState<Record<string, string[]>>({});
+  const [membersByScope, setMembersByScope] = useState<Record<string, RoomMember[]>>({});
+  const [departedIdsByScope, setDepartedIdsByScope] = useState<Record<string, string[]>>({});
   const requestEpochsRef = useRef<Record<string, number>>({});
   const previousCanonicalIdsRef = useRef<Record<string, Set<string>>>({});
-  const activeRoomKey = roomSettingsKey(activeRoom);
+  const principalScope = sessionToken ? `session:${sessionToken}` : "local-host";
+  const browserOrigin = typeof window !== "undefined" ? window.location.origin : "";
+  const scopeKeyFor = useCallback(
+    (room: RoomDockItem) =>
+      JSON.stringify([
+        browserOrigin,
+        roomSettingsKey(room),
+        room.meetingId,
+        principalScope,
+      ]),
+    [browserOrigin, principalScope]
+  );
+  const activeScopeKey = scopeKeyFor(activeRoom);
   const activeMeetingId = activeRoom.meetingId;
 
   const replaceMembers = useCallback((room: RoomDockItem, members: RoomMember[]) => {
-    const key = roomSettingsKey(room);
-    requestEpochsRef.current[key] = (requestEpochsRef.current[key] || 0) + 1;
-    setMembersByRoom((previous) => ({
+    const scopeKey = scopeKeyFor(room);
+    requestEpochsRef.current[scopeKey] = (requestEpochsRef.current[scopeKey] || 0) + 1;
+    setMembersByScope((previous) => ({
       ...previous,
-      [key]: members,
+      [scopeKey]: members,
     }));
-  }, []);
+  }, [scopeKeyFor]);
 
   const cachedMembersFor = useCallback(
-    (room: RoomDockItem) => membersByRoom[roomSettingsKey(room)] || [],
-    [membersByRoom]
+    (room: RoomDockItem) => enabled ? membersByScope[scopeKeyFor(room)] || [] : [],
+    [enabled, membersByScope, scopeKeyFor]
   );
 
   const refresh = useCallback(() => {
     if (!enabled || !activeMeetingId) return;
-    const requestEpoch = (requestEpochsRef.current[activeRoomKey] || 0) + 1;
-    requestEpochsRef.current[activeRoomKey] = requestEpoch;
+    const requestEpoch = (requestEpochsRef.current[activeScopeKey] || 0) + 1;
+    requestEpochsRef.current[activeScopeKey] = requestEpoch;
     fetchRoomMembers(activeMeetingId, sessionToken)
       .then((payload) => {
-        if (requestEpochsRef.current[activeRoomKey] !== requestEpoch) return;
-        setMembersByRoom((previous) => ({
+        if (requestEpochsRef.current[activeScopeKey] !== requestEpoch) return;
+        setMembersByScope((previous) => ({
           ...previous,
-          [activeRoomKey]: payload.members || [],
+          [activeScopeKey]: payload.members || [],
         }));
       })
       .catch(() => {
-        // Keep the previous roster while a transient refresh is unavailable.
+        // A transient failure must not make another identity's cached roster visible.
       });
-  }, [activeMeetingId, activeRoomKey, enabled, sessionToken]);
+  }, [activeMeetingId, activeScopeKey, enabled, sessionToken]);
 
   useEffect(() => {
     refresh();
   }, [membershipRevision, refresh]);
 
   useEffect(() => {
+    if (!enabled) return;
     const currentIds = new Set(
       canonicalParticipants.map((participant) => participant.participant_id)
     );
-    const previousIds = previousCanonicalIdsRef.current[activeRoomKey] || new Set<string>();
-    previousCanonicalIdsRef.current[activeRoomKey] = currentIds;
-    setDepartedIdsByRoom((previous) => {
-      const departed = new Set(previous[activeRoomKey] || []);
+    const previousIds = previousCanonicalIdsRef.current[activeScopeKey] || new Set<string>();
+    previousCanonicalIdsRef.current[activeScopeKey] = currentIds;
+    setDepartedIdsByScope((previous) => {
+      const departed = new Set(previous[activeScopeKey] || []);
       previousIds.forEach((participantId) => {
         if (!currentIds.has(participantId)) departed.add(participantId);
       });
       currentIds.forEach((participantId) => departed.delete(participantId));
       const nextIds = [...departed];
-      const priorIds = previous[activeRoomKey] || [];
+      const priorIds = previous[activeScopeKey] || [];
       if (
         nextIds.length === priorIds.length &&
         nextIds.every((participantId, index) => participantId === priorIds[index])
       ) {
         return previous;
       }
-      return { ...previous, [activeRoomKey]: nextIds };
+      return { ...previous, [activeScopeKey]: nextIds };
     });
-  }, [activeRoomKey, canonicalParticipants]);
+  }, [activeScopeKey, canonicalParticipants, enabled]);
 
   const activeMembers = useMemo(() => {
-    const departedIds = new Set(departedIdsByRoom[activeRoomKey] || []);
+    if (!enabled) return [];
+    const departedIds = new Set(departedIdsByScope[activeScopeKey] || []);
     const byId = new Map(
-      (membersByRoom[activeRoomKey] || [])
+      (membersByScope[activeScopeKey] || [])
         .filter((member) => !departedIds.has(member.participant_id))
         .map((member) => [member.participant_id, member])
     );
@@ -94,7 +108,7 @@ export function useRoomMembers({
       byId.set(participant.participant_id, participant);
     });
     return [...byId.values()];
-  }, [activeRoomKey, canonicalParticipants, departedIdsByRoom, membersByRoom]);
+  }, [activeScopeKey, canonicalParticipants, departedIdsByScope, enabled, membersByScope]);
 
   return {
     activeMembers,
