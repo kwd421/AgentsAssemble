@@ -61,6 +61,10 @@ from agentsassemble.legacy.meeting.cli.commands import (
     run_memory_capsule_command,
 )
 from agentsassemble.legacy.room.cli_commands import run_legacy_room_command
+from agentsassemble.legacy.runtime_policy import (
+    legacy_cli_command_quarantined,
+    legacy_cli_quarantine_message,
+)
 from agentsassemble.legacy.live_agent.cli.mcp_commands import run_mcp_command
 from agentsassemble.legacy.live_agent.cli.commands import (
     LegacyLiveAgentCliRuntime,
@@ -254,6 +258,10 @@ def build_parser() -> argparse.ArgumentParser:
 
 def main(argv: list[str] | None = None) -> int:
     args = build_parser().parse_args(argv)
+
+    if legacy_cli_command_quarantined(args.command):
+        print(legacy_cli_quarantine_message(args.command), file=sys.stderr)
+        return 2
 
     if args.command == "demo":
         return run_demo_command(args, run_demo_meeting=run_demo_meeting)
