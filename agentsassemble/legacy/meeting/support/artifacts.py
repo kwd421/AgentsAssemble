@@ -1,23 +1,76 @@
 from __future__ import annotations
 
 import json
-from pathlib import Path
+from pathlib import Path, PureWindowsPath
 from typing import Any
 
-from agentsassemble.legacy.meeting.support.artifact_packets import build_return_packet, render_return_packet_markdown
-from agentsassemble.legacy.meeting.support.persona_artifact_contract import apply_persona_artifact_contract_report
-from agentsassemble.legacy.meeting.support.artifact_public import render_agenda, render_decision, render_transcript
-from agentsassemble.legacy.meeting.support.delegate_packets import build_delegate_packet, render_delegate_packet_markdown
+from agentsassemble.legacy.meeting.support.artifact_packets import (
+    build_return_packet,
+    render_return_packet_markdown,
+)
+from agentsassemble.legacy.meeting.support.persona_artifact_contract import (
+    apply_persona_artifact_contract_report,
+)
+from agentsassemble.legacy.meeting.support.artifact_public import (
+    render_agenda,
+    render_decision,
+    render_transcript,
+)
+from agentsassemble.legacy.meeting.support.delegate_packets import (
+    build_delegate_packet,
+    render_delegate_packet_markdown,
+)
 from agentsassemble.models import Role
-from agentsassemble.legacy.meeting.support.task_scope_report import write_task_scope_report
+from agentsassemble.legacy.meeting.support.task_scope_report import (
+    write_task_scope_report,
+)
+
+
+MAX_ARTIFACT_COMPONENT_LENGTH = 128
+
+
+def _safe_artifact_component(value: object, *, field: str) -> str:
+    """Validate an untrusted identifier before using it as a path component."""
+
+    if not isinstance(value, str):
+        raise ValueError(f"{field} must be a string")
+    if not value or value != value.strip():
+        raise ValueError(f"{field} must not be empty or padded with whitespace")
+    if len(value) > MAX_ARTIFACT_COMPONENT_LENGTH:
+        raise ValueError(f"{field} exceeds the artifact path component limit")
+    if value in {".", ".."}:
+        raise ValueError(f"{field} must not be a relative path segment")
+    if any(character in value for character in ("/", "\\", "\x00", ":")):
+        raise ValueError(f"{field} must be a single safe path component")
+    if any(ord(character) < 32 or ord(character) == 127 for character in value):
+        raise ValueError(f"{field} contains control characters")
+    if value.endswith((".", " ")) or PureWindowsPath(value).is_reserved():
+        raise ValueError(f"{field} is not portable across supported platforms")
+    return value
+
+
+def _safe_artifact_path(root: Path, *parts: str) -> Path:
+    """Resolve an artifact path and prove it remains below ``root``."""
+
+    resolved_root = root.resolve()
+    candidate = resolved_root.joinpath(*parts).resolve()
+    try:
+        candidate.relative_to(resolved_root)
+    except ValueError as error:
+        raise ValueError("artifact path escapes its assigned directory") from error
+    return candidate
 
 
 def write_json(path: Path, data: dict[str, Any]) -> None:
-    path.write_text(json.dumps(data, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+    path.write_text(
+        json.dumps(data, ensure_ascii=False, indent=2) + "\n",
+        encoding="utf-8",
+    )
 
 
 def write_role_files(meeting_dir: Path, role: Role) -> None:
-    role_dir = meeting_dir / "roles" / role.id
+    role_id = _safe_artifact_component(role.id, field="role.id")
+    role_dir = _safe_artifact_path(meeting_dir, "roles", role_id)
     role_dir.mkdir(parents=True, exist_ok=True)
     (role_dir / "role.md").write_text(
         f"# {role.display_name}\n\nLens: {role.lens}\n\nFocus: {role.research_focus}\n\n"
@@ -29,16 +82,29 @@ def write_role_files(meeting_dir: Path, role: Role) -> None:
         f"{role.personality or {}}\n",
         encoding="utf-8",
     )
-    memory = meeting_dir.parent.parent / "memory" / "agents" / f"{role.id}.md"
+    memory_root = meeting_dir.parent.parent / "memory" / "agents"
+    memory = _safe_artifact_path(memory_root, f"{role_id}.md")
     (role_dir / "memory.md").write_text(
-        memory.read_text(encoding="utf-8") if memory.exists() else "# Memory\n\nNo prior meetings recorded yet.\n",
+        (
+            memory.read_text(encoding="utf-8")
+            if memory.exists()
+            else "# Memory\n\nNo prior meetings recorded yet.\n"
+        ),
         encoding="utf-8",
     )
     (role_dir / "history.jsonl").write_text("", encoding="utf-8")
 
 
 def write_research(meeting_dir: Path, research: dict[str, Any]) -> None:
-    research_dir = meeting_dir / "private_research" / research["role_id"]
+    role_id = _safe_artifact_component(
+        research.get("role_id"),
+        field="research.role_id",
+    )
+    research_dir = _safe_artifact_path(
+        meeting_dir,
+        "private_research",
+        role_id,
+    )
     research_dir.mkdir(parents=True, exist_ok=True)
     write_json(research_dir / "research.json", research)
 
@@ -170,11 +236,17 @@ def write_research(meeting_dir: Path, research: dict[str, Any]) -> None:
         )
         for url in claim.get("sources", []):
             lines.append(f"  - Source: {url}")
-    (research_dir / "research.md").write_text("\n".join(lines) + "\n", encoding="utf-8")
+    (research_dir / "research.md").write_text(
+        "\n".join(lines) + "\n",
+        encoding="utf-8",
+    )
 
 
 def write_agenda(meeting_dir: Path, meeting: dict[str, Any]) -> None:
-    (meeting_dir / "agenda.md").write_text(render_agenda(meeting), encoding="utf-8")
+    (meeting_dir / "agenda.md").write_text(
+        render_agenda(meeting),
+        encoding="utf-8",
+    )
 
 
 def write_room_log(meeting_dir: Path, meeting: dict[str, Any]) -> None:
@@ -193,7 +265,10 @@ def write_room_log(meeting_dir: Path, meeting: dict[str, Any]) -> None:
                 "",
             ]
         )
-    (meeting_dir / "room-log.md").write_text("\n".join(lines).rstrip() + "\n", encoding="utf-8")
+    (meeting_dir / "room-log.md").write_text(
+        "\n".join(lines).rstrip() + "\n",
+        encoding="utf-8",
+    )
 
 
 def write_room_artifacts(meeting_dir: Path, meeting: dict[str, Any]) -> None:
@@ -202,49 +277,90 @@ def write_room_artifacts(meeting_dir: Path, meeting: dict[str, Any]) -> None:
     write_json(meeting_dir / "meeting.json", meeting)
 
 
-def write_public_artifacts(meeting_dir: Path, meeting: dict[str, Any], *, transcript_text: str | None = None) -> None:
+def write_public_artifacts(
+    meeting_dir: Path,
+    meeting: dict[str, Any],
+    *,
+    transcript_text: str | None = None,
+) -> None:
     write_agenda(meeting_dir, meeting)
     (meeting_dir / "transcript.md").write_text(
-        transcript_text if transcript_text is not None else render_transcript(meeting),
+        (
+            transcript_text
+            if transcript_text is not None
+            else render_transcript(meeting)
+        ),
         encoding="utf-8",
     )
-    (meeting_dir / "decision.md").write_text(render_decision(meeting), encoding="utf-8")
+    (meeting_dir / "decision.md").write_text(
+        render_decision(meeting),
+        encoding="utf-8",
+    )
 
-    tasks_dir = meeting_dir / "tasks"
+    tasks_dir = _safe_artifact_path(meeting_dir, "tasks")
     tasks_dir.mkdir(exist_ok=True)
     synthesis = meeting["moderator_synthesis"]
-    for role_id, task in synthesis["tasks"].items():
-        (tasks_dir / f"{role_id}.md").write_text(f"# Task\n\n{task}\n", encoding="utf-8")
+    for raw_role_id, task in synthesis["tasks"].items():
+        role_id = _safe_artifact_component(
+            raw_role_id,
+            field="moderator_synthesis.tasks role_id",
+        )
+        task_path = _safe_artifact_path(tasks_dir, f"{role_id}.md")
+        task_path.write_text(f"# Task\n\n{task}\n", encoding="utf-8")
 
     write_task_scope_report(meeting_dir, meeting)
 
-    delegate_packet_dir = meeting_dir / "delegate_packets"
+    delegate_packet_dir = _safe_artifact_path(meeting_dir, "delegate_packets")
     delegate_packet_dir.mkdir(exist_ok=True)
     meeting["artifacts"]["delegate_packets"] = "delegate_packets/"
     meeting["delegate_packets"] = {}
     for role in meeting.get("roles", []):
         packet = build_delegate_packet(meeting, role)
-        role_id = role["id"]
+        role_id = _safe_artifact_component(
+            role.get("id"),
+            field="role.id",
+        )
         meeting["delegate_packets"][role_id] = {
             "json": f"delegate_packets/{role_id}.json",
             "markdown": f"delegate_packets/{role_id}.md",
         }
-        write_json(delegate_packet_dir / f"{role_id}.json", packet)
-        (delegate_packet_dir / f"{role_id}.md").write_text(render_delegate_packet_markdown(packet), encoding="utf-8")
+        write_json(
+            _safe_artifact_path(delegate_packet_dir, f"{role_id}.json"),
+            packet,
+        )
+        _safe_artifact_path(
+            delegate_packet_dir,
+            f"{role_id}.md",
+        ).write_text(
+            render_delegate_packet_markdown(packet),
+            encoding="utf-8",
+        )
 
-    return_packet_dir = meeting_dir / "return_packets"
+    return_packet_dir = _safe_artifact_path(meeting_dir, "return_packets")
     return_packet_dir.mkdir(exist_ok=True)
     meeting["artifacts"]["return_packets"] = "return_packets/"
     meeting["return_packets"] = {}
     for role in meeting.get("roles", []):
         packet = build_return_packet(meeting, role)
-        role_id = role["id"]
+        role_id = _safe_artifact_component(
+            role.get("id"),
+            field="role.id",
+        )
         meeting["return_packets"][role_id] = {
             "json": f"return_packets/{role_id}.json",
             "markdown": f"return_packets/{role_id}.md",
         }
-        write_json(return_packet_dir / f"{role_id}.json", packet)
-        (return_packet_dir / f"{role_id}.md").write_text(render_return_packet_markdown(packet), encoding="utf-8")
+        write_json(
+            _safe_artifact_path(return_packet_dir, f"{role_id}.json"),
+            packet,
+        )
+        _safe_artifact_path(
+            return_packet_dir,
+            f"{role_id}.md",
+        ).write_text(
+            render_return_packet_markdown(packet),
+            encoding="utf-8",
+        )
 
     apply_persona_artifact_contract_report(meeting_dir, meeting)
     write_json(meeting_dir / "meeting.json", meeting)

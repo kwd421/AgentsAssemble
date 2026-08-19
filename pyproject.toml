@@ -18,7 +18,7 @@ postgres = [
 ]
 
 [project.scripts]
-assemble = "agentsassemble.cli:main"
+assemble = "agentsassemble.entrypoint:main"
 
 [build-system]
 requires = ["setuptools>=68"]

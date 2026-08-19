@@ -13,6 +13,7 @@ from agentsassemble.legacy.gui_application import (
 )
 from agentsassemble.legacy.live_agent.http.flow import register_live_agent_flow_routes
 from agentsassemble.legacy.meeting.http.room_composition import register_room_routes
+from agentsassemble.legacy.runtime_policy import quarantined_legacy_router
 from agentsassemble.web.router import Router
 
 
@@ -93,13 +94,21 @@ def register_legacy_gui_routes(
     read_operation_payload: Callable[..., dict[str, object] | None],
     record_operation: Callable[..., object],
 ) -> None:
+    # Despite its retained import location, ``register_room_routes`` is the
+    # canonical room coordinator: it owns current room, invite, attachment,
+    # member, voice, and agent-session APIs. Keep it on the real router until
+    # those domains have moved to a non-legacy package.
     register_room_routes(route_table)
-    legacy_application.register_meeting_routes(route_table)
+
+    # Only the explicitly retained meeting/live-agent compatibility surface is
+    # placed behind the mutation quarantine.
+    legacy_routes = quarantined_legacy_router(route_table)
+    legacy_application.register_meeting_routes(legacy_routes)
     register_live_agent_flow_routes(
-        route_table,
+        legacy_routes,
         flow=flow,
         is_loopback_request=lambda ctx: ctx.uses_loopback_host(),
         read_operation_payload=read_operation_payload,
         record_operation=record_operation,
     )
-    legacy_application.register_live_agent_routes(route_table)
+    legacy_application.register_live_agent_routes(legacy_routes)
