@@ -9,7 +9,6 @@ fn main() {
             "open_server_link",
             "load_cached_room_directory",
             "cache_selected_room_directory",
-            "open_google_account_login",
             "check_desktop_update",
             "install_desktop_update",
         ]),

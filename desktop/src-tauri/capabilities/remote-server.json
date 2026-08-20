@@ -1,7 +1,7 @@
 {
   "$schema": "../gen/schemas/desktop-schema.json",
   "identifier": "remote-server",
-  "description": "Allow the selected server to cache rooms and request narrowly validated browser handoffs. Central login is additionally restricted in Rust to the loopback engine.",
+  "description": "Allow the selected server to cache rooms and request the narrowly validated central OAuth handoff. Central login is additionally restricted in Rust to the loopback engine.",
   "windows": ["main", "room"],
   "local": false,
   "remote": {
@@ -14,7 +14,6 @@
   },
   "permissions": [
     "allow-cache-selected-room-directory",
-    "allow-open-google-account-login",
     "allow-open-central-google-login"
   ]
 }

@@ -41,7 +41,6 @@ wrangler d1 create agentsassemble-identity
 # Copy the database id into wrangler.toml.
 wrangler secret put RECOVERY_PEPPER
 wrangler secret put IDENTITY_PEPPER
-wrangler secret put GOOGLE_CLIENT_ID           # web/manual handoff client
 wrangler secret put GOOGLE_DESKTOP_CLIENT_ID   # Google Desktop app OAuth client
 wrangler d1 migrations apply agentsassemble-identity --remote
 wrangler deploy

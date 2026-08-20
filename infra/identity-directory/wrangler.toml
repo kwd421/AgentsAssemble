@@ -18,7 +18,6 @@ CENTRAL_ALLOWED_ORIGINS = "tauri://localhost,http://tauri.localhost,https://taur
 # Set these with `wrangler secret put` rather than committing values:
 #   RECOVERY_PEPPER
 #   IDENTITY_PEPPER
-#   GOOGLE_CLIENT_ID
 #   GOOGLE_DESKTOP_CLIENT_ID
 
 [triggers]

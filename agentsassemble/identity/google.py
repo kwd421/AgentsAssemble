@@ -10,14 +10,9 @@ from collections.abc import Callable, Mapping
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from typing import Protocol
-from urllib.parse import urlencode
 from uuid import uuid4
 
 from agentsassemble.identity.accounts import AccountLinkConflict, external_account_identity
-from agentsassemble.identity.google_handoff import (
-    GoogleLoginHandoffCapacityExceeded,
-    GoogleLoginHandoffStore,
-)
 from agentsassemble.identity.repository import IdentityBackend
 
 
@@ -116,10 +111,6 @@ class GoogleLoginChallengeStore:
             )
         return nonce
 
-    def discard(self, nonce: str) -> None:
-        with self._lock:
-            self._challenges.pop(str(nonce or "").strip(), None)
-
     def consume(self, nonce: str) -> bool:
         clean_nonce = str(nonce or "").strip()
         now = time.monotonic()
@@ -164,12 +155,10 @@ class GoogleAccountLoginService:
         client_id: str = "",
         verifier: GoogleCredentialVerifier | None = None,
         challenges: GoogleLoginChallengeStore | None = None,
-        handoffs: GoogleLoginHandoffStore | None = None,
     ) -> None:
         self.client_id = str(client_id or "").strip()
         self._verifier = verifier or GoogleIdTokenVerifier(self.client_id)
         self._challenges = challenges or GoogleLoginChallengeStore()
-        self._handoffs = handoffs or GoogleLoginHandoffStore()
 
     @classmethod
     def from_environment(
@@ -224,104 +213,6 @@ class GoogleAccountLoginService:
                 unbound=not bool(user_id),
             ),
         }
-
-    def start_handoff(
-        self,
-        *,
-        current_user: dict[str, object] | None,
-        device_auth_key: str,
-        discard_guest_on_account_switch: bool = False,
-    ) -> dict[str, object]:
-        if not self.client_id:
-            raise GoogleLoginRejected(
-                "Google login is not configured on this server.",
-                code="google_login_not_configured",
-            )
-        user_id = str((current_user or {}).get("user_id") or "").strip()
-        if not user_id and not device_auth_key:
-            raise GoogleLoginRejected(
-                "A signed-in server identity or durable device identity is required to start Google login.",
-                code="device_identity_required",
-            )
-        subject = _login_subject(user_id=user_id, device_auth_key=device_auth_key)
-        nonce = self._challenges.issue(subject=subject, unbound=not bool(user_id))
-        try:
-            token = self._handoffs.issue(
-                user_id=user_id,
-                device_auth_key=device_auth_key,
-                nonce=nonce,
-                discard_guest_on_account_switch=discard_guest_on_account_switch,
-            )
-        except GoogleLoginHandoffCapacityExceeded as error:
-            self._challenges.discard(nonce)
-            raise GoogleLoginRejected(
-                "Google login capacity is temporarily exhausted.",
-                code="google_login_capacity_exceeded",
-            ) from error
-        handoff = self._handoffs.read(token)
-        if handoff is None:
-            raise RuntimeError("Google login handoff disappeared after issuance.")
-        return {
-            "status": "ready",
-            "handoff_url": f"/#{urlencode({'google_handoff': token})}",
-            "confirmation_code": handoff.confirmation_code,
-            "expires_in": int(self._handoffs.ttl_seconds),
-        }
-
-    def handoff_configuration(self, token: object) -> dict[str, object]:
-        handoff = self._handoffs.read(token)
-        if handoff is None:
-            raise GoogleLoginRejected(
-                "Google login handoff expired or was already used.",
-                code="google_login_handoff_invalid",
-            )
-        return {
-            "status": "ready",
-            "client_id": self.client_id,
-            "nonce": handoff.nonce,
-            "expires_in": max(0, int(handoff.expires_at - time.monotonic())),
-        }
-
-    def connect_handoff(
-        self,
-        identities: IdentityBackend,
-        *,
-        token: object,
-        confirmation_code: object = None,
-        credential: object,
-        switch_guest: GuestAccountSwitcher | None = None,
-    ) -> dict[str, object]:
-        if self._handoffs.read(token) is None:
-            raise GoogleLoginRejected(
-                "Google login handoff expired or was already used.",
-                code="google_login_handoff_invalid",
-            )
-        handoff = self._handoffs.consume(
-            token,
-            confirmation_code=confirmation_code,
-        )
-        if handoff is None:
-            raise GoogleLoginRejected(
-                "Enter the confirmation code shown in the requesting AgentsAssemble app.",
-                code="google_login_handoff_confirmation_required",
-            )
-        current_user = identities.get_user(handoff.user_id) if handoff.user_id else None
-        if handoff.user_id and current_user is None:
-            raise GoogleLoginRejected(
-                "The server identity for this login no longer exists.",
-                code="google_login_handoff_invalid",
-            )
-        return self.connect(
-            identities,
-            current_user=current_user,
-            device_auth_key=handoff.device_auth_key,
-            credential=credential,
-            nonce=handoff.nonce,
-            discard_guest_on_account_switch=(
-                handoff.discard_guest_on_account_switch
-            ),
-            switch_guest=switch_guest,
-        )
 
     def connect(
         self,

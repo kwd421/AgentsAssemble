@@ -13,13 +13,12 @@ import {
   CentralAuthenticationError,
   clearCentralSession,
   clearPendingRecoveryCode,
+  centralDirectoryUrl,
   configureCentralDirectory,
   createCentralGuest,
-  fetchCentralConfig,
   loadCentralServers,
   loadCentralSession,
   loadPendingRecoveryCode,
-  loginCentralGoogle,
   logoutCentral,
   recoverCentralGuest,
   verifyKnownServer,
@@ -45,9 +44,7 @@ const centralIdentity = document.querySelector("#central-identity");
 const centralState = document.querySelector("#central-state");
 const centralLoading = document.querySelector("#central-loading");
 const centralLoadingText = document.querySelector("#central-loading-text");
-const centralCancelLogin = document.querySelector("#central-cancel-login");
 const centralLogin = document.querySelector("#central-login");
-const centralGoogle = document.querySelector("#central-google");
 const centralNewGuest = document.querySelector("#central-new-guest");
 const centralExistingGuest = document.querySelector("#central-existing-guest");
 const centralGuestForm = document.querySelector("#central-guest-form");
@@ -73,8 +70,6 @@ let elapsedTimer = 0;
 let clientPlatform = "desktop";
 let cachedRoomsLoaded = false;
 let centralBusy = false;
-let googleEnabled = true;
-let googleAbortController = null;
 
 function showProgress(message) {
   retry.classList.add("hidden");
@@ -203,11 +198,10 @@ function showCentralPanel(panel) {
   if (panel !== "loading") centralCancelLogin.classList.add("hidden");
 }
 
-function showCentralLoading(message, { cancellable = false } = {}) {
+function showCentralLoading(message) {
   showCentralPanel("loading");
   centralOffline.classList.add("hidden");
   centralLoadingText.textContent = message;
-  centralCancelLogin.classList.toggle("hidden", !cancellable);
   centralState.textContent = "확인 중";
   setCentralMessage();
 }
@@ -223,15 +217,8 @@ function showCentralLogin(message = "", { allowOffline = false } = {}) {
   showCentralPanel("login");
   resetCentralLoginForms();
   centralState.textContent = "로그인 필요";
-  centralGoogle.disabled = !googleEnabled;
   centralOffline.classList.toggle("hidden", !allowOffline);
-  setCentralMessage(
-    message ||
-      (googleEnabled
-        ? ""
-        : "Google 로그인이 아직 중앙 Worker에 설정되지 않았습니다."),
-    message ? "error" : ""
-  );
+  setCentralMessage(message, message ? "error" : "");
 }
 
 function showRecoveryCode(code) {
@@ -374,11 +361,10 @@ async function initializeCentralIdentity() {
 
   let centralReachable = true;
   try {
-    const config = await fetchCentralConfig();
-    googleEnabled = Boolean(config.google_enabled);
+    const response = await fetch(`${centralDirectoryUrl()}/healthz`, { cache: "no-store" });
+    if (!response.ok) centralReachable = false;
   } catch {
     centralReachable = false;
-    googleEnabled = true;
   }
 
   const pendingRecoveryCode = loadPendingRecoveryCode();
@@ -529,40 +515,6 @@ centralRecoverForm.addEventListener("submit", (event) => {
     .finally(() => {
       centralBusy = false;
     });
-});
-
-centralGoogle.addEventListener("click", () => {
-  if (centralBusy || !googleEnabled) return;
-  const controller = new AbortController();
-  googleAbortController = controller;
-  centralBusy = true;
-  showCentralLoading("Google 로그인을 준비하는 중…", { cancellable: true });
-  void loginCentralGoogle(
-    (url) => invoke("open_central_google_login", { url }),
-    (message) => {
-      centralLoadingText.textContent = message;
-    },
-    controller.signal
-  )
-    .then(async () => {
-      centralBusy = false;
-      await refreshCentralHome();
-    })
-    .catch((error) =>
-      showCentralLogin(
-        error?.name === "AbortError"
-          ? "Google 로그인을 취소했습니다."
-          : String(error?.message || error)
-      )
-    )
-    .finally(() => {
-      if (googleAbortController === controller) googleAbortController = null;
-      centralBusy = false;
-    });
-});
-
-centralCancelLogin.addEventListener("click", () => {
-  googleAbortController?.abort();
 });
 
 centralCopyCode.addEventListener("click", () => {

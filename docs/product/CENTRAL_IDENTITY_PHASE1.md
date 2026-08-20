@@ -17,8 +17,8 @@ the attempt; the central Worker exchanges it and issues a session only when the 
 presents the matching PKCE verifier. The request uses only the `openid` scope, so it
 does not request name, email, profile, birthday, or contacts. Users do not copy a
 confirmation code, and the app does not poll the public Worker for browser completion.
-The older confirmation-code handoff remains available only for clients that do not
-yet have a native callback boundary.
+Clients without the native loopback callback do not expose Google login until they
+gain an equivalent platform callback boundary; there is no confirmation-code fallback.
 
 Special invite, operator-pairing, and room-recovery URLs bypass the normal startup identity boundary so an invited user is not trapped behind an unrelated account screen.
 

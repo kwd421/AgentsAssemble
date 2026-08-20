@@ -151,59 +151,7 @@ pub fn central_google_handoff_url(raw: &str) -> Result<Url, String> {
     if native_google_authorization_url(&url) {
         return Ok(url);
     }
-    let central = normalized_server_url(central_directory_origin())
-        .map_err(|error| format!("central directory configuration is invalid: {error}"))?;
-    if !same_origin(&url, &central) || url.path() != "/auth/google" || url.query().is_some() {
-        return Err(
-            "central Google login URL must stay on the configured identity directory".to_owned(),
-        );
-    }
-    if !url.username().is_empty() || url.password().is_some() {
-        return Err("central Google login URL must not contain credentials".to_owned());
-    }
-    let fragment = url
-        .fragment()
-        .ok_or_else(|| "central Google login URL is missing its handoff secret".to_owned())?;
-    let values = url::form_urlencoded::parse(fragment.as_bytes()).collect::<Vec<_>>();
-    if values.len() != 2 {
-        return Err("central Google login URL has an invalid handoff fragment".to_owned());
-    }
-    let handoff = values
-        .iter()
-        .find(|(key, _)| key == "handoff")
-        .map(|(_, value)| value.as_ref())
-        .ok_or_else(|| "central Google login URL is missing the handoff id".to_owned())?;
-    let browser = values
-        .iter()
-        .find(|(key, _)| key == "browser")
-        .map(|(_, value)| value.as_ref())
-        .ok_or_else(|| "central Google login URL is missing the browser secret".to_owned())?;
-    if !base64url_token(handoff, 16, 128) || !base64url_token(browser, 32, 128) {
-        return Err("central Google login URL has an invalid handoff secret".to_owned());
-    }
-    Ok(url)
-}
-
-pub fn google_account_handoff_url(raw: &str, server: &Url) -> Result<Url, String> {
-    let url = Url::parse(raw.trim()).map_err(|_| "Google login URL is invalid".to_owned())?;
-    if !same_origin(&url, server) || url.path() != "/" || url.query().is_some() {
-        return Err("Google login URL must stay on the selected server".to_owned());
-    }
-    if !url.username().is_empty() || url.password().is_some() {
-        return Err("Google login URL must not contain credentials".to_owned());
-    }
-    let fragment = url
-        .fragment()
-        .ok_or_else(|| "Google login URL is missing its one-time token".to_owned())?;
-    let values = url::form_urlencoded::parse(fragment.as_bytes()).collect::<Vec<_>>();
-    if values.len() != 1 || values[0].0 != "google_handoff" {
-        return Err("Google login URL has an invalid handoff fragment".to_owned());
-    }
-    let token = values[0].1.as_ref();
-    if !base64url_token(token, 32, 128) {
-        return Err("Google login URL has an invalid one-time token".to_owned());
-    }
-    Ok(url)
+    Err("central Google login URL must be Google's scoped desktop OAuth endpoint".to_owned())
 }
 
 pub fn is_local_app_url(candidate: &Url) -> bool {
@@ -320,14 +268,7 @@ mod tests {
     }
 
     #[test]
-    fn central_google_login_opens_only_scoped_handoff_or_native_oauth_urls() {
-        let valid = format!(
-            "{}/auth/google#handoff=goh_abcdefghijklmnop&browser={}",
-            central_directory_origin(),
-            "abcdefghijklmnopqrstuvwxyz_1234567890ABCDEFG"
-        );
-        assert_eq!(central_google_handoff_url(&valid).unwrap().as_str(), valid);
-
+    fn central_google_login_opens_only_scoped_native_oauth_urls() {
         let native = concat!(
             "https://accounts.google.com/o/oauth2/v2/auth?",
             "client_id=desktop-client.apps.googleusercontent.com&",
@@ -341,16 +282,7 @@ mod tests {
         assert_eq!(central_google_handoff_url(native).unwrap().as_str(), native);
 
         for raw in [
-            "https://evil.example.test/auth/google#handoff=goh_abcdefghijklmnop&browser=abcdefghijklmnopqrstuvwxyz_1234567890ABCDEFG",
-            "https://agentsassemble-identity-directory.seinel.workers.dev/auth/google?next=evil#handoff=goh_abcdefghijklmnop&browser=abcdefghijklmnopqrstuvwxyz_1234567890ABCDEFG",
-            "https://agentsassemble-identity-directory.seinel.workers.dev/auth/google#handoff=short&browser=abcdefghijklmnopqrstuvwxyz_1234567890ABCDEFG",
-            "https://agentsassemble-identity-directory.seinel.workers.dev/auth/google#handoff=goh_abcdefghijklmnop&browser=short",
-            "https://agentsassemble-identity-directory.seinel.workers.dev/auth/google#handoff=goh_abcdefghijklmnop&browser=abcdefghijklmnopqrstuvwxyz_1234567890ABCDEFG&next=evil",
-        ] {
-            assert!(central_google_handoff_url(raw).is_err(), "accepted {raw}");
-        }
-
-        for raw in [
+            "https://agentsassemble-identity-directory.seinel.workers.dev/auth/google#handoff=goh_abcdefghijklmnop&browser=abcdefghijklmnopqrstuvwxyz_1234567890ABCDEFG".to_owned(),
             native.replace("accounts.google.com", "accounts.google.com.evil.test"),
             native.replace(
                 "http%3A%2F%2F127.0.0.1%3A43123%2Fapi%2Fcentral-login%2Fcallback",
@@ -359,30 +291,6 @@ mod tests {
             native.replace("scope=openid", "scope=openid+email"),
         ] {
             assert!(central_google_handoff_url(&raw).is_err(), "accepted {raw}");
-        }
-    }
-
-    #[test]
-    fn google_login_handoff_opens_only_a_scoped_same_origin_token_url() {
-        let server = normalized_server_url("https://rooms.example.test:9443").unwrap();
-        let valid =
-            "https://rooms.example.test:9443/#google_handoff=abcdefghijklmnopqrstuvwxyz_123456";
-        assert_eq!(
-            google_account_handoff_url(valid, &server).unwrap().as_str(),
-            valid
-        );
-
-        for raw in [
-            "https://evil.example.test/#google_handoff=abcdefghijklmnopqrstuvwxyz_123456",
-            "https://rooms.example.test:9443/account#google_handoff=abcdefghijklmnopqrstuvwxyz_123456",
-            "https://rooms.example.test:9443/?next=evil#google_handoff=abcdefghijklmnopqrstuvwxyz_123456",
-            "https://rooms.example.test:9443/#google_handoff=short",
-            "https://rooms.example.test:9443/#google_handoff=abcdefghijklmnopqrstuvwxyz_123456&next=evil",
-        ] {
-            assert!(
-                google_account_handoff_url(raw, &server).is_err(),
-                "accepted {raw}"
-            );
         }
     }
 }

@@ -10,12 +10,7 @@ import {
   nowSeconds,
 } from "./http.js";
 import {
-  completeGoogleHandoff,
   exchangeNativeGoogleHandoff,
-  googleBrowserChallenge,
-  googleHandoffPage,
-  pollGoogleHandoff,
-  startGoogleHandoff,
   startNativeGoogleHandoff,
 } from "./google_handoff.js";
 import { authenticated, bootstrap } from "./session.js";
@@ -34,17 +29,11 @@ async function route(request, env) {
   }
   if (request.method === "GET" && url.pathname === "/v1/config") {
     return json({
-      google_enabled: Boolean(
-        env.GOOGLE_CLIENT_ID || env.GOOGLE_DESKTOP_CLIENT_ID
-      ),
+      google_enabled: Boolean(env.GOOGLE_DESKTOP_CLIENT_ID),
       google_native_enabled: Boolean(env.GOOGLE_DESKTOP_CLIENT_ID),
       protocol_version: 3,
     });
   }
-  if (request.method === "GET" && url.pathname === "/auth/google") {
-    return googleHandoffPage();
-  }
-
   const text =
     request.method === "GET" || request.method === "HEAD"
       ? ""
@@ -57,27 +46,9 @@ async function route(request, env) {
   }
   if (
     request.method === "POST" &&
-    url.pathname === "/v1/auth/google/handoff/start"
-  ) {
-    return startGoogleHandoff(request, env, text, now);
-  }
-  if (
-    request.method === "POST" &&
     url.pathname === "/v1/auth/google/native/start"
   ) {
     return startNativeGoogleHandoff(request, env, text, now);
-  }
-  if (
-    request.method === "POST" &&
-    url.pathname === "/v1/auth/google/handoff/browser-challenge"
-  ) {
-    return googleBrowserChallenge(env, text, now);
-  }
-  if (
-    request.method === "POST" &&
-    url.pathname === "/v1/auth/google/handoff/complete"
-  ) {
-    return completeGoogleHandoff(env, text, now);
   }
   if (
     request.method === "POST" &&
@@ -85,13 +56,6 @@ async function route(request, env) {
   ) {
     return exchangeNativeGoogleHandoff(env, text, now);
   }
-  if (
-    request.method === "POST" &&
-    url.pathname === "/v1/auth/google/handoff/poll"
-  ) {
-    return pollGoogleHandoff(env, text, now);
-  }
-
   const endpointMatch = url.pathname.match(
     /^\/v1\/servers\/([^/]+)\/endpoint$/
   );

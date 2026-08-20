@@ -148,21 +148,11 @@ the opaque account link. Logging out removes only that server-side
 public-account link; the local profile, rooms, and durable device credential
 remain. A remote account mutation requires forwarded HTTPS;
 a spoofed loopback Host header is not treated as a local request. Google does
-not permit this web flow inside an embedded WebView. The Tauri clients therefore
-ask the selected server for a short-lived, one-use handoff, open that
-same-origin URL in the system browser, and poll the server until the verified
-account link is visible. The requesting app displays a separate one-time
-confirmation code that the user must enter in the system browser; the URL alone
-cannot bind the authenticated account to the requesting device. The native
-command accepts only the selected server origin, while the handoff token,
-confirmation code, and Google nonce expire in process memory and are consumed
-once. A previously unseen remote device may start that handoff
-with its durable device credential before it has a server user row; completion
-binds the still-unowned credential to the verified account's existing server
-user. A credential that already belongs to a guest may move only through the
-same confirmed replacement path; the server leaves active rooms, revokes room
-sessions, removes the guest's other credentials/profile/recovery state, and
-then binds the current device to the existing account in identity storage.
+not permit this web flow inside an embedded WebView. Tauri clients use the
+central desktop OAuth flow during startup instead of a server-local browser
+handoff. The server-local account surface remains available only to ordinary
+browsers, where Google Identity Services can return directly to the page that
+initiated the login.
 
 ### Deferred plugin extension boundary
 
@@ -912,7 +902,7 @@ Detailed product policy: `docs/product/OPERATING_MODEL.md`.
 | Provider turn coordination | pending input, active turn phase, delta/final commit, and recovery in `room/turn_coordinator.py`; compatibility export in `room_turn_coordinator.py` |
 | Invites, browser admission, current-session connector, and operator-origin pairing | invite policy/application service in `admission/invite_service.py` with compatibility exports in `room_invite_application.py`; process-local facade in `room_invite.py`; preflight owner in `admission/preflight.py` with compatibility export in `room_admission.py`; session lifecycle in `admission/session_issuer.py` and `admission/session_service.py`; durable mutation and compensation in `admission/coordinator.py` and `admission/saga.py`, all with root compatibility exports; current app/CLI session adapter in `application/room_connector.py` and stdio MCP boundary in `providers/room_connector_mcp.py`; pairing in `identity/pairing.py` with compatibility exports in `operator_pairing.py`; HTTP in `web/routes/room_invite.py` with root compatibility export; managed native attendee in `room_attendee.py`; browser flow in `frontend/src/app/useRoomAdmission.ts` |
 | Invite/session persistence | contracts and fail-closed default in `admission/repository.py`; durable workflow allowlist in `admission/workflow_record.py`; explicit terminal-workflow selection/reporting in `admission/maintenance.py` and CLI boundary in `admission/maintenance_command.py`; local memory/JSON owner in `persistence/local/admission/`; hosted owner in `persistence/postgres/admission/`; root compatibility exports retained; selection in `room_invite_repository_factory.py` |
-| Identity, public account, credential, membership compatibility, preference, and usage persistence | storage-independent contracts in `identity/repository.py`, `identity/accounts.py`, and `identity/preferences.py`; Google verification/link policy in `identity/google.py` and process-memory desktop handoffs in `identity/google_handoff.py`; backend selection in `identity/factory.py`; account HTTP in `web/routes/accounts.py`; process-scoped binding and local fallback in `application/room_users.py`; local SQLite implementation, cache/binding registry, and one-time JSON import in `persistence/local/identity/`; hosted owner in `persistence/postgres/identity/`; compatibility exports in `identity_store.py`, `identity_room_preferences.py`, `identity_repository_factory.py`, and `postgres_identity_*.py` |
+| Identity, public account, credential, membership compatibility, preference, and usage persistence | storage-independent contracts in `identity/repository.py`, `identity/accounts.py`, and `identity/preferences.py`; browser Google verification/link policy in `identity/google.py`; backend selection in `identity/factory.py`; account HTTP in `web/routes/accounts.py`; process-scoped binding and local fallback in `application/room_users.py`; local SQLite implementation, cache/binding registry, and one-time JSON import in `persistence/local/identity/`; hosted owner in `persistence/postgres/identity/`; compatibility exports in `identity_store.py`, `identity_room_preferences.py`, `identity_repository_factory.py`, and `postgres_identity_*.py` |
 | Provider credentials | `provider_secrets.py`, provider credential routes |
 | Canonical attachment upload/download HTTP | `web/routes/attachments.py` with compatibility export in `gui_attachment_http.py`; storage in `attachments.py`, room media in `persistence/local/room/repository.py` or the selected `RoomRepository` |
 | GUI HTTP routing, response, static delivery, and WebSocket transport | route/request-context owner in `web/router.py`; response owner in `web/response.py`; static owner in `web/static.py`; shared SSE/WebSocket cadence in `web/sse_cadence.py`; RFC 6455 handshake/frame codec in `web/websocket_codec.py`; Python resident/bridge room client in `web/room_client.py`; ticket and per-connection protocol in `web/room_session.py`; ticket route and WebSocket upgrade owner in `web/websocket.py`; root compatibility exports retained; composition in `gui.py` |

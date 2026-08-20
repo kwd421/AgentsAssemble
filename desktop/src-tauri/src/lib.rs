@@ -10,8 +10,8 @@ use std::sync::{Arc, RwLock};
 #[cfg(desktop)]
 use local_runtime::LocalRuntime;
 use server_url::{
-    central_directory_origin, central_google_handoff_url, google_account_handoff_url,
-    is_local_app_url, normalized_navigation_url, normalized_server_url, same_origin,
+    central_directory_origin, central_google_handoff_url, is_local_app_url,
+    normalized_navigation_url, normalized_server_url, same_origin,
 };
 use tauri::Manager;
 #[cfg(desktop)]
@@ -254,18 +254,6 @@ fn cache_selected_room_directory(
     room_directory::store_selected_server_rooms(&app, &rooms, &server)
 }
 
-#[tauri::command]
-fn open_google_account_login(
-    window: WebviewWindow,
-    navigation: State<'_, NavigationState>,
-    url: String,
-) -> Result<(), String> {
-    let server = caller_selected_server(&window, &navigation)?;
-    let handoff = google_account_handoff_url(&url, &server)?;
-    tauri_plugin_opener::open_url(handoff.as_str(), None::<&str>)
-        .map_err(|error| format!("cannot open the system browser: {error}"))
-}
-
 fn build_main_window(
     app: &mut tauri::App,
     navigation_guard: Arc<RwLock<Option<Url>>>,
@@ -319,8 +307,7 @@ pub fn run() {
             open_server,
             open_server_link,
             load_cached_room_directory,
-            cache_selected_room_directory,
-            open_google_account_login
+            cache_selected_room_directory
         ]);
 
     #[cfg(mobile)]
@@ -333,8 +320,7 @@ pub fn run() {
             open_server,
             open_server_link,
             load_cached_room_directory,
-            cache_selected_room_directory,
-            open_google_account_login
+            cache_selected_room_directory
         ]);
 
     let app = builder

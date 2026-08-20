@@ -34,9 +34,6 @@ _HANDLER_AUTHORIZED_MUTATIONS = frozenset(
     {
         "/api/account/google",
         "/api/account/google/challenge",
-        "/api/account/google/handoff/complete",
-        "/api/account/google/handoff/configure",
-        "/api/account/google/handoff/start",
         "/api/agent-sessions",
         "/api/agent-sessions/resume",
         "/api/attachments",

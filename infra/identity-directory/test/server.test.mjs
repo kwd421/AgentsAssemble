@@ -268,7 +268,7 @@ test("CORS reflects only approved shell and loopback origins in production", asy
   }
 });
 
-test("the Worker accepts its exact own origin for the Google handoff page", async () => {
+test("the Worker accepts its exact own origin", async () => {
   const origin = "https://central.example";
   const response = await worker.fetch(
     new Request(`${origin}/healthz`, {

@@ -14,34 +14,6 @@ export function isDesktopWebview(): boolean {
   return Boolean(tauriInternals());
 }
 
-function isCentralGoogleHandoff(url: string): boolean {
-  try {
-    const parsed = new URL(url);
-    if (parsed.pathname !== "/auth/google" || parsed.search) return false;
-    const fragment = new URLSearchParams(parsed.hash.slice(1));
-    return (
-      fragment.size === 2 &&
-      Boolean(fragment.get("handoff")) &&
-      Boolean(fragment.get("browser"))
-    );
-  } catch {
-    return false;
-  }
-}
-
-export async function openDesktopGoogleLogin(url: string): Promise<void> {
-  const tauri = tauriInternals();
-  if (!tauri) {
-    throw new Error("데스크톱 브라우저 연결 기능을 사용할 수 없습니다.");
-  }
-  await tauri.invoke(
-    isCentralGoogleHandoff(url)
-      ? "open_central_google_login"
-      : "open_google_account_login",
-    { url }
-  );
-}
-
 export async function openDesktopCentralGoogleLogin(url: string): Promise<void> {
   const tauri = tauriInternals();
   if (!tauri) {
