@@ -253,6 +253,9 @@ surface rather than silently counted as React parity.
 | `/api/provider-credentials/vercel` | POST | exact | `setProviderCredential()` | yes | Stores a Vercel AI Gateway key in the host secure store; the input is cleared by React after submission. |
 | `/api/provider-credentials/vercel` | DELETE | exact | `deleteProviderCredential()` | yes | Deletes the Vercel AI Gateway key from the host secure store; the response never returns the credential value. |
 | `/api/room-events/stream` | GET | sse | `-` | no | Legacy/read-only SSE compatibility endpoint. React receives canonical RoomStore snapshots and events from `/ws?ticket=...`. |
+| `/api/central-login/callback/start` | POST | exact | `-` | no | Registers a bounded loopback-only Google login return state for the desktop shell. |
+| `/api/central-login/callback` | GET | exact | `-` | no | Receives the one-time Google authorization result on loopback and redirects to a secret-free completion page. |
+| `/api/central-login/callback/poll` | POST | exact | `-` | no | Lets the initiating desktop page retrieve its completed local Google handoff once. |
 | `/api/central-directory/registration-proof` | POST | exact | `-` | no | Local engine proves host-key ownership to the central directory. Not wrapped by the React API barrel. |
 | `/api/host/claim` | POST | exact | `claimHostDevice()` | yes | Host-token gated: binds this device's stable identity to the operator account so its sessions moderate from any entrance. |
 | `/api/server-info` | GET | exact | `-` | no | Public server identity metadata; the trusted-client shell reads it outside the React API barrel. |

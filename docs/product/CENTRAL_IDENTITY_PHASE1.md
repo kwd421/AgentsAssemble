@@ -4,11 +4,18 @@ Phase 1 keeps rooms, messages, attachments, provider sessions, and room ACLs on 
 
 ## Startup contract
 
-1. A normal launch does not mount `App` until startup identity resolution and a local room-directory readiness check finish. Cached room rows are therefore not rendered behind the startup spinner.
+1. On desktop, the native window stays hidden while the loopback engine starts, then opens directly on the login or room UI. The launcher does not show a separate local-engine loading screen. `App` still waits for startup identity resolution and a local room-directory readiness check before rendering cached room rows.
 2. With no central session, the user chooses Google, a new guest, or an existing guest recovery code.
 3. A newly created or recovered guest receives a rotated 160-bit recovery code. The application continues only after explicit confirmation that the code was stored safely.
 4. Once a remembered session exists, central downtime does not block the local engine. A rejected or expired central session does require login again.
 5. Central login never grants room membership. Each selected engine continues to enforce its own invite, session, and ACL contract.
+
+Desktop Google login uses the system browser, a loopback callback, and PKCE. The
+browser returns a short-lived authorization code to the exact local callback that
+started the attempt; the central Worker issues a session only when the app presents
+the matching verifier. Users do not copy a confirmation code, and the app does not
+poll the public Worker for browser completion. The older confirmation-code handoff
+remains available only for clients that do not yet have a native callback boundary.
 
 Special invite, operator-pairing, and room-recovery URLs bypass the normal startup identity boundary so an invited user is not trapped behind an unrelated account screen.
 

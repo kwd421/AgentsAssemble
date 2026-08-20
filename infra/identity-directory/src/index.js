@@ -11,10 +11,13 @@ import {
 } from "./http.js";
 import {
   completeGoogleHandoff,
+  completeNativeGoogleHandoff,
+  exchangeNativeGoogleHandoff,
   googleBrowserChallenge,
   googleHandoffPage,
   pollGoogleHandoff,
   startGoogleHandoff,
+  startNativeGoogleHandoff,
 } from "./google_handoff.js";
 import { authenticated, bootstrap } from "./session.js";
 import {
@@ -33,7 +36,7 @@ async function route(request, env) {
   if (request.method === "GET" && url.pathname === "/v1/config") {
     return json({
       google_enabled: Boolean(env.GOOGLE_CLIENT_ID),
-      protocol_version: 1,
+      protocol_version: 2,
     });
   }
   if (request.method === "GET" && url.pathname === "/auth/google") {
@@ -58,6 +61,12 @@ async function route(request, env) {
   }
   if (
     request.method === "POST" &&
+    url.pathname === "/v1/auth/google/native/start"
+  ) {
+    return startNativeGoogleHandoff(request, env, text, now);
+  }
+  if (
+    request.method === "POST" &&
     url.pathname === "/v1/auth/google/handoff/browser-challenge"
   ) {
     return googleBrowserChallenge(env, text, now);
@@ -67,6 +76,18 @@ async function route(request, env) {
     url.pathname === "/v1/auth/google/handoff/complete"
   ) {
     return completeGoogleHandoff(env, text, now);
+  }
+  if (
+    request.method === "POST" &&
+    url.pathname === "/v1/auth/google/native/complete"
+  ) {
+    return completeNativeGoogleHandoff(env, text, now);
+  }
+  if (
+    request.method === "POST" &&
+    url.pathname === "/v1/auth/google/native/exchange"
+  ) {
+    return exchangeNativeGoogleHandoff(env, text, now);
   }
   if (
     request.method === "POST" &&

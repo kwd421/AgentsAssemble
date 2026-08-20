@@ -368,16 +368,12 @@ export default function StartupIdentityGate({
           <p className="text-[13px] font-semibold leading-5 text-text-muted">
             {screen === "recovery-code"
               ? "이 코드는 다른 기기에서 같은 게스트 신원과 서버 목록을 복구할 때 필요합니다. 중앙에는 코드 원문을 저장하지 않습니다."
-              : "로그인한 뒤 이 기기의 로컬 엔진과 알고 있는 서버 목록을 불러옵니다. 방 권한은 각 엔진이 별도로 확인합니다."}
+              : "Google 계정은 내 서버 목록을 기기 간 동기화할 때만 사용합니다. 방과 메시지는 각 서버에 그대로 남습니다."}
           </p>
         </header>
 
         {screen === "choice" && (
           <div className="grid gap-3">
-            <p className="rounded-md bg-[#1b1c20] p-3 text-[11px] font-bold leading-5 text-text-muted">
-              현재 이 기기에 유효한 중앙 로그인이 없습니다. 게스트 복구 코드는
-              신원 생성·복구 직후 한 번만 표시되며 중앙에서 다시 조회할 수 없습니다.
-            </p>
             <button
               type="button"
               className="flex min-h-12 items-center justify-center gap-2 rounded-md bg-[#5865f2] px-4 text-[14px] font-black text-white disabled:opacity-60"

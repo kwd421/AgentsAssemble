@@ -120,15 +120,22 @@ async fn start_local_runtime(
 ) -> Result<String, String> {
     caller_is_local_shell(&window)?;
     let runtime_app = app.clone();
-    let server = tauri::async_runtime::spawn_blocking(move || {
+    let result = tauri::async_runtime::spawn_blocking(move || {
         let runtime = runtime_app.state::<LocalRuntime>();
         let server = runtime.ensure_running(&runtime_app)?;
         let _ = room_directory::refresh_local_rooms(&runtime_app, &server);
         Ok::<Url, String>(server)
     })
     .await
-    .map_err(|error| format!("local runtime startup worker failed: {error}"))??;
-    Ok(server.to_string())
+    .map_err(|error| format!("local runtime startup worker failed: {error}"))
+    .and_then(|server| server);
+    match result {
+        Ok(server) => Ok(server.to_string()),
+        Err(error) => {
+            let _ = window.show();
+            Err(error)
+        }
+    }
 }
 
 #[cfg(desktop)]
@@ -196,7 +203,10 @@ fn open_server(
     #[cfg(desktop)]
     {
         let _ = app;
-        navigate_to_server(&window, &navigation, server.clone(), server)
+        navigate_to_server(&window, &navigation, server.clone(), server)?;
+        window
+            .show()
+            .map_err(|error| format!("cannot show the local app window: {error}"))
     }
     #[cfg(mobile)]
     {
@@ -272,7 +282,8 @@ fn build_main_window(
     #[cfg(desktop)]
     let builder = builder
         .inner_size(1440.0, 900.0)
-        .min_inner_size(900.0, 620.0);
+        .min_inner_size(900.0, 620.0)
+        .visible(false);
     builder.build()?;
     Ok(())
 }

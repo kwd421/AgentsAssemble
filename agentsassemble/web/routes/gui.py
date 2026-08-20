@@ -11,6 +11,7 @@ from agentsassemble.features.social.routes import register_room_friend_profile_r
 from agentsassemble.identity.google import GoogleAccountLoginService
 from agentsassemble.web.router import RequestContext, Router
 from agentsassemble.web.routes.attachments import register_attachment_routes
+from agentsassemble.web.routes.central_login_callback import register_central_login_callback_routes
 from agentsassemble.web.routes.accounts import register_account_routes
 from agentsassemble.web.routes.identity_recovery import register_identity_recovery_routes
 from agentsassemble.web.routes.observability import register_observability_routes
@@ -120,6 +121,7 @@ def register_current_gui_routes(
         is_local_operator=lambda ctx: ctx.is_local_operator(),
     )
     register_attachment_routes(route_table)
+    register_central_login_callback_routes(route_table)
     register_account_routes(route_table, google=google_account_service)
     register_identity_recovery_routes(route_table)
     register_persona_routes(

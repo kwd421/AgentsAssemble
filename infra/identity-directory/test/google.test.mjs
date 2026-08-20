@@ -105,6 +105,36 @@ async function browserChallenge(env, started) {
   return payload(response);
 }
 
+async function startNativeHandoff(env, device, deviceId) {
+  const verifier = bytesToBase64Url(crypto.getRandomValues(new Uint8Array(32)));
+  const challenge = bytesToBase64Url(
+    await crypto.subtle.digest("SHA-256", utf8(verifier))
+  );
+  const state = bytesToBase64Url(crypto.getRandomValues(new Uint8Array(32)));
+  const response = await request(env, "/v1/auth/google/native/start", {
+    method: "POST",
+    body: JSON.stringify({
+      device_id: deviceId,
+      device_public_key_jwk: device.publicJwk,
+      device_label: "Desktop",
+      code_challenge: challenge,
+      redirect_uri: "http://127.0.0.1:43123/api/central-login/callback",
+      state,
+    }),
+  });
+  assert.equal(response.status, 201);
+  const started = await payload(response);
+  const fragmentParams = new URLSearchParams(
+    new URL(started.handoff_url).hash.slice(1)
+  );
+  return {
+    ...started,
+    browserToken: fragmentParams.get("browser"),
+    verifier,
+    state,
+  };
+}
+
 test("Google handoff separates browser/poll secrets and stores only a subject HMAC", async () => {
   const env = environment();
   const signer = await googleSigner(env);
@@ -306,4 +336,92 @@ test("Google handoff page loads GIS before initialization and isolates its opene
     response.headers.get("cross-origin-opener-policy"),
     "same-origin-allow-popups"
   );
+});
+
+test("native Google handoff returns through loopback and requires the PKCE verifier", async () => {
+  const env = environment();
+  const signer = await googleSigner(env);
+  const device = await deviceKey();
+  const started = await startNativeHandoff(
+    env,
+    device,
+    "native-google-device-0001"
+  );
+
+  assert.equal(started.confirmation_code, undefined);
+  assert.equal(started.poll_token, undefined);
+  const challenge = await browserChallenge(env, started);
+  assert.equal(challenge.flow, "native");
+
+  const credential = await googleToken(signer, env, challenge.nonce);
+  const completed = await payload(
+    await request(env, "/v1/auth/google/native/complete", {
+      method: "POST",
+      body: JSON.stringify({
+        handoff_id: started.handoff_id,
+        browser_token: started.browserToken,
+        credential,
+      }),
+    })
+  );
+  const callback = new URL(completed.redirect_url);
+  assert.equal(callback.origin, "http://127.0.0.1:43123");
+  assert.equal(callback.pathname, "/api/central-login/callback");
+  assert.equal(callback.searchParams.get("state"), started.state);
+  assert.ok(callback.searchParams.get("code"));
+
+  const wrongVerifier = await request(env, "/v1/auth/google/native/exchange", {
+    method: "POST",
+    body: JSON.stringify({
+      handoff_id: started.handoff_id,
+      authorization_code: callback.searchParams.get("code"),
+      code_verifier: `${started.verifier}wrong`,
+    }),
+  });
+  assert.equal(wrongVerifier.status, 401);
+
+  const exchanged = await payload(
+    await request(env, "/v1/auth/google/native/exchange", {
+      method: "POST",
+      body: JSON.stringify({
+        handoff_id: started.handoff_id,
+        authorization_code: callback.searchParams.get("code"),
+        code_verifier: started.verifier,
+      }),
+    })
+  );
+  assert.equal(exchanged.status, "complete");
+  assert.equal(exchanged.person.identity_kind, "google");
+
+  const replay = await request(env, "/v1/auth/google/native/exchange", {
+    method: "POST",
+    body: JSON.stringify({
+      handoff_id: started.handoff_id,
+      authorization_code: callback.searchParams.get("code"),
+      code_verifier: started.verifier,
+    }),
+  });
+  assert.equal(replay.status, 409);
+  assert.equal((await replay.json()).error.code, "handoff_consumed");
+});
+
+test("native Google handoff rejects redirects outside the local app", async () => {
+  const env = environment();
+  const device = await deviceKey();
+  const verifier = bytesToBase64Url(crypto.getRandomValues(new Uint8Array(32)));
+  const challenge = bytesToBase64Url(
+    await crypto.subtle.digest("SHA-256", utf8(verifier))
+  );
+  const response = await request(env, "/v1/auth/google/native/start", {
+    method: "POST",
+    body: JSON.stringify({
+      device_id: "native-redirect-device-0002",
+      device_public_key_jwk: device.publicJwk,
+      code_challenge: challenge,
+      redirect_uri: "https://attacker.example/callback",
+      state: bytesToBase64Url(crypto.getRandomValues(new Uint8Array(32))),
+    }),
+  });
+  assert.equal(response.status, 400);
+  assert.equal((await response.json()).error.code, "invalid_redirect_uri");
 });

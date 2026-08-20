@@ -55,8 +55,7 @@ export type CentralGuestResult = {
 export type CentralGoogleHandoff = {
   handoff_id: string;
   handoff_url: string;
-  poll_token: string;
-  confirmation_code: string;
+  state: string;
   expires_at: number;
 };
 
@@ -297,12 +296,31 @@ async function unsignedPost<T>(
   return responsePayload<T>(response);
 }
 
+async function localPost<T>(
+  path: string,
+  body: Record<string, unknown>,
+  signal?: AbortSignal
+): Promise<T> {
+  const response = await fetch(path, {
+    method: "POST",
+    cache: "no-store",
+    credentials: "same-origin",
+    redirect: "error",
+    referrerPolicy: "no-referrer",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify(body),
+    signal,
+  });
+  return responsePayload<T>(response);
+}
+
 export function parseCentralGoogleHandoff(value: unknown): CentralGoogleHandoff {
   const handoff = value as Partial<CentralGoogleHandoff> | null;
   if (!handoff || typeof handoff !== "object") {
     throw new Error("중앙 로그인 서버가 올바르지 않은 응답을 반환했습니다.");
   }
-  if (!String(handoff.confirmation_code || "").trim()) {
+  const state = String(handoff.state || "").trim();
+  if (!state) {
     throw new Error(
       "중앙 로그인 서버가 현재 앱보다 오래된 버전입니다. Worker 업데이트가 필요합니다."
     );
@@ -310,10 +328,7 @@ export function parseCentralGoogleHandoff(value: unknown): CentralGoogleHandoff 
   const result: CentralGoogleHandoff = {
     handoff_id: String(handoff.handoff_id || "").trim(),
     handoff_url: String(handoff.handoff_url || "").trim(),
-    poll_token: String(handoff.poll_token || "").trim(),
-    confirmation_code: String(handoff.confirmation_code || "")
-      .trim()
-      .toUpperCase(),
+    state,
     expires_at: Number(handoff.expires_at || 0),
   };
   let handoffUrl: URL;
@@ -327,8 +342,9 @@ export function parseCentralGoogleHandoff(value: unknown): CentralGoogleHandoff 
   );
   if (
     !result.handoff_id ||
-    !result.poll_token ||
-    !/^[A-Z0-9]{4}-[A-Z0-9]{4}$/.test(result.confirmation_code) ||
+    result.state.length < 32 ||
+    result.state.length > 128 ||
+    !/^[A-Za-z0-9._:-]+$/.test(result.state) ||
     !Number.isSafeInteger(result.expires_at) ||
     result.expires_at <= Math.floor(Date.now() / 1000) ||
     (handoffUrl.protocol !== "https:" &&
@@ -346,7 +362,7 @@ function throwIfGoogleLoginAborted(signal?: AbortSignal): void {
   throw error;
 }
 
-function waitForGooglePoll(signal?: AbortSignal): Promise<void> {
+function waitForGoogleReturn(signal?: AbortSignal): Promise<void> {
   throwIfGoogleLoginAborted(signal);
   return new Promise((resolve, reject) => {
     const timer = window.setTimeout(() => {
@@ -448,16 +464,29 @@ export async function loginCentralGoogle(
   signal?: AbortSignal
 ): Promise<CentralSession> {
   throwIfGoogleLoginAborted(signal);
+  const state = randomUrlToken(32);
+  const verifier = randomUrlToken(32);
+  const callback = await localPost<{ redirect_uri: string; expires_at: number }>(
+    "/api/central-login/callback/start",
+    { state },
+    signal
+  );
   const started = parseCentralGoogleHandoff(
     await unsignedPost<unknown>(
-      "/v1/auth/google/handoff/start",
-      await authDeviceBody(),
+      "/v1/auth/google/native/start",
+      {
+        ...(await authDeviceBody()),
+        code_challenge: await sha256(verifier),
+        redirect_uri: callback.redirect_uri,
+        state,
+      },
       signal
     )
   );
-  status?.(
-    `시스템 브라우저에서 Google 로그인을 완료하고 확인 코드 ${started.confirmation_code}를 입력해 주세요.`
-  );
+  if (started.state !== state) {
+    throw new Error("중앙 로그인 서버가 요청 상태를 바꾸었습니다.");
+  }
+  status?.("시스템 브라우저에서 Google 계정을 선택해 주세요.");
   if (isDesktopWebview()) {
     await openDesktopGoogleLogin(started.handoff_url);
   } else {
@@ -471,24 +500,39 @@ export async function loginCentralGoogle(
       // Cross-origin popup is already isolated.
     }
   }
-  while (Math.floor(Date.now() / 1000) < started.expires_at) {
-    await waitForGooglePoll(signal);
-    const polled = await unsignedPost<
+  const expiresAt = Math.min(started.expires_at, Number(callback.expires_at || 0));
+  while (Math.floor(Date.now() / 1000) < expiresAt) {
+    await waitForGoogleReturn(signal);
+    const returned = await localPost<
       | { status: "pending"; expires_at: number }
       | {
           status: "complete";
-          person: CentralPerson;
-          session: Omit<CentralSession, "person">;
+          handoff_id: string;
+          authorization_code: string;
         }
     >(
-      "/v1/auth/google/handoff/poll",
+      "/api/central-login/callback/poll",
+      { state },
+      signal
+    );
+    if (returned.status !== "complete") continue;
+    if (returned.handoff_id !== started.handoff_id) {
+      throw new Error("Google 로그인 응답이 현재 요청과 일치하지 않습니다.");
+    }
+    const exchanged = await unsignedPost<{
+      status: "complete";
+      person: CentralPerson;
+      session: Omit<CentralSession, "person">;
+    }>(
+      "/v1/auth/google/native/exchange",
       {
-        handoff_id: started.handoff_id,
-        poll_token: started.poll_token,
+        handoff_id: returned.handoff_id,
+        authorization_code: returned.authorization_code,
+        code_verifier: verifier,
       },
       signal
     );
-    if (polled.status === "complete") return saveSession(polled);
+    return saveSession(exchanged);
   }
   throw new Error("Google 로그인 시간이 만료됐습니다. 다시 시도해 주세요.");
 }

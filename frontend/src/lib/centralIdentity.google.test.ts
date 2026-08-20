@@ -3,30 +3,30 @@ import { describe, expect, it } from "vitest";
 import { parseCentralGoogleHandoff } from "./centralIdentity";
 
 describe("central Google handoff protocol", () => {
-  it("rejects an older Worker response before the app starts polling", () => {
+  it("rejects the old manual-code Worker response", () => {
     expect(() =>
       parseCentralGoogleHandoff({
         handoff_id: "goh_legacy",
         handoff_url: "https://central.example/auth/google#handoff=legacy",
         poll_token: "legacy-poll-token",
+        confirmation_code: "ABCD-EFGH",
         expires_at: 9_999_999_999,
       })
     ).toThrow(/업데이트/);
   });
 
-  it("accepts a handoff only when the confirmation-code contract is present", () => {
+  it("accepts a native handoff without exposing a confirmation or poll secret", () => {
     expect(
       parseCentralGoogleHandoff({
         handoff_id: "goh_current",
         handoff_url:
           "https://central.example/auth/google#handoff=current&browser=secret",
-        poll_token: "current-poll-token",
-        confirmation_code: "ABCD-EFGH",
+        state: "state_current_native_handoff_1234567890",
         expires_at: 9_999_999_999,
       })
     ).toMatchObject({
       handoff_id: "goh_current",
-      confirmation_code: "ABCD-EFGH",
+      state: "state_current_native_handoff_1234567890",
     });
   });
 });

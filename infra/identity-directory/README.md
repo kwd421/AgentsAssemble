@@ -15,6 +15,9 @@ and invite credentials remain on each AgentsAssemble engine.
   code and revokes prior sessions for that device.
 - Google subjects are stored only as an HMAC keyed by `IDENTITY_PEPPER`; Google ID
   tokens, raw subjects, names, email addresses, and profile images are never persisted.
+- Desktop Google login returns through an exact loopback callback and exchanges a
+  one-time authorization code with PKCE. The browser URL alone cannot claim the
+  resulting central session, and users do not copy a confirmation code.
 - Signed sessions can revoke every other session or delete their central identity.
   Account deletion cascades through devices, sessions, recovery state, and owned
   server registrations.
