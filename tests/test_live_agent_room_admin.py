@@ -115,7 +115,7 @@ class LiveAgentRoomAdminTests(unittest.TestCase):
             root = Path(temp_dir) / "aa"
             write_meeting(root)
             invite = create_room_invite(
-                room_url="http://192.168.1.10:8765",
+                room_url="https://192.168.1.10:8765",
                 meeting_id="room-a",
                 agent_id="remote-runner",
                 display_name="Remote Runner",
