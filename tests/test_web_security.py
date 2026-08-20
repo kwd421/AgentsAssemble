@@ -45,6 +45,18 @@ class WebRequestOriginIsolationTests(unittest.TestCase):
             )
         )
 
+    def test_public_google_disconnect_is_an_allowed_account_mutation(self) -> None:
+        self.assertTrue(
+            _request_trusted(
+                bound_host="127.0.0.1",
+                host_header="rooms.example.com",
+                origin="https://rooms.example.com",
+                path="/api/account/google",
+                method="DELETE",
+                public_url="https://rooms.example.com",
+            )
+        )
+
     def test_native_clients_without_origin_keep_trusted_host_access(self) -> None:
         self.assertTrue(
             _request_trusted(

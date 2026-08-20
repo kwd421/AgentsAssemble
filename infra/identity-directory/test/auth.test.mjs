@@ -227,3 +227,119 @@ test("a transient recovery session failure restores the original recovery code",
   assert.equal(recovered.person.person_id, created.person.person_id);
   assert.notEqual(recovered.recovery_code, created.recovery_code);
 });
+
+test("logging out other devices preserves only the requesting session", async () => {
+  const env = environment();
+  const { key: firstKey, created } = await createGuestIdentity(env);
+  const secondKey = await deviceKey();
+  const recoveredResponse = await request(env, "/v1/auth/recover", {
+    method: "POST",
+    body: JSON.stringify({
+      recovery_code: created.recovery_code,
+      device_id: "device-logout-others-0002",
+      device_public_key_jwk: secondKey.publicJwk,
+      device_label: "Second device",
+    }),
+  });
+  const recovered = await payload(recoveredResponse);
+
+  const logoutOthers = await signedDeviceRequest(
+    env,
+    recovered.session,
+    secondKey.pair,
+    "/v1/logout-others",
+    "POST",
+    {}
+  );
+  assert.equal(logoutOthers.status, 200);
+
+  const firstSession = await signedDeviceRequest(
+    env,
+    created.session,
+    firstKey.pair,
+    "/v1/bootstrap"
+  );
+  assert.equal(firstSession.status, 401);
+  const currentSession = await signedDeviceRequest(
+    env,
+    recovered.session,
+    secondKey.pair,
+    "/v1/bootstrap"
+  );
+  assert.equal(currentSession.status, 200);
+});
+
+test("deleting an account requires explicit confirmation and removes central data", async () => {
+  const env = environment();
+  const { key, created } = await createGuestIdentity(env);
+  const host = await hostKey();
+  const serverId = "account-owned-server-0001";
+  const registered = await signedDeviceRequest(
+    env,
+    created.session,
+    key.pair,
+    "/v1/servers",
+    "POST",
+    {
+      server_id: serverId,
+      label: "Account owned server",
+      host_public_key_jwk: host.publicJwk,
+      host_registration_proof: await hostRegistrationProof(
+        host.pair,
+        serverId,
+        created.person.person_id
+      ),
+    }
+  );
+  assert.equal(registered.status, 201);
+
+  const unconfirmed = await signedDeviceRequest(
+    env,
+    created.session,
+    key.pair,
+    "/v1/account",
+    "DELETE",
+    { confirmation: "wrong-person" }
+  );
+  assert.equal(unconfirmed.status, 400);
+
+  const deleted = await signedDeviceRequest(
+    env,
+    created.session,
+    key.pair,
+    "/v1/account",
+    "DELETE",
+    { confirmation: `delete:${created.person.person_id}` }
+  );
+  assert.equal(deleted.status, 200);
+  assert.equal(
+    env.DB.database.prepare("SELECT COUNT(*) AS count FROM persons").get().count,
+    0
+  );
+  assert.equal(
+    env.DB.database.prepare("SELECT COUNT(*) AS count FROM sessions").get().count,
+    0
+  );
+  assert.equal(
+    env.DB.database.prepare("SELECT COUNT(*) AS count FROM devices").get().count,
+    0
+  );
+  assert.equal(
+    env.DB.database
+      .prepare("SELECT COUNT(*) AS count FROM recovery_credentials")
+      .get().count,
+    0
+  );
+  assert.equal(
+    env.DB.database.prepare("SELECT COUNT(*) AS count FROM servers").get().count,
+    0
+  );
+
+  const expired = await signedDeviceRequest(
+    env,
+    created.session,
+    key.pair,
+    "/v1/bootstrap"
+  );
+  assert.equal(expired.status, 401);
+});

@@ -132,7 +132,8 @@ the user links a public account or completes guest recovery. Before host-room
 connections begin, first use requires an explicit choice between a linked public
 account and a device-local guest profile. Local rooms remain usable without a
 public account or Internet connection. A verified Google subject produces a
-stable opaque `acct-...` ID; the raw Google subject and ID token are not stored. Linking is an explicit account action and
+stable opaque `acct-...` ID; the raw Google subject, ID token, name, email, and
+profile image are not stored. Linking is an explicit account action and
 never silently merges two identities. When the selected Google account already
 belongs to another server user, the client must warn that the current guest
 profile, recovery material, and active participation will be discarded. Only
@@ -143,9 +144,9 @@ still own a server fail closed instead of being discarded.
 The web account surface uses Google Identity Services only when the server has
 `AGENTSASSEMBLE_GOOGLE_WEB_CLIENT_ID` configured. The backend verifies the ID
 token audience, issuer, expiry, and a short-lived one-use nonce before writing
-the account link. Logging out removes only that server-side public-account link
-and its cached Google profile fields; the local profile, rooms, and durable
-device credential remain. A remote account mutation requires forwarded HTTPS;
+the opaque account link. Logging out removes only that server-side
+public-account link; the local profile, rooms, and durable device credential
+remain. A remote account mutation requires forwarded HTTPS;
 a spoofed loopback Host header is not treated as a local request. Google does
 not permit this web flow inside an embedded WebView. The Tauri clients therefore
 ask the selected server for a short-lived, one-use handoff, open that

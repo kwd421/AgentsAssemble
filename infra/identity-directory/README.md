@@ -14,9 +14,14 @@ and invite credentials remain on each AgentsAssemble engine.
   and are stored in D1 only as an HMAC verifier. A successful recovery rotates the
   code and revokes prior sessions for that device.
 - Google subjects are stored only as an HMAC keyed by `IDENTITY_PEPPER`; Google ID
-  tokens and raw subjects are never persisted.
+  tokens, raw subjects, names, email addresses, and profile images are never persisted.
+- Signed sessions can revoke every other session or delete their central identity.
+  Account deletion cascades through devices, sessions, recovery state, and owned
+  server registrations.
 - Server endpoints are accepted only when signed by the server's Ed25519 host key.
-  Endpoint generations are monotonic, and leases expire automatically.
+  Endpoint generations are monotonic, leases expire automatically, and deleting a
+  server registration immediately invalidates its old host key. Each central identity
+  can own at most 20 registered servers.
 - A central login never grants room membership. Clients still authenticate directly
   to the selected engine and its room ACLs.
 - Public Quick Tunnel origins are valid server endpoints, but are not trusted central

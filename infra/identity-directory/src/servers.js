@@ -17,6 +17,7 @@ import { normalizeServerOrigin } from "./origin.js";
 
 const CLOCK_SKEW_SECONDS = 300;
 const NONCE_TTL_SECONDS = 600;
+const MAX_SERVERS_PER_PERSON = 20;
 
 export async function registerServer(session, env, text, now) {
   const body = parseJson(text);
@@ -78,36 +79,62 @@ export async function registerServer(session, env, text, now) {
       .bind(label, serverId)
       .run();
   } else {
-    await env.DB.batch([
-      env.DB
-        .prepare(
-          `INSERT INTO servers
-           (server_id, owner_person_id, host_public_key_jwk,
-            host_key_fingerprint, label, created_at, revoked_at)
-           VALUES (?, ?, ?, ?, ?, ?, NULL)`
-        )
-        .bind(
-          serverId,
-          session.person_id,
-          canonicalJson(hostJwk),
-          fingerprint,
-          label,
-          now
-        ),
-      env.DB
-        .prepare(
-          `INSERT INTO person_servers
-           (person_id, server_id, relation, alias, first_seen_at,
-            last_connected_at)
-           VALUES (?, ?, 'owner', ?, ?, NULL)`
-        )
-        .bind(session.person_id, serverId, label, now),
-    ]);
+    const count = await env.DB
+      .prepare("SELECT COUNT(*) AS count FROM servers WHERE owner_person_id = ?")
+      .bind(session.person_id)
+      .first();
+    if (Number(count?.count || 0) >= MAX_SERVERS_PER_PERSON) {
+      throw new HttpError(409, "server_limit_reached");
+    }
+    try {
+      await env.DB.batch([
+        env.DB
+          .prepare(
+            `INSERT INTO servers
+             (server_id, owner_person_id, host_public_key_jwk,
+              host_key_fingerprint, label, created_at, revoked_at)
+             VALUES (?, ?, ?, ?, ?, ?, NULL)`
+          )
+          .bind(
+            serverId,
+            session.person_id,
+            canonicalJson(hostJwk),
+            fingerprint,
+            label,
+            now
+          ),
+        env.DB
+          .prepare(
+            `INSERT INTO person_servers
+             (person_id, server_id, relation, alias, first_seen_at,
+              last_connected_at)
+             VALUES (?, ?, 'owner', ?, ?, NULL)`
+          )
+          .bind(session.person_id, serverId, label, now),
+      ]);
+    } catch (error) {
+      const message = String(error instanceof Error ? error.message : error);
+      if (message.includes("server_limit_reached")) {
+        throw new HttpError(409, "server_limit_reached");
+      }
+      throw error;
+    }
   }
   return json(
     { server_id: serverId, host_key_fingerprint: fingerprint },
     existing ? 200 : 201
   );
+}
+
+export async function deleteServer(session, env, serverId) {
+  const result = await env.DB
+    .prepare("DELETE FROM servers WHERE server_id = ? AND owner_person_id = ?")
+    .bind(serverId, session.person_id)
+    .run();
+  if (Number(result.meta?.changes || 0) !== 1) {
+    throw new HttpError(404, "server_not_found");
+  }
+  return json({ status: "server_deleted", server_id: serverId });
 }
 
 async function hostAuthentication(request, env, serverId, body, now) {

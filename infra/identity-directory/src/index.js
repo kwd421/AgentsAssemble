@@ -1,4 +1,5 @@
 import { allowedBrowserOrigin } from "./origin.js";
+import { deleteAccount, logoutOtherSessions } from "./account.js";
 import { createGuest, recoverGuest } from "./guest.js";
 import {
   HttpError,
@@ -16,7 +17,12 @@ import {
   startGoogleHandoff,
 } from "./google_handoff.js";
 import { authenticated, bootstrap } from "./session.js";
-import { bookmark, registerServer, updateEndpoint } from "./servers.js";
+import {
+  bookmark,
+  deleteServer,
+  registerServer,
+  updateEndpoint,
+} from "./servers.js";
 
 async function route(request, env) {
   const url = new URL(request.url);
@@ -104,8 +110,22 @@ async function route(request, env) {
       .run();
     return json({ status: "logged_out" });
   }
+  if (request.method === "POST" && url.pathname === "/v1/logout-others") {
+    return logoutOtherSessions(session, env, now);
+  }
+  if (request.method === "DELETE" && url.pathname === "/v1/account") {
+    return deleteAccount(session, env, text);
+  }
   if (request.method === "POST" && url.pathname === "/v1/servers") {
     return registerServer(session, env, text, now);
+  }
+  const serverMatch = url.pathname.match(/^\/v1\/servers\/([^/]+)$/);
+  if (serverMatch && request.method === "DELETE") {
+    return deleteServer(
+      session,
+      env,
+      cleanIdentifier(serverMatch[1], "server_id")
+    );
   }
   if (request.method === "POST" && url.pathname === "/v1/bookmarks") {
     return bookmark(session, env, text, now);

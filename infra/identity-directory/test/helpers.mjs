@@ -14,10 +14,13 @@ import {
 import worker from "../src/index.js";
 
 const directory = path.dirname(fileURLToPath(import.meta.url));
-const migration = fs.readFileSync(
-  path.join(directory, "../migrations/0001_initial.sql"),
-  "utf8"
-);
+const migrations = fs
+  .readdirSync(path.join(directory, "../migrations"))
+  .filter((name) => name.endsWith(".sql"))
+  .sort()
+  .map((name) =>
+    fs.readFileSync(path.join(directory, "../migrations", name), "utf8")
+  );
 
 class D1Prepared {
   constructor(database, sql, values = []) {
@@ -48,7 +51,7 @@ class D1Prepared {
 class D1Database {
   constructor() {
     this.database = new DatabaseSync(":memory:");
-    this.database.exec(migration);
+    for (const migration of migrations) this.database.exec(migration);
   }
   prepare(sql) {
     return new D1Prepared(this.database, sql);

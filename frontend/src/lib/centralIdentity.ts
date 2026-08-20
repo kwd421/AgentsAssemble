@@ -340,7 +340,7 @@ async function authDeviceBody(displayName?: string): Promise<Record<string, unkn
   return {
     device_id: device.deviceId,
     device_public_key_jwk: device.publicJwk,
-    device_label: navigator.userAgent.slice(0, 80),
+    device_label: "AgentsAssemble device",
     ...(displayName ? { display_name: displayName } : {}),
   };
 }

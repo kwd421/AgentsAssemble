@@ -66,6 +66,5 @@ export async function verifyGoogleIdToken(token, { clientId, nonce, nowSeconds, 
   if (!String(claims.sub || "").trim()) throw new Error("invalid Google credential");
   return {
     subject: String(claims.sub),
-    displayName: String(claims.name || "").trim().slice(0, 80),
   };
 }

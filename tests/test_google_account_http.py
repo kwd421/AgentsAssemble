@@ -225,6 +225,9 @@ class GoogleAccountHttpTests(unittest.TestCase):
                 "google",
                 subject_fingerprint,
             )
+            stored_account = identities.external_account_for_user(
+                str(linked_account_user["user_id"]),
+            )
             disconnected = self._dispatch(
                 router,
                 deps,
@@ -243,7 +246,12 @@ class GoogleAccountHttpTests(unittest.TestCase):
 
             self.assertEqual(linked.sent_json["status"], "connected")
             self.assertEqual(linked.sent_json["account"]["provider"], "google")
-            self.assertEqual(linked.sent_json["account"]["email"], "person@example.invalid")
+            self.assertEqual(linked.sent_json["account"]["display_name"], "")
+            self.assertEqual(linked.sent_json["account"]["email"], "")
+            self.assertEqual(linked.sent_json["account"]["avatar_image_url"], "")
+            self.assertEqual(stored_account["display_name"], "")
+            self.assertEqual(stored_account["email"], "")
+            self.assertEqual(stored_account["avatar_image_url"], "")
             self.assertEqual(
                 linked_account_user["user_id"],
                 linked.sent_json["user"]["user_id"],

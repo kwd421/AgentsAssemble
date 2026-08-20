@@ -107,6 +107,123 @@ test("host-signed endpoint leases are monotonic and immediately revocable", asyn
   assert.equal((await payload(afterStop)).servers[0].endpoint.status, "offline");
 });
 
+test("one central identity cannot register more than twenty servers", async () => {
+  const env = environment();
+  const { key, created } = await createGuestIdentity(env);
+  const host = await hostKey();
+
+  for (let index = 0; index < 20; index += 1) {
+    const serverId = `bounded-server-${String(index).padStart(4, "0")}`;
+    const response = await signedDeviceRequest(
+      env,
+      created.session,
+      key.pair,
+      "/v1/servers",
+      "POST",
+      {
+        server_id: serverId,
+        label: "Bounded",
+        host_public_key_jwk: host.publicJwk,
+        host_registration_proof: await hostRegistrationProof(
+          host.pair,
+          serverId,
+          created.person.person_id
+        ),
+      }
+    );
+    assert.equal(response.status, 201);
+  }
+
+  const rejectedId = "bounded-server-0020";
+  const rejected = await signedDeviceRequest(
+    env,
+    created.session,
+    key.pair,
+    "/v1/servers",
+    "POST",
+    {
+      server_id: rejectedId,
+      label: "Too many",
+      host_public_key_jwk: host.publicJwk,
+      host_registration_proof: await hostRegistrationProof(
+        host.pair,
+        rejectedId,
+        created.person.person_id
+      ),
+    }
+  );
+
+  assert.equal(rejected.status, 409);
+  assert.equal((await rejected.json()).error.code, "server_limit_reached");
+  assert.equal(
+    env.DB.database.prepare("SELECT COUNT(*) AS count FROM servers").get().count,
+    20
+  );
+});
+
+test("an owner can revoke a server key and register a replacement", async () => {
+  const env = environment();
+  const { key, created } = await createGuestIdentity(env);
+  const originalHost = await hostKey();
+  const serverId = "replaceable-server-0001";
+  const register = await signedDeviceRequest(
+    env,
+    created.session,
+    key.pair,
+    "/v1/servers",
+    "POST",
+    {
+      server_id: serverId,
+      label: "Original",
+      host_public_key_jwk: originalHost.publicJwk,
+      host_registration_proof: await hostRegistrationProof(
+        originalHost.pair,
+        serverId,
+        created.person.person_id
+      ),
+    }
+  );
+  assert.equal(register.status, 201);
+
+  const revoked = await signedDeviceRequest(
+    env,
+    created.session,
+    key.pair,
+    `/v1/servers/${serverId}`,
+    "DELETE"
+  );
+  assert.equal(revoked.status, 200);
+
+  const staleHost = await signedHostRequest(
+    env,
+    serverId,
+    originalHost.pair,
+    "DELETE",
+    { generation: 1, issued_at: Math.floor(Date.now() / 1000) }
+  );
+  assert.equal(staleHost.status, 404);
+
+  const replacementHost = await hostKey();
+  const replacement = await signedDeviceRequest(
+    env,
+    created.session,
+    key.pair,
+    "/v1/servers",
+    "POST",
+    {
+      server_id: serverId,
+      label: "Replacement",
+      host_public_key_jwk: replacementHost.publicJwk,
+      host_registration_proof: await hostRegistrationProof(
+        replacementHost.pair,
+        serverId,
+        created.person.person_id
+      ),
+    }
+  );
+  assert.equal(replacement.status, 201);
+});
+
 test("CORS reflects only approved shell and loopback origins in production", async () => {
   const env = environment({
     CENTRAL_ALLOWED_ORIGINS:

@@ -148,7 +148,7 @@ async function resolveGooglePerson(env, identity, now) {
             updated_at)
            VALUES (?, 'google', ?, 'active', ?, ?)`
         )
-        .bind(personId, cleanText(identity.displayName, 80), now, now),
+        .bind(personId, "Google user", now, now),
       env.DB
         .prepare(
           `INSERT INTO external_identities
@@ -185,6 +185,13 @@ export async function completeGoogleHandoff(env, text, now) {
   ) {
     throw new HttpError(401, "handoff_confirmation_required");
   }
+  await consumeRateLimit(
+    env.DB,
+    `google-complete:${row.handoff_id}`,
+    8,
+    HANDOFF_TTL_SECONDS,
+    now
+  );
   let identity;
   try {
     identity = await verifyGoogleIdToken(body.credential, {

@@ -403,8 +403,8 @@ class GoogleAccountLoginService:
                 provider="device",
                 user_id=f"u-{identity_suffix}",
                 participant_id=f"person-{identity_suffix}",
-                display_name=str(claims.get("name") or ""),
-                avatar_image_url=str(claims.get("picture") or ""),
+                display_name="",
+                avatar_image_url="",
                 participant_type="human",
             )
         if target_user is None:
@@ -421,9 +421,9 @@ class GoogleAccountLoginService:
             account_id=account_id,
             provider="google",
             subject_fingerprint=subject_fingerprint,
-            display_name=str(claims.get("name") or ""),
-            email=str(claims.get("email") or ""),
-            avatar_image_url=str(claims.get("picture") or ""),
+            display_name="",
+            email="",
+            avatar_image_url="",
             connected_at=now,
         )
         return {

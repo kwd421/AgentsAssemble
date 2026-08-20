@@ -230,7 +230,7 @@ def _public_invite_route_allowed(path: str, method: str) -> bool:
             "/api/identity/recovery-code/redeem",
         } or path in _PROVIDER_CREDENTIAL_PATHS
     if method == "DELETE":
-        return path in _PROVIDER_CREDENTIAL_PATHS
+        return path == "/api/account/google" or path in _PROVIDER_CREDENTIAL_PATHS
     if method == "OPTIONS":
         return _public_invite_route_allowed(path, "GET") or _public_invite_route_allowed(
             path,

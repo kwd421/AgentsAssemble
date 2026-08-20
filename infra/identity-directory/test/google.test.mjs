@@ -48,7 +48,9 @@ async function googleToken(pair, env, nonce, subject = "raw-google-subject-must-
         aud: env.GOOGLE_CLIENT_ID,
         sub: subject,
         nonce,
-        name: "Google User",
+        name: "Sensitive Google Name",
+        email: "sensitive@example.test",
+        picture: "https://profiles.example.test/sensitive.png",
         iat: now,
         exp: now + 600,
       })
@@ -193,12 +195,50 @@ test("Google handoff separates browser/poll secrets and stores only a subject HM
     "raw-google-subject-must-not-be-stored"
   );
   const serialized = JSON.stringify(
-    env.DB.database.prepare("SELECT * FROM external_identities").all()
+    {
+      persons: env.DB.database.prepare("SELECT * FROM persons").all(),
+      external: env.DB.database.prepare("SELECT * FROM external_identities").all(),
+    }
   );
   assert.equal(
     serialized.includes("raw-google-subject-must-not-be-stored"),
     false
   );
+  assert.equal(serialized.includes("Sensitive Google Name"), false);
+  assert.equal(serialized.includes("sensitive@example.test"), false);
+  assert.equal(serialized.includes("profiles.example.test"), false);
+});
+
+test("Google handoff completion is bounded per handoff", async () => {
+  const env = environment();
+  const device = await deviceKey();
+  const started = await startHandoff(env, device, "google-rate-device-0003");
+  await browserChallenge(env, started);
+
+  for (let attempt = 0; attempt < 8; attempt += 1) {
+    const rejected = await request(env, "/v1/auth/google/handoff/complete", {
+      method: "POST",
+      body: JSON.stringify({
+        handoff_id: started.handoff_id,
+        browser_token: started.browserToken,
+        confirmation_code: started.confirmation_code,
+        credential: "not-a-google-token",
+      }),
+    });
+    assert.equal(rejected.status, 401);
+  }
+
+  const limited = await request(env, "/v1/auth/google/handoff/complete", {
+    method: "POST",
+    body: JSON.stringify({
+      handoff_id: started.handoff_id,
+      browser_token: started.browserToken,
+      confirmation_code: started.confirmation_code,
+      credential: "not-a-google-token",
+    }),
+  });
+  assert.equal(limited.status, 429);
+  assert.equal((await limited.json()).error.code, "rate_limited");
 });
 
 test("Google handoff cannot replace a different identity already bound to the device", async () => {
