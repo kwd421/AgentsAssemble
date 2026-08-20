@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import {
   ArrowLeft,
   ArrowRight,
@@ -79,6 +79,14 @@ export default function StartupIdentityGate({
   const [busy, setBusy] = useState(false);
   const [status, setStatus] = useState("저장된 사용자 확인 중");
   const [error, setError] = useState("");
+  const googleAbortController = useRef<AbortController | null>(null);
+
+  useEffect(
+    () => () => {
+      googleAbortController.current?.abort();
+    },
+    []
+  );
 
   async function enterApplication() {
     setChecking(true);
@@ -238,20 +246,30 @@ export default function StartupIdentityGate({
 
   async function googleLogin() {
     if (busy) return;
+    const controller = new AbortController();
+    googleAbortController.current = controller;
     setBusy(true);
     setError("");
     try {
-      await loginCentralGoogle(setStatus);
+      await loginCentralGoogle(setStatus, controller.signal);
       await registerLocalServer(deviceToken).catch(() => undefined);
       await enterApplication();
     } catch (reason) {
       setChecking(false);
       setError(
-        reason instanceof Error
+        typeof reason === "object" &&
+          reason !== null &&
+          "name" in reason &&
+          reason.name === "AbortError"
+          ? "Google 로그인을 취소했습니다."
+          : reason instanceof Error
           ? reason.message
           : "Google 로그인을 완료하지 못했습니다."
       );
     } finally {
+      if (googleAbortController.current === controller) {
+        googleAbortController.current = null;
+      }
       setBusy(false);
     }
   }
@@ -356,6 +374,10 @@ export default function StartupIdentityGate({
 
         {screen === "choice" && (
           <div className="grid gap-3">
+            <p className="rounded-md bg-[#1b1c20] p-3 text-[11px] font-bold leading-5 text-text-muted">
+              현재 이 기기에 유효한 중앙 로그인이 없습니다. 게스트 복구 코드는
+              신원 생성·복구 직후 한 번만 표시되며 중앙에서 다시 조회할 수 없습니다.
+            </p>
             <button
               type="button"
               className="flex min-h-12 items-center justify-center gap-2 rounded-md bg-[#5865f2] px-4 text-[14px] font-black text-white disabled:opacity-60"
@@ -369,6 +391,15 @@ export default function StartupIdentityGate({
               )}{" "}
               Google로 계속
             </button>
+            {busy && (
+              <button
+                type="button"
+                className="min-h-10 rounded-md border border-white/10 px-4 text-[12px] font-black text-text-primary"
+                onClick={() => googleAbortController.current?.abort()}
+              >
+                Google 로그인 취소
+              </button>
+            )}
             <button
               type="button"
               className="flex min-h-12 items-center justify-center gap-2 rounded-md bg-[#2b2d31] px-4 text-[14px] font-black text-text-primary"

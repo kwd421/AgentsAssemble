@@ -10,6 +10,11 @@ import {
 } from "../../lib/deviceIdentity";
 import StartupIdentityGate from "./StartupIdentityGate";
 
+const centralMocks = vi.hoisted(() => ({
+  configured: false,
+  login: vi.fn(),
+}));
+
 vi.mock("../../api/identity", () => ({ fetchAccountStatus: vi.fn() }));
 vi.mock("../../api/room", () => ({ saveUserProfile: vi.fn() }));
 vi.mock("../../lib/deviceIdentity", () => ({
@@ -17,14 +22,14 @@ vi.mock("../../lib/deviceIdentity", () => ({
   rememberStartupIdentitySelection: vi.fn(),
 }));
 vi.mock("../../lib/centralIdentity", () => ({
-  centralIdentityConfigured: () => false,
+  centralIdentityConfigured: () => centralMocks.configured,
   bootstrapCentral: vi.fn(),
   clearPendingCentralRecoveryCode: vi.fn(),
   createCentralGuest: vi.fn(),
   isCentralAuthenticationError: () => false,
   loadCentralSession: () => null,
   loadPendingCentralRecoveryCode: () => "",
-  loginCentralGoogle: vi.fn(),
+  loginCentralGoogle: centralMocks.login,
   recoverCentralGuest: vi.fn(),
   registerLocalServer: vi.fn(),
 }));
@@ -34,6 +39,7 @@ vi.mock("./GoogleAccountSettings", () => ({
 
 afterEach(() => {
   cleanup();
+  centralMocks.configured = false;
   vi.clearAllMocks();
 });
 
@@ -85,5 +91,35 @@ describe("StartupIdentityGate", () => {
     await vi.waitFor(() => expect(onComplete).toHaveBeenCalledOnce());
     expect(rememberStartupIdentitySelection).toHaveBeenCalledOnce();
     expect(screen.queryByRole("textbox", { name: "표시 이름" })).toBeNull();
+  });
+
+  it("lets the user cancel a central Google handoff that is still pending", async () => {
+    centralMocks.configured = true;
+    centralMocks.login.mockImplementation(
+      (_status: (message: string) => void, signal: AbortSignal) =>
+        new Promise((_resolve, reject) => {
+          signal.addEventListener(
+            "abort",
+            () => reject(new DOMException("aborted", "AbortError")),
+            { once: true }
+          );
+        })
+    );
+
+    render(<StartupIdentityGate deviceToken="device-1" onComplete={vi.fn()} />);
+
+    await userEvent.click(
+      await screen.findByRole("button", { name: "Google로 계속" })
+    );
+    await userEvent.click(
+      await screen.findByRole("button", { name: "Google 로그인 취소" })
+    );
+
+    await vi.waitFor(() => {
+      expect(
+        screen.queryByRole("button", { name: "Google 로그인 취소" })
+      ).toBeNull();
+    });
+    expect(screen.getByRole("alert").textContent).toContain("취소");
   });
 });

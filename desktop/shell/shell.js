@@ -45,6 +45,7 @@ const centralIdentity = document.querySelector("#central-identity");
 const centralState = document.querySelector("#central-state");
 const centralLoading = document.querySelector("#central-loading");
 const centralLoadingText = document.querySelector("#central-loading-text");
+const centralCancelLogin = document.querySelector("#central-cancel-login");
 const centralLogin = document.querySelector("#central-login");
 const centralGoogle = document.querySelector("#central-google");
 const centralNewGuest = document.querySelector("#central-new-guest");
@@ -73,6 +74,7 @@ let clientPlatform = "desktop";
 let cachedRoomsLoaded = false;
 let centralBusy = false;
 let googleEnabled = true;
+let googleAbortController = null;
 
 function showProgress(message) {
   retry.classList.add("hidden");
@@ -198,12 +200,14 @@ function showCentralPanel(panel) {
   centralLogin.classList.toggle("hidden", panel !== "login");
   centralRecovery.classList.toggle("hidden", panel !== "recovery");
   centralHome.classList.toggle("hidden", panel !== "home");
+  if (panel !== "loading") centralCancelLogin.classList.add("hidden");
 }
 
-function showCentralLoading(message) {
+function showCentralLoading(message, { cancellable = false } = {}) {
   showCentralPanel("loading");
   centralOffline.classList.add("hidden");
   centralLoadingText.textContent = message;
+  centralCancelLogin.classList.toggle("hidden", !cancellable);
   centralState.textContent = "확인 중";
   setCentralMessage();
 }
@@ -529,22 +533,36 @@ centralRecoverForm.addEventListener("submit", (event) => {
 
 centralGoogle.addEventListener("click", () => {
   if (centralBusy || !googleEnabled) return;
+  const controller = new AbortController();
+  googleAbortController = controller;
   centralBusy = true;
-  showCentralLoading("Google 로그인을 준비하는 중…");
+  showCentralLoading("Google 로그인을 준비하는 중…", { cancellable: true });
   void loginCentralGoogle(
     (url) => invoke("open_central_google_login", { url }),
     (message) => {
       centralLoadingText.textContent = message;
-    }
+    },
+    controller.signal
   )
     .then(async () => {
       centralBusy = false;
       await refreshCentralHome();
     })
-    .catch((error) => showCentralLogin(String(error?.message || error)))
+    .catch((error) =>
+      showCentralLogin(
+        error?.name === "AbortError"
+          ? "Google 로그인을 취소했습니다."
+          : String(error?.message || error)
+      )
+    )
     .finally(() => {
+      if (googleAbortController === controller) googleAbortController = null;
       centralBusy = false;
     });
+});
+
+centralCancelLogin.addEventListener("click", () => {
+  googleAbortController?.abort();
 });
 
 centralCopyCode.addEventListener("click", () => {

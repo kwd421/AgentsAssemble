@@ -52,6 +52,14 @@ export type CentralGuestResult = {
   previous_code_revoked?: boolean;
 };
 
+export type CentralGoogleHandoff = {
+  handoff_id: string;
+  handoff_url: string;
+  poll_token: string;
+  confirmation_code: string;
+  expires_at: number;
+};
+
 type StoredDevice = {
   deviceId: string;
   privateKey: CryptoKey;
@@ -270,7 +278,11 @@ async function responsePayload<T>(response: Response): Promise<T> {
   return payload;
 }
 
-async function unsignedPost<T>(path: string, body: Record<string, unknown>): Promise<T> {
+async function unsignedPost<T>(
+  path: string,
+  body: Record<string, unknown>,
+  signal?: AbortSignal
+): Promise<T> {
   const response = await fetch(`${configuredUrl()}${path}`, {
     method: "POST",
     mode: "cors",
@@ -280,8 +292,76 @@ async function unsignedPost<T>(path: string, body: Record<string, unknown>): Pro
     referrerPolicy: "no-referrer",
     headers: { "content-type": "application/json" },
     body: JSON.stringify(body),
+    signal,
   });
   return responsePayload<T>(response);
+}
+
+export function parseCentralGoogleHandoff(value: unknown): CentralGoogleHandoff {
+  const handoff = value as Partial<CentralGoogleHandoff> | null;
+  if (!handoff || typeof handoff !== "object") {
+    throw new Error("중앙 로그인 서버가 올바르지 않은 응답을 반환했습니다.");
+  }
+  if (!String(handoff.confirmation_code || "").trim()) {
+    throw new Error(
+      "중앙 로그인 서버가 현재 앱보다 오래된 버전입니다. Worker 업데이트가 필요합니다."
+    );
+  }
+  const result: CentralGoogleHandoff = {
+    handoff_id: String(handoff.handoff_id || "").trim(),
+    handoff_url: String(handoff.handoff_url || "").trim(),
+    poll_token: String(handoff.poll_token || "").trim(),
+    confirmation_code: String(handoff.confirmation_code || "")
+      .trim()
+      .toUpperCase(),
+    expires_at: Number(handoff.expires_at || 0),
+  };
+  let handoffUrl: URL;
+  try {
+    handoffUrl = new URL(result.handoff_url);
+  } catch {
+    throw new Error("중앙 로그인 서버가 올바르지 않은 응답을 반환했습니다.");
+  }
+  const loopback = ["localhost", "127.0.0.1", "::1"].includes(
+    handoffUrl.hostname
+  );
+  if (
+    !result.handoff_id ||
+    !result.poll_token ||
+    !/^[A-Z0-9]{4}-[A-Z0-9]{4}$/.test(result.confirmation_code) ||
+    !Number.isSafeInteger(result.expires_at) ||
+    result.expires_at <= Math.floor(Date.now() / 1000) ||
+    (handoffUrl.protocol !== "https:" &&
+      !(handoffUrl.protocol === "http:" && loopback))
+  ) {
+    throw new Error("중앙 로그인 서버가 올바르지 않은 응답을 반환했습니다.");
+  }
+  return result;
+}
+
+function throwIfGoogleLoginAborted(signal?: AbortSignal): void {
+  if (!signal?.aborted) return;
+  const error = new Error("Google 로그인이 취소됐습니다.");
+  error.name = "AbortError";
+  throw error;
+}
+
+function waitForGooglePoll(signal?: AbortSignal): Promise<void> {
+  throwIfGoogleLoginAborted(signal);
+  return new Promise((resolve, reject) => {
+    const timer = window.setTimeout(() => {
+      signal?.removeEventListener("abort", abort);
+      resolve();
+    }, 1500);
+    function abort() {
+      window.clearTimeout(timer);
+      signal?.removeEventListener("abort", abort);
+      const error = new Error("Google 로그인이 취소됐습니다.");
+      error.name = "AbortError";
+      reject(error);
+    }
+    signal?.addEventListener("abort", abort, { once: true });
+  });
 }
 
 async function signedRequest<T>(
@@ -364,15 +444,17 @@ export async function recoverCentralGuest(
 }
 
 export async function loginCentralGoogle(
-  status?: (message: string) => void
+  status?: (message: string) => void,
+  signal?: AbortSignal
 ): Promise<CentralSession> {
-  const started = await unsignedPost<{
-    handoff_id: string;
-    handoff_url: string;
-    poll_token: string;
-    confirmation_code: string;
-    expires_at: number;
-  }>("/v1/auth/google/handoff/start", await authDeviceBody());
+  throwIfGoogleLoginAborted(signal);
+  const started = parseCentralGoogleHandoff(
+    await unsignedPost<unknown>(
+      "/v1/auth/google/handoff/start",
+      await authDeviceBody(),
+      signal
+    )
+  );
   status?.(
     `시스템 브라우저에서 Google 로그인을 완료하고 확인 코드 ${started.confirmation_code}를 입력해 주세요.`
   );
@@ -390,7 +472,7 @@ export async function loginCentralGoogle(
     }
   }
   while (Math.floor(Date.now() / 1000) < started.expires_at) {
-    await new Promise((resolve) => window.setTimeout(resolve, 1500));
+    await waitForGooglePoll(signal);
     const polled = await unsignedPost<
       | { status: "pending"; expires_at: number }
       | {
@@ -398,10 +480,14 @@ export async function loginCentralGoogle(
           person: CentralPerson;
           session: Omit<CentralSession, "person">;
         }
-    >("/v1/auth/google/handoff/poll", {
-      handoff_id: started.handoff_id,
-      poll_token: started.poll_token,
-    });
+    >(
+      "/v1/auth/google/handoff/poll",
+      {
+        handoff_id: started.handoff_id,
+        poll_token: started.poll_token,
+      },
+      signal
+    );
     if (polled.status === "complete") return saveSession(polled);
   }
   throw new Error("Google 로그인 시간이 만료됐습니다. 다시 시도해 주세요.");
