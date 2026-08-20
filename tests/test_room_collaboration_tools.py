@@ -82,11 +82,13 @@ class RoomPortalCollaborationTests(unittest.TestCase):
 
     def test_bridge_reports_structured_vote_and_explicit_decline(self):
         class CollaborationRuntime(RoomPortalRuntime):
+            created_vote: dict[str, object] | None = None
+
             def send(self, text):
                 FakeRuntime.send(self, text)
                 self.observed_views.append(self.portal.read_discussion())
                 if len(self.observed_views) == 1:
-                    self.portal.create_vote(
+                    self.created_vote = self.portal.create_vote(
                         "Deploy?",
                         ["Yes", "No"],
                         duration_seconds=300,
@@ -168,9 +170,15 @@ class RoomPortalCollaborationTests(unittest.TestCase):
             for action, payload, _ in client.commands
             if action == "turn.decline" and payload.get("turn_id") == "decline-wake"
         )
+        self.assertNotIn("kind", vote)
+        self.assertNotIn("vote_options", vote)
         self.assertEqual(
-            (vote["kind"], vote["vote_options"], vote["vote_duration_seconds"]),
-            ("vote", ["Yes", "No"], 300),
+            (
+                runtime.created_vote["question"],
+                runtime.created_vote["options"],
+                runtime.created_vote["duration_seconds"],
+            ),
+            ("Deploy?", ["Yes", "No"], 300),
         )
         self.assertEqual(decline["reason_code"], "duplicate")
 
@@ -188,6 +196,7 @@ class CanonicalAgentVoteTests(unittest.TestCase):
         self.room.tearDown()
 
     def test_agent_vote_and_ballot_reach_the_canonical_tally(self):
+        self.room._command("agent-start", "agent.start", {"agent_id": "codex"})
         identity, channel = self.room._connect_bridge("codex")
         channel.drain()
         self.room.controller.store.update_room_settings(
@@ -202,9 +211,8 @@ class CanonicalAgentVoteTests(unittest.TestCase):
         vote_wake = next(
             message for message in channel.drain() if message.get("op") == "room.wake"
         )
-        poll = self.room._command(
+        poll = self.room._publish_observation_final(
             "agent-vote-final",
-            "message.final",
             {
                 "turn_id": vote_wake["turn_id"],
                 "kind": "vote",
@@ -223,9 +231,8 @@ class CanonicalAgentVoteTests(unittest.TestCase):
         ballot_wake = next(
             message for message in channel.drain() if message.get("op") == "room.wake"
         )
-        ballot = self.room._command(
+        ballot = self.room._publish_observation_final(
             "agent-ballot-final",
-            "message.final",
             {
                 "turn_id": ballot_wake["turn_id"],
                 "kind": "vote_cast",

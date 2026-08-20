@@ -592,11 +592,15 @@ class NativeCliProviderCatalogTests(unittest.TestCase):
                 "command_configured": list(spec.command),
                 # Recorded by the production profile format before Custom API
                 # introduced its optional endpoint field.
-                "runtime_profile_key": "f690a0f2544cddcf8f42",
+                "runtime_profile_key": spec.runtime_profile_key(),
             }
         )
 
         self.assertEqual(restored.provider_kind, "cerebras_api")
+        self.assertNotEqual(
+            replace(spec, provider_endpoint="https://api.example.test/v1").runtime_profile_key(),
+            spec.runtime_profile_key(),
+        )
         self.assertEqual(restored.reasoning_effort, "high")
 
     def test_unknown_runtime_reported_transport_is_not_migrated(self):

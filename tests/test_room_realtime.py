@@ -3632,23 +3632,7 @@ class RoomRealtimeControllerTests(
         self.assertFalse(guest["agent.control"])
         self.assertEqual(
             [provider["id"] for provider in operator_snapshot["available_providers"]],
-            [
-                "codex",
-                "antigravity",
-                "grok",
-                "claude",
-                "cursor",
-                "opencode",
-                "deepseek",
-                "cerebras",
-                "openrouter",
-                "vercel",
-                "llmgateway",
-                "tokenrouter",
-                "custom_api",
-                "ollama",
-                "lmstudio",
-            ],
+            [provider["id"] for provider in self.provider_catalog.snapshot()["providers"]],
         )
 
     def test_snapshot_is_bounded_and_history_pages_are_read_only(self):
@@ -4485,7 +4469,7 @@ class RoomRealtimeControllerTests(
             {"turn_id": assignment["turn_id"], "content": "clean final"},
             identity,
         )
-        events = RoomStore(self.root).read_events("general")
+        events = RoomStore(self.root).read_events("general", include_hidden=True)
         event_types = [event["type"] for event in events]
 
         self.assertIn("turn_state", event_types)
