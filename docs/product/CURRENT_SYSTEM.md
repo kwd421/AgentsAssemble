@@ -150,9 +150,12 @@ a spoofed loopback Host header is not treated as a local request. Google does
 not permit this web flow inside an embedded WebView. The Tauri clients therefore
 ask the selected server for a short-lived, one-use handoff, open that
 same-origin URL in the system browser, and poll the server until the verified
-account link is visible. The native command accepts only the selected server
-origin, while the handoff token and Google nonce expire in process memory and
-are consumed once. A previously unseen remote device may start that handoff
+account link is visible. The requesting app displays a separate one-time
+confirmation code that the user must enter in the system browser; the URL alone
+cannot bind the authenticated account to the requesting device. The native
+command accepts only the selected server origin, while the handoff token,
+confirmation code, and Google nonce expire in process memory and are consumed
+once. A previously unseen remote device may start that handoff
 with its durable device credential before it has a server user row; completion
 binds the still-unowned credential to the verified account's existing server
 user. A credential that already belongs to a guest may move only through the

@@ -1,6 +1,7 @@
 """Short-lived system-browser handoffs for Google account linking."""
 from __future__ import annotations
 
+import hmac
 import secrets
 import threading
 import time
@@ -12,6 +13,7 @@ class GoogleLoginHandoff:
     user_id: str
     device_auth_key: str
     nonce: str
+    confirmation_code: str
     discard_guest_on_account_switch: bool
     expires_at: float
 
@@ -42,6 +44,7 @@ class GoogleLoginHandoffStore:
     ) -> str:
         now = time.monotonic()
         token = secrets.token_urlsafe(32)
+        confirmation_code = _new_confirmation_code()
         with self._lock:
             self._prune(now)
             subject = _handoff_subject(user_id=user_id, device_auth_key=device_auth_key)
@@ -58,6 +61,7 @@ class GoogleLoginHandoffStore:
                 user_id=user_id,
                 device_auth_key=device_auth_key,
                 nonce=nonce,
+                confirmation_code=confirmation_code,
                 discard_guest_on_account_switch=discard_guest_on_account_switch,
                 expires_at=now + self.ttl_seconds,
             )
@@ -71,12 +75,23 @@ class GoogleLoginHandoffStore:
             handoff = self._handoffs.get(clean_token)
         return handoff if handoff is not None and handoff.expires_at > now else None
 
-    def consume(self, token: object) -> GoogleLoginHandoff | None:
+    def consume(
+        self,
+        token: object,
+        *,
+        confirmation_code: object = None,
+    ) -> GoogleLoginHandoff | None:
         clean_token = str(token or "").strip()
         now = time.monotonic()
         with self._lock:
             self._prune(now)
-            handoff = self._handoffs.pop(clean_token, None)
+            handoff = self._handoffs.get(clean_token)
+            if handoff is None or not hmac.compare_digest(
+                _normalize_confirmation_code(confirmation_code),
+                _normalize_confirmation_code(handoff.confirmation_code),
+            ):
+                return None
+            self._handoffs.pop(clean_token, None)
         return handoff if handoff is not None and handoff.expires_at > now else None
 
     def _prune(self, now: float) -> None:
@@ -110,6 +125,16 @@ def _handoff_subject(*, user_id: str, device_auth_key: str) -> str:
     if clean_user_id:
         return f"user:{clean_user_id}"
     return f"device:{str(device_auth_key or '').strip()}"
+
+
+def _new_confirmation_code() -> str:
+    alphabet = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789"
+    value = "".join(secrets.choice(alphabet) for _ in range(8))
+    return f"{value[:4]}-{value[4:]}"
+
+
+def _normalize_confirmation_code(value: object) -> str:
+    return str(value or "").strip().replace("-", "").upper()
 
 
 class GoogleLoginHandoffCapacityExceeded(RuntimeError):

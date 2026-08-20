@@ -132,6 +132,7 @@ def register_account_routes(
             result = google.connect_handoff(
                 ctx.deps.identities,
                 token=payload.get("token"),
+                confirmation_code=payload.get("confirmation_code"),
                 credential=payload.get("credential"),
                 switch_guest=lambda current, target, auth_key, switched_at: (
                     _account_switcher(ctx).switch(

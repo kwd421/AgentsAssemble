@@ -138,7 +138,11 @@ class GoogleLoginCapacityTests(unittest.TestCase):
                 deps,
                 "/api/account/google/handoff/complete",
                 "POST",
-                body={"token": second_token, "credential": "google-id-token"},
+                body={
+                    "token": second_token,
+                    "confirmation_code": replacement.sent_json["confirmation_code"],
+                    "credential": "google-id-token",
+                },
             )
 
         self.assertEqual(retired.sent_error[2], "google_login_handoff_invalid")

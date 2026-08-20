@@ -370,9 +370,12 @@ export async function loginCentralGoogle(
     handoff_id: string;
     handoff_url: string;
     poll_token: string;
+    confirmation_code: string;
     expires_at: number;
   }>("/v1/auth/google/handoff/start", await authDeviceBody());
-  status?.("시스템 브라우저에서 Google 로그인을 완료해 주세요.");
+  status?.(
+    `시스템 브라우저에서 Google 로그인을 완료하고 확인 코드 ${started.confirmation_code}를 입력해 주세요.`
+  );
   if (isDesktopWebview()) {
     await openDesktopGoogleLogin(started.handoff_url);
   } else {

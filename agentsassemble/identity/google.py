@@ -258,9 +258,13 @@ class GoogleAccountLoginService:
                 "Google login capacity is temporarily exhausted.",
                 code="google_login_capacity_exceeded",
             ) from error
+        handoff = self._handoffs.read(token)
+        if handoff is None:
+            raise RuntimeError("Google login handoff disappeared after issuance.")
         return {
             "status": "ready",
             "handoff_url": f"/#{urlencode({'google_handoff': token})}",
+            "confirmation_code": handoff.confirmation_code,
             "expires_in": int(self._handoffs.ttl_seconds),
         }
 
@@ -283,14 +287,23 @@ class GoogleAccountLoginService:
         identities: IdentityBackend,
         *,
         token: object,
+        confirmation_code: object = None,
         credential: object,
         switch_guest: GuestAccountSwitcher | None = None,
     ) -> dict[str, object]:
-        handoff = self._handoffs.consume(token)
-        if handoff is None:
+        if self._handoffs.read(token) is None:
             raise GoogleLoginRejected(
                 "Google login handoff expired or was already used.",
                 code="google_login_handoff_invalid",
+            )
+        handoff = self._handoffs.consume(
+            token,
+            confirmation_code=confirmation_code,
+        )
+        if handoff is None:
+            raise GoogleLoginRejected(
+                "Enter the confirmation code shown in the requesting AgentsAssemble app.",
+                code="google_login_handoff_confirmation_required",
             )
         current_user = identities.get_user(handoff.user_id) if handoff.user_id else None
         if handoff.user_id and current_user is None:

@@ -23,6 +23,19 @@ import {
 
 const HANDOFF_TTL_SECONDS = 600;
 
+function normalizeConfirmationCode(value) {
+  return String(value || "").trim().replaceAll("-", "").toUpperCase();
+}
+
+async function confirmationCode(env, handoffId, browserTokenHash) {
+  const digest = await hmacBase64Url(
+    envSecret(env, "IDENTITY_PEPPER"),
+    `google-handoff-confirm-v1\u0000${handoffId}\u0000${browserTokenHash}`
+  );
+  const value = digest.replace(/[^A-Za-z0-9]/g, "").toUpperCase().slice(0, 8);
+  return `${value.slice(0, 4)}-${value.slice(4)}`;
+}
+
 export async function startGoogleHandoff(request, env, text, now) {
   if (!env.GOOGLE_CLIENT_ID) {
     throw new HttpError(503, "google_login_unavailable");
@@ -41,6 +54,7 @@ export async function startGoogleHandoff(request, env, text, now) {
   const browserToken = randomBase64Url(32);
   const pollToken = randomBase64Url(32);
   const nonce = randomBase64Url(24);
+  const browserTokenHash = await sha256Base64Url(browserToken);
   await env.DB
     .prepare(
       `INSERT INTO google_handoffs
@@ -54,7 +68,7 @@ export async function startGoogleHandoff(request, env, text, now) {
       deviceId,
       canonicalJson(publicJwk),
       cleanText(body.device_label, 80),
-      await sha256Base64Url(browserToken),
+      browserTokenHash,
       await sha256Base64Url(pollToken),
       nonce,
       now,
@@ -69,6 +83,7 @@ export async function startGoogleHandoff(request, env, text, now) {
         `${base}/auth/google#handoff=${encodeURIComponent(handoffId)}` +
         `&browser=${encodeURIComponent(browserToken)}`,
       poll_token: pollToken,
+      confirmation_code: await confirmationCode(env, handoffId, browserTokenHash),
       expires_at: now + HANDOFF_TTL_SECONDS,
     },
     201
@@ -159,6 +174,17 @@ async function resolveGooglePerson(env, identity, now) {
 export async function completeGoogleHandoff(env, text, now) {
   const body = parseJson(text);
   const row = await handoffByBrowserToken(env, body, now);
+  const expectedConfirmation = normalizeConfirmationCode(
+    await confirmationCode(env, row.handoff_id, row.browser_token_hash)
+  );
+  if (
+    !constantTimeEqual(
+      expectedConfirmation,
+      normalizeConfirmationCode(body.confirmation_code)
+    )
+  ) {
+    throw new HttpError(401, "handoff_confirmation_required");
+  }
   let identity;
   try {
     identity = await verifyGoogleIdToken(body.credential, {
@@ -266,6 +292,7 @@ const handoff_id = params.get('handoff') || '';
 const browser_token = params.get('browser') || '';
 history.replaceState({}, '', location.pathname);
 const status = document.getElementById('status');
+const confirmation = document.getElementById('confirmation');
 async function post(path, body) {
   const response = await fetch(path, {
     method: 'POST',
@@ -289,11 +316,18 @@ async function post(path, body) {
       client_id: challenge.client_id,
       nonce: challenge.nonce,
       callback: async response => {
+        const confirmation_code = confirmation.value.trim();
+        if (!confirmation_code) {
+          status.textContent =
+            '요청한 AgentsAssemble 앱에 표시된 확인 코드를 먼저 입력하세요.';
+          return;
+        }
         status.textContent = 'Google 계정을 확인하는 중…';
         try {
           await post('/v1/auth/google/handoff/complete', {
             handoff_id,
             browser_token,
+            confirmation_code,
             credential: response.credential
           });
           status.textContent =
@@ -319,7 +353,7 @@ async function post(path, body) {
   }
 })();`;
   const nonce = randomBase64Url(18);
-  const html = `<!doctype html><html lang="ko"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>AgentsAssemble 로그인</title><script src="https://accounts.google.com/gsi/client"></script><style nonce="${nonce}">body{margin:0;background:#101114;color:#f2f3f5;font:15px system-ui;display:grid;min-height:100vh;place-items:center}.card{width:min(420px,calc(100vw - 40px));background:#202126;border:1px solid #ffffff18;border-radius:14px;padding:28px;box-sizing:border-box;box-shadow:0 24px 70px #0008}h1{font-size:24px;margin:0 0 10px}p{color:#b5bac1;line-height:1.5}#google-button{margin-top:22px;min-height:44px}</style></head><body><main class="card"><h1>AgentsAssemble</h1><p id="status">Google 로그인을 준비하는 중…</p><div id="google-button"></div></main><script nonce="${nonce}">${script}</script></body></html>`;
+  const html = `<!doctype html><html lang="ko"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>AgentsAssemble 로그인</title><script src="https://accounts.google.com/gsi/client"></script><style nonce="${nonce}">body{margin:0;background:#101114;color:#f2f3f5;font:15px system-ui;display:grid;min-height:100vh;place-items:center}.card{width:min(420px,calc(100vw - 40px));background:#202126;border:1px solid #ffffff18;border-radius:14px;padding:28px;box-sizing:border-box;box-shadow:0 24px 70px #0008}h1{font-size:24px;margin:0 0 10px}p{color:#b5bac1;line-height:1.5}label{display:grid;gap:8px;color:#b5bac1;font-weight:700}input{border:1px solid #ffffff2b;border-radius:8px;background:#111214;color:#f2f3f5;padding:12px;font:700 18px ui-monospace,monospace;letter-spacing:.12em;text-transform:uppercase}#google-button{margin-top:22px;min-height:44px}</style></head><body><main class="card"><h1>AgentsAssemble</h1><p id="status">Google 로그인을 준비하는 중…</p><p>직접 시작한 로그인만 계속하세요. 다른 사람이 보낸 코드나 링크를 사용하지 마세요.</p><label>요청한 AgentsAssemble 앱에 표시된 코드<input id="confirmation" autocomplete="one-time-code" maxlength="9" placeholder="ABCD-EFGH"></label><div id="google-button"></div></main><script nonce="${nonce}">${script}</script></body></html>`;
   return new Response(html, {
     headers: {
       "content-type": "text/html; charset=utf-8",

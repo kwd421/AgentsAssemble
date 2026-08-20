@@ -113,6 +113,23 @@ test("Google handoff separates browser/poll secrets and stores only a subject HM
 
   const challenge = await browserChallenge(env, started);
   const credential = await googleToken(signer, env, challenge.nonce);
+  const unconfirmed = await request(
+    env,
+    "/v1/auth/google/handoff/complete",
+    {
+      method: "POST",
+      body: JSON.stringify({
+        handoff_id: started.handoff_id,
+        browser_token: started.browserToken,
+        credential,
+      }),
+    }
+  );
+  assert.equal(unconfirmed.status, 401);
+  assert.equal(
+    (await unconfirmed.json()).error.code,
+    "handoff_confirmation_required"
+  );
   const completed = await request(
     env,
     "/v1/auth/google/handoff/complete",
@@ -121,6 +138,7 @@ test("Google handoff separates browser/poll secrets and stores only a subject HM
       body: JSON.stringify({
         handoff_id: started.handoff_id,
         browser_token: started.browserToken,
+        confirmation_code: started.confirmation_code,
         credential,
       }),
     }
@@ -215,6 +233,7 @@ test("Google handoff cannot replace a different identity already bound to the de
       body: JSON.stringify({
         handoff_id: started.handoff_id,
         browser_token: started.browserToken,
+        confirmation_code: started.confirmation_code,
         credential,
       }),
     }

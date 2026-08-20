@@ -22,7 +22,9 @@ export function consumeGoogleAccountHandoffToken(url = window.location.href): st
 
 export default function GoogleAccountHandoffPage({ token }: { token: string }) {
   const buttonRef = useRef<HTMLDivElement>(null);
+  const confirmationCodeRef = useRef("");
   const [message, setMessage] = useState("Google 로그인을 준비하는 중…");
+  const [confirmationCode, setConfirmationCode] = useState("");
   const [error, setError] = useState("");
   const [account, setAccount] = useState<PublicAccount | null>(null);
 
@@ -45,12 +47,21 @@ export default function GoogleAccountHandoffPage({ token }: { token: string }) {
           nonce: configuration.nonce,
           callback: (response) => {
             const credential = String(response.credential || "").trim();
+            const confirmationCode = confirmationCodeRef.current.trim();
             if (!credential) {
               setError("Google이 로그인 응답을 반환하지 않았습니다.");
               return;
             }
+            if (!confirmationCode) {
+              setError("요청한 AgentsAssemble 앱에 표시된 확인 코드를 입력하세요.");
+              return;
+            }
             setMessage("AgentsAssemble 계정에 연결하는 중…");
-            void completeGoogleAccountHandoff({ token, credential })
+            void completeGoogleAccountHandoff({
+              token,
+              confirmationCode,
+              credential,
+            })
               .then((connected) => {
                 if (!active) return;
                 setAccount(connected.account);
@@ -102,6 +113,25 @@ export default function GoogleAccountHandoffPage({ token }: { token: string }) {
           </div>
         ) : (
           <>
+            <p className="text-xs font-bold leading-5 text-[#ffcf70]">
+              직접 시작한 로그인만 계속하세요. 다른 사람이 보낸 코드나 링크를 사용하지 마세요.
+            </p>
+            <label className="grid gap-2 text-xs font-bold text-[#b5bac1]">
+              요청한 AgentsAssemble 앱에 표시된 코드
+              <input
+                aria-label="AgentsAssemble 확인 코드"
+                autoComplete="one-time-code"
+                className="rounded-lg border border-[#3f4147] bg-[#111214] px-3 py-2 font-mono text-base font-black uppercase tracking-[0.14em] text-text-primary"
+                maxLength={9}
+                placeholder="ABCD-EFGH"
+                value={confirmationCode}
+                onChange={(event) => {
+                  const next = event.target.value.toUpperCase();
+                  confirmationCodeRef.current = next;
+                  setConfirmationCode(next);
+                }}
+              />
+            </label>
             <div ref={buttonRef} className="min-h-10 w-full overflow-hidden" />
             {!error && (
               <p className="flex items-center gap-2 text-xs font-bold text-[#949ba4]">

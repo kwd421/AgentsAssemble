@@ -45,6 +45,7 @@ export type GoogleAccountConnectResponse = {
 export type GoogleAccountHandoffStartResponse = {
   status: "ready";
   handoff_url: string;
+  confirmation_code: string;
   expires_in: number;
 };
 
@@ -127,14 +128,16 @@ export function configureGoogleAccountHandoff(
 
 export function completeGoogleAccountHandoff({
   token,
+  confirmationCode,
   credential,
 }: {
   token: string;
+  confirmationCode: string;
   credential: string;
 }): Promise<GoogleAccountConnectResponse> {
   return postJson<GoogleAccountConnectResponse>(
     "/api/account/google/handoff/complete",
-    { token, credential }
+    { token, confirmation_code: confirmationCode, credential }
   );
 }
 

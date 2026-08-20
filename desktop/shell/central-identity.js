@@ -316,7 +316,9 @@ export async function loginCentralGoogle(openSystemBrowser, status) {
     "POST",
     await authDeviceBody()
   );
-  status?.("시스템 브라우저에서 Google 로그인을 완료해 주세요.");
+  status?.(
+    `시스템 브라우저에서 Google 로그인을 완료하고 확인 코드 ${started.confirmation_code}를 입력해 주세요.`
+  );
   await openSystemBrowser(started.handoff_url);
   while (Math.floor(Date.now() / 1000) < Number(started.expires_at || 0)) {
     await new Promise((resolve) => window.setTimeout(resolve, 1500));

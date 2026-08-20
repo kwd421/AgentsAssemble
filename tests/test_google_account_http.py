@@ -78,7 +78,11 @@ class GoogleAccountHttpTests(unittest.TestCase):
 
                 verifier.nonce = configuration["nonce"]
                 complete_body = json.dumps(
-                    {"token": token, "credential": "google-id-token"}
+                    {
+                        "token": token,
+                        "confirmation_code": started["confirmation_code"],
+                        "credential": "google-id-token",
+                    }
                 ).encode()
                 with urlopen(
                     Request(
@@ -398,12 +402,33 @@ class GoogleAccountHttpTests(unittest.TestCase):
                 **remote,
             )
             verifier.nonce = str(configured.sent_json["nonce"])
+            mismatched = self._dispatch(
+                router,
+                deps,
+                "/api/account/google/handoff/complete",
+                "POST",
+                body={
+                    "token": token,
+                    "confirmation_code": "ZZZZ-ZZZZ",
+                    "credential": "google-id-token",
+                },
+                **remote,
+            )
+            self.assertEqual(mismatched.sent_error[0], HTTPStatus.FORBIDDEN)
+            self.assertEqual(
+                mismatched.sent_error[2],
+                "google_login_handoff_confirmation_required",
+            )
             completed = self._dispatch(
                 router,
                 deps,
                 "/api/account/google/handoff/complete",
                 "POST",
-                body={"token": token, "credential": "google-id-token"},
+                body={
+                    "token": token,
+                    "confirmation_code": started.sent_json["confirmation_code"],
+                    "credential": "google-id-token",
+                },
                 **remote,
             )
             remote_status = self._dispatch(

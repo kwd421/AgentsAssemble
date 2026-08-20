@@ -57,6 +57,10 @@ describe("GoogleAccountHandoffPage", () => {
 
     render(<GoogleAccountHandoffPage token="one-time-handoff" />);
 
+    fireEvent.change(
+      await screen.findByRole("textbox", { name: "AgentsAssemble 확인 코드" }),
+      { target: { value: "ABCD-EFGH" } }
+    );
     fireEvent.click(
       await screen.findByRole("button", { name: "Google 계정으로 계속" })
     );
@@ -64,6 +68,7 @@ describe("GoogleAccountHandoffPage", () => {
     await waitFor(() => {
       expect(identityApi.completeGoogleAccountHandoff).toHaveBeenCalledWith({
         token: "one-time-handoff",
+        confirmationCode: "ABCD-EFGH",
         credential: "verified-google-token",
       });
     });
