@@ -1,12 +1,12 @@
 {
  "readme": "AgentsAssemble codebase map. Regenerate with `make codebase-map`; verify committed outputs with `make codebase-map-verify`. modules[] columns: name, path, package, domain, classification, migration_status, lines, docstring, imports[], imported_by[] (indexes into modules), classes[[name, [[base, defining_module], ...]]] (best-effort, top-level classes only). frontend[] columns: path, group, lines, doc, imports[], imported_by[] (indexes into frontend). package_edges go importer -> dependency with module-import counts; `points` is the precomputed polyline for that edge and `intra_cycle` marks imports whose endpoints share one cycle group. graph{} holds the layered package drawing: layers[] top-to-bottom (each with members[] package ids, member_count, and the dominant domain), (a package sits below everything importing it), clusters[] are mutually dependent packages (import cycles at package level) drawn as one labelled block, plus width/height of the drawing. health{} ranks findings for a reader who has to act: cycles[] (mutually dependent packages, with the lines they hold), leaning_on_retiring[] (current modules importing legacy/compatibility modules - the reason legacy cannot be deleted), highest_leverage_migrations[] (retiring modules with the most current importers), unreferenced_shims[] (compatibility modules with no importer in agentsassemble/ and no reference in tests/; callers outside this repository are not visible, so verify before deleting), and hotspots[] (largest modules). health.scope states exactly what was measured. class_graph{} is the UML generalization DAG over base classes that resolve inside the repo: edges go base -> subclass, so a subclass always sits below the class it extends. Coordinates in graph and class_graph are laid out with a Sugiyama pipeline (cycle condensation, Coffman-Graham layering, dummy-node edge routing, median/transpose crossing reduction) and are deterministic.",
- "generated_at": "2026-08-16T13:40:38Z",
- "fingerprint": "8f81d5fb20e04cbc",
+ "generated_at": "2026-08-20T04:20:31Z",
+ "fingerprint": "e8e4e002ae2454bf",
  "stats": {
   "backend_modules": 919,
-  "backend_lines": 161642,
+  "backend_lines": 161643,
   "frontend_files": 223,
-  "frontend_lines": 52622,
+  "frontend_lines": 52655,
   "packages": 31,
   "import_cycles": 0,
   "classifications": {
@@ -305,7 +305,7 @@
    "kind": "backend",
    "doc": "First-party plugin host for room activity plugins.",
    "files": 10,
-   "lines": 1148,
+   "lines": 1149,
    "domains": {
     "application": 10
    },
@@ -560,7 +560,7 @@
    "kind": "frontend",
    "doc": "Application shell, routing, and global client state.",
    "files": 23,
-   "lines": 6199,
+   "lines": 6210,
    "domains": {},
    "classes": {},
    "x": 558.0,
@@ -608,7 +608,7 @@
    "kind": "frontend",
    "doc": "Top-level room views rendered by the shell.",
    "files": 114,
-   "lines": 23265,
+   "lines": 23287,
    "domains": {},
    "classes": {},
    "x": 558.0,
@@ -4384,7 +4384,7 @@
      "web"
     ],
     "internal_edges": 97,
-    "lines": 158020,
+    "lines": 158021,
     "heaviest": "legacy"
    },
    {
@@ -4397,7 +4397,7 @@
      "fe:views"
     ],
     "internal_edges": 17,
-    "lines": 52622,
+    "lines": 52655,
     "heaviest": "fe:views"
    }
   ],
@@ -17133,7 +17133,7 @@
    "application",
    "current",
    "planned-move",
-   182,
+   183,
    "Process-wide first-party plugin host used by WebSocket sessions.",
    [
     567,
@@ -27235,7 +27235,7 @@
   [
    "frontend/src/app/useRoomSideChat.isolation.test.tsx",
    "app",
-   141,
+   150,
    "",
    [
     2,
@@ -27258,7 +27258,7 @@
   [
    "frontend/src/app/useRoomSideChat.ts",
    "app",
-   194,
+   196,
    "",
    [
     2,
@@ -29355,7 +29355,7 @@
   [
    "frontend/src/views/components/StartupIdentityBoundary.tsx",
    "views",
-   67,
+   89,
    "",
    [
     50,
@@ -29902,31 +29902,31 @@
    "name": "agentsassemble",
    "note": "Backend package (Python)",
    "files": 919,
-   "lines": 161642
+   "lines": 161643
   },
   {
    "name": "frontend/src",
    "note": "React room client (TS/TSX)",
    "files": 223,
-   "lines": 52622
+   "lines": 52655
   },
   {
    "name": "tests",
    "note": "Backend test suite",
    "files": 396,
-   "lines": 158165
+   "lines": 158191
   },
   {
    "name": "scripts",
    "note": "Repo automation scripts",
    "files": 8,
-   "lines": 7118
+   "lines": 7134
   },
   {
    "name": "docs",
    "note": "Product and architecture docs",
    "files": 89,
-   "lines": 31601
+   "lines": 31607
   },
   {
    "name": "configs",

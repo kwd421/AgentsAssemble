@@ -4,7 +4,7 @@ Status: generated architecture inventory
 
 Generator: `python3 scripts/generate_package_map.py`
 
-Source fingerprint: `6a9c1c512f104273`
+Source fingerprint: `e0adba05cc4d2186`
 
 This file describes current evidence and proposed ownership. It does not by
 itself authorize a module move or a product behavior change.
@@ -593,7 +593,7 @@ itself authorize a module move or a product behavior change.
 | `agentsassemble.plugin` | `agentsassemble/plugin/__init__.py` | 19 | application | current | `agentsassemble.plugin.manifest`, `agentsassemble.plugin.registry` | 0 | - | monkeypatch:1 | `tests/test_plugin_rimworld.py` | `application/` | planned-move |
 | `agentsassemble.plugin.activity_wakes` | `agentsassemble/plugin/activity_wakes.py` | 86 | application | current | `agentsassemble.room.text` | 1 | - | test-import:1 | `tests/test_plugin_rimworld.py` | `application/` | planned-move |
 | `agentsassemble.plugin.agent_tools` | `agentsassemble/plugin/agent_tools.py` | 71 | application | current | `agentsassemble.plugin.manifest`, `agentsassemble.room.text` | 2 | - | - | - | `application/` | planned-move |
-| `agentsassemble.plugin.host_service` | `agentsassemble/plugin/host_service.py` | 182 | application | current | `agentsassemble.plugin.registry`, `agentsassemble.room.commands`, `agentsassemble.room.text` | 3 | `call:Lock@15`, `call:set@20`, `call:getLogger@21` | test-import:2 | `tests/test_plugin_rimworld.py`, `tests/test_ws_room_session.py` | `application/` | planned-move |
+| `agentsassemble.plugin.host_service` | `agentsassemble/plugin/host_service.py` | 183 | application | current | `agentsassemble.plugin.registry`, `agentsassemble.room.commands`, `agentsassemble.room.text` | 3 | `call:Lock@15`, `call:set@20`, `call:getLogger@21` | test-import:2 | `tests/test_plugin_rimworld.py`, `tests/test_ws_room_session.py` | `application/` | planned-move |
 | `agentsassemble.plugin.isolated_runner` | `agentsassemble/plugin/isolated_runner.py` | 108 | application | current | - | 0 | `control-flow@11` | - | - | `application/` | planned-move |
 | `agentsassemble.plugin.manifest` | `agentsassemble/plugin/manifest.py` | 131 | application | current | `agentsassemble.room.text` | 6 | `call:frozenset@12`, `call:frozenset@21` | test-import:1 | `tests/test_plugin_rimworld.py` | `application/` | planned-move |
 | `agentsassemble.plugin.process_host` | `agentsassemble/plugin/process_host.py` | 302 | application | current | `agentsassemble.plugin.manifest`, `agentsassemble.providers.process_environment`, `agentsassemble.room.text` | 1 | - | test-import:1 | `tests/test_plugin_rimworld.py` | `application/` | planned-move |
