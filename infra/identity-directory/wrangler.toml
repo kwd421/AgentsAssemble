@@ -19,6 +19,7 @@ CENTRAL_ALLOWED_ORIGINS = "tauri://localhost,http://tauri.localhost,https://taur
 #   RECOVERY_PEPPER
 #   IDENTITY_PEPPER
 #   GOOGLE_CLIENT_ID
+#   GOOGLE_DESKTOP_CLIENT_ID
 
 [triggers]
 crons = ["17 3 * * *"]

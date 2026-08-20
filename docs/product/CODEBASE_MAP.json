@@ -1,12 +1,12 @@
 {
  "readme": "AgentsAssemble codebase map. Regenerate with `make codebase-map`; verify committed outputs with `make codebase-map-verify`. modules[] columns: name, path, package, domain, classification, migration_status, lines, docstring, imports[], imported_by[] (indexes into modules), classes[[name, [[base, defining_module], ...]]] (best-effort, top-level classes only). frontend[] columns: path, group, lines, doc, imports[], imported_by[] (indexes into frontend). package_edges go importer -> dependency with module-import counts; `points` is the precomputed polyline for that edge and `intra_cycle` marks imports whose endpoints share one cycle group. graph{} holds the layered package drawing: layers[] top-to-bottom (each with members[] package ids, member_count, and the dominant domain), (a package sits below everything importing it), clusters[] are mutually dependent packages (import cycles at package level) drawn as one labelled block, plus width/height of the drawing. health{} ranks findings for a reader who has to act: cycles[] (mutually dependent packages, with the lines they hold), leaning_on_retiring[] (current modules importing legacy/compatibility modules - the reason legacy cannot be deleted), highest_leverage_migrations[] (retiring modules with the most current importers), unreferenced_shims[] (compatibility modules with no importer in agentsassemble/ and no reference in tests/; callers outside this repository are not visible, so verify before deleting), and hotspots[] (largest modules). health.scope states exactly what was measured. class_graph{} is the UML generalization DAG over base classes that resolve inside the repo: edges go base -> subclass, so a subclass always sits below the class it extends. Coordinates in graph and class_graph are laid out with a Sugiyama pipeline (cycle condensation, Coffman-Graham layering, dummy-node edge routing, median/transpose crossing reduction) and are deterministic.",
- "generated_at": "2026-08-20T15:51:50Z",
- "fingerprint": "c082b5ca24653ee2",
+ "generated_at": "2026-08-20T16:26:29Z",
+ "fingerprint": "9f018d495f42a4fc",
  "stats": {
   "backend_modules": 922,
-  "backend_lines": 161944,
+  "backend_lines": 161970,
   "frontend_files": 224,
-  "frontend_lines": 52941,
+  "frontend_lines": 52974,
   "packages": 31,
   "import_cycles": 0,
   "classifications": {
@@ -22,7 +22,7 @@
    "kind": "backend",
    "doc": "HTTP and WebSocket transport boundaries for the current GUI.",
    "files": 35,
-   "lines": 7030,
+   "lines": 7050,
    "domains": {
     "web": 35
    },
@@ -42,7 +42,7 @@
    "kind": "backend",
    "doc": "Application composition and cross-domain transaction contracts.",
    "files": 43,
-   "lines": 10698,
+   "lines": 10704,
    "domains": {
     "application": 43
    },
@@ -576,7 +576,7 @@
    "kind": "frontend",
    "doc": "Shared utilities and presentation helpers.",
    "files": 60,
-   "lines": 6787,
+   "lines": 6820,
    "domains": {},
    "classes": {},
    "x": 786.0,
@@ -4384,7 +4384,7 @@
      "web"
     ],
     "internal_edges": 97,
-    "lines": 158292,
+    "lines": 158318,
     "heaviest": "legacy"
    },
    {
@@ -4397,7 +4397,7 @@
      "fe:views"
     ],
     "internal_edges": 17,
-    "lines": 52941,
+    "lines": 52974,
     "heaviest": "fe:views"
    }
   ],
@@ -5978,7 +5978,7 @@
    "application",
    "current",
    "in-target-package",
-   92,
+   98,
    "Short-lived loopback return channel for desktop central login.",
    [],
    [
@@ -26090,7 +26090,7 @@
    "web",
    "current",
    "in-target-package",
-   130,
+   150,
    "Loopback-only browser return routes for central desktop login.",
    [
     44,
@@ -27481,7 +27481,7 @@
   [
    "frontend/src/lib/centralIdentity.google.test.ts",
    "lib",
-   32,
+   47,
    "",
    [
     49
@@ -27501,7 +27501,7 @@
   [
    "frontend/src/lib/centralIdentity.ts",
    "lib",
-   616,
+   634,
    "",
    [
     50
@@ -29970,19 +29970,19 @@
    "name": "agentsassemble",
    "note": "Backend package (Python)",
    "files": 922,
-   "lines": 161944
+   "lines": 161970
   },
   {
    "name": "frontend/src",
    "note": "React room client (TS/TSX)",
    "files": 224,
-   "lines": 52941
+   "lines": 52974
   },
   {
    "name": "tests",
    "note": "Backend test suite",
    "files": 398,
-   "lines": 158457
+   "lines": 158499
   },
   {
    "name": "scripts",
@@ -29994,7 +29994,7 @@
    "name": "docs",
    "note": "Product and architecture docs",
    "files": 89,
-   "lines": 31624
+   "lines": 31627
   },
   {
    "name": "configs",
@@ -30012,7 +30012,7 @@
    "name": "infra",
    "note": "Deployment / infrastructure",
    "files": 40,
-   "lines": 5101
+   "lines": 5187
   }
  ]
 }

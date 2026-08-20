@@ -11,11 +11,14 @@ Phase 1 keeps rooms, messages, attachments, provider sessions, and room ACLs on 
 5. Central login never grants room membership. Each selected engine continues to enforce its own invite, session, and ACL contract.
 
 Desktop Google login uses the system browser, a loopback callback, and PKCE. The
-browser returns a short-lived authorization code to the exact local callback that
-started the attempt; the central Worker issues a session only when the app presents
-the matching verifier. Users do not copy a confirmation code, and the app does not
-poll the public Worker for browser completion. The older confirmation-code handoff
-remains available only for clients that do not yet have a native callback boundary.
+app opens Google's standard installed-app authorization endpoint directly. Google
+returns its short-lived authorization code to the exact local callback that started
+the attempt; the central Worker exchanges it and issues a session only when the app
+presents the matching PKCE verifier. The request uses only the `openid` scope, so it
+does not request name, email, profile, birthday, or contacts. Users do not copy a
+confirmation code, and the app does not poll the public Worker for browser completion.
+The older confirmation-code handoff remains available only for clients that do not
+yet have a native callback boundary.
 
 Special invite, operator-pairing, and room-recovery URLs bypass the normal startup identity boundary so an invited user is not trapped behind an unrelated account screen.
 

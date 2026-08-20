@@ -11,7 +11,6 @@ import {
 } from "./http.js";
 import {
   completeGoogleHandoff,
-  completeNativeGoogleHandoff,
   exchangeNativeGoogleHandoff,
   googleBrowserChallenge,
   googleHandoffPage,
@@ -35,8 +34,11 @@ async function route(request, env) {
   }
   if (request.method === "GET" && url.pathname === "/v1/config") {
     return json({
-      google_enabled: Boolean(env.GOOGLE_CLIENT_ID),
-      protocol_version: 2,
+      google_enabled: Boolean(
+        env.GOOGLE_CLIENT_ID || env.GOOGLE_DESKTOP_CLIENT_ID
+      ),
+      google_native_enabled: Boolean(env.GOOGLE_DESKTOP_CLIENT_ID),
+      protocol_version: 3,
     });
   }
   if (request.method === "GET" && url.pathname === "/auth/google") {
@@ -76,12 +78,6 @@ async function route(request, env) {
     url.pathname === "/v1/auth/google/handoff/complete"
   ) {
     return completeGoogleHandoff(env, text, now);
-  }
-  if (
-    request.method === "POST" &&
-    url.pathname === "/v1/auth/google/native/complete"
-  ) {
-    return completeNativeGoogleHandoff(env, text, now);
   }
   if (
     request.method === "POST" &&

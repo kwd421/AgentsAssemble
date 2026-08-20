@@ -47,8 +47,7 @@ class CentralLoginCallbackHttpTests(unittest.TestCase):
                 query = urlencode(
                     {
                         "state": state,
-                        "handoff_id": "goh_native_callback_0001",
-                        "code": "native_callback_code_12345678901234567890",
+                        "code": "4/0-google-native-authorization-code_123456789",
                     }
                 )
                 callback_request = Request(
@@ -58,7 +57,7 @@ class CentralLoginCallbackHttpTests(unittest.TestCase):
                 with urlopen(callback_request, timeout=4) as response:
                     self.assertEqual(response.geturl(), f"{base}/central-login-complete")
                     page = response.read().decode("utf-8")
-                self.assertNotIn("native_callback_code", page)
+                self.assertNotIn("google-native-authorization-code", page)
                 self.assertEqual(
                     response.headers.get_content_type(),
                     "text/html",
@@ -70,10 +69,53 @@ class CentralLoginCallbackHttpTests(unittest.TestCase):
                 ) as response:
                     delivered = json.loads(response.read().decode("utf-8"))
                 self.assertEqual(delivered["status"], "complete")
-                self.assertEqual(delivered["handoff_id"], "goh_native_callback_0001")
                 self.assertEqual(
                     delivered["authorization_code"],
-                    "native_callback_code_12345678901234567890",
+                    "4/0-google-native-authorization-code_123456789",
+                )
+            finally:
+                server.shutdown()
+                server.server_close()
+                thread.join(timeout=2)
+
+    def test_google_cancellation_returns_to_the_app_without_leaving_login_pending(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            server = ThreadingHTTPServer(
+                ("127.0.0.1", 0),
+                _make_handler(Path(temp_dir) / "room"),
+            )
+            thread = threading.Thread(target=server.serve_forever, daemon=True)
+            thread.start()
+            try:
+                base = f"http://127.0.0.1:{server.server_port}"
+                state = "state_cancelled_callback_12345678901234567890"
+                with urlopen(
+                    _post(f"{base}/api/central-login/callback/start", {"state": state}),
+                    timeout=4,
+                ):
+                    pass
+
+                query = urlencode({"state": state, "error": "access_denied"})
+                with urlopen(
+                    Request(
+                        f"{base}/api/central-login/callback?{query}",
+                        method="GET",
+                    ),
+                    timeout=4,
+                ) as response:
+                    self.assertEqual(
+                        response.geturl(),
+                        f"{base}/central-login-complete?status=cancelled",
+                    )
+
+                with urlopen(
+                    _post(f"{base}/api/central-login/callback/poll", {"state": state}),
+                    timeout=4,
+                ) as response:
+                    delivered = json.loads(response.read().decode("utf-8"))
+                self.assertEqual(
+                    delivered,
+                    {"status": "error", "error": "google_login_cancelled"},
                 )
             finally:
                 server.shutdown()

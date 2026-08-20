@@ -29,6 +29,14 @@ _SUCCESS_PAGE = """<!doctype html>
   <body><main><h1>로그인이 완료되었습니다</h1><p>AgentsAssemble 앱으로 돌아가세요. 이 탭은 닫아도 됩니다.</p></main></body>
 </html>"""
 
+_CANCELLED_PAGE = _SUCCESS_PAGE.replace(
+    "로그인이 완료되었습니다",
+    "Google 로그인을 취소했습니다",
+).replace(
+    "AgentsAssemble 앱으로 돌아가세요. 이 탭은 닫아도 됩니다.",
+    "AgentsAssemble 앱으로 돌아가 다시 시도할 수 있습니다. 이 탭은 닫아도 됩니다.",
+)
+
 
 def register_central_login_callback_routes(
     router: Router,
@@ -73,8 +81,8 @@ def register_central_login_callback_routes(
         try:
             callbacks.complete(
                 ctx.query_value("state"),
-                ctx.query_value("handoff_id"),
                 ctx.query_value("code"),
+                ctx.query_value("error"),
             )
         except ValueError as error:
             ctx.send_error(HTTPStatus.BAD_REQUEST, str(error))
@@ -83,7 +91,12 @@ def register_central_login_callback_routes(
             ctx.send_error(HTTPStatus.GONE, str(error))
             return
         ctx.handler.send_response(HTTPStatus.SEE_OTHER)
-        ctx.handler.send_header("Location", "/central-login-complete")
+        location = (
+            "/central-login-complete?status=cancelled"
+            if ctx.query_value("error")
+            else "/central-login-complete"
+        )
+        ctx.handler.send_header("Location", location)
         ctx.handler.send_header("Cache-Control", "no-store")
         ctx.handler.send_header("Referrer-Policy", "no-referrer")
         ctx.handler.send_header("Content-Length", "0")
@@ -93,8 +106,13 @@ def register_central_login_callback_routes(
     def callback_success(ctx: RequestContext) -> None:
         if not require_local_operator(ctx):
             return
+        page = (
+            _CANCELLED_PAGE
+            if ctx.query_value("status") == "cancelled"
+            else _SUCCESS_PAGE
+        )
         ctx.handler._send_bytes(
-            _SUCCESS_PAGE.encode("utf-8"),
+            page.encode("utf-8"),
             "text/html; charset=utf-8",
             cache_control="no-store",
             referrer_policy="no-referrer",
@@ -118,10 +136,12 @@ def register_central_login_callback_routes(
         if completed is None:
             ctx.send_json({"status": "pending"})
             return
+        if completed.error:
+            ctx.send_json({"status": "error", "error": "google_login_cancelled"})
+            return
         ctx.send_json(
             {
                 "status": "complete",
-                "handoff_id": completed.handoff_id,
                 "authorization_code": completed.authorization_code,
             }
         )

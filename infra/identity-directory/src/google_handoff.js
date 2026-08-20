@@ -134,7 +134,7 @@ function pkceVerifier(value) {
 }
 
 export async function startNativeGoogleHandoff(request, env, text, now) {
-  if (!env.GOOGLE_CLIENT_ID) {
+  if (!env.GOOGLE_DESKTOP_CLIENT_ID) {
     throw new HttpError(503, "google_login_unavailable");
   }
   await consumeRateLimit(
@@ -151,7 +151,6 @@ export async function startNativeGoogleHandoff(request, env, text, now) {
   const state = cleanIdentifier(body.state, "state", 32, 128);
   const challenge = pkceChallenge(body.code_challenge);
   const handoffId = `goh_${randomBase64Url(18)}`;
-  const browserToken = randomBase64Url(32);
   const nonce = randomBase64Url(24);
   await env.DB
     .prepare(
@@ -159,32 +158,42 @@ export async function startNativeGoogleHandoff(request, env, text, now) {
        (handoff_id, device_id, device_public_key_jwk, device_label,
         browser_token_hash, poll_token_hash, google_nonce, status, person_id,
         created_at, expires_at, consumed_at, flow_kind, code_challenge,
-        redirect_uri, redirect_state, authorization_code_hash)
+        redirect_uri, authorization_code_hash)
        VALUES (?, ?, ?, ?, ?, ?, ?, 'pending', NULL, ?, ?, NULL, 'native',
-               ?, ?, ?, NULL)`
+               ?, ?, NULL)`
     )
     .bind(
       handoffId,
       deviceId,
       canonicalJson(publicJwk),
       cleanText(body.device_label, 80),
-      await sha256Base64Url(browserToken),
+      await sha256Base64Url(randomBase64Url(32)),
       await sha256Base64Url(randomBase64Url(32)),
       nonce,
       now,
       now + HANDOFF_TTL_SECONDS,
       challenge,
-      redirectUri,
-      state
+      redirectUri
     )
     .run();
-  const base = new URL(request.url).origin;
+  const authorizationUrl = new URL(
+    "https://accounts.google.com/o/oauth2/v2/auth"
+  );
+  authorizationUrl.search = new URLSearchParams({
+    client_id: String(env.GOOGLE_DESKTOP_CLIENT_ID),
+    redirect_uri: redirectUri,
+    response_type: "code",
+    scope: "openid",
+    state,
+    nonce,
+    code_challenge: challenge,
+    code_challenge_method: "S256",
+    prompt: "select_account",
+  }).toString();
   return json(
     {
       handoff_id: handoffId,
-      handoff_url:
-        `${base}/auth/google#handoff=${encodeURIComponent(handoffId)}` +
-        `&browser=${encodeURIComponent(browserToken)}`,
+      authorization_url: authorizationUrl.toString(),
       state,
       expires_at: now + HANDOFF_TTL_SECONDS,
     },
@@ -215,10 +224,12 @@ async function handoffByBrowserToken(env, body, now) {
 export async function googleBrowserChallenge(env, text, now) {
   const body = parseJson(text);
   const row = await handoffByBrowserToken(env, body, now);
+  if ((row.flow_kind || "manual") !== "manual") {
+    throw new HttpError(401, "invalid_handoff");
+  }
   return json({
     client_id: env.GOOGLE_CLIENT_ID,
     nonce: row.google_nonce,
-    flow: row.flow_kind || "manual",
     expires_at: row.expires_at,
   });
 }
@@ -274,7 +285,7 @@ async function resolveGooglePerson(env, identity, now) {
   }
 }
 
-async function verifiedGooglePerson(env, body, row, now) {
+async function verifiedGooglePerson(env, credential, clientId, row, now) {
   await consumeRateLimit(
     env.DB,
     `google-complete:${row.handoff_id}`,
@@ -284,8 +295,8 @@ async function verifiedGooglePerson(env, body, row, now) {
   );
   let identity;
   try {
-    identity = await verifyGoogleIdToken(body.credential, {
-      clientId: String(env.GOOGLE_CLIENT_ID),
+    identity = await verifyGoogleIdToken(credential, {
+      clientId: String(clientId),
       nonce: row.google_nonce,
       nowSeconds: now,
       env,
@@ -318,7 +329,13 @@ export async function completeGoogleHandoff(env, text, now) {
   if ((row.flow_kind || "manual") !== "manual") {
     throw new HttpError(401, "invalid_handoff");
   }
-  const personId = await verifiedGooglePerson(env, body, row, now);
+  const personId = await verifiedGooglePerson(
+    env,
+    body.credential,
+    env.GOOGLE_CLIENT_ID,
+    row,
+    now
+  );
   const ready = await env.DB
     .prepare(
       `UPDATE google_handoffs SET status = 'ready', person_id = ?
@@ -330,36 +347,6 @@ export async function completeGoogleHandoff(env, text, now) {
     throw new HttpError(409, "handoff_consumed");
   }
   return json({ status: "ready" });
-}
-
-export async function completeNativeGoogleHandoff(env, text, now) {
-  const body = parseJson(text);
-  const row = await handoffByBrowserToken(env, body, now);
-  if (row.flow_kind !== "native") {
-    throw new HttpError(401, "invalid_handoff");
-  }
-  const personId = await verifiedGooglePerson(env, body, row, now);
-  const authorizationCode = randomBase64Url(32);
-  const ready = await env.DB
-    .prepare(
-      `UPDATE google_handoffs
-       SET status = 'ready', person_id = ?, authorization_code_hash = ?
-       WHERE handoff_id = ? AND status = 'pending' AND flow_kind = 'native'`
-    )
-    .bind(
-      personId,
-      await sha256Base64Url(authorizationCode),
-      row.handoff_id
-    )
-    .run();
-  if (Number(ready.meta?.changes || 0) !== 1) {
-    throw new HttpError(409, "handoff_consumed");
-  }
-  const redirect = new URL(row.redirect_uri);
-  redirect.searchParams.set("state", row.redirect_state);
-  redirect.searchParams.set("handoff_id", row.handoff_id);
-  redirect.searchParams.set("code", authorizationCode);
-  return json({ status: "ready", redirect_url: redirect.toString() });
 }
 
 async function issueHandoffSession(env, row, now) {
@@ -411,15 +398,60 @@ async function issueHandoffSession(env, row, now) {
   }
 }
 
+function googleAuthorizationCode(value) {
+  const clean = String(value || "").trim();
+  if (
+    clean.length < 16 ||
+    clean.length > 2048 ||
+    !/^[\x21-\x7e]+$/.test(clean)
+  ) {
+    throw new HttpError(400, "invalid_authorization_code");
+  }
+  return clean;
+}
+
+async function exchangeGoogleAuthorizationCode(env, row, code, verifier) {
+  let response;
+  try {
+    response = await fetch("https://oauth2.googleapis.com/token", {
+      method: "POST",
+      headers: {
+        accept: "application/json",
+        "content-type": "application/x-www-form-urlencoded",
+      },
+      body: new URLSearchParams({
+        code,
+        client_id: String(env.GOOGLE_DESKTOP_CLIENT_ID),
+        redirect_uri: row.redirect_uri,
+        grant_type: "authorization_code",
+        code_verifier: verifier,
+      }),
+    });
+  } catch {
+    throw new HttpError(502, "google_token_exchange_failed");
+  }
+  if (!response.ok) {
+    throw new HttpError(401, "invalid_google_authorization");
+  }
+  let payload;
+  try {
+    payload = await response.json();
+  } catch {
+    throw new HttpError(502, "google_token_exchange_failed");
+  }
+  if (typeof payload?.id_token !== "string" || !payload.id_token) {
+    throw new HttpError(401, "invalid_google_authorization");
+  }
+  return payload.id_token;
+}
+
 export async function exchangeNativeGoogleHandoff(env, text, now) {
+  if (!env.GOOGLE_DESKTOP_CLIENT_ID) {
+    throw new HttpError(503, "google_login_unavailable");
+  }
   const body = parseJson(text);
   const handoffId = cleanIdentifier(body.handoff_id, "handoff_id");
-  const authorizationCode = cleanIdentifier(
-    body.authorization_code,
-    "authorization_code",
-    32,
-    128
-  );
+  const authorizationCode = googleAuthorizationCode(body.authorization_code);
   const verifier = pkceVerifier(body.code_verifier);
   const row = await env.DB
     .prepare("SELECT * FROM google_handoffs WHERE handoff_id = ?")
@@ -428,18 +460,54 @@ export async function exchangeNativeGoogleHandoff(env, text, now) {
   if (!row || row.expires_at <= now || row.flow_kind !== "native") {
     throw new HttpError(401, "invalid_handoff");
   }
-  if (row.status !== "ready" || !row.person_id) {
-    throw new HttpError(409, "handoff_consumed");
-  }
   const authorizationCodeHash = await sha256Base64Url(authorizationCode);
   const challenge = await sha256Base64Url(verifier);
-  if (
-    !constantTimeEqual(row.authorization_code_hash || "", authorizationCodeHash) ||
-    !constantTimeEqual(row.code_challenge || "", challenge)
-  ) {
+  if (!constantTimeEqual(row.code_challenge || "", challenge)) {
     throw new HttpError(401, "invalid_handoff");
   }
-  return issueHandoffSession(env, row, now);
+  if (row.status === "ready" && row.person_id) {
+    if (!constantTimeEqual(row.authorization_code_hash || "", authorizationCodeHash)) {
+      throw new HttpError(401, "invalid_handoff");
+    }
+    return issueHandoffSession(env, row, now);
+  }
+  if (row.status !== "pending") {
+    throw new HttpError(409, "handoff_consumed");
+  }
+  const credential = await exchangeGoogleAuthorizationCode(
+    env,
+    row,
+    authorizationCode,
+    verifier
+  );
+  const personId = await verifiedGooglePerson(
+    env,
+    credential,
+    env.GOOGLE_DESKTOP_CLIENT_ID,
+    row,
+    now
+  );
+  const ready = await env.DB
+    .prepare(
+      `UPDATE google_handoffs
+       SET status = 'ready', person_id = ?, authorization_code_hash = ?
+       WHERE handoff_id = ? AND status = 'pending' AND flow_kind = 'native'`
+    )
+    .bind(personId, authorizationCodeHash, row.handoff_id)
+    .run();
+  if (Number(ready.meta?.changes || 0) !== 1) {
+    throw new HttpError(409, "handoff_consumed");
+  }
+  return issueHandoffSession(
+    env,
+    {
+      ...row,
+      status: "ready",
+      person_id: personId,
+      authorization_code_hash: authorizationCodeHash,
+    },
+    now
+  );
 }
 
 export async function pollGoogleHandoff(env, text, now) {
@@ -478,7 +546,7 @@ history.replaceState({}, '', location.pathname);
 const status = document.getElementById('status');
 const manual = document.getElementById('manual-confirmation');
 const confirmation = document.getElementById('confirmation');
-const promptButton = document.getElementById('google-prompt');
+const googleButton = document.getElementById('google-button');
 async function post(path, body) {
   const response = await fetch(path, {
     method: 'POST',
@@ -498,7 +566,7 @@ async function post(path, body) {
       '/v1/auth/google/handoff/browser-challenge',
       {handoff_id, browser_token}
     );
-    if (challenge.flow === 'manual') manual.hidden = false;
+    manual.hidden = false;
     google.accounts.id.initialize({
       client_id: challenge.client_id,
       nonce: challenge.nonce,
@@ -508,51 +576,41 @@ async function post(path, body) {
           const body = {
             handoff_id,
             browser_token,
+            confirmation_code: confirmation.value.trim(),
             credential: response.credential
           };
-          if (challenge.flow === 'manual') {
-            body.confirmation_code = confirmation.value.trim();
-            if (!body.confirmation_code) {
-              status.textContent = '앱에 표시된 확인 코드를 입력해 주세요.';
-              return;
-            }
-          }
-          const completed = await post(
-            challenge.flow === 'native'
-              ? '/v1/auth/google/native/complete'
-              : '/v1/auth/google/handoff/complete',
-            body
-          );
-          if (challenge.flow === 'native') {
-            location.replace(completed.redirect_url);
+          if (!body.confirmation_code) {
+            status.textContent = '앱에 표시된 확인 코드를 입력해 주세요.';
             return;
           }
+          await post(
+            '/v1/auth/google/handoff/complete',
+            body
+          );
           status.textContent =
             '로그인이 완료되었습니다. AgentsAssemble 앱으로 돌아가세요.';
-          promptButton.hidden = true;
+          googleButton.hidden = true;
         } catch (error) {
           status.textContent = error.message;
         }
       }
     });
-    const showAccountChooser = () => {
-      status.textContent = 'Google 계정 선택 창을 여는 중…';
-      google.accounts.id.prompt(notification => {
-        if (notification.isNotDisplayed?.() || notification.isSkippedMoment?.()) {
-          status.textContent =
-            '계정 선택 창이 열리지 않았습니다. 아래 버튼을 다시 눌러 주세요.';
-        }
-      });
-    };
-    promptButton.hidden = false;
-    promptButton.addEventListener('click', showAccountChooser);
-    showAccountChooser();
+    google.accounts.id.renderButton(googleButton, {
+      type: 'standard',
+      theme: 'outline',
+      size: 'large',
+      text: 'continue_with',
+      shape: 'rectangular',
+      width: 320
+    });
+    googleButton.hidden = false;
+    status.textContent = '확인 코드를 입력한 뒤 Google 계정을 선택해 주세요.';
   } catch (error) {
     status.textContent = error.message;
   }
 })();`;
   const nonce = randomBase64Url(18);
-  const html = `<!doctype html><html lang="ko"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>AgentsAssemble 로그인</title><script src="https://accounts.google.com/gsi/client"></script><style nonce="${nonce}">*{box-sizing:border-box}[hidden]{display:none!important}body{margin:0;background:#101114;color:#f2f3f5;font:15px system-ui;display:grid;min-height:100vh;place-items:center;padding:20px}.card{width:min(380px,100%);background:#202126;border:1px solid #ffffff18;border-radius:16px;padding:30px;box-shadow:0 24px 70px #0008}h1{font-size:24px;margin:0 0 10px}p{color:#b5bac1;line-height:1.55;margin:8px 0}label{display:grid;gap:8px;margin-top:18px;color:#b5bac1;font-weight:700}input{width:100%;border:1px solid #ffffff2b;border-radius:8px;background:#111214;color:#f2f3f5;padding:12px;font:700 18px ui-monospace,monospace;letter-spacing:.12em;text-transform:uppercase}button{width:100%;margin-top:22px;border:1px solid #ffffff2b;border-radius:9px;background:#f2f3f5;color:#202124;padding:12px 16px;font:700 15px system-ui;cursor:pointer}button:hover{background:#fff}button:focus-visible{outline:3px solid #8ea1ff;outline-offset:2px}</style></head><body><main class="card"><h1>Google 계정으로 계속</h1><p id="status">로그인 준비 중…</p><p>AgentsAssemble은 계정을 확인하고 내 서버 목록을 동기화하는 데만 Google 로그인을 사용합니다.</p><label id="manual-confirmation" hidden>앱에 표시된 확인 코드<input id="confirmation" autocomplete="one-time-code" maxlength="9" placeholder="ABCD-EFGH"></label><button id="google-prompt" type="button" hidden>Google 계정 선택</button></main><script nonce="${nonce}">${script}</script></body></html>`;
+  const html = `<!doctype html><html lang="ko"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>AgentsAssemble 로그인</title><script src="https://accounts.google.com/gsi/client"></script><style nonce="${nonce}">*{box-sizing:border-box}[hidden]{display:none!important}body{margin:0;background:#101114;color:#f2f3f5;font:15px system-ui;display:grid;min-height:100vh;place-items:center;padding:20px}.card{width:min(380px,100%);background:#202126;border:1px solid #ffffff18;border-radius:16px;padding:30px;box-shadow:0 24px 70px #0008}h1{font-size:24px;margin:0 0 10px}p{color:#b5bac1;line-height:1.55;margin:8px 0}label{display:grid;gap:8px;margin-top:18px;color:#b5bac1;font-weight:700}input{width:100%;border:1px solid #ffffff2b;border-radius:8px;background:#111214;color:#f2f3f5;padding:12px;font:700 18px ui-monospace,monospace;letter-spacing:.12em;text-transform:uppercase}#google-button{display:flex;justify-content:center;margin-top:22px}</style></head><body><main class="card"><h1>Google 계정으로 계속</h1><p id="status">로그인 준비 중…</p><p>AgentsAssemble은 계정을 확인하고 내 서버 목록을 동기화하는 데만 Google 로그인을 사용합니다.</p><label id="manual-confirmation" hidden>앱에 표시된 확인 코드<input id="confirmation" autocomplete="one-time-code" maxlength="9" placeholder="ABCD-EFGH"></label><div id="google-button" hidden></div></main><script nonce="${nonce}">${script}</script></body></html>`;
   return new Response(html, {
     headers: {
       "content-type": "text/html; charset=utf-8",
@@ -562,7 +620,6 @@ async function post(path, body) {
         "https://accounts.google.com/gsi/client; " +
         "connect-src 'self' https://accounts.google.com; " +
         "frame-src https://accounts.google.com; " +
-        "connect-src 'self' https://accounts.google.com; " +
         `style-src 'nonce-${nonce}'; ` +
         "img-src data: https://*.googleusercontent.com; " +
         "base-uri 'none'; frame-ancestors 'none'; form-action 'none'",

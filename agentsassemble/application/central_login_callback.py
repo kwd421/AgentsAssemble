@@ -8,13 +8,13 @@ from dataclasses import dataclass
 
 
 _URL_TOKEN = re.compile(r"^[A-Za-z0-9._:-]+$")
-_AUTHORIZATION_CODE = re.compile(r"^[A-Za-z0-9_-]+$")
+_AUTHORIZATION_CODE = re.compile(r"^[\x21-\x7e]+$")
 
 
 @dataclass(frozen=True)
 class CentralLoginCallback:
-    handoff_id: str
-    authorization_code: str
+    authorization_code: str | None
+    error: str | None
 
 
 class CentralLoginCallbackBroker:
@@ -42,24 +42,30 @@ class CentralLoginCallbackBroker:
     def complete(
         self,
         state: object,
-        handoff_id: object,
         authorization_code: object,
+        error: object = None,
         *,
         now: float | None = None,
     ) -> None:
         clean_state = self._state(state)
-        clean_handoff_id = self._token(handoff_id, "handoff_id", 8, 128)
-        clean_code = str(authorization_code or "").strip()
-        if not 32 <= len(clean_code) <= 128 or not _AUTHORIZATION_CODE.fullmatch(clean_code):
-            raise ValueError("authorization_code is invalid")
+        clean_error = str(error or "").strip()
+        if clean_error:
+            clean_error = self._token(clean_error, "error", 3, 64)
+            clean_code = None
+        else:
+            clean_code = str(authorization_code or "").strip()
+            if not 16 <= len(clean_code) <= 2048 or not _AUTHORIZATION_CODE.fullmatch(
+                clean_code
+            ):
+                raise ValueError("authorization_code is invalid")
         current = time.time() if now is None else now
         with self._lock:
             self._discard_expired(current)
             if clean_state not in self._expected:
                 raise LookupError("central login state is unknown or expired")
             self._completed[clean_state] = CentralLoginCallback(
-                handoff_id=clean_handoff_id,
                 authorization_code=clean_code,
+                error=clean_error or None,
             )
 
     def poll(self, state: object, *, now: float | None = None) -> CentralLoginCallback | None:

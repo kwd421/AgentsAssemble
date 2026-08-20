@@ -1,4 +1,7 @@
-import { isDesktopWebview, openDesktopGoogleLogin } from "./desktopBridge";
+import {
+  isDesktopWebview,
+  openDesktopCentralGoogleLogin,
+} from "./desktopBridge";
 
 const SESSION_KEY = "agentsassemble.centralSession.v1";
 const SERVERS_KEY = "agentsassemble.centralServers.v1";
@@ -54,7 +57,7 @@ export type CentralGuestResult = {
 
 export type CentralGoogleHandoff = {
   handoff_id: string;
-  handoff_url: string;
+  authorization_url: string;
   state: string;
   expires_at: number;
 };
@@ -327,19 +330,16 @@ export function parseCentralGoogleHandoff(value: unknown): CentralGoogleHandoff 
   }
   const result: CentralGoogleHandoff = {
     handoff_id: String(handoff.handoff_id || "").trim(),
-    handoff_url: String(handoff.handoff_url || "").trim(),
+    authorization_url: String(handoff.authorization_url || "").trim(),
     state,
     expires_at: Number(handoff.expires_at || 0),
   };
-  let handoffUrl: URL;
+  let authorizationUrl: URL;
   try {
-    handoffUrl = new URL(result.handoff_url);
+    authorizationUrl = new URL(result.authorization_url);
   } catch {
     throw new Error("중앙 로그인 서버가 올바르지 않은 응답을 반환했습니다.");
   }
-  const loopback = ["localhost", "127.0.0.1", "::1"].includes(
-    handoffUrl.hostname
-  );
   if (
     !result.handoff_id ||
     result.state.length < 32 ||
@@ -347,8 +347,18 @@ export function parseCentralGoogleHandoff(value: unknown): CentralGoogleHandoff 
     !/^[A-Za-z0-9._:-]+$/.test(result.state) ||
     !Number.isSafeInteger(result.expires_at) ||
     result.expires_at <= Math.floor(Date.now() / 1000) ||
-    (handoffUrl.protocol !== "https:" &&
-      !(handoffUrl.protocol === "http:" && loopback))
+    authorizationUrl.protocol !== "https:" ||
+    authorizationUrl.hostname !== "accounts.google.com" ||
+    authorizationUrl.pathname !== "/o/oauth2/v2/auth" ||
+    authorizationUrl.username ||
+    authorizationUrl.password ||
+    authorizationUrl.hash ||
+    authorizationUrl.searchParams.get("response_type") !== "code" ||
+    authorizationUrl.searchParams.get("scope") !== "openid" ||
+    authorizationUrl.searchParams.get("state") !== result.state ||
+    authorizationUrl.searchParams.get("code_challenge_method") !== "S256" ||
+    !authorizationUrl.searchParams.get("client_id") ||
+    !authorizationUrl.searchParams.get("nonce")
   ) {
     throw new Error("중앙 로그인 서버가 올바르지 않은 응답을 반환했습니다.");
   }
@@ -466,6 +476,7 @@ export async function loginCentralGoogle(
   throwIfGoogleLoginAborted(signal);
   const state = randomUrlToken(32);
   const verifier = randomUrlToken(32);
+  const codeChallenge = await sha256(verifier);
   const callback = await localPost<{ redirect_uri: string; expires_at: number }>(
     "/api/central-login/callback/start",
     { state },
@@ -476,7 +487,7 @@ export async function loginCentralGoogle(
       "/v1/auth/google/native/start",
       {
         ...(await authDeviceBody()),
-        code_challenge: await sha256(verifier),
+        code_challenge: codeChallenge,
         redirect_uri: callback.redirect_uri,
         state,
       },
@@ -486,11 +497,18 @@ export async function loginCentralGoogle(
   if (started.state !== state) {
     throw new Error("중앙 로그인 서버가 요청 상태를 바꾸었습니다.");
   }
+  const authorizationUrl = new URL(started.authorization_url);
+  if (
+    authorizationUrl.searchParams.get("redirect_uri") !== callback.redirect_uri ||
+    authorizationUrl.searchParams.get("code_challenge") !== codeChallenge
+  ) {
+    throw new Error("중앙 로그인 서버가 현재 앱과 다른 로그인 요청을 만들었습니다.");
+  }
   status?.("시스템 브라우저에서 Google 계정을 선택해 주세요.");
   if (isDesktopWebview()) {
-    await openDesktopGoogleLogin(started.handoff_url);
+    await openDesktopCentralGoogleLogin(started.authorization_url);
   } else {
-    const popup = window.open(started.handoff_url, "_blank");
+    const popup = window.open(started.authorization_url, "_blank");
     if (!popup) {
       throw new Error("브라우저 팝업이 차단됐습니다. 팝업을 허용하고 다시 시도해 주세요.");
     }
@@ -505,9 +523,9 @@ export async function loginCentralGoogle(
     await waitForGoogleReturn(signal);
     const returned = await localPost<
       | { status: "pending"; expires_at: number }
+      | { status: "error"; error: string }
       | {
           status: "complete";
-          handoff_id: string;
           authorization_code: string;
         }
     >(
@@ -515,9 +533,9 @@ export async function loginCentralGoogle(
       { state },
       signal
     );
-    if (returned.status !== "complete") continue;
-    if (returned.handoff_id !== started.handoff_id) {
-      throw new Error("Google 로그인 응답이 현재 요청과 일치하지 않습니다.");
+    if (returned.status === "pending") continue;
+    if (returned.status === "error") {
+      throw new Error("Google 로그인이 취소됐습니다.");
     }
     const exchanged = await unsignedPost<{
       status: "complete";
@@ -526,7 +544,7 @@ export async function loginCentralGoogle(
     }>(
       "/v1/auth/google/native/exchange",
       {
-        handoff_id: returned.handoff_id,
+        handoff_id: started.handoff_id,
         authorization_code: returned.authorization_code,
         code_verifier: verifier,
       },

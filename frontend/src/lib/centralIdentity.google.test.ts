@@ -15,12 +15,16 @@ describe("central Google handoff protocol", () => {
     ).toThrow(/업데이트/);
   });
 
-  it("accepts a native handoff without exposing a confirmation or poll secret", () => {
+  it("accepts a native handoff that opens Google's standard authorization page", () => {
     expect(
       parseCentralGoogleHandoff({
         handoff_id: "goh_current",
-        handoff_url:
-          "https://central.example/auth/google#handoff=current&browser=secret",
+        authorization_url:
+          "https://accounts.google.com/o/oauth2/v2/auth?" +
+          "client_id=desktop-client&response_type=code&scope=openid&" +
+          "state=state_current_native_handoff_1234567890&" +
+          "nonce=nonce-current&code_challenge=challenge-current&" +
+          "code_challenge_method=S256",
         state: "state_current_native_handoff_1234567890",
         expires_at: 9_999_999_999,
       })
@@ -28,5 +32,16 @@ describe("central Google handoff protocol", () => {
       handoff_id: "goh_current",
       state: "state_current_native_handoff_1234567890",
     });
+  });
+
+  it("rejects a native handoff that still opens the Worker's custom login page", () => {
+    expect(() =>
+      parseCentralGoogleHandoff({
+        handoff_id: "goh_wrong_page",
+        authorization_url: "https://central.example/auth/google",
+        state: "state_current_native_handoff_1234567890",
+        expires_at: 9_999_999_999,
+      })
+    ).toThrow(/올바르지 않은/);
   });
 });

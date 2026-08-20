@@ -30,7 +30,13 @@ async function googleSigner(env) {
   return pair;
 }
 
-async function googleToken(pair, env, nonce, subject = "raw-google-subject-must-not-be-stored") {
+async function googleToken(
+  pair,
+  env,
+  nonce,
+  subject = "raw-google-subject-must-not-be-stored",
+  clientId = env.GOOGLE_CLIENT_ID
+) {
   const now = Math.floor(Date.now() / 1000);
   const header = bytesToBase64Url(
     utf8(
@@ -45,7 +51,7 @@ async function googleToken(pair, env, nonce, subject = "raw-google-subject-must-
     utf8(
       JSON.stringify({
         iss: "https://accounts.google.com",
-        aud: env.GOOGLE_CLIENT_ID,
+        aud: clientId,
         sub: subject,
         nonce,
         name: "Sensitive Google Name",
@@ -124,12 +130,8 @@ async function startNativeHandoff(env, device, deviceId) {
   });
   assert.equal(response.status, 201);
   const started = await payload(response);
-  const fragmentParams = new URLSearchParams(
-    new URL(started.handoff_url).hash.slice(1)
-  );
   return {
     ...started,
-    browserToken: fragmentParams.get("browser"),
     verifier,
     state,
   };
@@ -338,7 +340,7 @@ test("Google handoff page loads GIS before initialization and isolates its opene
   );
 });
 
-test("native Google handoff returns through loopback and requires the PKCE verifier", async () => {
+test("native Google handoff opens Google's account chooser and exchanges its PKCE code", async () => {
   const env = environment();
   const signer = await googleSigner(env);
   const device = await deviceKey();
@@ -350,59 +352,84 @@ test("native Google handoff returns through loopback and requires the PKCE verif
 
   assert.equal(started.confirmation_code, undefined);
   assert.equal(started.poll_token, undefined);
-  const challenge = await browserChallenge(env, started);
-  assert.equal(challenge.flow, "native");
-
-  const credential = await googleToken(signer, env, challenge.nonce);
-  const completed = await payload(
-    await request(env, "/v1/auth/google/native/complete", {
-      method: "POST",
-      body: JSON.stringify({
-        handoff_id: started.handoff_id,
-        browser_token: started.browserToken,
-        credential,
-      }),
-    })
+  const authorizationUrl = new URL(started.authorization_url);
+  assert.equal(authorizationUrl.origin, "https://accounts.google.com");
+  assert.equal(authorizationUrl.pathname, "/o/oauth2/v2/auth");
+  assert.equal(
+    authorizationUrl.searchParams.get("client_id"),
+    env.GOOGLE_DESKTOP_CLIENT_ID
   );
-  const callback = new URL(completed.redirect_url);
-  assert.equal(callback.origin, "http://127.0.0.1:43123");
-  assert.equal(callback.pathname, "/api/central-login/callback");
-  assert.equal(callback.searchParams.get("state"), started.state);
-  assert.ok(callback.searchParams.get("code"));
+  assert.equal(
+    authorizationUrl.searchParams.get("redirect_uri"),
+    "http://127.0.0.1:43123/api/central-login/callback"
+  );
+  assert.equal(authorizationUrl.searchParams.get("response_type"), "code");
+  assert.equal(authorizationUrl.searchParams.get("scope"), "openid");
+  assert.equal(authorizationUrl.searchParams.get("state"), started.state);
+  assert.equal(
+    authorizationUrl.searchParams.get("code_challenge_method"),
+    "S256"
+  );
+  assert.equal(authorizationUrl.searchParams.get("prompt"), "select_account");
+
+  const authorizationCode = "4/0-google-native-authorization-code_123456789";
 
   const wrongVerifier = await request(env, "/v1/auth/google/native/exchange", {
     method: "POST",
     body: JSON.stringify({
       handoff_id: started.handoff_id,
-      authorization_code: callback.searchParams.get("code"),
+      authorization_code: authorizationCode,
       code_verifier: `${started.verifier}wrong`,
     }),
   });
   assert.equal(wrongVerifier.status, 401);
 
-  const exchanged = await payload(
-    await request(env, "/v1/auth/google/native/exchange", {
+  const credential = await googleToken(
+    signer,
+    env,
+    authorizationUrl.searchParams.get("nonce"),
+    "raw-google-subject-must-not-be-stored",
+    env.GOOGLE_DESKTOP_CLIENT_ID
+  );
+  const originalFetch = globalThis.fetch;
+  globalThis.fetch = async (url, init) => {
+    assert.equal(String(url), "https://oauth2.googleapis.com/token");
+    const form = new URLSearchParams(String(init.body));
+    assert.equal(form.get("code"), authorizationCode);
+    assert.equal(form.get("client_id"), env.GOOGLE_DESKTOP_CLIENT_ID);
+    assert.equal(form.get("code_verifier"), started.verifier);
+    return new Response(JSON.stringify({ id_token: credential }), {
+      status: 200,
+      headers: { "content-type": "application/json" },
+    });
+  };
+  try {
+    const exchanged = await payload(
+      await request(env, "/v1/auth/google/native/exchange", {
+        method: "POST",
+        body: JSON.stringify({
+          handoff_id: started.handoff_id,
+          authorization_code: authorizationCode,
+          code_verifier: started.verifier,
+        }),
+      })
+    );
+    assert.equal(exchanged.status, "complete");
+    assert.equal(exchanged.person.identity_kind, "google");
+
+    const replay = await request(env, "/v1/auth/google/native/exchange", {
       method: "POST",
       body: JSON.stringify({
         handoff_id: started.handoff_id,
-        authorization_code: callback.searchParams.get("code"),
+        authorization_code: authorizationCode,
         code_verifier: started.verifier,
       }),
-    })
-  );
-  assert.equal(exchanged.status, "complete");
-  assert.equal(exchanged.person.identity_kind, "google");
-
-  const replay = await request(env, "/v1/auth/google/native/exchange", {
-    method: "POST",
-    body: JSON.stringify({
-      handoff_id: started.handoff_id,
-      authorization_code: callback.searchParams.get("code"),
-      code_verifier: started.verifier,
-    }),
-  });
-  assert.equal(replay.status, 409);
-  assert.equal((await replay.json()).error.code, "handoff_consumed");
+    });
+    assert.equal(replay.status, 409);
+    assert.equal((await replay.json()).error.code, "handoff_consumed");
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
 });
 
 test("native Google handoff rejects redirects outside the local app", async () => {

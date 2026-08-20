@@ -15,9 +15,11 @@ and invite credentials remain on each AgentsAssemble engine.
   code and revokes prior sessions for that device.
 - Google subjects are stored only as an HMAC keyed by `IDENTITY_PEPPER`; Google ID
   tokens, raw subjects, names, email addresses, and profile images are never persisted.
-- Desktop Google login returns through an exact loopback callback and exchanges a
-  one-time authorization code with PKCE. The browser URL alone cannot claim the
-  resulting central session, and users do not copy a confirmation code.
+- Desktop Google login opens Google's standard installed-app authorization page,
+  returns through an exact loopback callback, and exchanges the one-time Google
+  authorization code with PKCE. The browser URL alone cannot claim the resulting
+  central session, and users do not copy a confirmation code. Only the `openid`
+  scope is requested; profile, email, name, birthday, and contacts are not requested.
 - Signed sessions can revoke every other session or delete their central identity.
   Account deletion cascades through devices, sessions, recovery state, and owned
   server registrations.
@@ -39,13 +41,15 @@ wrangler d1 create agentsassemble-identity
 # Copy the database id into wrangler.toml.
 wrangler secret put RECOVERY_PEPPER
 wrangler secret put IDENTITY_PEPPER
-wrangler secret put GOOGLE_CLIENT_ID   # optional until Google login is configured
+wrangler secret put GOOGLE_CLIENT_ID           # web/manual handoff client
+wrangler secret put GOOGLE_DESKTOP_CLIENT_ID   # Google Desktop app OAuth client
 wrangler d1 migrations apply agentsassemble-identity --remote
 wrangler deploy
 ```
 
 Use independently generated 32-byte-or-longer values for both peppers. Do not reuse
 Cloudflare account API tokens, tunnel tokens, host tokens, or room credentials.
+The Desktop OAuth client is public and has no client secret in the app or Worker.
 
 `CENTRAL_ALLOWED_ORIGINS` is the exact comma-separated allowlist for trusted bundled
 client origins. Loopback HTTP origins are also accepted so the local desktop engine

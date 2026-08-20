@@ -80,6 +80,7 @@ export function environment(overrides = {}) {
     RECOVERY_PEPPER: "recovery-test-pepper-at-least-32-characters",
     IDENTITY_PEPPER: "identity-test-pepper-at-least-32-characters",
     GOOGLE_CLIENT_ID: "test-google-client.apps.googleusercontent.com",
+    GOOGLE_DESKTOP_CLIENT_ID: "test-google-desktop.apps.googleusercontent.com",
     SESSION_TTL_SECONDS: "3600",
     MAX_ENDPOINT_LEASE_SECONDS: "900",
     ALLOW_TRYCLOUDFLARE_ORIGINS: "false",
