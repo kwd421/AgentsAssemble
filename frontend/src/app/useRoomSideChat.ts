@@ -40,7 +40,7 @@ export function useRoomSideChat({ meetingId, enabled = true }: UseRoomSideChatOp
   const [events, setEvents] = useState<SideChatEvent[]>([]);
   const [error, setError] = useState<Error | null>(null);
   const [selectedThread, setSelectedThread] = useState<SideChatThreadContext | null>(null);
-  const [draftsByContext, setDraftsByContext] = useState<Record<string, string>>({});
+  const [draftsByScope, setDraftsByScope] = useState<Record<string, Record<string, string>>>({});
   const [acceptedScopeKey, setAcceptedScopeKey] = useState("");
   const acceptedScopeKeyRef = useRef("");
   const requestedScopeKeyRef = useRef("");
@@ -65,7 +65,6 @@ export function useRoomSideChat({ meetingId, enabled = true }: UseRoomSideChatOp
     setEvents([]);
     setError(null);
     setSelectedThread(null);
-    setDraftsByContext({});
     if (!requestedScopeKey) return undefined;
 
     acceptedScopeKeyRef.current = requestedScopeKey;
@@ -146,15 +145,18 @@ export function useRoomSideChat({ meetingId, enabled = true }: UseRoomSideChatOp
 
   const updateDraft = useCallback((key: string, value: string) => {
     if (!scopeAcceptsUpdates()) return;
-    setDraftsByContext((previous) => {
-      if ((previous[key] || "") === value) return previous;
-      const next = { ...previous };
+    const scopeKey = requestedScopeKeyRef.current;
+    if (!scopeKey) return;
+    setDraftsByScope((previous) => {
+      const current = previous[scopeKey] || {};
+      if ((current[key] || "") === value) return previous;
+      const next = { ...current };
       if (value) {
         next[key] = value;
       } else {
         delete next[key];
       }
-      return next;
+      return { ...previous, [scopeKey]: next };
     });
   }, [scopeAcceptsUpdates]);
 
@@ -180,7 +182,7 @@ export function useRoomSideChat({ meetingId, enabled = true }: UseRoomSideChatOp
     events: visibleEvents,
     error: scopeIsCurrent ? error : null,
     selectedThread: visibleSelectedThread,
-    draftsByContext: scopeIsCurrent ? draftsByContext : {},
+    draftsByContext: scopeIsCurrent ? draftsByScope[requestedScopeKey] || {} : {},
     sideChatEvents,
     threadEvents,
     threadSummaries,

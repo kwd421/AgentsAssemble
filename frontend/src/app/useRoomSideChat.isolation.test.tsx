@@ -75,9 +75,11 @@ describe("useRoomSideChat principal isolation", () => {
   it("clears messages, selected UI, and drafts before accepting another session in the same room", async () => {
     const userAFetch = deferred<{ events: SideChatEvent[] }>();
     const userBFetch = deferred<{ events: SideChatEvent[] }>();
+    const userAReturnFetch = deferred<{ events: SideChatEvent[] }>();
     apiMocks.fetchSideChat
       .mockReturnValueOnce(userAFetch.promise)
-      .mockReturnValueOnce(userBFetch.promise);
+      .mockReturnValueOnce(userBFetch.promise)
+      .mockReturnValueOnce(userAReturnFetch.promise);
     persistRoomGuestSession(session("session-a", "user-a"));
     const hook = renderHook(
       ({ renderVersion }: { renderVersion: number }) => {
@@ -126,6 +128,13 @@ describe("useRoomSideChat principal isolation", () => {
       "user-b-visible",
     ]);
     expect(hook.result.current.draftsByContext).toEqual({});
+
+    persistRoomGuestSession(session("session-a", "user-a"));
+    hook.rerender({ renderVersion: 2 });
+    await waitFor(() =>
+      expect(hook.result.current.draftsByContext).toEqual({ general: "user-a draft" })
+    );
+    expect(hook.result.current.events).toEqual([]);
   });
 
   it("does not fetch room data from a public or guest entrance without a valid room session", () => {
