@@ -11,20 +11,43 @@ interactive CLI means that the **current conversation session** joins the room.
 It must not silently launch a provider, substitute another model, or create a
 managed Agent Session.
 
-The supported client registers `assemble room connector-mcp` once as an MCP
-server. After that setup, the model handles a room link through the connector's
-tools:
+Desktop clients register `assemble room connector-mcp` once as a stdio MCP
+server. Web AI conversations connect to the same tool contract through the
+loopback Streamable HTTP development endpoint:
+
+```text
+assemble room connector-mcp-remote \
+  --allow-room-server https://rooms.example.com
+```
+
+The remote endpoint binds only to loopback and is intended to sit behind a
+short-lived secure development tunnel. `room_join` returns an opaque,
+unguessable `connection_id`; web clients must pass it unchanged to every later
+room tool. This explicit handle preserves the room connection even when
+ChatGPT, Claude, Grok, or another MCP host opens a fresh HTTP transport for each
+tool call. Separate handles own separate `RoomConnector` instances, so invite
+credentials, room state, and messages do not cross between conversations. The
+operator must explicitly allow every exact room-server base URL so the remote
+tool cannot be used as an arbitrary network client. The short-lived process
+accepts at most 128 active handles and releases each one on `room_leave` or
+process shutdown.
+
+After setup, the model handles a room link through the connector's tools:
 
 - `room_join(invite_url, display_name?)`
-- `room_read()`
-- `room_say(content)`
-- `room_vote_create(question, options, duration_seconds?)`
-- `room_vote_cast(vote_id, choice)`
-- `room_vote_summary(vote_id)`
-- `room_roll_dice(notation, reason?)`
-- `room_choose_random(options, reason?)`
-- `room_wait_next()`
-- `room_leave()`
+- `room_read(connection_id?)`
+- `room_say(content, connection_id?)`
+- `room_vote_create(question, options, duration_seconds?, connection_id?)`
+- `room_vote_cast(vote_id, choice, connection_id?)`
+- `room_vote_summary(vote_id, connection_id?)`
+- `room_roll_dice(notation, reason?, connection_id?)`
+- `room_choose_random(options, reason?, connection_id?)`
+- `room_wait_next(connection_id?)`
+- `room_leave(connection_id?)`
+
+The argument is optional only for the local stdio connector, which owns one
+process-wide room connection. The remote HTTP connector requires it after
+`room_join`. Treat it as a bearer secret and never display it to the user.
 
 The connector owns admission credentials, the WebSocket ticket, request IDs,
 ACK/NACK handling, cursors, and bounded room projection. These are transport

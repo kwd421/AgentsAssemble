@@ -5,13 +5,20 @@ import tempfile
 import threading
 import time
 import unittest
+from contextlib import asynccontextmanager
 from http.server import ThreadingHTTPServer
 from pathlib import Path
 from urllib.request import Request, urlopen
 
+import anyio
+import httpx
+from mcp import ClientSession
+from mcp.client.streamable_http import streamable_http_client
+
 from agentsassemble.application.room_connector import RoomConnector
 from agentsassemble.gui import _make_handler
 from agentsassemble.persistence.local.room.repository import RoomStore
+from agentsassemble.providers.room_connector_mcp import build_remote_room_connector_mcp
 from agentsassemble.web.room_client import connect_room_ws_with_ticket
 
 
@@ -267,6 +274,176 @@ class RoomConnectorTests(unittest.TestCase):
 
             left = connector.leave()
             self.assertEqual(left["status"], "left")
+
+    def test_remote_mcp_keeps_conversation_sessions_isolated(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            base, store = self._start_server(Path(temp_dir))
+            store.create_room("room-b", label="Room B")
+            invite_a = self._create_connector_invite(
+                base,
+                room_id="room-a",
+                agent_id="web-session-a",
+            )
+            invite_b = self._create_connector_invite(
+                base,
+                room_id="room-b",
+                agent_id="web-session-b",
+            )
+            server = build_remote_room_connector_mcp(
+                allowed_room_origins=[base],
+            )
+            self.addCleanup(server.close)
+
+            result = anyio.run(
+                self._exercise_isolated_remote_sessions,
+                server.streamable_http_app(),
+                invite_a,
+                invite_b,
+            )
+
+            self.assertEqual(result["room_a"], "room-a")
+            self.assertEqual(result["room_b"], "room-b")
+            self.assertTrue(result["connections_are_distinct"])
+            self.assertTrue(result["disallowed_join_rejected"])
+            self.assertTrue(result["missing_connection_rejected"])
+            self.assertEqual(result["messages_a"], ["message for A"])
+            self.assertEqual(result["messages_b"], ["message for B"])
+            self.assertEqual(
+                [
+                    str(event.get("content") or "")
+                    for event in store.read_events(
+                        "room-a",
+                        event_types=("message_final",),
+                    )
+                ],
+                ["message for A"],
+            )
+            self.assertEqual(
+                [
+                    str(event.get("content") or "")
+                    for event in store.read_events(
+                        "room-b",
+                        event_types=("message_final",),
+                    )
+                ],
+                ["message for B"],
+            )
+
+    def _create_connector_invite(
+        self,
+        base: str,
+        *,
+        room_id: str,
+        agent_id: str,
+    ) -> str:
+        request = Request(
+            f"{base}/api/room-invite/create",
+            data=json.dumps(
+                {
+                    "meeting_id": room_id,
+                    "agent_id": agent_id,
+                    "display_name": agent_id,
+                    "participant_type": "agent",
+                    "client_type": "browser",
+                    "max_uses": 1,
+                    "local_dev_preview": True,
+                }
+            ).encode("utf-8"),
+            headers={"Content-Type": "application/json"},
+            method="POST",
+        )
+        with urlopen(request, timeout=4) as response:
+            invite = json.loads(response.read().decode("utf-8"))
+        return f"{base}/join?token={invite['invite_token']}"
+
+    async def _exercise_isolated_remote_sessions(
+        self,
+        app,
+        invite_a: str,
+        invite_b: str,
+    ) -> dict[str, object]:
+        async with app.router.lifespan_context(app):
+            async with self._remote_mcp_session(app) as session_a:
+                disallowed = await session_a.call_tool(
+                    "room_join",
+                    {"invite_url": "http://127.0.0.1:9/join?token=not-used"},
+                )
+                join_a = await session_a.call_tool(
+                    "room_join",
+                    {"invite_url": invite_a},
+                )
+            async with self._remote_mcp_session(app) as session_b:
+                join_b = await session_b.call_tool(
+                    "room_join",
+                    {"invite_url": invite_b},
+                )
+
+            payload_a = dict(join_a.structuredContent or {})
+            payload_b = dict(join_b.structuredContent or {})
+            connection_a = str(payload_a["connection_id"])
+            connection_b = str(payload_b["connection_id"])
+            missing_connection = await self._call_remote_once(app, "room_read", {})
+            await self._call_remote_once(
+                app,
+                "room_say",
+                {"connection_id": connection_a, "content": "message for A"},
+            )
+            await self._call_remote_once(
+                app,
+                "room_say",
+                {"connection_id": connection_b, "content": "message for B"},
+            )
+            read_a = await self._call_remote_once(
+                app,
+                "room_read",
+                {"connection_id": connection_a},
+            )
+            read_b = await self._call_remote_once(
+                app,
+                "room_read",
+                {"connection_id": connection_b},
+            )
+            await self._call_remote_once(
+                app,
+                "room_leave",
+                {"connection_id": connection_a},
+            )
+            await self._call_remote_once(
+                app,
+                "room_leave",
+                {"connection_id": connection_b},
+            )
+
+            state_a = dict(read_a.structuredContent or {})
+            state_b = dict(read_b.structuredContent or {})
+            return {
+                "room_a": payload_a.get("room_id"),
+                "room_b": payload_b.get("room_id"),
+                "connections_are_distinct": connection_a != connection_b,
+                "disallowed_join_rejected": disallowed.isError,
+                "missing_connection_rejected": missing_connection.isError,
+                "messages_a": [item["content"] for item in state_a["messages"]],
+                "messages_b": [item["content"] for item in state_b["messages"]],
+            }
+
+    async def _call_remote_once(self, app, tool: str, arguments: dict[str, object]):
+        async with self._remote_mcp_session(app) as session:
+            return await session.call_tool(tool, arguments)
+
+    @asynccontextmanager
+    async def _remote_mcp_session(self, app):
+        transport = httpx.ASGITransport(app=app)
+        async with httpx.AsyncClient(
+            transport=transport,
+            base_url="http://127.0.0.1:8000",
+        ) as http_client:
+            async with streamable_http_client(
+                "http://127.0.0.1:8000/mcp",
+                http_client=http_client,
+            ) as (read_stream, write_stream, _):
+                async with ClientSession(read_stream, write_stream) as session:
+                    await session.initialize()
+                    yield session
 
 
 if __name__ == "__main__":

@@ -183,6 +183,17 @@ def run_room_command(args: argparse.Namespace, *, runtime: RoomCliRuntime) -> in
         serve_room_connector_mcp()
         return 0
 
+    if args.room_command == "connector-mcp-remote":
+        from agentsassemble.providers.room_connector_mcp import (
+            serve_remote_room_connector_mcp,
+        )
+
+        serve_remote_room_connector_mcp(
+            allowed_room_origins=args.allowed_room_origins,
+            port=args.port,
+        )
+        return 0
+
     if args.room_command == "smoke":
         live_cli_providers = [
             runtime.clean_text(provider, limit=128)

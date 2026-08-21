@@ -6,6 +6,7 @@ import json
 import secrets
 import threading
 from collections import deque
+from collections.abc import Iterable
 from urllib.error import HTTPError
 from urllib.parse import parse_qs, urlsplit, urlunsplit
 from urllib.request import Request, urlopen
@@ -43,7 +44,11 @@ class RoomConnector:
     process or creates a managed Agent Session.
     """
 
-    def __init__(self) -> None:
+    def __init__(
+        self,
+        *,
+        allowed_server_urls: Iterable[str] | None = None,
+    ) -> None:
         self._condition = threading.Condition(threading.RLock())
         self._client: WsRoomClient | None = None
         self._receiver: threading.Thread | None = None
@@ -67,6 +72,14 @@ class RoomConnector:
         self._responses: dict[str, dict[str, object]] = {}
         self._last_seq = 0
         self._device_token = f"room-connector-{secrets.token_urlsafe(24)}"
+        self._allowed_server_urls = (
+            frozenset(
+                normalize_room_server_url(server_url)
+                for server_url in allowed_server_urls
+            )
+            if allowed_server_urls is not None
+            else None
+        )
 
     def join(
         self,
@@ -83,6 +96,13 @@ class RoomConnector:
                     "This connector is already in a room. Leave it before joining another."
                 )
         server_url, invite_token = parse_room_invite_url(clean_invite_url)
+        if (
+            self._allowed_server_urls is not None
+            and server_url not in self._allowed_server_urls
+        ):
+            raise RoomConnectorError(
+                "This remote connector is not allowed to contact that room server."
+            )
         joined = join_room_session(
             server_url,
             invite_token,
@@ -490,6 +510,20 @@ def parse_room_invite_url(value: str) -> tuple[str, str]:
     return server_url, token
 
 
+def normalize_room_server_url(value: str) -> str:
+    try:
+        parsed = urlsplit(str(value or "").strip())
+    except ValueError:
+        raise ValueError("Room server URL is invalid.") from None
+    if parsed.scheme not in {"http", "https"} or not parsed.netloc:
+        raise ValueError("Room server URL must be HTTP(S).")
+    if parsed.query or parsed.fragment:
+        raise ValueError("Room server URL cannot contain a query or fragment.")
+    return urlunsplit(
+        (parsed.scheme, parsed.netloc, parsed.path.rstrip("/"), "", ""),
+    )
+
+
 def _message_events(message: dict[str, object]) -> list[dict[str, object]]:
     events = message.get("events")
     if not isinstance(events, list):
@@ -513,5 +547,6 @@ __all__ = [
     "RoomConnector",
     "RoomConnectorError",
     "RoomConnectorRejected",
+    "normalize_room_server_url",
     "parse_room_invite_url",
 ]

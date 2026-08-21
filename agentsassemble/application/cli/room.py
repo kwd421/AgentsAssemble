@@ -96,6 +96,28 @@ def register_room_parsers(subparsers: argparse._SubParsersAction) -> None:
             "this command once in a supported app or interactive CLI."
         ),
     )
+    room_connector_remote = room_subparsers.add_parser(
+        "connector-mcp-remote",
+        help=(
+            "Serve the current-session Room Connector as a loopback Streamable "
+            "HTTP MCP endpoint for a secure development tunnel."
+        ),
+    )
+    room_connector_remote.add_argument(
+        "--port",
+        type=parse_positive_int,
+        default=8788,
+    )
+    room_connector_remote.add_argument(
+        "--allow-room-server",
+        action="append",
+        required=True,
+        dest="allowed_room_origins",
+        help=(
+            "Exact HTTP(S) room server base URL this connector may contact; "
+            "repeat to allow more than one server."
+        ),
+    )
 
     for room_command in ("join", "resume"):
         room_join = room_subparsers.add_parser(
