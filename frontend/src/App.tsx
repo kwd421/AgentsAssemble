@@ -1338,14 +1338,18 @@ export default function App() {
           remoteClientPacketPreview={inviteRemoteClientPacket.preview}
           remoteClientPacketFriendName={inviteRemoteClientPacket.friendName}
           onClose={closeInviteModal}
-          onGenerateSecureInvite={() =>
+          onGenerateSecureInvite={(options, startTunnelIfNeeded) =>
             void generateInviteLink(
               inviteModalRoom,
-              inviteModalAppearance?.inviteScope || inviteModalRoom.inviteScope || "room"
+              inviteModalAppearance?.inviteScope || inviteModalRoom.inviteScope || "room",
+              options,
+              startTunnelIfNeeded
             )
           }
           onCopy={() => void copyInviteLink(inviteModalRoom)}
-          onGenerateAgentInvite={() => void generateAgentInviteLink(inviteModalRoom)}
+          onGenerateAgentInvite={(startTunnelIfNeeded) =>
+            void generateAgentInviteLink(inviteModalRoom, startTunnelIfNeeded)
+          }
           onCopyAgentInvite={() => void copyAgentInviteLink()}
           onGenerateOperatorPairing={() => void generateOperatorPairingLink(inviteModalRoom)}
           onCopyOperatorPairing={() => void copyOperatorPairingLink()}
@@ -1357,11 +1361,12 @@ export default function App() {
           onStartTunnel={() => void startInviteTunnel()}
           onStopTunnel={() => void stopInviteTunnel()}
           onCopyRemoteClientPacket={() => void copyRemoteClientPacket()}
-          onInviteFriend={(friend) =>
+          onInviteFriend={(friend, startTunnelIfNeeded) =>
             void inviteFriendToRoom({
               friend,
               room: inviteModalRoom,
               appearance: inviteModalAppearance,
+              startTunnelIfNeeded,
             })
           }
         />

@@ -30,14 +30,16 @@ cleanup.
 
 ### Explicit public-tunnel consent
 
-- Separate “create invite” from “open this room to the internet”.
-- Show the exposure method, scope, expiry, and stop control before activation.
-- Keep local-only invite generation local by default.
-- Confirm that closing public access invalidates or clearly expires the public
-  path.
+- Completed 2026-08-21: invite creation no longer opens a public tunnel without
+  an explicit confirmation. The modal shows whether external access is open,
+  provides a stop control, exposes selectable person-invite limits and expiry,
+  and labels external AI links as one-use and one-hour.
+- Closing external access removes the active public route while the local room
+  continues running.
 
-Exit evidence: no public tunnel starts until the user confirms the exact
-exposure action, and the UI proves when it is closed.
+Exit evidence recorded in `FRONTEND_FEATURE_MATRIX.md`: the live disposable
+browser smoke observed confirmation, Quick Tunnel creation, link generation,
+and return to local-only state.
 
 ### Honest feature labelling
 

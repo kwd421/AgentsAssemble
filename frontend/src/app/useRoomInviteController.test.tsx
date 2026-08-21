@@ -198,6 +198,23 @@ describe("useRoomInviteController", () => {
     );
   });
 
+  it("does not expose the local server when invite generation lacks explicit consent", async () => {
+    apiMocks.fetchPublicInviteStatus.mockResolvedValue({
+      ...publicStatus,
+      public_url: "",
+      tunnel: { available: true, running: false, phase: "stopped" },
+    });
+    const hook = renderInviteController();
+
+    await act(async () => {
+      await hook.result.current.generateAgentInvite(room);
+    });
+
+    expect(apiMocks.startPublicInviteTunnel).not.toHaveBeenCalled();
+    expect(apiMocks.createRoomInvite).not.toHaveBeenCalled();
+    expect(hook.result.current.copyStatus).toContain("외부 접속");
+  });
+
   it("regenerates a stale host token and retries secure invite creation once", async () => {
     let storedToken = "stale-token";
     apiMocks.loadHostToken.mockImplementation(() => storedToken);
@@ -233,6 +250,8 @@ describe("useRoomInviteController", () => {
         agentId: "guest",
         displayName: "Guest",
         inviteScope: "room",
+        ttlSeconds: 604800,
+        maxUses: 5,
       });
     });
 
@@ -240,6 +259,9 @@ describe("useRoomInviteController", () => {
     expect(apiMocks.clearHostToken).toHaveBeenCalledTimes(1);
     expect(apiMocks.generatePublicInviteHostToken).toHaveBeenCalledTimes(1);
     expect(apiMocks.saveHostToken).toHaveBeenCalledWith("fresh-token");
+    expect(apiMocks.createRoomInvite).toHaveBeenLastCalledWith(
+      expect.objectContaining({ ttlSeconds: 604800, maxUses: 5 })
+    );
     expect(storedToken).toBe("fresh-token");
     expect(hook.result.current.secureInviteUrl).toBe(
       "https://room.example.com/join?token=token-1"
