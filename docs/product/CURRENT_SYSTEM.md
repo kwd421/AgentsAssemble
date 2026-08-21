@@ -953,6 +953,8 @@ the browser-visible flow rather than proving only that a backend function works.
 | `docs/product/PACKAGE_MAP.md` | generated current inventory | Moving modules, checking ownership/import direction, or removing compatibility paths |
 | `docs/product/PACKAGE_CYCLES.md` | generated current cycle report | Changing imports around GUI observability, release health, resident providers, or live-agent runner |
 | `docs/product/CODEBASE_MAP.html` / `.json` | generated interactive codebase map | Orienting in the codebase, finding module ownership, or exploring package dependencies |
+| `docs/product/FRONTEND_FEATURE_MATRIX.md` | current frontend inventory and verification record | Checking whether a visible workflow is implemented or planning a frontend release smoke |
+| `docs/product/FRONTEND_ROADMAP.md` | prioritized frontend future work | Selecting the next frontend slice after consulting the current inventory |
 | `docs/live-cli-room-current-architecture.md` | current implementation | Changing canonical room protocol, state, lifecycle, or provider bridge |
 | `docs/product/OPERATING_MODEL.md` | current detailed policy | Changing security, memory, official-record, or mode boundaries |
 | `docs/product/RUNTIME_OWNERSHIP.md` | current ownership map | Changing provider process, Agent Session, recovery, or legacy resident ownership |
