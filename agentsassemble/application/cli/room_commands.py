@@ -9,7 +9,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Callable, Collection
 
-from agentsassemble.application.agent_sessions import clean_agent_session_provider_kind
+from agentsassemble.providers.codex_app_server import clean_agent_session_provider_kind
 
 
 JsonObject = dict[str, Any]

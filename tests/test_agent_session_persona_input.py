@@ -2,7 +2,6 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from agentsassemble.application.agent_sessions import resume_agent_session_payload
 from agentsassemble.persistence.local.room.repository import RoomStore
 from agentsassemble.persona_cards import PersonaCard, save_persona_card
 from agentsassemble.room.turn_context import build_room_turn_packet
@@ -22,16 +21,23 @@ class AgentSessionPersonaInputTests(unittest.TestCase):
             )
             store = RoomStore(output_root)
             store.create_room("room-a", label="Night Council")
-            resume_agent_session_payload(
-                output_root,
+            store.upsert_participant(
+                "room-a",
                 {
-                    "room_id": "room-a",
-                    "agent_id": "agent-a",
-                    "session_id": "session-a",
+                    "participant_id": "agent-a",
                     "display_name": "Guide",
-                    "provider_kind": "deepseek_api",
+                    "participant_type": "agent",
+                    "status": "joined",
                 },
-                repository=store,
+            )
+            store.upsert_session(
+                "room-a",
+                {
+                    "session_id": "session-a",
+                    "participant_id": "agent-a",
+                    "provider_kind": "deepseek_api",
+                    "status": "attached",
+                },
             )
             store.upsert_session(
                 "room-a",

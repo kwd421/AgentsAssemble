@@ -3,52 +3,12 @@
 # Update an entry only when its compatibility contract or measured caller baseline changes.
 
 [[shim]]
-filename = "agent_sessions.py"
-replacement_import = "agentsassemble.application.agent_sessions"
-introduced_in = "Milestone 7.4 Agent Session application package"
-removal_gate = "No direct imports or monkeypatch targets use agentsassemble.agent_sessions for one compatibility window."
-export_policy = "historical-import-compatibility"
-allowed_callers = ["tests/gui_server_test_support.py", "tests/test_agent_session_room_store.py", "tests/test_gui_room_repository_injection.py"]
-
-[[shim]]
-filename = "antigravity_resident.py"
-replacement_import = "agentsassemble.providers.antigravity_resident"
-introduced_in = "Milestone 5.23 Antigravity resident adapter move"
-removal_gate = "No direct imports use agentsassemble.antigravity_resident for one compatibility window."
-export_policy = "historical-import-compatibility"
-allowed_callers = []
-
-[[shim]]
 filename = "application_transaction.py"
 replacement_import = "agentsassemble.application.transaction"
 introduced_in = "Milestone 4.5 application package bootstrap"
 removal_gate = "No direct imports use agentsassemble.application_transaction for one compatibility window."
 export_policy = "historical-import-compatibility"
 allowed_callers = []
-
-[[shim]]
-filename = "artifact_packets.py"
-replacement_import = "agentsassemble.legacy.meeting.support.artifact_packets"
-introduced_in = "Milestone 6.71 legacy meeting support package"
-removal_gate = "No direct imports or patches use agentsassemble.artifact_packets for one compatibility window."
-export_policy = "historical-import-compatibility"
-allowed_callers = ["tests/test_delegate_packets.py"]
-
-[[shim]]
-filename = "artifact_public.py"
-replacement_import = "agentsassemble.legacy.meeting.support.artifact_public"
-introduced_in = "Milestone 6.71 legacy meeting support package"
-removal_gate = "No direct imports or patches use agentsassemble.artifact_public for one compatibility window."
-export_policy = "historical-import-compatibility"
-allowed_callers = []
-
-[[shim]]
-filename = "artifacts.py"
-replacement_import = "agentsassemble.legacy.meeting.support.artifacts"
-introduced_in = "Milestone 6.71 legacy meeting support package"
-removal_gate = "No direct imports or patches use agentsassemble.artifacts for one compatibility window."
-export_policy = "historical-import-compatibility"
-allowed_callers = ["tests/test_task_scope_report.py"]
 
 [[shim]]
 filename = "attachments.py"
@@ -91,14 +51,6 @@ export_policy = "historical-import-compatibility"
 allowed_callers = ["tests/test_canonical_room_benchmark.py"]
 
 [[shim]]
-filename = "claude_resident.py"
-replacement_import = "agentsassemble.providers.claude_resident"
-introduced_in = "Milestone 5.19 Claude resident TUI move"
-removal_gate = "No direct imports use agentsassemble.claude_resident for one compatibility window."
-export_policy = "historical-import-compatibility"
-allowed_callers = []
-
-[[shim]]
 filename = "claude_transcript.py"
 replacement_import = "agentsassemble.providers.claude_transcript"
 introduced_in = "Milestone 5.18 Claude transcript parser move"
@@ -115,58 +67,10 @@ export_policy = "historical-import-compatibility"
 allowed_callers = []
 
 [[shim]]
-filename = "cli_diagnostics.py"
-replacement_import = "agentsassemble.diagnostics.cli"
-introduced_in = "Milestone 7.5 diagnostic smoke package"
-removal_gate = "No direct imports use agentsassemble.cli_diagnostics for one compatibility window."
-export_policy = "historical-import-compatibility"
-allowed_callers = ["agentsassemble/cli.py"]
-
-[[shim]]
 filename = "cli_http_errors.py"
 replacement_import = "agentsassemble.web.cli_errors"
 introduced_in = "Milestone 6.64 retained HTTP ownership wave"
 removal_gate = "No direct imports use agentsassemble.cli_http_errors for one compatibility window."
-export_policy = "historical-import-compatibility"
-allowed_callers = ["tests/test_cli_timeout_session_ensure.py"]
-
-[[shim]]
-filename = "cli_legacy_live_agent_format.py"
-replacement_import = "agentsassemble.legacy.live_agent.cli.command_format"
-introduced_in = "Milestone 6.69 CLI diagnostics ownership wave"
-removal_gate = "No direct imports or patches use agentsassemble.cli_legacy_live_agent_format for one compatibility window."
-export_policy = "historical-import-compatibility"
-allowed_callers = ["agentsassemble/cli.py"]
-
-[[shim]]
-filename = "cli_legacy_live_agent_processes.py"
-replacement_import = "agentsassemble.legacy.live_agent.cli.process_commands"
-introduced_in = "Milestone 6.69 CLI diagnostics ownership wave"
-removal_gate = "No direct imports or patches use agentsassemble.cli_legacy_live_agent_processes for one compatibility window."
-export_policy = "historical-import-compatibility"
-allowed_callers = ["agentsassemble/cli.py"]
-
-[[shim]]
-filename = "cli_legacy_live_agent_sessions.py"
-replacement_import = "agentsassemble.legacy.live_agent.cli.session_commands"
-introduced_in = "Milestone 6.69 CLI diagnostics ownership wave"
-removal_gate = "No direct imports or patches use agentsassemble.cli_legacy_live_agent_sessions for one compatibility window."
-export_policy = "historical-import-compatibility"
-allowed_callers = ["agentsassemble/cli.py"]
-
-[[shim]]
-filename = "cli_legacy_live_agent_smoke.py"
-replacement_import = "agentsassemble.legacy.live_agent.cli.smoke_commands"
-introduced_in = "Milestone 6.69 CLI diagnostics ownership wave"
-removal_gate = "No direct imports or patches use agentsassemble.cli_legacy_live_agent_smoke for one compatibility window."
-export_policy = "historical-import-compatibility"
-allowed_callers = ["agentsassemble/cli.py"]
-
-[[shim]]
-filename = "cli_parser_common.py"
-replacement_import = "agentsassemble.application.cli.common"
-introduced_in = "Milestone 7.3 CLI parser package"
-removal_gate = "No direct imports use agentsassemble.cli_parser_common for one compatibility window."
 export_policy = "historical-import-compatibility"
 allowed_callers = []
 
@@ -175,14 +79,6 @@ filename = "cli_parser_core.py"
 replacement_import = "agentsassemble.application.cli.core"
 introduced_in = "Milestone 7.3 CLI parser package"
 removal_gate = "No direct imports use agentsassemble.cli_parser_core for one compatibility window."
-export_policy = "historical-import-compatibility"
-allowed_callers = []
-
-[[shim]]
-filename = "cli_parser_live_agent.py"
-replacement_import = "agentsassemble.legacy.live_agent.cli.parser"
-introduced_in = "Milestone 7.3 CLI parser package"
-removal_gate = "No direct imports use agentsassemble.cli_parser_live_agent for one compatibility window."
 export_policy = "historical-import-compatibility"
 allowed_callers = []
 
@@ -203,14 +99,6 @@ export_policy = "historical-import-compatibility"
 allowed_callers = []
 
 [[shim]]
-filename = "cli_parser_sessions.py"
-replacement_import = "agentsassemble.legacy.live_agent.cli.sessions"
-introduced_in = "Milestone 7.3 CLI parser package"
-removal_gate = "No direct imports use agentsassemble.cli_parser_sessions for one compatibility window."
-export_policy = "historical-import-compatibility"
-allowed_callers = []
-
-[[shim]]
 filename = "codex_app_server_live_runtime.py"
 replacement_import = "agentsassemble.providers.codex_app_server_live"
 introduced_in = "Milestone 5.21 Codex app-server live wrapper move"
@@ -227,28 +115,12 @@ export_policy = "historical-import-compatibility"
 allowed_callers = []
 
 [[shim]]
-filename = "codex_resident.py"
-replacement_import = "agentsassemble.providers.codex_resident"
-introduced_in = "Milestone 5.22 Codex resident adapter move"
-removal_gate = "No direct imports use agentsassemble.codex_resident for one compatibility window."
-export_policy = "historical-import-compatibility"
-allowed_callers = []
-
-[[shim]]
 filename = "codex_session_ids.py"
 replacement_import = "agentsassemble.providers.codex_session_ids"
 introduced_in = "Milestone 5.17 Codex provider parser move"
 removal_gate = "No direct imports use agentsassemble.codex_session_ids for one compatibility window."
 export_policy = "historical-import-compatibility"
 allowed_callers = []
-
-[[shim]]
-filename = "codex_sessions.py"
-replacement_import = "agentsassemble.legacy.live_agent.codex_sessions"
-introduced_in = "Milestone 6.68 provider support ownership wave"
-removal_gate = "No direct imports or patches use agentsassemble.codex_sessions for one compatibility window."
-export_policy = "historical-import-compatibility"
-allowed_callers = ["tests/test_codex_sessions.py"]
 
 [[shim]]
 filename = "codex_stream.py"
@@ -259,30 +131,6 @@ export_policy = "historical-import-compatibility"
 allowed_callers = []
 
 [[shim]]
-filename = "cursor_resident.py"
-replacement_import = "agentsassemble.providers.cursor_resident"
-introduced_in = "Milestone 5.25 Cursor resident adapter move"
-removal_gate = "No direct imports use agentsassemble.cursor_resident for one compatibility window."
-export_policy = "historical-import-compatibility"
-allowed_callers = []
-
-[[shim]]
-filename = "decision_gate.py"
-replacement_import = "agentsassemble.legacy.meeting.support.decision_gate"
-introduced_in = "Milestone 6.71 legacy meeting support package"
-removal_gate = "No direct imports or patches use agentsassemble.decision_gate for one compatibility window."
-export_policy = "historical-import-compatibility"
-allowed_callers = ["tests/test_decision_gate.py"]
-
-[[shim]]
-filename = "decision_status.py"
-replacement_import = "agentsassemble.legacy.meeting.support.decision_status"
-introduced_in = "Milestone 6.71 legacy meeting support package"
-removal_gate = "No direct imports or patches use agentsassemble.decision_status for one compatibility window."
-export_policy = "historical-import-compatibility"
-allowed_callers = ["tests/test_decision_status.py"]
-
-[[shim]]
 filename = "deepseek_runtime.py"
 replacement_import = "agentsassemble.providers.deepseek"
 introduced_in = "Milestone 5.7 DeepSeek runtime move"
@@ -291,28 +139,12 @@ export_policy = "historical-import-compatibility"
 allowed_callers = []
 
 [[shim]]
-filename = "delegate_packets.py"
-replacement_import = "agentsassemble.legacy.meeting.support.delegate_packets"
-introduced_in = "Milestone 6.71 legacy meeting support package"
-removal_gate = "No direct imports or patches use agentsassemble.delegate_packets for one compatibility window."
-export_policy = "historical-import-compatibility"
-allowed_callers = ["tests/test_delegate_packets.py"]
-
-[[shim]]
 filename = "diagnostic_report_projection.py"
 replacement_import = "agentsassemble.diagnostics.report_projection"
 introduced_in = "Milestone 7.1 diagnostic projection package"
 removal_gate = "No direct imports use agentsassemble.diagnostic_report_projection for one compatibility window."
 export_policy = "historical-import-compatibility"
 allowed_callers = []
-
-[[shim]]
-filename = "evidence.py"
-replacement_import = "agentsassemble.legacy.meeting.support.evidence"
-introduced_in = "Milestone 6.71 legacy meeting support package"
-removal_gate = "No direct imports or patches use agentsassemble.evidence for one compatibility window."
-export_policy = "historical-import-compatibility"
-allowed_callers = ["tests/test_evidence_gate.py"]
 
 [[shim]]
 filename = "frontend_runtime.py"
@@ -331,236 +163,12 @@ export_policy = "historical-import-compatibility"
 allowed_callers = []
 
 [[shim]]
-filename = "grok_resident.py"
-replacement_import = "agentsassemble.providers.grok_resident"
-introduced_in = "Milestone 5.24 Grok resident adapter move"
-removal_gate = "No direct imports use agentsassemble.grok_resident for one compatibility window."
-export_policy = "historical-import-compatibility"
-allowed_callers = []
-
-[[shim]]
-filename = "gui_application.py"
-replacement_import = "agentsassemble.application.gui"
-introduced_in = "Milestone 4.5 application package bootstrap"
-removal_gate = "No direct imports use agentsassemble.gui_application for one compatibility window."
-export_policy = "historical-import-compatibility"
-allowed_callers = []
-
-[[shim]]
 filename = "gui_attachment_http.py"
 replacement_import = "agentsassemble.web.routes.attachments"
 introduced_in = "Milestone 4.6 current web route package"
 removal_gate = "No direct imports use agentsassemble.gui_attachment_http for one compatibility window."
 export_policy = "historical-import-compatibility"
 allowed_callers = []
-
-[[shim]]
-filename = "gui_legacy_application.py"
-replacement_import = "agentsassemble.legacy.gui_application"
-introduced_in = "Milestone 7.2 legacy GUI composition package"
-removal_gate = "No direct imports use agentsassemble.gui_legacy_application for one compatibility window."
-export_policy = "historical-import-compatibility"
-allowed_callers = []
-
-[[shim]]
-filename = "gui_legacy_codex_session_http.py"
-replacement_import = "agentsassemble.legacy.live_agent.http.codex_session"
-introduced_in = "Milestone 6.64 retained HTTP ownership wave"
-removal_gate = "No direct imports use agentsassemble.gui_legacy_codex_session_http for one compatibility window."
-export_policy = "historical-import-compatibility"
-allowed_callers = ["agentsassemble/gui.py"]
-
-[[shim]]
-filename = "gui_legacy_live_agent_discovery_http.py"
-replacement_import = "agentsassemble.legacy.live_agent.http.discovery"
-introduced_in = "Milestone 6.53 legacy resident discovery HTTP move"
-removal_gate = "No direct imports use agentsassemble.gui_legacy_live_agent_discovery_http for one compatibility window."
-export_policy = "historical-import-compatibility"
-allowed_callers = []
-
-[[shim]]
-filename = "gui_legacy_live_agent_engagement_http.py"
-replacement_import = "agentsassemble.legacy.live_agent.http.engagement"
-introduced_in = "Milestone 6.44 legacy resident engagement HTTP move"
-removal_gate = "No direct imports use agentsassemble.gui_legacy_live_agent_engagement_http for one compatibility window."
-export_policy = "historical-import-compatibility"
-allowed_callers = []
-
-[[shim]]
-filename = "gui_legacy_live_agent_join_brief_http.py"
-replacement_import = "agentsassemble.legacy.live_agent.http.join_brief"
-introduced_in = "Milestone 6.46 legacy resident join-brief HTTP move"
-removal_gate = "No direct imports use agentsassemble.gui_legacy_live_agent_join_brief_http for one compatibility window."
-export_policy = "historical-import-compatibility"
-allowed_callers = []
-
-[[shim]]
-filename = "gui_legacy_live_agent_official_reply_http.py"
-replacement_import = "agentsassemble.legacy.live_agent.http.official_reply"
-introduced_in = "Milestone 6.48 legacy resident official-reply HTTP move"
-removal_gate = "No direct imports use agentsassemble.gui_legacy_live_agent_official_reply_http for one compatibility window."
-export_policy = "historical-import-compatibility"
-allowed_callers = []
-
-[[shim]]
-filename = "gui_legacy_live_agent_preflight_http.py"
-replacement_import = "agentsassemble.legacy.live_agent.http.preflight"
-introduced_in = "Milestone 6.54 legacy resident preflight HTTP move"
-removal_gate = "No direct imports use agentsassemble.gui_legacy_live_agent_preflight_http for one compatibility window."
-export_policy = "historical-import-compatibility"
-allowed_callers = []
-
-[[shim]]
-filename = "gui_legacy_live_agent_presence_http.py"
-replacement_import = "agentsassemble.legacy.live_agent.http.presence"
-introduced_in = "Milestone 6.51 legacy resident presence HTTP move"
-removal_gate = "No direct imports use agentsassemble.gui_legacy_live_agent_presence_http for one compatibility window."
-export_policy = "historical-import-compatibility"
-allowed_callers = []
-
-[[shim]]
-filename = "gui_legacy_live_agent_probe_http.py"
-replacement_import = "agentsassemble.legacy.live_agent.http.probe"
-introduced_in = "Milestone 6.49 legacy resident probe HTTP move"
-removal_gate = "No direct imports use agentsassemble.gui_legacy_live_agent_probe_http for one compatibility window."
-export_policy = "historical-import-compatibility"
-allowed_callers = []
-
-[[shim]]
-filename = "gui_legacy_live_agent_process_http.py"
-replacement_import = "agentsassemble.legacy.live_agent.http.process"
-introduced_in = "Milestone 6.52 legacy resident process HTTP move"
-removal_gate = "No direct imports use agentsassemble.gui_legacy_live_agent_process_http for one compatibility window."
-export_policy = "historical-import-compatibility"
-allowed_callers = []
-
-[[shim]]
-filename = "gui_legacy_live_agent_read_http.py"
-replacement_import = "agentsassemble.legacy.live_agent.http.read"
-introduced_in = "Milestone 6.58 legacy resident read HTTP move"
-removal_gate = "No direct imports use agentsassemble.gui_legacy_live_agent_read_http for one compatibility window."
-export_policy = "historical-import-compatibility"
-allowed_callers = []
-
-[[shim]]
-filename = "gui_legacy_live_agent_readiness_http.py"
-replacement_import = "agentsassemble.legacy.live_agent.http.readiness"
-introduced_in = "Milestone 6.55 legacy resident readiness HTTP move"
-removal_gate = "No direct imports use agentsassemble.gui_legacy_live_agent_readiness_http for one compatibility window."
-export_policy = "historical-import-compatibility"
-allowed_callers = []
-
-[[shim]]
-filename = "gui_legacy_live_agent_room_session_http.py"
-replacement_import = "agentsassemble.legacy.live_agent.http.room_session"
-introduced_in = "Milestone 6.45 legacy resident room-session HTTP move"
-removal_gate = "No direct imports use agentsassemble.gui_legacy_live_agent_room_session_http for one compatibility window."
-export_policy = "historical-import-compatibility"
-allowed_callers = []
-
-[[shim]]
-filename = "gui_legacy_live_agent_self_managed_http.py"
-replacement_import = "agentsassemble.legacy.live_agent.http.self_managed"
-introduced_in = "Milestone 6.50 legacy self-managed resident HTTP move"
-removal_gate = "No direct imports use agentsassemble.gui_legacy_live_agent_self_managed_http for one compatibility window."
-export_policy = "historical-import-compatibility"
-allowed_callers = []
-
-[[shim]]
-filename = "gui_legacy_live_agent_session_http.py"
-replacement_import = "agentsassemble.legacy.live_agent.http.session"
-introduced_in = "Milestone 6.57 legacy resident session HTTP move"
-removal_gate = "No direct imports use agentsassemble.gui_legacy_live_agent_session_http for one compatibility window."
-export_policy = "historical-import-compatibility"
-allowed_callers = []
-
-[[shim]]
-filename = "gui_legacy_live_agent_session_run_http.py"
-replacement_import = "agentsassemble.legacy.live_agent.http.session_run"
-introduced_in = "Milestone 6.56 legacy resident session-run HTTP move"
-removal_gate = "No direct imports use agentsassemble.gui_legacy_live_agent_session_run_http for one compatibility window."
-export_policy = "historical-import-compatibility"
-allowed_callers = []
-
-[[shim]]
-filename = "gui_legacy_live_agent_smoke_http.py"
-replacement_import = "agentsassemble.legacy.live_agent.http.smoke"
-introduced_in = "Milestone 6.59 legacy resident smoke HTTP move"
-removal_gate = "No direct imports use agentsassemble.gui_legacy_live_agent_smoke_http for one compatibility window."
-export_policy = "historical-import-compatibility"
-allowed_callers = []
-
-[[shim]]
-filename = "gui_legacy_live_agent_speech_http.py"
-replacement_import = "agentsassemble.legacy.live_agent.http.speech"
-introduced_in = "Milestone 6.47 legacy resident speech HTTP move"
-removal_gate = "No direct imports use agentsassemble.gui_legacy_live_agent_speech_http for one compatibility window."
-export_policy = "historical-import-compatibility"
-allowed_callers = []
-
-[[shim]]
-filename = "gui_legacy_lobby_http.py"
-replacement_import = "agentsassemble.legacy.meeting.http.lobby"
-introduced_in = "Milestone 6.60 legacy lobby HTTP move"
-removal_gate = "No direct imports use agentsassemble.gui_legacy_lobby_http for one compatibility window."
-export_policy = "historical-import-compatibility"
-allowed_callers = []
-
-[[shim]]
-filename = "gui_legacy_meeting_http.py"
-replacement_import = "agentsassemble.legacy.meeting.http.meeting"
-introduced_in = "Milestone 6.60 legacy meeting read HTTP move"
-removal_gate = "No direct imports use agentsassemble.gui_legacy_meeting_http for one compatibility window."
-export_policy = "historical-import-compatibility"
-allowed_callers = []
-
-[[shim]]
-filename = "gui_legacy_meeting_lifecycle_http.py"
-replacement_import = "agentsassemble.legacy.meeting.http.lifecycle"
-introduced_in = "Milestone 6.60 legacy meeting lifecycle HTTP move"
-removal_gate = "No direct imports use agentsassemble.gui_legacy_meeting_lifecycle_http for one compatibility window."
-export_policy = "historical-import-compatibility"
-allowed_callers = []
-
-[[shim]]
-filename = "gui_legacy_official_round_http.py"
-replacement_import = "agentsassemble.legacy.meeting.http.official_round"
-introduced_in = "Milestone 6.60 legacy official-round HTTP move"
-removal_gate = "No direct imports use agentsassemble.gui_legacy_official_round_http for one compatibility window."
-export_policy = "historical-import-compatibility"
-allowed_callers = []
-
-[[shim]]
-filename = "gui_legacy_official_turn_http.py"
-replacement_import = "agentsassemble.legacy.meeting.http.official_turn"
-introduced_in = "Milestone 6.60 legacy official-turn HTTP move"
-removal_gate = "No direct imports use agentsassemble.gui_legacy_official_turn_http for one compatibility window."
-export_policy = "historical-import-compatibility"
-allowed_callers = []
-
-[[shim]]
-filename = "gui_legacy_provider_health_http.py"
-replacement_import = "agentsassemble.legacy.diagnostics.http.provider_health"
-introduced_in = "Milestone 7.1 provider health HTTP package"
-removal_gate = "No direct imports use agentsassemble.gui_legacy_provider_health_http for one compatibility window."
-export_policy = "historical-import-compatibility"
-allowed_callers = []
-
-[[shim]]
-filename = "gui_legacy_review_checkpoint_http.py"
-replacement_import = "agentsassemble.legacy.meeting.http.review_checkpoint"
-introduced_in = "Milestone 6.60 legacy review-checkpoint HTTP move"
-removal_gate = "No direct imports use agentsassemble.gui_legacy_review_checkpoint_http for one compatibility window."
-export_policy = "historical-import-compatibility"
-allowed_callers = []
-
-[[shim]]
-filename = "gui_live_agent_flow_http.py"
-replacement_import = "agentsassemble.legacy.live_agent.http.flow"
-introduced_in = "Milestone 6.64 retained HTTP ownership wave"
-removal_gate = "No direct imports use agentsassemble.gui_live_agent_flow_http for one compatibility window."
-export_policy = "historical-import-compatibility"
-allowed_callers = ["agentsassemble/gui.py"]
 
 [[shim]]
 filename = "gui_mafia_http.py"
@@ -611,14 +219,6 @@ export_policy = "historical-import-compatibility"
 allowed_callers = []
 
 [[shim]]
-filename = "gui_retired_http.py"
-replacement_import = "agentsassemble.web.routes.retired"
-introduced_in = "Milestone 4.10 retired route package"
-removal_gate = "No direct imports use agentsassemble.gui_retired_http for one compatibility window, and the v0.2 tombstone audit permits removal."
-export_policy = "historical-import-compatibility"
-allowed_callers = []
-
-[[shim]]
 filename = "gui_room_agent_http.py"
 replacement_import = "agentsassemble.web.routes.agent_sessions"
 introduced_in = "Milestone 4.7 Agent Session route package"
@@ -627,36 +227,12 @@ export_policy = "historical-import-compatibility"
 allowed_callers = []
 
 [[shim]]
-filename = "gui_room_http.py"
-replacement_import = "agentsassemble.legacy.meeting.http.room_composition"
-introduced_in = "Milestone 6.64 retained HTTP ownership wave"
-removal_gate = "No direct imports or patches use agentsassemble.gui_room_http for one compatibility window."
-export_policy = "historical-import-compatibility"
-allowed_callers = ["agentsassemble/gui.py", "tests/test_gui_server_room_routes.py"]
-
-[[shim]]
 filename = "gui_room_invite_http.py"
 replacement_import = "agentsassemble.web.routes.room_invite"
 introduced_in = "Milestone 4.6 current web route package"
 removal_gate = "No direct imports use agentsassemble.gui_room_invite_http for one compatibility window."
 export_policy = "historical-import-compatibility"
 allowed_callers = []
-
-[[shim]]
-filename = "gui_room_lifecycle_http.py"
-replacement_import = "agentsassemble.legacy.meeting.http.room_lifecycle_compat"
-introduced_in = "Milestone 6.64 retained HTTP ownership wave"
-removal_gate = "No direct imports use agentsassemble.gui_room_lifecycle_http for one compatibility window."
-export_policy = "historical-import-compatibility"
-allowed_callers = ["agentsassemble/gui.py"]
-
-[[shim]]
-filename = "gui_room_moderation_media_http.py"
-replacement_import = "agentsassemble.legacy.meeting.http.room_moderation_media"
-introduced_in = "Milestone 6.64 retained HTTP ownership wave"
-removal_gate = "No direct imports use agentsassemble.gui_room_moderation_media_http for one compatibility window."
-export_policy = "historical-import-compatibility"
-allowed_callers = ["agentsassemble/gui.py"]
 
 [[shim]]
 filename = "gui_room_settings_http.py"
@@ -707,14 +283,6 @@ export_policy = "historical-import-compatibility"
 allowed_callers = []
 
 [[shim]]
-filename = "hermes_resident.py"
-replacement_import = "agentsassemble.providers.hermes_resident"
-introduced_in = "Milestone 5.26 Hermes resident adapter move"
-removal_gate = "No direct imports use agentsassemble.hermes_resident for one compatibility window."
-export_policy = "historical-import-compatibility"
-allowed_callers = []
-
-[[shim]]
 filename = "identity_repository_factory.py"
 replacement_import = "agentsassemble.identity.factory"
 introduced_in = "Milestone 3.11 identity repository factory move"
@@ -737,526 +305,6 @@ introduced_in = "Milestone 3.9 local identity persistence move"
 removal_gate = "Callers use agentsassemble.identity.repository for contracts and agentsassemble.persistence.local.identity registry, migration, or repository modules for one compatibility window."
 export_policy = "historical-import-compatibility"
 allowed_callers = ["tests/test_local_identity_persistence_package.py"]
-
-[[shim]]
-filename = "kiro_resident.py"
-replacement_import = "agentsassemble.providers.kiro_resident"
-introduced_in = "Milestone 5.27 Kiro resident adapter move"
-removal_gate = "No direct imports use agentsassemble.kiro_resident for one compatibility window."
-export_policy = "historical-import-compatibility"
-allowed_callers = []
-
-[[shim]]
-filename = "legacy_live_agent_diagnostics.py"
-replacement_import = "agentsassemble.legacy.live_agent.diagnostics"
-introduced_in = "Milestone 6.32 legacy resident diagnostics move"
-removal_gate = "No direct imports use agentsassemble.legacy_live_agent_diagnostics for one compatibility window."
-export_policy = "historical-import-compatibility"
-allowed_callers = []
-
-[[shim]]
-filename = "legacy_live_agent_discovery.py"
-replacement_import = "agentsassemble.legacy.live_agent.discovery"
-introduced_in = "Milestone 6.39 legacy resident discovery move"
-removal_gate = "No direct imports use agentsassemble.legacy_live_agent_discovery for one compatibility window."
-export_policy = "historical-import-compatibility"
-allowed_callers = []
-
-[[shim]]
-filename = "legacy_live_agent_engagement.py"
-replacement_import = "agentsassemble.legacy.live_agent.engagement"
-introduced_in = "Milestone 6.25 legacy resident engagement service move"
-removal_gate = "No direct imports use agentsassemble.legacy_live_agent_engagement for one compatibility window."
-export_policy = "historical-import-compatibility"
-allowed_callers = []
-
-[[shim]]
-filename = "legacy_live_agent_health.py"
-replacement_import = "agentsassemble.legacy.live_agent.health"
-introduced_in = "Milestone 6.33 legacy resident health policy move"
-removal_gate = "No direct imports use agentsassemble.legacy_live_agent_health for one compatibility window."
-export_policy = "historical-import-compatibility"
-allowed_callers = []
-
-[[shim]]
-filename = "legacy_live_agent_health_queries.py"
-replacement_import = "agentsassemble.legacy.live_agent.health_queries"
-introduced_in = "Milestone 6.37 legacy resident health query move"
-removal_gate = "No direct imports use agentsassemble.legacy_live_agent_health_queries for one compatibility window."
-export_policy = "historical-import-compatibility"
-allowed_callers = []
-
-[[shim]]
-filename = "legacy_live_agent_observation_health.py"
-replacement_import = "agentsassemble.legacy.live_agent.observation_health"
-introduced_in = "Milestone 6.34 legacy resident observation health move"
-removal_gate = "No direct imports use agentsassemble.legacy_live_agent_observation_health for one compatibility window."
-export_policy = "historical-import-compatibility"
-allowed_callers = []
-
-[[shim]]
-filename = "legacy_live_agent_official_reply.py"
-replacement_import = "agentsassemble.legacy.live_agent.official_reply"
-introduced_in = "Milestone 6.42 legacy resident official reply move"
-removal_gate = "No direct imports or monkeypatch targets use agentsassemble.legacy_live_agent_official_reply for one compatibility window."
-export_policy = "historical-import-compatibility"
-allowed_callers = []
-
-[[shim]]
-filename = "legacy_live_agent_preflight.py"
-replacement_import = "agentsassemble.legacy.live_agent.preflight"
-introduced_in = "Milestone 6.24 legacy resident preflight service move"
-removal_gate = "No direct imports use agentsassemble.legacy_live_agent_preflight for one compatibility window."
-export_policy = "historical-import-compatibility"
-allowed_callers = []
-
-[[shim]]
-filename = "legacy_live_agent_presence.py"
-replacement_import = "agentsassemble.legacy.live_agent.presence"
-introduced_in = "Milestone 6.27 legacy resident presence family move"
-removal_gate = "No direct imports use agentsassemble.legacy_live_agent_presence for one compatibility window."
-export_policy = "historical-import-compatibility"
-allowed_callers = []
-
-[[shim]]
-filename = "legacy_live_agent_presence_projection.py"
-replacement_import = "agentsassemble.legacy.live_agent.presence_projection"
-introduced_in = "Milestone 6.27 legacy resident presence family move"
-removal_gate = "No direct imports use agentsassemble.legacy_live_agent_presence_projection for one compatibility window."
-export_policy = "historical-import-compatibility"
-allowed_callers = []
-
-[[shim]]
-filename = "legacy_live_agent_probe.py"
-replacement_import = "agentsassemble.legacy.live_agent.probe"
-introduced_in = "Milestone 6.26 legacy resident probe service move"
-removal_gate = "No direct imports use agentsassemble.legacy_live_agent_probe for one compatibility window."
-export_policy = "historical-import-compatibility"
-allowed_callers = []
-
-[[shim]]
-filename = "legacy_live_agent_process_control.py"
-replacement_import = "agentsassemble.legacy.live_agent.process_control"
-introduced_in = "Milestone 6.28 legacy resident process mutation move"
-removal_gate = "No direct imports use agentsassemble.legacy_live_agent_process_control for one compatibility window."
-export_policy = "historical-import-compatibility"
-allowed_callers = []
-
-[[shim]]
-filename = "legacy_live_agent_process_projection.py"
-replacement_import = "agentsassemble.legacy.live_agent.process_projection"
-introduced_in = "Milestone 6.31 legacy resident process projection move"
-removal_gate = "No direct imports use agentsassemble.legacy_live_agent_process_projection for one compatibility window."
-export_policy = "historical-import-compatibility"
-allowed_callers = []
-
-[[shim]]
-filename = "legacy_live_agent_process_service.py"
-replacement_import = "agentsassemble.legacy.live_agent.process_service"
-introduced_in = "Milestone 6.28 legacy resident process mutation move"
-removal_gate = "No direct imports use agentsassemble.legacy_live_agent_process_service for one compatibility window."
-export_policy = "historical-import-compatibility"
-allowed_callers = []
-
-[[shim]]
-filename = "legacy_live_agent_queries.py"
-replacement_import = "agentsassemble.legacy.live_agent.queries"
-introduced_in = "Milestone 6.40 legacy resident query facade move"
-removal_gate = "No direct imports use agentsassemble.legacy_live_agent_queries for one compatibility window."
-export_policy = "historical-import-compatibility"
-allowed_callers = []
-
-[[shim]]
-filename = "legacy_live_agent_readiness.py"
-replacement_import = "agentsassemble.legacy.live_agent.readiness"
-introduced_in = "Milestone 6.38 legacy resident readiness family move"
-removal_gate = "No direct imports use agentsassemble.legacy_live_agent_readiness for one compatibility window."
-export_policy = "historical-import-compatibility"
-allowed_callers = []
-
-[[shim]]
-filename = "legacy_live_agent_readiness_projection.py"
-replacement_import = "agentsassemble.legacy.live_agent.readiness_projection"
-introduced_in = "Milestone 6.38 legacy resident readiness family move"
-removal_gate = "No direct imports use agentsassemble.legacy_live_agent_readiness_projection for one compatibility window."
-export_policy = "historical-import-compatibility"
-allowed_callers = []
-
-[[shim]]
-filename = "legacy_live_agent_roster_queries.py"
-replacement_import = "agentsassemble.legacy.live_agent.roster_queries"
-introduced_in = "Milestone 6.36 legacy resident roster query move"
-removal_gate = "No direct imports use agentsassemble.legacy_live_agent_roster_queries for one compatibility window."
-export_policy = "historical-import-compatibility"
-allowed_callers = []
-
-[[shim]]
-filename = "legacy_live_agent_session_control.py"
-replacement_import = "agentsassemble.legacy.live_agent.session_control"
-introduced_in = "Milestone 6.29 legacy resident session policy move"
-removal_gate = "No direct imports use agentsassemble.legacy_live_agent_session_control for one compatibility window."
-export_policy = "historical-import-compatibility"
-allowed_callers = []
-
-[[shim]]
-filename = "legacy_live_agent_session_projection.py"
-replacement_import = "agentsassemble.legacy.live_agent.session_projection"
-introduced_in = "Milestone 6.29 legacy resident session policy move"
-removal_gate = "No direct imports use agentsassemble.legacy_live_agent_session_projection for one compatibility window."
-export_policy = "historical-import-compatibility"
-allowed_callers = []
-
-[[shim]]
-filename = "legacy_live_agent_session_run_health.py"
-replacement_import = "agentsassemble.legacy.live_agent.session_run_health"
-introduced_in = "Milestone 6.35 legacy resident session-run health move"
-removal_gate = "No direct imports use agentsassemble.legacy_live_agent_session_run_health for one compatibility window."
-export_policy = "historical-import-compatibility"
-allowed_callers = []
-
-[[shim]]
-filename = "legacy_live_agent_session_run_service.py"
-replacement_import = "agentsassemble.legacy.live_agent.session_run_service"
-introduced_in = "Milestone 6.30 legacy resident session service move"
-removal_gate = "No direct imports use agentsassemble.legacy_live_agent_session_run_service for one compatibility window."
-export_policy = "historical-import-compatibility"
-allowed_callers = []
-
-[[shim]]
-filename = "legacy_live_agent_session_service.py"
-replacement_import = "agentsassemble.legacy.live_agent.session_service"
-introduced_in = "Milestone 6.30 legacy resident session service move"
-removal_gate = "No direct imports use agentsassemble.legacy_live_agent_session_service for one compatibility window."
-export_policy = "historical-import-compatibility"
-allowed_callers = []
-
-[[shim]]
-filename = "legacy_live_agent_smoke.py"
-replacement_import = "agentsassemble.legacy.live_agent.smoke"
-introduced_in = "Milestone 6.43 legacy resident smoke facade move"
-removal_gate = "No direct imports use agentsassemble.legacy_live_agent_smoke for one compatibility window."
-export_policy = "historical-import-compatibility"
-allowed_callers = []
-
-[[shim]]
-filename = "legacy_live_agent_speech.py"
-replacement_import = "agentsassemble.legacy.live_agent.speech"
-introduced_in = "Milestone 6.41 legacy resident speech service move"
-removal_gate = "No direct imports use agentsassemble.legacy_live_agent_speech for one compatibility window."
-export_policy = "historical-import-compatibility"
-allowed_callers = []
-
-[[shim]]
-filename = "legacy_lobby_commands.py"
-replacement_import = "agentsassemble.legacy.meeting.lobby_commands"
-introduced_in = "Milestone 6.61 legacy meeting service package"
-removal_gate = "No direct imports use agentsassemble.legacy_lobby_commands for one compatibility window."
-export_policy = "historical-import-compatibility"
-allowed_callers = []
-
-[[shim]]
-filename = "legacy_meeting_lifecycle.py"
-replacement_import = "agentsassemble.legacy.meeting.lifecycle"
-introduced_in = "Milestone 6.61 legacy meeting service package"
-removal_gate = "No direct imports use agentsassemble.legacy_meeting_lifecycle for one compatibility window."
-export_policy = "historical-import-compatibility"
-allowed_callers = []
-
-[[shim]]
-filename = "legacy_meeting_operation_projection.py"
-replacement_import = "agentsassemble.legacy.meeting.operation_projection"
-introduced_in = "Milestone 6.61 legacy meeting service package"
-removal_gate = "No direct imports use agentsassemble.legacy_meeting_operation_projection for one compatibility window."
-export_policy = "historical-import-compatibility"
-allowed_callers = []
-
-[[shim]]
-filename = "legacy_meeting_queries.py"
-replacement_import = "agentsassemble.legacy.meeting.queries"
-introduced_in = "Milestone 6.61 legacy meeting service package"
-removal_gate = "No direct imports use agentsassemble.legacy_meeting_queries for one compatibility window."
-export_policy = "historical-import-compatibility"
-allowed_callers = []
-
-[[shim]]
-filename = "legacy_meeting_records.py"
-replacement_import = "agentsassemble.legacy.meeting.records"
-introduced_in = "Milestone 6.61 legacy meeting service package"
-removal_gate = "No direct imports use agentsassemble.legacy_meeting_records for one compatibility window."
-export_policy = "historical-import-compatibility"
-allowed_callers = []
-
-[[shim]]
-filename = "legacy_official_rounds.py"
-replacement_import = "agentsassemble.legacy.meeting.official_rounds"
-introduced_in = "Milestone 6.61 legacy meeting service package"
-removal_gate = "No direct imports use agentsassemble.legacy_official_rounds for one compatibility window."
-export_policy = "historical-import-compatibility"
-allowed_callers = []
-
-[[shim]]
-filename = "legacy_official_turns.py"
-replacement_import = "agentsassemble.legacy.meeting.official_turns"
-introduced_in = "Milestone 6.61 legacy meeting service package"
-removal_gate = "No direct imports use agentsassemble.legacy_official_turns for one compatibility window."
-export_policy = "historical-import-compatibility"
-allowed_callers = []
-
-[[shim]]
-filename = "legacy_review_checkpoint.py"
-replacement_import = "agentsassemble.legacy.meeting.review_checkpoint"
-introduced_in = "Milestone 6.61 legacy meeting service package"
-removal_gate = "No direct imports use agentsassemble.legacy_review_checkpoint for one compatibility window."
-export_policy = "historical-import-compatibility"
-allowed_callers = []
-
-[[shim]]
-filename = "legacy_room_migration.py"
-replacement_import = "agentsassemble.legacy.room.migration"
-introduced_in = "Milestone 6.67 legacy room migration package"
-removal_gate = "No direct imports or patches use agentsassemble.legacy_room_migration for one compatibility window."
-export_policy = "historical-import-compatibility"
-allowed_callers = ["tests/test_legacy_room_migration.py"]
-
-[[shim]]
-filename = "legacy_room_preferences_source.py"
-replacement_import = "agentsassemble.legacy.room.preferences_source"
-introduced_in = "Milestone 6.67 legacy room migration package"
-removal_gate = "No direct imports or patches use agentsassemble.legacy_room_preferences_source for one compatibility window."
-export_policy = "historical-import-compatibility"
-allowed_callers = ["tests/test_room_preferences_migration.py"]
-
-[[shim]]
-filename = "legacy_room_settings_document.py"
-replacement_import = "agentsassemble.legacy.room.settings_document"
-introduced_in = "Milestone 6.67 legacy room migration package"
-removal_gate = "No direct imports or patches use agentsassemble.legacy_room_settings_document for one compatibility window."
-export_policy = "historical-import-compatibility"
-allowed_callers = ["tests/test_room_settings_migration.py"]
-
-[[shim]]
-filename = "legacy_room_settings_source.py"
-replacement_import = "agentsassemble.legacy.room.settings_source"
-introduced_in = "Milestone 6.67 legacy room migration package"
-removal_gate = "No direct imports or patches use agentsassemble.legacy_room_settings_source for one compatibility window."
-export_policy = "historical-import-compatibility"
-allowed_callers = ["tests/test_room_settings_migration.py"]
-
-[[shim]]
-filename = "legacy_turn_results.py"
-replacement_import = "agentsassemble.legacy.meeting.core.turn_results"
-introduced_in = "Milestone 6.62 retained meeting engine package"
-removal_gate = "No direct imports use agentsassemble.legacy_turn_results for one compatibility window."
-export_policy = "historical-import-compatibility"
-allowed_callers = ["tests/test_legacy_turn_results.py"]
-
-[[shim]]
-filename = "legacy_turn_scheduler.py"
-replacement_import = "agentsassemble.legacy.meeting.turn_scheduler"
-introduced_in = "Milestone 6.61 legacy meeting service package"
-removal_gate = "No direct imports use agentsassemble.legacy_turn_scheduler for one compatibility window."
-export_policy = "historical-import-compatibility"
-allowed_callers = []
-
-[[shim]]
-filename = "live_agent_context.py"
-replacement_import = "agentsassemble.legacy.live_agent.runtime.context"
-introduced_in = "Milestone 6.66 resident room integration package"
-removal_gate = "No direct imports or patches use agentsassemble.live_agent_context for one compatibility window."
-export_policy = "historical-import-compatibility"
-allowed_callers = ["agentsassemble/gui.py"]
-
-[[shim]]
-filename = "live_agent_continuity_proof.py"
-replacement_import = "agentsassemble.legacy.live_agent.runtime.continuity_proof"
-introduced_in = "Milestone 6.66 resident room integration package"
-removal_gate = "No direct imports or patches use agentsassemble.live_agent_continuity_proof for one compatibility window."
-export_policy = "historical-import-compatibility"
-allowed_callers = ["agentsassemble/cli.py"]
-
-[[shim]]
-filename = "live_agent_discovery.py"
-replacement_import = "agentsassemble.legacy.live_agent.runtime.discovery"
-introduced_in = "Milestone 6.66 resident room integration package"
-removal_gate = "No direct imports or patches use agentsassemble.live_agent_discovery for one compatibility window."
-export_policy = "historical-import-compatibility"
-allowed_callers = ["tests/test_live_agent_discovery.py"]
-
-[[shim]]
-filename = "live_agent_finalization.py"
-replacement_import = "agentsassemble.legacy.live_agent.runtime.finalization"
-introduced_in = "Milestone 6.66 resident room integration package"
-removal_gate = "No direct imports or patches use agentsassemble.live_agent_finalization for one compatibility window."
-export_policy = "historical-import-compatibility"
-allowed_callers = ["tests/test_live_agent_finalization.py"]
-
-[[shim]]
-filename = "live_agent_frontend_create.py"
-replacement_import = "agentsassemble.legacy.live_agent.runtime.frontend_create"
-introduced_in = "Milestone 6.66 resident room integration package"
-removal_gate = "No direct imports or patches use agentsassemble.live_agent_frontend_create for one compatibility window."
-export_policy = "historical-import-compatibility"
-allowed_callers = ["tests/test_live_agent_frontend_create.py"]
-
-[[shim]]
-filename = "live_agent_join_brief.py"
-replacement_import = "agentsassemble.legacy.live_agent.runtime.join_brief"
-introduced_in = "Milestone 6.66 resident room integration package"
-removal_gate = "No direct imports or patches use agentsassemble.live_agent_join_brief for one compatibility window."
-export_policy = "historical-import-compatibility"
-allowed_callers = []
-
-[[shim]]
-filename = "live_agent_launch_policy.py"
-replacement_import = "agentsassemble.legacy.live_agent.runtime.launch_policy"
-introduced_in = "Milestone 6.65 resident runtime package"
-removal_gate = "No direct imports use the root launch-policy module for one compatibility window."
-export_policy = "historical-import-compatibility"
-allowed_callers = ["agentsassemble/cli.py"]
-
-[[shim]]
-filename = "live_agent_meetings.py"
-replacement_import = "agentsassemble.legacy.live_agent.runtime.meetings"
-introduced_in = "Milestone 6.66 resident room integration package"
-removal_gate = "No direct imports or patches use agentsassemble.live_agent_meetings for one compatibility window."
-export_policy = "historical-import-compatibility"
-allowed_callers = ["tests/test_live_agent_sessions.py"]
-
-[[shim]]
-filename = "live_agent_operations.py"
-replacement_import = "agentsassemble.legacy.live_agent.runtime.operations"
-introduced_in = "Milestone 6.65 resident runtime package"
-removal_gate = "No direct imports use the root operation module for one compatibility window."
-export_policy = "historical-import-compatibility"
-allowed_callers = ["agentsassemble/gui.py"]
-
-[[shim]]
-filename = "live_agent_persona_smoke.py"
-replacement_import = "agentsassemble.legacy.live_agent.runtime.persona_smoke"
-introduced_in = "Milestone 6.66 resident room integration package"
-removal_gate = "No direct imports or patches use agentsassemble.live_agent_persona_smoke for one compatibility window."
-export_policy = "historical-import-compatibility"
-allowed_callers = []
-
-[[shim]]
-filename = "live_agent_play_presets.py"
-replacement_import = "agentsassemble.legacy.live_agent.runtime.play_presets"
-introduced_in = "Milestone 6.66 resident room integration package"
-removal_gate = "No direct imports or patches use agentsassemble.live_agent_play_presets for one compatibility window."
-export_policy = "historical-import-compatibility"
-allowed_callers = ["tests/test_live_agent_play_presets.py"]
-
-[[shim]]
-filename = "live_agent_preflight.py"
-replacement_import = "agentsassemble.legacy.live_agent.runtime.preflight"
-introduced_in = "Milestone 6.66 resident room integration package"
-removal_gate = "No direct imports or patches use agentsassemble.live_agent_preflight for one compatibility window."
-export_policy = "historical-import-compatibility"
-allowed_callers = ["tests/test_live_agent_preflight.py"]
-
-[[shim]]
-filename = "live_agent_probe.py"
-replacement_import = "agentsassemble.legacy.live_agent.runtime.probe"
-introduced_in = "Milestone 6.66 resident room integration package"
-removal_gate = "No direct imports or patches use agentsassemble.live_agent_probe for one compatibility window."
-export_policy = "historical-import-compatibility"
-allowed_callers = ["tests/test_live_agent_probe.py"]
-
-[[shim]]
-filename = "live_agent_processes.py"
-replacement_import = "agentsassemble.legacy.live_agent.runtime.processes"
-introduced_in = "Milestone 6.65 resident runtime package"
-removal_gate = "No direct imports or patches use the root process module for one compatibility window."
-export_policy = "historical-import-compatibility"
-allowed_callers = ["tests/test_live_agent_processes.py"]
-
-[[shim]]
-filename = "live_agent_quota.py"
-replacement_import = "agentsassemble.legacy.live_agent.runtime.quota"
-introduced_in = "Milestone 6.65 resident runtime package"
-removal_gate = "No direct imports use the root quota module for one compatibility window."
-export_policy = "historical-import-compatibility"
-allowed_callers = ["tests/test_live_agent_sessions.py"]
-
-[[shim]]
-filename = "live_agent_review_checkpoints.py"
-replacement_import = "agentsassemble.legacy.live_agent.runtime.review_checkpoints"
-introduced_in = "Milestone 6.66 resident room integration package"
-removal_gate = "No direct imports or patches use agentsassemble.live_agent_review_checkpoints for one compatibility window."
-export_policy = "historical-import-compatibility"
-allowed_callers = ["tests/test_live_agent_review_checkpoints.py"]
-
-[[shim]]
-filename = "live_agent_room_admin.py"
-replacement_import = "agentsassemble.legacy.live_agent.runtime.room_admin"
-introduced_in = "Milestone 6.66 resident room integration package"
-removal_gate = "No direct imports or patches use agentsassemble.live_agent_room_admin for one compatibility window."
-export_policy = "historical-import-compatibility"
-allowed_callers = ["tests/test_live_agent_room_admin.py"]
-
-[[shim]]
-filename = "live_agent_roster.py"
-replacement_import = "agentsassemble.legacy.live_agent.runtime.roster"
-introduced_in = "Milestone 6.66 resident room integration package"
-removal_gate = "No direct imports or patches use agentsassemble.live_agent_roster for one compatibility window."
-export_policy = "historical-import-compatibility"
-allowed_callers = ["tests/test_live_agent_roster.py"]
-
-[[shim]]
-filename = "live_agent_self_managed.py"
-replacement_import = "agentsassemble.legacy.live_agent.runtime.self_managed"
-introduced_in = "Milestone 6.65 resident runtime package"
-removal_gate = "No direct imports use the root self-managed module for one compatibility window."
-export_policy = "historical-import-compatibility"
-allowed_callers = ["tests/test_live_agent_self_managed.py"]
-
-[[shim]]
-filename = "live_agent_session_runs.py"
-replacement_import = "agentsassemble.legacy.live_agent.runtime.session_runs"
-introduced_in = "Milestone 6.65 resident runtime package"
-removal_gate = "No direct imports or patches use the root session-run module for one compatibility window."
-export_policy = "historical-import-compatibility"
-allowed_callers = ["tests/test_live_agent_session_runs.py"]
-
-[[shim]]
-filename = "live_agent_sessions.py"
-replacement_import = "agentsassemble.legacy.live_agent.runtime.sessions"
-introduced_in = "Milestone 6.65 resident runtime package"
-removal_gate = "No direct imports or patches use the root sessions module for one compatibility window."
-export_policy = "historical-import-compatibility"
-allowed_callers = ["tests/test_live_agent_sessions.py"]
-
-[[shim]]
-filename = "live_agent_settings.py"
-replacement_import = "agentsassemble.legacy.live_agent.runtime.settings"
-introduced_in = "Milestone 6.65 resident runtime package"
-removal_gate = "No direct imports use the root settings module for one compatibility window."
-export_policy = "historical-import-compatibility"
-allowed_callers = ["tests/test_live_agent_settings.py"]
-
-[[shim]]
-filename = "live_agent_smoke.py"
-replacement_import = "agentsassemble.legacy.live_agent.runtime.smoke"
-introduced_in = "Milestone 6.66 resident room integration package"
-removal_gate = "No direct imports or patches use agentsassemble.live_agent_smoke for one compatibility window."
-export_policy = "historical-import-compatibility"
-allowed_callers = []
-
-[[shim]]
-filename = "live_agent_timing.py"
-replacement_import = "agentsassemble.legacy.live_agent.runtime.timing"
-introduced_in = "Milestone 6.65 resident runtime package"
-removal_gate = "No direct imports use the root timing module for one compatibility window."
-export_policy = "historical-import-compatibility"
-allowed_callers = ["agentsassemble/cli.py"]
-
-[[shim]]
-filename = "live_agents.py"
-replacement_import = "agentsassemble.legacy.live_agent.state"
-introduced_in = "Milestone 6.71 legacy resident state package"
-removal_gate = "No direct imports or patches use agentsassemble.live_agents for one compatibility window."
-export_policy = "historical-import-compatibility"
-allowed_callers = ["tests/test_live_agents.py"]
 
 [[shim]]
 filename = "live_cli.py"
@@ -1291,14 +339,6 @@ export_policy = "historical-import-compatibility"
 allowed_callers = []
 
 [[shim]]
-filename = "live_meeting_memory.py"
-replacement_import = "agentsassemble.legacy.meeting.support.live_meeting_memory"
-introduced_in = "Milestone 6.71 legacy meeting support package"
-removal_gate = "No direct imports or patches use agentsassemble.live_meeting_memory for one compatibility window."
-export_policy = "historical-import-compatibility"
-allowed_callers = ["tests/test_live_meeting_memory.py"]
-
-[[shim]]
 filename = "live_session_adapter.py"
 replacement_import = "agentsassemble.providers.live_session_adapter"
 introduced_in = "Milestone 6.68 provider support ownership wave"
@@ -1315,30 +355,6 @@ export_policy = "historical-import-compatibility"
 allowed_callers = ["tests/test_live_session_transport.py"]
 
 [[shim]]
-filename = "live_transcript.py"
-replacement_import = "agentsassemble.legacy.meeting.support.live_transcript"
-introduced_in = "Milestone 6.71 legacy meeting support package"
-removal_gate = "No direct imports or patches use agentsassemble.live_transcript for one compatibility window."
-export_policy = "historical-import-compatibility"
-allowed_callers = ["tests/test_live_transcript.py"]
-
-[[shim]]
-filename = "lobby_promotion.py"
-replacement_import = "agentsassemble.legacy.meeting.support.lobby_promotion"
-introduced_in = "Milestone 6.71 legacy meeting support package"
-removal_gate = "No direct imports or patches use agentsassemble.lobby_promotion for one compatibility window."
-export_policy = "historical-import-compatibility"
-allowed_callers = ["tests/test_lobby_promotion.py"]
-
-[[shim]]
-filename = "lobby_queries.py"
-replacement_import = "agentsassemble.legacy.meeting.support.lobby_queries"
-introduced_in = "Milestone 6.71 legacy meeting support package"
-removal_gate = "No direct imports or patches use agentsassemble.lobby_queries for one compatibility window."
-export_policy = "historical-import-compatibility"
-allowed_callers = ["tests/test_gui_server_lobby_social.py"]
-
-[[shim]]
 filename = "local_resources.py"
 replacement_import = "agentsassemble.diagnostics.local_resources"
 introduced_in = "Milestone 6.70 shared room support ownership wave"
@@ -1353,86 +369,6 @@ introduced_in = "Milestone 6.23 optional Mafia game service move"
 removal_gate = "No direct imports use agentsassemble.mafia_game for one compatibility window."
 export_policy = "historical-import-compatibility"
 allowed_callers = ["tests/test_mafia_game.py"]
-
-[[shim]]
-filename = "mcp_server.py"
-replacement_import = "agentsassemble.legacy.live_agent.mcp_server"
-introduced_in = "Milestone 6.70 shared room support ownership wave"
-removal_gate = "No direct imports or patches use agentsassemble.mcp_server for one compatibility window."
-export_policy = "historical-import-compatibility"
-allowed_callers = ["tests/test_mcp_server.py"]
-
-[[shim]]
-filename = "meeting.py"
-replacement_import = "agentsassemble.legacy.meeting.core.runner"
-introduced_in = "Milestone 6.62 retained meeting engine package"
-removal_gate = "No direct imports or patches use agentsassemble.meeting for one compatibility window."
-export_policy = "historical-import-compatibility"
-allowed_callers = []
-
-[[shim]]
-filename = "meeting_context.py"
-replacement_import = "agentsassemble.legacy.meeting.core.context"
-introduced_in = "Milestone 6.62 retained meeting engine package"
-removal_gate = "No direct imports use agentsassemble.meeting_context for one compatibility window."
-export_policy = "historical-import-compatibility"
-allowed_callers = ["tests/test_decision_context.py"]
-
-[[shim]]
-filename = "meeting_events.py"
-replacement_import = "agentsassemble.legacy.meeting.core.events"
-introduced_in = "Milestone 6.62 retained meeting engine package"
-removal_gate = "No direct imports or patches use agentsassemble.meeting_events for one compatibility window."
-export_policy = "historical-import-compatibility"
-allowed_callers = ["tests/test_meeting_events.py"]
-
-[[shim]]
-filename = "meeting_lifecycle.py"
-replacement_import = "agentsassemble.legacy.meeting.core.lifecycle"
-introduced_in = "Milestone 6.62 retained meeting engine package"
-removal_gate = "No direct imports use agentsassemble.meeting_lifecycle for one compatibility window."
-export_policy = "historical-import-compatibility"
-allowed_callers = ["tests/test_meeting_lifecycle.py"]
-
-[[shim]]
-filename = "meeting_phases.py"
-replacement_import = "agentsassemble.legacy.meeting.core.phases"
-introduced_in = "Milestone 6.62 retained meeting engine package"
-removal_gate = "No direct imports use agentsassemble.meeting_phases for one compatibility window."
-export_policy = "historical-import-compatibility"
-allowed_callers = ["tests/test_debate_turn_control.py"]
-
-[[shim]]
-filename = "meeting_record.py"
-replacement_import = "agentsassemble.legacy.meeting.core.record"
-introduced_in = "Milestone 6.62 retained meeting engine package"
-removal_gate = "No direct imports use agentsassemble.meeting_record for one compatibility window."
-export_policy = "historical-import-compatibility"
-allowed_callers = []
-
-[[shim]]
-filename = "meeting_setup.py"
-replacement_import = "agentsassemble.legacy.meeting.core.setup"
-introduced_in = "Milestone 6.62 retained meeting engine package"
-removal_gate = "No direct imports or patches use agentsassemble.meeting_setup for one compatibility window."
-export_policy = "historical-import-compatibility"
-allowed_callers = ["tests/test_meeting_setup.py"]
-
-[[shim]]
-filename = "memory.py"
-replacement_import = "agentsassemble.legacy.meeting.support.memory"
-introduced_in = "Milestone 6.71 legacy meeting support package"
-removal_gate = "No direct imports or patches use agentsassemble.memory for one compatibility window."
-export_policy = "historical-import-compatibility"
-allowed_callers = ["tests/test_memory.py"]
-
-[[shim]]
-filename = "memory_capsules.py"
-replacement_import = "agentsassemble.legacy.meeting.support.memory_capsules"
-introduced_in = "Milestone 6.71 legacy meeting support package"
-removal_gate = "No direct imports or patches use agentsassemble.memory_capsules for one compatibility window."
-export_policy = "historical-import-compatibility"
-allowed_callers = ["tests/test_memory_capsules.py"]
 
 [[shim]]
 filename = "multi_host_invites.py"
@@ -1465,14 +401,6 @@ introduced_in = "Milestone 3.7 identity pairing package bootstrap"
 removal_gate = "No direct imports use agentsassemble.operator_pairing for one compatibility window."
 export_policy = "historical-import-compatibility"
 allowed_callers = []
-
-[[shim]]
-filename = "persona_artifact_contract.py"
-replacement_import = "agentsassemble.legacy.meeting.support.persona_artifact_contract"
-introduced_in = "Milestone 6.71 legacy meeting support package"
-removal_gate = "No direct imports or patches use agentsassemble.persona_artifact_contract for one compatibility window."
-export_policy = "historical-import-compatibility"
-allowed_callers = ["tests/test_persona_artifact_contract.py"]
 
 [[shim]]
 filename = "postgres_application_database.py"
@@ -1568,7 +496,7 @@ replacement_import = "agentsassemble.persistence.postgres.room.repository"
 introduced_in = "Milestone 2.2 PostgreSQL room persistence move"
 removal_gate = "No direct imports or monkeypatch targets use agentsassemble.postgres_room_repository for one compatibility window."
 export_policy = "historical-import-compatibility"
-allowed_callers = ["tests/test_postgres_cross_authority_transactions.py", "tests/test_postgres_room_repository.py", "tests/test_room_repository_migration.py"]
+allowed_callers = ["tests/test_postgres_cross_authority_transactions.py", "tests/test_postgres_room_repository.py"]
 
 [[shim]]
 filename = "postgres_room_rows.py"
@@ -1584,7 +512,7 @@ replacement_import = "agentsassemble.persistence.postgres.schema"
 introduced_in = "Milestone 2.2 shared PostgreSQL schema move"
 removal_gate = "No direct imports or monkeypatch targets use agentsassemble.postgres_room_schema for one compatibility window."
 export_policy = "historical-import-compatibility"
-allowed_callers = ["tests/test_postgres_application_database.py", "tests/test_postgres_cross_authority_transactions.py", "tests/test_postgres_identity_repository.py", "tests/test_postgres_invite_repository.py", "tests/test_postgres_room_repository.py", "tests/test_postgres_room_schema.py", "tests/test_room_repository_factory.py", "tests/test_room_repository_migration.py"]
+allowed_callers = ["tests/test_postgres_application_database.py", "tests/test_postgres_cross_authority_transactions.py", "tests/test_postgres_identity_repository.py", "tests/test_postgres_invite_repository.py", "tests/test_postgres_room_repository.py", "tests/test_postgres_room_schema.py", "tests/test_room_repository_factory.py"]
 
 [[shim]]
 filename = "process_environment.py"
@@ -1617,22 +545,6 @@ introduced_in = "Milestone 5.2 provider catalog move"
 removal_gate = "No direct imports use agentsassemble.provider_catalog for one compatibility window."
 export_policy = "historical-import-compatibility"
 allowed_callers = []
-
-[[shim]]
-filename = "provider_health.py"
-replacement_import = "agentsassemble.diagnostics.provider_health"
-introduced_in = "Milestone 7.1 provider health diagnostic package"
-removal_gate = "No direct imports or monkeypatch targets use agentsassemble.provider_health for one compatibility window."
-export_policy = "historical-import-compatibility"
-allowed_callers = []
-
-[[shim]]
-filename = "provider_login.py"
-replacement_import = "agentsassemble.legacy.live_agent.provider_login"
-introduced_in = "Milestone 6.68 provider support ownership wave"
-removal_gate = "No direct imports or patches use agentsassemble.provider_login for one compatibility window."
-export_policy = "historical-import-compatibility"
-allowed_callers = ["tests/test_gui_server_provider_http.py"]
 
 [[shim]]
 filename = "provider_model_verification.py"
@@ -1728,7 +640,7 @@ replacement_import = "agentsassemble.admission.preflight"
 introduced_in = "Milestone 3.1 admission package bootstrap"
 removal_gate = "No direct imports or monkeypatch targets use agentsassemble.room_admission for one compatibility window."
 export_policy = "historical-import-compatibility"
-allowed_callers = ["tests/test_gui_application_services.py", "tests/test_gui_server_room_routes.py", "tests/test_room_admission.py"]
+allowed_callers = ["tests/test_room_admission.py"]
 
 [[shim]]
 filename = "room_admission_coordinator.py"
@@ -1851,26 +763,10 @@ export_policy = "historical-import-compatibility"
 allowed_callers = []
 
 [[shim]]
-filename = "room_event_benchmark.py"
-replacement_import = "agentsassemble.legacy.diagnostics.room_event_benchmark"
-introduced_in = "Milestone 6.69 CLI diagnostics ownership wave"
-removal_gate = "No direct imports or patches use agentsassemble.room_event_benchmark for one compatibility window."
-export_policy = "historical-import-compatibility"
-allowed_callers = ["tests/test_room_event_benchmark.py"]
-
-[[shim]]
 filename = "room_event_broker.py"
 replacement_import = "agentsassemble.room.event_broker"
 introduced_in = "Milestone 6.5 room event broker move"
 removal_gate = "No direct imports use agentsassemble.room_event_broker for one compatibility window."
-export_policy = "historical-import-compatibility"
-allowed_callers = []
-
-[[shim]]
-filename = "room_friend_dms.py"
-replacement_import = "agentsassemble.features.social.direct_messages"
-introduced_in = "Milestone 6.15 optional friend-DM service move"
-removal_gate = "No direct imports use agentsassemble.room_friend_dms for one compatibility window."
 export_policy = "historical-import-compatibility"
 allowed_callers = []
 
@@ -1939,14 +835,6 @@ export_policy = "historical-import-compatibility"
 allowed_callers = ["tests/test_room_native_cli_e2e.py"]
 
 [[shim]]
-filename = "room_preferences_migration.py"
-replacement_import = "agentsassemble.legacy.room.preferences_migration"
-introduced_in = "Milestone 6.67 legacy room migration package"
-removal_gate = "No direct imports or patches use agentsassemble.room_preferences_migration for one compatibility window."
-export_policy = "historical-import-compatibility"
-allowed_callers = ["tests/test_room_preferences_migration.py"]
-
-[[shim]]
 filename = "room_projection.py"
 replacement_import = "agentsassemble.room.projection"
 introduced_in = "Milestone 6.2 room commands and projection move"
@@ -1985,14 +873,6 @@ introduced_in = "Milestone 6.67 legacy room migration package"
 removal_gate = "No direct imports or patches use agentsassemble.room_repository_factory for one compatibility window."
 export_policy = "historical-import-compatibility"
 allowed_callers = ["tests/test_room_repository_factory.py"]
-
-[[shim]]
-filename = "room_repository_migration.py"
-replacement_import = "agentsassemble.legacy.room.repository_migration"
-introduced_in = "Milestone 6.67 legacy room migration package"
-removal_gate = "No direct imports or patches use agentsassemble.room_repository_migration for one compatibility window."
-export_policy = "historical-import-compatibility"
-allowed_callers = ["tests/test_room_repository_migration.py"]
 
 [[shim]]
 filename = "room_repository_records.py"
@@ -2035,14 +915,6 @@ export_policy = "historical-import-compatibility"
 allowed_callers = ["tests/test_room_settings.py"]
 
 [[shim]]
-filename = "room_settings_migration.py"
-replacement_import = "agentsassemble.legacy.room.settings_migration"
-introduced_in = "Milestone 6.67 legacy room migration package"
-removal_gate = "No direct imports or patches use agentsassemble.room_settings_migration for one compatibility window."
-export_policy = "historical-import-compatibility"
-allowed_callers = ["tests/test_room_settings_migration.py"]
-
-[[shim]]
 filename = "room_settings_service.py"
 replacement_import = "agentsassemble.room.settings_service"
 introduced_in = "Milestone 6.21 room settings service move"
@@ -2064,7 +936,7 @@ replacement_import = "agentsassemble.persistence.local.room.repository"
 introduced_in = "Milestone 2.5 local SQLite room persistence move"
 removal_gate = "No direct imports or monkeypatch targets use agentsassemble.room_store for one compatibility window."
 export_policy = "historical-import-compatibility"
-allowed_callers = ["tests/gui_server_test_support.py", "tests/test_agent_session_room_store.py", "tests/test_gui_room_repository_injection.py", "tests/test_gui_server_room_settings_http.py", "tests/test_legacy_room_migration.py", "tests/test_local_room_persistence_package.py", "tests/test_operator_pairing.py", "tests/test_public_invite_http.py", "tests/test_room_admission.py", "tests/test_room_admission_coordinator.py", "tests/test_room_agent_lifecycle.py", "tests/test_room_attention_policy.py", "tests/test_room_attention_reconciliation.py", "tests/test_room_channel_stream.py", "tests/test_room_channels_http.py", "tests/test_room_context.py", "tests/test_room_preferences_migration.py", "tests/test_room_provider_sync_cursor.py", "tests/test_room_realtime.py", "tests/test_room_repository_factory.py", "tests/test_room_repository_migration.py", "tests/test_room_settings_migration.py", "tests/test_room_turn_coordinator.py", "tests/test_room_unification.py", "tests/test_sqlite_room_repository.py", "tests/test_voice_presence.py", "tests/test_ws_room_client.py"]
+allowed_callers = ["tests/test_gui_room_repository_injection.py", "tests/test_gui_server_room_settings_http.py", "tests/test_local_room_persistence_package.py", "tests/test_operator_pairing.py", "tests/test_public_invite_http.py", "tests/test_room_admission.py", "tests/test_room_admission_coordinator.py", "tests/test_room_agent_lifecycle.py", "tests/test_room_attention_policy.py", "tests/test_room_attention_reconciliation.py", "tests/test_room_channel_stream.py", "tests/test_room_channels_http.py", "tests/test_room_context.py", "tests/test_room_provider_sync_cursor.py", "tests/test_room_realtime.py", "tests/test_room_repository_factory.py", "tests/test_room_turn_coordinator.py", "tests/test_room_unification.py", "tests/test_sqlite_room_repository.py", "tests/test_voice_presence.py", "tests/test_ws_room_client.py"]
 
 [[shim]]
 filename = "room_turn_context.py"
@@ -2072,7 +944,7 @@ replacement_import = "agentsassemble.room.turn_context"
 introduced_in = "Milestone 6.11 room turn-context move"
 removal_gate = "No direct imports use agentsassemble.room_turn_context for one compatibility window."
 export_policy = "historical-import-compatibility"
-allowed_callers = ["tests/test_agent_session_room_store.py"]
+allowed_callers = []
 
 [[shim]]
 filename = "room_turn_coordinator.py"
@@ -2123,14 +995,6 @@ export_policy = "historical-import-compatibility"
 allowed_callers = []
 
 [[shim]]
-filename = "session_run_monitor.py"
-replacement_import = "agentsassemble.application.session_run_monitor"
-introduced_in = "Milestone 4.13 application session-run monitor move"
-removal_gate = "No direct imports use agentsassemble.session_run_monitor for one compatibility window."
-export_policy = "historical-import-compatibility"
-allowed_callers = []
-
-[[shim]]
 filename = "side_chat.py"
 replacement_import = "agentsassemble.features.side_chat.service"
 introduced_in = "Milestone 6.13 optional side-chat service move"
@@ -2171,30 +1035,6 @@ export_policy = "historical-import-compatibility"
 allowed_callers = []
 
 [[shim]]
-filename = "stance_match.py"
-replacement_import = "agentsassemble.legacy.meeting.support.stance_match"
-introduced_in = "Milestone 6.71 legacy meeting support package"
-removal_gate = "No direct imports or patches use agentsassemble.stance_match for one compatibility window."
-export_policy = "historical-import-compatibility"
-allowed_callers = ["tests/test_decision_gate.py"]
-
-[[shim]]
-filename = "task_scope_report.py"
-replacement_import = "agentsassemble.legacy.meeting.support.task_scope_report"
-introduced_in = "Milestone 6.71 legacy meeting support package"
-removal_gate = "No direct imports or patches use agentsassemble.task_scope_report for one compatibility window."
-export_policy = "historical-import-compatibility"
-allowed_callers = ["tests/test_task_scope_report.py"]
-
-[[shim]]
-filename = "templates.py"
-replacement_import = "agentsassemble.legacy.meeting.support.templates"
-introduced_in = "Milestone 6.71 legacy meeting support package"
-removal_gate = "No direct imports or patches use agentsassemble.templates for one compatibility window."
-export_policy = "historical-import-compatibility"
-allowed_callers = []
-
-[[shim]]
 filename = "user_profile.py"
 replacement_import = "agentsassemble.features.social.profile"
 introduced_in = "Milestone 6.16 optional user-profile service move"
@@ -2217,14 +1057,6 @@ introduced_in = "Milestone 5.8 Windows ConPTY runtime move"
 removal_gate = "No direct imports use agentsassemble.windows_conpty for one compatibility window."
 export_policy = "historical-import-compatibility"
 allowed_callers = []
-
-[[shim]]
-filename = "ws_resident.py"
-replacement_import = "agentsassemble.legacy.live_agent.room_resident"
-introduced_in = "Milestone 6.64 retained HTTP ownership wave"
-removal_gate = "No direct imports use agentsassemble.ws_resident for one compatibility window."
-export_policy = "historical-import-compatibility"
-allowed_callers = ["tests/test_ws_resident.py"]
 
 [[shim]]
 filename = "ws_room_client.py"

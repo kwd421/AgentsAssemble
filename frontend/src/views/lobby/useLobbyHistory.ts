@@ -9,7 +9,6 @@ import {
 } from "react";
 
 import {
-  fetchLobby,
   mergeLobbyEvents,
   type LobbyEvent,
 } from "../../api";
@@ -18,7 +17,6 @@ import type { RoomTypingIndicator } from "../../lib/roomTypingIndicators";
 
 
 const HISTORY_TOP_THRESHOLD = 120;
-const HISTORY_PAGE_SIZE = 50;
 const INITIAL_HISTORY_MESSAGE_TARGET = 20;
 
 
@@ -72,7 +70,6 @@ export function useLobbyHistory({
   const [pinnedToLatest, setPinnedToLatest] = useState(true);
   const [hasMoreHistory, setHasMoreHistory] = useState(true);
   const [loadingOlder, setLoadingOlder] = useState(false);
-  const usesCanonicalHistory = Boolean(loadCanonicalHistory);
   const loaded = loadedRoomId === activeRoom.id;
   if (historyRoomRef.current !== activeRoom.id) {
     historyRoomRef.current = activeRoom.id;
@@ -88,19 +85,10 @@ export function useLobbyHistory({
           !event.flow_meeting_id ||
           event.flow_meeting_id === activeRoom.meetingId
       );
-    if (usesCanonicalHistory || !activeRoom.createdAt) return roomEvents;
-    const roomStartedAt = Date.parse(activeRoom.createdAt);
-    if (!Number.isFinite(roomStartedAt)) return roomEvents;
-    return roomEvents.filter((event) => {
-      if (event.flow_meeting_id === activeRoom.meetingId) return true;
-      const eventTime = Date.parse(event.created_at || "");
-      return Number.isFinite(eventTime) && eventTime >= roomStartedAt;
-    });
+    return roomEvents;
   }, [
-    activeRoom.createdAt,
     activeRoom.meetingId,
     events,
-    usesCanonicalHistory,
   ]);
   const voteRevisions = useMemo(() => {
     const revisions: Record<string, string> = {};
@@ -139,8 +127,7 @@ export function useLobbyHistory({
       return;
     }
     const element = scrollRef.current;
-    const oldest = events[0];
-    if (!element || (!usesCanonicalHistory && !oldest?.id)) return;
+    if (!element || !loadCanonicalHistory) return;
     const requestedRoomId = activeRoom.id;
     loadingOlderRoomRef.current = requestedRoomId;
     setLoadingOlder(true);
@@ -159,8 +146,7 @@ export function useLobbyHistory({
       scrollHeight: element.scrollHeight,
       scrollTop: triggerScrollTop ?? element.scrollTop,
     };
-    if (usesCanonicalHistory && loadCanonicalHistory) {
-      loadCanonicalHistory(canonicalOldestSeq)
+    loadCanonicalHistory(canonicalOldestSeq)
         .then((page) => {
           if (historyRoomRef.current !== requestedRoomId) return;
           setHasMoreHistory(page.hasMoreBefore);
@@ -183,38 +169,6 @@ export function useLobbyHistory({
             setLoadingOlder(false);
           }
         });
-      return;
-    }
-    const request = fetchLobby(activeRoom.meetingId, {
-      before: oldest.id,
-      limit: HISTORY_PAGE_SIZE,
-    });
-    request
-      .then((page) => {
-        if (historyRoomRef.current !== requestedRoomId) return;
-        const older = Array.isArray(page.events) ? page.events : [];
-        setHasMoreHistory(Boolean(page.has_more));
-        if (older.length) {
-          setEvents((previous) => mergeLobbyEvents(older, previous));
-        } else {
-          prependAnchorRef.current = null;
-          if (loadingOlderRoomRef.current === requestedRoomId) {
-            loadingOlderRoomRef.current = "";
-          }
-        }
-      })
-      .catch(() => {
-        if (historyRoomRef.current !== requestedRoomId) return;
-        prependAnchorRef.current = null;
-        if (loadingOlderRoomRef.current === requestedRoomId) {
-          loadingOlderRoomRef.current = "";
-        }
-      })
-      .finally(() => {
-        if (historyRoomRef.current === requestedRoomId) {
-          setLoadingOlder(false);
-        }
-      });
   }, [
     activeRoom.id,
     activeRoom.meetingId,
@@ -223,7 +177,6 @@ export function useLobbyHistory({
     hasMoreHistory,
     loadCanonicalHistory,
     loaded,
-    usesCanonicalHistory,
     visibleEvents,
   ]);
 
@@ -294,22 +247,21 @@ export function useLobbyHistory({
   }, [activeRoom.id, updatePinnedToLatest]);
 
   useEffect(() => {
-    if (usesCanonicalHistory) {
-      setEvents(canonicalEvents || []);
-      setHasMoreHistory(canonicalHasMoreHistory);
-      if (!canonicalHistoryReady) {
+    setEvents(canonicalEvents || []);
+    setHasMoreHistory(canonicalHasMoreHistory);
+    if (!canonicalHistoryReady) {
         historyReadyRef.current = false;
         if (loadingOlderRoomRef.current !== activeRoom.id) {
           setLoadingOlder(false);
         }
         setLoadedRoomId((current) => (current === activeRoom.id ? "" : current));
-        return;
-      }
-      const needsInitialBackfill =
+      return;
+    }
+    const needsInitialBackfill =
         canonicalHasMoreHistory &&
         (canonicalEvents || []).length < INITIAL_HISTORY_MESSAGE_TARGET &&
         initialBackfillFailedRoomRef.current !== activeRoom.id;
-      if (needsInitialBackfill && loadCanonicalHistory) {
+    if (needsInitialBackfill && loadCanonicalHistory) {
         historyReadyRef.current = false;
         setLoadedRoomId((current) => (current === activeRoom.id ? "" : current));
         if (loadingOlderRoomRef.current !== activeRoom.id) {
@@ -336,36 +288,13 @@ export function useLobbyHistory({
               }
             });
         }
-        return;
-      }
-      historyReadyRef.current = true;
-      if (loadingOlderRoomRef.current !== activeRoom.id) {
-        setLoadingOlder(false);
-      }
-      setLoadedRoomId(activeRoom.id);
       return;
     }
-    let cancelled = false;
-    setEvents([]);
-    setLoadedRoomId((current) => (current === activeRoom.id ? "" : current));
-    setHasMoreHistory(true);
-    const lobbyRequest = fetchLobby(activeRoom.meetingId);
-    lobbyRequest
-      .then((data) => {
-        if (cancelled) return;
-        const nextEvents = Array.isArray(data.events) ? data.events : [];
-        setEvents((previous) => mergeLobbyEvents(previous, nextEvents));
-        historyReadyRef.current = true;
-        setLoadedRoomId(activeRoom.id);
-      })
-      .catch(() => {
-        if (cancelled) return;
-        historyReadyRef.current = true;
-        setLoadedRoomId(activeRoom.id);
-      });
-    return () => {
-      cancelled = true;
-    };
+    historyReadyRef.current = true;
+    if (loadingOlderRoomRef.current !== activeRoom.id) {
+      setLoadingOlder(false);
+    }
+    setLoadedRoomId(activeRoom.id);
   }, [
     activeRoom.meetingId,
     activeRoom.id,
@@ -374,7 +303,6 @@ export function useLobbyHistory({
     canonicalHistoryReady,
     canonicalOldestSeq,
     loadCanonicalHistory,
-    usesCanonicalHistory,
   ]);
 
   const handleStreamEvents = useCallback((incoming: LobbyEvent[]) => {

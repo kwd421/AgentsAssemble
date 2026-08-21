@@ -23,7 +23,6 @@ export default function HomeSidebar({
   profileIdentity,
   friends = [],
   selectedFriendId,
-  activeDmFriendId,
   onFriendSelect,
   onStartAddFriend,
   onStartAddAgent,
@@ -36,8 +35,7 @@ export default function HomeSidebar({
   profileIdentity?: UserProfileIdentity;
   friends?: RoomFriend[];
   selectedFriendId?: string;
-  activeDmFriendId?: string;
-  onFriendSelect?: (friend: RoomFriend, intent?: "profile" | "dm") => void;
+  onFriendSelect?: (friend: RoomFriend) => void;
   onStartAddFriend?: (draftName?: string) => void;
   onStartAddAgent?: () => void;
 }) {
@@ -49,7 +47,7 @@ export default function HomeSidebar({
     return friends.filter((friend) => roomFriendMatchesSearch(friend, needle));
   }, [cleanDmQuery, friends]);
   return (
-    <aside className="dc-sidebar dc-home-sidebar flex shrink-0 flex-col" aria-label="친구와 DM">
+    <aside className="dc-sidebar dc-home-sidebar flex shrink-0 flex-col" aria-label="친구 목록">
       <header className="dc-home-search">
         <label>
           <span className="sr-only">대화 찾기 또는 시작하기</span>
@@ -76,7 +74,7 @@ export default function HomeSidebar({
               key={item.id}
               type="button"
               className="dc-home-nav-item"
-              data-active={activeFilter === item.id && !activeDmFriendId}
+              data-active={activeFilter === item.id}
               onClick={() => onFilterChange(item.id)}
             >
               <Icon size={20} />
@@ -86,7 +84,7 @@ export default function HomeSidebar({
         })}
         <div className="dc-dm-section">
           <div className="dc-dm-title">
-            <span>다이렉트 메시지</span>
+            <span>저장된 친구</span>
             <button type="button" aria-label="친구 추가하기" onClick={() => onStartAddFriend?.()}>
               <Plus size={14} />
             </button>
@@ -102,8 +100,8 @@ export default function HomeSidebar({
                   className="dc-dm-row"
                   data-status={friend.status || "offline"}
                   data-profile-selected={selectedFriendId === friend.friend_id}
-                  data-active={activeDmFriendId === friend.friend_id}
-                  onClick={() => onFriendSelect?.(friend, "dm")}
+                  data-active={selectedFriendId === friend.friend_id}
+                  onClick={() => onFriendSelect?.(friend)}
                   title={`${friend.display_name} · ${meta?.label || "미분류"}`}
                 >
                   <span className="dc-dm-avatar">

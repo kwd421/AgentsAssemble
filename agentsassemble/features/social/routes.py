@@ -1,11 +1,8 @@
 """HTTP routes for room friends, direct messages, and the local profile."""
 from __future__ import annotations
 
-from collections.abc import Callable
 from http import HTTPStatus
 
-from agentsassemble.legacy.live_agent.state import read_live_agents
-from agentsassemble.features.social.direct_messages import room_friend_dm_payload
 from agentsassemble.features.social.friends import (
     delete_room_friend,
     room_friends_payload,
@@ -17,32 +14,15 @@ from agentsassemble.web.router import RequestContext, Router
 
 def register_room_friend_profile_routes(
     router: Router,
-    *,
-    post_direct_dm: Callable[
-        [RequestContext, dict[str, object]],
-        dict[str, object],
-    ],
 ) -> None:
     """Attach room-friend, direct-message, and local-profile routes."""
-
-    @router.get("/api/room-friends/dm")
-    def room_friend_dm(ctx: RequestContext) -> None:
-        try:
-            ctx.send_json(
-                room_friend_dm_payload(
-                    ctx.deps.output_root,
-                    ctx.query_value("friend_id"),
-                )
-            )
-        except ValueError as error:
-            ctx.send_error(HTTPStatus.BAD_REQUEST, str(error))
 
     @router.get("/api/room-friends")
     def room_friends(ctx: RequestContext) -> None:
         ctx.send_json(
             room_friends_payload(
                 ctx.deps.output_root,
-                read_live_agents(ctx.deps.output_root),
+                [],
             )
         )
 
@@ -66,16 +46,6 @@ def register_room_friend_profile_routes(
         except ValueError as error:
             ctx.send_error(HTTPStatus.BAD_REQUEST, str(error))
 
-    @router.post("/api/room-friends/dm")
-    def post_room_friend_dm(ctx: RequestContext) -> None:
-        payload = ctx.read_json_body()
-        if payload is None:
-            return
-        try:
-            ctx.send_json(post_direct_dm(ctx, payload))
-        except ValueError as error:
-            ctx.send_error(HTTPStatus.BAD_REQUEST, str(error))
-
     @router.post("/api/room-friends")
     def post_room_friend(ctx: RequestContext) -> None:
         payload = ctx.read_json_body()
@@ -87,7 +57,7 @@ def register_room_friend_profile_routes(
                 "friend": friend,
                 **room_friends_payload(
                     ctx.deps.output_root,
-                    read_live_agents(ctx.deps.output_root),
+                    [],
                 ),
             }
         )
@@ -132,7 +102,7 @@ def register_room_friend_profile_routes(
                 "deleted": deleted,
                 **room_friends_payload(
                     ctx.deps.output_root,
-                    read_live_agents(ctx.deps.output_root),
+                    [],
                 ),
             }
         )

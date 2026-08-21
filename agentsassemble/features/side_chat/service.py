@@ -1,4 +1,4 @@
-"""Legacy side-chat JSONL storage and meeting-scoped reads."""
+"""Side-chat JSONL storage and room-scoped reads."""
 from __future__ import annotations
 
 import json
@@ -7,18 +7,14 @@ import threading
 from pathlib import Path
 from uuid import uuid4
 
-from agentsassemble.legacy.meeting.core.events import (
-    append_side_chat_event_to_file,
-    clean_lobby_text,
-    iter_lobby_events_newest_first,
-    read_side_chat_events,
-)
+from agentsassemble.features.jsonl_chat import append_chat_event, read_chat_events
+from agentsassemble.room.text import clean_room_text
 
 _SIDE_CHAT_WRITE_LOCK = threading.Lock()
 
 
 def _side_chat_scope_id(value: object) -> str:
-    return clean_lobby_text(value, limit=128)
+    return clean_room_text(value, limit=128)
 
 
 def _side_chat_event_matches_meeting(event: dict[str, object], meeting_id: str) -> bool:
@@ -45,27 +41,28 @@ def read_side_chat(
     path = output_root / "side_chat.jsonl"
     scoped_meeting_id = _side_chat_scope_id(meeting_id)
     if not scoped_meeting_id:
-        return read_side_chat_events(path, limit=limit)
+        return read_chat_events(path, limit=limit or 120)
     if limit is not None and limit <= 0:
         return []
-    newest_matches: list[dict[str, object]] = []
-    for event in iter_lobby_events_newest_first(path, default_channel="side_chat"):
-        if not _side_chat_event_matches_meeting(event, scoped_meeting_id):
-            continue
-        newest_matches.append(event)
-        if limit is not None and len(newest_matches) >= limit:
-            break
-    newest_matches.reverse()
-    return newest_matches
+    return _filter_side_chat_events_for_meeting(
+        read_chat_events(path, limit=max(limit or 120, 120)),
+        scoped_meeting_id,
+    )[-limit:] if limit is not None else _filter_side_chat_events_for_meeting(
+        read_chat_events(path, limit=10000), scoped_meeting_id
+    )
 
 
 def append_side_chat_event(output_root: Path, event: dict[str, object]) -> dict[str, object]:
     with _SIDE_CHAT_WRITE_LOCK:
-        return append_side_chat_event_to_file(output_root / "side_chat.jsonl", event)
+        return append_chat_event(
+            output_root / "side_chat.jsonl",
+            event,
+            channel="side_chat",
+        )
 
 
 def delete_room_side_chat_events(output_root: Path, meeting_id: str) -> int:
-    """Remove one room's legacy side-chat rows without disturbing other rooms."""
+    """Remove one room's side-chat rows without disturbing other rooms."""
     scoped_meeting_id = _side_chat_scope_id(meeting_id)
     if not scoped_meeting_id:
         return 0

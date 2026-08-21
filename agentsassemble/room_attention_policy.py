@@ -4,7 +4,7 @@ import re
 from collections.abc import Iterable
 from typing import Mapping
 
-from agentsassemble.legacy.meeting.core.events import clean_lobby_text
+from agentsassemble.room.text import clean_room_text as clean_lobby_text
 from agentsassemble.room_attention import AttentionEvaluation
 from agentsassemble.room_engagement import message_mentions_all
 

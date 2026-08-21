@@ -13,7 +13,6 @@ import type { RoomSocketHandle } from "../../roomSocketClient";
 import LobbyComposer from "./LobbyComposer";
 
 const apiMocks = vi.hoisted(() => ({
-  postLobbyMessage: vi.fn(),
   uploadLobbyAttachment: vi.fn(),
 }));
 
@@ -21,7 +20,6 @@ vi.mock("../../api", async (importOriginal) => {
   const actual = await importOriginal<typeof import("../../api")>();
   return {
     ...actual,
-    postLobbyMessage: apiMocks.postLobbyMessage,
     uploadLobbyAttachment: apiMocks.uploadLobbyAttachment,
   };
 });
@@ -30,11 +28,10 @@ describe("LobbyComposer", () => {
   afterEach(() => cleanup());
 
   beforeEach(() => {
-    apiMocks.postLobbyMessage.mockReset();
     apiMocks.uploadLobbyAttachment.mockReset();
   });
 
-  it("does not fall back to legacy lobby posting while the canonical socket is unavailable", async () => {
+  it("keeps a message unsent while the canonical socket is unavailable", async () => {
     const onPosted = vi.fn();
     render(
       <LobbyComposer
@@ -52,7 +49,6 @@ describe("LobbyComposer", () => {
       await screen.findByText("방 연결이 준비되지 않았습니다. 연결된 뒤 다시 보내 주세요.")
     ).toBeTruthy();
     await waitFor(() => expect(onPosted).not.toHaveBeenCalled());
-    expect(apiMocks.postLobbyMessage).not.toHaveBeenCalled();
   });
 
   it("keeps the composer focused after an Enter submission finishes", async () => {

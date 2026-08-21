@@ -1,7 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import { Bot, Search, UserPlus, Users } from "lucide-react";
 import {
-  type LiveAgentProcessGroup,
   type ParticipantType,
   type RoomFriend,
   type RoomFriendsResponse,
@@ -10,7 +9,6 @@ import type { FriendListFilter } from "../app/friendsDirectoryTypes";
 import { roomFriendMatchesSearch } from "../lib/friendSearch";
 import { PARTICIPANT_TYPE_OPTIONS } from "../lib/participantTypes";
 import { isActivePresence } from "../lib/presenceStatus";
-import FriendDmPanel from "./components/FriendDmPanel";
 import FriendProfileCard from "./components/FriendProfileCard";
 import FriendRow from "./components/FriendRow";
 
@@ -42,15 +40,10 @@ export default function FriendsView({
   addDraftName,
   onShowDirectory,
   onSelectFriend,
-  onOpenFriendDm,
-  onShowFriendProfile,
   onAddCandidate,
   onAddManual,
   onDeleteFriend,
   selectedFriendId,
-  activeDmFriendId,
-  processGroups = [],
-  onSessionActionComplete,
   onStartAddAgent,
 }: {
   typeFilter: ParticipantType | null;
@@ -62,8 +55,6 @@ export default function FriendsView({
   addDraftName: string;
   onShowDirectory: (filter: FriendListFilter) => void;
   onSelectFriend: (friend: RoomFriend) => void;
-  onOpenFriendDm: (friend: RoomFriend) => void;
-  onShowFriendProfile: (friend: RoomFriend) => void;
   onAddCandidate: (friend: RoomFriend) => Promise<boolean>;
   onAddManual: (draft: {
     displayName: string;
@@ -72,16 +63,12 @@ export default function FriendsView({
   }) => Promise<boolean>;
   onDeleteFriend: (friend: RoomFriend, preferredNextVisibleFriendId?: string) => Promise<boolean>;
   selectedFriendId: string;
-  activeDmFriendId: string;
-  processGroups?: LiveAgentProcessGroup[];
-  onSessionActionComplete?: () => void;
   onStartAddAgent?: () => void;
 }) {
   const [query, setQuery] = useState("");
   const [displayName, setDisplayName] = useState("");
   const [participantType, setParticipantType] = useState<ParticipantType>("subscription_ai");
   const [providerKind, setProviderKind] = useState("");
-  const [dmFocusSignal, setDmFocusSignal] = useState(0);
 
   useEffect(() => {
     if (filter !== "add") return;
@@ -102,7 +89,6 @@ export default function FriendsView({
     return typedCandidates.filter((friend) => roomFriendMatchesSearch(friend, needle));
   }, [payload.candidates, query, typeFilter]);
   const selectedFriend = useMemo(() => {
-    if (activeDmFriendId) return null;
     const explicitSelection = payload.friends.find((friend) => {
       if (friend.friend_id !== selectedFriendId) return false;
       if (typeFilter && friend.participant_type !== typeFilter) return false;
@@ -111,21 +97,7 @@ export default function FriendsView({
     if (explicitSelection) return explicitSelection;
     if (filter === "online" || filter === "all") return visibleFriends[0] || null;
     return null;
-  }, [activeDmFriendId, filter, payload.friends, selectedFriendId, typeFilter, visibleFriends]);
-  const activeDmFriend = useMemo(
-    () => payload.friends.find((friend) => friend.friend_id === activeDmFriendId) || null,
-    [activeDmFriendId, payload.friends]
-  );
-  const profileFriend = activeDmFriend || selectedFriend;
-
-  function openFriendDm(friend: RoomFriend) {
-    onOpenFriendDm(friend);
-    setDmFocusSignal((value) => value + 1);
-  }
-
-  function showFriendProfile(friend: RoomFriend) {
-    onShowFriendProfile(friend);
-  }
+  }, [filter, payload.friends, selectedFriendId, typeFilter, visibleFriends]);
 
   async function handleAddCandidate(friend: RoomFriend) {
     await onAddCandidate(friend);
@@ -161,16 +133,16 @@ export default function FriendsView({
           <span>친구</span>
         </div>
         <nav className="dc-friends-tabs" aria-label="친구 필터">
-          <button type="button" data-active={filter === "online" && !activeDmFriend} onClick={() => onShowDirectory("online")}>
+          <button type="button" data-active={filter === "online"} onClick={() => onShowDirectory("online")}>
             온라인
           </button>
-          <button type="button" data-active={filter === "all" && !activeDmFriend} onClick={() => onShowDirectory("all")}>
+          <button type="button" data-active={filter === "all"} onClick={() => onShowDirectory("all")}>
             모두
           </button>
           <button
             type="button"
             className="add-tab"
-            data-active={filter === "add" && !activeDmFriend}
+            data-active={filter === "add"}
             onClick={() => onShowDirectory("add")}
           >
             친구 추가하기
@@ -179,15 +151,7 @@ export default function FriendsView({
       </header>
 
       <div className="dc-friends-body">
-        <main className="dc-friends-main" data-mode={activeDmFriend ? "dm" : "directory"}>
-          {activeDmFriend ? (
-            <FriendDmPanel
-              friend={activeDmFriend}
-              focusSignal={dmFocusSignal}
-              layout="channel"
-              onShowProfile={showFriendProfile}
-            />
-          ) : (
+        <main className="dc-friends-main" data-mode="directory">
           <>
           <label className="dc-friends-search">
             <Search size={16} />
@@ -253,7 +217,6 @@ export default function FriendsView({
                 <FriendRow
                   key={friend.friend_id}
                   friend={friend}
-                  onStartDm={openFriendDm}
                   onDelete={handleDeleteFriend}
                   selected={selectedFriend?.friend_id === friend.friend_id}
                   onSelect={onSelectFriend}
@@ -287,19 +250,13 @@ export default function FriendsView({
           </section>
           )}
           </>
-          )}
         </main>
 
         <aside className="dc-friends-activity">
-          <h2>{profileFriend ? "프로필" : "현재 활동 중"}</h2>
+          <h2>{selectedFriend ? "프로필" : "현재 활동 중"}</h2>
           <FriendProfileCard
-            friend={profileFriend}
-            onStartDm={openFriendDm}
-            onDelete={profileFriend ? handleDeleteFriend : undefined}
-            processGroups={processGroups}
-            onSessionActionComplete={() => {
-              onSessionActionComplete?.();
-            }}
+            friend={selectedFriend}
+            onDelete={selectedFriend ? handleDeleteFriend : undefined}
           />
         </aside>
       </div>

@@ -37,11 +37,7 @@ class AgentSessionCliTests(unittest.TestCase):
             default_live_cli_smoke_config=Path("configs/live-cli-providers.example.json"),
         )
 
-    def test_demo_free_chat_mode_is_rejected(self):
-        with patch("sys.stderr", new_callable=StringIO), self.assertRaises(SystemExit):
-            build_parser().parse_args(["demo", "--meeting-mode", "free-chat"])
-
-    def test_default_help_exposes_agent_session_not_legacy_connection_paths(self):
+    def test_default_help_exposes_current_room_commands(self):
         help_text = build_parser().format_help()
 
         self.assertIn("Agent Session", help_text)
@@ -50,39 +46,6 @@ class AgentSessionCliTests(unittest.TestCase):
         self.assertNotIn("live-agent", help_text)
         self.assertNotIn("claude-bridge", help_text)
         self.assertNotIn("sessions", help_text)
-
-    def test_mcp_serve_without_internal_flag_is_disabled(self):
-        stderr = StringIO()
-        with patch("sys.stderr", stderr):
-            exit_code = main(["mcp", "serve", "--profile", "participant"])
-
-        self.assertEqual(exit_code, 2)
-        self.assertIn("legacy/internal", stderr.getvalue())
-
-    def test_live_agent_flow_without_internal_flag_is_disabled_before_http(self):
-        stderr = StringIO()
-        with patch("sys.stderr", stderr):
-            exit_code = main(["live-agent", "flow", "--meeting-id", "m1", "--topic", "t"])
-
-        self.assertEqual(exit_code, 2)
-        self.assertIn("legacy/internal", stderr.getvalue())
-
-    def test_live_agent_session_resume_without_internal_flag_is_disabled(self):
-        stderr = StringIO()
-        with patch("sys.stderr", stderr):
-            exit_code = main(
-                [
-                    "live-agent",
-                    "resume-session",
-                    "--meeting-id",
-                    "m1",
-                    "--live-agent-config",
-                    "agents.json",
-                ]
-            )
-
-        self.assertEqual(exit_code, 2)
-        self.assertIn("legacy/internal", stderr.getvalue())
 
     def test_room_resume_uses_agent_session_resume_endpoint(self):
         args = build_parser().parse_args(
@@ -245,24 +208,6 @@ class AgentSessionCliTests(unittest.TestCase):
             [(('codex-app-server-same-profile',), {"approve_real_provider": True})],
         )
         self.assertIn('"status": "ok"', stdout.getvalue())
-
-    def test_room_smoke_legacy_approved_stub_does_not_dispatch_app_server_runner(self):
-        args = build_parser().parse_args(
-            [
-                "room",
-                "smoke",
-                "fresh-codex",
-                "--approve-real-provider",
-                "--json",
-            ]
-        )
-
-        stdout = StringIO()
-        with patch("sys.stdout", stdout):
-            exit_code = run_room_command(args, runtime=self._runtime())
-
-        self.assertEqual(exit_code, 0)
-        self.assertIn('"status": "not_run"', stdout.getvalue())
 
     def test_room_smoke_live_cli_dispatches_command_config_harness(self):
         args = build_parser().parse_args(

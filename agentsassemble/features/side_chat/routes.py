@@ -35,14 +35,4 @@ def register_side_chat_routes(router: Router) -> None:
             }
         )
 
-    @router.get("/api/events/side-chat")
-    def side_chat_events(ctx: RequestContext) -> None:
-        ctx.send_sse_stream(
-            "side_chat",
-            "side_chat",
-            meeting_id=ctx.query_value("meeting_id"),
-            last_event_id=ctx.last_event_id(),
-        )
-
-
 __all__ = ["register_side_chat_routes"]

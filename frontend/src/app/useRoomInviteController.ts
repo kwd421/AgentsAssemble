@@ -16,14 +16,11 @@ import {
 } from "../api";
 import { getOrCreateDeviceToken } from "../lib/deviceIdentity";
 import {
-  inviteFriendDmMessage,
   remoteClientPacketPreview,
   secureInviteCopyTarget,
 } from "../lib/roomInviteCopy";
 import { localPreviewInviteUrlForRoom, type RoomDockItem } from "../lib/roomDockModel";
 import type { RoomAppearance } from "../lib/roomAppearance";
-import { isActivePresence } from "../lib/presenceStatus";
-import { postCurrentUserFriendDm } from "./currentUserFriendDm";
 
 type InviteModalState = { roomId: string } | null;
 
@@ -488,11 +485,9 @@ export function useRoomInviteController({
     setFriendStatuses((previous) => ({ ...previous, [friendId]: "초대 중" }));
     try {
       const isAiFriend = friend.participant_type !== "human";
-      const isLiveSession = isActivePresence(friend.status);
       const inviteScope = appearance?.inviteScope || room.inviteScope || "room";
-      const readOnlyInvite = inviteScope === "read_only";
       const participantId = friend.source_agent_id || friend.friend_id;
-      const { invite, target } = await createSecureInviteForRoom({
+      const { invite } = await createSecureInviteForRoom({
         room,
         agentId: participantId,
         displayName: friend.display_name,
@@ -505,21 +500,9 @@ export function useRoomInviteController({
         friendName: packetPreview ? friend.display_name : "",
         preview: packetPreview,
       });
-      if (isAiFriend) {
-        await postCurrentUserFriendDm({
-          friendId,
-          message: inviteFriendDmMessage({
-            roomLabel: room.label,
-            link: target.copyUrl,
-            isAiFriend,
-            isLiveSession,
-            readOnlyInvite,
-          }),
-        });
-      }
       setFriendStatuses((previous) => ({
         ...previous,
-        [friendId]: isAiFriend ? (isLiveSession ? "호출됨" : "실행 필요") : "초대됨",
+        [friendId]: isAiFriend ? "입장 패킷 생성됨" : "초대 링크 생성됨",
       }));
     } catch (error) {
       setFriendStatuses((previous) => ({

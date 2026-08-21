@@ -26,8 +26,8 @@ The current product surface is:
 - sequenced room history, reconnect replay, bounded provider context, and
   provider-owned private conversation state.
 
-The meeting/research/decision/archive pipeline is legacy. Do not connect new
-shared-room behavior to it unless the user explicitly requests legacy work.
+The retired meeting/research/decision/archive pipeline is not part of the
+current product. New shared-room behavior belongs on the canonical room path.
 
 ## Canonical Architecture
 
@@ -212,9 +212,10 @@ reloaded clients receive only the new static build.
 
 Current domain code is owned by `room/`, `admission/`, `identity/`,
 `providers/`, `web/`, `application/`, `diagnostics/`, and `persistence/`.
-Retained meeting and resident implementations are owned below `legacy/`.
-Historical root imports remain explicit compatibility exports recorded by
-`scripts/check_package_architecture.py`; new flat product modules are rejected.
+The retired `legacy/` package and its HTTP, CLI, GUI, process, meeting, and
+resident paths have been removed. Remaining root imports are explicit shims for
+current code and are recorded by `scripts/check_package_architecture.py`; new
+flat product modules are rejected.
 
 `docs/product/PACKAGE_MAP.md` is the generated inventory and
 `docs/product/PACKAGE_CYCLES.md` is the generated cycle report.
@@ -883,13 +884,13 @@ Detailed product policy: `docs/product/OPERATING_MODEL.md`.
 | Catalog-validated server-owned Agent Session creation | `room/agent_creation.py`; composed by `room/realtime.py` |
 | Stopped server-owned Agent Session reactivation | `room/agent_reactivation.py`; composed by `room/realtime.py` |
 | Canonical human message validation and append | `room/messages.py`; composed by `room/realtime.py` |
-| Governed legacy/public room speech identity and safety policy | `room/speech.py`; compatibility export in `room_speech.py` |
+| Governed room speech identity and safety policy | `room/speech.py`; compatibility export in `room_speech.py` |
 | Canonical participant mute transaction and post-commit runtime synchronization | `room/member_mute.py`; composed by `room/realtime.py` |
 | Canonical participant leave transaction and delayed access revocation | `room/participant_leave.py`; composed by `room/realtime.py` |
 | Retryable participant kick intent, external cleanup, and final transaction | `room/participant_kick.py`; composed by `room/realtime.py` |
 | Room-delete owner/name validation, Agent Session cleanup, and tombstone command resumption | `room/deletion.py`; composed by `room/realtime.py` |
 | Deleted-room invite/session/identity/listener/provider/file/socket cleanup and tombstone completion | `room/deleted_cleanup.py`; composed by `room/realtime.py` |
-| Room history and lifecycle HTTP | `web/routes/room_history.py`, `web/routes/room_lifecycle.py`; legacy `/api/room/ensure` composition remains in `gui_room_lifecycle_http.py` |
+| Room history and lifecycle HTTP | `web/routes/room_history.py`, `web/routes/room_lifecycle.py`; composed by `web/routes/room_composition.py` |
 | Room roster and member HTTP | canonical mute/kick compatibility writes in `room/moderation.py`; retained roster/presence projection in `room_members.py`; HTTP in `web/routes/room_members.py`; retained resident kick and optional channel/voice composition remains in `gui_room_moderation_media_http.py` |
 | Routing and provider context | `room_routing.py`; bounded room projection in `room/context.py`; turn packet assembly in `room/turn_context.py`; compatibility exports in `room_context.py` and `room_turn_context.py`; provider delivery cursor parity in `providers/sync_cursor.py` with compatibility export in `room_provider_sync_cursor.py` |
 | Fanout and bridge delivery | `room/event_broker.py` with compatibility export in `room_event_broker.py`; provider-side delivery in `providers/agent_bridge.py`, executable composition in `application/agent_bridge_entrypoint.py`; compatibility export in `room_agent_bridge.py` |
@@ -908,45 +909,19 @@ Detailed product policy: `docs/product/OPERATING_MODEL.md`.
 | GUI HTTP routing, response, static delivery, and WebSocket transport | route/request-context owner in `web/router.py`; response owner in `web/response.py`; static owner in `web/static.py`; shared SSE/WebSocket cadence in `web/sse_cadence.py`; RFC 6455 handshake/frame codec in `web/websocket_codec.py`; Python resident/bridge room client in `web/room_client.py`; ticket and per-connection protocol in `web/room_session.py`; ticket route and WebSocket upgrade owner in `web/websocket.py`; root compatibility exports retained; composition in `gui.py` |
 | GUI Host/Origin and public-route trust policy | owner in `web/security.py`; compatibility exports in `gui_request_security.py` |
 | Public invite runtime and stable entrypoint | server-lifetime host-token/public-URL state and validation in `application/public_invite_runtime.py`; repository-relative stable-entry configuration and asynchronous Cloudflare KV announcement in `application/stable_entry.py`; Cloudflare quick-tunnel process lifecycle in `application/public_tunnel.py`; root compatibility exports retained |
-| Durable legacy session-run monitor lifecycle | thread lifecycle and diagnostics in `application/session_run_monitor.py` with root compatibility export; reconcile policy wiring in `gui.py` |
-| Canonical room HTTP routes | `gui_room_*_http.py`; coordinator in `gui_room_http.py` |
-| Local legacy lobby POST/SSE compatibility | `legacy/meeting/http/lobby.py`; root HTTP module is a compatibility export; do not expose it as remote room transport or attach new canonical behavior here |
-| Legacy meeting read/lifecycle/workroom/SSE compatibility | registrars in `legacy/meeting/http/`, query projection in `legacy/meeting/queries.py`, record semantics in `legacy/meeting/records.py`; root HTTP modules are compatibility exports |
-| Legacy resident room/return-packet reads | query facade and visible-event projection in `legacy/live_agent/queries.py`; read-only HTTP registrar in `legacy/live_agent/http/read.py`; both retain root compatibility exports |
-| Legacy resident diagnostic histories | read facade, process/session history, and readiness overlay in `legacy/live_agent/diagnostics.py`; read-only HTTP registrar in `legacy/live_agent/http/read.py`; both retain root compatibility exports |
-| Legacy resident process/connection projections | safe process and connection projection in `legacy/live_agent/process_projection.py` with root compatibility export; diagnostic composition in `legacy/live_agent/diagnostics.py` |
-| Legacy resident process mutations | redacted error and operation-detail policy in `legacy/live_agent/process_control.py`; mutation service in `legacy/live_agent/process_service.py`; HTTP registrar in `legacy/live_agent/http/process.py`; all retain root compatibility exports |
-| Legacy resident session policy | status, summary, and redacted error policy in `legacy/live_agent/session_control.py`; bounded operation payloads in `legacy/live_agent/session_projection.py`; root compatibility exports |
-| Legacy resident session mutations | group/session lifecycle in `legacy/live_agent/session_service.py`; durable run lifecycle in `legacy/live_agent/session_run_service.py`; HTTP registrars in `legacy/live_agent/http/session.py` and `session_run.py`; all retain root compatibility exports |
-| Legacy resident readiness | preflight/smoke composition in `legacy/live_agent/readiness.py`; bounded public projection in `legacy/live_agent/readiness_projection.py`; HTTP registrar in `legacy/live_agent/http/readiness.py`; read facade in `legacy/live_agent/diagnostics.py`; moved modules retain root compatibility exports |
-| Legacy resident presence | registration, heartbeat, leave, and audit projection in `legacy/live_agent/presence.py` and `presence_projection.py`; HTTP registrar in `legacy/live_agent/http/presence.py`; all retain root compatibility exports |
-| Legacy resident roster and admission projections | query facade and admission evidence in `legacy/live_agent/roster_queries.py`; read-only HTTP registrar in `legacy/live_agent/http/read.py`; both retain root compatibility exports |
-| Legacy resident health aggregation | shared safe status and reason policy in `legacy/live_agent/health.py`; observation cursor/event policy in `legacy/live_agent/observation_health.py`; durable run/monitor policy in `legacy/live_agent/session_run_health.py`; aggregate query facade in `legacy/live_agent/health_queries.py`; each retains a root compatibility export |
-| Legacy resident preflight | service in `legacy/live_agent/preflight.py`; safe response projection in `diagnostics/report_projection.py`; HTTP registrar in `legacy/live_agent/http/preflight.py`; service, projection, and HTTP retain root compatibility exports |
-| Legacy resident engagement mutation | service and operation audit in `legacy/live_agent/engagement.py`; HTTP registrar in `legacy/live_agent/http/engagement.py`; both retain root compatibility exports |
-| Legacy resident reply probe | execution, timeout normalization, and bounded operation audit in `legacy/live_agent/probe.py`; HTTP registrar in `legacy/live_agent/http/probe.py`; both retain root compatibility exports |
-| Legacy resident local CLI discovery | service and bounded operation details in `legacy/live_agent/discovery.py`; HTTP registrar in `legacy/live_agent/http/discovery.py`; both retain root compatibility exports |
-| Legacy resident lobby and DM speech | speech service, flow metadata, and duplicate/turn-conflict policy in `legacy/live_agent/speech.py`; HTTP registrar in `legacy/live_agent/http/speech.py`; both retain root compatibility exports |
-| Legacy resident official/review replies | idempotent reply service, shared-memory refresh, and operation audit in `legacy/live_agent/official_reply.py`; HTTP registrar in `legacy/live_agent/http/official_reply.py`; both retain root compatibility exports |
-| Legacy resident smoke facade | smoke input normalization, execution composition, and bounded diagnostic projection in `legacy/live_agent/smoke.py`; HTTP registrar in `legacy/live_agent/http/smoke.py`; both retain root compatibility exports |
-| Legacy resident frontend-created session deletion | compatibility HTTP registrar in `legacy/live_agent/http/room_session.py` with root export; mutation service remains `live_agent_room_admin.py` pending its own ownership move |
-| Legacy resident external join brief | compatibility HTTP registrar in `legacy/live_agent/http/join_brief.py` with root export; side-effect-free packet policy remains `live_agent_join_brief.py` pending its own ownership move |
-| Legacy self-managed resident controls | compatibility stop/resume HTTP registrar in `legacy/live_agent/http/self_managed.py` with root export; execution service remains `live_agent_self_managed.py` pending its own ownership move |
-| Remaining legacy resident smoke compatibility | `gui.py`; classify and extract one verified family at a time |
-| Room-global settings | `room_global_settings.py`, `room_settings_service.py`, repository methods; HTTP in `web/routes/room_settings.py` with root compatibility export |
-| User-owned room notification/read preferences | validation in `room_user_preferences.py`; local persistence in `identity_room_preferences.py`; hosted persistence in `postgres_identity_preferences.py`; composition in `room_settings_service.py` |
-| Legacy room-global settings migration | source inspection in `legacy_room_settings_source.py`; atomic SQLite migration in `room_settings_migration.py` |
-| Legacy user preference migration | source inspection in `legacy_room_preferences_source.py`; explicit target-user migration in `room_preferences_migration.py` |
-| Friends, direct-message and local-profile HTTP | saved-friend records and live-agent projection in `features/social/friends.py`; friend-DM JSONL and live-agent delivery in `features/social/direct_messages.py`; local UI profile in `features/social/profile.py`; root compatibility exports in `room_friends.py`, `room_friend_dms.py`, and `user_profile.py`; routes in `features/social/routes.py` with root compatibility export in `gui_social_http.py`; direct-message process callback wired in `gui.py` |
+| Canonical room HTTP routes | `web/routes/room_composition.py` composes history, Agent Sessions, lifecycle, members, media, and invite admission |
+| Room-global settings | `room/global_settings.py`, `room/settings_service.py`, repository methods; HTTP in `web/routes/room_settings.py` |
+| User-owned room notification/read preferences | validation in `room/user_preferences.py`; local and hosted persistence in `persistence/`; composition in `room/settings_service.py` |
+| Friends and local-profile HTTP | saved-friend records in `features/social/friends.py`; local UI profile in `features/social/profile.py`; routes in `features/social/routes.py` |
 | Play Mode Mafia HTTP | routes in `features/mafia/routes.py`; game state and rules in `features/mafia/game.py`; root compatibility exports in `gui_mafia_http.py` and `mafia_game.py` |
-| Side-chat storage and room scoping | `features/side_chat/service.py` with root compatibility export in `side_chat.py`; event normalization in `meeting_events.py`; HTTP/SSE routes in `features/side_chat/routes.py` with root compatibility export in `gui_side_chat_http.py` |
-| CLI parser registration | `cli_parser_common.py`, `cli_parser_*.py`; dispatch in `cli.py` |
+| Side-chat storage and room scoping | `features/side_chat/service.py`; event normalization in `features/jsonl_chat.py`; HTTP routes in `features/side_chat/routes.py` |
+| CLI parser registration | focused parsers and commands under `application/cli/`; dispatch in `cli.py` |
 | Canonical React transport and sequenced history | `frontend/src/useCanonicalRoom.ts`, `frontend/src/roomSocketClient.ts` |
 | React room composition | `frontend/src/App.tsx`; domain state belongs in focused hooks under `frontend/src/app/` |
 | Room directory cache and hydration | `frontend/src/app/useRoomDirectory.ts`, `frontend/src/lib/roomDockModel.ts` |
 | Room members, settings, channels, invites, and side chat | `frontend/src/app/useRoomMembers.ts`, `useRoomSettingsController.ts`, `useRoomChannels.ts`, `useRoomInviteController.ts`, `useRoomSideChat.ts` |
 | Typing versus visible agent activity policy | `frontend/src/lib/roomTypingIndicators.ts`, `agentActivityPreferences.ts` |
-| Friends directory and DM selection | `frontend/src/app/useFriendsDirectory.ts`, `frontend/src/views/FriendsView.tsx` |
+| Friends directory and profiles | `frontend/src/app/useFriendsDirectory.ts`, `frontend/src/views/FriendsView.tsx` |
 | Active Play Mode Mafia game lifecycle | `frontend/src/app/useActiveMafiaGame.ts`; presentation in `App.tsx` and `LiveView.tsx` |
 | Frontend API client | `frontend/src/api/`; compatibility barrel in `frontend/src/api.ts` |
 | Message and roster UI | `frontend/src/views/LobbyView.tsx`, `frontend/src/views/components/member/` |

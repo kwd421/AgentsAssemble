@@ -38,7 +38,6 @@ import {
 } from "./api";
 import { useRoomAdmission } from "./app/useRoomAdmission";
 import { useFriendsDirectory } from "./app/useFriendsDirectory";
-import { useLiveAgentProcessGroups } from "./app/useLiveAgentProcessGroups";
 import { useRoomDirectory } from "./app/useRoomDirectory";
 import { useRoomSideChat } from "./app/useRoomSideChat";
 import { useRoomInviteController } from "./app/useRoomInviteController";
@@ -447,15 +446,11 @@ export default function App() {
     homeFilter,
     friendListFilter,
     selectedFriendId: selectedHomeFriendId,
-    activeDmFriendId: activeHomeDmFriendId,
     addDraftName: friendAddDraftName,
-    refresh: refreshFriendsDirectory,
     changeHomeFilter: changeFriendsHomeFilter,
     showDirectory: showFriendsDirectory,
     selectHomeFriend: selectFriendsHomeFriend,
     selectFriend: selectDirectoryFriend,
-    openFriendDm: openDirectoryFriendDm,
-    showFriendProfile: showDirectoryFriendProfile,
     openAddFriend: openFriendsAddView,
     addCandidate: addFriendsCandidate,
     addManual: addFriendsManual,
@@ -473,14 +468,6 @@ export default function App() {
   const activeRoom = rooms.find((room) => room.id === activeRoomId) ?? rooms[0] ?? EMPTY_ROOM;
   const activeRoomDisconnected = roomIsDisconnected(activeRoom);
   const activeOperationalMeetingId = activeRoomDisconnected ? "" : activeRoom.meetingId;
-  const {
-    processGroups,
-    refresh: refreshLiveAgentProcessGroups,
-  } = useLiveAgentProcessGroups({
-    activeMeetingId: activeOperationalMeetingId,
-    guestLocked,
-    enabled: startupIdentityResolved && !activeRoomDisconnected,
-  });
   const activeSideChatMeetingId = activeOperationalMeetingId;
   const {
     error: sideChatError,
@@ -645,14 +632,6 @@ export default function App() {
         Boolean(usageTarget)
       );
     });
-  const activeProcessGroups = useMemo(
-    () =>
-      processGroups.filter(
-        (group) => group.meeting_id && group.meeting_id === activeRoom.meetingId
-      ),
-    [activeRoom.meetingId, processGroups]
-  );
-  const activeProcessGroup = activeProcessGroups[0];
   const guestOwnedAgentIds = useMemo(() => {
     const agentId = guestSession?.agentId || "";
     return agentId ? [agentId, `${agentId}-ai`] : [];
@@ -662,12 +641,11 @@ export default function App() {
       guestLocked
         ? []
         : [
-            ...(activeProcessGroup?.agents || []).map((agent) => agent.agent_id),
             ...activeRoomAgentSessions
               .filter((session) => !session.external_owned)
               .map((session) => session.participant_id),
           ].filter(Boolean),
-    [activeProcessGroup?.agents, activeRoomAgentSessions, guestLocked]
+    [activeRoomAgentSessions, guestLocked]
   );
   const quotaViewer = useMemo<AgentQuotaVisibilityViewer>(
     () => ({
@@ -793,13 +771,8 @@ export default function App() {
     []
   );
   const refreshSessionAndMembers = useCallback(() => {
-    refreshLiveAgentProcessGroups();
     refreshMembers();
-  }, [refreshLiveAgentProcessGroups, refreshMembers]);
-  const refreshSessionAndMembersWithFriends = useCallback(() => {
-    refreshSessionAndMembers();
-    void refreshFriendsDirectory();
-  }, [refreshFriendsDirectory, refreshSessionAndMembers]);
+  }, [refreshMembers]);
   const scopedMentionables = useMemo(
     () =>
       roomMentionables({
@@ -941,12 +914,12 @@ export default function App() {
     changeFriendsHomeFilter(filter);
   }
 
-  function selectHomeFriend(friend: RoomFriend, intent: "profile" | "dm" = "profile") {
+  function selectHomeFriend(friend: RoomFriend) {
     setChannel("friends");
     setAdminOpen(false);
     setChannelMenu(null);
     closeMobileOverlays();
-    selectFriendsHomeFriend(friend, intent);
+    selectFriendsHomeFriend(friend);
   }
 
   function openAddFriendView(draftName = "") {
@@ -1487,7 +1460,7 @@ export default function App() {
             });
           }
         }}
-        onCreated={() => refreshLiveAgentProcessGroups()}
+        onCreated={() => refreshMembers()}
       />
 
       {guestRecoveryRequest && (
@@ -1534,7 +1507,6 @@ export default function App() {
           profileIdentity={{ deviceToken }}
           friends={homeFriendsPayload.friends}
           selectedFriendId={selectedHomeFriendId}
-          activeDmFriendId={activeHomeDmFriendId}
           onFriendSelect={selectHomeFriend}
           onStartAddFriend={openAddFriendView}
           onStartAddAgent={openAgentCreate}
@@ -1801,15 +1773,10 @@ export default function App() {
               addDraftName={friendAddDraftName}
               onShowDirectory={showFriendsDirectory}
               selectedFriendId={selectedHomeFriendId}
-              activeDmFriendId={activeHomeDmFriendId}
               onSelectFriend={selectDirectoryFriend}
-              onOpenFriendDm={openDirectoryFriendDm}
-              onShowFriendProfile={showDirectoryFriendProfile}
               onAddCandidate={addFriendsCandidate}
               onAddManual={addFriendsManual}
               onDeleteFriend={deleteDirectoryFriend}
-              processGroups={processGroups}
-              onSessionActionComplete={refreshSessionAndMembersWithFriends}
               onStartAddAgent={openAgentCreate}
             />
           ) : adminOpen ? (
@@ -2032,7 +1999,6 @@ export default function App() {
                 onCreateCompanionAiPacket={() => void createCompanionAiPacket()}
                 onCopyGuestAiPacket={() => void copyGuestAiPacket()}
                 channelNotifications={activeChannelSettings}
-                processGroups={activeProcessGroups}
                 onSessionActionComplete={refreshSessionAndMembers}
                 quotaViewer={quotaViewer}
                 onAgentUsageRequest={loadProviderUsage}

@@ -13,11 +13,7 @@ from urllib.parse import urlparse
 from urllib.request import Request, urlopen
 from uuid import uuid4
 
-from agentsassemble.admission.invite import (
-    reset_state,
-    set_runtime_host_token,
-    set_runtime_public_url,
-)
+from agentsassemble.application.public_invite_runtime import PublicInviteRuntime
 from agentsassemble.gui import _make_handler
 from agentsassemble.persistence.local.room.repository import RoomStore
 from agentsassemble.web.room_client import connect_room_ws
@@ -39,13 +35,16 @@ def _json_request(
 
 class PublicInviteSecurityHttpTests(unittest.TestCase):
     def setUp(self) -> None:
-        reset_state()
+        self.public_invite = PublicInviteRuntime(environ={})
 
     def tearDown(self) -> None:
-        reset_state()
+        self.public_invite.clear_public_url()
 
     def _start_server(self, root: Path) -> ThreadingHTTPServer:
-        server = ThreadingHTTPServer(("127.0.0.1", 0), _make_handler(root))
+        server = ThreadingHTTPServer(
+            ("127.0.0.1", 0),
+            _make_handler(root, public_invite_runtime_override=self.public_invite),
+        )
         threading.Thread(target=server.serve_forever, daemon=True).start()
         return server
 
@@ -95,7 +94,7 @@ class PublicInviteSecurityHttpTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as temp_dir:
             root = Path(temp_dir) / "room"
             RoomStore(root).create_room("friend-room", label="Friend room")
-            set_runtime_host_token("host-secret")
+            self.public_invite.set_host_token("host-secret")
             server = self._start_server(root)
             try:
                 base = f"http://127.0.0.1:{server.server_port}"
@@ -179,8 +178,8 @@ class PublicInviteSecurityHttpTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as temp_dir:
             root = Path(temp_dir) / "room"
             RoomStore(root).create_room("friend-room", label="Friend room")
-            set_runtime_host_token("host-secret")
-            set_runtime_public_url("https://shared-room.example.com")
+            self.public_invite.set_host_token("host-secret")
+            self.public_invite.set_public_url("https://shared-room.example.com")
             server = self._start_server(root)
             try:
                 base = f"http://127.0.0.1:{server.server_port}"
@@ -312,8 +311,8 @@ class PublicInviteSecurityHttpTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as temp_dir:
             root = Path(temp_dir) / "room"
             RoomStore(root).create_room("friend-room", label="Friend room")
-            set_runtime_host_token("host-secret")
-            set_runtime_public_url("https://shared-room.example.com")
+            self.public_invite.set_host_token("host-secret")
+            self.public_invite.set_public_url("https://shared-room.example.com")
             server = self._start_server(root)
             try:
                 base = f"http://127.0.0.1:{server.server_port}"
@@ -361,8 +360,8 @@ class PublicInviteSecurityHttpTests(unittest.TestCase):
             store = RoomStore(root)
             store.create_room("friend-room", label="Friend room")
             store.close()
-            set_runtime_host_token("host-secret")
-            set_runtime_public_url("https://shared-room.example.com")
+            self.public_invite.set_host_token("host-secret")
+            self.public_invite.set_public_url("https://shared-room.example.com")
             server = self._start_server(root)
             room_client = None
             try:
@@ -452,8 +451,8 @@ class PublicInviteSecurityHttpTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as temp_dir:
             root = Path(temp_dir) / "room"
             RoomStore(root).create_room("friend-room", label="Friend room")
-            set_runtime_host_token("host-secret")
-            set_runtime_public_url("https://shared-room.example.com")
+            self.public_invite.set_host_token("host-secret")
+            self.public_invite.set_public_url("https://shared-room.example.com")
             server = self._start_server(root)
             try:
                 base = f"http://127.0.0.1:{server.server_port}"

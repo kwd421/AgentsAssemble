@@ -18,13 +18,9 @@ from pathlib import Path
 from unittest.mock import patch
 from urllib.error import HTTPError
 from urllib.request import Request, urlopen
+from uuid import uuid4
 
 from agentsassemble.gui import _make_handler
-from agentsassemble.admission.invite import (
-    create_room_invite,
-    join_room_with_invite,
-    reset_state,
-)
 from agentsassemble.room.event_broker import RoomEventBroker
 from agentsassemble.web.http_server import AgentsAssembleHTTPServer
 from agentsassemble.web.websocket import handle_ws_upgrade
@@ -80,13 +76,11 @@ def _recv_server_text(sock: socket.socket, timeout: float = 4.0) -> dict:
 
 class WsEndpointTests(unittest.TestCase):
     def setUp(self):
-        reset_state()
         self._servers: list[ThreadingHTTPServer] = []
 
     def tearDown(self):
         for server in list(self._servers):
             self._stop_server(server)
-        reset_state()
 
     def _start_server(self, root: Path) -> ThreadingHTTPServer:
         server = ThreadingHTTPServer(("127.0.0.1", 0), _make_handler(root))
@@ -112,10 +106,41 @@ class WsEndpointTests(unittest.TestCase):
         server.server_close()
 
     def _session_token(self, base: str) -> str:
-        invite = create_room_invite(
-            room_url=base, meeting_id="room-1", agent_id="guest-1", display_name="테스터", max_uses=1
+        def post(endpoint: str, payload: dict[str, object]) -> dict[str, object]:
+            request = Request(
+                f"{base}{endpoint}",
+                data=json.dumps(payload).encode("utf-8"),
+                headers={"Content-Type": "application/json"},
+                method="POST",
+            )
+            try:
+                with urlopen(request, timeout=4) as response:
+                    return json.loads(response.read().decode("utf-8"))
+            except HTTPError as error:
+                if endpoint == "/api/rooms" and error.code == 400:
+                    error.close()
+                    return {}
+                raise
+
+        post("/api/rooms", {"room_id": "room-1", "label": "Room One"})
+        invite = post(
+            "/api/room-invite/create",
+            {
+                "meeting_id": "room-1",
+                "agent_id": "guest-1",
+                "display_name": "테스터",
+                "max_uses": 1,
+                "local_dev_preview": True,
+            },
         )
-        joined = join_room_with_invite(str(invite["invite_token"]))
+        joined = post(
+            "/api/room-invite/join",
+            {
+                "invite_token": invite["invite_token"],
+                "request_id": str(uuid4()),
+                "device_token": f"test-device-{uuid4().hex}",
+            },
+        )
         return str(joined["session_token"])
 
     def _ws_ticket(self, base: str, token: str) -> str:
@@ -206,10 +231,10 @@ class WsEndpointTests(unittest.TestCase):
 
                 sock = self._handshake(host, port, ticket)
                 try:
-                    sock.sendall(_client_text_frame(json.dumps({"op": "subscribe", "streams": ["lobby"]})))
+                    sock.sendall(_client_text_frame(json.dumps({"op": "subscribe", "streams": ["room_events"]})))
                     msg = _recv_server_text(sock)
                     self.assertEqual(msg["op"], "subscribed")
-                    self.assertEqual(msg["streams"], ["lobby"])
+                    self.assertEqual(msg["streams"], ["room_events"])
                 finally:
                     sock.close()
             finally:
@@ -253,27 +278,13 @@ class WsEndpointTests(unittest.TestCase):
             finally:
                 self._stop_server(server)
 
-    def test_remote_participant_uses_only_canonical_message_command(self):
+    def test_remote_participant_uses_canonical_message_command(self):
         with tempfile.TemporaryDirectory() as tmp:
             server = self._start_server(Path(tmp))
             try:
                 host, port = server.server_address
                 base = f"http://{host}:{port}"
                 token = self._session_token(base)
-                legacy_request = Request(
-                    f"{base}/api/room/say",
-                    data=json.dumps({"message": "legacy split brain"}).encode("utf-8"),
-                    headers={
-                        "Authorization": f"Bearer {token}",
-                        "Content-Type": "application/json",
-                    },
-                    method="POST",
-                )
-                with self.assertRaises(HTTPError) as legacy_rejected:
-                    urlopen(legacy_request, timeout=4)
-                self.assertEqual(legacy_rejected.exception.code, 404)
-                legacy_rejected.exception.close()
-
                 ticket = self._ws_ticket(base, token)
                 sock = self._handshake(host, port, ticket)
                 try:
@@ -396,8 +407,6 @@ class WsEndpointTests(unittest.TestCase):
 
         def deps(channel, _handler):
             return WsRoomDeps(
-                read_lobby_after=lambda _room, _cursor: ([], ""),
-                read_roster=lambda _room: ([], ""),
                 read_side_chat_after=lambda _room, _cursor: ([], ""),
                 set_thinking=lambda _identity, _on: None,
                 is_session_active=lambda _token: active["value"],
@@ -472,7 +481,7 @@ class WsEndpointTests(unittest.TestCase):
         with urlopen(req, timeout=4) as resp:
             return json.loads(resp.read().decode("utf-8"))["ticket"]
 
-    def test_host_ws_ticket_on_loopback_subscribes_lobby_and_roster(self):
+    def test_host_ws_ticket_on_loopback_subscribes_to_room_events(self):
         with tempfile.TemporaryDirectory() as tmp:
             server = self._start_server(Path(tmp))
             try:
@@ -486,12 +495,12 @@ class WsEndpointTests(unittest.TestCase):
                 try:
                     sock.sendall(
                         _client_text_frame(
-                            json.dumps({"op": "subscribe", "streams": ["lobby", "roster"]})
+                            json.dumps({"op": "subscribe", "streams": ["room_events"]})
                         )
                     )
                     msg = _recv_server_text(sock)
                     self.assertEqual(msg["op"], "subscribed")
-                    self.assertEqual(msg["streams"], ["lobby", "roster"])
+                    self.assertEqual(msg["streams"], ["room_events"])
                 finally:
                     sock.close()
             finally:

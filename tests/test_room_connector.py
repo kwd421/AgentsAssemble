@@ -11,18 +11,12 @@ from urllib.request import Request, urlopen
 
 from agentsassemble.application.room_connector import RoomConnector
 from agentsassemble.gui import _make_handler
-from agentsassemble.admission.invite import (
-    create_room_invite,
-    reset_state,
-)
 from agentsassemble.persistence.local.room.repository import RoomStore
 from agentsassemble.web.room_client import connect_room_ws_with_ticket
 
 
 class RoomConnectorTests(unittest.TestCase):
     def setUp(self) -> None:
-        reset_state()
-        self.addCleanup(reset_state)
         self._servers: list[ThreadingHTTPServer] = []
 
     def tearDown(self) -> None:
@@ -149,15 +143,24 @@ class RoomConnectorTests(unittest.TestCase):
             self.addCleanup(host.close)
             self._send_host_message(host, "before join", "host-before")
 
-            invite = create_room_invite(
-                room_url=base,
-                meeting_id="room-a",
-                agent_id="external-agent",
-                display_name="External Agent",
-                participant_type="agent",
-                client_type="browser",
-                max_uses=1,
+            request = Request(
+                f"{base}/api/room-invite/create",
+                data=json.dumps(
+                    {
+                        "meeting_id": "room-a",
+                        "agent_id": "external-agent",
+                        "display_name": "External Agent",
+                        "participant_type": "agent",
+                        "client_type": "browser",
+                        "max_uses": 1,
+                        "local_dev_preview": True,
+                    }
+                ).encode("utf-8"),
+                headers={"Content-Type": "application/json"},
+                method="POST",
             )
+            with urlopen(request, timeout=4) as response:
+                invite = json.loads(response.read().decode("utf-8"))
             connector = RoomConnector()
             self.addCleanup(connector.close)
             joined = connector.join(

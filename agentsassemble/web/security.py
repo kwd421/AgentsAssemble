@@ -181,7 +181,6 @@ def _public_invite_route_allowed(path: str, method: str) -> bool:
                 "/api/room-channels",
                 "/api/room/channel-lobby",
                 "/api/room/voice",
-                "/api/live-agent-flow",
                 "/api/room-members",
                 "/api/room-invite/sessions",
                 "/api/room-invite/invites",

@@ -14,10 +14,9 @@ def room_members_response(
     ctx: RequestContext,
     meeting_id: str,
 ) -> dict[str, object]:
-    """Project canonical and retained resident members for HTTP clients."""
+    """Project canonical members and active Agent Sessions for HTTP clients."""
     return room_members_payload(
         ctx.deps.output_root,
-        ctx.deps.legacy_agents(),
         meeting_id=meeting_id,
         sessions=ctx.deps.sessions.active_summary(),
         repository=ctx.deps.rooms,
@@ -26,15 +25,6 @@ def room_members_response(
 
 def register_room_member_routes(router: Router) -> None:
     """Register roster streaming, member reads, upsert, and mute routes."""
-
-    @router.get("/api/events/roster")
-    def roster_events_stream(ctx: RequestContext) -> None:
-        ctx.send_sse_stream(
-            "roster",
-            "roster",
-            meeting_id=ctx.query_value("meeting_id"),
-            last_event_id=None,
-        )
 
     @router.get("/api/room-members")
     def room_members(ctx: RequestContext) -> None:

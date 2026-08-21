@@ -104,13 +104,6 @@ export interface SideChatPostResponse {
 
 export type RoomEvent = GeneratedRoomEvent;
 
-export function fetchLobby(meetingId = "", options: { before?: string; limit?: number } = {}) {
-  const limitText = options.limit ? String(options.limit) : undefined;
-  return fetchJson<{ events: LobbyEvent[]; has_more?: boolean }>(
-    `/api/lobby${queryString({ meeting_id: meetingId, before: options.before, limit: limitText })}`
-  );
-}
-
 export function uploadLobbyAttachment(
   file: File,
   options: LobbyAttachmentUploadOptions | string = {}
@@ -132,43 +125,6 @@ export function uploadLobbyAttachment(
     );
   }).then((payload) => {
     return payload.attachment;
-  });
-}
-
-export function postLobbyMessage({
-  name,
-  side = "mine",
-  kind = "message",
-  message,
-  attachments = [],
-  meetingId = "",
-  voteId = "",
-  voteQuestion = "",
-  voteOptions = [],
-  voteChoice = "",
-}: {
-  name: string;
-  side?: string;
-  kind?: "message" | "ready" | "deploy" | "vote" | "vote_cast";
-  message: string;
-  attachments?: LobbyAttachmentRef[];
-  meetingId?: string;
-  voteId?: string;
-  voteQuestion?: string;
-  voteOptions?: string[];
-  voteChoice?: string;
-}) {
-  return postJson<LobbyPostResponse>("/api/lobby", {
-    name,
-    side,
-    kind,
-    message,
-    attachments,
-    flow_meeting_id: meetingId,
-    vote_id: voteId,
-    vote_question: voteQuestion,
-    vote_options: voteOptions,
-    vote_choice: voteChoice,
   });
 }
 
@@ -257,10 +213,6 @@ export function leaveVoiceChannel(params: {
     : postJson<{ participants: ApiVoiceParticipant[] }>("/api/room/voice/leave",
         { channel_id: params.channelId, meeting_id: params.meetingId });
   return result.then((payload) => normalizeVoiceParticipants(payload.participants));
-}
-
-export function fetchLobbyVote(meetingId: string, voteId: string) {
-  return fetchJson<VoteSummary>(`/api/lobby/vote${queryString({ meeting_id: meetingId, vote_id: voteId })}`);
 }
 
 export function fetchRoomVote(sessionToken: string, voteId: string) {

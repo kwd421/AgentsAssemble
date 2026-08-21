@@ -7,18 +7,18 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 CURRENT_INVITE_APPLICATION_MODULES = (
-    "agentsassemble/gui_application.py",
-    "agentsassemble/gui_live_agent_flow_http.py",
+    "agentsassemble/application/gui.py",
+    "agentsassemble/application/gui_factory.py",
     "agentsassemble/web/routes/public_invite.py",
     "agentsassemble/web/security.py",
     "agentsassemble/web/routes/room_members.py",
     "agentsassemble/web/router.py",
-    "agentsassemble/public_tunnel.py",
+    "agentsassemble/application/public_tunnel.py",
     "agentsassemble/room_admission.py",
     "agentsassemble/admission/coordinator.py",
     "agentsassemble/admission/saga.py",
     "agentsassemble/admission/invite_service.py",
-    "agentsassemble/room_realtime.py",
+    "agentsassemble/room/realtime.py",
 )
 def _imported_modules(relative_path: str) -> set[str]:
     tree = ast.parse((ROOT / relative_path).read_text(encoding="utf-8"))

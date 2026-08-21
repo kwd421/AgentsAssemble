@@ -12,10 +12,8 @@ const apiMocks = vi.hoisted(() => ({
   createOperatorPairing: vi.fn(),
   createRoomInvite: vi.fn(),
   fetchPublicInviteStatus: vi.fn(),
-  fetchUserProfile: vi.fn(),
   generatePublicInviteHostToken: vi.fn(),
   loadHostToken: vi.fn(),
-  postRoomFriendDm: vi.fn(),
   saveHostToken: vi.fn(),
   startPublicInviteTunnel: vi.fn(),
   stopPublicInviteTunnel: vi.fn(),
@@ -65,17 +63,6 @@ describe("useRoomInviteController", () => {
   beforeEach(() => {
     vi.resetAllMocks();
     apiMocks.fetchPublicInviteStatus.mockResolvedValue(publicStatus);
-    apiMocks.fetchUserProfile.mockResolvedValue({
-      displayName: "Current Profile Owner",
-      handle: "current.owner",
-      status: "online",
-      customStatus: "",
-      avatarLabel: "CP",
-      bannerPreset: "default",
-      accentColor: "#5865f2",
-      micMuted: false,
-      deafened: false,
-    });
     apiMocks.loadHostToken.mockReturnValue("host-token");
   });
 
@@ -132,7 +119,6 @@ describe("useRoomInviteController", () => {
       join_url: "https://room.example.com/join?token=token-friend",
       remote_client_packet: { attend: { room: room.meetingId } },
     });
-    apiMocks.postRoomFriendDm.mockResolvedValue({});
     const hook = renderInviteController();
     act(() => hook.result.current.open("room-1"));
 
@@ -140,8 +126,7 @@ describe("useRoomInviteController", () => {
       await hook.result.current.inviteFriend({ friend, room });
     });
 
-    expect(apiMocks.postRoomFriendDm).toHaveBeenCalledTimes(1);
-    expect(hook.result.current.friendStatuses[friend.friend_id]).toBe("호출됨");
+    expect(hook.result.current.friendStatuses[friend.friend_id]).toBe("입장 패킷 생성됨");
     expect(hook.result.current.remoteClientPacket.preview).toContain('"attend"');
 
     act(() => hook.result.current.open("room-2"));

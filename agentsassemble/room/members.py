@@ -6,13 +6,12 @@ import time
 from pathlib import Path
 from typing import Any
 
-from agentsassemble.application.agent_sessions import merge_room_store_members
+from agentsassemble.application.agent_sessions.commands import merge_room_store_members
 from agentsassemble.room.command_uow import RoomCommandUnitOfWork
 from agentsassemble.room.text import clean_room_text as clean_lobby_text
 from agentsassemble.persistence.local.identity.registry import (
     identity_store_for_output_root,
 )
-from agentsassemble.features.social.friends import room_friend_type_for_agent
 from agentsassemble.room.moderation import (
     is_room_member_muted,
     remove_room_member,
@@ -196,7 +195,6 @@ def thinking_participants(meeting_id: str, *, now: float | None = None) -> set[s
 
 def room_members_payload(
     output_root: Path,
-    agents: list[dict[str, object]],
     *,
     meeting_id: str = "",
     sessions: list[dict[str, object]] | None = None,
@@ -230,37 +228,19 @@ def room_members_payload(
             **session_member,
         }
 
-    live_agent_keys: set[str] = set()
-    for agent in agents:
-        agent_member = _member_from_agent(agent, meeting_id=room_id)
-        if not agent_member:
-            continue
-        key = _member_key(agent_member)
-        live_agent_keys.add(key)
-        if key in by_key:
-            merged = dict(agent_member)
-            # Saved fields win, but never let an empty saved value (e.g. a
-            # mute-only moderation record) blank out the live agent's presence.
-            merged.update(
-                {key: value for key, value in by_key[key].items() if value not in ("", [], {}, None)}
-            )
-            by_key[key] = merged
-        else:
-            by_key[key] = agent_member
-
     for key, member in by_key.items():
         member["muted"] = muted_by_key.get(key, bool(member.get("muted", False)))
         # Invite-sourced presence is only as alive as its session token: the
         # roster row saved at join time says "online" forever, so recompute it
         # from the live session list (live agents report their own status).
-        if key not in live_agent_keys and member.get("source") in {
+        if member.get("source") in {
             "room_invite",
             "room_invite_session",
         }:
             member["status"] = "online" if key in live_session_keys else "offline"
 
     roster = _collapse_stale_invite_duplicates(
-        list(by_key.values()), live_keys=live_session_keys | live_agent_keys
+        list(by_key.values()), live_keys=live_session_keys
     )
     roster = merge_room_store_members(
         output_root,
@@ -362,46 +342,6 @@ def _member_from_session(session: dict[str, object], *, meeting_id: str) -> dict
             "last_seen_at": session.get("joined_at"),
         }
     )
-
-
-def _member_from_agent(agent: dict[str, object], *, meeting_id: str) -> dict[str, object] | None:
-    agent_id = clean_lobby_text(agent.get("agent_id"), limit=128)
-    if not agent_id:
-        return None
-    agent_meeting_id = clean_lobby_text(agent.get("meeting_id"), limit=128)
-    if meeting_id and agent_meeting_id != meeting_id:
-        return None
-    participant_type = room_friend_type_for_agent(agent)
-    return _normalize_member_record(
-        {
-            "meeting_id": meeting_id or agent_meeting_id,
-            "participant_id": agent_id,
-            "display_name": agent.get("display_name") or agent_id,
-            "role": _default_role_for_agent(agent, participant_type),
-            "participant_type": participant_type,
-            "provider_kind": agent.get("provider_kind"),
-            "connection_kind": agent.get("connection_kind"),
-            "status": agent.get("status"),
-            "source": "live_agent",
-            "last_seen_at": agent.get("last_seen_at"),
-        }
-    )
-
-
-def _default_role_for_agent(agent: dict[str, object], participant_type: str) -> str:
-    if participant_type == "human":
-        return "human"
-    text = " ".join(
-        clean_lobby_text(agent.get(key), limit=128).lower()
-        for key in ("agent_id", "display_name", "provider_kind", "connection_kind", "engagement_mode")
-    )
-    if any(token in text for token in ("director", "lead", "manager", "owner", "pm", "planner", "디렉터", "팀장")):
-        return "director"
-    if any(token in text for token in ("review", "reviewer", "critic", "qa", "audit", "리뷰", "검토")):
-        return "reviewer"
-    if any(token in text for token in ("impl", "implement", "coder", "engineer", "builder", "dev", "구현", "개발")):
-        return "implementer"
-    return "agent"
 
 
 def _normalize_member_record(payload: dict[str, Any]) -> dict[str, object]:

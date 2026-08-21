@@ -47,7 +47,6 @@ class GuiRuntimeDependencies:
     make_handler: Callable[..., type]
     server_factory: Callable[..., Any]
     local_server_url: Callable[[object], str]
-    autostart_live_agent_group: Callable[..., None]
     print_startup_banner: Callable[..., None]
 
 
@@ -64,12 +63,6 @@ def serve_gui_runtime(
     host_token: str = "",
     unsafe_expose_control_plane: bool = False,
     start_public_tunnel: bool = False,
-    live_agent_config: Path | None = None,
-    live_agent_group_id: str = "",
-    live_agent_auto_restart: bool = False,
-    live_agent_max_restarts: int = 0,
-    live_agent_restart_backoff_seconds: float = 5.0,
-    live_agent_stale_restart_after_seconds: float = 0.0,
     frontend_dist_root: Path | None = None,
 ) -> None:
     # Install user-local CLI dirs before catalog discovery or provider spawn.
@@ -195,10 +188,6 @@ def serve_gui_runtime(
         handler = dependencies.make_handler(
             root,
             application_services=services,
-            process_supervisor=services.process_supervisor,
-            session_run_controller=services.session_run_controller,
-            session_run_monitor=services.session_run_monitor,
-            flow_supervisor=services.flow_supervisor,
             frontend_dist_root=served_frontend_root,
             public_tunnel_manager=services.public_tunnel_manager,
             room_repository_override=room_repository,
@@ -295,24 +284,8 @@ def serve_gui_runtime(
         )
         server.rolling_restart = rolling_restart
 
-        def autostart(server_url: str) -> None:
-            if live_agent_config is None:
-                return
-            dependencies.autostart_live_agent_group(
-                root,
-                services.process_supervisor,
-                config_path=live_agent_config,
-                server_url=server_url,
-                group_id=live_agent_group_id,
-                auto_restart=live_agent_auto_restart,
-                max_restarts=live_agent_max_restarts,
-                restart_backoff_seconds=live_agent_restart_backoff_seconds,
-                stale_restart_after_seconds=live_agent_stale_restart_after_seconds,
-            )
-
         services.start(
             server_url,
-            before_session_monitor=autostart,
             start_public_tunnel=start_public_tunnel,
         )
         if rolling_bootstrap is not None:

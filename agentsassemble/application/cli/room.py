@@ -29,16 +29,6 @@ def register_room_parsers(subparsers: argparse._SubParsersAction) -> None:
     room_status.add_argument("room_id")
     room_status.add_argument("--json", action="store_true", dest="as_json")
 
-    room_migrate_legacy = room_subparsers.add_parser(
-        "migrate-legacy-messages",
-        help="Import preserved legacy meeting messages into the canonical room event store.",
-    )
-    room_migrate_legacy.add_argument("--output-root", default=".agentsassemble")
-    migrate_legacy_mode = room_migrate_legacy.add_mutually_exclusive_group(required=True)
-    migrate_legacy_mode.add_argument("--dry-run", action="store_true")
-    migrate_legacy_mode.add_argument("--apply", action="store_true")
-    room_migrate_legacy.add_argument("--json", action="store_true", dest="as_json")
-
     room_migrate_postgres = room_subparsers.add_parser(
         "migrate-postgres",
         help="Inspect or copy canonical SQLite room state into an empty PostgreSQL repository.",
@@ -54,29 +44,6 @@ def register_room_parsers(subparsers: argparse._SubParsersAction) -> None:
     migrate_postgres_mode.add_argument("--apply", action="store_true")
     room_migrate_postgres.set_defaults(apply=False)
     room_migrate_postgres.add_argument("--json", action="store_true", dest="as_json")
-
-    room_migrate_settings = room_subparsers.add_parser(
-        "migrate-room-settings",
-        help="Inspect or move legacy room_settings.json globals into canonical SQLite rooms.",
-    )
-    room_migrate_settings.add_argument("--output-root", default=".agentsassemble")
-    migrate_settings_mode = room_migrate_settings.add_mutually_exclusive_group()
-    migrate_settings_mode.add_argument("--dry-run", action="store_false", dest="apply")
-    migrate_settings_mode.add_argument("--apply", action="store_true")
-    room_migrate_settings.set_defaults(apply=False)
-    room_migrate_settings.add_argument("--json", action="store_true", dest="as_json")
-
-    room_migrate_preferences = room_subparsers.add_parser(
-        "migrate-room-preferences",
-        help="Inspect or move legacy room notifications/read state to one identity user.",
-    )
-    room_migrate_preferences.add_argument("--output-root", default=".agentsassemble")
-    room_migrate_preferences.add_argument("--user-id", required=True)
-    migrate_preferences_mode = room_migrate_preferences.add_mutually_exclusive_group()
-    migrate_preferences_mode.add_argument("--dry-run", action="store_false", dest="apply")
-    migrate_preferences_mode.add_argument("--apply", action="store_true")
-    room_migrate_preferences.set_defaults(apply=False)
-    room_migrate_preferences.add_argument("--json", action="store_true", dest="as_json")
 
     room_purge_admission = room_subparsers.add_parser(
         "purge-admission-workflows",
@@ -145,7 +112,7 @@ def register_room_parsers(subparsers: argparse._SubParsersAction) -> None:
         room_join.add_argument("--sandbox", default="")
         room_join.add_argument("--permissions", default="")
         room_join.add_argument("--provider", default="", help="User-facing provider alias, such as codex.")
-        room_join.add_argument("--provider-kind", default="", help="Internal provider kind for legacy scripts.")
+        room_join.add_argument("--provider-kind", default="", help="Internal provider kind override.")
         room_join.add_argument("--start", action="store_true", help="Opt in to launching/resuming the provider process.")
         room_join.add_argument("--dry-run", action="store_true", help="Return the launch plan without starting the provider.")
         room_join.add_argument("--json", action="store_true", dest="as_json")

@@ -18,7 +18,6 @@ from agentsassemble.providers.live_cli import LiveCliRuntime
 from agentsassemble.providers.runtime_config import ProviderRuntimeProfile
 from agentsassemble.application.room_attendee import AgentAttendee
 from agentsassemble.providers.bridge_process import NativeCliBridgeProcessManager
-from agentsassemble.admission.invite import reset_state
 from agentsassemble.room_native_cli_smoke import NON_ROOM_REPLY, _latency_acceptance, run_room_native_cli_smoke
 from agentsassemble.room.realtime import NativeCliProviderSpec, RoomRealtimeController
 from agentsassemble.web.room_client import (
@@ -329,7 +328,6 @@ class NativeCliRoomEndToEndTests(unittest.TestCase):
 
     def test_invited_external_attendee_kick_stops_cli_and_revokes_access(self):
         self._inbox = []
-        reset_state()
         with tempfile.TemporaryDirectory() as temp_dir:
             root = Path(temp_dir)
             workspace = root / "external-workspace"
@@ -502,7 +500,6 @@ class NativeCliRoomEndToEndTests(unittest.TestCase):
                 server.shutdown()
                 server.server_close()
                 server_thread.join(timeout=2.0)
-                reset_state()
 
     @staticmethod
     def _host_ticket(base: str) -> str:

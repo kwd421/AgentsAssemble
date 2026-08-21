@@ -42,8 +42,8 @@ WS_TICKET_TTL_SECONDS = 30.0
 WS_MAX_PENDING_TICKETS_TOTAL = 2048
 WS_PENDING_TICKET_RESERVE_DIVISOR = 8
 WS_MAX_PENDING_TICKETS_PER_SESSION = 8
-WS_STREAMS = ("lobby", "roster", "side_chat", "room_events", "plugin")
-WS_DEFAULT_STREAMS = ("lobby", "roster", "side_chat")
+WS_STREAMS = ("side_chat", "room_events", "plugin")
+WS_DEFAULT_STREAMS = ("room_events",)
 WS_SESSION_TOKEN_KEY = "_ws_session_token"
 WS_SESSION_REVOKED_CATEGORY = "session_revoked"
 WS_MAX_CLIENT_MESSAGE_BYTES = 256 * 1024
@@ -57,8 +57,8 @@ HOST_BROWSER_DISPLAY_DEFAULT = LOCAL_OPERATOR_DISPLAY_NAME_DEFAULT
 def host_browser_ws_session(meeting_id: str) -> dict[str, object]:
     """Synthetic invite session for the local host browser over WebSocket.
 
-    Mirrors the trusted local operator identity used by /api/lobby so the host
-    console can subscribe without a guest invite session token.
+    Mirrors the trusted local operator identity used by the canonical room
+    transport so the host can connect without a guest invite session token.
     """
     clean_meeting_id = str(meeting_id or "").strip()
     if not clean_meeting_id:
@@ -183,12 +183,10 @@ def _ticket_subject(session: dict, *, session_token: str) -> str:
 class WsRoomDeps:
     """Room operations the session needs, injected so the core stays testable.
 
-    read_lobby_after(meeting_id, after_id) -> (events, latest_id)
-    read_roster(meeting_id) -> (members, signature)
+    Side chat remains an optional lightweight stream beside canonical room
+    events. Participant and message state comes from ``room_snapshot``.
     """
 
-    read_lobby_after: Callable[[str, str], tuple[list, str]]
-    read_roster: Callable[[str], tuple[list, str]]
     read_side_chat_after: Callable[[str, str], tuple[list, str]]
     set_thinking: Callable[[dict, bool], None]
     is_session_active: Callable[[str], bool] = lambda token: True
@@ -209,7 +207,6 @@ class WsRoomSession:
     session_token: str = ""
     subscribed: set = field(default_factory=set)
     _cursors: dict = field(default_factory=dict)
-    _roster_sig: str = ""
     _room_after_seq: int = 0
     _plugin_after_seq: int = 0
     handshake_complete: bool = False
@@ -402,26 +399,6 @@ class WsRoomSession:
         if not self._session_is_active():
             return [self._error(WS_SESSION_REVOKED_CATEGORY, "This room session has ended.")]
         frames: list[bytes] = []
-        if "lobby" in self.subscribed:
-            events, latest = self.deps.read_lobby_after(self.meeting_id, self._cursors.get("lobby", ""))
-            if events:
-                self._cursors["lobby"] = latest or self._cursors.get("lobby", "")
-                message: dict[str, object] = {"op": "event", "stream": "lobby", "events": events}
-                if snapshot:
-                    message["snapshot"] = True
-                frames.append(encode_text(json.dumps(message)))
-            elif snapshot:
-                frames.append(encode_text(json.dumps({
-                    "op": "event",
-                    "stream": "lobby",
-                    "events": [],
-                    "snapshot": True,
-                })))
-        if "roster" in self.subscribed:
-            members, signature = self.deps.read_roster(self.meeting_id)
-            if signature != self._roster_sig:
-                self._roster_sig = signature
-                frames.append(encode_text(json.dumps({"op": "event", "stream": "roster", "members": members})))
         if "side_chat" in self.subscribed:
             events, latest = self.deps.read_side_chat_after(
                 self.meeting_id,

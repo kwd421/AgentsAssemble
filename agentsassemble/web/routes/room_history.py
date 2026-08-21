@@ -3,8 +3,7 @@ from __future__ import annotations
 
 from http import HTTPStatus
 
-from agentsassemble.application.agent_sessions import room_status_payload
-from agentsassemble.room.votes import legacy_vote_summary
+from agentsassemble.application.agent_sessions.commands import room_status_payload
 from agentsassemble.web.router import RequestContext, Router
 from agentsassemble.room.global_settings import public_room_global_settings
 
@@ -36,29 +35,6 @@ def register_room_history_routes(router: Router) -> None:
             "origin": str(room.get("origin") or ""),
         }
 
-    @router.get("/api/lobby")
-    def lobby_history(ctx: RequestContext) -> None:
-        meeting_id = ctx.query_value("meeting_id")
-        before_event_id = ctx.query_value("before").strip()
-        if before_event_id:
-            ctx.send_json(
-                ctx.deps.read_lobby_before(
-                    ctx.deps.output_root,
-                    before_event_id=before_event_id,
-                    limit=ctx.deps.history_page_limit(ctx.query),
-                    meeting_id=meeting_id,
-                )
-            )
-            return
-        ctx.send_json(
-            {
-                "events": ctx.deps.read_lobby(
-                    ctx.deps.output_root,
-                    meeting_id=meeting_id,
-                )
-            }
-        )
-
     @router.get("/api/room-events/stream")
     def canonical_room_events_stream(ctx: RequestContext) -> None:
         room_id = ctx.query_value("room_id") or ctx.query_value("meeting_id")
@@ -78,40 +54,6 @@ def register_room_history_routes(router: Router) -> None:
                 room_id,
                 repository=ctx.deps.rooms,
             )
-        )
-
-    def _vote_summary_response(
-        ctx: RequestContext,
-        meeting_id: str,
-        vote_id: str,
-    ) -> None:
-        events = ctx.deps.read_lobby(
-            ctx.deps.output_root,
-            None,
-            meeting_id=meeting_id,
-        )
-        try:
-            ctx.send_json(legacy_vote_summary(events, vote_id))
-        except ValueError as error:
-            ctx.send_error(HTTPStatus.NOT_FOUND, str(error))
-
-    @router.get("/api/lobby/vote")
-    def lobby_vote_summary(ctx: RequestContext) -> None:
-        _vote_summary_response(
-            ctx,
-            ctx.query_value("meeting_id"),
-            ctx.query_value("vote_id"),
-        )
-
-    @router.get("/api/room/vote")
-    def room_vote_summary(ctx: RequestContext) -> None:
-        session = ctx.require_session()
-        if session is None:
-            return
-        _vote_summary_response(
-            ctx,
-            str(session.get("meeting_id") or ""),
-            ctx.query_value("vote_id"),
         )
 
     @router.get("/api/rooms")

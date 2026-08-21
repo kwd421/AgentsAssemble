@@ -73,34 +73,6 @@ class FrontendSideChatRuntimeTests(unittest.TestCase):
             assert.deepEqual(merged.map((event) => event.id), ["side-a", "side-c"]);
             assert.equal(merged[0].message, "수정");
 
-            const seen = [];
-            let lastSource = null;
-            class FakeEventSource {
-              constructor(url) {
-                this.url = url;
-                this.listeners = new Map();
-                lastSource = this;
-                seen.push({ type: "open", url });
-              }
-              addEventListener(type, listener) {
-                this.listeners.set(type, listener);
-              }
-              close() {
-                seen.push({ type: "close", url: this.url });
-              }
-            }
-            globalThis.EventSource = FakeEventSource;
-            const unsubscribe = api.subscribeSideChat("room-a", (events) => {
-              seen.push({ type: "update", count: events.length, message: events[0].message });
-            });
-            assert.equal(seen[0].url, "/api/events/side-chat?meeting_id=room-a");
-            lastSource.listeners.get("side_chat")({
-              data: JSON.stringify({ stream: "side_chat", events: [{ id: "side-z", name: "Z", message: "z" }] }),
-            });
-            unsubscribe();
-            assert.deepEqual(seen.map((item) => item.type), ["open", "update", "close"]);
-            assert.equal(seen[1].message, "z");
-
             let posted = null;
             globalThis.fetch = async (url, options) => {
               posted = { url, options, body: JSON.parse(options.body) };
