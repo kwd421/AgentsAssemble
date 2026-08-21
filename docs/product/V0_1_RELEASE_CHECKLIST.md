@@ -1,5 +1,12 @@
 # AgentsAssemble v0.1 Release Checklist
 
+Status: historical release-hardening record; not the current release gate
+
+This checklist describes the retired meeting/operator-console product shape.
+Use `CURRENT_SYSTEM.md` for the active product, `docs/roadmap.md` for remaining
+direction, and a current bounded plan under `docs/plans/` for any new release
+gate. The contents below remain as evidence and must not authorize new work.
+
 This checklist defines "higher completion quality" for the current v0.1 push.
 It is not a feature wishlist. It is the release-hardening bar for the core
 usable flow that already exists: local GUI room, approved agents, official
@@ -13,10 +20,9 @@ The current correctness and test-quality work is tracked in
 state for chat compaction and task handoff: it owns the current checklist,
 verification evidence, commits, and remaining limitations.
 
-The legacy findings discovered during the same audit are recorded separately in
-`docs/reports/2026-07-28-legacy-static-audit.md`. They are not authorization to
-repair or extend legacy code. New canonical work must not depend on those
-paths.
+The legacy findings discovered during the same audit were historical evidence,
+not authorization to repair or extend legacy code. New canonical work must not
+depend on those paths.
 
 The release is not ready while the active hardening ledger has unchecked
 current-path items or an unverified completion gate. A passing raw test count
@@ -187,8 +193,7 @@ Completed evidence:
    - build a Trello/Jira-like roadmap page only when the React/Vite frontend
      track starts.
 6. Record the React default-route flip:
-   - use `docs/product/legacy-react-parity-matrix.md` for the API/SSE parity,
-     room-event contracts, and retired legacy-route evidence behind the flip.
+   - preserve API/event parity and retired legacy-route evidence behind the flip.
    - `/` now serves the React operator console when built and reports a
      build-required response otherwise; legacy static routes are retired.
    - browser-rendered parity for the four React surfaces stays operator-verified

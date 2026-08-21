@@ -1,5 +1,10 @@
 # AgentsAssemble 플랫폼 비전 (2026-06-15)
 
+Status: superseded historical vision; remaining direction is in `docs/roadmap.md`
+
+이 문서는 당시 제품 방향의 근거를 보존한다. 현재 구현이나 작업 순서를
+판단하는 문서로 사용하지 않는다.
+
 > 출발점은 "디스코드 같은 멀티에이전트 채팅방"이었지만, 목표는
 > **"방을 사회 레이어로 둔, 배포 가능한 멀티에이전트 클라이언트/플랫폼"**이다.
 > Cursor / opencode / Claude Code 와 같은 급의 클라이언트인데, 차별점은

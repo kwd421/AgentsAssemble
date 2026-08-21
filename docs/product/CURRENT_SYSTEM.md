@@ -914,7 +914,7 @@ Detailed product policy: `docs/product/OPERATING_MODEL.md`.
 | User-owned room notification/read preferences | validation in `room/user_preferences.py`; local and hosted persistence in `persistence/`; composition in `room/settings_service.py` |
 | Friends and local-profile HTTP | saved-friend records in `features/social/friends.py`; local UI profile in `features/social/profile.py`; routes in `features/social/routes.py` |
 | Play Mode Mafia HTTP | routes in `features/mafia/routes.py`; game state and rules in `features/mafia/game.py`; root compatibility exports in `gui_mafia_http.py` and `mafia_game.py` |
-| Side-chat storage and room scoping | `features/side_chat/service.py`; event normalization in `features/jsonl_chat.py`; HTTP routes in `features/side_chat/routes.py` |
+| Ephemeral human-only side chat | process-memory retention and room scoping in `features/side_chat/service.py`; event normalization in `features/jsonl_chat.py`; human/browser HTTP authorization in `features/side_chat/routes.py`; Agent Bridge subscription rejection in `web/room_session.py` |
 | CLI parser registration | focused parsers and commands under `application/cli/`; dispatch in `cli.py` |
 | Canonical React transport and sequenced history | `frontend/src/useCanonicalRoom.ts`, `frontend/src/roomSocketClient.ts` |
 | React room composition | `frontend/src/App.tsx`; domain state belongs in focused hooks under `frontend/src/app/` |
@@ -954,14 +954,15 @@ the browser-visible flow rather than proving only that a backend function works.
 | `docs/product/PACKAGE_CYCLES.md` | generated current cycle report | Changing imports around GUI observability, release health, resident providers, or live-agent runner |
 | `docs/product/CODEBASE_MAP.html` / `.json` | generated interactive codebase map | Orienting in the codebase, finding module ownership, or exploring package dependencies |
 | `docs/product/FRONTEND_FEATURE_MATRIX.md` | current frontend inventory and verification record | Checking whether a visible workflow is implemented or planning a frontend release smoke |
-| `docs/product/FRONTEND_ROADMAP.md` | prioritized frontend future work | Selecting the next frontend slice after consulting the current inventory |
+| `docs/roadmap.md` | sole active product roadmap, including frontend priorities | Selecting and sequencing future work after consulting current state and evidence |
 | `docs/live-cli-room-current-architecture.md` | current implementation | Changing canonical room protocol, state, lifecycle, or provider bridge |
 | `docs/product/OPERATING_MODEL.md` | current detailed policy | Changing security, memory, official-record, or mode boundaries |
 | `docs/product/RUNTIME_OWNERSHIP.md` | current ownership map | Changing provider process, Agent Session, recovery, or legacy resident ownership |
 | `docs/provider-architecture.md` | mixed provider reference | Changing provider families or legacy provider adapters |
 | `docs/live-session-room-model.md` | mixed design history | Changing legacy room semantics or tracing why a rule exists |
 | `docs/live-agent-ops.md` | legacy/operator reference | Operating or modifying legacy resident commands |
-| `docs/roadmap.md` | future direction | Planning only, never as implementation permission |
+| `docs/README.md` | documentation authority map | Deciding which current, future, evidence, plan, or legacy document owns a fact |
+| `docs/product/FRONTEND_ROADMAP.md` | superseded compatibility pointer | Following an old link only; do not add work there |
 | `docs/reports/` | evidence and research | Checking past smoke results, incidents, or proposals |
 
 ## Keep This File Useful

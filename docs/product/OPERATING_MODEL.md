@@ -125,8 +125,8 @@ report.
   Codex 5.3 Spark was measured at roughly 4-6 seconds in this mode; that delay
   is provider exec/resume invocation cost, not a polling interval or cooldown
   promise.
-- frontend polish is deferred until the backend state and data contracts are
-  stable enough for another AI or human designer to refine.
+- Frontend breadth and polish must preserve the authoritative backend contracts;
+  the React client is a supported product surface, not a preview or future fork.
 - The React/Vite operator console is now the default GUI surface at `/`, served
   by the Python GUI from `frontend/dist` when that build exists.
 - The dependency-light vanilla HTML/CSS/JS console is retired as a public GUI
@@ -276,22 +276,12 @@ controls that start checks from the browser.
 
 ## GUI Text And Refresh Policy
 
-The vanilla GUI should optimize for trustworthy operations before polish:
+The supported React room client should optimize for trustworthy operations
+before polish. Current visible capability and verification evidence belongs in
+`FRONTEND_FEATURE_MATRIX.md`; this section owns only the durable policy:
 
-- The Lobby should act like a staging or pick room: participant readiness,
-  admission state, the current meeting id, and the basic Play Mode start/stop
-  path are the primary surface.
-- Session lifecycle, recovery, diagnostic, smoke, discovery, and other operator
-  controls should stay available but live under an advanced area instead of
-  dominating the default lobby.
-- The Live tab may show a compact Play Mode surface with running/finished state,
-  remaining time, participant status, and unofficial flow events. It must not
-  make Play Mode chatter look like transcript or decision evidence.
-- The React preview may show a global room command strip for current step,
-  next action, participant counts, and safe navigation between room surfaces.
-  That strip must read existing safe lifecycle/agent projections only; it must
-  not start providers, run release checks, close turns, promote chatter, or
-  expose private session, prompt, path, or credential fields.
+- Actions must expose their authority and side effects and must not leak private
+  session, prompt, path, or credential fields.
 - Natural-language room text should preserve readable tokens such as model
   versions, decimals, units, ellipses, and speaker names.
 - Forced mid-token wrapping belongs on technical strings such as URLs, logs,
@@ -303,41 +293,20 @@ The vanilla GUI should optimize for trustworthy operations before polish:
 - Input drafts, scroll position, and latest navigation are operator state and
   should survive background refreshes.
 
-## Room Event Bus Direction
+## Room Event Transport Policy
 
-Low-latency infrastructure ideas should enter AgentsAssemble as small,
-measured room-event mechanics before any heavy queue stack. The near-term
-shape is an append-only room event log, per-agent and per-browser cursors,
-SSE fanout for new events, bounded queues for backpressure, and payloads that
-reference large attachments or artifacts by id rather than copying bytes into
-the event stream.
+The repository event log is authoritative and the ticket-authenticated canonical
+WebSocket carries live room state. Every client advances only across contiguous
+sequence numbers and resynchronizes on a gap. Bounded queues and explicit
+backpressure must preserve that contract; large attachments and artifacts travel
+by id rather than being copied into the event stream.
 
-Benchmarking is part of that direction. Each room-event or scheduler slice
-should add a cheap numeric check where practical: append latency, read-after
-cursor latency, SSE delivery latency, queue wait time, dropped/backpressured
-event count, and per-agent speaking distribution. Kafka, Flink, Redis Streams,
-RDMA, DPDK, CPU pinning, and similar infrastructure are future scaling studies,
-not requirements for the local-first v1 room.
-
-The first benchmark surface is `assemble live-agent room-benchmark`. It calls
-the existing local append/read functions, does not fsync when the product path
-does not fsync, and reports local append/read/tail latency plus a synthetic flow
-speaking-distribution imbalance ratio plus first-speaker anchor-share metrics.
-When `--sse-samples N` is set, it also
-reports a small `lobby_sse_append_to_frame_ms` measurement against the existing
-local `/api/events/lobby` SSE endpoint. The stream checks the file-backed event
-log on a low-latency polling cadence while keeping idle keep-alive frames on a
-slower cadence; the number is a regression tripwire on the same machine, not an
-SLA. Queue wait time and backpressure counts still require a later server/fanout
-slice and remain out of scope.
-
-`assemble release-health run --check room_event_benchmark --as-json` lifts a
-safe `benchmark_summary` from that benchmark output so operators can compare
-numeric p99, scheduler fairness, and first-speaker anchor-share signals without
-reading raw paths, environment details, command arguments, or full benchmark
-logs. Regression signal ceilings and floors are informational tripwires in this
-local-first v1 stage; they do not make the check fail by themselves and React
-must not start the benchmark from the browser.
+Measure changes at the boundary they affect: repository append/read latency,
+WebSocket delivery and recovery, queue pressure, and speaking distribution where
+relevant. Benchmark output is local diagnostic evidence, not an SLA, and browser
+clients must not start privileged benchmarks. Kafka, Redis Streams, specialized
+network stacks, and similar infrastructure remain scaling research rather than
+requirements for the local-first room.
 
 ## Local Resource Visibility
 
@@ -361,8 +330,8 @@ The roadmap page should be separate from the live meeting progress view.
 Meeting progress answers "where is this room right now"; the roadmap board
 answers "where is the product going across versions."
 
-When the richer responsive frontend is started, design a dedicated roadmap page
-with a Trello/Jira-like shape:
+If a roadmap UI is prioritized, build it as a dedicated React page with a
+Trello/Jira-like shape:
 
 - long-term epics.
 - version or milestone lanes.
@@ -372,41 +341,23 @@ with a Trello/Jira-like shape:
 - completed work visible but de-emphasized.
 - current and next work easy to find without opening raw markdown.
 
-Until then, do not add this as more vanilla GUI clutter. Keep roadmap source of
-truth in `docs/roadmap.md` and product memory in this file.
-
-## What To Build Next
-
-Near-term work should favor backend contracts over visual polish:
-- Keep the director-led, agent-owned room template grounded in safe fake or
-  self-service residents first: director, product lead, engineering lead,
-  design lead, and implementer are room roles and display/provider slots, not
-  permission to launch real Opus, Codex, Kiro, Cursor, or other provider CLIs.
-- Add discovery rows that say how a provider can join and what evidence supports it.
-- Keep context durability labels such as provider-managed, process-lifetime, and
-  stateless-prompt visible on admission, roster, and startup-packet surfaces
-  where they are accurate.
-- Treat provider-managed resume adapters such as Codex, Kiro, and Grok as actual
-  provider sessions only after a real continuity proof shows later turns can
-  recall earlier private session context without AgentsAssemble replaying it.
-- Keep `shared_memory/` resident meeting artifacts deterministic, official-only,
-  and refreshed during long-running sessions.
-- Keep the compact shared-memory room payload and resident prompt block aligned
-  with those official-only artifacts.
-- Keep GUI changes minimal: show trustworthy state and leave detailed front-end
-  styling for a later pass.
+The page must visualize `docs/roadmap.md`; it must not become another product
+roadmap or write authority. Product roadmap progress remains separate from room
+activity and Agent Session progress.
 
 ## Source-Of-Truth Routing
 
 - `docs/roadmap.md` tracks status and priority.
-- `docs/product/V0_1_RELEASE_CHECKLIST.md` owns the current release-hardening
-  bar for the core usable flow.
-- `docs/live-session-room-model.md` owns room semantics.
+- `docs/product/CURRENT_SYSTEM.md` owns the active product and architecture.
+- `docs/product/FRONTEND_FEATURE_MATRIX.md` owns current frontend capability and
+  verification evidence.
+- `docs/live-session-room-model.md` is mixed design history for legacy room
+  semantics.
 - `docs/live-cli-room-current-architecture.md` owns the implemented local CLI
   room map: canonical state, WebSocket protocol, Agent Bridge lifecycle,
   provider extraction rules, verification, and remaining boundaries.
 - `docs/provider-architecture.md` owns provider and adapter boundaries.
-- `docs/live-agent-ops.md` owns operator commands, readiness, and verification.
+- `docs/live-agent-ops.md` is a legacy operator reference.
 - `docs/product/OPERATING_MODEL.md` owns the product memory in this file.
 
 When these files conflict, stop and surface the conflict before editing behavior.

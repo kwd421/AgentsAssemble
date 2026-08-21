@@ -1,5 +1,10 @@
 # 실행계획: 방 위생 버그 3종 수술 (나가기 영속화 / 추방 정상화 / 카드 다이어트)
 
+Status: superseded historical execution plan; do not execute as current work
+
+현재 구현은 `docs/product/CURRENT_SYSTEM.md`와 owning code/tests에서 다시
+확인한다. 아래 명령과 단계는 당시 기록이며 새 작업 권한이 아니다.
+
 > 이 문서는 실행자가 코드베이스를 몰라도 그대로 따라칠 수 있게 쓴 작업 지시서다.
 > 각 태스크는 원자적이다: **변경 파일 → 현재 코드 → 바꿀 코드 → 테스트 → 검증 명령 → 완료 기준** 순.
 > 태스크 순서대로 진행하고, 태스크 하나 끝날 때마다 검증 명령을 돌리고 커밋한다.
