@@ -4368,7 +4368,7 @@ body[data-sidebar-resizing="true"] {
 .dc-composer-bar {
   position: relative;
   display: grid;
-  grid-template-columns: minmax(0, 1fr) repeat(8, 36px);
+  grid-template-columns: minmax(0, 1fr) repeat(5, 36px);
   min-height: 44px;
   align-items: center;
   gap: 2px;
@@ -6460,10 +6460,6 @@ body[data-sidebar-resizing="true"] {
     order: 2;
   }
 
-  .dc-composer-button[data-accessory="gift"] {
-    order: 3;
-  }
-
   .dc-composer-button[data-role="emoji"] {
     order: 5;
   }
@@ -6472,8 +6468,6 @@ body[data-sidebar-resizing="true"] {
     order: 6;
   }
 
-  .dc-composer-button[data-accessory="gif"],
-  .dc-composer-button[data-accessory="sticker"],
   .dc-composer-button[data-role="mention"] {
     display: none;
   }

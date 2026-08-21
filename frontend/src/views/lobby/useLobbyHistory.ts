@@ -329,6 +329,7 @@ export function useLobbyHistory({
     handleLobbyPosted,
     handleLobbyScroll,
     hasMoreHistory,
+    loadOlderHistory,
     loaded,
     loadingOlder,
     pinnedToLatest,

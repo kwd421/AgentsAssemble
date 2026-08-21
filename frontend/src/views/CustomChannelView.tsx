@@ -109,6 +109,21 @@ function TextChannelBody({
     [channel.id, sessionToken, meetingId]
   );
   const [events, , error, refresh] = usePoll<LobbyEvent[]>(fetcher, 2500);
+  const messages = events || [];
+  const channelSearchItems = messages
+    .filter((event) => Boolean(event.message?.trim()))
+    .map((event) => ({
+      id: event.id,
+      author: event.name || "익명",
+      body: event.message,
+      onSelect: () => {
+        const target = Array.from(
+          scrollRef.current?.querySelectorAll<HTMLElement>("[data-channel-event-id]") || []
+        ).find((candidate) => candidate.dataset.channelEventId === event.id);
+        target?.scrollIntoView({ block: "center" });
+        target?.focus({ preventScroll: true });
+      },
+    }));
 
   useEffect(() => {
     const node = scrollRef.current;
@@ -137,8 +152,6 @@ function TextChannelBody({
     }
   }
 
-  const messages = events || [];
-
   return (
     <div className="flex min-h-0 min-w-0 flex-1 flex-col">
       <ChannelHeader
@@ -150,6 +163,7 @@ function TextChannelBody({
         onOpenMobileSidebar={onOpenMobileSidebar}
         onOpenMobileInfo={onOpenMobileInfo}
         headerActions={headerActions}
+        searchItems={channelSearchItems}
       />
       <div ref={scrollRef} className="min-h-0 flex-1 overflow-y-auto px-4 py-3 chat-scroll">
         {error && !messages.length ? (
@@ -161,7 +175,12 @@ function TextChannelBody({
         ) : (
           <ul className="dc-channel-message-list">
             {messages.map((event) => (
-              <li key={event.id} className="dc-channel-message">
+              <li
+                key={event.id}
+                className="dc-channel-message"
+                data-channel-event-id={event.id}
+                tabIndex={0}
+              >
                 <span className="dc-channel-message-author preserve-words">
                   {event.name || "익명"}
                 </span>

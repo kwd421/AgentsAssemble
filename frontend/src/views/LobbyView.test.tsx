@@ -92,6 +92,38 @@ function voteResult(id: string, voter: string, choice: string): LobbyEvent {
 }
 
 describe("LobbyView active provider turn", () => {
+  it("finds a loaded channel message and opens that result", async () => {
+    const scrollIntoView = vi.fn();
+    Element.prototype.scrollIntoView = scrollIntoView;
+    renderLobby(
+      [
+        {
+          id: "message-search-target",
+          kind: "message",
+          name: "Agent B",
+          message: "배포 전에 카나리아 검증을 진행합니다",
+          side: "other",
+          created_at: "2026-07-26T01:00:00Z",
+          actor_id: "agent-b",
+          flow_meeting_id: "room-a",
+          flow_action: "message_final",
+        },
+      ],
+      []
+    );
+
+    fireEvent.change(screen.getByRole("searchbox", { name: "general 검색" }), {
+      target: { value: "카나리아" },
+    });
+    fireEvent.click(
+      await screen.findByRole("button", {
+        name: /Agent B.*배포 전에 카나리아 검증을 진행합니다/,
+      })
+    );
+
+    expect(scrollIntoView).toHaveBeenCalledWith({ block: "center" });
+  });
+
   it("keeps input status above expandable live thought activity", async () => {
     renderLobby([thought("Bash로 테스트를 실행 중")], [indicator]);
 

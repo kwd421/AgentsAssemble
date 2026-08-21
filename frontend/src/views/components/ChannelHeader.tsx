@@ -1,5 +1,6 @@
-import { useState, type ChangeEvent, type ReactNode } from "react";
+import { useMemo, useState, type ChangeEvent, type ReactNode } from "react";
 import { ArrowLeft, Bell, ChevronRight, Pin, Search, Users, PanelRight } from "lucide-react";
+import "../../styles/channel-search.css";
 
 type HeaderPanel = "notifications" | "pins" | "search";
 
@@ -9,6 +10,14 @@ export type ChannelHeaderActions = {
   pinnedSummary?: string;
   onMarkRead?: () => void;
   onOpenSettings?: () => void;
+};
+
+export type ChannelSearchItem = {
+  id: string;
+  author: string;
+  body: string;
+  meta?: string;
+  onSelect: () => void;
 };
 
 /**
@@ -26,6 +35,10 @@ export default function ChannelHeader({
   onToggleMembers,
   onOpenMobileSidebar,
   onOpenMobileInfo,
+  searchItems = [],
+  searchHasMore = false,
+  searchLoadingMore = false,
+  onLoadMoreSearch,
 }: {
   icon: ReactNode;
   title: string;
@@ -36,6 +49,10 @@ export default function ChannelHeader({
   onToggleMembers?: () => void;
   onOpenMobileSidebar?: () => void;
   onOpenMobileInfo?: () => void;
+  searchItems?: ChannelSearchItem[];
+  searchHasMore?: boolean;
+  searchLoadingMore?: boolean;
+  onLoadMoreSearch?: () => void;
 }) {
   const [activePanel, setActivePanel] = useState<HeaderPanel | null>(null);
   const [searchQuery, setSearchQuery] = useState("");
@@ -64,6 +81,21 @@ export default function ChannelHeader({
   const notificationSummary = headerActions?.notificationSummary || "서버 기본 알림을 사용 중입니다.";
   const lastReadSummary = headerActions?.lastReadSummary || "아직 이 채널을 읽음으로 표시하지 않았습니다.";
   const pinnedSummary = headerActions?.pinnedSummary || "아직 고정된 메시지가 없습니다.";
+  const searchNeedle = searchQuery.trim().toLocaleLowerCase();
+  const searchMatches = useMemo(() => {
+    if (!searchNeedle) return [];
+    return searchItems
+      .filter((item) =>
+        `${item.author}\n${item.body}`.toLocaleLowerCase().includes(searchNeedle)
+      )
+      .slice()
+      .reverse();
+  }, [searchItems, searchNeedle]);
+
+  function selectSearchItem(item: ChannelSearchItem) {
+    item.onSelect();
+    setActivePanel(null);
+  }
 
   return (
     <header className="dc-chat-head flex h-12 shrink-0 items-center gap-2 px-3 lg:px-4">
@@ -196,11 +228,65 @@ export default function ChannelHeader({
             {activePanel === "search" && (
               <>
                 <p className="dc-head-popover-title">채널 검색</p>
-                <p className="dc-head-popover-copy preserve-words">
-                  {searchQuery.trim()
-                    ? `"${searchQuery.trim()}" 검색어를 이 채널 안에서 확인 중입니다.`
-                    : "검색어를 입력하면 이 채널의 검색 상태가 표시됩니다."}
-                </p>
+                <label className="dc-head-popover-search">
+                  <span className="sr-only">{title} 검색어</span>
+                  <Search size={14} aria-hidden />
+                  <input
+                    type="search"
+                    aria-label={`${title} 검색어`}
+                    placeholder="메시지 또는 작성자 검색"
+                    value={searchQuery}
+                    onChange={handleSearchChange}
+                    autoFocus
+                  />
+                </label>
+                {!searchNeedle ? (
+                  <p className="dc-head-popover-copy preserve-words">
+                    검색어를 입력하면 현재까지 불러온 메시지에서 찾습니다.
+                  </p>
+                ) : searchMatches.length ? (
+                  <>
+                    <p className="dc-head-popover-copy preserve-words">
+                      {searchMatches.length}개의 결과를 찾았습니다.
+                    </p>
+                    <div className="dc-head-search-results" role="list" aria-label="채널 검색 결과">
+                      {searchMatches.map((item) => (
+                        <button
+                          key={item.id}
+                          type="button"
+                          onClick={() => selectSearchItem(item)}
+                        >
+                          <span className="dc-head-search-result-author preserve-words">
+                            {item.author || "Room"}
+                          </span>
+                          {item.meta && (
+                            <span className="dc-head-search-result-meta preserve-words">
+                              {item.meta}
+                            </span>
+                          )}
+                          <span className="dc-head-search-result-body preserve-words">
+                            {item.body}
+                          </span>
+                        </button>
+                      ))}
+                    </div>
+                  </>
+                ) : (
+                  <p className="dc-head-popover-copy preserve-words">
+                    현재 불러온 메시지에는 일치하는 결과가 없습니다.
+                  </p>
+                )}
+                {searchNeedle && searchHasMore && onLoadMoreSearch && (
+                  <div className="dc-head-popover-actions">
+                    <button
+                      type="button"
+                      disabled={searchLoadingMore}
+                      onClick={onLoadMoreSearch}
+                    >
+                      {searchLoadingMore ? "이전 대화 불러오는 중..." : "이전 대화 더 검색"}
+                    </button>
+                  </div>
+                )}
               </>
             )}
           </section>

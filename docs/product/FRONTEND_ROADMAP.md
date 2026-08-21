@@ -18,16 +18,15 @@ or destructive without guessing.
 
 ## P0 — Fix Misleading Or Blocking Workflows
 
-### Reliable workspace selection
+### Finish workspace-bound creation
 
-- Make the native picker appear in front of the initiating window.
-- Treat cancel as a normal result, not a raw backend failure.
-- Time out a lost picker and restore the add-agent form.
-- Show a human error with a retry action.
+- The native picker now appears in front, cancel restores the form, and raw
+  picker codes are translated to retryable user-facing errors.
 - Verify Grok and OpenCode creation end to end using only the visible form.
 
-Exit evidence: a clean browser/desktop session can select, cancel, retry, create,
-and start a workspace-bound agent without HTTP fallback or process cleanup.
+Exit evidence: a clean browser and signed desktop session can select a folder,
+create, and start a workspace-bound agent without HTTP fallback or process
+cleanup.
 
 ### Explicit public-tunnel consent
 
@@ -44,16 +43,18 @@ exposure action, and the UI proves when it is closed.
 
 - Label mute/headset and voice-channel controls as presence previews until real
   audio exists.
-- Label gift/GIF/sticker helpers as local text descriptions.
-- Replace raw backend identifiers such as `workspace_picker_failed` with useful
-  user-facing recovery copy while retaining structured diagnostics.
+- Gift/GIF/sticker placeholders have been removed from the composer.
+- Raw workspace-picker identifiers are now replaced with useful user-facing
+  recovery copy while structured diagnostics remain server-side.
 
 ## P1 — Complete Core Collaboration
 
-### Real search and message actions
+### Complete message actions
 
-- Implement channel match filtering or next/previous navigation.
-- Add empty, loading, error, and cleared-query behavior.
+- Loaded channel messages now support match results, empty/cleared-query states,
+  history paging, and result-to-message navigation.
+- Add next/previous keyboard navigation and decide whether server-side search is
+  needed beyond loaded history.
 - Make pin, thread-open, and message context actions keyboard accessible.
 - Verify pin/unpin persistence and thread reply projection.
 

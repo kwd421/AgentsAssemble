@@ -4,7 +4,7 @@ Status: generated architecture inventory
 
 Generator: `python3 scripts/generate_package_map.py`
 
-Source fingerprint: `8ee7f56293ea84f0`
+Source fingerprint: `311a44699b21dd12`
 
 This file describes current evidence and proposed ownership. It does not by
 itself authorize a module move or a product behavior change.
@@ -426,7 +426,7 @@ itself authorize a module move or a product behavior change.
 | `agentsassemble.providers.turn_progress` | `agentsassemble/providers/turn_progress.py` | 101 | providers | current | - | 9 | `call:TypeVar@20` | - | - | `providers/` | in-target-package |
 | `agentsassemble.providers.usage_contract` | `agentsassemble/providers/usage_contract.py` | 24 | providers | current | - | 6 | - | test-import:2 | `tests/test_opencode_usage.py`, `tests/test_provider_usage_registry.py` | `providers/` | in-target-package |
 | `agentsassemble.providers.windows_conpty` | `agentsassemble/providers/windows_conpty.py` | 381 | providers | current | `agentsassemble.providers.live_cli_output`, `agentsassemble.providers.live_cli_transcripts`, `agentsassemble.providers.process_environment`, `agentsassemble.providers.terminal_interactions`, `agentsassemble.providers.turn_progress`, `agentsassemble.room.text` | 2 | - | test-import:2 | `tests/test_provider_runtime_controls.py`, `tests/test_windows_conpty_progress_timeout.py` | `providers/` | in-target-package |
-| `agentsassemble.providers.workspace_picker` | `agentsassemble/providers/workspace_picker.py` | 107 | providers | current | - | 1 | - | - | - | `providers/` | in-target-package |
+| `agentsassemble.providers.workspace_picker` | `agentsassemble/providers/workspace_picker.py` | 115 | providers | current | - | 1 | - | - | - | `providers/` | in-target-package |
 | `agentsassemble.public_invite_runtime` | `agentsassemble/public_invite_runtime.py` | 18 | admission | compatibility | `agentsassemble.application.public_invite_runtime` | 0 | - | - | - | `admission/` | compatibility-shim |
 | `agentsassemble.public_tunnel` | `agentsassemble/public_tunnel.py` | 14 | application | compatibility | `agentsassemble.application.public_tunnel` | 0 | - | - | - | `application/` | compatibility-shim |
 | `agentsassemble.release_health` | `agentsassemble/release_health.py` | 51 | diagnostics | compatibility | `agentsassemble.diagnostics.release_health` | 0 | - | - | - | `diagnostics/` | compatibility-shim |

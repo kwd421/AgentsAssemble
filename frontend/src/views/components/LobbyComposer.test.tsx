@@ -31,6 +31,19 @@ describe("LobbyComposer", () => {
     apiMocks.uploadLobbyAttachment.mockReset();
   });
 
+  it("offers emoji without placeholder gift, GIF, or sticker controls", () => {
+    render(<LobbyComposer meetingId="room-a" onPosted={vi.fn()} />);
+
+    expect(screen.queryByLabelText("채팅 선물")).toBeNull();
+    expect(screen.queryByLabelText("채팅 GIF")).toBeNull();
+    expect(screen.queryByLabelText("채팅 스티커")).toBeNull();
+    fireEvent.click(screen.getByLabelText("이모지 삽입"));
+    const picker = screen.getByRole("listbox", { name: "이모지 선택" });
+    fireEvent.click(within(picker).getByRole("option", { name: "👍" }));
+
+    expect((screen.getByLabelText("채팅 입력") as HTMLTextAreaElement).value).toBe("👍");
+  });
+
   it("keeps a message unsent while the canonical socket is unavailable", async () => {
     const onPosted = vi.fn();
     render(

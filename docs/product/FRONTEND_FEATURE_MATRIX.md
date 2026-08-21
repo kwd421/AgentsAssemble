@@ -47,11 +47,12 @@ behavior; it does not replace the owning code or its tests.
 | Capability | Current owner | Evidence | Status | Remaining gap |
 | --- | --- | --- | --- | --- |
 | Room message send/render | `views/LobbyView.tsx`, `views/components/LobbyComposer.tsx` | Sent messages and observed ordered transcript rendering | Live verified | Repeat with a remote guest and reconnect during send |
-| Mentions and emoji | `views/components/MentionInput.tsx`, `lib/mentionComposerModel.ts` | Mention and emoji controls inserted content in the composer | Live verified | Verify keyboard selection across a long roster |
-| Gift, GIF, sticker helpers | `views/components/LobbyComposer.tsx` | Each control inserted its local descriptive format and displayed the local-only explanation | Live verified | Clarify that these are text descriptions, not rich Discord media |
+| Mentions and emoji | `views/components/MentionInput.tsx`, `lib/mentionComposerModel.ts`, `views/components/LobbyComposer.tsx` | Mention insertion remained available; the emoji picker opened and inserted a selected emoji into the live composer | Live verified | Verify keyboard selection across a long roster and the emoji grid |
+| Gift, GIF, sticker helpers | `views/components/LobbyComposer.tsx` | The misleading placeholder controls were removed; they no longer appear in the live composer | Live verified | Add rich-media integrations only with a real transport and product contract |
 | App command menu and vote entry | `views/components/ComposerCommandMenu.tsx`, `VoteComposerDialog.tsx` | App control opened the `/vote` command choice | Surface verified | Complete a live poll create/vote/close smoke |
 | Attachments | `views/components/LobbyAttachments.tsx` | Native file chooser opened and cancellation returned cleanly | Surface verified | Upload, render, download, size/type rejection, and reconnect need a disposable-file smoke |
-| Channel search | `views/components/ChannelHeader.tsx` | Search accepted a known transcript token but left every message visible and showed only status copy | Needs work | Implement actual match filtering/navigation and empty-result behavior |
+| Channel search | `views/components/ChannelHeader.tsx`, `views/LobbyView.tsx`, `views/CustomChannelView.tsx` | A known token produced one result and selecting it moved and focused the matching historical message | Live verified | Add next/previous keyboard navigation and server-side search beyond loaded history if needed |
+| Older room history | `views/lobby/useLobbyHistory.ts`, `roomSocketClient.ts` | A 450-message room initially loaded the latest 200; upward scrolling fetched older pages and preserved a usable reading position | Live verified | Add a repeatable browser fixture that measures anchor position across each individual page prepend |
 | Pinned messages | `views/components/ChannelHeader.tsx` | Toggle opened the empty pinned-message state and closed cleanly | Surface verified | Pin/unpin requires a real message action and persistence check |
 | Side chat | `views/components/SideChatDock.tsx`, `app/useRoomSideChat.ts` | Sent a side-chat message and observed it in the unofficial panel | Live verified | Verify privacy/projection with a second participant |
 | Threads | `views/components/SideChatDock.tsx`, `lib/sideChatThreadModel.ts` | Empty state correctly required opening a thread from a room message | Surface verified | No message affordance was conclusively found; opening and replying to a real thread remains unverified |
@@ -65,7 +66,7 @@ behavior; it does not replace the owning code or its tests.
 | Add OpenCode free Hy3 agent | same as above plus provider runtime | Selected exact free model `opencode/hy3-free`; real OpenCode server replied to a direct mention | Live verified | Keep free and paid Hy3 labels/pricing visibly distinct |
 | Ordered routing and decline | room transport and provider bridges | An agent not directly addressed declined through the structured room path; direct mentions reached the intended agent | Live verified | Add deterministic cross-provider routing smoke fixtures |
 | Provider member details | `views/components/member/MemberDetailModal.tsx`, `AgentSessionMemberDetails.tsx` | Profile, runtime settings, visibility, session controls, diagnostics, moderation, and usage surfaces rendered | Surface verified | Pause/resume did not yield conclusive live UI evidence; stop/restart and kick were intentionally not performed |
-| Workspace picker | `views/components/WorkspacePickerField.tsx` and native picker route | Browser form remained at `선택 중...`; terminating the stuck chooser exposed raw `workspace_picker_failed` | Needs work | Make the picker appear reliably, add cancel/timeout recovery, and present a human error message |
+| Workspace picker | `views/components/WorkspacePickerField.tsx` and `providers/workspace_picker.py` | The macOS picker appeared in front as a Finder-owned dialog; cancel returned to an enabled form, and focused coverage prevents raw backend codes reaching the user | Live verified | Complete one workspace-bound agent creation from folder selection through provider start |
 
 ## Invites, Settings, And Platform Surfaces
 
@@ -81,8 +82,9 @@ behavior; it does not replace the owning code or its tests.
 
 ## 2026-08-21 Live Smoke Boundary
 
-The smoke used an isolated local data root and a temporary room. It exercised
-real DeepSeek, Grok, and OpenCode provider processes. It did not publish a
+The smoke used isolated local data roots and temporary rooms. It exercised
+real DeepSeek, Grok, and OpenCode provider processes, plus a 450-message history
+fixture for paging and search. It did not publish a
 release, retain a public tunnel, delete durable user data, link a real Google
 account, send user files, or expose recovery, invite, or credential material.
 

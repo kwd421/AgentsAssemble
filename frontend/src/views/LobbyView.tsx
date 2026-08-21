@@ -98,6 +98,7 @@ export default function LobbyView({
     handleLobbyPosted,
     handleLobbyScroll,
     hasMoreHistory,
+    loadOlderHistory,
     loaded,
     loadingOlder,
     pinnedToLatest,
@@ -133,6 +134,30 @@ export default function LobbyView({
   const mentionLabels = useMemo(
     () => Object.fromEntries(mentionables.map(({ token, label }) => [token, label])),
     [mentionables]
+  );
+  const channelSearchItems = useMemo(
+    () =>
+      visibleEvents
+        .filter((event) => Boolean(event.message?.trim()))
+        .map((event) => ({
+          id: event.id,
+          author: event.name || "Room",
+          body: event.message,
+          meta: new Date(event.created_at).toLocaleString("ko-KR", {
+            month: "numeric",
+            day: "numeric",
+            hour: "2-digit",
+            minute: "2-digit",
+          }),
+          onSelect: () => {
+            const target = Array.from(
+              scrollRef.current?.querySelectorAll<HTMLElement>("[data-room-event-id]") || []
+            ).find((candidate) => candidate.dataset.roomEventId === event.id);
+            target?.scrollIntoView({ block: "center" });
+            target?.focus({ preventScroll: true });
+          },
+        })),
+    [scrollRef, visibleEvents]
   );
   const activeThinking = useMemo(() => {
     const indicatorByTurn = new Map<string, RoomTypingIndicator>();
@@ -175,6 +200,10 @@ export default function LobbyView({
         headerActions={headerActions}
         onOpenMobileSidebar={onOpenMobileSidebar}
         onOpenMobileInfo={onOpenMobileInfo}
+        searchItems={channelSearchItems}
+        searchHasMore={hasMoreHistory}
+        searchLoadingMore={loadingOlder}
+        onLoadMoreSearch={() => loadOlderHistory(scrollRef.current?.scrollTop)}
       />
 
       {!canManageRoom && (
