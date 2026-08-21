@@ -1,6 +1,6 @@
 import { act, renderHook, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import type { LobbyEvent, SideChatEvent } from "../api";
+import type { SideChatEvent } from "../api";
 import {
   persistRoomGuestSession,
   type RoomGuestSession,
@@ -25,17 +25,6 @@ function sideEvent(id: string): SideChatEvent {
     side: "mine",
     created_at: "2026-08-16T00:00:00Z",
     channel: "side_chat",
-  };
-}
-
-function lobbyEvent(id: string): LobbyEvent {
-  return {
-    id,
-    kind: "message",
-    name: id,
-    message: id,
-    side: "mine",
-    created_at: "2026-08-16T00:00:00Z",
   };
 }
 
@@ -93,15 +82,11 @@ describe("useRoomSideChat principal isolation", () => {
       userAFetch.resolve({ events: [sideEvent("user-a-secret")] });
       await userAFetch.promise;
     });
-    act(() => {
-      hook.result.current.selectThread(lobbyEvent("user-a-thread"), "general");
-      hook.result.current.updateDraft("general", "user-a draft");
-    });
+    act(() => hook.result.current.updateDraft("general", "user-a draft"));
     const stalePostedHandler = hook.result.current.handlePostedEvents;
     expect(hook.result.current.events.map((event) => event.id)).toEqual([
       "user-a-secret",
     ]);
-    expect(hook.result.current.selectedThread?.sourceEventId).toBe("user-a-thread");
     expect(hook.result.current.draftsByContext).toEqual({ general: "user-a draft" });
 
     persistRoomGuestSession(session("session-b", "user-b"));
@@ -109,9 +94,6 @@ describe("useRoomSideChat principal isolation", () => {
 
     expect(hook.result.current.events).toEqual([]);
     expect(hook.result.current.sideChatEvents).toEqual([]);
-    expect(hook.result.current.threadEvents).toEqual([]);
-    expect(hook.result.current.threadSummaries).toEqual({});
-    expect(hook.result.current.selectedThread).toBeNull();
     expect(hook.result.current.draftsByContext).toEqual({});
     expect(hook.result.current.error).toBeNull();
 

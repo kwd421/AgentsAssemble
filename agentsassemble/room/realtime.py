@@ -194,6 +194,7 @@ class RoomRealtimeController:
         attention_shadow_mode: str = "off",
         reconcile_startup_sessions: bool = True,
         write_budget_policy: RoomWriteBudgetPolicy | None = None,
+        delete_side_chat: Callable[[str], object] | None = None,
     ) -> None:
         self.output_root = Path(output_root)
         self.store = repository or RoomStore(self.output_root)
@@ -469,13 +470,12 @@ class RoomRealtimeController:
                 )
                 .purged_count
             ),
-            delete_identity_room=lambda room_id: (
-                identity_store_for_output_root(
-                    self.output_root
-                ).delete_room(room_id)
-            ),
+            delete_identity_room=lambda room_id: identity_store_for_output_root(
+                self.output_root
+            ).delete_room(room_id),
             remove_event_listener=self._remove_room_event_listener,
             schedule_cleanup=self._deferred_cleanup.schedule,
+            delete_side_chat=delete_side_chat,
         )
         self._room_runtime_cleanup = RoomRuntimeCleanupService(
             store=self.store,

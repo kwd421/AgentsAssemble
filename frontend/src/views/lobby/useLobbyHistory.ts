@@ -70,6 +70,7 @@ export function useLobbyHistory({
   const [pinnedToLatest, setPinnedToLatest] = useState(true);
   const [hasMoreHistory, setHasMoreHistory] = useState(true);
   const [loadingOlder, setLoadingOlder] = useState(false);
+  const [historyLoadError, setHistoryLoadError] = useState(false);
   const loaded = loadedRoomId === activeRoom.id;
   if (historyRoomRef.current !== activeRoom.id) {
     historyRoomRef.current = activeRoom.id;
@@ -131,6 +132,7 @@ export function useLobbyHistory({
     const requestedRoomId = activeRoom.id;
     loadingOlderRoomRef.current = requestedRoomId;
     setLoadingOlder(true);
+    setHistoryLoadError(false);
     const anchorEventId = visibleEvents[0]?.id || "";
     const anchorElement = Array.from(
       element.querySelectorAll<HTMLElement>("[data-room-event-id]")
@@ -160,6 +162,7 @@ export function useLobbyHistory({
         .catch(() => {
           if (historyRoomRef.current !== requestedRoomId) return;
           prependAnchorRef.current = null;
+          setHistoryLoadError(true);
           if (loadingOlderRoomRef.current === requestedRoomId) {
             loadingOlderRoomRef.current = "";
           }
@@ -244,6 +247,7 @@ export function useLobbyHistory({
 
   useEffect(() => {
     updatePinnedToLatest(true);
+    setHistoryLoadError(false);
   }, [activeRoom.id, updatePinnedToLatest]);
 
   useEffect(() => {
@@ -276,6 +280,7 @@ export function useLobbyHistory({
             .catch(() => {
               if (historyRoomRef.current !== requestedRoomId) return;
               initialBackfillFailedRoomRef.current = requestedRoomId;
+              setHistoryLoadError(true);
               historyReadyRef.current = true;
               setLoadedRoomId(requestedRoomId);
             })
@@ -329,6 +334,7 @@ export function useLobbyHistory({
     handleLobbyPosted,
     handleLobbyScroll,
     hasMoreHistory,
+    historyLoadError,
     loadOlderHistory,
     loaded,
     loadingOlder,

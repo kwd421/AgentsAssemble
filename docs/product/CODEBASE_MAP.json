@@ -1,12 +1,12 @@
 {
  "readme": "AgentsAssemble codebase map. Regenerate with `make codebase-map`; verify committed outputs with `make codebase-map-verify`. modules[] columns: name, path, package, domain, classification, migration_status, lines, docstring, imports[], imported_by[] (indexes into modules), classes[[name, [[base, defining_module], ...]]] (best-effort, top-level classes only). frontend[] columns: path, group, lines, doc, imports[], imported_by[] (indexes into frontend). package_edges go importer -> dependency with module-import counts; `points` is the precomputed polyline for that edge and `intra_cycle` marks imports whose endpoints share one cycle group. graph{} holds the layered package drawing: layers[] top-to-bottom (each with members[] package ids, member_count, and the dominant domain), (a package sits below everything importing it), clusters[] are mutually dependent packages (import cycles at package level) drawn as one labelled block, plus width/height of the drawing. health{} ranks findings for a reader who has to act: cycles[] (mutually dependent packages, with the lines they hold), leaning_on_retiring[] (current modules importing legacy/compatibility modules - the reason legacy cannot be deleted), highest_leverage_migrations[] (retiring modules with the most current importers), unreferenced_shims[] (compatibility modules with no importer in agentsassemble/ and no reference in tests/; callers outside this repository are not visible, so verify before deleting), and hotspots[] (largest modules). health.scope states exactly what was measured. class_graph{} is the UML generalization DAG over base classes that resolve inside the repo: edges go base -> subclass, so a subclass always sits below the class it extends. Coordinates in graph and class_graph are laid out with a Sugiyama pipeline (cycle condensation, Coffman-Graham layering, dummy-node edge routing, median/transpose crossing reduction) and are deterministic.",
- "generated_at": "2026-08-21T01:46:34Z",
- "fingerprint": "91e62a98ae76f55f",
+ "generated_at": "2026-08-21T18:05:23Z",
+ "fingerprint": "6156fcee0b1c74d7",
  "stats": {
   "backend_modules": 570,
-  "backend_lines": 98773,
-  "frontend_files": 215,
-  "frontend_lines": 49446,
+  "backend_lines": 99205,
+  "frontend_files": 214,
+  "frontend_lines": 49415,
   "packages": 30,
   "import_cycles": 0,
   "classifications": {
@@ -21,7 +21,7 @@
    "kind": "backend",
    "doc": "HTTP and WebSocket transport boundaries for the current GUI.",
    "files": 36,
-   "lines": 6861,
+   "lines": 6875,
    "domains": {
     "web": 36
    },
@@ -41,7 +41,7 @@
    "kind": "backend",
    "doc": "Application composition and cross-domain transaction contracts.",
    "files": 35,
-   "lines": 8149,
+   "lines": 8223,
    "domains": {
     "application": 35
    },
@@ -61,7 +61,7 @@
    "kind": "backend",
    "doc": "Current room domain contracts and behavior.",
    "files": 69,
-   "lines": 17709,
+   "lines": 17710,
    "domains": {
     "room": 69
    },
@@ -122,7 +122,7 @@
    "kind": "backend",
    "doc": "Provider runtime contracts and implementations.",
    "files": 135,
-   "lines": 34739,
+   "lines": 35005,
    "domains": {
     "providers": 135
    },
@@ -182,7 +182,7 @@
    "kind": "backend",
    "doc": "Optional product feature packages.",
    "files": 12,
-   "lines": 1522,
+   "lines": 1601,
    "domains": {
     "features": 12
    },
@@ -322,7 +322,7 @@
    "kind": "backend",
    "doc": "Flat root modules owned by the application domain that have not been physically moved into the target package yet.",
    "files": 27,
-   "lines": 1263,
+   "lines": 1264,
    "domains": {
     "application": 27
    },
@@ -363,7 +363,7 @@
    "kind": "backend",
    "doc": "Flat root modules owned by the features domain that have not been physically moved into the target package yet.",
    "files": 6,
-   "lines": 88,
+   "lines": 85,
    "domains": {
     "features": 6
    },
@@ -484,7 +484,7 @@
    "kind": "frontend",
    "doc": "Frontend entry files (App, main, API client, styles) living directly under src/.",
    "files": 17,
-   "lines": 13788,
+   "lines": 13739,
    "domains": {},
    "classes": {},
    "x": 102.0,
@@ -500,7 +500,7 @@
    "kind": "frontend",
    "doc": "Room protocol client: HTTP calls, WebSocket wiring, DTO mapping.",
    "files": 9,
-   "lines": 1759,
+   "lines": 1756,
    "domains": {},
    "classes": {},
    "x": 330.0,
@@ -516,7 +516,7 @@
    "kind": "frontend",
    "doc": "Application shell, routing, and global client state.",
    "files": 21,
-   "lines": 6074,
+   "lines": 5989,
    "domains": {},
    "classes": {},
    "x": 558.0,
@@ -531,8 +531,8 @@
    "id": "fe:lib",
    "kind": "frontend",
    "doc": "Shared utilities and presentation helpers.",
-   "files": 55,
-   "lines": 6009,
+   "files": 54,
+   "lines": 5955,
    "domains": {},
    "classes": {},
    "x": 786.0,
@@ -548,7 +548,7 @@
    "kind": "frontend",
    "doc": "Frontend source files grouped under src/styles/.",
    "files": 2,
-   "lines": 106,
+   "lines": 107,
    "domains": {},
    "classes": {},
    "x": 444.0,
@@ -580,7 +580,7 @@
    "kind": "frontend",
    "doc": "Top-level room views rendered by the shell.",
    "files": 110,
-   "lines": 21579,
+   "lines": 21738,
    "domains": {},
    "classes": {},
    "x": 558.0,
@@ -720,6 +720,22 @@
     ],
     [
      1018.0,
+     238.0
+    ]
+   ],
+   "intra_cycle": true
+  },
+  {
+   "from": "application",
+   "to": "features",
+   "count": 2,
+   "points": [
+    [
+     998.0,
+     238.0
+    ],
+    [
+     1246.0,
      238.0
     ]
    ],
@@ -1048,7 +1064,7 @@
   {
    "from": "fe:app",
    "to": "fe:lib",
-   "count": 26,
+   "count": 25,
    "points": [
     [
      766.0,
@@ -1064,7 +1080,7 @@
   {
    "from": "fe:lib",
    "to": "fe:(src root)",
-   "count": 18,
+   "count": 17,
    "points": [
     [
      786.0,
@@ -1176,7 +1192,7 @@
   {
    "from": "fe:views",
    "to": "fe:lib",
-   "count": 87,
+   "count": 84,
    "points": [
     [
      755.8823529411765,
@@ -1617,22 +1633,6 @@
     [
      1226.0,
      261.2631578947368
-    ]
-   ],
-   "intra_cycle": true
-  },
-  {
-   "from": "room",
-   "to": "features",
-   "count": 1,
-   "points": [
-    [
-     1484.1176470588234,
-     298.0
-    ],
-    [
-     1443.8823529411766,
-     280.0
     ]
    ],
    "intra_cycle": true
@@ -3730,9 +3730,9 @@
  "health": {
   "scope": "Imports are counted inside agentsassemble/ only; test references are counted separately from tests/. Callers outside this repository are not visible to the generator.",
   "totals": {
-   "retiring_lines": 2863,
+   "retiring_lines": 2860,
    "current_to_retiring_imports": 1,
-   "unreferenced_shim_lines": 2429,
+   "unreferenced_shim_lines": 2426,
    "test_only_shims": 16
   },
   "cycles": [
@@ -3753,7 +3753,7 @@
      "web"
     ],
     "internal_edges": 73,
-    "lines": 95843,
+    "lines": 96278,
     "heaviest": "providers"
    },
    {
@@ -3766,7 +3766,7 @@
      "fe:views"
     ],
     "internal_edges": 17,
-    "lines": 49340,
+    "lines": 49308,
     "heaviest": "fe:views"
    }
   ],
@@ -5003,7 +5003,7 @@
    "application",
    "current",
    "in-target-package",
-   192,
+   214,
    "Room command parser registrations.",
    [
     38,
@@ -5023,7 +5023,7 @@
    "application",
    "current",
    "in-target-package",
-   259,
+   270,
    "Execution for current room and Agent Session CLI commands.",
    [
     19,
@@ -5113,7 +5113,7 @@
    "application",
    "current",
    "in-target-package",
-   203,
+   205,
    "",
    [
     14,
@@ -5125,6 +5125,7 @@
     52,
     53,
     62,
+    104,
     131,
     134,
     287,
@@ -5168,7 +5169,7 @@
    "application",
    "current",
    "in-target-package",
-   300,
+   304,
    "",
    [
     14,
@@ -5181,6 +5182,7 @@
     52,
     53,
     59,
+    104,
     131,
     134,
     179,
@@ -5392,7 +5394,7 @@
    "application",
    "current",
    "in-target-package",
-   517,
+   552,
    "Current-session room connector over the canonical room WebSocket.",
    [
     459,
@@ -6221,7 +6223,7 @@
    "features",
    "optional",
    "in-target-package",
-   88,
+   100,
    "Small bounded JSONL chat store used by optional room surfaces.",
    [
     459
@@ -6302,10 +6304,9 @@
    "features",
    "optional",
    "in-target-package",
-   38,
+   92,
    "Side-chat HTTP and event-stream routes.",
    [
-    104,
     541
    ],
    [
@@ -6321,19 +6322,24 @@
    "features",
    "optional",
    "in-target-package",
-   101,
-   "Side-chat JSONL storage and room-scoped reads.",
+   114,
+   "Server-memory side chat with bounded room-scoped lifetime.",
    [
     98,
     459
    ],
    [
-    103,
-    420,
+    48,
+    49,
     524,
-    540
+    541
    ],
-   []
+   [
+    [
+     "SideChatStore",
+     []
+    ]
+   ]
   ],
   [
    "agentsassemble.features.social",
@@ -6443,7 +6449,7 @@
    "application",
    "current",
    "retained-entrypoint",
-   277,
+   278,
    "Current local HTTP/WebSocket application entrypoint.",
    [
     22,
@@ -12311,15 +12317,24 @@
    "providers",
    "current",
    "in-target-package",
-   120,
-   "Stdio MCP tools that let the current app or CLI session join a room link.",
+   386,
+   "MCP tools that let the current app or web conversation join a room link.",
    [
     56
    ],
    [
     45
    ],
-   []
+   [
+    [
+     "_RemoteConnectorSessions",
+     []
+    ],
+    [
+     "RemoteRoomConnectorMcp",
+     []
+    ]
+   ]
   ],
   [
    "agentsassemble.providers.room_observation_orientation",
@@ -13953,10 +13968,9 @@
    "room",
    "current",
    "in-target-package",
-   119,
+   120,
    "",
    [
-    104,
     408,
     423,
     438,
@@ -16682,8 +16696,8 @@
    "features",
    "compatibility",
    "compatibility-shim",
-   7,
-   "Compatibility exports for the optional side-chat service.",
+   4,
+   "Compatibility export for the optional side-chat service.",
    [
     104
    ],
@@ -16994,7 +17008,7 @@
    "web",
    "current",
    "in-target-package",
-   540,
+   552,
    "WebSocket room ticket and per-connection protocol core.",
    [
     12,
@@ -17049,11 +17063,10 @@
    "web",
    "current",
    "in-target-package",
-   84,
+   76,
    "Compose current canonical room WebSocket dependencies.",
    [
     48,
-    104,
     231,
     446,
     447,
@@ -17071,7 +17084,7 @@
    "web",
    "current",
    "in-target-package",
-   696,
+   705,
    "Route-table dispatcher and unified request identity for the GUI server.",
    [
     14,
@@ -17079,6 +17092,7 @@
     20,
     26,
     52,
+    104,
     131,
     134,
     408,
@@ -17235,7 +17249,7 @@
    "web",
    "current",
    "in-target-package",
-   166,
+   167,
    "Route registration for the composed GUI application.",
    [
     48,
@@ -17788,7 +17802,7 @@
   [
    "frontend/src/App.tsx",
    "(src root)",
-   2072,
+   2004,
    "",
    [
     1,
@@ -17817,35 +17831,35 @@
     83,
     84,
     86,
-    88,
-    102,
+    87,
+    101,
+    103,
     104,
     105,
-    106,
-    108,
-    113,
-    120,
-    122,
-    125,
-    127,
-    132,
-    135,
-    137,
-    139,
-    142,
-    153,
-    169,
-    172,
-    174,
-    176,
-    178,
-    180,
-    183,
-    185,
-    213
+    107,
+    112,
+    119,
+    121,
+    124,
+    126,
+    131,
+    134,
+    136,
+    138,
+    141,
+    152,
+    168,
+    171,
+    173,
+    175,
+    177,
+    179,
+    182,
+    184,
+    212
    ],
    [
-    91
+    90
    ]
   ],
   [
@@ -17854,14 +17868,14 @@
    18,
    "",
    [
-    95
+    94
    ],
    [
     0,
+    144,
     145,
-    146,
-    190,
-    191
+    189,
+    190
    ]
   ],
   [
@@ -17913,9 +17927,9 @@
     77,
     85,
     86,
-    87,
-    89,
-    95,
+    88,
+    94,
+    98,
     99,
     100,
     101,
@@ -17930,51 +17944,50 @@
     110,
     111,
     112,
-    113,
+    116,
     117,
     118,
     119,
-    120,
+    129,
     130,
-    131,
+    134,
     135,
     136,
     137,
     138,
-    139,
+    143,
     144,
     145,
     146,
     147,
-    148,
+    151,
     152,
-    153,
-    159,
+    158,
+    167,
     168,
-    169,
-    172,
+    171,
+    174,
     175,
-    176,
+    178,
     179,
-    180,
+    183,
     184,
-    185,
-    187,
+    186,
+    189,
     190,
     191,
     192,
-    193,
+    194,
     195,
     196,
     197,
-    198,
-    201,
-    203,
+    200,
+    202,
+    204,
     205,
-    206,
+    209,
     210,
-    211,
-    212
+    211
    ]
   ],
   [
@@ -17990,8 +18003,8 @@
    ],
    [
     2,
-    98,
-    113
+    97,
+    112
    ]
   ],
   [
@@ -18025,10 +18038,10 @@
    ],
    [
     2,
+    132,
     133,
-    134,
-    182,
-    183
+    181,
+    182
    ]
   ],
   [
@@ -18069,7 +18082,7 @@
    [
     2,
     3,
-    116
+    115
    ]
   ],
   [
@@ -18089,9 +18102,9 @@
     7,
     11,
     73,
-    134,
-    182,
-    183
+    133,
+    181,
+    182
    ]
   ],
   [
@@ -18107,12 +18120,12 @@
   [
    "frontend/src/api/roomHistory.ts",
    "api",
-   360,
+   357,
    "",
    [
     4,
     9,
-    98
+    97
    ],
    [
     2,
@@ -18128,8 +18141,8 @@
    [
     0,
     16,
-    106,
-    139
+    105,
+    138
    ]
   ],
   [
@@ -18209,7 +18222,7 @@
    [
     0,
     17,
-    137
+    136
    ]
   ],
   [
@@ -18293,7 +18306,7 @@
    [
     0,
     23,
-    172
+    171
    ]
   ],
   [
@@ -18365,7 +18378,7 @@
   [
    "frontend/src/app/useRoomSideChat.isolation.test.tsx",
    "app",
-   150,
+   132,
    "",
    [
     2,
@@ -18377,7 +18390,7 @@
   [
    "frontend/src/app/useRoomSideChat.test.tsx",
    "app",
-   156,
+   134,
    "",
    [
     2,
@@ -18388,12 +18401,11 @@
   [
    "frontend/src/app/useRoomSideChat.ts",
    "app",
-   196,
+   151,
    "",
    [
     2,
-    80,
-    87
+    80
    ],
    [
     0,
@@ -18420,18 +18432,18 @@
    [
     14,
     33,
-    104,
-    105
+    103,
+    104
    ]
   ],
   [
    "frontend/src/index.css",
    "(src root)",
-   7116,
+   7135,
    "",
    [],
    [
-    91
+    90
    ]
   ],
   [
@@ -18464,11 +18476,11 @@
     2
    ],
    [
-    153,
-    167,
+    152,
+    166,
+    201,
     202,
-    203,
-    206
+    205
    ]
   ],
   [
@@ -18478,11 +18490,11 @@
    "",
    [],
    [
-    148,
-    196,
-    198,
-    205,
-    206
+    147,
+    195,
+    197,
+    204,
+    205
    ]
   ],
   [
@@ -18495,9 +18507,9 @@
    ],
    [
     0,
-    148,
-    169,
-    206
+    147,
+    168,
+    205
    ]
   ],
   [
@@ -18507,7 +18519,7 @@
    "",
    [],
    [
-    203
+    202
    ]
   ],
   [
@@ -18521,9 +18533,9 @@
     4,
     17,
     18,
+    100,
     101,
-    102,
-    146
+    145
    ]
   ],
   [
@@ -18533,10 +18545,10 @@
    "",
    [
     2,
-    95
+    94
    ],
    [
-    102
+    101
    ]
   ],
   [
@@ -18570,7 +18582,7 @@
    [
     44,
     45,
-    183
+    182
    ]
   ],
   [
@@ -18582,7 +18594,7 @@
    [
     46,
     75,
-    134
+    133
    ]
   ],
   [
@@ -18595,12 +18607,12 @@
     0,
     18,
     24,
+    133,
     134,
-    135,
-    137,
+    136,
+    180,
     181,
-    182,
-    183
+    182
    ]
   ],
   [
@@ -18610,7 +18622,7 @@
    "",
    [],
    [
-    129
+    128
    ]
   ],
   [
@@ -18623,9 +18635,9 @@
     59
    ],
    [
-    106,
-    139,
-    172
+    105,
+    138,
+    171
    ]
   ],
   [
@@ -18635,7 +18647,7 @@
    "",
    [],
    [
-    134
+    133
    ]
   ],
   [
@@ -18657,7 +18669,7 @@
    [
     0,
     52,
-    135
+    134
    ]
   ],
   [
@@ -18685,7 +18697,7 @@
    "",
    [],
    [
-    146
+    145
    ]
   ],
   [
@@ -18695,7 +18707,7 @@
    "",
    [],
    [
-    104
+    103
    ]
   ],
   [
@@ -18707,10 +18719,10 @@
    [
     82,
     83,
-    108,
-    146,
-    151,
-    180
+    107,
+    145,
+    150,
+    179
    ]
   ],
   [
@@ -18723,12 +18735,12 @@
    ],
    [
     50,
-    106,
+    105,
+    129,
     130,
-    131,
-    153,
-    172,
-    206
+    152,
+    171,
+    205
    ]
   ],
   [
@@ -18739,12 +18751,12 @@
    [],
    [
     0,
-    106,
+    105,
+    129,
     130,
-    131,
-    153,
-    172,
-    203
+    152,
+    171,
+    202
    ]
   ],
   [
@@ -18753,11 +18765,11 @@
    81,
    "",
    [
-    95
+    94
    ],
    [
-    113,
-    119
+    112,
+    118
    ]
   ],
   [
@@ -18767,7 +18779,7 @@
    "",
    [
     63,
-    95
+    94
    ],
    []
   ],
@@ -18777,12 +18789,12 @@
    193,
    "",
    [
-    95
+    94
    ],
    [
     62,
-    113,
-    118
+    112,
+    117
    ]
   ],
   [
@@ -18791,13 +18803,13 @@
    80,
    "",
    [
-    98
+    97
    ],
    [
-    102,
-    108,
-    164,
-    165
+    101,
+    107,
+    163,
+    164
    ]
   ],
   [
@@ -18843,7 +18855,7 @@
    ],
    [
     67,
-    104
+    103
    ]
   ],
   [
@@ -18864,7 +18876,7 @@
    [],
    [
     69,
-    129
+    128
    ]
   ],
   [
@@ -18882,13 +18894,13 @@
     73,
     75,
     80,
-    108,
+    107,
+    151,
     152,
-    153,
-    172,
+    171,
+    173,
     174,
-    175,
-    176
+    175
    ]
   ],
   [
@@ -18930,13 +18942,13 @@
     72,
     74,
     79,
+    106,
     107,
-    108,
-    127,
-    174,
-    176,
-    183,
-    212
+    126,
+    173,
+    175,
+    182,
+    211
    ]
   ],
   [
@@ -18964,7 +18976,7 @@
     22,
     73,
     74,
-    183
+    182
    ]
   ],
   [
@@ -18981,7 +18993,7 @@
   [
    "frontend/src/lib/roomEventProjection.ts",
    "lib",
-   240,
+   242,
    "",
    [
     2
@@ -18989,7 +19001,7 @@
    [
     76,
     86,
-    102
+    101
    ]
   ],
   [
@@ -19000,8 +19012,8 @@
    [],
    [
     0,
-    108,
-    146
+    107,
+    145
    ]
   ],
   [
@@ -19032,7 +19044,7 @@
     72,
     73,
     79,
-    134
+    133
    ]
   ],
   [
@@ -19044,7 +19056,7 @@
    [
     0,
     24,
-    172
+    171
    ]
   ],
   [
@@ -19079,7 +19091,7 @@
    [],
    [
     0,
-    174
+    173
    ]
   ],
   [
@@ -19105,25 +19117,10 @@
    [
     0,
     85,
+    106,
     107,
-    108,
-    210,
-    212
-   ]
-  ],
-  [
-   "frontend/src/lib/sideChatThreadModel.ts",
-   "lib",
-   56,
-   "",
-   [
-    2
-   ],
-   [
-    32,
-    108,
-    180,
-    210
+    209,
+    211
    ]
   ],
   [
@@ -19145,9 +19142,9 @@
     2
    ],
    [
+    182,
     183,
-    184,
-    185
+    184
    ]
   ],
   [
@@ -19157,7 +19154,7 @@
    "",
    [],
    [
-    146
+    145
    ]
   ],
   [
@@ -19168,7 +19165,7 @@
    [
     0,
     35,
-    181
+    180
    ],
    []
   ],
@@ -19179,7 +19176,7 @@
    "",
    [],
    [
-    95
+    94
    ]
   ],
   [
@@ -19188,7 +19185,7 @@
    105,
    "",
    [
-    95
+    94
    ],
    []
   ],
@@ -19198,7 +19195,7 @@
    742,
    "",
    [
-    95
+    94
    ],
    []
   ],
@@ -19209,8 +19206,8 @@
    "",
    [
     2,
-    92,
-    98
+    91,
+    97
    ],
    [
     1,
@@ -19218,47 +19215,47 @@
     61,
     62,
     63,
+    92,
     93,
-    94,
+    98,
     99,
     100,
     101,
     102,
-    103,
+    109,
     110,
     111,
     112,
-    113,
+    116,
     117,
     118,
-    119,
+    144,
     145,
-    146,
-    148,
+    147,
+    152,
     153,
-    154,
+    156,
     157,
     158,
-    159,
-    162,
-    166,
+    161,
+    165,
+    167,
     168,
-    169,
-    190,
+    189,
+    196,
     197,
-    198,
-    209,
-    213
+    208,
+    212
    ]
   ],
   [
    "frontend/src/styles/channel-search.css",
    "styles",
-   70,
+   71,
    "",
    [],
    [
-    122
+    121
    ]
   ],
   [
@@ -19268,7 +19265,7 @@
    "",
    [],
    [
-    146
+    145
    ]
   ],
   [
@@ -19282,7 +19279,7 @@
    [
     11,
     64,
-    95
+    94
    ]
   ],
   [
@@ -19292,8 +19289,8 @@
    "",
    [
     2,
-    95,
-    102
+    94,
+    101
    ],
    []
   ],
@@ -19304,8 +19301,8 @@
    "",
    [
     2,
-    95,
-    102
+    94,
+    101
    ],
    []
   ],
@@ -19317,8 +19314,8 @@
    [
     2,
     42,
-    95,
-    102
+    94,
+    101
    ],
    []
   ],
@@ -19333,14 +19330,14 @@
     43,
     64,
     77,
-    95
+    94
    ],
    [
     0,
+    98,
     99,
     100,
-    101,
-    103
+    102
    ]
   ],
   [
@@ -19350,8 +19347,8 @@
    "",
    [
     2,
-    95,
-    102
+    94,
+    101
    ],
    []
   ],
@@ -19378,7 +19375,7 @@
    [
     2,
     34,
-    122
+    121
    ],
    [
     0
@@ -19395,8 +19392,8 @@
     50,
     59,
     60,
-    130,
-    131
+    129,
+    130
    ],
    [
     0
@@ -19405,20 +19402,20 @@
   [
    "frontend/src/views/LobbyView.test.tsx",
    "views",
-   580,
+   696,
    "",
    [
     2,
     73,
     86,
-    108
+    107
    ],
    []
   ],
   [
    "frontend/src/views/LobbyView.tsx",
    "views",
-   366,
+   431,
    "",
    [
     2,
@@ -19428,18 +19425,17 @@
     73,
     78,
     86,
-    87,
-    122,
-    146,
-    165,
-    191,
+    121,
+    145,
+    164,
+    190,
+    209,
     210,
-    211,
-    212
+    211
    ],
    [
     0,
-    107
+    106
    ]
   ],
   [
@@ -19451,7 +19447,7 @@
     2
    ],
    [
-    118
+    117
    ]
   ],
   [
@@ -19461,8 +19457,8 @@
    "",
    [
     2,
-    95,
-    113
+    94,
+    112
    ],
    []
   ],
@@ -19473,8 +19469,8 @@
    "",
    [
     2,
-    95,
-    113
+    94,
+    112
    ],
    []
   ],
@@ -19485,8 +19481,8 @@
    "",
    [
     2,
-    95,
-    113
+    94,
+    112
    ],
    []
   ],
@@ -19500,19 +19496,19 @@
     3,
     61,
     63,
-    95,
-    116,
+    94,
+    115,
+    156,
     157,
     158,
-    159,
-    161,
-    193
+    160,
+    192
    ],
    [
     0,
+    109,
     110,
-    111,
-    112
+    111
    ]
   ],
   [
@@ -19522,7 +19518,7 @@
    "A sibling of the modal's other sections, not a panel inside one. The card",
    [],
    [
-    116
+    115
    ]
   ],
   [
@@ -19531,7 +19527,7 @@
    124,
    "",
    [
-    116
+    115
    ],
    []
   ],
@@ -19542,12 +19538,12 @@
    "",
    [
     8,
-    114
+    113
    ],
    [
-    113,
-    115,
-    119
+    112,
+    114,
+    118
    ]
   ],
   [
@@ -19557,8 +19553,8 @@
    "",
    [
     2,
-    95,
-    118
+    94,
+    117
    ],
    []
   ],
@@ -19570,20 +19566,20 @@
    [
     2,
     63,
-    95,
-    109,
-    119,
-    166,
-    193
+    94,
+    108,
+    118,
+    165,
+    192
    ],
    [
-    117,
-    148,
-    153,
+    116,
+    147,
+    152,
+    196,
     197,
-    198,
-    200,
-    206
+    199,
+    205
    ]
   ],
   [
@@ -19594,11 +19590,11 @@
    [
     2,
     61,
-    95,
-    116
+    94,
+    115
    ],
    [
-    118
+    117
    ]
   ],
   [
@@ -19619,23 +19615,23 @@
    48,
    "",
    [
-    122
+    121
    ],
    []
   ],
   [
    "frontend/src/views/components/ChannelHeader.tsx",
    "views",
-   297,
+   364,
    "",
    [
-    96
+    95
    ],
    [
     0,
-    105,
-    108,
-    121
+    104,
+    107,
+    120
    ]
   ],
   [
@@ -19645,7 +19641,7 @@
    "",
    [],
    [
-    124
+    123
    ]
   ],
   [
@@ -19654,10 +19650,10 @@
    70,
    "",
    [
-    123
+    122
    ],
    [
-    146
+    145
    ]
   ],
   [
@@ -19677,7 +19673,7 @@
    "",
    [],
    [
-    127
+    126
    ]
   ],
   [
@@ -19687,7 +19683,7 @@
    "",
    [
     73,
-    126
+    125
    ],
    [
     0
@@ -19699,7 +19695,7 @@
    83,
    "",
    [
-    129
+    128
    ],
    []
   ],
@@ -19713,9 +19709,9 @@
     70
    ],
    [
-    128,
-    180,
-    210
+    127,
+    179,
+    209
    ]
   ],
   [
@@ -19729,7 +19725,7 @@
     60
    ],
    [
-    106
+    105
    ]
   ],
   [
@@ -19743,7 +19739,7 @@
     60
    ],
    [
-    106
+    105
    ]
   ],
   [
@@ -19763,7 +19759,7 @@
    "",
    [
     5,
-    134
+    133
    ],
    []
   ],
@@ -19781,9 +19777,9 @@
     80
    ],
    [
-    133,
-    183,
-    187
+    132,
+    182,
+    186
    ]
   ],
   [
@@ -19807,7 +19803,7 @@
    "",
    [
     2,
-    137
+    136
    ],
    []
   ],
@@ -19820,11 +19816,11 @@
     2,
     18,
     48,
-    140
+    139
    ],
    [
     0,
-    136
+    135
    ]
   ],
   [
@@ -19836,7 +19832,7 @@
     2
    ],
    [
-    187
+    186
    ]
   ],
   [
@@ -19848,7 +19844,7 @@
     2,
     12,
     50,
-    185
+    184
    ],
    [
     0
@@ -19861,9 +19857,9 @@
    "",
    [],
    [
-    137,
-    185,
-    196
+    136,
+    184,
+    195
    ]
   ],
   [
@@ -19872,7 +19868,7 @@
    46,
    "",
    [
-    142
+    141
    ],
    []
   ],
@@ -19884,7 +19880,7 @@
    [],
    [
     0,
-    141
+    140
    ]
   ],
   [
@@ -19893,7 +19889,7 @@
    54,
    "",
    [
-    144
+    143
    ],
    []
   ],
@@ -19906,8 +19902,8 @@
     2
    ],
    [
-    143,
-    210
+    142,
+    209
    ]
   ],
   [
@@ -19918,8 +19914,8 @@
    [
     1,
     2,
-    95,
-    146
+    94,
+    145
    ],
    []
   ],
@@ -19935,16 +19931,16 @@
     56,
     58,
     78,
-    90,
-    95,
-    97,
-    124,
-    151,
-    188
+    89,
+    94,
+    96,
+    123,
+    150,
+    187
    ],
    [
-    108,
-    145
+    107,
+    144
    ]
   ],
   [
@@ -19954,7 +19950,7 @@
    "",
    [
     2,
-    148
+    147
    ],
    []
   ],
@@ -19967,19 +19963,19 @@
     2,
     39,
     40,
-    95,
-    118,
-    167,
+    94,
+    117,
+    166,
+    197,
     198,
     199,
-    200,
+    203,
     204,
-    205,
-    206
+    205
    ],
    [
-    147,
-    169
+    146,
+    168
    ]
   ],
   [
@@ -19989,7 +19985,7 @@
    "",
    [],
    [
-    151
+    150
    ]
   ],
   [
@@ -19998,7 +19994,7 @@
    39,
    "",
    [
-    151
+    150
    ],
    []
   ],
@@ -20009,13 +20005,13 @@
    "",
    [
     58,
-    149,
-    161
+    148,
+    160
    ],
    [
-    146,
-    150,
-    180
+    145,
+    149,
+    179
    ]
   ],
   [
@@ -20026,14 +20022,14 @@
    [
     2,
     71,
-    153
+    152
    ],
    []
   ],
   [
    "frontend/src/views/components/MobileRoomInfoPanel.tsx",
    "views",
-   516,
+   502,
    "",
    [
     2,
@@ -20041,15 +20037,15 @@
     59,
     60,
     71,
-    95,
-    118,
-    161,
-    199,
-    203
+    94,
+    117,
+    160,
+    198,
+    202
    ],
    [
     0,
-    152
+    151
    ]
   ],
   [
@@ -20058,10 +20054,10 @@
    84,
    "",
    [
-    95
+    94
    ],
    [
-    157
+    156
    ]
   ],
   [
@@ -20071,7 +20067,7 @@
    "",
    [],
    [
-    157
+    156
    ]
   ],
   [
@@ -20080,7 +20076,7 @@
    230,
    "",
    [
-    157
+    156
    ],
    []
   ],
@@ -20090,17 +20086,17 @@
    405,
    "",
    [
-    95,
+    94,
+    153,
     154,
-    155,
-    162,
-    208,
-    209
+    161,
+    207,
+    208
    ],
    [
-    113,
-    156,
-    166
+    112,
+    155,
+    165
    ]
   ],
   [
@@ -20109,11 +20105,11 @@
    48,
    "",
    [
-    95
+    94
    ],
    [
-    113,
-    166
+    112,
+    165
    ]
   ],
   [
@@ -20123,10 +20119,10 @@
    "",
    [
     2,
-    95
+    94
    ],
    [
-    113
+    112
    ]
   ],
   [
@@ -20135,7 +20131,7 @@
    40,
    "",
    [
-    161
+    160
    ],
    []
   ],
@@ -20145,16 +20141,16 @@
    51,
    "",
    [
-    207
+    206
    ],
    [
-    113,
-    151,
-    153,
-    160,
-    198,
-    200,
-    210
+    112,
+    150,
+    152,
+    159,
+    197,
+    199,
+    209
    ]
   ],
   [
@@ -20163,10 +20159,10 @@
    124,
    "",
    [
-    95
+    94
    ],
    [
-    157
+    156
    ]
   ],
   [
@@ -20176,7 +20172,7 @@
    "",
    [],
    [
-    165
+    164
    ]
   ],
   [
@@ -20186,7 +20182,7 @@
    "",
    [
     64,
-    165
+    164
    ],
    []
   ],
@@ -20197,11 +20193,11 @@
    "",
    [
     64,
-    163
+    162
    ],
    [
-    108,
-    164
+    107,
+    163
    ]
   ],
   [
@@ -20210,12 +20206,12 @@
    40,
    "",
    [
-    95,
-    157,
-    158
+    94,
+    156,
+    157
    ],
    [
-    118
+    117
    ]
   ],
   [
@@ -20227,7 +20223,7 @@
     38
    ],
    [
-    148
+    147
    ]
   ],
   [
@@ -20237,8 +20233,8 @@
    "",
    [
     2,
-    95,
-    169
+    94,
+    168
    ],
    []
   ],
@@ -20250,12 +20246,12 @@
    [
     2,
     40,
-    95,
-    148
+    94,
+    147
    ],
    [
     0,
-    168
+    167
    ]
   ],
   [
@@ -20265,7 +20261,7 @@
    "",
    [],
    [
-    172
+    171
    ]
   ],
   [
@@ -20274,7 +20270,7 @@
    77,
    "",
    [
-    172
+    171
    ],
    []
   ],
@@ -20291,11 +20287,11 @@
     60,
     71,
     81,
-    170
+    169
    ],
    [
     0,
-    171
+    170
    ]
   ],
   [
@@ -20305,7 +20301,7 @@
    "",
    [],
    [
-    174
+    173
    ]
   ],
   [
@@ -20317,7 +20313,7 @@
     71,
     73,
     84,
-    173
+    172
    ],
    [
     0
@@ -20331,7 +20327,7 @@
    [
     2,
     71,
-    176
+    175
    ],
    []
   ],
@@ -20347,7 +20343,7 @@
    ],
    [
     0,
-    175
+    174
    ]
   ],
   [
@@ -20356,7 +20352,7 @@
    43,
    "",
    [
-    178
+    177
    ],
    []
   ],
@@ -20368,35 +20364,34 @@
    [],
    [
     0,
-    177
+    176
    ]
   ],
   [
    "frontend/src/views/components/SideChatDock.test.tsx",
    "views",
-   109,
+   111,
    "",
    [
     2,
-    180
+    179
    ],
    []
   ],
   [
    "frontend/src/views/components/SideChatDock.tsx",
    "views",
-   269,
+   218,
    "",
    [
     2,
     58,
-    87,
-    129,
-    151
+    128,
+    150
    ],
    [
     0,
-    179
+    178
    ]
   ],
   [
@@ -20406,10 +20401,10 @@
    "",
    [
     48,
-    183
+    182
    ],
    [
-    91
+    90
    ]
   ],
   [
@@ -20421,7 +20416,7 @@
     5,
     9,
     48,
-    183
+    182
    ],
    []
   ],
@@ -20437,13 +20432,13 @@
     48,
     73,
     75,
-    89,
-    134
+    88,
+    133
    ],
    [
     0,
-    181,
-    182
+    180,
+    181
    ]
   ],
   [
@@ -20453,8 +20448,8 @@
    "",
    [
     2,
-    89,
-    185
+    88,
+    184
    ],
    []
   ],
@@ -20465,14 +20460,14 @@
    "",
    [
     2,
-    89,
-    140,
-    187
+    88,
+    139,
+    186
    ],
    [
     0,
-    139,
-    184
+    138,
+    183
    ]
   ],
   [
@@ -20482,7 +20477,7 @@
    "",
    [],
    [
-    187
+    186
    ]
   ],
   [
@@ -20492,12 +20487,12 @@
    "",
    [
     2,
-    134,
-    138,
-    186
+    133,
+    137,
+    185
    ],
    [
-    185
+    184
    ]
   ],
   [
@@ -20507,7 +20502,7 @@
    "",
    [],
    [
-    146
+    145
    ]
   ],
   [
@@ -20517,7 +20512,7 @@
    "---- /vote poll card (issue 7) ----",
    [],
    [
-    191
+    190
    ]
   ],
   [
@@ -20528,8 +20523,8 @@
    [
     1,
     2,
-    95,
-    191
+    94,
+    190
    ],
    []
   ],
@@ -20541,11 +20536,11 @@
    [
     1,
     2,
-    189
+    188
    ],
    [
-    108,
-    190
+    107,
+    189
    ]
   ],
   [
@@ -20555,7 +20550,7 @@
    "",
    [
     2,
-    193
+    192
    ],
    []
   ],
@@ -20568,9 +20563,9 @@
     2
    ],
    [
-    113,
-    118,
-    192
+    112,
+    117,
+    191
    ]
   ],
   [
@@ -20580,7 +20575,7 @@
    "",
    [],
    [
-    196
+    195
    ]
   ],
   [
@@ -20590,8 +20585,8 @@
    "",
    [
     2,
-    196,
-    205
+    195,
+    204
    ],
    []
   ],
@@ -20603,13 +20598,13 @@
    [
     2,
     39,
-    140,
-    194,
-    205
+    139,
+    193,
+    204
    ],
    [
-    195,
-    198
+    194,
+    197
    ]
   ],
   [
@@ -20619,12 +20614,12 @@
    "",
    [
     2,
-    95,
-    118,
-    205
+    94,
+    117,
+    204
    ],
    [
-    198
+    197
    ]
   ],
   [
@@ -20635,16 +20630,16 @@
    [
     2,
     39,
-    95,
-    118,
-    161,
+    94,
+    117,
+    160,
+    195,
     196,
-    197,
-    202,
-    205
+    201,
+    204
    ],
    [
-    148
+    147
    ]
   ],
   [
@@ -20654,8 +20649,8 @@
    "",
    [],
    [
-    148,
-    153
+    147,
+    152
    ]
   ],
   [
@@ -20664,13 +20659,13 @@
    238,
    "",
    [
-    118,
-    161,
-    203,
-    205
+    117,
+    160,
+    202,
+    204
    ],
    [
-    148
+    147
    ]
   ],
   [
@@ -20680,8 +20675,8 @@
    "",
    [
     2,
-    202,
-    205
+    201,
+    204
    ],
    []
   ],
@@ -20692,12 +20687,12 @@
    "",
    [
     38,
-    203,
-    205
+    202,
+    204
    ],
    [
-    198,
-    201
+    197,
+    200
    ]
   ],
   [
@@ -20710,13 +20705,13 @@
     38,
     41,
     60,
-    205
+    204
    ],
    [
-    153,
-    200,
-    202,
-    206
+    152,
+    199,
+    201,
+    205
    ]
   ],
   [
@@ -20725,10 +20720,10 @@
    73,
    "",
    [
-    205
+    204
    ],
    [
-    148
+    147
    ]
   ],
   [
@@ -20741,17 +20736,17 @@
     39
    ],
    [
-    148,
+    147,
+    194,
     195,
     196,
     197,
-    198,
+    199,
     200,
     201,
     202,
     203,
-    204,
-    206
+    205
    ]
   ],
   [
@@ -20765,12 +20760,12 @@
     39,
     40,
     59,
-    118,
-    203,
-    205
+    117,
+    202,
+    204
    ],
    [
-    148
+    147
    ]
   ],
   [
@@ -20780,7 +20775,7 @@
    "",
    [],
    [
-    161
+    160
    ]
   ],
   [
@@ -20790,7 +20785,7 @@
    "",
    [],
    [
-    157
+    156
    ]
   ],
   [
@@ -20799,27 +20794,26 @@
    91,
    "",
    [
-    95
+    94
    ],
    [
-    157
+    156
    ]
   ],
   [
    "frontend/src/views/lobby/LobbyEventRows.tsx",
    "views",
-   441,
+   409,
    "",
    [
     2,
     86,
-    87,
-    129,
-    144,
-    161
+    128,
+    143,
+    160
    ],
    [
-    108
+    107
    ]
   ],
   [
@@ -20831,13 +20825,13 @@
     2
    ],
    [
-    108
+    107
    ]
   ],
   [
    "frontend/src/views/lobby/useLobbyHistory.ts",
    "views",
-   341,
+   347,
    "",
    [
     2,
@@ -20845,7 +20839,7 @@
     86
    ],
    [
-    108
+    107
    ]
   ],
   [
@@ -20854,7 +20848,7 @@
    107,
    "",
    [
-    95
+    94
    ],
    [
     0
@@ -20927,19 +20921,19 @@
    "name": "agentsassemble",
    "note": "Backend package (Python)",
    "files": 570,
-   "lines": 98773
+   "lines": 99205
   },
   {
    "name": "frontend/src",
    "note": "React room client (TS/TSX)",
-   "files": 215,
-   "lines": 49446
+   "files": 214,
+   "lines": 49415
   },
   {
    "name": "tests",
    "note": "Backend test suite",
-   "files": 244,
-   "lines": 64410
+   "files": 243,
+   "lines": 64616
   },
   {
    "name": "scripts",
@@ -20950,8 +20944,8 @@
   {
    "name": "docs",
    "note": "Product and architecture docs",
-   "files": 89,
-   "lines": 30324
+   "files": 90,
+   "lines": 30638
   },
   {
    "name": "configs",

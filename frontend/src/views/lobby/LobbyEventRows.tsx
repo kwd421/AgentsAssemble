@@ -10,7 +10,6 @@ import {
   FileText,
   Globe,
   LoaderCircle,
-  MessageCircle,
   MoreHorizontal,
   Search,
   Terminal,
@@ -19,7 +18,6 @@ import {
 } from "lucide-react";
 
 import type { LobbyEvent } from "../../api";
-import type { LobbyThreadSummary } from "../../lib/sideChatThreadModel";
 import type { RoomTypingIndicator } from "../../lib/roomTypingIndicators";
 import DiscordText, { type MentionLabels } from "../components/DiscordText";
 import LobbyAttachments from "../components/LobbyAttachments";
@@ -347,8 +345,6 @@ export function LobbySystemRow({
 export function LobbyMessageRow({
   event,
   providerKind,
-  onOpenSideThread,
-  threadSummary,
   voteCard,
   showHeader = true,
   mentionLabels,
@@ -356,8 +352,6 @@ export function LobbyMessageRow({
 }: {
   event: LobbyEvent;
   providerKind?: string;
-  onOpenSideThread?: (event: LobbyEvent) => void;
-  threadSummary?: LobbyThreadSummary;
   voteCard?: ReactNode;
   showHeader?: boolean;
   mentionLabels: MentionLabels;
@@ -381,17 +375,6 @@ export function LobbyMessageRow({
         system={systemLike}
       />
       <div className="dc-message-actions" aria-label="메시지 작업">
-        {onOpenSideThread && (
-          <button
-            type="button"
-            className="dc-message-action-button"
-            onClick={() => onOpenSideThread(event)}
-            aria-label="스레드로 열기"
-            title="스레드"
-          >
-            <MessageCircle size={15} />
-          </button>
-        )}
         <button
           type="button"
           className="dc-message-action-button"
@@ -420,21 +403,6 @@ export function LobbyMessageRow({
           </div>
         )}
         <LobbyAttachments attachments={event.attachments} sessionToken={roomSessionToken} />
-        {threadSummary && onOpenSideThread && (
-          <button
-            type="button"
-            className="dc-message-thread-chip"
-            onClick={() => onOpenSideThread(event)}
-            aria-label={`스레드 보기, 답장 ${threadSummary.replyCount}개`}
-          >
-            <MessageCircle size={14} />
-            <span>답장 {threadSummary.replyCount}개</span>
-            <span className="dc-message-thread-last preserve-words">
-              {threadSummary.lastReplyName || "사이드"} ·{" "}
-              {timeLabel(threadSummary.lastReplyAt)}
-            </span>
-          </button>
-        )}
       </div>
     </div>
   );

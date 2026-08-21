@@ -175,6 +175,7 @@ def _make_handler(
         operator_pairing_service=services.pairing,
         public_invite_runtime=services.public_invite,
         attachment_store=services.media_store,
+        side_chat_store=services.side_chat_store,
         room_command_handler=room_controller.handle_command,
         room_runtime_command_handler=execute_room_runtime_command,
     )

@@ -233,6 +233,28 @@ class SubscribeTests(unittest.TestCase):
     def tearDown(self):
         reset_plugin_host_for_tests()
 
+    def test_agent_bridge_cannot_subscribe_to_human_side_chat(self):
+        session = _session(
+            FakeDeps(),
+            participant_type="agent",
+            client_type="agent_bridge",
+        )
+
+        messages = text_messages(
+            session.handle_frame(
+                OP_TEXT,
+                json.dumps(
+                    {"op": "subscribe", "streams": ["room_events", "side_chat"]}
+                ).encode(),
+            )
+        )
+
+        rejection = next(message for message in messages if message.get("op") == "error")
+        subscribed = next(message for message in messages if message.get("op") == "subscribed")
+        self.assertEqual(rejection["category"], "stream_forbidden")
+        self.assertEqual(subscribed["streams"], ["room_events"])
+        self.assertNotIn("side_chat", session.subscribed)
+
     def test_plugin_event_is_delivered_once_to_each_subscribed_connection(self):
         left = _session(FakeDeps())
         right = _session(FakeDeps())

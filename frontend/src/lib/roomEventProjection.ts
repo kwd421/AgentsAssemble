@@ -76,6 +76,7 @@ export function projectRoomEventsToTimeline(
     if (["thinking_delta", "activity_delta"].includes(event.type) && String(event.content || "").trim()) {
       const projected: LobbyEvent = {
         id: event.id,
+        seq: Number(event.seq) || undefined,
         created_at: event.created_at,
         name: speaker.name,
         avatar_image_url: speaker.avatarImageUrl || undefined,
@@ -142,6 +143,7 @@ export function projectRoomEventsToTimeline(
           : `${existing?.message || ""}${event.content || ""}`;
       const projected: LobbyEvent = {
         id: key,
+        seq: Number(event.seq) || existing?.seq,
         created_at: event.created_at,
         name: isVoteResult ? "투표" : speaker.name,
         avatar_image_url: speaker.avatarImageUrl || undefined,

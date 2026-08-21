@@ -138,7 +138,7 @@ class PublicInviteSecurityHttpTests(unittest.TestCase):
                 server.shutdown()
                 server.server_close()
 
-    def test_public_room_request_cannot_reach_unclassified_compatibility_mutation(self):
+    def test_unauthenticated_lan_caller_cannot_write_human_side_chat(self):
         with tempfile.TemporaryDirectory() as temp_dir:
             root = Path(temp_dir) / "room"
             server = ThreadingHTTPServer(("0.0.0.0", 0), _make_handler(root))
@@ -152,7 +152,7 @@ class PublicInviteSecurityHttpTests(unittest.TestCase):
                             f"{base}/api/side-chat",
                             {
                                 "name": "remote caller",
-                                "message": "must not reach compatibility storage",
+                                "message": "must not reach side chat",
                                 "flow_meeting_id": "room-a",
                             },
                             {
@@ -170,8 +170,8 @@ class PublicInviteSecurityHttpTests(unittest.TestCase):
                 server.server_close()
                 thread.join(timeout=2)
 
-        self.assertEqual(rejected.exception.code, 403)
-        self.assertEqual(payload.get("code"), "local_operator_required")
+        self.assertEqual(rejected.exception.code, 401)
+        self.assertEqual(payload.get("error"), "session token required")
         self.assertFalse(event_written)
 
     def test_guest_companion_cannot_replace_operator_identity_or_gain_moderation(self):

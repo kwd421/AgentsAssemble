@@ -115,7 +115,7 @@ const FriendsView = lazy(() => import("./views/FriendsView"));
 const CustomChannelView = lazy(() => import("./views/CustomChannelView"));
 
 type Channel = "friends" | "lobby";
-type MobileRoomInfoInitialMode = "info" | "side-chat" | "thread";
+type MobileRoomInfoInitialMode = "info" | "side-chat";
 
 type ChannelConfig = {
   id: Channel;
@@ -166,14 +166,11 @@ type RoomSettingsState = {
   initialSectionId?: RoomSettingsSectionId;
 } | null;
 
-type RightPanelMode = "room-info" | "side-chat" | "thread";
+type RightPanelMode = "room-info" | "side-chat";
 
 const CHANNELS: ChannelConfig[] = [
   { id: "lobby", label: "general", icon: Hash },
 ];
-const LOBBY_CHANNEL_LABEL =
-  CHANNELS.find((channelConfig) => channelConfig.id === "lobby")?.label || "general";
-
 const CHANNEL_SECTIONS: Array<{ id: string; label: string; channels: Channel[] }> = [
   { id: "conversation", label: "Text Channels", channels: ["lobby"] },
 ];
@@ -204,6 +201,7 @@ function channelNotificationSummary(setting?: ChannelSettings): string {
 
 function channelLastReadSummary(setting?: ChannelSettings): string {
   if (!setting?.lastReadAt) return "아직 이 채널을 읽음으로 표시하지 않았습니다.";
+  if (setting.lastReadAt.startsWith("seq:")) return "이 채널의 읽음 위치가 기기 간 동기화됩니다.";
   try {
     const readAt = new Date(setting.lastReadAt).toLocaleString("ko-KR", {
       dateStyle: "short",
@@ -471,15 +469,11 @@ export default function App() {
   const activeSideChatMeetingId = activeOperationalMeetingId;
   const {
     error: sideChatError,
-    selectedThread: sideChatThread,
     draftsByContext: sideChatDraftsByContext,
     sideChatEvents,
-    threadEvents: sideChatThreadEvents,
-    threadSummaries: sideChatThreadSummaries,
     handleRealtimeEvents: handleSideChatRealtimeEvents,
     handlePostedEvents: handleSideChatPosted,
     handleRealtimeError: handleSideChatError,
-    selectThread: selectSideChatThread,
     updateDraft: updateSideChatDraft,
   } = useRoomSideChat({
     meetingId: activeSideChatMeetingId,
@@ -735,18 +729,6 @@ export default function App() {
       window.removeEventListener("touchcancel", handleTouchCancel);
     };
   }, [mobileRoomInfoOpen, mobileSidebarOpen]);
-
-  function openSideChatThread(event: LobbyEvent) {
-    selectSideChatThread(event, LOBBY_CHANNEL_LABEL);
-    if (mobileViewportIsActive()) {
-      setMobileSidebarOpen(false);
-      setMobileRoomInfoInitialMode("thread");
-      setMobileRoomInfoOpen(true);
-    } else {
-      setMembersOpen(true);
-      setRightPanelMode("thread");
-    }
-  }
 
   const scopedAgents = agents.filter((agent) => roomHasAgent(activeRoom, agent));
   const scopedViewerParticipantId = guestSession?.agentId || "operator-local";
@@ -1232,8 +1214,8 @@ export default function App() {
     roomSettings.updateChannelSetting(activeRoom, channelId, updates);
   }
 
-  function markChannelRead(channelId: string) {
-    updateChannelSetting(channelId, { lastReadAt: new Date().toISOString() });
+  function markChannelRead(channelId: string, cursor = "") {
+    updateChannelSetting(channelId, { lastReadAt: cursor || new Date().toISOString() });
     setChannelMenu(null);
   }
 
@@ -1250,7 +1232,8 @@ export default function App() {
     return {
       notificationSummary: channelNotificationSummary(setting),
       lastReadSummary: channelLastReadSummary(setting),
-      onMarkRead: () => markChannelRead(channelId),
+      lastReadCursor: setting?.lastReadAt || "",
+      onMarkRead: (cursor) => markChannelRead(channelId, cursor),
       onOpenSettings: guestLocked ? undefined : () => openRoomSettings(activeRoom.id),
     };
   }
@@ -1832,9 +1815,7 @@ export default function App() {
               onOpenMobileSidebar={openMobileSidebar}
               onOpenMobileInfo={openMobileRoomInfo}
               appearance={activeAppearance}
-              onOpenSideThread={openSideChatThread}
               onGuestSessionExpired={expireGuestSession}
-              threadSummaries={sideChatThreadSummaries}
               typingIndicators={typingIndicators}
               canonicalEvents={visibleRoomTimelineEvents}
               canonicalHistoryReady={activeRoomHistory.initialized}
@@ -1885,22 +1866,7 @@ export default function App() {
               error={sideChatError}
               onPosted={handleSideChatPosted}
               mentionables={scopedMentionables}
-              canPostMessages={!guestLocked}
-              draftsByContext={sideChatDraftsByContext}
-              onDraftChange={updateSideChatDraft}
-              authorName={scopedViewerDisplayName}
-            />
-          }
-          threadContent={
-            <SideChatDock
-              meetingId={activeSideChatMeetingId}
-              events={sideChatThreadEvents}
-              error={sideChatError}
-              onPosted={handleSideChatPosted}
-              mentionables={scopedMentionables}
-              mode="thread"
-              threadContext={sideChatThread}
-              canPostMessages={!guestLocked}
+              canPostMessages={lobbyPostingState.canPost}
               draftsByContext={sideChatDraftsByContext}
               onDraftChange={updateSideChatDraft}
               authorName={scopedViewerDisplayName}
@@ -1920,7 +1886,7 @@ export default function App() {
       {showMembers && membersOpen && (
         <aside
           className="dc-members hidden shrink-0 xl:flex xl:flex-col"
-          aria-label="방 연결 정보, 사이드챗과 스레드"
+          aria-label="방 연결 정보와 사이드챗"
           data-testid="room-right-panel"
           data-panel-mode={rightPanelMode}
         >
@@ -1968,18 +1934,6 @@ export default function App() {
               onClick={() => activateRightPanelMode("side-chat")}
             >
               사이드챗
-            </button>
-            <button
-              type="button"
-              role="tab"
-              id="thread-panel-tab"
-              data-active={rightPanelMode === "thread"}
-              aria-selected={rightPanelMode === "thread"}
-              aria-controls="thread-panel"
-              onPointerUp={(event) => activateRightPanelModeFromPointer("thread", event)}
-              onClick={() => activateRightPanelMode("thread")}
-            >
-              스레드
             </button>
           </div>
           {rightPanelMode === "room-info" ? (
@@ -2035,35 +1989,13 @@ export default function App() {
                 error={sideChatError}
                 onPosted={handleSideChatPosted}
                 mentionables={scopedMentionables}
-                canPostMessages={!guestLocked}
+                canPostMessages={lobbyPostingState.canPost}
                 draftsByContext={sideChatDraftsByContext}
                 onDraftChange={updateSideChatDraft}
                 authorName={scopedViewerDisplayName}
               />
             </section>
-          ) : (
-            <section
-              id="thread-panel"
-              role="tabpanel"
-              aria-labelledby="thread-panel-tab"
-              className="min-h-0 flex-1"
-              data-testid="thread-panel"
-            >
-              <SideChatDock
-                meetingId={activeSideChatMeetingId}
-                events={sideChatThreadEvents}
-                error={sideChatError}
-                onPosted={handleSideChatPosted}
-                mentionables={scopedMentionables}
-                mode="thread"
-                threadContext={sideChatThread}
-                canPostMessages={!guestLocked}
-                draftsByContext={sideChatDraftsByContext}
-                onDraftChange={updateSideChatDraft}
-                authorName={scopedViewerDisplayName}
-              />
-            </section>
-          )}
+          ) : null}
         </aside>
       )}
     </div>

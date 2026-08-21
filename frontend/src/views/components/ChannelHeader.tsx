@@ -1,4 +1,12 @@
-import { useMemo, useState, type ChangeEvent, type ReactNode } from "react";
+import {
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  type ChangeEvent,
+  type KeyboardEvent as ReactKeyboardEvent,
+  type ReactNode,
+} from "react";
 import { ArrowLeft, Bell, ChevronRight, Pin, Search, Users, PanelRight } from "lucide-react";
 import "../../styles/channel-search.css";
 
@@ -7,8 +15,10 @@ type HeaderPanel = "notifications" | "pins" | "search";
 export type ChannelHeaderActions = {
   notificationSummary?: string;
   lastReadSummary?: string;
+  lastReadCursor?: string;
+  latestReadCursor?: string;
   pinnedSummary?: string;
-  onMarkRead?: () => void;
+  onMarkRead?: (cursor?: string) => void;
   onOpenSettings?: () => void;
 };
 
@@ -56,6 +66,25 @@ export default function ChannelHeader({
 }) {
   const [activePanel, setActivePanel] = useState<HeaderPanel | null>(null);
   const [searchQuery, setSearchQuery] = useState("");
+  const [activeSearchIndex, setActiveSearchIndex] = useState(-1);
+  const popupSearchRef = useRef<HTMLInputElement | null>(null);
+
+  useEffect(() => {
+    function handleWindowKeyDown(event: KeyboardEvent) {
+      if ((event.metaKey || event.ctrlKey) && event.key.toLocaleLowerCase() === "f") {
+        event.preventDefault();
+        setActivePanel("search");
+        window.requestAnimationFrame(() => popupSearchRef.current?.focus());
+        return;
+      }
+      if (event.key === "Escape" && activePanel) {
+        event.preventDefault();
+        setActivePanel(null);
+      }
+    }
+    window.addEventListener("keydown", handleWindowKeyDown);
+    return () => window.removeEventListener("keydown", handleWindowKeyDown);
+  }, [activePanel]);
 
   function togglePanel(panel: HeaderPanel) {
     setActivePanel((current) => (current === panel ? null : panel));
@@ -64,6 +93,7 @@ export default function ChannelHeader({
   function handleSearchChange(event: ChangeEvent<HTMLInputElement>) {
     const nextQuery = event.currentTarget.value;
     setSearchQuery(nextQuery);
+    setActiveSearchIndex(-1);
     setActivePanel(nextQuery.trim() ? "search" : null);
   }
 
@@ -95,6 +125,33 @@ export default function ChannelHeader({
   function selectSearchItem(item: ChannelSearchItem) {
     item.onSelect();
     setActivePanel(null);
+  }
+
+  function handleSearchKeyDown(event: ReactKeyboardEvent<HTMLInputElement>) {
+    if (event.key === "Escape") {
+      event.preventDefault();
+      setActivePanel(null);
+      return;
+    }
+    if (!searchMatches.length) return;
+    if (event.key === "ArrowDown") {
+      event.preventDefault();
+      setActiveSearchIndex((current) =>
+        current < 0 ? 0 : (current + 1) % searchMatches.length
+      );
+      return;
+    }
+    if (event.key === "ArrowUp") {
+      event.preventDefault();
+      setActiveSearchIndex((current) =>
+        current <= 0 ? searchMatches.length - 1 : current - 1
+      );
+      return;
+    }
+    if (event.key === "Enter") {
+      event.preventDefault();
+      selectSearchItem(searchMatches[activeSearchIndex < 0 ? 0 : activeSearchIndex]);
+    }
   }
 
   return (
@@ -170,6 +227,7 @@ export default function ChannelHeader({
             placeholder={`${title} 검색`}
             value={searchQuery}
             onChange={handleSearchChange}
+            onKeyDown={handleSearchKeyDown}
             onFocus={() => {
               if (searchQuery.trim()) setActivePanel("search");
             }}
@@ -200,7 +258,7 @@ export default function ChannelHeader({
                   {headerActions?.onMarkRead && (
                     <button
                       type="button"
-                      onClick={headerActions.onMarkRead}
+                      onClick={() => headerActions.onMarkRead?.(headerActions.latestReadCursor)}
                     >
                       읽음으로 표시
                     </button>
@@ -232,11 +290,18 @@ export default function ChannelHeader({
                   <span className="sr-only">{title} 검색어</span>
                   <Search size={14} aria-hidden />
                   <input
+                    ref={popupSearchRef}
                     type="search"
                     aria-label={`${title} 검색어`}
+                    aria-activedescendant={
+                      searchMatches.length
+                        ? `channel-search-result-${searchMatches[activeSearchIndex < 0 ? 0 : activeSearchIndex].id}`
+                        : undefined
+                    }
                     placeholder="메시지 또는 작성자 검색"
                     value={searchQuery}
                     onChange={handleSearchChange}
+                    onKeyDown={handleSearchKeyDown}
                     autoFocus
                   />
                 </label>
@@ -250,10 +315,12 @@ export default function ChannelHeader({
                       {searchMatches.length}개의 결과를 찾았습니다.
                     </p>
                     <div className="dc-head-search-results" role="list" aria-label="채널 검색 결과">
-                      {searchMatches.map((item) => (
+                      {searchMatches.map((item, index) => (
                         <button
                           key={item.id}
+                          id={`channel-search-result-${item.id}`}
                           type="button"
+                          data-active={index === (activeSearchIndex < 0 ? 0 : activeSearchIndex)}
                           onClick={() => selectSearchItem(item)}
                         >
                           <span className="dc-head-search-result-author preserve-words">

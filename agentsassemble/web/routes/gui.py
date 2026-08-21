@@ -76,6 +76,7 @@ _HANDLER_AUTHORIZED_MUTATIONS = frozenset(
         "/api/rooms/archive",
         "/api/rooms/close",
         "/api/runtime/rolling-restart",
+        "/api/side-chat",
         "/api/user-profile",
         "/api/ws-ticket",
     }

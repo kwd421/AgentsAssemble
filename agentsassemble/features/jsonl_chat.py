@@ -16,7 +16,20 @@ def append_chat_event(
     channel: str,
 ) -> dict[str, object]:
     path.parent.mkdir(parents=True, exist_ok=True)
-    event = {
+    event = build_chat_event(payload, channel=channel)
+    with path.open("a", encoding="utf-8") as handle:
+        handle.write(json.dumps(event, ensure_ascii=False, sort_keys=True) + "\n")
+    return event
+
+
+def build_chat_event(
+    payload: dict[str, object],
+    *,
+    channel: str,
+) -> dict[str, object]:
+    """Normalize one chat event without choosing its storage lifetime."""
+
+    return {
         "id": uuid4().hex[:12],
         "created_at": datetime.now(UTC).isoformat(),
         "name": clean_room_text(payload.get("name"), limit=32) or "guest",
@@ -30,15 +43,9 @@ def append_chat_event(
         "actor_type": clean_room_text(payload.get("actor_type"), limit=32),
         "target_agent_id": clean_room_text(payload.get("target_agent_id"), limit=128),
         "source_event_id": clean_room_text(payload.get("source_event_id"), limit=128),
-        "thread_source_event_id": clean_room_text(
-            payload.get("thread_source_event_id"), limit=128
-        ),
         "flow_meeting_id": clean_room_text(payload.get("flow_meeting_id"), limit=128),
         "attachments": _attachments(payload.get("attachments")),
     }
-    with path.open("a", encoding="utf-8") as handle:
-        handle.write(json.dumps(event, ensure_ascii=False, sort_keys=True) + "\n")
-    return event
 
 
 def read_chat_events(path: Path, *, limit: int = 120) -> list[dict[str, object]]:
@@ -85,4 +92,9 @@ def _attachments(value: object) -> list[dict[str, object]]:
     return [dict(item) for item in value[:8] if isinstance(item, dict)]
 
 
-__all__ = ["append_chat_event", "read_chat_events", "read_chat_events_after"]
+__all__ = [
+    "append_chat_event",
+    "build_chat_event",
+    "read_chat_events",
+    "read_chat_events_after",
+]

@@ -1,15 +1,9 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import {
   fetchSideChat,
   mergeSideChatEvents,
-  type LobbyEvent,
   type SideChatEvent,
 } from "../api";
-import {
-  sideChatEventsForThreadContext,
-  threadSummariesForSideChat,
-  type SideChatThreadContext,
-} from "../lib/sideChatThreadModel";
 import {
   loadRoomGuestSession,
   roomGuestSessionExpired,
@@ -39,7 +33,6 @@ function sideChatPrincipalScope(meetingId: string): string {
 export function useRoomSideChat({ meetingId, enabled = true }: UseRoomSideChatOptions) {
   const [events, setEvents] = useState<SideChatEvent[]>([]);
   const [error, setError] = useState<Error | null>(null);
-  const [selectedThread, setSelectedThread] = useState<SideChatThreadContext | null>(null);
   const [draftsByScope, setDraftsByScope] = useState<Record<string, Record<string, string>>>({});
   const [acceptedScopeKey, setAcceptedScopeKey] = useState("");
   const acceptedScopeKeyRef = useRef("");
@@ -64,7 +57,6 @@ export function useRoomSideChat({ meetingId, enabled = true }: UseRoomSideChatOp
     setAcceptedScopeKey("");
     setEvents([]);
     setError(null);
-    setSelectedThread(null);
     if (!requestedScopeKey) return undefined;
 
     acceptedScopeKeyRef.current = requestedScopeKey;
@@ -128,21 +120,6 @@ export function useRoomSideChat({ meetingId, enabled = true }: UseRoomSideChatOp
     [scopeAcceptsUpdates]
   );
 
-  const selectThread = useCallback((event: LobbyEvent, channelLabel: string) => {
-    if (!scopeAcceptsUpdates()) return;
-    setSelectedThread({
-      sourceEventId: event.id,
-      sourceName: event.name || "Room",
-      sourceMessage: event.message || "",
-      channelLabel,
-    });
-  }, [scopeAcceptsUpdates]);
-
-  const clearThread = useCallback(() => {
-    if (!scopeAcceptsUpdates()) return;
-    setSelectedThread(null);
-  }, [scopeAcceptsUpdates]);
-
   const updateDraft = useCallback((key: string, value: string) => {
     if (!scopeAcceptsUpdates()) return;
     const scopeKey = requestedScopeKeyRef.current;
@@ -161,36 +138,14 @@ export function useRoomSideChat({ meetingId, enabled = true }: UseRoomSideChatOp
   }, [scopeAcceptsUpdates]);
 
   const visibleEvents = scopeIsCurrent ? events : [];
-  const visibleSelectedThread = scopeIsCurrent ? selectedThread : null;
-  const sideChatEvents = useMemo(
-    () => sideChatEventsForThreadContext(visibleEvents, null),
-    [visibleEvents]
-  );
-  const threadEvents = useMemo(
-    () =>
-      visibleSelectedThread
-        ? sideChatEventsForThreadContext(visibleEvents, visibleSelectedThread)
-        : [],
-    [visibleEvents, visibleSelectedThread]
-  );
-  const threadSummaries = useMemo(
-    () => threadSummariesForSideChat(visibleEvents),
-    [visibleEvents]
-  );
-
   return {
     events: visibleEvents,
     error: scopeIsCurrent ? error : null,
-    selectedThread: visibleSelectedThread,
     draftsByContext: scopeIsCurrent ? draftsByScope[requestedScopeKey] || {} : {},
-    sideChatEvents,
-    threadEvents,
-    threadSummaries,
+    sideChatEvents: visibleEvents,
     handleRealtimeEvents,
     handlePostedEvents,
     handleRealtimeError,
-    selectThread,
-    clearThread,
     updateDraft,
   };
 }

@@ -30,6 +30,7 @@ export type LobbyAttachmentUploadOptions = {
 
 export interface LobbyEvent {
   id: string;
+  seq?: number;
   kind: string;
   name: string;
   message: string;
@@ -91,7 +92,6 @@ export interface SideChatEvent {
   side: string;
   created_at: string;
   flow_meeting_id?: string;
-  thread_source_event_id?: string;
   channel?: string;
   audience?: string;
   official_record?: boolean;
@@ -229,14 +229,12 @@ export function postSideChatMessage({
   kind = "message",
   message,
   meetingId = "",
-  threadSourceEventId = "",
 }: {
   name: string;
   side?: string;
   kind?: "message";
   message: string;
   meetingId?: string;
-  threadSourceEventId?: string;
 }) {
   return postJson<SideChatPostResponse>("/api/side-chat", {
     name,
@@ -244,7 +242,6 @@ export function postSideChatMessage({
     kind,
     message,
     flow_meeting_id: meetingId,
-    thread_source_event_id: threadSourceEventId,
   });
 }
 

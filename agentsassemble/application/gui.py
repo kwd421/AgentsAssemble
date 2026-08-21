@@ -12,6 +12,7 @@ from agentsassemble.admission.preflight import RoomAdmissionService
 from agentsassemble.admission.repository import InviteSessionRepository
 from agentsassemble.admission.session_service import RoomSessionService
 from agentsassemble.application.central_directory_host import CentralDirectoryHost
+from agentsassemble.features.side_chat.service import SideChatStore
 from agentsassemble.application.transaction import ApplicationTransactionBoundary
 from agentsassemble.room.attachments import FileAttachmentStore
 from agentsassemble.identity.pairing import OperatorPairingService
@@ -49,6 +50,7 @@ class GuiApplicationServices:
     identity_backend: IdentityBackend
     invite_store_path: Path
     media_store: FileAttachmentStore
+    side_chat_store: SideChatStore
     public_tunnel_manager: PublicTunnelManager
     ws_ticket_store: WsTicketStore
     native_cli_bridge_manager: NativeCliBridgeProcessManager | None

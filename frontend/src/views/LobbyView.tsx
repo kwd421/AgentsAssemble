@@ -10,7 +10,6 @@ import LobbyComposer from "./components/LobbyComposer";
 import ChannelHeader from "./components/ChannelHeader";
 import type { ChannelHeaderActions } from "./components/ChannelHeader";
 import type { RoomAppearance } from "../lib/roomAppearance";
-import type { LobbyThreadSummary } from "../lib/sideChatThreadModel";
 import type { RoomPostingMode } from "../lib/roomGuestPosting";
 import type { RoomTypingIndicator } from "../lib/roomTypingIndicators";
 import type { Mentionable } from "../lib/mentionComposerModel";
@@ -42,9 +41,7 @@ export default function LobbyView({
   onOpenMobileSidebar,
   onOpenMobileInfo,
   appearance,
-  onOpenSideThread,
   onGuestSessionExpired,
-  threadSummaries = {},
   roomSessionToken = "",
   viewerParticipantId = "",
   typingIndicators = [],
@@ -72,9 +69,7 @@ export default function LobbyView({
   onOpenMobileSidebar?: () => void;
   onOpenMobileInfo?: () => void;
   appearance?: RoomAppearance;
-  onOpenSideThread?: (event: LobbyEvent) => void;
   onGuestSessionExpired?: () => void;
-  threadSummaries?: Record<string, LobbyThreadSummary>;
   roomSessionToken?: string;
   viewerParticipantId?: string;
   bindLobbyStream?: (receive: (events: LobbyEvent[]) => void) => () => void;
@@ -98,6 +93,7 @@ export default function LobbyView({
     handleLobbyPosted,
     handleLobbyScroll,
     hasMoreHistory,
+    historyLoadError,
     loadOlderHistory,
     loaded,
     loadingOlder,
@@ -159,6 +155,49 @@ export default function LobbyView({
         })),
     [scrollRef, visibleEvents]
   );
+  const latestReadSequence = useMemo(
+    () => visibleEvents.reduce((latest, event) => Math.max(latest, Number(event.seq) || 0), 0),
+    [visibleEvents]
+  );
+  const lastReadSequence = useMemo(() => {
+    const match = /^seq:(\d+)$/.exec(headerActions?.lastReadCursor || "");
+    return match ? Number(match[1]) : 0;
+  }, [headerActions?.lastReadCursor]);
+  const firstUnreadEvent = useMemo(
+    () =>
+      headerActions?.onMarkRead
+        ? visibleEvents.find(
+            (event) => Number(event.seq) > lastReadSequence && event.kind !== "thinking"
+          )
+        : undefined,
+    [headerActions?.onMarkRead, lastReadSequence, visibleEvents]
+  );
+  const unreadCount = useMemo(
+    () =>
+      firstUnreadEvent
+        ? visibleEvents.filter(
+            (event) => Number(event.seq) > lastReadSequence && event.kind !== "thinking"
+          ).length
+        : 0,
+    [firstUnreadEvent, lastReadSequence, visibleEvents]
+  );
+  const effectiveHeaderActions = useMemo(
+    () =>
+      headerActions
+        ? {
+            ...headerActions,
+            latestReadCursor: latestReadSequence ? `seq:${latestReadSequence}` : "",
+          }
+        : undefined,
+    [headerActions, latestReadSequence]
+  );
+  function jumpToEvent(eventId: string) {
+    const target = Array.from(
+      scrollRef.current?.querySelectorAll<HTMLElement>("[data-room-event-id]") || []
+    ).find((candidate) => candidate.dataset.roomEventId === eventId);
+    target?.scrollIntoView({ block: "center" });
+    target?.focus({ preventScroll: true });
+  }
   const activeThinking = useMemo(() => {
     const indicatorByTurn = new Map<string, RoomTypingIndicator>();
     typingIndicators.forEach((indicator) => {
@@ -197,7 +236,7 @@ export default function LobbyView({
         subtitle="사람과 에이전트가 함께 보는 기본 채널"
         membersOpen={membersOpen}
         onToggleMembers={onToggleMembers}
-        headerActions={headerActions}
+        headerActions={effectiveHeaderActions}
         onOpenMobileSidebar={onOpenMobileSidebar}
         onOpenMobileInfo={onOpenMobileInfo}
         searchItems={channelSearchItems}
@@ -205,6 +244,21 @@ export default function LobbyView({
         searchLoadingMore={loadingOlder}
         onLoadMoreSearch={() => loadOlderHistory(scrollRef.current?.scrollTop)}
       />
+
+      {firstUnreadEvent && latestReadSequence > lastReadSequence && (
+        <div className="dc-unread-bar" role="region" aria-label="안 읽은 메시지">
+          <button type="button" onClick={() => jumpToEvent(firstUnreadEvent.id)}>
+            {unreadCount}개의 안 읽은 메시지
+          </button>
+          <button
+            type="button"
+            aria-label="현재까지 읽음으로 표시"
+            onClick={() => headerActions?.onMarkRead?.(`seq:${latestReadSequence}`)}
+          >
+            읽음으로 표시하기
+          </button>
+        </div>
+      )}
 
       {!canManageRoom && (
         <div className="dc-room-status-line">
@@ -228,15 +282,20 @@ export default function LobbyView({
         className="relative min-h-0 flex-1 overflow-y-auto py-4 chat-scroll"
         style={{ overflowAnchor: "none" }}
       >
-        {!pinnedToLatest && visibleEvents.length > 0 && (
-          <button
-            type="button"
-            onClick={scrollToLatest}
-            aria-label="최신 메시지로 이동"
-            className="ops-button sticky top-2 z-[1] mr-3 ml-auto block rounded-full px-3 py-1.5 text-[12px] font-bold text-accent shadow-lg lg:mr-4"
+        {historyLoadError && (
+          <div
+            role="alert"
+            className="sticky top-2 z-[2] mx-auto mb-2 flex w-fit items-center gap-3 rounded-md border border-error/40 bg-panel px-3 py-2 text-[12px] text-text-secondary shadow-lg"
           >
-            최신으로
-          </button>
+            <span>이전 대화를 불러오지 못했습니다.</span>
+            <button
+              type="button"
+              className="font-bold text-accent hover:underline"
+              onClick={() => loadOlderHistory(scrollRef.current?.scrollTop)}
+            >
+              다시 시도
+            </button>
+          </div>
         )}
         {loaded && !hasMoreHistory && (
           // The channel intro marks the true beginning of history, like Discord.
@@ -305,8 +364,6 @@ export default function LobbyView({
                   providerKindByParticipant.get(event.actor_id || "")
                 }
                 showHeader={row.showHeader}
-                onOpenSideThread={onOpenSideThread}
-                threadSummary={threadSummaries[event.id]}
                 voteCard={
                   event.kind === "vote" ? (
                     <VotePollCard
@@ -339,6 +396,14 @@ export default function LobbyView({
 
       {/* Composer */}
       <div className="shrink-0 px-4 pb-5">
+        {!pinnedToLatest && visibleEvents.length > 0 && (
+          <div className="dc-old-history-notice" role="status">
+            <span>오래된 메시지를 보고 있어요</span>
+            <button type="button" onClick={scrollToLatest} aria-label="최신 메시지로 이동">
+              최근으로 이동하기
+            </button>
+          </div>
+        )}
         {resolveProviderRequest && providerRequests.length > 0 && (
           <div className="dc-provider-request-stack">
             {providerRequests.map((request) => (

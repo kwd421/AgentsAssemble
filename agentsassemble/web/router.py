@@ -33,6 +33,7 @@ from agentsassemble.identity.repository import (
     device_auth_key,
 )
 from agentsassemble.application.public_invite_runtime import PublicInviteRuntime
+from agentsassemble.features.side_chat.service import SideChatStore
 from agentsassemble.room.repository import RoomRepository
 from agentsassemble.web.security import (
     _LOOPBACK_HOSTNAMES,
@@ -80,6 +81,7 @@ class GuiDeps:
     operator_pairing_service: OperatorPairingService | None = None
     public_invite_runtime: PublicInviteRuntime | None = None
     attachment_store: FileAttachmentStore | None = None
+    side_chat_store: SideChatStore | None = None
     room_command_handler: Callable[
         [dict[str, object], dict[str, object]], dict[str, object]
     ] | None = None
@@ -148,6 +150,13 @@ class GuiDeps:
         store = self.attachment_store
         if store is None:
             raise RuntimeError("GUI attachment store is not configured.")
+        return store
+
+    @property
+    def side_chat(self) -> SideChatStore:
+        store = self.side_chat_store
+        if store is None:
+            raise RuntimeError("GUI side chat store is not configured.")
         return store
 
     def handle_room_command(

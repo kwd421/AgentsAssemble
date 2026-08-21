@@ -39,7 +39,8 @@
 }
 
 .dc-head-search-results button:hover,
-.dc-head-search-results button:focus-visible {
+.dc-head-search-results button:focus-visible,
+.dc-head-search-results button[data-active="true"] {
   background: var(--color-sidebar-hover);
   color: var(--color-text-primary);
   outline: none;

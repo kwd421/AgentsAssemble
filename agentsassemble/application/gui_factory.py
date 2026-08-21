@@ -22,6 +22,7 @@ from agentsassemble.application.room_users import (
     release_room_users_backend,
 )
 from agentsassemble.room.attachments import FileAttachmentStore
+from agentsassemble.features.side_chat.service import SideChatStore
 from agentsassemble.identity.pairing import OperatorPairingService
 from agentsassemble.identity.repository import IdentityBackend
 from agentsassemble.persistence.local.admission.repository import (
@@ -222,6 +223,7 @@ def build_gui_application_services(
             )
 
         ws_ticket_store = WsTicketStore()
+        side_chat_store = SideChatStore()
         native_cli_bridge_manager: NativeCliBridgeProcessManager | None = None
         if room_realtime_controller_override is not None:
             room_realtime_controller = room_realtime_controller_override
@@ -238,6 +240,7 @@ def build_gui_application_services(
                     repository=room_repository,
                     attention_shadow_mode=attention_shadow_mode,
                     reconcile_startup_sessions=reconcile_startup_sessions,
+                    delete_side_chat=side_chat_store.clear_room,
                 )
                 native_cli_bridge_manager.set_exit_listener(
                     built_controller.bridge_process_exited
@@ -273,6 +276,7 @@ def build_gui_application_services(
             identity_backend=identity_backend,
             invite_store_path=default_room_invite_store_path(output_root),
             media_store=FileAttachmentStore(output_root),
+            side_chat_store=side_chat_store,
             public_tunnel_manager=invite_tunnel_manager,
             ws_ticket_store=ws_ticket_store,
             native_cli_bridge_manager=native_cli_bridge_manager,

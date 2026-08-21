@@ -314,6 +314,18 @@ class WsRoomSession:
     def _on_subscribe(self, msg: dict) -> list[bytes]:
         requested = msg.get("streams") or list(WS_DEFAULT_STREAMS)
         streams = [s for s in requested if s in WS_STREAMS]
+        frames: list[bytes] = []
+        if "side_chat" in streams and (
+            self.identity.get("client_type") != "browser"
+            or self.identity.get("participant_type") != "human"
+        ):
+            streams.remove("side_chat")
+            frames.append(
+                self._error(
+                    "stream_forbidden",
+                    "Side chat is available only to human browser sessions.",
+                )
+            )
         self.subscribed = set(streams)
         self.handshake_complete = True
         self._room_after_seq = _safe_nonnegative_int(msg.get("resume_from_seq"))
@@ -325,7 +337,7 @@ class WsRoomSession:
             self.deps.on_subscribe(self.identity, set(streams), self._room_after_seq)
         except Exception:
             return [self._error("subscribe_failed", "Could not subscribe to room events.")]
-        frames = [encode_text(json.dumps({"op": "subscribed", "streams": sorted(self.subscribed)}))]
+        frames.append(encode_text(json.dumps({"op": "subscribed", "streams": sorted(self.subscribed)})))
         frames.extend(self.poll(snapshot=True))  # immediate snapshot after subscribe
         return frames
 
