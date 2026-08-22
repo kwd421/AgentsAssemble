@@ -231,7 +231,11 @@ class RoomPortalCollaboration:
         with self._lock:
             events = [dict(item) for item in self._messages()]
         try:
-            summary = summarize_vote(events, clean_vote_id)
+            summary = summarize_vote(
+                events,
+                clean_vote_id,
+                viewer_participant_id=self.participant_id,
+            )
         except ValueError as error:
             raise RoomPortalCollaborationError(str(error)) from error
         self._record_activity("vote_summary", details={"vote_id": clean_vote_id})

@@ -805,10 +805,9 @@ class RoomRealtimeControllerTests(
 
         self.assertEqual(summary["result"]["question"], "어느 길로 갈까?")
         self.assertEqual(summary["result"]["tallies"], {"북쪽": 0, "남쪽": 1})
-        self.assertEqual(
-            summary["result"]["voter_ids"],
-            {"북쪽": [], "남쪽": ["operator-local"]},
-        )
+        self.assertEqual(summary["result"]["own_choice"], "남쪽")
+        self.assertNotIn("voters", summary["result"])
+        self.assertNotIn("voter_ids", summary["result"])
         self.assertEqual(summary["result"]["total_votes"], 1)
         self.assertNotIn("vote_id", poll)
         self.assertEqual(poll["vote_options"], ["북쪽", "남쪽"])

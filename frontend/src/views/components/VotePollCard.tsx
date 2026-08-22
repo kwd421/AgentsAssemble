@@ -19,12 +19,10 @@ function remainingTimeLabel(milliseconds: number): string {
 
 export default function VotePollCard({
   event,
-  voterParticipantId,
   canVote = true,
   revision = "",
 }: {
   event: LobbyEvent;
-  voterParticipantId: string;
   canVote?: boolean;
   revision?: string;
 }) {
@@ -96,9 +94,7 @@ export default function VotePollCard({
   const options = summary?.options || event.vote_options || [];
   const question = summary?.question || event.vote_question || "";
   const total = summary?.total_votes ?? 0;
-  const myChoice = options.find((option) =>
-    (summary?.voter_ids?.[option] || []).includes(voterParticipantId)
-  );
+  const myChoice = summary?.own_choice || "";
   const deadlineLabel = ended
     ? "마감됨"
     : hasDeadline
@@ -131,7 +127,6 @@ export default function VotePollCard({
         {options.map((option) => {
           const count = summary?.tallies?.[option] ?? 0;
           const percent = total > 0 ? Math.round((count / total) * 100) : 0;
-          const voters = summary?.voters?.[option] || [];
           return (
             <button
               key={option}
@@ -140,7 +135,7 @@ export default function VotePollCard({
               data-mine={option === myChoice}
               disabled={!canVote || ended || Boolean(busyOption)}
               onClick={() => void castVote(option)}
-              title={voters.length ? `투표: ${voters.join(", ")}` : "아직 아무도 투표하지 않음"}
+              title={`${count}표`}
             >
               <span className="dc-vote-option-bar" style={{ width: `${percent}%` }} aria-hidden />
               <span className="dc-vote-option-label preserve-words">

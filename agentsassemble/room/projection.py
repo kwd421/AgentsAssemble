@@ -207,6 +207,27 @@ def public_event_for_identity(
     """Project one event while preserving sequence continuity for private activity."""
 
     projected = public_event(event)
+    if (
+        projected.get("message_kind") == "vote_cast"
+        and clean_lobby_text(identity.get("client_type"), limit=64) != "agent_bridge"
+    ):
+        projected = {
+            key: value
+            for key, value in projected.items()
+            if key
+            not in {
+                "participant_id",
+                "participant_type",
+                "actor_id",
+                "actor_type",
+                "owner_id",
+                "session_id",
+                "display_name",
+                "avatar_image_url",
+                "vote_choice",
+            }
+        }
+        projected["actor"] = {}
     owner_only = projected.get("visibility") == "owner" or projected.get("audience") == "owner"
     if not owner_only:
         return projected

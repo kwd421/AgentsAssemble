@@ -230,7 +230,9 @@ class RoomConnectorTests(unittest.TestCase):
             self.assertEqual(cast["event"]["vote_choice"], "north")
             summary = connector.vote_summary(vote_id)
             self.assertEqual(summary["tallies"], {"north": 1, "south": 0})
-            self.assertEqual(summary["voter_ids"]["north"], ["external-agent"])
+            self.assertEqual(summary["own_choice"], "north")
+            self.assertNotIn("voters", summary)
+            self.assertNotIn("voter_ids", summary)
 
             store.update_room_settings("room-a", {"tool_mode": "tabletop"})
             rolled = connector.roll_dice("1d6", reason="route check")

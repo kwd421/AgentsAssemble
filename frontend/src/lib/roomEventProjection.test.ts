@@ -201,7 +201,7 @@ describe("projectRoomEventsToTimeline", () => {
     ]);
   });
 
-  it("projects a canonical ballot as a deterministic system-style vote result", () => {
+  it("does not project an individual anonymous ballot into the room timeline", () => {
     const timeline = projectRoomEventsToTimeline([
       event({
         id: "ballot-1",
@@ -214,17 +214,7 @@ describe("projectRoomEventsToTimeline", () => {
       }),
     ]);
 
-    expect(timeline).toEqual([
-      expect.objectContaining({
-        kind: "vote_cast",
-        name: "투표",
-        side: "other",
-        actor_id: "voter-1",
-        vote_id: "vote-1",
-        vote_choice: "남쪽",
-        message: "🗳️ 민지의 선택: 「남쪽」",
-      }),
-    ]);
+    expect(timeline).toEqual([]);
   });
 
   it("keeps provider failures out of the public conversation timeline", () => {

@@ -581,10 +581,10 @@ export default function LobbyView({
               );
             }
             const event = row.event;
+            if (event.kind === "vote_cast") return null;
             if (
               event.kind === "system" ||
-              event.kind === "flow_event" ||
-              event.kind === "vote_cast"
+              event.kind === "flow_event"
             ) {
               return <LobbySystemRow key={row.key} event={event} mentionLabels={mentionLabels} />;
             }
@@ -602,7 +602,6 @@ export default function LobbyView({
                   event.kind === "vote" && !event.message_deleted ? (
                     <VotePollCard
                       event={event}
-                      voterParticipantId={viewerParticipantId}
                       canVote={canPostMessages}
                       revision={voteRevisions[event.vote_id || event.id] || ""}
                     />

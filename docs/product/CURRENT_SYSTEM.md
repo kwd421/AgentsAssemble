@@ -418,15 +418,18 @@ composer for a question, two to ten named options, and a bounded deadline. The
 server normalizes the poll, computes its deadline, rejects unknown choices and
 late ballots, and stores the matched option text. Vote questions, options,
 deadline, and recorded ballots are rendered in every provider's private room
-mirror. The browser shows each recorded ballot and other system messages as a
-centered separator rather than as a participant message row, and keeps the
-aggregate tally and ended state on the vote card. Ballot result rows
-do not wake providers. There is no separate vote-close/final-winner event.
+mirror. Human-facing room projections redact ballot actor and choice fields.
+The browser does not render individual ballot activity; its vote card reads an
+identity-scoped summary containing anonymous totals and only that viewer's own
+choice, including after reload. Ballots do not wake providers. Provider-private
+room mirrors and the retained terminal helper still need the same aggregate-only
+projection. There is no separate vote-close/final-winner event.
 Agent Sessions use `create_vote` and `cast_vote`; the bridge carries those
 structured fields through `message.final`, and the canonical repository applies
 the same validation and tally rules as the human UI. `vote_summary` is explicitly
 limited to the provider's current bounded mirror rather than claiming a
-full-history authoritative query.
+full-history authoritative query; its Python path returns totals and the current
+Agent Session's own choice without voter names or participant IDs.
 
 Provider reasoning summaries and tool/work activity use the canonical room
 event stream but are private to the owning participant by default. Other

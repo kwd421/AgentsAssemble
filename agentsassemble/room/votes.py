@@ -145,7 +145,12 @@ def _display_name(event: dict[str, object], participant_id: str) -> str:
     )
 
 
-def vote_summary(events: list[dict[str, object]], vote_id: str) -> dict[str, object]:
+def vote_summary(
+    events: list[dict[str, object]],
+    vote_id: str,
+    *,
+    viewer_participant_id: str = "",
+) -> dict[str, object]:
     """Aggregate one poll from chronological canonical vote events.
 
     Raises ValueError when the poll event is missing from the given events.
@@ -154,7 +159,7 @@ def vote_summary(events: list[dict[str, object]], vote_id: str) -> dict[str, obj
     if not clean_vote_id:
         raise ValueError("vote_id is required.")
     poll: dict[str, object] | None = None
-    latest_choice_by_voter: dict[str, tuple[str, str]] = {}
+    latest_choice_by_voter: dict[str, str] = {}
     for event in events:
         if event.get("message_deleted") is True:
             continue
@@ -179,21 +184,15 @@ def vote_summary(events: list[dict[str, object]], vote_id: str) -> dict[str, obj
         participant_id = _participant_id(event)
         if not participant_id:
             continue
-        latest_choice_by_voter[participant_id] = (
-            matched,
-            _display_name(event, participant_id),
-        )
+        latest_choice_by_voter[participant_id] = matched
     if poll is None:
         raise ValueError(f"Vote {clean_vote_id} was not found.")
 
     options = [str(option) for option in poll.get("vote_options") or []]
     tallies = {option: 0 for option in options}
-    voters: dict[str, list[str]] = {option: [] for option in options}
-    voter_ids: dict[str, list[str]] = {option: [] for option in options}
-    for participant_id, (choice, display_name) in latest_choice_by_voter.items():
+    for choice in latest_choice_by_voter.values():
         tallies[choice] += 1
-        voters[choice].append(display_name)
-        voter_ids[choice].append(participant_id)
+    clean_viewer_id = clean_lobby_text(viewer_participant_id, limit=128)
     return {
         "vote_id": clean_vote_id,
         "question": str(poll.get("vote_question") or ""),
@@ -203,8 +202,7 @@ def vote_summary(events: list[dict[str, object]], vote_id: str) -> dict[str, obj
         "created_by": str(poll.get("name") or poll.get("display_name") or ""),
         "created_at": str(poll.get("created_at") or ""),
         "tallies": tallies,
-        "voters": voters,
-        "voter_ids": voter_ids,
+        "own_choice": latest_choice_by_voter.get(clean_viewer_id, ""),
         "total_votes": len(latest_choice_by_voter),
     }
 
@@ -212,6 +210,8 @@ def vote_summary(events: list[dict[str, object]], vote_id: str) -> dict[str, obj
 def legacy_vote_summary(
     events: list[dict[str, object]],
     vote_id: str,
+    *,
+    viewer_participant_id: str = "",
 ) -> dict[str, object]:
     """Preserve retained lobby ballots that predate participant identities.
 
@@ -236,7 +236,11 @@ def legacy_vote_summary(
                 "actor_id": f"legacy-name:{display_name.casefold()}",
             }
         )
-    return vote_summary(adapted_events, vote_id)
+    return vote_summary(
+        adapted_events,
+        vote_id,
+        viewer_participant_id=viewer_participant_id,
+    )
 
 
 def resolve_vote_choice(choice: object, options: list[object]) -> str:

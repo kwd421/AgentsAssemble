@@ -876,6 +876,10 @@ class RoomRealtimeController:
                 result = vote_summary(
                     self.store.vote_events(room_id, vote_id),
                     vote_id,
+                    viewer_participant_id=clean_lobby_text(
+                        identity.get("agent_id"),
+                        limit=128,
+                    ),
                 )
             except ValueError as error:
                 raise RoomCommandRejected(

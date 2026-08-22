@@ -135,25 +135,20 @@ export function projectRoomEventsToTimeline(
       const existingIndex = turnIndex.get(key);
       const existing = existingIndex === undefined ? null : timeline[existingIndex];
       const messageKind = String(event.message_kind || existing?.kind || "message");
-      const voteChoice = String(event.vote_choice || existing?.vote_choice || "");
-      const isVoteResult = event.type === "message_final" && messageKind === "vote_cast";
-      if (isVoteResult && event.message_deleted === true) return;
-      const message =
-        isVoteResult
-          ? `🗳️ ${speaker.name}의 선택: 「${voteChoice || "선택 없음"}」`
-          : event.type === "message_final"
-          ? String(event.content || "")
-          : `${existing?.message || ""}${event.content || ""}`;
+      if (event.type === "message_final" && messageKind === "vote_cast") return;
+      const message = event.type === "message_final"
+        ? String(event.content || "")
+        : `${existing?.message || ""}${event.content || ""}`;
       const projected: LobbyEvent = {
         id: key,
         record_id: event.type === "message_final" ? event.id : existing?.record_id,
         seq: Number(event.seq) || existing?.seq,
         created_at: event.created_at,
-        name: isVoteResult ? "투표" : speaker.name,
+        name: speaker.name,
         avatar_image_url: speaker.avatarImageUrl || undefined,
         provider_kind: speaker.providerKind || undefined,
         role: speaker.role || undefined,
-        side: isVoteResult ? "other" : speaker.side,
+        side: speaker.side,
         kind: messageKind,
         message,
         actor_id: eventActor.id,
@@ -183,7 +178,6 @@ export function projectRoomEventsToTimeline(
         vote_deadline_at:
           String(event.vote_deadline_at || existing?.vote_deadline_at || "") ||
           undefined,
-        vote_choice: voteChoice || undefined,
         attachments: Array.isArray(event.attachments)
           ? event.attachments
           : existing?.attachments,

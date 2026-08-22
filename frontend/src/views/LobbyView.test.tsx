@@ -412,7 +412,7 @@ describe("LobbyView active provider turn", () => {
 });
 
 describe("LobbyView vote results", () => {
-  it("shows canonical ballots as centered system separators without message controls", async () => {
+  it("does not reveal individual ballot activity from retained timeline state", () => {
     const { container } = renderLobby(
       [
         voteResult("ballot-a", "민지", "남쪽"),
@@ -421,15 +421,11 @@ describe("LobbyView vote results", () => {
       []
     );
 
-    expect(await screen.findByText("🗳️ 민지의 선택: 「남쪽」")).toBeTruthy();
-    expect(screen.getByText("🗳️ 준호의 선택: 「북쪽」")).toBeTruthy();
-
     const firstRow = container.querySelector('[data-room-event-id="ballot-a"]');
     const secondRow = container.querySelector('[data-room-event-id="ballot-b"]');
-    expect(firstRow?.classList.contains("dc-system-divider")).toBe(true);
-    expect(secondRow?.classList.contains("dc-system-divider")).toBe(true);
-    expect(firstRow?.querySelector(".dc-message-avatar")).toBeNull();
-    expect(firstRow?.querySelector(".dc-message-actions")).toBeNull();
+    expect(firstRow).toBeNull();
+    expect(secondRow).toBeNull();
+    expect(screen.queryByText(/민지|준호/)).toBeNull();
   });
 });
 
