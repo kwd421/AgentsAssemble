@@ -208,7 +208,7 @@ def public_event_for_identity(
 
     projected = public_event(event)
     if (
-        projected.get("message_kind") in {"vote_cast", "vote_withdraw"}
+        projected.get("message_kind") in {"vote_cast", "vote_withdraw", "vote_close"}
         and clean_lobby_text(identity.get("client_type"), limit=64) != "agent_bridge"
     ):
         projected = {

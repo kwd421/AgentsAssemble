@@ -1461,8 +1461,7 @@ class RoomTurnCoordinator:
         input_up_to_seq = safe_bounded_int(session.get("input_up_to_seq"), default=0, minimum=0)
         try:
             structured_fields = canonical_structured_fields(
-                prepared.structured,
-                events=writer,
+                prepared.structured, events=writer, participant_id=agent_id,
             )
         except StructuredMessageError as error:
             raise RoomCommandRejected(str(error), code=error.code) from error
@@ -1480,7 +1479,7 @@ class RoomTurnCoordinator:
             **structured_fields,
             target_agent_id=clean_lobby_text(
                 None
-                if prepared.structured.message_kind in {"vote_cast", "vote_withdraw"}
+                if prepared.structured.message_kind in {"vote_cast", "vote_withdraw", "vote_close"}
                 else prepared.target_agent_id,
                 limit=128,
             ),

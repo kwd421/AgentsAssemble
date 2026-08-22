@@ -936,6 +936,7 @@ class RoomRealtimeController:
                         payload,
                         unit=unit,
                         compatibility_muted=compatibility_muted,
+                        can_moderate=self._is_room_owner(identity, room_id) or room_identity_is_operator(identity),
                     ),
                 )
         if action in MESSAGE_MUTATION_ACTIONS:
@@ -1589,7 +1590,7 @@ class RoomRealtimeController:
             return
         if (
             event.get("message_source") == "room_tool_result"
-            or event.get("message_kind") in {"vote_cast", "vote_withdraw"}
+            or event.get("message_kind") in {"vote_cast", "vote_withdraw", "vote_close"}
         ):
             return
         with self._lock:

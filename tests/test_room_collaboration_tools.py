@@ -16,6 +16,36 @@ from tests.test_room_agent_bridge import (
 
 
 class RoomPortalCollaborationTests(unittest.TestCase):
+    def test_vote_creator_agent_can_stage_an_early_close(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            portal = RoomPortal(Path(temp_dir) / "portal", participant_id="codex")
+            portal.prepare()
+            portal.ingest_frame(
+                {
+                    "room_settings": {"tool_mode": "chat"},
+                    "stream": "room_events",
+                    "events": [
+                        {
+                            "id": "vote-1",
+                            "seq": 1,
+                            "type": "message_final",
+                            "participant_id": "codex",
+                            "message_kind": "vote",
+                            "vote_question": "Continue?",
+                            "vote_options": ["Yes", "No"],
+                        }
+                    ],
+                }
+            )
+            portal.begin_observation("close-vote", input_up_to_seq=1)
+
+            receipt = portal.close_vote("vote-1")
+            publication = portal.consume_publication_result("close-vote")
+
+        self.assertEqual(receipt, {"queued": True, "vote_id": "vote-1"})
+        self.assertEqual(publication.message_kind, "vote_close")
+        self.assertEqual(publication.vote_id, "vote-1")
+
     def test_room_portal_stages_an_explicit_vote_withdrawal(self):
         with tempfile.TemporaryDirectory() as temp_dir:
             portal = RoomPortal(Path(temp_dir) / "portal", participant_id="codex")
@@ -258,7 +288,7 @@ class CanonicalAgentVoteTests(unittest.TestCase):
     def tearDown(self):
         self.room.tearDown()
 
-    def test_agent_vote_and_ballot_reach_the_canonical_tally(self):
+    def test_agent_vote_ballot_and_close_reach_the_canonical_tally(self):
         self.room._command("agent-start", "agent.start", {"agent_id": "codex"})
         identity, channel = self.room._connect_bridge("codex")
         channel.drain()
@@ -310,6 +340,29 @@ class CanonicalAgentVoteTests(unittest.TestCase):
             "room.vote.summary",
             {"vote_id": poll["id"]},
         )["result"]
+        self.room._command(
+            "agent-close-request",
+            "message.send",
+            {"content": "Close the latest poll"},
+        )
+        close_wake = next(
+            message for message in channel.drain() if message.get("op") == "room.wake"
+        )
+        closed = self.room._publish_observation_final(
+            "agent-close-final",
+            {
+                "turn_id": close_wake["turn_id"],
+                "kind": "vote_close",
+                "vote_id": poll["id"],
+                "observed_through_seq": close_wake["input_up_to_seq"],
+            },
+            identity,
+        )["result"]["event"]
+        closed_summary = self.room._command(
+            "agent-closed-summary",
+            "room.vote.summary",
+            {"vote_id": poll["id"]},
+        )["result"]
 
         self.assertEqual(
             (poll["participant_type"], poll["message_kind"], poll["vote_options"]),
@@ -319,3 +372,5 @@ class CanonicalAgentVoteTests(unittest.TestCase):
             (ballot["message_kind"], ballot["vote_choice"], summary["tallies"]),
             ("vote_cast", "Large", {"Small": 0, "Large": 1}),
         )
+        self.assertEqual(closed["message_kind"], "vote_close")
+        self.assertTrue(closed_summary["closed"])

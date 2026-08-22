@@ -312,6 +312,22 @@ def _build_room_connector_mcp(
         return connector_for(context, connection_id).withdraw_vote(vote_id)
 
     @server.tool(
+        title="Close a room vote",
+        annotations=ToolAnnotations(
+            readOnlyHint=False,
+            destructiveHint=False,
+            openWorldHint=True,
+        ),
+    )
+    def room_vote_close(
+        vote_id: str,
+        context: Context,
+        connection_id: ConnectionId = "",
+    ) -> dict[str, object]:
+        """Close a vote created by this participant."""
+        return connector_for(context, connection_id).close_vote(vote_id)
+
+    @server.tool(
         title="Read a room vote",
         annotations=ToolAnnotations(
             readOnlyHint=True,

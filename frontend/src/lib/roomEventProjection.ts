@@ -137,7 +137,7 @@ export function projectRoomEventsToTimeline(
       const messageKind = String(event.message_kind || existing?.kind || "message");
       if (
         event.type === "message_final" &&
-        (messageKind === "vote_cast" || messageKind === "vote_withdraw")
+        ["vote_cast", "vote_withdraw", "vote_close"].includes(messageKind)
       ) return;
       const message = event.type === "message_final"
         ? String(event.content || "")
@@ -233,7 +233,7 @@ export function projectRoomEventsToTimeline(
 
   return timeline.filter(
     (item) =>
-      !["vote_cast", "vote_withdraw"].includes(item.kind) ||
+      !["vote_cast", "vote_withdraw", "vote_close"].includes(item.kind) ||
       !item.vote_id ||
       !deletedVoteIds.has(item.vote_id)
   );

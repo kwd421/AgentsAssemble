@@ -325,6 +325,8 @@ elif command == "vote-cast":
             fail("vote deadline is invalid")
         if deadline_at <= datetime.now(timezone.utc):
             fail("this vote has ended")
+    if poll.get("vote_closed") is True:
+        fail("this vote has ended")
     choice = resolve_choice(sys.argv[3], list(poll.get("vote_options") or []))
     turn_id = active_turn()
     stage_publication({
@@ -351,6 +353,8 @@ elif command == "vote-withdraw":
             fail("vote deadline is invalid")
         if deadline_at <= datetime.now(timezone.utc):
             fail("this vote has ended")
+    if poll.get("vote_closed") is True:
+        fail("this vote has ended")
     turn_id = active_turn()
     stage_publication({
         "content": "",
@@ -360,6 +364,32 @@ elif command == "vote-withdraw":
     })
     details = {"vote_id": vote_id}
     audit("withdraw_vote", turn_id, details)
+    print(json.dumps({"queued": True, **details}, ensure_ascii=False))
+elif command == "vote-close":
+    require_tool("close_vote")
+    if len(sys.argv) != 3:
+        fail("usage: agentsassemble-room vote-close <vote-id>")
+    vote_id = clean_text(sys.argv[2], 128)
+    poll = find_poll(vote_id)
+    deadline = str(poll.get("vote_deadline_at") or "")
+    if deadline:
+        try:
+            deadline_at = datetime.fromisoformat(deadline.replace("Z", "+00:00"))
+        except ValueError:
+            fail("vote deadline is invalid")
+        if deadline_at <= datetime.now(timezone.utc):
+            fail("this vote has ended")
+    if poll.get("vote_closed") is True:
+        fail("this vote has ended")
+    turn_id = active_turn()
+    stage_publication({
+        "content": "",
+        "target_agent_id": "",
+        "message_kind": "vote_close",
+        "vote_id": vote_id,
+    })
+    details = {"vote_id": vote_id}
+    audit("close_vote", turn_id, details)
     print(json.dumps({"queued": True, **details}, ensure_ascii=False))
 elif command == "vote-summary":
     require_tool("vote_summary")
@@ -393,6 +423,9 @@ elif command == "vote-summary":
         "tallies": tallies,
         "own_choice": own_choice,
         "total_votes": sum(tallies.values()),
+        "closed": bool(poll.get("vote_closed")),
+        "closed_at": str(poll.get("vote_closed_at") or ""),
+        "close_reason": "manual" if poll.get("vote_closed") else "",
         "scope": "bounded_current_view",
     }
     audit("vote_summary", details={"vote_id": vote_id})
@@ -492,7 +525,7 @@ elif command == "rim-speak":
     atomic_json(PLUGIN_SPEECH, {"text": text})
     print(json.dumps({"queued": True, "colonist_id": colonist_id, "text": text}, ensure_ascii=False))
 elif command == "help":
-    print("agentsassemble-room read | search <query> [channel|all] [cursor] | search-context <channel> <event-id> | participants | speak [text] | speak-to <agent-id> [text] | decline <nothing_useful_to_add|not_addressed|duplicate> | vote-create <question> <json-options> [duration] | vote-cast <vote-id> <choice> | vote-withdraw <vote-id> | vote-summary <vote-id> | media <id> | roll <NdS+M> | choose <json-options> | rim-observe | rim-inspect <type> | rim-act <action> <json-args> | rim-speak <text>")
+    print("agentsassemble-room read | search <query> [channel|all] [cursor] | search-context <channel> <event-id> | participants | speak [text] | speak-to <agent-id> [text] | decline <nothing_useful_to_add|not_addressed|duplicate> | vote-create <question> <json-options> [duration] | vote-cast <vote-id> <choice> | vote-withdraw <vote-id> | vote-close <vote-id> | vote-summary <vote-id> | media <id> | roll <NdS+M> | choose <json-options> | rim-observe | rim-inspect <type> | rim-act <action> <json-args> | rim-speak <text>")
 else:
     fail("unknown command")
 """

@@ -1,9 +1,10 @@
 """Canonical room vote validation and tallying.
 
 A poll is one room message (message_kind "vote"; its event id is the vote_id)
-and any number of ballot changes referencing that vote_id. ``vote_cast`` sets
-or replaces a choice and ``vote_withdraw`` removes it. The log is the source of
-truth — no separate vote store — and the latest ballot change per voter wins.
+and any number of vote state changes referencing that vote_id. ``vote_cast``
+sets or replaces a choice, ``vote_withdraw`` removes it, and ``vote_close``
+ends the poll early. The log is the source of truth — no separate vote store —
+and the latest ballot change per voter before closure wins.
 """
 from __future__ import annotations
 
@@ -21,6 +22,8 @@ VOTE_QUESTION_LIMIT = 300
 VOTE_OPTION_LIMIT = 100
 MAX_VOTE_OPTIONS = 10
 VOTE_BALLOT_EVENT_KINDS = frozenset({"vote_cast", "vote_withdraw"})
+VOTE_CLOSE_EVENT_KIND = "vote_close"
+VOTE_STATE_EVENT_KINDS = frozenset({*VOTE_BALLOT_EVENT_KINDS, VOTE_CLOSE_EVENT_KIND})
 
 
 def normalize_vote_definition(
@@ -136,6 +139,10 @@ def _participant_id(event: dict[str, object]) -> str:
     )
 
 
+def vote_creator_participant_id(poll: dict[str, object]) -> str:
+    return _participant_id(poll)
+
+
 def _display_name(event: dict[str, object], participant_id: str) -> str:
     return (
         clean_lobby_text(
@@ -161,6 +168,7 @@ def vote_summary(
         raise ValueError("vote_id is required.")
     poll: dict[str, object] | None = None
     latest_choice_by_voter: dict[str, str] = {}
+    closed_at = ""
     for event in events:
         if event.get("message_deleted") is True:
             continue
@@ -175,7 +183,11 @@ def vote_summary(
         if kind == "vote" and poll is None:
             poll = event
             continue
-        if kind not in VOTE_BALLOT_EVENT_KINDS or poll is None:
+        if kind == VOTE_CLOSE_EVENT_KIND and poll is not None:
+            if not closed_at:
+                closed_at = clean_lobby_text(event.get("created_at"), limit=128)
+            continue
+        if kind not in VOTE_BALLOT_EVENT_KINDS or poll is None or closed_at:
             continue
         participant_id = _participant_id(event)
         if not participant_id:
@@ -191,6 +203,10 @@ def vote_summary(
         latest_choice_by_voter[participant_id] = matched
     if poll is None:
         raise ValueError(f"Vote {clean_vote_id} was not found.")
+
+    deadline_closed = vote_deadline_has_passed(poll.get("vote_deadline_at"))
+    if deadline_closed and not closed_at:
+        closed_at = clean_lobby_text(poll.get("vote_deadline_at"), limit=128)
 
     options = [str(option) for option in poll.get("vote_options") or []]
     tallies = {option: 0 for option in options}
@@ -208,6 +224,9 @@ def vote_summary(
         "tallies": tallies,
         "own_choice": latest_choice_by_voter.get(clean_viewer_id, ""),
         "total_votes": len(latest_choice_by_voter),
+        "closed": bool(closed_at),
+        "closed_at": closed_at,
+        "close_reason": "deadline" if deadline_closed else ("manual" if closed_at else ""),
     }
 
 

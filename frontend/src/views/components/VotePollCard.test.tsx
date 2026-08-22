@@ -123,6 +123,50 @@ describe("VotePollCard", () => {
     expect(screen.getByText("투표가 마감되었습니다")).toBeTruthy();
   });
 
+  it("lets an authorized participant close an open vote through the room socket", async () => {
+    const command = vi.fn().mockResolvedValue({
+      op: "ack",
+      request_id: "summary-open",
+      accepted: true,
+      action: "room.vote.summary",
+      result: {
+        vote_id: "vote-1",
+        question: "어느 길로 갈까?",
+        options: ["북쪽", "남쪽"],
+        created_by: "호스트",
+        created_at: "2026-01-01T00:00:00Z",
+        tallies: { 북쪽: 1, 남쪽: 0 },
+        own_choice: "북쪽",
+        total_votes: 1,
+        closed: false,
+        closed_at: "",
+      },
+    });
+    const say = vi.fn().mockResolvedValue({ events: [] });
+    const socket: RoomSocketHandle = {
+      close: vi.fn(),
+      ready: () => true,
+      command,
+      say,
+      historyBefore: vi.fn(),
+    };
+    render(
+      <RoomSocketProvider socket={socket}>
+        <VotePollCard event={pollEvent()} canClose />
+      </RoomSocketProvider>
+    );
+
+    fireEvent.click(await screen.findByRole("button", { name: "투표 종료" }));
+
+    await waitFor(() =>
+      expect(say).toHaveBeenCalledWith({
+        message: "",
+        kind: "vote_close",
+        voteId: "vote-1",
+      })
+    );
+  });
+
   it("does not attempt a vote when the canonical room socket is unavailable", async () => {
     render(
       <RoomSocketProvider socket={null}>

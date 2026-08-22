@@ -581,7 +581,7 @@ export default function LobbyView({
               );
             }
             const event = row.event;
-            if (event.kind === "vote_cast" || event.kind === "vote_withdraw") return null;
+            if (["vote_cast", "vote_withdraw", "vote_close"].includes(event.kind)) return null;
             if (
               event.kind === "system" ||
               event.kind === "flow_event"
@@ -603,6 +603,14 @@ export default function LobbyView({
                     <VotePollCard
                       event={event}
                       canVote={canPostMessages}
+                      canClose={
+                        canPostMessages &&
+                        (
+                          canManageRoom ||
+                          event.actor_id === viewerParticipantId ||
+                          agentOwnerIds.get(event.actor_id || "")?.has(viewerParticipantId) === true
+                        )
+                      }
                       revision={voteRevisions[event.vote_id || event.id] || ""}
                     />
                   ) : undefined

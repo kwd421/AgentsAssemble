@@ -202,7 +202,7 @@ def ambient_trigger_rejection_reason(event: dict[str, object]) -> str:
     if clean_lobby_text(event.get("type"), limit=64) != "message_final":
         return "ambient_event_type_not_supported"
     message_kind = clean_lobby_text(event.get("message_kind"), limit=64).lower()
-    if message_kind in {"vote", "vote_cast", "vote_withdraw"}:
+    if message_kind in {"vote", "vote_cast", "vote_withdraw", "vote_close"}:
         return "ambient_vote_event"
     if message_kind not in AMBIENT_TEXT_MESSAGE_KINDS:
         return "ambient_message_kind_not_supported"

@@ -1,12 +1,12 @@
 {
  "readme": "AgentsAssemble codebase map. Regenerate with `make codebase-map`; verify committed outputs with `make codebase-map-verify`. modules[] columns: name, path, package, domain, classification, migration_status, lines, docstring, imports[], imported_by[] (indexes into modules), classes[[name, [[base, defining_module], ...]]] (best-effort, top-level classes only). frontend[] columns: path, group, lines, doc, imports[], imported_by[] (indexes into frontend). package_edges go importer -> dependency with module-import counts; `points` is the precomputed polyline for that edge and `intra_cycle` marks imports whose endpoints share one cycle group. graph{} holds the layered package drawing: layers[] top-to-bottom (each with members[] package ids, member_count, and the dominant domain), (a package sits below everything importing it), clusters[] are mutually dependent packages (import cycles at package level) drawn as one labelled block, plus width/height of the drawing. health{} ranks findings for a reader who has to act: cycles[] (mutually dependent packages, with the lines they hold), leaning_on_retiring[] (current modules importing legacy/compatibility modules - the reason legacy cannot be deleted), highest_leverage_migrations[] (retiring modules with the most current importers), unreferenced_shims[] (compatibility modules with no importer in agentsassemble/ and no reference in tests/; callers outside this repository are not visible, so verify before deleting), and hotspots[] (largest modules). health.scope states exactly what was measured. class_graph{} is the UML generalization DAG over base classes that resolve inside the repo: edges go base -> subclass, so a subclass always sits below the class it extends. Coordinates in graph and class_graph are laid out with a Sugiyama pipeline (cycle condensation, Coffman-Graham layering, dummy-node edge routing, median/transpose crossing reduction) and are deterministic.",
- "generated_at": "2026-08-22T03:35:46Z",
- "fingerprint": "4d539cd368bc6413",
+ "generated_at": "2026-08-22T03:56:10Z",
+ "fingerprint": "90bc29f6345de497",
  "stats": {
   "backend_modules": 583,
-  "backend_lines": 101765,
+  "backend_lines": 101997,
   "frontend_files": 220,
-  "frontend_lines": 50985,
+  "frontend_lines": 51093,
   "packages": 30,
   "import_cycles": 0,
   "classifications": {
@@ -41,7 +41,7 @@
    "kind": "backend",
    "doc": "Application composition and cross-domain transaction contracts.",
    "files": 35,
-   "lines": 8344,
+   "lines": 8353,
    "domains": {
     "application": 35
    },
@@ -61,7 +61,7 @@
    "kind": "backend",
    "doc": "Current room domain contracts and behavior.",
    "files": 71,
-   "lines": 18081,
+   "lines": 18152,
    "domains": {
     "room": 71
    },
@@ -81,7 +81,7 @@
    "kind": "backend",
    "doc": "Canonical invite, session, pairing, and room-admission services.",
    "files": 18,
-   "lines": 3781,
+   "lines": 3782,
    "domains": {
     "admission": 18
    },
@@ -122,7 +122,7 @@
    "kind": "backend",
    "doc": "Provider runtime contracts and implementations.",
    "files": 137,
-   "lines": 35976,
+   "lines": 36127,
    "domains": {
     "providers": 137
    },
@@ -500,7 +500,7 @@
    "kind": "frontend",
    "doc": "Room protocol client: HTTP calls, WebSocket wiring, DTO mapping.",
    "files": 11,
-   "lines": 1874,
+   "lines": 1877,
    "domains": {},
    "classes": {},
    "x": 330.0,
@@ -580,7 +580,7 @@
    "kind": "frontend",
    "doc": "Top-level room views rendered by the shell.",
    "files": 113,
-   "lines": 22899,
+   "lines": 23004,
    "domains": {},
    "classes": {},
    "x": 558.0,
@@ -3861,7 +3861,7 @@
      "web"
     ],
     "internal_edges": 73,
-    "lines": 98802,
+    "lines": 99034,
     "heaviest": "providers"
    },
    {
@@ -3874,7 +3874,7 @@
      "fe:views"
     ],
     "internal_edges": 17,
-    "lines": 50792,
+    "lines": 50900,
     "heaviest": "fe:views"
    }
   ],
@@ -3985,13 +3985,13 @@
   "hotspots": [
    {
     "module": "agentsassemble.room.turn_coordinator",
-    "lines": 2223,
+    "lines": 2222,
     "cls": "current",
     "imported_by": 5
    },
    {
     "module": "agentsassemble.room.realtime",
-    "lines": 1865,
+    "lines": 1866,
     "cls": "current",
     "imported_by": 7
    },
@@ -4021,7 +4021,7 @@
    },
    {
     "module": "agentsassemble.providers.room_portal",
-    "lines": 1176,
+    "lines": 1180,
     "cls": "current",
     "imported_by": 20
    },
@@ -4376,7 +4376,7 @@
    "admission",
    "current",
    "in-target-package",
-   737,
+   738,
    "Repository-injected invite policy and application operations.",
    [
     12,
@@ -5504,7 +5504,7 @@
    "application",
    "current",
    "in-target-package",
-   636,
+   645,
    "Current-session room connector over the canonical room WebSocket.",
    [
     472,
@@ -12052,7 +12052,7 @@
    "providers",
    "current",
    "in-target-package",
-   800,
+   799,
    "",
    [
     288,
@@ -12087,7 +12087,7 @@
    "providers",
    "current",
    "in-target-package",
-   410,
+   425,
    "Room tool schemas and execution for OpenAI-compatible chat APIs.",
    [
     239,
@@ -12272,7 +12272,7 @@
    "providers",
    "current",
    "in-target-package",
-   190,
+   198,
    "Session-local Pi tools for bounded workspace reads and RoomPortal access.",
    [],
    [
@@ -12615,7 +12615,7 @@
    "providers",
    "current",
    "in-target-package",
-   444,
+   460,
    "MCP tools that let the current app or web conversation join a room link.",
    [
     56
@@ -12666,7 +12666,7 @@
    "providers",
    "current",
    "in-target-package",
-   1176,
+   1180,
    "Private room-view boundary used by autonomous provider sessions.",
    [
     272,
@@ -12725,7 +12725,7 @@
    "providers",
    "current",
    "in-target-package",
-   412,
+   464,
    "Structured collaboration actions owned by one private RoomPortal.",
    [
     385,
@@ -12762,7 +12762,7 @@
    "providers",
    "current",
    "in-target-package",
-   506,
+   539,
    "Standalone terminal helper installed into provider-private room state.",
    [],
    [
@@ -12777,7 +12777,7 @@
    "providers",
    "current",
    "in-target-package",
-   169,
+   174,
    "Stdio MCP boundary for one provider session's private room portal.",
    [
     376,
@@ -12838,7 +12838,7 @@
    "providers",
    "current",
    "in-target-package",
-   127,
+   146,
    "Anonymous vote projection for one provider-private RoomPortal.",
    [
     472,
@@ -14676,7 +14676,7 @@
    "room",
    "current",
    "in-target-package",
-   457,
+   492,
    "",
    [
     419,
@@ -15213,7 +15213,7 @@
    "room",
    "current",
    "in-target-package",
-   1865,
+   1866,
    "",
    [
     16,
@@ -15630,7 +15630,7 @@
    "room",
    "current",
    "in-target-package",
-   152,
+   168,
    "Validation and canonical event fields for structured room publications.",
    [
     472,
@@ -15902,7 +15902,7 @@
    "room",
    "current",
    "in-target-package",
-   53,
+   54,
    "Server-owned room tool availability independent of conversation routing.",
    [],
    [
@@ -15968,7 +15968,7 @@
    "room",
    "current",
    "in-target-package",
-   2223,
+   2222,
    "",
    [
     88,
@@ -16161,7 +16161,7 @@
    "room",
    "current",
    "in-target-package",
-   265,
+   284,
    "Canonical room vote validation and tallying.",
    [
     472
@@ -18580,7 +18580,7 @@
   [
    "frontend/src/api/roomHistory.ts",
    "api",
-   359,
+   362,
    "",
    [
     4,
@@ -19889,7 +19889,7 @@
   [
    "frontend/src/views/LobbyView.tsx",
    "views",
-   693,
+   701,
    "",
    [
     1,
@@ -20986,7 +20986,7 @@
   [
    "frontend/src/views/components/VotePollCard.css",
    "views",
-   123,
+   141,
    "---- /vote poll card (issue 7) ----",
    [],
    [
@@ -20996,7 +20996,7 @@
   [
    "frontend/src/views/components/VotePollCard.test.tsx",
    "views",
-   218,
+   262,
    "",
    [
     1,
@@ -21009,7 +21009,7 @@
   [
    "frontend/src/views/components/VotePollCard.tsx",
    "views",
-   165,
+   198,
    "",
    [
     1,
@@ -21281,7 +21281,7 @@
   [
    "frontend/src/views/lobby/LobbyEventRows.tsx",
    "views",
-   447,
+   448,
    "",
    [
     2,
@@ -21321,7 +21321,7 @@
   [
    "frontend/src/views/lobby/lobbyRows.ts",
    "views",
-   98,
+   99,
    "",
    [
     2
@@ -21437,19 +21437,19 @@
    "name": "agentsassemble",
    "note": "Backend package (Python)",
    "files": 583,
-   "lines": 101765
+   "lines": 101997
   },
   {
    "name": "frontend/src",
    "note": "React room client (TS/TSX)",
    "files": 220,
-   "lines": 50985
+   "lines": 51093
   },
   {
    "name": "tests",
    "note": "Backend test suite",
-   "files": 248,
-   "lines": 65790
+   "files": 249,
+   "lines": 65938
   },
   {
    "name": "scripts",
@@ -21461,7 +21461,7 @@
    "name": "docs",
    "note": "Product and architecture docs",
    "files": 90,
-   "lines": 30677
+   "lines": 30682
   },
   {
    "name": "configs",

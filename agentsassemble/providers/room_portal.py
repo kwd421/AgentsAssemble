@@ -68,7 +68,7 @@ def room_session_orientation(provider_kind: object = "") -> str:
     return f"""Shared room session:
 - You are an ongoing participant in a shared AgentsAssemble room.
 - Structured room votes are available through `create_vote`, `cast_vote`,
-  `withdraw_vote`, and `vote_summary` when those names appear under Available
+  `withdraw_vote`, `close_vote`, and `vote_summary` when those names appear under Available
   room tools.
 - `search_messages` searches the complete readable room record; use
   `read_message_context` on one result when an older discussion matters.
@@ -217,6 +217,7 @@ class RoomPortal(RoomPortalSearchTools):
                 if clean_room_text(event.get("message_kind"), limit=64) in {
                     "vote_cast",
                     "vote_withdraw",
+                    "vote_close",
                 }:
                     self._vote_projection.ingest_ballot(event)
                     continue
@@ -573,6 +574,9 @@ class RoomPortal(RoomPortalSearchTools):
 
     def withdraw_vote(self, vote_id: object) -> dict[str, object]:
         return self._collaboration.withdraw_vote(vote_id)
+
+    def close_vote(self, vote_id: object) -> dict[str, object]:
+        return self._collaboration.close_vote(vote_id)
 
     def vote_summary(self, vote_id: object) -> dict[str, object]:
         return self._collaboration.vote_summary(vote_id)

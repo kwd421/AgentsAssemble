@@ -79,6 +79,9 @@ export interface VoteSummary {
   tallies: Record<string, number>;
   own_choice: string;
   total_votes: number;
+  closed?: boolean;
+  closed_at?: string;
+  close_reason?: "deadline" | "manual" | "";
 }
 
 export interface LobbyPostResponse {

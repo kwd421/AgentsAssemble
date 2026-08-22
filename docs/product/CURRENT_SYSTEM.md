@@ -423,14 +423,19 @@ anonymous totals and only that viewer's own choice, including after reload.
 Selecting a different option replaces the viewer's ballot. Selecting the
 current option again sends an explicit `vote_withdraw` event, removes only that
 participant's latest ballot, and preserves the withdrawn state after reload.
+The creator, room host, or room administrator can end an open vote early; this
+appends a `vote_close` state event. A configured deadline derives the same
+closed state automatically. Closed votes retain their final anonymous tally,
+reject later ballot changes, and remain closed after reload.
 Ballots do not wake providers. Each provider-private RoomPortal keeps the
 identity-linked latest ballots only in its controller memory long enough to
 derive the bounded mirror. Its `current.md`, `messages.json`, Python/MCP
 `vote_summary`, and retained terminal helper expose only anonymous totals and
 that Agent Session's own choice; they never persist or render another voter's
-name, participant ID, or choice. There is no separate
-vote-close/final-winner event.
-Agent Sessions use `create_vote`, `cast_vote`, and `withdraw_vote`; the bridge
+name, participant ID, or choice. Closing a vote records only the close state;
+it does not choose a winner or execute an action.
+Agent Sessions use `create_vote`, `cast_vote`, `withdraw_vote`, and `close_vote`;
+the bridge
 carries those structured fields through `message.final`, and the canonical
 repository applies the same validation and tally rules as the human UI.
 `vote_summary` is explicitly limited to the provider's current bounded mirror

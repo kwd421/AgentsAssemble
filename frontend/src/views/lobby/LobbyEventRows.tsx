@@ -376,7 +376,8 @@ export function LobbyMessageRow({
     event.kind === "system" ||
     event.kind === "flow_event" ||
     event.kind === "vote_cast" ||
-    event.kind === "vote_withdraw";
+    event.kind === "vote_withdraw" ||
+    event.kind === "vote_close";
   return (
     <div
       className={`dc-message grid grid-cols-[40px_minmax(0,1fr)] gap-3 px-4 ${

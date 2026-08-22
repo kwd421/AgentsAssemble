@@ -12,7 +12,7 @@ def apply_event_updates(
         raise ValueError("Canonical room event identity fields cannot be changed")
     if "actor" in updates:
         ballot_redaction = (
-            event.get("message_kind") in {"vote_cast", "vote_withdraw"}
+            event.get("message_kind") in {"vote_cast", "vote_withdraw", "vote_close"}
             and updates.get("message_deleted") is True
             and updates.get("actor") == {}
         )

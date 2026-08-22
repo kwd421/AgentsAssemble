@@ -25,9 +25,12 @@ from agentsassemble.room.votes import (
     normalize_vote_definition,
     normalize_vote_duration_seconds,
     resolve_vote_choice,
-    VOTE_BALLOT_EVENT_KINDS,
+    VOTE_CLOSE_EVENT_KIND,
+    VOTE_STATE_EVENT_KINDS,
     vote_deadline_has_passed,
+    vote_creator_participant_id,
     vote_poll,
+    vote_summary,
 )
 
 
@@ -44,6 +47,7 @@ class RoomMessageService:
         *,
         unit: RoomCommandUnitOfWork,
         compatibility_muted: bool,
+        can_moderate: bool = False,
     ) -> dict[str, object]:
         content = room_message_text(
             payload.get("content") or payload.get("message"),
@@ -60,7 +64,7 @@ class RoomMessageService:
                 str(error),
                 code="invalid_attachment",
             ) from error
-        if kind not in {"vote", *VOTE_BALLOT_EVENT_KINDS} and not content and not attachments:
+        if kind not in {"vote", *VOTE_STATE_EVENT_KINDS} and not content and not attachments:
             raise RoomCommandRejected(
                 "Message content or an attachment is required.",
                 code="empty",
@@ -114,7 +118,7 @@ class RoomMessageService:
             vote_deadline_at = deadline_for_vote(vote_duration_seconds)
             vote_id = None
             vote_choice = None
-        if kind in VOTE_BALLOT_EVENT_KINDS:
+        if kind in VOTE_STATE_EVENT_KINDS:
             vote_id = clean_room_text(payload.get("vote_id"), 128)
             try:
                 poll = vote_poll(unit.event_by_id(vote_id), vote_id)
@@ -135,7 +139,38 @@ class RoomMessageService:
                     "This vote has ended.",
                     code="vote_expired",
                 )
-            if kind == "vote_cast":
+            vote_events = unit.vote_events(vote_id)
+            try:
+                closed = bool(vote_summary(vote_events, vote_id).get("closed"))
+            except ValueError as error:
+                raise RoomCommandRejected(
+                    str(error),
+                    code="vote_not_found",
+                ) from error
+            if closed:
+                raise RoomCommandRejected(
+                    "This vote has ended.",
+                    code="vote_closed",
+                )
+            if kind == VOTE_CLOSE_EVENT_KIND:
+                principals = room_identity_principals(identity)
+                creator_id = vote_creator_participant_id(poll)
+                creator = unit.participant(creator_id)
+                creator_owner_id = clean_room_text(
+                    creator.get("owner_id") or creator.get("created_by"),
+                    128,
+                )
+                if not (
+                    can_moderate
+                    or creator_id in principals
+                    or (creator_owner_id and creator_owner_id in principals)
+                ):
+                    raise RoomCommandRejected(
+                        "Only the vote creator or a room host can close this vote.",
+                        code="permission_denied",
+                    )
+                vote_choice = None
+            elif kind == "vote_cast":
                 vote_choice = resolve_vote_choice(
                     payload.get("vote_choice"),
                     list(poll.get("vote_options") or []),
@@ -167,7 +202,7 @@ class RoomMessageService:
             vote_deadline_at=vote_deadline_at,
             vote_choice=vote_choice,
             target_agent_id=(
-                None if kind in VOTE_BALLOT_EVENT_KINDS else payload.get("target_agent_id")
+                None if kind in VOTE_STATE_EVENT_KINDS else payload.get("target_agent_id")
             ),
             relay_depth=0,
         )

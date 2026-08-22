@@ -20,6 +20,7 @@ PI_READ_ONLY_TOOLS = (
     "create_vote",
     "cast_vote",
     "withdraw_vote",
+    "close_vote",
     "vote_summary",
 )
 
@@ -175,6 +176,13 @@ export default function (pi: ExtensionAPI) {{
     description: "Withdraw the current ballot from a structured room vote.",
     parameters: Type.Object({{ vote_id: Type.String() }}),
     execute: async (_id, params) => result(await room(["vote-withdraw", params.vote_id])),
+  }});
+  pi.registerTool({{
+    name: "close_vote",
+    label: "Close room vote",
+    description: "Close a structured room vote created by this Agent Session.",
+    parameters: Type.Object({{ vote_id: Type.String() }}),
+    execute: async (_id, params) => result(await room(["vote-close", params.vote_id])),
   }});
   pi.registerTool({{
     name: "vote_summary",

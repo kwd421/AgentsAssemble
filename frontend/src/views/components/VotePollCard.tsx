@@ -20,10 +20,12 @@ function remainingTimeLabel(milliseconds: number): string {
 export default function VotePollCard({
   event,
   canVote = true,
+  canClose = false,
   revision = "",
 }: {
   event: LobbyEvent;
   canVote?: boolean;
+  canClose?: boolean;
   revision?: string;
 }) {
   const roomSocket = useRoomSocket();
@@ -56,7 +58,7 @@ export default function VotePollCard({
   const deadlineAt = summary?.vote_deadline_at || event.vote_deadline_at || "";
   const deadlineMs = Date.parse(deadlineAt);
   const hasDeadline = Boolean(deadlineAt) && Number.isFinite(deadlineMs);
-  const ended = hasDeadline && clockMs >= deadlineMs;
+  const ended = Boolean(summary?.closed) || (hasDeadline && clockMs >= deadlineMs);
 
   useEffect(() => {
     setClockMs(Date.now());
@@ -91,6 +93,25 @@ export default function VotePollCard({
     }
   }
 
+  async function closeVote() {
+    if (!canClose || ended || busyOption) return;
+    setBusyOption("__close__");
+    setError("");
+    try {
+      if (!roomSocket?.ready()) throw new Error("방 연결이 준비되지 않았습니다.");
+      await roomSocket.say({
+        message: "",
+        kind: "vote_close",
+        voteId,
+      });
+      refresh();
+    } catch (errorValue) {
+      setError(errorValue instanceof Error ? errorValue.message : "투표 종료 실패");
+    } finally {
+      setBusyOption("");
+    }
+  }
+
   const options = summary?.options || event.vote_options || [];
   const question = summary?.question || event.vote_question || "";
   const total = summary?.total_votes ?? 0;
@@ -112,6 +133,18 @@ export default function VotePollCard({
           >
             {deadlineLabel}
           </span>
+        )}
+        {canClose && !ended && (
+          <button
+            type="button"
+            className="dc-vote-close"
+            onClick={() => void closeVote()}
+            disabled={Boolean(busyOption)}
+            aria-label="투표 종료"
+            title="투표 종료"
+          >
+            종료
+          </button>
         )}
         <button
           type="button"

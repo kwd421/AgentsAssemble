@@ -270,6 +270,15 @@ class RoomConnector:
             },
         )
 
+    def close_vote(self, vote_id: str) -> dict[str, object]:
+        return self._event_command(
+            "message.send",
+            {
+                "kind": "vote_close",
+                "vote_id": vote_id,
+            },
+        )
+
     def vote_summary(self, vote_id: str) -> dict[str, object]:
         return self._command_result(
             "room.vote.summary",
