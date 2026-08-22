@@ -66,6 +66,7 @@ class RoomPortalMcpTests(unittest.TestCase):
                 "decline_to_speak",
                 "create_vote",
                 "cast_vote",
+                "withdraw_vote",
                 "vote_summary",
                 "roll_dice",
                 "choose_random",

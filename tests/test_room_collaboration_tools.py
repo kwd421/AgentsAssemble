@@ -16,6 +16,37 @@ from tests.test_room_agent_bridge import (
 
 
 class RoomPortalCollaborationTests(unittest.TestCase):
+    def test_room_portal_stages_an_explicit_vote_withdrawal(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            portal = RoomPortal(Path(temp_dir) / "portal", participant_id="codex")
+            portal.prepare()
+            portal.ingest_frame(
+                {
+                    "room_settings": {"tool_mode": "chat"},
+                    "stream": "room_events",
+                    "events": [
+                        {
+                            "id": "vote-1",
+                            "seq": 1,
+                            "type": "message_final",
+                            "participant_id": "host-id",
+                            "message_kind": "vote",
+                            "vote_question": "Continue?",
+                            "vote_options": ["Yes", "No"],
+                        }
+                    ],
+                }
+            )
+            portal.begin_observation("withdraw-vote", input_up_to_seq=1)
+
+            receipt = portal.withdraw_vote("vote-1")
+            publication = portal.consume_publication_result("withdraw-vote")
+
+        self.assertEqual(receipt, {"queued": True, "vote_id": "vote-1"})
+        self.assertEqual(publication.message_kind, "vote_withdraw")
+        self.assertEqual(publication.vote_id, "vote-1")
+        self.assertEqual(publication.vote_choice, "")
+
     def test_terminal_helper_discovers_people_and_casts_a_structured_ballot(self):
         with tempfile.TemporaryDirectory() as temp_dir:
             portal = RoomPortal(Path(temp_dir) / "portal", participant_id="gemini")

@@ -25,6 +25,7 @@ from agentsassemble.room.votes import (
     normalize_vote_definition,
     normalize_vote_duration_seconds,
     resolve_vote_choice,
+    VOTE_BALLOT_EVENT_KINDS,
     vote_deadline_has_passed,
     vote_poll,
 )
@@ -59,7 +60,7 @@ class RoomMessageService:
                 str(error),
                 code="invalid_attachment",
             ) from error
-        if kind not in {"vote", "vote_cast"} and not content and not attachments:
+        if kind not in {"vote", *VOTE_BALLOT_EVENT_KINDS} and not content and not attachments:
             raise RoomCommandRejected(
                 "Message content or an attachment is required.",
                 code="empty",
@@ -113,7 +114,7 @@ class RoomMessageService:
             vote_deadline_at = deadline_for_vote(vote_duration_seconds)
             vote_id = None
             vote_choice = None
-        if kind == "vote_cast":
+        if kind in VOTE_BALLOT_EVENT_KINDS:
             vote_id = clean_room_text(payload.get("vote_id"), 128)
             try:
                 poll = vote_poll(unit.event_by_id(vote_id), vote_id)
@@ -134,15 +135,18 @@ class RoomMessageService:
                     "This vote has ended.",
                     code="vote_expired",
                 )
-            vote_choice = resolve_vote_choice(
-                payload.get("vote_choice"),
-                list(poll.get("vote_options") or []),
-            )
-            if not vote_choice:
-                raise RoomCommandRejected(
-                    "vote_choice must match one of the vote options.",
-                    code="invalid_vote_choice",
+            if kind == "vote_cast":
+                vote_choice = resolve_vote_choice(
+                    payload.get("vote_choice"),
+                    list(poll.get("vote_options") or []),
                 )
+                if not vote_choice:
+                    raise RoomCommandRejected(
+                        "vote_choice must match one of the vote options.",
+                        code="invalid_vote_choice",
+                    )
+            else:
+                vote_choice = None
             vote_question = None
             vote_options = None
             content = ""
@@ -163,7 +167,7 @@ class RoomMessageService:
             vote_deadline_at=vote_deadline_at,
             vote_choice=vote_choice,
             target_agent_id=(
-                None if kind == "vote_cast" else payload.get("target_agent_id")
+                None if kind in VOTE_BALLOT_EVENT_KINDS else payload.get("target_agent_id")
             ),
             relay_depth=0,
         )

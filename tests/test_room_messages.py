@@ -155,6 +155,36 @@ class RoomMessageServiceTests(unittest.TestCase):
         self.assertEqual(cast["vote_id"], poll["id"])
         self.assertEqual(cast["vote_choice"], "B")
 
+    def test_vote_withdraw_appends_an_explicit_ballot_removal(self) -> None:
+        poll = self._send(
+            {
+                "request_id": "withdraw-poll",
+                "kind": "vote",
+                "vote_question": "Choose",
+                "vote_options": ["A", "B"],
+            }
+        )["event"]
+        self._send(
+            {
+                "request_id": "withdraw-cast",
+                "kind": "vote_cast",
+                "vote_id": poll["id"],
+                "vote_choice": "A",
+            }
+        )
+
+        withdrawal = self._send(
+            {
+                "request_id": "withdraw-ballot",
+                "kind": "vote_withdraw",
+                "vote_id": poll["id"],
+            }
+        )["event"]
+
+        self.assertEqual(withdrawal["message_kind"], "vote_withdraw")
+        self.assertEqual(withdrawal["vote_id"], poll["id"])
+        self.assertNotIn("vote_choice", withdrawal)
+
     def test_attachment_only_message_is_allowed_and_must_own_the_attachment(self) -> None:
         attachment = store_uploaded_attachment(
             self.root,

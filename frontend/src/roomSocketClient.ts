@@ -40,7 +40,7 @@ export interface RoomSocketHandlers {
 export interface RoomSayRequest {
   message: string;
   attachments?: LobbyAttachmentRef[];
-  kind?: "message" | "ready" | "deploy" | "vote" | "vote_cast";
+  kind?: "message" | "ready" | "deploy" | "vote" | "vote_cast" | "vote_withdraw";
   voteId?: string;
   voteQuestion?: string;
   voteOptions?: string[];

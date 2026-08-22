@@ -337,6 +337,30 @@ elif command == "vote-cast":
     details = {"vote_id": vote_id, "choice": choice}
     audit("cast_vote", turn_id, details)
     print(json.dumps({"queued": True, **details}, ensure_ascii=False))
+elif command == "vote-withdraw":
+    require_tool("withdraw_vote")
+    if len(sys.argv) != 3:
+        fail("usage: agentsassemble-room vote-withdraw <vote-id>")
+    vote_id = clean_text(sys.argv[2], 128)
+    poll = find_poll(vote_id)
+    deadline = str(poll.get("vote_deadline_at") or "")
+    if deadline:
+        try:
+            deadline_at = datetime.fromisoformat(deadline.replace("Z", "+00:00"))
+        except ValueError:
+            fail("vote deadline is invalid")
+        if deadline_at <= datetime.now(timezone.utc):
+            fail("this vote has ended")
+    turn_id = active_turn()
+    stage_publication({
+        "content": "",
+        "target_agent_id": "",
+        "message_kind": "vote_withdraw",
+        "vote_id": vote_id,
+    })
+    details = {"vote_id": vote_id}
+    audit("withdraw_vote", turn_id, details)
+    print(json.dumps({"queued": True, **details}, ensure_ascii=False))
 elif command == "vote-summary":
     require_tool("vote_summary")
     if len(sys.argv) != 3:
@@ -468,7 +492,7 @@ elif command == "rim-speak":
     atomic_json(PLUGIN_SPEECH, {"text": text})
     print(json.dumps({"queued": True, "colonist_id": colonist_id, "text": text}, ensure_ascii=False))
 elif command == "help":
-    print("agentsassemble-room read | search <query> [channel|all] [cursor] | search-context <channel> <event-id> | participants | speak [text] | speak-to <agent-id> [text] | decline <nothing_useful_to_add|not_addressed|duplicate> | vote-create <question> <json-options> [duration] | vote-cast <vote-id> <choice> | vote-summary <vote-id> | media <id> | roll <NdS+M> | choose <json-options> | rim-observe | rim-inspect <type> | rim-act <action> <json-args> | rim-speak <text>")
+    print("agentsassemble-room read | search <query> [channel|all] [cursor] | search-context <channel> <event-id> | participants | speak [text] | speak-to <agent-id> [text] | decline <nothing_useful_to_add|not_addressed|duplicate> | vote-create <question> <json-options> [duration] | vote-cast <vote-id> <choice> | vote-withdraw <vote-id> | vote-summary <vote-id> | media <id> | roll <NdS+M> | choose <json-options> | rim-observe | rim-inspect <type> | rim-act <action> <json-args> | rim-speak <text>")
 else:
     fail("unknown command")
 """

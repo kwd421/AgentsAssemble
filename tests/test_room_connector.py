@@ -233,6 +233,12 @@ class RoomConnectorTests(unittest.TestCase):
             self.assertEqual(summary["own_choice"], "north")
             self.assertNotIn("voters", summary)
             self.assertNotIn("voter_ids", summary)
+            withdrawn = connector.withdraw_vote(vote_id)
+            self.assertEqual(withdrawn["event"]["message_kind"], "vote_withdraw")
+            summary = connector.vote_summary(vote_id)
+            self.assertEqual(summary["tallies"], {"north": 0, "south": 0})
+            self.assertEqual(summary["own_choice"], "")
+            self.assertEqual(summary["total_votes"], 0)
 
             store.update_room_settings("room-a", {"tool_mode": "tabletop"})
             rolled = connector.roll_dice("1d6", reason="route check")
@@ -277,10 +283,11 @@ class RoomConnectorTests(unittest.TestCase):
                 [
                     "before join",
                     "after join",
-                    "connector reply",
-                    "",
-                    "",
-                    roll_event["content"],
+                "connector reply",
+                "",
+                "",
+                "",
+                roll_event["content"],
                     choice_event["content"],
                 ],
             )

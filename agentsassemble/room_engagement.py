@@ -195,7 +195,7 @@ def should_reply_to_event(
     display_name: str,
 ) -> bool:
     mode = str(engagement_mode or "mentioned").strip().lower().replace("-", "_")
-    if str(event.get("kind") or "") == "vote_cast":
+    if str(event.get("kind") or "") in {"vote_cast", "vote_withdraw"}:
         return False  # ballots are markers, not conversation — never chat-reply to them
     if mode == "always":
         return True

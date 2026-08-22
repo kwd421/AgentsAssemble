@@ -143,6 +143,27 @@ class VoteSummaryTests(unittest.TestCase):
         self.assertNotIn("voters", summary)
         self.assertNotIn("voter_ids", summary)
 
+    def test_latest_withdrawal_removes_only_that_participants_ballot(self) -> None:
+        poll, casts, vote_id = self._poll_and_casts()
+        withdrawal = _canonical_event(
+            event_id="withdraw-1",
+            seq=5,
+            kind="vote_withdraw",
+            participant_id="u-cheolsu",
+            display_name="철수",
+            vote_id=vote_id,
+        )
+
+        summary = vote_summary(
+            [poll, *casts, withdrawal],
+            vote_id,
+            viewer_participant_id="u-cheolsu",
+        )
+
+        self.assertEqual(summary["tallies"], {"치킨": 0, "피자": 2})
+        self.assertEqual(summary["total_votes"], 2)
+        self.assertEqual(summary["own_choice"], "")
+
     def test_same_display_names_remain_distinct_voters(self) -> None:
         poll, _casts, vote_id = self._poll_and_casts()
         first = _canonical_event(

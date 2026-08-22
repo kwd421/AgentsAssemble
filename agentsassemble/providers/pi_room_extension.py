@@ -19,6 +19,7 @@ PI_READ_ONLY_TOOLS = (
     "decline_to_speak",
     "create_vote",
     "cast_vote",
+    "withdraw_vote",
     "vote_summary",
 )
 
@@ -167,6 +168,13 @@ export default function (pi: ExtensionAPI) {{
     description: "Cast a vote in a structured room vote.",
     parameters: Type.Object({{ vote_id: Type.String(), choice: Type.String() }}),
     execute: async (_id, params) => result(await room(["vote-cast", params.vote_id, params.choice])),
+  }});
+  pi.registerTool({{
+    name: "withdraw_vote",
+    label: "Withdraw room vote",
+    description: "Withdraw the current ballot from a structured room vote.",
+    parameters: Type.Object({{ vote_id: Type.String() }}),
+    execute: async (_id, params) => result(await room(["vote-withdraw", params.vote_id])),
   }});
   pi.registerTool({{
     name: "vote_summary",

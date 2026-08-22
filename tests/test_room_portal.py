@@ -11,6 +11,52 @@ from agentsassemble.providers.room_portal import RoomPortal, helper_interpreter
 
 
 class RoomPortalVoteProjectionTests(unittest.TestCase):
+    def test_provider_projection_removes_a_withdrawn_ballot(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            portal = RoomPortal(Path(temp_dir) / "portal", participant_id="codex")
+            portal.prepare()
+            portal.ingest_frame(
+                {
+                    "stream": "room_events",
+                    "events": [
+                        {
+                            "id": "vote-1",
+                            "seq": 1,
+                            "type": "message_final",
+                            "participant_id": "host",
+                            "message_kind": "vote",
+                            "vote_question": "Which route?",
+                            "vote_options": ["North", "South"],
+                        },
+                        {
+                            "id": "ballot-1",
+                            "seq": 2,
+                            "type": "message_final",
+                            "participant_id": "codex",
+                            "message_kind": "vote_cast",
+                            "vote_id": "vote-1",
+                            "vote_choice": "North",
+                        },
+                        {
+                            "id": "withdraw-1",
+                            "seq": 3,
+                            "type": "message_final",
+                            "participant_id": "codex",
+                            "message_kind": "vote_withdraw",
+                            "vote_id": "vote-1",
+                        },
+                    ],
+                }
+            )
+
+            summary = portal.vote_summary("vote-1")
+            view = portal.read_discussion()
+
+        self.assertEqual(summary["tallies"], {"North": 0, "South": 0})
+        self.assertEqual(summary["own_choice"], "")
+        self.assertEqual(summary["total_votes"], 0)
+        self.assertIn("Anonymous result: North 0, South 0", view)
+
     def test_provider_files_and_summary_expose_only_anonymous_results(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:
             portal = RoomPortal(Path(temp_dir) / "portal", participant_id="codex")

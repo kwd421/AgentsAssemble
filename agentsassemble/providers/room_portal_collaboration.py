@@ -39,7 +39,11 @@ class RoomPublication:
 
     @property
     def has_message(self) -> bool:
-        return bool(self.content) or self.message_kind in {"vote", "vote_cast"}
+        return bool(self.content) or self.message_kind in {
+            "vote",
+            "vote_cast",
+            "vote_withdraw",
+        }
 
     @classmethod
     def from_payload(cls, payload: dict[str, object]) -> RoomPublication:
@@ -231,6 +235,38 @@ class RoomPortalCollaboration:
         )
         details = {"vote_id": clean_vote_id, "choice": matched}
         self._record_activity("cast_vote", turn_id=turn_id, details=details)
+        return {"queued": True, **details}
+
+    def withdraw_vote(self, vote_id: object) -> dict[str, object]:
+        self._require_tool("withdraw_vote")
+        clean_vote_id = clean_room_text(vote_id, limit=128)
+        with self._lock:
+            poll = next(
+                (
+                    item
+                    for item in self._messages()
+                    if clean_room_text(item.get("id"), limit=128) == clean_vote_id
+                ),
+                {},
+            )
+        try:
+            canonical_poll = vote_poll(poll, clean_vote_id)
+            if vote_deadline_has_passed(canonical_poll.get("vote_deadline_at")):
+                raise ValueError("This vote has ended.")
+        except ValueError as error:
+            raise RoomPortalCollaborationError(str(error)) from error
+        turn_id = self.active_turn_id()
+        self.stage_publication(
+            turn_id,
+            {
+                "content": "",
+                "target_agent_id": "",
+                "message_kind": "vote_withdraw",
+                "vote_id": clean_vote_id,
+            },
+        )
+        details = {"vote_id": clean_vote_id}
+        self._record_activity("withdraw_vote", turn_id=turn_id, details=details)
         return {"queued": True, **details}
 
     def vote_summary(self, vote_id: object) -> dict[str, object]:

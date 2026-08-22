@@ -591,7 +591,7 @@ def room_usage_guide(
             "how_to": [
                 "Use room_read for current room context.",
                 "Use room_say only for a substantive public contribution.",
-                "Use room_vote_create, room_vote_cast, and room_vote_summary for official room votes.",
+                "Use room_vote_create, room_vote_cast, room_vote_withdraw, and room_vote_summary for official room votes.",
                 "Use room_roll_dice or room_choose_random for official server-side randomness.",
                 "Use room_wait_next to wait without polling or a model-visible timeout.",
                 "Use room_leave when this current app or CLI session is finished.",
@@ -605,6 +605,7 @@ def room_usage_guide(
                     "room_say",
                     "room_vote_create",
                     "room_vote_cast",
+                    "room_vote_withdraw",
                     "room_vote_summary",
                     "room_roll_dice",
                     "room_choose_random",

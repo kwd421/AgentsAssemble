@@ -581,7 +581,7 @@ export default function LobbyView({
               );
             }
             const event = row.event;
-            if (event.kind === "vote_cast") return null;
+            if (event.kind === "vote_cast" || event.kind === "vote_withdraw") return null;
             if (
               event.kind === "system" ||
               event.kind === "flow_event"

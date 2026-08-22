@@ -161,6 +161,19 @@ ROOM_TOOL_SCHEMAS: tuple[dict[str, object], ...] = (
     {
         "type": "function",
         "function": {
+            "name": "withdraw_vote",
+            "description": "Withdraw this agent's current ballot from an existing structured vote.",
+            "parameters": {
+                "type": "object",
+                "properties": {"vote_id": {"type": "string"}},
+                "required": ["vote_id"],
+                "additionalProperties": False,
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
             "name": "vote_summary",
             "description": (
                 "Summarize a vote from this session's current bounded room view. "
@@ -355,6 +368,8 @@ def execute_room_tool(
             arguments.get("vote_id"),
             arguments.get("choice"),
         )
+    elif name == "withdraw_vote":
+        result = portal.withdraw_vote(arguments.get("vote_id"))
     elif name == "vote_summary":
         result = portal.vote_summary(arguments.get("vote_id"))
     elif name == "roll_dice":

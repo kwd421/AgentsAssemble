@@ -1589,7 +1589,7 @@ class RoomRealtimeController:
             return
         if (
             event.get("message_source") == "room_tool_result"
-            or event.get("message_kind") == "vote_cast"
+            or event.get("message_kind") in {"vote_cast", "vote_withdraw"}
         ):
             return
         with self._lock:

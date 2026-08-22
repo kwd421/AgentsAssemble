@@ -100,7 +100,7 @@ export function useLobbyHistory({
     const revisions: Record<string, string> = {};
     events.forEach((event) => {
       if (
-        event.kind !== "vote_cast" ||
+        !["vote_cast", "vote_withdraw"].includes(event.kind) ||
         !event.vote_id ||
         (event.flow_meeting_id && event.flow_meeting_id !== activeRoom.meetingId)
       ) {

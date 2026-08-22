@@ -79,9 +79,9 @@ export default function VotePollCard({
       if (!roomSocket?.ready()) throw new Error("방 연결이 준비되지 않았습니다.");
       await roomSocket.say({
         message: "",
-        kind: "vote_cast",
+        kind: option === myChoice ? "vote_withdraw" : "vote_cast",
         voteId,
-        voteChoice: option,
+        ...(option === myChoice ? {} : { voteChoice: option }),
       });
       refresh();
     } catch (errorValue) {
@@ -155,7 +155,7 @@ export default function VotePollCard({
           {ended
             ? "투표가 마감되었습니다"
             : canVote
-              ? "선택지를 누르면 투표 (다시 누르면 변경)"
+              ? "선택지를 누르면 투표 · 내 선택을 다시 누르면 철회"
               : "읽기 전용 세션은 투표할 수 없어요"}
         </span>
       </footer>

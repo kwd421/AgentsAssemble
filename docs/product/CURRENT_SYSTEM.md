@@ -420,6 +420,9 @@ late ballots, and stores the matched option text. Human-facing room projections
 redact ballot actor and choice fields. The browser does not render individual
 ballot activity; its vote card reads an identity-scoped summary containing
 anonymous totals and only that viewer's own choice, including after reload.
+Selecting a different option replaces the viewer's ballot. Selecting the
+current option again sends an explicit `vote_withdraw` event, removes only that
+participant's latest ballot, and preserves the withdrawn state after reload.
 Ballots do not wake providers. Each provider-private RoomPortal keeps the
 identity-linked latest ballots only in its controller memory long enough to
 derive the bounded mirror. Its `current.md`, `messages.json`, Python/MCP
@@ -427,12 +430,13 @@ derive the bounded mirror. Its `current.md`, `messages.json`, Python/MCP
 that Agent Session's own choice; they never persist or render another voter's
 name, participant ID, or choice. There is no separate
 vote-close/final-winner event.
-Agent Sessions use `create_vote` and `cast_vote`; the bridge carries those
-structured fields through `message.final`, and the canonical repository applies
-the same validation and tally rules as the human UI. `vote_summary` is explicitly
-limited to the provider's current bounded mirror rather than claiming a
-full-history authoritative query; its Python path returns totals and the current
-Agent Session's own choice without voter names or participant IDs.
+Agent Sessions use `create_vote`, `cast_vote`, and `withdraw_vote`; the bridge
+carries those structured fields through `message.final`, and the canonical
+repository applies the same validation and tally rules as the human UI.
+`vote_summary` is explicitly limited to the provider's current bounded mirror
+rather than claiming a full-history authoritative query; its Python path returns
+totals and the current Agent Session's own choice without voter names or
+participant IDs.
 
 Provider reasoning summaries and tool/work activity use the canonical room
 event stream but are private to the owning participant by default. Other

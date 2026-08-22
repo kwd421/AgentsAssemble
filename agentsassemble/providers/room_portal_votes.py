@@ -19,14 +19,20 @@ class RoomPortalVoteProjection:
             event.get("participant_id") or event.get("actor_id"),
             limit=128,
         )
+        kind = clean_room_text(event.get("message_kind"), limit=64)
         choice = clean_room_text(event.get("vote_choice"), limit=200)
-        if not vote_id or not participant_id or not choice:
+        if (
+            not vote_id
+            or not participant_id
+            or kind not in {"vote_cast", "vote_withdraw"}
+            or (kind == "vote_cast" and not choice)
+        ):
             return
         seq = _nonnegative_int(event.get("seq"))
         ballots = self._ballots.setdefault(vote_id, {})
         current = ballots.get(participant_id)
         if current is None or seq >= current[0]:
-            ballots[participant_id] = (seq, choice)
+            ballots[participant_id] = (seq, choice if kind == "vote_cast" else "")
 
     def refresh(self, messages: list[dict[str, object]]) -> None:
         for message in messages:

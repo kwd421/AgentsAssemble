@@ -215,7 +215,7 @@ _VOTE_BALLOT_EVENTS_QUERY = """SELECT payload_json FROM room_events
                                WHERE room_id = %s
                                  AND visibility = %s
                                  AND event_type = 'message_final'
-                                 AND payload_json->>'message_kind' = 'vote_cast'
+                                 AND payload_json->>'message_kind' IN ('vote_cast', 'vote_withdraw')
                                  AND payload_json->>'vote_id' = %s
                                  AND seq > %s
                                ORDER BY seq"""

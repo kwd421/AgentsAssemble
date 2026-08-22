@@ -76,6 +76,11 @@ def serve_room_portal_mcp(root: str | Path) -> None:
         return portal.cast_vote(vote_id, choice)
 
     @server.tool()
+    def withdraw_vote(vote_id: str) -> dict[str, object]:
+        """Withdraw this agent's current ballot from an existing vote."""
+        return portal.withdraw_vote(vote_id)
+
+    @server.tool()
     def vote_summary(vote_id: str) -> dict[str, object]:
         """Summarize a vote from this session's bounded current room view."""
         return portal.vote_summary(vote_id)

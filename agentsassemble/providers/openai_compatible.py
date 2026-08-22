@@ -694,7 +694,7 @@ _WORK_TOOL_NAMES = frozenset(
 )
 
 _TERMINAL_ROOM_TOOLS = frozenset(
-    {"publish_message", "decline_to_speak", "create_vote", "cast_vote"}
+    {"publish_message", "decline_to_speak", "create_vote", "cast_vote", "withdraw_vote"}
 )
 
 
@@ -720,6 +720,7 @@ def _tool_title(tool_name: object) -> str:
         "choose_random": "무작위 선택",
         "create_vote": "투표 만들기",
         "cast_vote": "투표하기",
+        "withdraw_vote": "투표 철회",
         "vote_summary": "투표 결과 확인",
         "list_workspace_files": "작업 폴더 살펴보기",
         "read_workspace_file": "파일 읽기",

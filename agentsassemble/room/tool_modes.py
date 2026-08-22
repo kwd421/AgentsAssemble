@@ -17,6 +17,7 @@ CORE_ROOM_TOOLS = frozenset(
         "decline_to_speak",
         "create_vote",
         "cast_vote",
+        "withdraw_vote",
         "vote_summary",
     }
 )

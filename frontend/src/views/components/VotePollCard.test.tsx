@@ -174,4 +174,45 @@ describe("VotePollCard", () => {
     expect(south.title).toBe("1표");
     expect(document.body.textContent).not.toContain("민지");
   });
+
+  it("withdraws the authenticated viewer's ballot when they select it again", async () => {
+    const command = vi.fn().mockResolvedValue({
+      op: "ack",
+      request_id: "summary-own-choice",
+      accepted: true,
+      action: "room.vote.summary",
+      result: {
+        vote_id: "vote-1",
+        question: "어느 길로 갈까?",
+        options: ["북쪽", "남쪽"],
+        tallies: { 북쪽: 0, 남쪽: 1 },
+        own_choice: "남쪽",
+        total_votes: 1,
+      },
+    });
+    const say = vi.fn().mockResolvedValue({ events: [] });
+    const socket: RoomSocketHandle = {
+      close: vi.fn(),
+      ready: () => true,
+      command,
+      say,
+      historyBefore: vi.fn(),
+    };
+    render(
+      <RoomSocketProvider socket={socket}>
+        <VotePollCard event={pollEvent()} />
+      </RoomSocketProvider>
+    );
+
+    const selected = (await screen.findByText(/남쪽/)).closest("button") as HTMLButtonElement;
+    fireEvent.click(selected);
+
+    await waitFor(() =>
+      expect(say).toHaveBeenCalledWith({
+        message: "",
+        kind: "vote_withdraw",
+        voteId: "vote-1",
+      })
+    );
+  });
 });

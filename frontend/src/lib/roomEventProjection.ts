@@ -135,7 +135,10 @@ export function projectRoomEventsToTimeline(
       const existingIndex = turnIndex.get(key);
       const existing = existingIndex === undefined ? null : timeline[existingIndex];
       const messageKind = String(event.message_kind || existing?.kind || "message");
-      if (event.type === "message_final" && messageKind === "vote_cast") return;
+      if (
+        event.type === "message_final" &&
+        (messageKind === "vote_cast" || messageKind === "vote_withdraw")
+      ) return;
       const message = event.type === "message_final"
         ? String(event.content || "")
         : `${existing?.message || ""}${event.content || ""}`;
@@ -229,7 +232,10 @@ export function projectRoomEventsToTimeline(
   });
 
   return timeline.filter(
-    (item) => item.kind !== "vote_cast" || !item.vote_id || !deletedVoteIds.has(item.vote_id)
+    (item) =>
+      !["vote_cast", "vote_withdraw"].includes(item.kind) ||
+      !item.vote_id ||
+      !deletedVoteIds.has(item.vote_id)
   );
 }
 

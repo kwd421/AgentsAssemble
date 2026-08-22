@@ -1480,7 +1480,7 @@ class RoomTurnCoordinator:
             **structured_fields,
             target_agent_id=clean_lobby_text(
                 None
-                if prepared.structured.message_kind == "vote_cast"
+                if prepared.structured.message_kind in {"vote_cast", "vote_withdraw"}
                 else prepared.target_agent_id,
                 limit=128,
             ),

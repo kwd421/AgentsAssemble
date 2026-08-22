@@ -1,9 +1,9 @@
 """Canonical room vote validation and tallying.
 
 A poll is one room message (message_kind "vote"; its event id is the vote_id)
-and any number of ballots (message_kind "vote_cast" referencing that vote_id).
-The log is the source of truth — no separate vote store — and the latest cast
-per voter wins, so re-voting just changes your choice.
+and any number of ballot changes referencing that vote_id. ``vote_cast`` sets
+or replaces a choice and ``vote_withdraw`` removes it. The log is the source of
+truth — no separate vote store — and the latest ballot change per voter wins.
 """
 from __future__ import annotations
 
@@ -20,6 +20,7 @@ MAX_VOTE_DURATION_SECONDS = 86400
 VOTE_QUESTION_LIMIT = 300
 VOTE_OPTION_LIMIT = 100
 MAX_VOTE_OPTIONS = 10
+VOTE_BALLOT_EVENT_KINDS = frozenset({"vote_cast", "vote_withdraw"})
 
 
 def normalize_vote_definition(
@@ -174,15 +175,18 @@ def vote_summary(
         if kind == "vote" and poll is None:
             poll = event
             continue
-        if kind != "vote_cast" or poll is None:
+        if kind not in VOTE_BALLOT_EVENT_KINDS or poll is None:
+            continue
+        participant_id = _participant_id(event)
+        if not participant_id:
+            continue
+        if kind == "vote_withdraw":
+            latest_choice_by_voter.pop(participant_id, None)
             continue
         choice = str(event.get("vote_choice") or "")
         options = poll.get("vote_options") if isinstance(poll.get("vote_options"), list) else []
         matched = resolve_vote_choice(choice, options)
         if not matched:
-            continue
-        participant_id = _participant_id(event)
-        if not participant_id:
             continue
         latest_choice_by_voter[participant_id] = matched
     if poll is None:
