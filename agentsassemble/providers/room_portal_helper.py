@@ -344,29 +344,31 @@ elif command == "vote-summary":
     vote_id = clean_text(sys.argv[2], 128)
     poll = find_poll(vote_id)
     options = [str(value) for value in poll.get("vote_options") or []]
-    latest = {}
-    for item in load_messages():
-        if not isinstance(item, dict) or item.get("message_kind") != "vote_cast":
-            continue
-        if str(item.get("vote_id") or "") != vote_id:
-            continue
-        participant_id = str(item.get("participant_id") or "")
-        if not participant_id:
-            continue
-        choice = resolve_choice(item.get("vote_choice"), options)
-        latest[participant_id] = (choice, str(item.get("display_name") or participant_id))
-    tallies = {option: 0 for option in options}
-    voters = {option: [] for option in options}
-    for choice, display_name in latest.values():
-        tallies[choice] += 1
-        voters[choice].append(display_name)
+    raw_tallies = poll.get("vote_tallies")
+    if not isinstance(raw_tallies, dict):
+        raw_tallies = {}
+    tallies = {}
+    for option in options:
+        value = raw_tallies.get(option, 0)
+        if isinstance(value, bool):
+            value = 0
+        try:
+            tallies[option] = max(0, int(value))
+        except (TypeError, ValueError):
+            tallies[option] = 0
+    projected_own_choice = poll.get("vote_own_choice")
+    own_choice = (
+        resolve_choice(projected_own_choice, options)
+        if projected_own_choice
+        else ""
+    )
     result = {
         "vote_id": vote_id,
         "question": str(poll.get("vote_question") or ""),
         "options": options,
         "tallies": tallies,
-        "voters": voters,
-        "total_votes": len(latest),
+        "own_choice": own_choice,
+        "total_votes": sum(tallies.values()),
         "scope": "bounded_current_view",
     }
     audit("vote_summary", details={"vote_id": vote_id})

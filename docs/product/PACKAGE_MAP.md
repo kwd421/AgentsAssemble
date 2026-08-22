@@ -4,17 +4,17 @@ Status: generated architecture inventory
 
 Generator: `python3 scripts/generate_package_map.py`
 
-Source fingerprint: `018f8d96804888ba`
+Source fingerprint: `66d4aeda6bb822c0`
 
 This file describes current evidence and proposed ownership. It does not by
 itself authorize a module move or a product behavior change.
 
 ## Summary
 
-- Python modules: 582
+- Python modules: 583
 - Top-level package modules: 147
-- Domains: admission=33, application=82, diagnostics=17, features=23, identity=12, persistence=86, providers=174, room=106, web=49
-- Classifications: compatibility=147, current=418, optional=17
+- Domains: admission=33, application=82, diagnostics=17, features=23, identity=12, persistence=86, providers=175, room=106, web=49
+- Classifications: compatibility=147, current=419, optional=17
 
 ## Classification Rules
 
@@ -406,11 +406,12 @@ itself authorize a module move or a product behavior change.
 | `agentsassemble.providers.remote_openai` | `agentsassemble/providers/remote_openai.py` | 776 | providers | current | `agentsassemble.diagnostics.sensitive_text`, `agentsassemble.providers.api_context`, `agentsassemble.providers.openai_compatible`, `agentsassemble.providers.provider_errors`, `agentsassemble.providers.remote_http`, `agentsassemble.providers.room_portal`, `agentsassemble.room.text` | 8 | - | test-import:5 | `tests/test_api_session_recovery.py`, `tests/test_cerebras_model_catalog.py`, `tests/test_openai_compatible_room_actions.py`, `+2` | `providers/` | in-target-package |
 | `agentsassemble.providers.room_connector_mcp` | `agentsassemble/providers/room_connector_mcp.py` | 428 | providers | current | `agentsassemble.application.room_connector` | 1 | - | test-import:1 | `tests/test_room_connector.py` | `providers/` | in-target-package |
 | `agentsassemble.providers.room_observation_orientation` | `agentsassemble/providers/room_observation_orientation.py` | 242 | providers | current | `agentsassemble.providers.runtime_contracts`, `agentsassemble.room.text`, `agentsassemble.room.tool_modes` | 2 | - | - | - | `providers/` | in-target-package |
-| `agentsassemble.providers.room_portal` | `agentsassemble/providers/room_portal.py` | 1171 | providers | current | `agentsassemble.providers.activity_plugin_portal`, `agentsassemble.providers.room_observation_orientation`, `agentsassemble.providers.room_portal_collaboration`, `agentsassemble.providers.room_portal_helper`, `agentsassemble.providers.room_portal_search`, `agentsassemble.providers.room_random`, `agentsassemble.room.system_results`, `agentsassemble.room.text`, +1 | 20 | `call:compile@52`, `call:compile@53`, `call:room_session_orientation@88` | test-import:14 | `tests/test_cerebras_room_observation.py`, `tests/test_deepseek_room_observation.py`, `tests/test_grok_acp_runtime.py`, `+11` | `providers/` | in-target-package |
-| `agentsassemble.providers.room_portal_collaboration` | `agentsassemble/providers/room_portal_collaboration.py` | 333 | providers | current | `agentsassemble.providers.runtime_contracts`, `agentsassemble.room.text`, `agentsassemble.room.votes` | 1 | - | - | - | `providers/` | in-target-package |
-| `agentsassemble.providers.room_portal_helper` | `agentsassemble/providers/room_portal_helper.py` | 480 | providers | current | - | 1 | - | - | - | `providers/` | in-target-package |
+| `agentsassemble.providers.room_portal` | `agentsassemble/providers/room_portal.py` | 1169 | providers | current | `agentsassemble.providers.activity_plugin_portal`, `agentsassemble.providers.room_observation_orientation`, `agentsassemble.providers.room_portal_collaboration`, `agentsassemble.providers.room_portal_helper`, `agentsassemble.providers.room_portal_search`, `agentsassemble.providers.room_portal_votes`, `agentsassemble.providers.room_random`, `agentsassemble.room.system_results`, +2 | 20 | `call:compile@56`, `call:compile@57`, `call:room_session_orientation@92` | test-import:14 | `tests/test_cerebras_room_observation.py`, `tests/test_deepseek_room_observation.py`, `tests/test_grok_acp_runtime.py`, `+11` | `providers/` | in-target-package |
+| `agentsassemble.providers.room_portal_collaboration` | `agentsassemble/providers/room_portal_collaboration.py` | 376 | providers | current | `agentsassemble.providers.runtime_contracts`, `agentsassemble.room.text`, `agentsassemble.room.votes` | 1 | - | - | - | `providers/` | in-target-package |
+| `agentsassemble.providers.room_portal_helper` | `agentsassemble/providers/room_portal_helper.py` | 482 | providers | current | - | 1 | - | - | - | `providers/` | in-target-package |
 | `agentsassemble.providers.room_portal_mcp` | `agentsassemble/providers/room_portal_mcp.py` | 164 | providers | current | `agentsassemble.providers.room_portal`, `agentsassemble.providers.room_tool_names`, `agentsassemble.providers.runtime_contracts` | 4 | - | test-import:2 | `tests/test_room_portal_mcp.py`, `tests/test_room_portal_search.py` | `providers/` | in-target-package |
 | `agentsassemble.providers.room_portal_search` | `agentsassemble/providers/room_portal_search.py` | 394 | providers | current | - | 3 | `call:compile@18` | test-import:1 | `tests/test_room_portal_search.py` | `providers/` | in-target-package |
+| `agentsassemble.providers.room_portal_votes` | `agentsassemble/providers/room_portal_votes.py` | 121 | providers | current | `agentsassemble.room.text`, `agentsassemble.room.votes` | 1 | - | - | - | `providers/` | in-target-package |
 | `agentsassemble.providers.room_random` | `agentsassemble/providers/room_random.py` | 16 | providers | current | `agentsassemble.room.random` | 1 | - | test-import:1 | `tests/test_room_random.py` | `providers/` | in-target-package |
 | `agentsassemble.providers.room_tool_names` | `agentsassemble/providers/room_tool_names.py` | 43 | providers | current | - | 3 | `call:compile@8` | - | - | `providers/` | in-target-package |
 | `agentsassemble.providers.runtime_config` | `agentsassemble/providers/runtime_config.py` | 335 | providers | current | `agentsassemble.providers.remote_openai`, `agentsassemble.room.text` | 8 | - | test-import:3 | `tests/test_provider_runtime_controls.py`, `tests/test_room_agent_bridge.py`, `tests/test_room_native_cli_e2e.py` | `providers/` | in-target-package |
@@ -501,7 +502,7 @@ itself authorize a module move or a product behavior change.
 | `agentsassemble.room.startup_reconciliation` | `agentsassemble/room/startup_reconciliation.py` | 156 | room | current | `agentsassemble.room.errors`, `agentsassemble.room.projection`, `agentsassemble.room.provider_requests`, `agentsassemble.room.repository`, `agentsassemble.room.text`, `agentsassemble.room.turn_coordinator` | 1 | `call:frozenset@17`, `call:getLogger@20` | test-import:1 | `tests/test_room_startup_reconciliation.py` | `room/` | in-target-package |
 | `agentsassemble.room.structured_messages` | `agentsassemble/room/structured_messages.py` | 149 | room | current | `agentsassemble.room.text`, `agentsassemble.room.votes` | 2 | - | - | - | `room/` | in-target-package |
 | `agentsassemble.room.system_results` | `agentsassemble/room/system_results.py` | 238 | room | current | `agentsassemble.room.random_contract`, `agentsassemble.room.text` | 3 | `call:compile@16` | test-import:2 | `tests/test_room_random.py`, `tests/test_room_system_results.py` | `room/` | in-target-package |
-| `agentsassemble.room.text` | `agentsassemble/room/text.py` | 20 | room | current | - | 158 | - | test-import:1 | `tests/test_room_text.py` | `room/` | in-target-package |
+| `agentsassemble.room.text` | `agentsassemble/room/text.py` | 20 | room | current | - | 159 | - | test-import:1 | `tests/test_room_text.py` | `room/` | in-target-package |
 | `agentsassemble.room.tool_authorization` | `agentsassemble/room/tool_authorization.py` | 21 | room | current | `agentsassemble.room.errors`, `agentsassemble.room.tool_modes` | 2 | - | - | - | `room/` | in-target-package |
 | `agentsassemble.room.tool_modes` | `agentsassemble/room/tool_modes.py` | 52 | room | current | - | 5 | `call:frozenset@8`, `call:frozenset@10` | - | - | `room/` | in-target-package |
 | `agentsassemble.room.turn_assignment_serialization` | `agentsassemble/room/turn_assignment_serialization.py` | 17 | room | current | - | 1 | - | - | - | `room/` | in-target-package |
@@ -511,7 +512,7 @@ itself authorize a module move or a product behavior change.
 | `agentsassemble.room.user_preferences` | `agentsassemble/room/user_preferences.py` | 127 | room | current | `agentsassemble.room.channels` | 7 | `call:frozenset@9`, `call:frozenset@10`, `call:frozenset@11` | test-import:1 | `tests/test_room_user_preferences.py` | `room/` | in-target-package |
 | `agentsassemble.room.visibility` | `agentsassemble/room/visibility.py` | 10 | room | current | - | 5 | - | - | - | `room/` | in-target-package |
 | `agentsassemble.room.voice_presence` | `agentsassemble/room/voice_presence.py` | 107 | room | current | - | 3 | `call:Lock@18` | test-import:1 | `tests/test_voice_presence.py` | `room/` | in-target-package |
-| `agentsassemble.room.votes` | `agentsassemble/room/votes.py` | 261 | room | current | `agentsassemble.room.text` | 5 | - | test-import:1 | `tests/test_room_votes.py` | `room/` | in-target-package |
+| `agentsassemble.room.votes` | `agentsassemble/room/votes.py` | 261 | room | current | `agentsassemble.room.text` | 6 | - | test-import:1 | `tests/test_room_votes.py` | `room/` | in-target-package |
 | `agentsassemble.room.write_budget` | `agentsassemble/room/write_budget.py` | 229 | room | current | `agentsassemble.room.errors`, `agentsassemble.room.repository`, `agentsassemble.room.text` | 1 | `call:frozenset@45`, `call:frozenset@67` | test-import:3 | `tests/room_realtime_security_contract.py`, `tests/test_room_command_admission.py`, `tests/test_room_write_budget.py` | `room/` | in-target-package |
 | `agentsassemble.room_admission` | `agentsassemble/room_admission.py` | 10 | admission | compatibility | `agentsassemble.admission.preflight` | 0 | - | test-import:1 | `tests/test_room_admission.py` | `admission/` | compatibility-shim |
 | `agentsassemble.room_admission_coordinator` | `agentsassemble/room_admission_coordinator.py` | 7 | admission | compatibility | `agentsassemble.admission.coordinator` | 0 | - | - | - | `admission/` | compatibility-shim |

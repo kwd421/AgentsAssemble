@@ -416,14 +416,17 @@ the public event metadata contains only the bounded result fields.
 Entering `/vote` opens the human vote
 composer for a question, two to ten named options, and a bounded deadline. The
 server normalizes the poll, computes its deadline, rejects unknown choices and
-late ballots, and stores the matched option text. Vote questions, options,
-deadline, and recorded ballots are rendered in every provider's private room
-mirror. Human-facing room projections redact ballot actor and choice fields.
-The browser does not render individual ballot activity; its vote card reads an
-identity-scoped summary containing anonymous totals and only that viewer's own
-choice, including after reload. Ballots do not wake providers. Provider-private
-room mirrors and the retained terminal helper still need the same aggregate-only
-projection. There is no separate vote-close/final-winner event.
+late ballots, and stores the matched option text. Human-facing room projections
+redact ballot actor and choice fields. The browser does not render individual
+ballot activity; its vote card reads an identity-scoped summary containing
+anonymous totals and only that viewer's own choice, including after reload.
+Ballots do not wake providers. Each provider-private RoomPortal keeps the
+identity-linked latest ballots only in its controller memory long enough to
+derive the bounded mirror. Its `current.md`, `messages.json`, Python/MCP
+`vote_summary`, and retained terminal helper expose only anonymous totals and
+that Agent Session's own choice; they never persist or render another voter's
+name, participant ID, or choice. There is no separate
+vote-close/final-winner event.
 Agent Sessions use `create_vote` and `cast_vote`; the bridge carries those
 structured fields through `message.final`, and the canonical repository applies
 the same validation and tally rules as the human UI. `vote_summary` is explicitly

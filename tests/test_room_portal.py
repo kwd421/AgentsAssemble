@@ -10,6 +10,135 @@ from pathlib import Path
 from agentsassemble.providers.room_portal import RoomPortal, helper_interpreter
 
 
+class RoomPortalVoteProjectionTests(unittest.TestCase):
+    def test_provider_files_and_summary_expose_only_anonymous_results(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            portal = RoomPortal(Path(temp_dir) / "portal", participant_id="codex")
+            portal.prepare()
+            portal.ingest_frame(
+                {
+                    "stream": "room_events",
+                    "events": [
+                        {
+                            "id": "vote-1",
+                            "seq": 1,
+                            "type": "message_final",
+                            "participant_id": "host",
+                            "display_name": "Host",
+                            "message_kind": "vote",
+                            "vote_id": "vote-1",
+                            "vote_question": "Which route?",
+                            "vote_options": ["North", "South"],
+                            "vote_duration_seconds": 300,
+                            "vote_deadline_at": "2026-07-27T15:00:00+00:00",
+                        },
+                        {
+                            "id": "ballot-1",
+                            "seq": 2,
+                            "type": "message_final",
+                            "participant_id": "peer",
+                            "display_name": "Peer",
+                            "message_kind": "vote_cast",
+                            "vote_id": "vote-1",
+                            "vote_choice": "South",
+                        },
+                        {
+                            "id": "ballot-2",
+                            "seq": 3,
+                            "type": "message_final",
+                            "participant_id": "codex",
+                            "display_name": "Codex",
+                            "message_kind": "vote_cast",
+                            "vote_id": "vote-1",
+                            "vote_choice": "North",
+                        },
+                    ],
+                }
+            )
+
+            view = portal.acp_read_text("/agentsassemble-room/current.md")
+            message_index = json.loads(
+                (portal.root / "messages.json").read_text(encoding="utf-8")
+            )
+            summary = portal.vote_summary("vote-1")
+            portal.begin_observation("vote-snapshot", input_up_to_seq=3)
+            portal.ingest_frame(
+                {
+                    "stream": "room_events",
+                    "events": [
+                        {
+                            "id": "ballot-3",
+                            "seq": 4,
+                            "type": "message_final",
+                            "participant_id": "peer",
+                            "display_name": "Peer",
+                            "message_kind": "vote_cast",
+                            "vote_id": "vote-1",
+                            "vote_choice": "North",
+                        },
+                        {
+                            "id": "ballot-1",
+                            "seq": 2,
+                            "type": "message_final",
+                            "participant_id": "peer",
+                            "display_name": "Peer",
+                            "message_kind": "vote_cast",
+                            "vote_id": "vote-1",
+                            "vote_choice": "South",
+                        },
+                    ],
+                }
+            )
+            frozen_view = portal.read_discussion()
+            frozen_summary = portal.vote_summary("vote-1")
+            frozen_index = json.loads(
+                (portal.root / "messages.json").read_text(encoding="utf-8")
+            )
+            frozen_terminal_summary = json.loads(
+                subprocess.run(
+                    [str(portal.helper_path), "vote-summary", "vote-1"],
+                    check=True,
+                    capture_output=True,
+                    text=True,
+                ).stdout
+            )
+            portal.end_observation("vote-snapshot")
+            changed_summary = portal.vote_summary("vote-1")
+            changed_view = portal.read_discussion()
+
+        self.assertIn("[Vote vote-1]", view)
+        self.assertIn("Which route?", view)
+        self.assertIn("Closes at: 2026-07-27T15:00:00+00:00", view)
+        self.assertIn("1. North", view)
+        self.assertIn("2. South", view)
+        self.assertIn("Anonymous result: North 1, South 1", view)
+        self.assertNotIn("ballot", view.casefold())
+        self.assertNotIn("Peer", view)
+        self.assertNotIn("Codex", view)
+        self.assertTrue(
+            all(
+                message.get("message_kind") != "vote_cast"
+                for message in message_index["messages"]
+            )
+        )
+        self.assertEqual(summary["tallies"], {"North": 1, "South": 1})
+        self.assertEqual(summary["own_choice"], "North")
+        self.assertNotIn("voters", summary)
+        self.assertIn("Anonymous result: North 1, South 1", frozen_view)
+        self.assertEqual(frozen_summary["tallies"], {"North": 1, "South": 1})
+        self.assertEqual(
+            frozen_index["messages"][0]["vote_tallies"],
+            {"North": 1, "South": 1},
+        )
+        self.assertEqual(
+            frozen_terminal_summary["tallies"],
+            {"North": 1, "South": 1},
+        )
+        self.assertEqual(changed_summary["tallies"], {"North": 2, "South": 0})
+        self.assertEqual(changed_summary["own_choice"], "North")
+        self.assertIn("Anonymous result: North 2, South 0", changed_view)
+
+
 class RoomPortalResultTests(unittest.TestCase):
     def test_observation_results_excludes_prior_and_invalid_activity(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:

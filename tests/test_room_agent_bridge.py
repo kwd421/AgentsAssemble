@@ -495,50 +495,6 @@ class RoomAgentBridgeTests(unittest.TestCase):
             ],
         )
 
-    def test_room_portal_renders_vote_question_options_and_ballots(self):
-        with tempfile.TemporaryDirectory() as temp_dir:
-            portal = RoomPortal(Path(temp_dir) / "portal", participant_id="codex")
-            portal.prepare()
-            portal.ingest_frame(
-                {
-                    "stream": "room_events",
-                    "events": [
-                        {
-                            "id": "vote-1",
-                            "seq": 1,
-                            "type": "message_final",
-                            "participant_id": "host",
-                            "display_name": "Host",
-                            "message_kind": "vote",
-                            "vote_id": "vote-1",
-                            "vote_question": "Which route?",
-                            "vote_options": ["North", "South"],
-                            "vote_duration_seconds": 300,
-                            "vote_deadline_at": "2026-07-27T15:00:00+00:00",
-                        },
-                        {
-                            "id": "ballot-1",
-                            "seq": 2,
-                            "type": "message_final",
-                            "participant_id": "peer",
-                            "display_name": "Peer",
-                            "message_kind": "vote_cast",
-                            "vote_id": "vote-1",
-                            "vote_choice": "South",
-                        },
-                    ],
-                }
-            )
-
-            view = portal.acp_read_text("/agentsassemble-room/current.md")
-
-        self.assertIn("[Vote vote-1]", view)
-        self.assertIn("Which route?", view)
-        self.assertIn("Closes at: 2026-07-27T15:00:00+00:00", view)
-        self.assertIn("1. North", view)
-        self.assertIn("2. South", view)
-        self.assertIn("[Vote vote-1 ballot] South", view)
-
     def test_codex_wake_does_not_publish_commentary_after_provider_error(self):
         class FailingAppServer:
             def start(self, profile):

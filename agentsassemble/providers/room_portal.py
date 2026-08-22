@@ -28,6 +28,10 @@ from agentsassemble.providers.room_portal_helper import (
     windows_helper_wrapper,
 )
 from agentsassemble.providers.room_portal_search import RoomPortalSearchTools
+from agentsassemble.providers.room_portal_votes import (
+    RoomPortalVoteProjection,
+    render_vote_message,
+)
 from agentsassemble.providers.room_portal_collaboration import (
     RoomPortalCollaboration,
     RoomPortalError,
@@ -133,6 +137,9 @@ class RoomPortal(RoomPortalSearchTools):
         self._lock = threading.RLock()
         self._messages: list[dict[str, object]] = []
         self._message_ids: set[str] = set()
+        self._vote_projection = RoomPortalVoteProjection(
+            participant_id=self.participant_id
+        )
         self._display_name = self.participant_id
         self._participants: dict[str, str] = {}
         self._participant_roles: dict[str, str] = {}
@@ -157,7 +164,7 @@ class RoomPortal(RoomPortalSearchTools):
             write_json=self._write_json_atomic,
             record_activity=self._record_activity,
             require_tool=self._require_tool,
-            messages=lambda: self._messages,
+            messages=self._collaboration_messages,
         )
         self._activity_plugin = ActivityPluginPortal(
             self.root,
@@ -206,6 +213,9 @@ class RoomPortal(RoomPortalSearchTools):
                 event_id = clean_room_text(event.get("id"), limit=128)
                 if not event_id or event_id in self._message_ids:
                     continue
+                if clean_room_text(event.get("message_kind"), limit=64) == "vote_cast":
+                    self._vote_projection.ingest_ballot(event)
+                    continue
                 projected = _project_message(event)
                 self._messages.append(projected)
                 self._message_ids.add(event_id)
@@ -214,6 +224,7 @@ class RoomPortal(RoomPortalSearchTools):
                     for item in projected.get("attachments", [])
                     if isinstance(item, dict)
                 )
+            self._vote_projection.refresh(self._messages)
             self._write_participant_index()
             self._bound_messages()
             self._write_message_index()
@@ -253,10 +264,11 @@ class RoomPortal(RoomPortalSearchTools):
             # observation_receipt verifies that the provider read this view.
             self._new_since_seq = self._seen_through_seq
             self._active_messages = tuple(
-                message
+                dict(message)
                 for message in self._messages
                 if int(message.get("seq") or 0) <= assigned_seq
             )
+            self._write_message_index()
             room_tools = room_tool_names(self._tool_mode)
             plugin_fields = self._activity_plugin.begin_observation(
                 plugin_id=self._activity_plugin_id,
@@ -432,6 +444,7 @@ class RoomPortal(RoomPortalSearchTools):
             self._activity_plugin.end_observation()
             self._active_media_ids = ()
             self._active_messages = None
+            self._write_message_index()
             self._write_view()
 
     def acp_read_text(self, path: object, *, line: object = None, limit: object = None) -> str:
@@ -786,6 +799,7 @@ class RoomPortal(RoomPortalSearchTools):
             for item in self._messages
             if clean_room_text(item.get("id"), limit=128)
         }
+        self._vote_projection.retain_for(self._messages)
 
     def _write_view(self) -> None:
         messages = (
@@ -929,6 +943,11 @@ class RoomPortal(RoomPortalSearchTools):
     def _write_message_index(self) -> None:
         self._collaboration.write_message_index()
 
+    def _collaboration_messages(self) -> list[dict[str, object]]:
+        if self._active_messages is not None:
+            return list(self._active_messages)
+        return self._messages
+
     def _write_participant_index(self) -> None:
         self._collaboration.write_participant_index(list(self._participants))
 
@@ -1009,9 +1028,11 @@ def _frame_events(frame: dict[str, object]) -> Iterable[dict[str, object]]:
 
 def _project_message(event: dict[str, object]) -> dict[str, object]:
     attachments = event.get("attachments") if isinstance(event.get("attachments"), list) else []
+    seq = max(0, int(event.get("seq") or 0))
     return {
         "id": clean_room_text(event.get("id"), limit=128),
-        "seq": max(0, int(event.get("seq") or 0)),
+        "seq": seq,
+        "vote_created_seq": seq,
         "created_at": clean_room_text(event.get("created_at"), limit=128),
         "participant_id": clean_room_text(
             event.get("participant_id") or event.get("actor_id"),
@@ -1061,30 +1082,7 @@ def _visible_message_content(message: dict[str, object]) -> str:
     content = str(message.get("content") or "")
     kind = clean_room_text(message.get("message_kind"), limit=64)
     if kind == "vote":
-        question = clean_room_text(message.get("vote_question"), limit=500)
-        options = (
-            message.get("vote_options")
-            if isinstance(message.get("vote_options"), list)
-            else []
-        )
-        lines = [
-            f"[Vote {clean_room_text(message.get('vote_id'), limit=128)}]",
-            question or "(No question provided.)",
-        ]
-        deadline_at = clean_room_text(message.get("vote_deadline_at"), limit=128)
-        if deadline_at:
-            lines.append(f"Closes at: {deadline_at}")
-        lines.extend(
-            f"{index}. {clean_room_text(option, limit=200)}"
-            for index, option in enumerate(options, start=1)
-            if clean_room_text(option, limit=200)
-        )
-        return "\n".join(lines)
-    if kind == "vote_cast":
-        return (
-            f"[Vote {clean_room_text(message.get('vote_id'), limit=128)} ballot] "
-            f"{clean_room_text(message.get('vote_choice'), limit=200) or '(no choice)'}"
-        )
+        return render_vote_message(message)
     return content
 
 

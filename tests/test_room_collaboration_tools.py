@@ -49,11 +49,33 @@ class RoomPortalCollaborationTests(unittest.TestCase):
                             "message_kind": "vote",
                             "vote_question": "Continue?",
                             "vote_options": ["Yes", "No"],
-                        }
+                        },
+                        {
+                            "id": "ballot-1",
+                            "seq": 2,
+                            "type": "message_final",
+                            "participant_id": "host-id",
+                            "participant_type": "human",
+                            "display_name": "Host",
+                            "message_kind": "vote_cast",
+                            "vote_id": "vote-1",
+                            "vote_choice": "Yes",
+                        },
+                        {
+                            "id": "ballot-2",
+                            "seq": 3,
+                            "type": "message_final",
+                            "participant_id": "gemini",
+                            "participant_type": "agent",
+                            "display_name": "Gemini",
+                            "message_kind": "vote_cast",
+                            "vote_id": "vote-1",
+                            "vote_choice": "No",
+                        },
                     ],
                 }
             )
-            portal.begin_observation("terminal-vote", input_up_to_seq=1)
+            portal.begin_observation("terminal-vote", input_up_to_seq=3)
 
             participants = subprocess.run(
                 [str(portal.helper_path), "participants"],
@@ -67,6 +89,12 @@ class RoomPortalCollaborationTests(unittest.TestCase):
                 capture_output=True,
                 text=True,
             )
+            summary = subprocess.run(
+                [str(portal.helper_path), "vote-summary", "vote-1"],
+                check=True,
+                capture_output=True,
+                text=True,
+            )
             publication = portal.consume_publication_result("terminal-vote")
 
         listed = json.loads(participants.stdout)
@@ -75,6 +103,10 @@ class RoomPortalCollaborationTests(unittest.TestCase):
             [("gemini", "Gemini"), ("host-id", "Host")],
         )
         self.assertEqual(json.loads(ballot.stdout)["choice"], "No")
+        terminal_summary = json.loads(summary.stdout)
+        self.assertEqual(terminal_summary["tallies"], {"Yes": 1, "No": 1})
+        self.assertEqual(terminal_summary["own_choice"], "No")
+        self.assertNotIn("voters", terminal_summary)
         self.assertEqual(
             (publication.message_kind, publication.vote_id, publication.vote_choice),
             ("vote_cast", "vote-1", "No"),

@@ -16,7 +16,6 @@ from agentsassemble.room.votes import (
     resolve_vote_choice,
     vote_deadline_has_passed,
     vote_poll,
-    vote_summary as summarize_vote,
 )
 
 
@@ -70,6 +69,15 @@ JsonWriter = Callable[[Path, dict[str, object]], None]
 ActivityRecorder = Callable[..., None]
 ToolAuthorizer = Callable[[str], None]
 MessageReader = Callable[[], list[dict[str, object]]]
+
+
+def _safe_count(value: object) -> int:
+    if isinstance(value, bool):
+        return 0
+    try:
+        return int(value)
+    except (TypeError, ValueError):
+        return 0
 
 
 class RoomPortalCollaboration:
@@ -229,15 +237,50 @@ class RoomPortalCollaboration:
         self._require_tool("vote_summary")
         clean_vote_id = clean_room_text(vote_id, limit=128)
         with self._lock:
-            events = [dict(item) for item in self._messages()]
-        try:
-            summary = summarize_vote(
-                events,
-                clean_vote_id,
-                viewer_participant_id=self.participant_id,
+            poll = next(
+                (
+                    dict(item)
+                    for item in self._messages()
+                    if clean_room_text(
+                        item.get("vote_id") or item.get("id"), limit=128
+                    )
+                    == clean_vote_id
+                    and clean_room_text(item.get("message_kind"), limit=64)
+                    == "vote"
+                ),
+                {},
             )
+        try:
+            canonical_poll = vote_poll(poll, clean_vote_id)
         except ValueError as error:
             raise RoomPortalCollaborationError(str(error)) from error
+        options = [str(option) for option in canonical_poll.get("vote_options") or []]
+        raw_tallies = (
+            canonical_poll.get("vote_tallies")
+            if isinstance(canonical_poll.get("vote_tallies"), dict)
+            else {}
+        )
+        tallies = {
+            option: max(0, _safe_count(raw_tallies.get(option)))
+            for option in options
+        }
+        own_choice = resolve_vote_choice(
+            canonical_poll.get("vote_own_choice"), options
+        )
+        summary = {
+            "vote_id": clean_vote_id,
+            "question": str(canonical_poll.get("vote_question") or ""),
+            "options": options,
+            "vote_duration_seconds": int(
+                canonical_poll.get("vote_duration_seconds") or 0
+            ),
+            "vote_deadline_at": str(canonical_poll.get("vote_deadline_at") or ""),
+            "created_by": str(canonical_poll.get("display_name") or ""),
+            "created_at": str(canonical_poll.get("created_at") or ""),
+            "tallies": tallies,
+            "own_choice": own_choice,
+            "total_votes": sum(tallies.values()),
+        }
         self._record_activity("vote_summary", details={"vote_id": clean_vote_id})
         return {**summary, "scope": "bounded_current_view"}
 
