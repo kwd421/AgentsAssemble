@@ -59,6 +59,7 @@ export function projectRoomEventsToTimeline(
 ): LobbyEvent[] {
   const timeline: LobbyEvent[] = [];
   const turnIndex = new Map<string, number>();
+  const recordIndex = new Map<string, number>();
   const activityIndex = new Map<string, number>();
   const viewerParticipantId = String(options.viewerParticipantId || "");
   const participantProfiles = options.participantProfiles || {};
@@ -184,13 +185,40 @@ export function projectRoomEventsToTimeline(
         attachments: Array.isArray(event.attachments)
           ? event.attachments
           : existing?.attachments,
+        edited_at: String(event.edited_at || existing?.edited_at || "") || undefined,
+        message_deleted: event.message_deleted === true,
       };
+      if (projected.message_deleted) {
+        projected.message = "삭제된 메시지입니다";
+        projected.attachments = [];
+      }
       if (existingIndex === undefined) {
         turnIndex.set(key, timeline.length);
+        if (event.type === "message_final") recordIndex.set(String(event.id), timeline.length);
         timeline.push(projected);
       } else {
         timeline[existingIndex] = projected;
+        if (event.type === "message_final") recordIndex.set(String(event.id), existingIndex);
       }
+      return;
+    }
+
+    if (event.type === "message_updated" || event.type === "message_deleted") {
+      const targetIndex = recordIndex.get(String(event.target_event_id || ""));
+      if (targetIndex === undefined) return;
+      const existing = timeline[targetIndex];
+      timeline[targetIndex] = event.type === "message_deleted"
+        ? {
+            ...existing,
+            message: "삭제된 메시지입니다",
+            attachments: [],
+            message_deleted: true,
+          }
+        : {
+            ...existing,
+            message: String(event.content || ""),
+            edited_at: String(event.edited_at || "") || undefined,
+          };
       return;
     }
 

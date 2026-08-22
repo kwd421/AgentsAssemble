@@ -112,6 +112,9 @@ class RoomCommandUnitOfWork:
     def event_by_id(self, event_id: str) -> dict[str, object]:
         return self._require_transaction().event_by_id(event_id)
 
+    def update_event_fields(self, event_id: str, **updates: object) -> dict[str, object]:
+        return self._require_transaction().update_event_fields(event_id, **updates)
+
     def room_settings(self) -> RoomGlobalSettingsRecord:
         return self._require_transaction().room_settings()
 

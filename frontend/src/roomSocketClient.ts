@@ -189,6 +189,13 @@ function commandAckResultIsValid(
   if (action === "message.send" || action.startsWith("room.random.")) {
     return hasDurableEvent && event?.type === "message_final";
   }
+  if (action === "message.edit" || action === "message.delete") {
+    return Boolean(
+      hasDurableEvent &&
+      event?.type === (action === "message.edit" ? "message_updated" : "message_deleted") &&
+      event?.target_event_id === payload.event_id
+    );
+  }
   if (action === "room.history") {
     return Boolean(
       isRecord(result) &&

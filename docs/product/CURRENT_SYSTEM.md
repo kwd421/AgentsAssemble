@@ -2,7 +2,7 @@
 
 Status: current starting point
 
-Updated: 2026-08-02
+Updated: 2026-08-22
 
 Read this file before changing rooms, Agent Sessions, providers, invites,
 moderation, media, or the React room UI. It is intentionally short. Follow its
@@ -272,6 +272,16 @@ external adoption because they wrote a separate legacy lobby record. An
 `agent_bridge` invite starts or attaches the provider named by the invite as a
 separate Agent Session; it does not transplant the AI application session that
 opened the invite.
+
+Ordinary `#general` messages also use canonical WebSocket mutations. A human
+may edit only their own public message; a human may delete their own message,
+an Agent Session owner may delete that session's public message, and the room
+owner may moderate any public message. Edits update the canonical event and
+append a sequenced `message_updated` projection without waking providers.
+Deletes replace the body and attachments with a durable tombstone, append
+`message_deleted`, remove the message from search and pins, and delete its
+stored attachment bytes. Finalized Agent Session messages are not editable.
+Custom-channel and vote-message mutation remain separate unfinished slices.
 
 A supported Codex/Claude-style app or interactive CLI can instead register
 `assemble room connector-mcp` once. Giving that current conversation a normal

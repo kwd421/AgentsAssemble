@@ -35,6 +35,8 @@ export interface LobbyEvent {
   kind: string;
   name: string;
   message: string;
+  edited_at?: string;
+  message_deleted?: boolean;
   side: string;
   created_at: string;
   official_record?: boolean;

@@ -51,6 +51,8 @@ def _search_record(
     event_type = clean_room_text(event.get("type"), limit=64)
     if channel_id == "lobby" and event_type != "message_final":
         return None
+    if event.get("message_deleted") is True:
+        return None
     if channel_id != "lobby" and clean_room_text(event.get("kind"), limit=64) != "message":
         return None
     event_id = clean_room_text(event.get("id"), limit=128)
@@ -104,6 +106,17 @@ class MessageSearchService:
                 limit=None,
                 include_hidden=False,
             )
+            if any(
+                event.get("type") in {"message_updated", "message_deleted"}
+                for event in events
+            ):
+                self._delete_channel(connection, clean_room, "lobby")
+                events = repository.read_events(
+                    clean_room,
+                    after_seq=0,
+                    limit=None,
+                    include_hidden=False,
+                )
             for event in events:
                 record = _search_record(clean_room, "lobby", event)
                 if record:

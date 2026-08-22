@@ -1,17 +1,17 @@
 {
  "readme": "AgentsAssemble codebase map. Regenerate with `make codebase-map`; verify committed outputs with `make codebase-map-verify`. modules[] columns: name, path, package, domain, classification, migration_status, lines, docstring, imports[], imported_by[] (indexes into modules), classes[[name, [[base, defining_module], ...]]] (best-effort, top-level classes only). frontend[] columns: path, group, lines, doc, imports[], imported_by[] (indexes into frontend). package_edges go importer -> dependency with module-import counts; `points` is the precomputed polyline for that edge and `intra_cycle` marks imports whose endpoints share one cycle group. graph{} holds the layered package drawing: layers[] top-to-bottom (each with members[] package ids, member_count, and the dominant domain), (a package sits below everything importing it), clusters[] are mutually dependent packages (import cycles at package level) drawn as one labelled block, plus width/height of the drawing. health{} ranks findings for a reader who has to act: cycles[] (mutually dependent packages, with the lines they hold), leaning_on_retiring[] (current modules importing legacy/compatibility modules - the reason legacy cannot be deleted), highest_leverage_migrations[] (retiring modules with the most current importers), unreferenced_shims[] (compatibility modules with no importer in agentsassemble/ and no reference in tests/; callers outside this repository are not visible, so verify before deleting), and hotspots[] (largest modules). health.scope states exactly what was measured. class_graph{} is the UML generalization DAG over base classes that resolve inside the repo: edges go base -> subclass, so a subclass always sits below the class it extends. Coordinates in graph and class_graph are laid out with a Sugiyama pipeline (cycle condensation, Coffman-Graham layering, dummy-node edge routing, median/transpose crossing reduction) and are deterministic.",
- "generated_at": "2026-08-22T01:19:04Z",
- "fingerprint": "7ff639504dbd5683",
+ "generated_at": "2026-08-22T02:13:26Z",
+ "fingerprint": "7fd44e3f93f25d0c",
  "stats": {
-  "backend_modules": 579,
-  "backend_lines": 100990,
-  "frontend_files": 218,
-  "frontend_lines": 50411,
+  "backend_modules": 581,
+  "backend_lines": 101339,
+  "frontend_files": 220,
+  "frontend_lines": 50895,
   "packages": 30,
   "import_cycles": 0,
   "classifications": {
    "compatibility": 147,
-   "current": 415,
+   "current": 417,
    "optional": 17
   }
  },
@@ -60,13 +60,13 @@
    "id": "room",
    "kind": "backend",
    "doc": "Current room domain contracts and behavior.",
-   "files": 69,
-   "lines": 17730,
+   "files": 70,
+   "lines": 17967,
    "domains": {
-    "room": 69
+    "room": 70
    },
    "classes": {
-    "current": 69
+    "current": 70
    },
    "x": 1474.0,
    "y": 298.0,
@@ -161,13 +161,13 @@
    "id": "persistence",
    "kind": "backend",
    "doc": "Persistence adapters composed by the application layer.",
-   "files": 44,
-   "lines": 11693,
+   "files": 45,
+   "lines": 11789,
    "domains": {
-    "persistence": 44
+    "persistence": 45
    },
    "classes": {
-    "current": 44
+    "current": 45
    },
    "x": 562.0,
    "y": 298.0,
@@ -182,7 +182,7 @@
    "kind": "backend",
    "doc": "Optional product feature packages.",
    "files": 17,
-   "lines": 2335,
+   "lines": 2351,
    "domains": {
     "features": 17
    },
@@ -484,7 +484,7 @@
    "kind": "frontend",
    "doc": "Frontend entry files (App, main, API client, styles) living directly under src/.",
    "files": 17,
-   "lines": 13814,
+   "lines": 13821,
    "domains": {},
    "classes": {},
    "x": 102.0,
@@ -500,7 +500,7 @@
    "kind": "frontend",
    "doc": "Room protocol client: HTTP calls, WebSocket wiring, DTO mapping.",
    "files": 11,
-   "lines": 1873,
+   "lines": 1875,
    "domains": {},
    "classes": {},
    "x": 330.0,
@@ -532,7 +532,7 @@
    "kind": "frontend",
    "doc": "Shared utilities and presentation helpers.",
    "files": 54,
-   "lines": 5956,
+   "lines": 6023,
    "domains": {},
    "classes": {},
    "x": 786.0,
@@ -564,7 +564,7 @@
    "kind": "frontend",
    "doc": "Frontend source files grouped under src/types/.",
    "files": 1,
-   "lines": 131,
+   "lines": 136,
    "domains": {},
    "classes": {},
    "x": 330.0,
@@ -579,8 +579,8 @@
    "id": "fe:views",
    "kind": "frontend",
    "doc": "Top-level room views rendered by the shell.",
-   "files": 111,
-   "lines": 22455,
+   "files": 113,
+   "lines": 22858,
    "domains": {},
    "classes": {},
    "x": 558.0,
@@ -1144,7 +1144,7 @@
   {
    "from": "fe:views",
    "to": "fe:(src root)",
-   "count": 85,
+   "count": 87,
    "points": [
     [
      558.0,
@@ -1368,7 +1368,7 @@
   {
    "from": "persistence",
    "to": "room",
-   "count": 41,
+   "count": 43,
    "points": [
     [
      770.0,
@@ -3861,7 +3861,7 @@
      "web"
     ],
     "internal_edges": 73,
-    "lines": 98027,
+    "lines": 98376,
     "heaviest": "providers"
    },
    {
@@ -3874,7 +3874,7 @@
      "fe:views"
     ],
     "internal_edges": 17,
-    "lines": 50218,
+    "lines": 50702,
     "heaviest": "fe:views"
    }
   ],
@@ -3991,7 +3991,7 @@
    },
    {
     "module": "agentsassemble.room.realtime",
-    "lines": 1866,
+    "lines": 1861,
     "cls": "current",
     "imported_by": 7
    },
@@ -4009,7 +4009,7 @@
    },
    {
     "module": "agentsassemble.persistence.local.room.repository",
-    "lines": 1532,
+    "lines": 1525,
     "cls": "current",
     "imported_by": 6
    },
@@ -4051,7 +4051,7 @@
    },
    {
     "module": "agentsassemble.persistence.postgres.room.repository",
-    "lines": 1003,
+    "lines": 1011,
     "cls": "current",
     "imported_by": 1
    }
@@ -4081,12 +4081,12 @@
    19,
    "Compatibility exports for provider adapters now owned by providers.",
    [
-    274,
     275,
     276,
-    279,
+    277,
     280,
-    282
+    281,
+    283
    ],
    [],
    []
@@ -4101,7 +4101,7 @@
    5,
    "Compatibility export for the provider adapter contract.",
    [
-    274
+    275
    ],
    [],
    []
@@ -4116,7 +4116,7 @@
    5,
    "Compatibility export for the Codex meeting adapter.",
    [
-    275
+    276
    ],
    [],
    []
@@ -4131,7 +4131,7 @@
    5,
    "Compatibility export for the Codex live-session adapter.",
    [
-    276
+    277
    ],
    [],
    []
@@ -4146,7 +4146,7 @@
    35,
    "Compatibility exports for HTTP LLM adapters.",
    [
-    277
+    278
    ],
    [],
    []
@@ -4161,7 +4161,7 @@
    5,
    "Compatibility exports for the one-shot legacy CLI adapter.",
    [
-    278
+    279
    ],
    [],
    []
@@ -4176,7 +4176,7 @@
    5,
    "Compatibility export for the deterministic mock adapter.",
    [
-    279
+    280
    ],
    [],
    []
@@ -4191,7 +4191,7 @@
    25,
    "Compatibility exports for the provider adapter registry.",
    [
-    280
+    281
    ],
    [],
    []
@@ -4206,7 +4206,7 @@
    8,
    "Compatibility exports for the remote HTTP bridge adapter.",
    [
-    281
+    282
    ],
    [],
    []
@@ -4221,7 +4221,7 @@
    5,
    "Compatibility export for unsupported provider diagnostics.",
    [
-    282
+    283
    ],
    [],
    []
@@ -4249,17 +4249,17 @@
    115,
    "Shared durable capacity policy for room access sessions.",
    [
-    468
+    470
    ],
    [
     14,
     16,
     25,
     185,
-    205,
-    432,
-    548,
-    565
+    206,
+    433,
+    550,
+    567
    ],
    [
     [
@@ -4315,16 +4315,16 @@
     26,
     62,
     139,
-    340,
-    456,
-    468
+    341,
+    458,
+    470
    ],
    [
     48,
     49,
-    481,
-    550,
-    565
+    483,
+    552,
+    567
    ],
    [
     [
@@ -4362,10 +4362,10 @@
     59,
     139,
     185,
-    468
+    470
    ],
    [
-    505
+    507
    ],
    []
   ],
@@ -4384,8 +4384,8 @@
     18,
     21,
     22,
-    340,
-    468
+    341,
+    470
    ],
    [
     13,
@@ -4396,10 +4396,10 @@
     49,
     57,
     138,
-    455,
-    506,
-    550,
-    565
+    457,
+    508,
+    552,
+    567
    ],
    [
     [
@@ -4432,7 +4432,7 @@
    "",
    [
     27,
-    468
+    470
    ],
    [
     14,
@@ -4458,8 +4458,8 @@
     19,
     22,
     185,
-    205,
-    483
+    206,
+    485
    ],
    [
     [
@@ -4488,7 +4488,7 @@
    ],
    [
     45,
-    484
+    486
    ],
    []
   ],
@@ -4503,14 +4503,14 @@
    "Side-effect-free browser identity decisions for room invite startup.",
    [
     139,
-    456,
-    468
+    458,
+    470
    ],
    [
     48,
     49,
-    480,
-    550
+    482,
+    552
    ],
    [
     [
@@ -4529,11 +4529,11 @@
    69,
    "",
    [
-    468
+    470
    ],
    [
     16,
-    410
+    411
    ],
    []
   ],
@@ -4562,7 +4562,7 @@
     50,
     116,
     185,
-    507
+    509
    ],
    [
     [
@@ -4670,7 +4670,7 @@
     19,
     49,
     116,
-    508
+    510
    ],
    []
   ],
@@ -4687,11 +4687,11 @@
     16,
     26,
     139,
-    468
+    470
    ],
    [
     14,
-    482
+    484
    ],
    [
     [
@@ -4726,7 +4726,7 @@
     15,
     26,
     136,
-    518
+    520
    ],
    [
     [
@@ -4747,7 +4747,7 @@
    [
     22,
     25,
-    468
+    470
    ],
    [
     14,
@@ -4758,9 +4758,9 @@
     57,
     136,
     138,
-    455,
-    519,
-    550
+    457,
+    521,
+    552
    ],
    [
     [
@@ -4782,7 +4782,7 @@
    [
     17,
     136,
-    547
+    549
    ],
    []
   ],
@@ -4796,12 +4796,12 @@
    93,
    "Bounded durable record validation for room admission workflows.",
    [
-    468
+    470
    ],
    [
     185,
-    205,
-    507
+    206,
+    509
    ],
    []
   ],
@@ -4831,10 +4831,10 @@
     26,
     133,
     139,
-    431
+    432
    ],
    [
-    552
+    554
    ],
    [
     [
@@ -4853,19 +4853,19 @@
    168,
    "Executable composition for a server-owned provider Agent Bridge.",
    [
-    283,
-    293,
+    284,
     294,
-    369,
-    375,
-    379,
-    382,
-    384,
-    547,
-    575
+    295,
+    370,
+    376,
+    380,
+    383,
+    385,
+    549,
+    577
    ],
    [
-    485
+    487
    ],
    []
   ],
@@ -4894,14 +4894,14 @@
    201,
    "Canonical room command and projection adapters used by Agent Sessions.",
    [
-    456,
-    468
+    458,
+    470
    ],
    [
     32,
     116,
-    437,
-    564
+    438,
+    566
    ],
    []
   ],
@@ -4918,7 +4918,7 @@
    [
     48,
     60,
-    561
+    563
    ],
    [
     [
@@ -4951,7 +4951,7 @@
    "Short-lived loopback return channel for desktop central login.",
    [],
    [
-    555
+    557
    ],
    [
     [
@@ -4988,9 +4988,9 @@
    "Execution for the explicit one-shot API provider CLI lane.",
    [
     193,
-    270,
-    286,
-    302
+    271,
+    287,
+    303
    ],
    [
     75
@@ -5048,7 +5048,7 @@
     58,
     63,
     92,
-    542
+    544
    ],
    [
     75
@@ -5065,7 +5065,7 @@
    91,
    "Shared HTTP and timeout behavior for CLI entrypoints.",
    [
-    541
+    543
    ],
    [
     75
@@ -5098,7 +5098,7 @@
    133,
    "Execution for current persona CLI commands.",
    [
-    226
+    227
    ],
    [
     75
@@ -5140,8 +5140,8 @@
     55,
     58,
     87,
-    312,
-    373
+    313,
+    374
    ],
    [
     75
@@ -5237,19 +5237,19 @@
     109,
     136,
     139,
-    295,
-    417,
-    455,
-    456,
-    548
+    296,
+    418,
+    457,
+    458,
+    550
    ],
    [
     49,
     50,
     116,
-    543,
-    549,
-    556
+    545,
+    551,
+    558
    ],
    [
     [
@@ -5296,13 +5296,13 @@
     139,
     185,
     193,
-    200,
-    295,
-    368,
-    417,
-    455,
-    456,
-    548
+    201,
+    296,
+    369,
+    418,
+    457,
+    458,
+    550
    ],
    [
     116
@@ -5333,9 +5333,9 @@
     61,
     63,
     139,
-    363,
-    456,
-    542
+    364,
+    458,
+    544
    ],
    [
     40,
@@ -5392,8 +5392,8 @@
     53,
     57,
     116,
-    406,
-    550
+    407,
+    552
    ],
    [
     [
@@ -5419,7 +5419,7 @@
     48,
     49,
     116,
-    407
+    408
    ],
    [
     [
@@ -5472,23 +5472,23 @@
    "",
    [
     88,
-    283,
-    313,
-    340,
-    346,
-    356,
-    369,
-    372,
-    375,
-    379,
-    382,
-    384,
-    386,
-    547
+    284,
+    314,
+    341,
+    347,
+    357,
+    370,
+    373,
+    376,
+    380,
+    383,
+    385,
+    387,
+    549
    ],
    [
     45,
-    488
+    490
    ],
    [
     [
@@ -5507,11 +5507,11 @@
    627,
    "Current-session room connector over the canonical room WebSocket.",
    [
-    468,
-    547
+    470,
+    549
    ],
    [
-    373
+    374
    ],
    [
     [
@@ -5554,16 +5554,16 @@
     90,
     116,
     185,
-    295,
-    340,
-    455,
-    468,
-    472,
-    547
+    296,
+    341,
+    457,
+    470,
+    474,
+    549
    ],
    [
     75,
-    510
+    512
    ],
    []
   ],
@@ -5577,9 +5577,9 @@
    169,
    "",
    [
-    200,
-    225,
-    456
+    201,
+    226,
+    458
    ],
    [
     19,
@@ -5591,7 +5591,7 @@
     89,
     116,
     134,
-    515
+    517
    ],
    [
     [
@@ -5652,7 +5652,7 @@
     34
    ],
    [
-    561
+    563
    ],
    []
   ],
@@ -5669,8 +5669,8 @@
    [
     50,
     53,
-    537,
-    565
+    539,
+    567
    ],
    [
     [
@@ -5757,7 +5757,7 @@
    43,
    "Compatibility exports for agentsassemble.room.attachments.",
    [
-    417
+    418
    ],
    [],
    []
@@ -5772,7 +5772,7 @@
    18,
    "Compatibility exports for Agent Bridge protocol contracts.",
    [
-    296
+    297
    ],
    [],
    []
@@ -5787,7 +5787,7 @@
    6,
    "Compatibility export for correlated Agent Bridge report tracking.",
    [
-    297
+    298
    ],
    [],
    []
@@ -5802,7 +5802,7 @@
    12,
    "Compatibility exports for external bridge stop confirmation.",
    [
-    420
+    421
    ],
    [],
    []
@@ -5830,7 +5830,7 @@
    21,
    "Compatibility exports for the disabled Claude print-mode bridge.",
    [
-    300
+    301
    ],
    [],
    []
@@ -5860,11 +5860,11 @@
    116,
    "",
    [
-    226,
-    468
+    227,
+    470
    ],
    [
-    229
+    230
    ],
    []
   ],
@@ -5878,7 +5878,7 @@
    18,
    "Compatibility exports for Claude transcript parsing and tailing.",
    [
-    310
+    311
    ],
    [],
    []
@@ -5919,7 +5919,7 @@
     57,
     90,
     116,
-    468
+    470
    ],
    [],
    []
@@ -5934,7 +5934,7 @@
    9,
    "Compatibility exports for agentsassemble.web.cli_errors.",
    [
-    541
+    543
    ],
    [],
    []
@@ -5994,7 +5994,7 @@
    9,
    "Compatibility exports for the Codex app-server room runtime.",
    [
-    313
+    314
    ],
    [],
    []
@@ -6009,7 +6009,7 @@
    64,
    "Compatibility exports for the Codex app-server runtime.",
    [
-    312
+    313
    ],
    [],
    []
@@ -6024,7 +6024,7 @@
    16,
    "Compatibility exports for Codex session identifier parsing.",
    [
-    318
+    319
    ],
    [],
    []
@@ -6039,7 +6039,7 @@
    9,
    "Compatibility exports for Codex JSONL stream parsing.",
    [
-    319
+    320
    ],
    [],
    []
@@ -6054,7 +6054,7 @@
    6,
    "Compatibility export for the DeepSeek streaming runtime.",
    [
-    322
+    323
    ],
    [],
    []
@@ -6098,8 +6098,8 @@
    "",
    [
     198,
-    200,
-    427
+    201,
+    428
    ],
    [
     45,
@@ -6122,17 +6122,17 @@
    114,
    "",
    [
-    468
+    470
    ],
    [
     55,
     74,
-    283,
-    295,
-    413,
-    428,
-    455,
-    473
+    284,
+    296,
+    414,
+    429,
+    457,
+    475
    ],
    [
     [
@@ -6156,8 +6156,8 @@
    "Opt-in real-provider diagnostics for Codex app-server Agent Sessions.",
    [
     58,
-    312,
-    468
+    313,
+    470
    ],
    [],
    []
@@ -6172,8 +6172,8 @@
    326,
    "",
    [
-    341,
-    468
+    342,
+    470
    ],
    [
     44,
@@ -6195,7 +6195,7 @@
    [],
    [
     149,
-    558
+    560
    ],
    [
     [
@@ -6219,8 +6219,8 @@
    [
     39,
     40,
-    408,
-    558
+    409,
+    560
    ],
    [
     [
@@ -6295,16 +6295,16 @@
    [],
    [
     93,
-    292,
-    295,
-    298,
-    312,
-    369,
-    372,
-    386,
-    413,
-    418,
-    444
+    293,
+    296,
+    299,
+    313,
+    370,
+    373,
+    387,
+    414,
+    419,
+    446
    ],
    [
     [
@@ -6336,13 +6336,13 @@
    141,
    "Small bounded JSONL chat store used by optional room surfaces.",
    [
-    468
+    470
    ],
    [
     103,
     105,
     109,
-    567
+    569
    ],
    []
   ],
@@ -6369,7 +6369,7 @@
    511,
    "",
    [
-    468
+    470
    ],
    [
     101,
@@ -6388,11 +6388,11 @@
    "Mafia game HTTP routes for the GUI server.",
    [
     100,
-    550
+    552
    ],
    [
     118,
-    556
+    558
    ],
    []
   ],
@@ -6416,16 +6416,16 @@
    "features",
    "optional",
    "in-target-package",
-   154,
+   157,
    "HTTP projection and human-only mutation routes for message pins.",
    [
     98,
-    421,
-    468,
-    550
+    422,
+    470,
+    552
    ],
    [
-    556
+    558
    ],
    []
   ],
@@ -6454,12 +6454,12 @@
    [
     98,
     106,
-    421,
-    468,
-    550
+    422,
+    470,
+    552
    ],
    [
-    556
+    558
    ],
    []
   ],
@@ -6470,11 +6470,11 @@
    "features",
    "optional",
    "in-target-package",
-   382,
+   395,
    "SQLite FTS index derived from the complete public room record.",
    [
-    456,
-    468
+    458,
+    470
    ],
    [
     105
@@ -6509,11 +6509,11 @@
    92,
    "Side-chat HTTP and event-stream routes.",
    [
-    550
+    552
    ],
    [
     128,
-    556
+    558
    ],
    []
   ],
@@ -6528,13 +6528,13 @@
    "Server-memory side chat with bounded room-scoped lifetime.",
    [
     98,
-    468
+    470
    ],
    [
     48,
     49,
-    533,
-    550
+    535,
+    552
    ],
    [
     [
@@ -6566,11 +6566,11 @@
    289,
    "Optional saved room-friend records and live-agent status projection.",
    [
-    468
+    470
    ],
    [
     113,
-    503
+    505
    ],
    []
   ],
@@ -6585,12 +6585,12 @@
    "Authenticated user-profile normalization and room synchronization.",
    [
     139,
-    456
+    458
    ],
    [
     113,
-    538,
-    565
+    540,
+    567
    ],
    []
   ],
@@ -6606,11 +6606,11 @@
    [
     111,
     112,
-    550
+    552
    ],
    [
     129,
-    556
+    558
    ],
    []
   ],
@@ -6624,7 +6624,7 @@
    18,
    "Compatibility exports for React frontend build inspection.",
    [
-    542
+    544
    ],
    [],
    []
@@ -6639,7 +6639,7 @@
    6,
    "Compatibility export for the structured Grok ACP runtime.",
    [
-    326
+    327
    ],
    [],
    []
@@ -6666,16 +6666,16 @@
     134,
     135,
     139,
-    347,
-    455,
-    456,
-    542,
-    543,
+    348,
+    457,
+    458,
     544,
-    549,
-    550,
-    556,
-    573
+    545,
+    546,
+    551,
+    552,
+    558,
+    575
    ],
    [
     57,
@@ -6693,7 +6693,7 @@
    4,
    "Compatibility export for canonical attachment routes.",
    [
-    554
+    556
    ],
    [],
    []
@@ -6723,7 +6723,7 @@
    12,
    "Compatibility export for read-only observability HTTP routes.",
    [
-    558
+    560
    ],
    [],
    []
@@ -6738,7 +6738,7 @@
    14,
    "Compatibility exports for provider HTTP routes.",
    [
-    560
+    562
    ],
    [],
    []
@@ -6753,7 +6753,7 @@
    10,
    "Compatibility exports for public invite administration routes.",
    [
-    561
+    563
    ],
    [],
    []
@@ -6768,7 +6768,7 @@
    28,
    "Compatibility exports for GUI request security policy.",
    [
-    571
+    573
    ],
    [],
    []
@@ -6783,7 +6783,7 @@
    14,
    "Compatibility exports for GUI HTTP response writers.",
    [
-    546
+    548
    ],
    [],
    []
@@ -6798,7 +6798,7 @@
    4,
    "Compatibility export for Agent Session HTTP routes.",
    [
-    553
+    555
    ],
    [],
    []
@@ -6813,7 +6813,7 @@
    4,
    "Compatibility export for room invite and admission routes.",
    [
-    565
+    567
    ],
    [],
    []
@@ -6828,7 +6828,7 @@
    4,
    "Compatibility export for room settings routes.",
    [
-    569
+    571
    ],
    [],
    []
@@ -6843,7 +6843,7 @@
    22,
    "Compatibility exports for GUI HTTP routing and request context.",
    [
-    550
+    552
    ],
    [],
    []
@@ -6888,7 +6888,7 @@
    16,
    "Compatibility exports for React static delivery.",
    [
-    573
+    575
    ],
    [],
    []
@@ -6903,7 +6903,7 @@
    10,
    "Compatibility exports for GUI WebSocket HTTP transport.",
    [
-    574
+    576
    ],
    [],
    []
@@ -6931,14 +6931,14 @@
    35,
    "Public account identity derived independently from device credentials.",
    [
-    468
+    470
    ],
    [
     30,
     135,
     187,
-    209,
-    552
+    210,
+    554
    ],
    [
     [
@@ -6987,8 +6987,8 @@
    ],
    [
     116,
-    552,
-    556
+    554,
+    558
    ],
    [
     [
@@ -7043,15 +7043,15 @@
     27,
     62,
     139,
-    456,
-    468
+    458,
+    470
    ],
    [
     48,
     49,
     181,
-    550,
-    565
+    552,
+    567
    ],
    [
     [
@@ -7070,14 +7070,14 @@
    12,
    "Shared identity rules for room preference ownership.",
    [
-    468
+    470
    ],
    [
     141,
     191,
     195,
-    210,
-    215
+    211,
+    216
    ],
    []
   ],
@@ -7094,11 +7094,11 @@
     16,
     26,
     139,
-    456,
-    468
+    458,
+    470
    ],
    [
-    557
+    559
    ],
    [
     [
@@ -7117,8 +7117,8 @@
    245,
    "Storage-independent identity contracts and normalization helpers.",
    [
-    468,
-    475
+    470,
+    477
    ],
    [
     14,
@@ -7141,12 +7141,12 @@
     190,
     193,
     194,
-    216,
-    462,
-    548,
+    217,
+    464,
     550,
     552,
-    565
+    554,
+    567
    ],
    [
     [
@@ -7219,7 +7219,7 @@
    22,
    "Compatibility exports for the persistent POSIX live CLI runtime.",
    [
-    341
+    342
    ],
    [],
    []
@@ -7234,7 +7234,7 @@
    16,
    "Compatibility exports for live CLI terminal output extraction.",
    [
-    342
+    343
    ],
    [],
    []
@@ -7264,7 +7264,7 @@
    26,
    "Compatibility exports for live CLI structured transcript adapters.",
    [
-    343
+    344
    ],
    [],
    []
@@ -7279,7 +7279,7 @@
    27,
    "Compatibility exports for agentsassemble.providers.live_session_adapter.",
    [
-    344
+    345
    ],
    [],
    []
@@ -7294,7 +7294,7 @@
    13,
    "Compatibility exports for agentsassemble.providers.live_session_transport.",
    [
-    345
+    346
    ],
    [],
    []
@@ -7678,7 +7678,6 @@
    "",
    [],
    [
-    274,
     275,
     276,
     277,
@@ -7686,7 +7685,8 @@
     279,
     280,
     281,
-    282
+    282,
+    283
    ],
    [
     [
@@ -7764,7 +7764,7 @@
    36,
    "Compatibility exports for provider launch specifications.",
    [
-    340
+    341
    ],
    [],
    []
@@ -7779,7 +7779,7 @@
    9,
    "Compatibility exports for OpenCode provider runtimes.",
    [
-    356
+    357
    ],
    [],
    []
@@ -7854,7 +7854,7 @@
     18,
     22,
     28,
-    468
+    470
    ],
    [
     13,
@@ -7863,7 +7863,7 @@
     49,
     57,
     184,
-    507
+    509
    ],
    [
     [
@@ -7905,7 +7905,7 @@
    "SQLite persistence for public accounts linked to server-local users.",
    [
     133,
-    468
+    470
    ],
    [
     194
@@ -7927,7 +7927,7 @@
    104,
    "SQLite ownership for immutable server and room identifiers.",
    [
-    468
+    470
    ],
    [
     194
@@ -7964,7 +7964,7 @@
    "Security-sensitive SQLite mutations for consumed operator pairings.",
    [
     139,
-    468
+    470
    ],
    [
     194
@@ -7987,8 +7987,8 @@
    "SQLite persistence for identity-owned room preferences.",
    [
     137,
-    457,
-    475
+    459,
+    477
    ],
    [
     141,
@@ -8036,9 +8036,9 @@
     59,
     134,
     142,
-    437,
-    439,
-    455
+    438,
+    441,
+    457
    ],
    []
   ],
@@ -8059,8 +8059,8 @@
     191,
     192,
     195,
-    468,
-    475
+    470,
+    477
    ],
    [
     59,
@@ -8127,12 +8127,12 @@
    471,
    "",
    [
-    468,
-    489
+    470,
+    491
    ],
    [
-    200,
-    535
+    201,
+    537
    ],
    []
   ],
@@ -8146,17 +8146,36 @@
    995,
    "",
    [
-    199,
-    201,
+    200,
     202,
-    433,
-    468,
-    476
+    203,
+    434,
+    470,
+    478
    ],
    [
     87,
-    200,
-    498
+    199,
+    201,
+    500
+   ],
+   []
+  ],
+  [
+   "agentsassemble.persistence.local.room.event_mutations",
+   "agentsassemble/persistence/local/room/event_mutations.py",
+   "persistence",
+   "persistence",
+   "current",
+   "in-target-package",
+   69,
+   "SQLite reads and in-place payload mutations for canonical room events.",
+   [
+    198,
+    470
+   ],
+   [
+    201
    ],
    []
   ],
@@ -8170,12 +8189,12 @@
    98,
    "SQLite persistence for channel-scoped pinned message pointers.",
    [
-    457,
-    468
+    459,
+    470
    ],
    [
     198,
-    200
+    201
    ],
    [
     [
@@ -8191,26 +8210,27 @@
    "persistence",
    "current",
    "in-target-package",
-   1532,
+   1525,
    "",
    [
     197,
     198,
     199,
-    202,
-    433,
-    456,
-    457,
-    468,
-    489
+    200,
+    203,
+    434,
+    458,
+    459,
+    470,
+    491
    ],
    [
     49,
     58,
     87,
-    455,
-    472,
-    524
+    457,
+    474,
+    526
    ],
    [
     [
@@ -8265,7 +8285,7 @@
    [],
    [
     198,
-    200
+    201
    ],
    []
   ],
@@ -8308,12 +8328,12 @@
     12,
     18,
     28,
-    206,
     207,
-    468
+    208,
+    470
    ],
    [
-    254
+    255
    ],
    [
     [
@@ -8332,14 +8352,14 @@
    148,
    "Application-owned PostgreSQL pool and transaction boundary.",
    [
-    207,
-    225
+    208,
+    226
    ],
    [
-    205,
-    212,
-    222,
-    246
+    206,
+    213,
+    223,
+    247
    ],
    [
     [
@@ -8368,11 +8388,11 @@
    "Bounded PostgreSQL connection pool ownership.",
    [],
    [
-    205,
     206,
-    212,
-    222,
-    248
+    207,
+    213,
+    223,
+    249
    ],
    [
     [
@@ -8436,11 +8456,11 @@
    "PostgreSQL persistence for public accounts linked to server-local users.",
    [
     133,
-    216,
-    468
+    217,
+    470
    ],
    [
-    212
+    213
    ],
    [
     [
@@ -8460,12 +8480,12 @@
    "PostgreSQL identity persistence for room preferences.",
    [
     137,
-    457,
-    475
+    459,
+    477
    ],
    [
-    212,
-    249
+    213,
+    250
    ],
    []
   ],
@@ -8479,10 +8499,10 @@
    130,
    "PostgreSQL persistence for one-time guest identity recovery codes.",
    [
-    216
+    217
    ],
    [
-    212
+    213
    ],
    [
     [
@@ -8501,19 +8521,19 @@
    453,
    "PostgreSQL implementation of the complete IdentityBackend contract.",
    [
-    206,
     207,
-    209,
+    208,
     210,
     211,
-    213,
+    212,
     214,
     215,
     216,
-    475
+    217,
+    477
    ],
    [
-    250
+    251
    ],
    [
     [
@@ -8541,11 +8561,11 @@
    382,
    "PostgreSQL operations for identity-owned memberships and room registry.",
    [
-    468
+    470
    ],
    [
-    212,
-    251
+    213,
+    252
    ],
    []
   ],
@@ -8559,11 +8579,11 @@
    89,
    "PostgreSQL operations for identity-owned provider usage accounting.",
    [
-    468
+    470
    ],
    [
-    212,
-    252
+    213,
+    253
    ],
    []
   ],
@@ -8580,7 +8600,7 @@
     137
    ],
    [
-    212
+    213
    ],
    []
   ],
@@ -8595,13 +8615,13 @@
    "PostgreSQL operations for users, credentials, and operator pairing.",
    [
     139,
-    468
+    470
    ],
    [
-    209,
-    211,
+    210,
     212,
-    253
+    213,
+    254
    ],
    []
   ],
@@ -8628,13 +8648,13 @@
    489,
    "PostgreSQL persistence for durable room attention state.",
    [
-    457,
-    468,
-    489
+    459,
+    470,
+    491
    ],
    [
-    222,
-    247
+    223,
+    248
    ],
    []
   ],
@@ -8648,11 +8668,11 @@
    87,
    "PostgreSQL persistence for channel-scoped pinned message pointers.",
    [
-    457,
-    468
+    459,
+    470
    ],
    [
-    222
+    223
    ],
    [
     [
@@ -8668,17 +8688,18 @@
    "persistence",
    "current",
    "in-target-package",
-   367,
+   393,
    "",
    [
-    223,
-    433,
-    457,
-    468
+    224,
+    434,
+    459,
+    470,
+    478
    ],
    [
-    222,
-    255
+    223,
+    256
    ],
    []
   ],
@@ -8692,15 +8713,15 @@
    319,
    "",
    [
-    223,
-    433,
-    457,
-    468,
-    476
+    224,
+    434,
+    459,
+    470,
+    478
    ],
    [
-    222,
-    256
+    223,
+    257
    ],
    []
   ],
@@ -8711,25 +8732,25 @@
    "persistence",
    "current",
    "in-target-package",
-   1003,
+   1011,
    "",
    [
-    206,
     207,
-    218,
+    208,
     219,
     220,
     221,
-    224,
+    222,
     225,
-    433,
-    456,
-    457,
-    468,
-    489
+    226,
+    434,
+    458,
+    459,
+    470,
+    491
    ],
    [
-    257
+    258
    ],
    [
     [
@@ -8758,9 +8779,9 @@
    "Row decoding shared by PostgreSQL room queries and mutations.",
    [],
    [
-    220,
     221,
-    258
+    222,
+    259
    ],
    []
   ],
@@ -8775,7 +8796,7 @@
    "",
    [],
    [
-    222
+    223
    ],
    []
   ],
@@ -8791,9 +8812,9 @@
    [],
    [
     58,
-    206,
-    222,
-    259
+    207,
+    223,
+    260
    ],
    [
     [
@@ -8826,15 +8847,15 @@
    75,
    "Stable public API for persona card import, storage, and prompt rendering.",
    [
-    228,
-    230,
+    229,
     231,
-    234
+    232,
+    235
    ],
    [
     43,
     72,
-    472
+    474
    ],
    []
   ],
@@ -8848,12 +8869,12 @@
    282,
    "Bounded asset extraction and persistence for persona imports.",
    [
-    230,
-    234,
-    235
+    231,
+    235,
+    236
    ],
    [
-    228
+    229
    ],
    []
   ],
@@ -8867,16 +8888,16 @@
    483,
    "Risu, CCv3, and CharX persona import and asset handling.",
    [
-    227,
-    230,
+    228,
     231,
     232,
-    234,
-    235
+    233,
+    235,
+    236
    ],
    [
-    226,
-    229
+    227,
+    230
    ],
    []
   ],
@@ -8891,17 +8912,17 @@
    "Operator-facing library and provider-selection boundary for persona assets.",
    [
     72,
-    228,
-    230,
-    234,
-    340
+    229,
+    231,
+    235,
+    341
    ],
    [
-    412,
-    416,
-    455,
-    472,
-    559
+    413,
+    417,
+    457,
+    474,
+    561
    ],
    [
     [
@@ -8934,16 +8955,16 @@
    320,
    "Persona card domain models and safe summaries.",
    [
-    235
+    236
    ],
    [
-    226,
     227,
     228,
     229,
-    231,
+    230,
     232,
-    234
+    233,
+    235
    ],
    [
     [
@@ -8986,12 +9007,12 @@
    488,
    "Lore selection and provider prompt rendering for persona cards.",
    [
-    230,
-    235
+    231,
+    236
    ],
    [
-    226,
-    228
+    227,
+    229
    ],
    []
   ],
@@ -9005,11 +9026,11 @@
    215,
    "Risu module decoding and normalized persona conversion.",
    [
-    230,
-    235
+    231,
+    236
    ],
    [
-    228
+    229
    ],
    []
   ],
@@ -9023,11 +9044,11 @@
    39,
    "Persona-selection serialization shared by provider launch profiles.",
    [
-    468
+    470
    ],
    [
-    339,
-    340
+    340,
+    341
    ],
    []
   ],
@@ -9041,13 +9062,13 @@
    23,
    "Persistence for normalized persona cards.",
    [
-    230
+    231
    ],
    [
-    226,
     227,
     228,
-    229
+    229,
+    230
    ],
    []
   ],
@@ -9062,11 +9083,11 @@
    "Primitive value normalization shared by persona card modules.",
    [],
    [
-    227,
     228,
-    230,
+    229,
     231,
-    232
+    232,
+    233
    ],
    []
   ],
@@ -9080,8 +9101,8 @@
    19,
    "First-party plugin host for room activity plugins.",
    [
-    241,
-    243
+    242,
+    244
    ],
    [],
    []
@@ -9096,10 +9117,10 @@
    86,
    "Route activity-plugin story triggers to the provider that owns a pawn.",
    [
-    468
+    470
    ],
    [
-    455
+    457
    ],
    [
     [
@@ -9118,12 +9139,12 @@
    71,
    "Validated first-party activity-plugin tool metadata.",
    [
-    241,
-    468
+    242,
+    470
    ],
    [
-    271,
-    354
+    272,
+    355
    ],
    []
   ],
@@ -9137,14 +9158,14 @@
    183,
    "Process-wide first-party plugin host used by WebSocket sessions.",
    [
-    243,
-    425,
-    468
+    244,
+    426,
+    470
    ],
    [
-    455,
-    548,
-    549
+    457,
+    550,
+    551
    ],
    [
     [
@@ -9181,15 +9202,15 @@
    131,
    "Versioned plugin manifest contract for first-party plugins only.",
    [
-    468
+    470
    ],
    [
-    236,
-    238,
-    242,
+    237,
+    239,
     243,
     244,
-    573
+    245,
+    575
    ],
    [
     [
@@ -9208,12 +9229,12 @@
    302,
    "Isolated subprocess host for first-party plugin server entrypoints.",
    [
-    241,
-    363,
-    468
+    242,
+    364,
+    470
    ],
    [
-    243
+    244
    ],
    [
     [
@@ -9245,14 +9266,14 @@
    180,
    "Room-scoped first-party plugin activation and transport fan-out.",
    [
-    241,
     242,
-    245,
-    468
+    243,
+    246,
+    470
    ],
    [
-    236,
-    239
+    237,
+    240
    ],
    [
     [
@@ -9271,11 +9292,11 @@
    22,
    "Room setting helpers for activity plugins.",
    [
-    241,
-    468
+    242,
+    470
    ],
    [
-    433
+    434
    ],
    []
   ],
@@ -9289,10 +9310,10 @@
    47,
    "Plugin-scoped durable storage. Not the official room chat transcript.",
    [
-    468
+    470
    ],
    [
-    243
+    244
    ],
    [
     [
@@ -9311,7 +9332,7 @@
    17,
    "Compatibility exports for PostgreSQL application database ownership.",
    [
-    206
+    207
    ],
    [],
    []
@@ -9326,7 +9347,7 @@
    37,
    "Compatibility exports for PostgreSQL room attention persistence.",
    [
-    218
+    219
    ],
    [],
    []
@@ -9341,7 +9362,7 @@
    22,
    "Compatibility exports for the bounded PostgreSQL connection pool.",
    [
-    207
+    208
    ],
    [],
    []
@@ -9356,7 +9377,7 @@
    12,
    "Compatibility exports for PostgreSQL identity room preferences.",
    [
-    210
+    211
    ],
    [],
    []
@@ -9371,7 +9392,7 @@
    11,
    "Compatibility export for PostgreSQL identity repository ownership.",
    [
-    212
+    213
    ],
    [],
    []
@@ -9386,7 +9407,7 @@
    39,
    "Compatibility exports for PostgreSQL identity roster persistence.",
    [
-    213
+    214
    ],
    [],
    []
@@ -9401,7 +9422,7 @@
    12,
    "Compatibility exports for PostgreSQL identity usage persistence.",
    [
-    214
+    215
    ],
    [],
    []
@@ -9416,7 +9437,7 @@
    41,
    "Compatibility exports for PostgreSQL identity user persistence.",
    [
-    216
+    217
    ],
    [],
    []
@@ -9431,7 +9452,7 @@
    11,
    "Compatibility export for PostgreSQL invite/session repository ownership.",
    [
-    205
+    206
    ],
    [],
    []
@@ -9446,7 +9467,7 @@
    35,
    "Compatibility exports for PostgreSQL room mutations.",
    [
-    220
+    221
    ],
    [],
    []
@@ -9461,7 +9482,7 @@
    43,
    "Compatibility exports for PostgreSQL room queries.",
    [
-    221
+    222
    ],
    [],
    []
@@ -9476,7 +9497,7 @@
    11,
    "Compatibility exports for PostgreSQL room repository ownership.",
    [
-    222
+    223
    ],
    [],
    []
@@ -9491,7 +9512,7 @@
    9,
    "Compatibility export for PostgreSQL room row decoding.",
    [
-    223
+    224
    ],
    [],
    []
@@ -9506,7 +9527,7 @@
    26,
    "Compatibility exports for the shared PostgreSQL schema boundary.",
    [
-    225
+    226
    ],
    [],
    []
@@ -9521,7 +9542,7 @@
    14,
    "Compatibility exports for provider child-process environment sanitation.",
    [
-    363
+    364
    ],
    [],
    []
@@ -9536,7 +9557,7 @@
    9,
    "Compatibility exports for provider authentication guidance.",
    [
-    291
+    292
    ],
    [],
    []
@@ -9551,7 +9572,7 @@
    24,
    "Compatibility exports for provider capability discovery.",
    [
-    301
+    302
    ],
    [],
    []
@@ -9566,7 +9587,7 @@
    28,
    "Compatibility exports for the optional API-provider model catalog.",
    [
-    302
+    303
    ],
    [],
    []
@@ -9581,7 +9602,7 @@
    9,
    "Compatibility exports for provider model identity verification.",
    [
-    348
+    349
    ],
    [],
    []
@@ -9596,7 +9617,7 @@
    18,
    "Compatibility exports for provider runtime launch configuration.",
    [
-    382
+    383
    ],
    [],
    []
@@ -9611,7 +9632,7 @@
    16,
    "Compatibility exports for provider runtime result contracts.",
    [
-    383
+    384
    ],
    [],
    []
@@ -9626,7 +9647,7 @@
    12,
    "Compatibility exports for provider runtime construction.",
    [
-    384
+    385
    ],
    [],
    []
@@ -9641,7 +9662,7 @@
    16,
    "Compatibility exports for secure provider credential storage.",
    [
-    386
+    387
    ],
    [],
    []
@@ -9656,7 +9677,7 @@
    6,
    "Compatibility export for locally stored provider session discovery.",
    [
-    388
+    389
    ],
    [],
    []
@@ -9673,8 +9694,8 @@
    [],
    [
     37,
-    286,
-    560
+    287,
+    562
    ],
    []
   ],
@@ -9688,11 +9709,11 @@
    278,
    "Private activity-plugin state and one-turn agent command staging.",
    [
-    238,
-    468
+    239,
+    470
    ],
    [
-    375
+    376
    ],
    [
     [
@@ -9720,12 +9741,12 @@
    97,
    "Canonical Agent Bridge publication for staged activity-plugin commands.",
    [
-    296,
     297,
-    468
+    298,
+    470
    ],
    [
-    283
+    284
    ],
    [
     [
@@ -9762,15 +9783,15 @@
    23,
    "Provider adapter implementations.",
    [
-    274,
     275,
     276,
-    279,
+    277,
     280,
-    282
+    281,
+    283
    ],
    [
-    560
+    562
    ],
    []
   ],
@@ -9789,14 +9810,14 @@
    [
     1,
     2,
-    273,
-    275,
-    277,
+    274,
+    276,
     278,
     279,
     280,
     281,
-    282
+    282,
+    283
    ],
    [
     [
@@ -9821,18 +9842,18 @@
    "",
    [
     177,
-    274,
-    314,
-    316,
-    318,
-    389
+    275,
+    315,
+    317,
+    319,
+    390
    ],
    [
     1,
     3,
-    273,
-    276,
-    280
+    274,
+    277,
+    281
    ],
    [
     [
@@ -9857,15 +9878,15 @@
    "",
    [
     177,
-    275,
-    314,
-    316
+    276,
+    315,
+    317
    ],
    [
     1,
     4,
-    273,
-    280
+    274,
+    281
    ],
    [
     [
@@ -9890,15 +9911,15 @@
    "",
    [
     177,
-    274,
-    371,
-    389
+    275,
+    372,
+    390
    ],
    [
     5,
-    278,
-    280,
-    281
+    279,
+    281,
+    282
    ],
    [
     [
@@ -9968,13 +9989,13 @@
    "",
    [
     177,
-    274,
-    277,
-    389
+    275,
+    278,
+    390
    ],
    [
     6,
-    280
+    281
    ],
    [
     [
@@ -10008,13 +10029,13 @@
    "",
    [
     177,
-    274
+    275
    ],
    [
     1,
     7,
-    273,
-    280
+    274,
+    281
    ],
    [
     [
@@ -10039,19 +10060,19 @@
    "",
    [
     177,
-    274,
     275,
     276,
     277,
     278,
     279,
-    281,
-    282
+    280,
+    282,
+    283
    ],
    [
     1,
     8,
-    273
+    274
    ],
    [
     [
@@ -10075,14 +10096,14 @@
    "",
    [
     177,
-    274,
-    277,
-    370,
-    389
+    275,
+    278,
+    371,
+    390
    ],
    [
     9,
-    280
+    281
    ],
    [
     [
@@ -10107,13 +10128,13 @@
    "",
    [
     177,
-    274
+    275
    ],
    [
     1,
     10,
-    273,
-    280
+    274,
+    281
    ],
    [
     [
@@ -10138,23 +10159,23 @@
    "Persistent provider runtime bridge for the canonical room protocol.",
    [
     88,
-    272,
-    293,
-    296,
+    273,
+    294,
     297,
-    365,
-    367,
-    374,
+    298,
+    366,
+    368,
     375,
-    382,
+    376,
     383,
-    444,
-    468
+    384,
+    446,
+    470
    ],
    [
     31,
     55,
-    485
+    487
    ],
    [
     [
@@ -10195,13 +10216,13 @@
    559,
    "",
    [
-    366,
     367,
-    391,
-    468
+    368,
+    392,
+    470
    ],
    [
-    384
+    385
    ],
    [
     [
@@ -10220,13 +10241,13 @@
    257,
    "OpenAI-compatible chat adapter for the API-provider lane (master plan 1단계 B).",
    [
-    270,
-    302,
-    371
+    271,
+    303,
+    372
    ],
    [
     37,
-    487
+    489
    ],
    [
     [
@@ -10259,10 +10280,10 @@
    "Bounded request views for persistent OpenAI-compatible API sessions.",
    [],
    [
-    351,
-    353,
-    372,
-    384
+    352,
+    354,
+    373,
+    385
    ],
    [
     [
@@ -10313,8 +10334,8 @@
    "Private durable checkpoints and tool-result storage for direct API sessions.",
    [],
    [
-    351,
-    353
+    352,
+    354
    ],
    [
     [
@@ -10374,7 +10395,7 @@
    "OpenAI-compatible function schemas for the bounded API work harness.",
    [],
    [
-    290
+    291
    ],
    []
   ],
@@ -10388,11 +10409,11 @@
    510,
    "Workspace-scoped tools for OpenAI-compatible API Agent Sessions.",
    [
-    289,
-    367
+    290,
+    368
    ],
    [
-    353
+    354
    ],
    [
     [
@@ -10421,7 +10442,7 @@
    "Provider authentication error classification and login guidance.",
    [],
    [
-    261
+    262
    ],
    []
   ],
@@ -10438,7 +10459,7 @@
     96
    ],
    [
-    298
+    299
    ],
    [
     [
@@ -10457,12 +10478,12 @@
    95,
    "Build and send provider failure reports over the Agent Bridge protocol.",
    [
-    296,
-    365
+    297,
+    366
    ],
    [
     31,
-    283
+    284
    ],
    [
     [
@@ -10483,7 +10504,7 @@
    [],
    [
     31,
-    295
+    296
    ],
    [
     [
@@ -10509,22 +10530,22 @@
    [
     88,
     96,
-    294,
-    298,
-    340,
-    346,
-    356,
-    363,
-    372,
-    375,
-    382,
-    386
+    295,
+    299,
+    341,
+    347,
+    357,
+    364,
+    373,
+    376,
+    383,
+    387
    ],
    [
     48,
     49,
     57,
-    493
+    495
    ],
    [
     [
@@ -10551,15 +10572,15 @@
    286,
    "",
    [
-    383,
-    468
+    384,
+    470
    ],
    [
     66,
-    272,
-    283,
-    293,
-    297
+    273,
+    284,
+    294,
+    298
    ],
    [
     [
@@ -10613,12 +10634,12 @@
    109,
    "",
    [
-    296
+    297
    ],
    [
     67,
-    272,
-    283
+    273,
+    284
    ],
    [
     [
@@ -10642,10 +10663,10 @@
    "Lifetime-scoped credential redaction for server-owned Agent Bridges.",
    [
     96,
-    292
+    293
    ],
    [
-    295
+    296
    ],
    [
     [
@@ -10692,24 +10713,24 @@
    1595,
    "Provider option discovery, catalog caching, and selection validation.",
    [
-    303,
     304,
-    306,
-    325,
-    334,
-    340,
-    350,
-    357,
-    363,
-    372,
-    387
+    305,
+    307,
+    326,
+    335,
+    341,
+    351,
+    358,
+    364,
+    373,
+    388
    ],
    [
-    262,
-    412,
-    416,
-    455,
-    560
+    263,
+    413,
+    417,
+    457,
+    562
    ],
    [
     [
@@ -10739,9 +10760,9 @@
    [],
    [
     37,
-    263,
-    286,
-    560
+    264,
+    287,
+    562
    ],
    []
   ],
@@ -10756,9 +10777,9 @@
    "Subscription model-catalog provenance and filtering policy.",
    [],
    [
-    301,
-    334,
-    357
+    302,
+    335,
+    358
    ],
    [
     [
@@ -10787,7 +10808,7 @@
    "Stable revisions for the public provider-selection contract.",
    [],
    [
-    301
+    302
    ],
    []
   ],
@@ -10801,9 +10822,9 @@
    38,
    "",
    [
-    353,
-    371,
-    375
+    354,
+    372,
+    376
    ],
    [],
    [
@@ -10829,7 +10850,7 @@
    "Read exact model identifiers from the installed Claude Code registry.",
    [],
    [
-    301
+    302
    ],
    []
   ],
@@ -10844,8 +10865,8 @@
    "",
    [],
    [
-    340,
-    349
+    341,
+    350
    ],
    []
   ],
@@ -10859,14 +10880,14 @@
    373,
    "",
    [
-    366,
     367,
-    444,
-    468
+    368,
+    446,
+    470
    ],
    [
-    349,
-    384
+    350,
+    385
    ],
    [
     [
@@ -10886,9 +10907,9 @@
    "Claude Code interactive TUI parsing and resident command validation.",
    [],
    [
-    342,
-    391,
-    392
+    343,
+    392,
+    393
    ],
    []
   ],
@@ -10922,11 +10943,11 @@
    141,
    "Sanitized Claude subscription usage from the native Claude CLI.",
    [
-    392,
-    403
+    393,
+    404
    ],
    [
-    368
+    369
    ],
    [
     [
@@ -10955,21 +10976,21 @@
    "Codex app-server process, JSON-RPC, and runtime profile ownership.",
    [
     96,
-    315,
-    317,
-    363,
-    367,
-    401,
+    316,
+    318,
+    364,
+    368,
     402,
-    444,
-    468
+    403,
+    446,
+    470
    ],
    [
     45,
     81,
     89,
-    313,
-    320
+    314,
+    321
    ],
    [
     [
@@ -10992,17 +11013,17 @@
    272,
    "Persistent room runtime wrapper for Codex app-server.",
    [
-    312,
-    367,
-    375,
-    378,
-    468
+    313,
+    368,
+    376,
+    379,
+    470
    ],
    [
     55,
     80,
-    349,
-    384
+    350,
+    385
    ],
    [
     [
@@ -11021,11 +11042,11 @@
    20,
    "Shared Codex command construction for current provider callers.",
    [
-    385
+    386
    ],
    [
-    275,
-    276
+    276,
+    277
    ],
    []
   ],
@@ -11039,10 +11060,10 @@
    40,
    "Process-local Codex model-provider overrides for native API harnesses.",
    [
-    468
+    470
    ],
    [
-    312
+    313
    ],
    []
   ],
@@ -11057,8 +11078,8 @@
    "",
    [],
    [
-    275,
-    276
+    276,
+    277
    ],
    []
   ],
@@ -11072,12 +11093,12 @@
    321,
    "",
    [
-    367,
-    444,
-    468
+    368,
+    446,
+    470
    ],
    [
-    312
+    313
    ],
    []
   ],
@@ -11093,7 +11114,7 @@
    [],
    [
     82,
-    275
+    276
    ],
    []
   ],
@@ -11122,11 +11143,11 @@
    171,
    "Sanitized Codex account rate-limit snapshots from app-server JSON-RPC.",
    [
-    312,
-    403
+    313,
+    404
    ],
    [
-    368
+    369
    ],
    [
     [
@@ -11145,13 +11166,13 @@
    235,
    "Cursor CLI room MCP lifecycle for one managed Agent Session.",
    [
-    363,
-    375,
-    378,
-    382
+    364,
+    376,
+    379,
+    383
    ],
    [
-    384
+    385
    ],
    [
     [
@@ -11170,9 +11191,9 @@
    47,
    "",
    [
-    353,
-    371,
-    375
+    354,
+    372,
+    376
    ],
    [
     84
@@ -11199,12 +11220,12 @@
    131,
    "Sanitized DeepSeek account balance from the provider's public API.",
    [
-    371,
-    386,
-    403
+    372,
+    387,
+    404
    ],
    [
-    368
+    369
    ],
    [
     [
@@ -11236,14 +11257,14 @@
    529,
    "Freebuff subscription CLI runtime using PTY without inventing structured events.",
    [
-    341,
-    375,
-    468
+    342,
+    376,
+    470
    ],
    [
-    301,
-    340,
-    384
+    302,
+    341,
+    385
    ],
    [
     [
@@ -11271,11 +11292,11 @@
    5,
    "Structured Grok ACP runtime.",
    [
-    330
+    331
    ],
    [
     115,
-    384
+    385
    ],
    []
   ],
@@ -11289,11 +11310,11 @@
    98,
    "",
    [
-    367,
-    468
+    368,
+    470
    ],
    [
-    330
+    331
    ],
    []
   ],
@@ -11308,7 +11329,7 @@
    "Process helpers for the Grok ACP transport.",
    [],
    [
-    330
+    331
    ],
    []
   ],
@@ -11322,11 +11343,11 @@
    146,
    "Room portal permission policy for Grok ACP tool requests.",
    [
-    381,
-    468
+    382,
+    470
    ],
    [
-    330
+    331
    ],
    []
   ],
@@ -11340,22 +11361,22 @@
    753,
    "",
    [
-    327,
     328,
     329,
-    331,
+    330,
     332,
     333,
-    363,
-    367,
-    375,
-    378,
-    383,
-    402,
-    468
+    334,
+    364,
+    368,
+    376,
+    379,
+    384,
+    403,
+    470
    ],
    [
-    326
+    327
    ],
    [
     [
@@ -11383,10 +11404,10 @@
    51,
    "Durable Grok ACP provider-session state.",
    [
-    468
+    470
    ],
    [
-    330
+    331
    ],
    [
     [
@@ -11406,7 +11427,7 @@
    "ACP stdio transport and JSON-RPC correlation.",
    [],
    [
-    330
+    331
    ],
    [
     [
@@ -11425,10 +11446,10 @@
    263,
    "Turn notification projection helpers for Grok ACP.",
    [
-    468
+    470
    ],
    [
-    330
+    331
    ],
    [
     [
@@ -11447,10 +11468,10 @@
    68,
    "Grok CLI catalog provenance helpers.",
    [
-    303
+    304
    ],
    [
-    301
+    302
    ],
    [
     [
@@ -11474,11 +11495,11 @@
    93,
    "Normalize harness tool/reasoning/terminal signals into room activity events.",
    [
-    444,
-    468
+    446,
+    470
    ],
    [
-    337
+    338
    ],
    []
   ],
@@ -11492,15 +11513,15 @@
    263,
    "OpenCode serve harness that points only at a session-local NativeModelGateway.",
    [
-    349,
-    351,
-    356,
-    359,
-    375,
-    468
+    350,
+    352,
+    357,
+    360,
+    376,
+    470
    ],
    [
-    338
+    339
    ],
    [
     [
@@ -11519,18 +11540,18 @@
    489,
    "Pi JSONL RPC harness bound to a session-local NativeModelGateway.",
    [
-    335,
-    349,
-    351,
-    362,
+    336,
+    350,
+    352,
     363,
-    367,
-    375,
-    402,
-    468
+    364,
+    368,
+    376,
+    403,
+    470
    ],
    [
-    338
+    339
    ],
    [
     [
@@ -11549,15 +11570,15 @@
    319,
    "Canonical execution-harness registry for API/Local providers.",
    [
-    336,
     337,
-    349,
-    468
+    338,
+    350,
+    470
    ],
    [
-    340,
-    350,
-    384
+    341,
+    351,
+    385
    ],
    [
     [
@@ -11576,13 +11597,13 @@
    98,
    "Immutable provider launch profile and its stable runtime identity.",
    [
-    233,
-    402,
-    468
+    234,
+    403,
+    470
    ],
    [
-    340,
-    445
+    341,
+    447
    ],
    [
     [
@@ -11601,13 +11622,13 @@
    1110,
    "Provider launch specifications, command construction, and profile validation.",
    [
-    233,
-    307,
-    325,
-    338,
+    234,
+    308,
+    326,
     339,
-    372,
-    468
+    340,
+    373,
+    470
    ],
    [
     14,
@@ -11615,23 +11636,23 @@
     55,
     57,
     179,
-    229,
-    295,
-    301,
-    347,
-    412,
+    230,
+    296,
+    302,
+    348,
     413,
-    415,
+    414,
     416,
-    419,
-    441,
-    447,
-    450,
-    455,
-    472,
-    473,
-    517,
-    525
+    417,
+    420,
+    443,
+    449,
+    452,
+    457,
+    474,
+    475,
+    519,
+    527
    ],
    [
     [
@@ -11668,20 +11689,20 @@
    1013,
    "",
    [
-    342,
     343,
-    363,
-    391,
-    402,
-    468
+    344,
+    364,
+    392,
+    403,
+    470
    ],
    [
     90,
     143,
-    325,
-    349,
-    384,
-    392
+    326,
+    350,
+    385,
+    393
    ],
    [
     [
@@ -11713,15 +11734,15 @@
    190,
    "",
    [
-    309
+    310
    ],
    [
     144,
-    341,
-    391,
+    342,
     392,
-    397,
-    404
+    393,
+    398,
+    405
    ],
    []
   ],
@@ -11735,12 +11756,12 @@
    29,
    "Compatibility facade for provider-owned structured transcript parsers.",
    [
-    393
+    394
    ],
    [
     146,
-    341,
-    404
+    342,
+    405
    ],
    []
   ],
@@ -11815,14 +11836,14 @@
    59,
    "",
    [
-    353,
-    371,
-    375
+    354,
+    372,
+    376
    ],
    [
     55,
-    295,
-    384
+    296,
+    385
    ],
    [
     [
@@ -11846,8 +11867,8 @@
    223,
    "Allowlisted provider CLI login launched from the local operator UI.",
    [
-    340,
-    468
+    341,
+    470
    ],
    [
     116
@@ -11879,10 +11900,10 @@
    "Provider-reported model identity verification policy.",
    [],
    [
-    264,
-    419,
-    450,
-    473
+    265,
+    420,
+    452,
+    475
    ],
    []
   ],
@@ -11896,18 +11917,18 @@
    293,
    "Native coding-harness adapters for API and Local model providers.",
    [
-    307,
     308,
-    313,
-    341,
-    351,
-    375,
-    468
+    309,
+    314,
+    342,
+    352,
+    376,
+    470
    ],
    [
-    336,
     337,
-    338
+    338,
+    339
    ],
    [
     [
@@ -11935,10 +11956,10 @@
    73,
    "",
    [
-    338
+    339
    ],
    [
-    301
+    302
    ],
    []
   ],
@@ -11952,17 +11973,17 @@
    564,
    "Loopback model-wire adapter owned by one native Agent Session.",
    [
-    287,
     288,
-    352,
-    371,
-    402,
-    468
+    289,
+    353,
+    372,
+    403,
+    470
    ],
    [
-    336,
     337,
-    349
+    338,
+    350
    ],
    [
     [
@@ -12018,7 +12039,7 @@
    "Translate native coding-harness model wires to OpenAI Chat Completions.",
    [],
    [
-    351
+    352
    ],
    []
   ],
@@ -12032,23 +12053,23 @@
    799,
    "",
    [
-    287,
     288,
-    290,
-    354,
+    289,
+    291,
     355,
-    365,
-    367,
-    371,
-    375,
-    402,
-    468
+    356,
+    366,
+    368,
+    372,
+    376,
+    403,
+    470
    ],
    [
-    305,
-    322,
-    346,
-    372
+    306,
+    323,
+    347,
+    373
    ],
    [
     [
@@ -12067,12 +12088,12 @@
    395,
    "Room tool schemas and execution for OpenAI-compatible chat APIs.",
    [
-    238,
-    375,
-    381
+    239,
+    376,
+    382
    ],
    [
-    353
+    354
    ],
    [
     [
@@ -12092,7 +12113,7 @@
    "Structured response state and user-visible diagnostics for OpenAI-compatible streams.",
    [],
    [
-    353
+    354
    ],
    [
     [
@@ -12111,23 +12132,23 @@
    785,
    "",
    [
-    358,
     359,
     360,
-    367,
-    371,
-    375,
-    378,
-    402,
-    444,
-    468
+    361,
+    368,
+    372,
+    376,
+    379,
+    403,
+    446,
+    470
    ],
    [
     55,
     180,
-    295,
-    336,
-    384
+    296,
+    337,
+    385
    ],
    [
     [
@@ -12146,10 +12167,10 @@
    103,
    "Parse OpenCode's mixed provider catalog into managed subscription models.",
    [
-    303
+    304
    ],
    [
-    301
+    302
    ],
    []
   ],
@@ -12163,12 +12184,12 @@
    198,
    "",
    [
-    367,
-    444,
-    468
+    368,
+    446,
+    470
    ],
    [
-    356
+    357
    ],
    []
   ],
@@ -12182,12 +12203,12 @@
    180,
    "",
    [
-    363,
-    371
+    364,
+    372
    ],
    [
-    336,
-    356
+    337,
+    357
    ],
    [
     [
@@ -12210,10 +12231,10 @@
    29,
    "",
    [
-    468
+    470
    ],
    [
-    356
+    357
    ],
    []
   ],
@@ -12227,13 +12248,13 @@
    273,
    "OpenCode Go usage read from the authenticated OpenCode web dashboard.",
    [
-    371,
-    386,
-    403
+    372,
+    387,
+    404
    ],
    [
-    368,
-    560
+    369,
+    562
    ],
    [
     [
@@ -12253,7 +12274,7 @@
    "Session-local Pi tools for bounded workspace reads and RoomPortal access.",
    [],
    [
-    337
+    338
    ],
    []
   ],
@@ -12269,18 +12290,18 @@
    [],
    [
     50,
-    242,
-    260,
-    295,
-    301,
-    312,
-    321,
-    330,
-    337,
-    341,
-    359,
-    392,
-    404
+    243,
+    261,
+    296,
+    302,
+    313,
+    322,
+    331,
+    338,
+    342,
+    360,
+    393,
+    405
    ],
    []
   ],
@@ -12312,16 +12333,16 @@
    189,
    "Public provider-failure categories derived only from explicit provider errors.",
    [
-    468
+    470
    ],
    [
-    283,
-    293,
-    353,
-    372,
-    413,
-    419,
-    473
+    284,
+    294,
+    354,
+    373,
+    414,
+    420,
+    475
    ],
    [
     [
@@ -12346,8 +12367,8 @@
    "",
    [],
    [
-    285,
-    308
+    286,
+    309
    ],
    [
     [
@@ -12366,22 +12387,22 @@
    170,
    "",
    [
-    468
+    470
    ],
    [
-    283,
-    285,
-    290,
-    308,
-    312,
+    284,
+    286,
+    291,
+    309,
     313,
-    317,
-    327,
-    330,
-    337,
-    353,
-    356,
-    358
+    314,
+    318,
+    328,
+    331,
+    338,
+    354,
+    357,
+    359
    ],
    [
     [
@@ -12404,16 +12425,16 @@
    92,
    "Owner-only provider usage registry and public error contract.",
    [
-    311,
-    320,
-    323,
-    361,
-    392,
-    403
+    312,
+    321,
+    324,
+    362,
+    393,
+    404
    ],
    [
     49,
-    560
+    562
    ],
    [
     [
@@ -12456,8 +12477,8 @@
    "",
    [],
    [
-    281,
-    409
+    282,
+    410
    ],
    []
   ],
@@ -12472,18 +12493,18 @@
    "Pinned HTTPS transport for credentialed remote model providers.",
    [],
    [
-    277,
-    286,
-    305,
-    322,
+    278,
+    287,
+    306,
     323,
-    346,
-    351,
-    353,
-    356,
-    359,
-    361,
-    372
+    324,
+    347,
+    352,
+    354,
+    357,
+    360,
+    362,
+    373
    ],
    [
     [
@@ -12539,22 +12560,22 @@
    "Declarative remote OpenAI-compatible providers and their room runtime.",
    [
     96,
-    287,
-    353,
-    365,
-    371,
-    375,
-    468
+    288,
+    354,
+    366,
+    372,
+    376,
+    470
    ],
    [
     55,
-    295,
-    301,
-    340,
-    382,
-    384,
-    386,
-    571
+    296,
+    302,
+    341,
+    383,
+    385,
+    387,
+    573
    ],
    [
     [
@@ -12621,13 +12642,13 @@
    242,
    "Provider-specific instructions for the first content-free room observation.",
    [
-    383,
-    468,
-    470
+    384,
+    470,
+    472
    ],
    [
-    283,
-    375
+    284,
+    376
    ],
    [
     [
@@ -12646,37 +12667,37 @@
    1171,
    "Private room-view boundary used by autonomous provider sessions.",
    [
-    271,
-    374,
-    376,
+    272,
+    375,
     377,
-    379,
+    378,
     380,
-    467,
-    468,
-    470
+    381,
+    469,
+    470,
+    472
    ],
    [
     31,
     55,
-    283,
-    295,
-    305,
-    313,
-    321,
+    284,
+    296,
+    306,
+    314,
     322,
-    325,
-    330,
-    336,
+    323,
+    326,
+    331,
     337,
-    346,
-    349,
-    353,
+    338,
+    347,
+    350,
     354,
-    356,
-    372,
-    378,
-    384
+    355,
+    357,
+    373,
+    379,
+    385
    ],
    [
     [
@@ -12704,12 +12725,12 @@
    329,
    "Structured collaboration actions owned by one private RoomPortal.",
    [
-    383,
-    468,
-    478
+    384,
+    470,
+    480
    ],
    [
-    375
+    376
    ],
    [
     [
@@ -12742,7 +12763,7 @@
    "Standalone terminal helper installed into provider-private room state.",
    [],
    [
-    375
+    376
    ],
    []
   ],
@@ -12756,15 +12777,15 @@
    164,
    "Stdio MCP boundary for one provider session's private room portal.",
    [
-    375,
-    381,
-    383
+    376,
+    382,
+    384
    ],
    [
-    313,
-    321,
-    330,
-    356
+    314,
+    322,
+    331,
+    357
    ],
    []
   ],
@@ -12781,7 +12802,7 @@
    [
     31,
     55,
-    375
+    376
    ],
    [
     [
@@ -12817,10 +12838,10 @@
    16,
    "Provider compatibility imports for canonical room randomness.",
    [
-    453
+    455
    ],
    [
-    375
+    376
    ],
    []
   ],
@@ -12835,9 +12856,9 @@
    "Canonical room-tool names and provider-safe protocol aliases.",
    [],
    [
-    329,
-    354,
-    378
+    330,
+    355,
+    379
    ],
    []
   ],
@@ -12851,18 +12872,18 @@
    335,
    "",
    [
-    372,
-    468
+    373,
+    470
    ],
    [
     31,
     55,
-    265,
-    283,
-    295,
-    321,
-    384,
-    419
+    266,
+    284,
+    296,
+    322,
+    385,
+    420
    ],
    [
     [
@@ -12908,18 +12929,18 @@
    "",
    [],
    [
-    266,
-    283,
-    296,
-    330,
-    374,
-    376,
-    378,
-    391,
-    419,
-    441,
-    455,
-    473
+    267,
+    284,
+    297,
+    331,
+    375,
+    377,
+    379,
+    392,
+    420,
+    443,
+    457,
+    475
    ],
    [
     [
@@ -12960,27 +12981,27 @@
    291,
    "",
    [
-    285,
-    287,
-    308,
-    313,
-    321,
-    325,
+    286,
+    288,
+    309,
+    314,
+    322,
     326,
-    338,
-    341,
-    346,
-    356,
-    372,
-    375,
-    382,
-    391,
-    404
+    327,
+    339,
+    342,
+    347,
+    357,
+    373,
+    376,
+    383,
+    392,
+    405
    ],
    [
     31,
     55,
-    267
+    268
    ],
    [
     [
@@ -13004,11 +13025,11 @@
    92,
    "",
    [
-    468
+    470
    ],
    [
-    314,
-    532
+    315,
+    534
    ],
    [
     [
@@ -13049,15 +13070,15 @@
    "",
    [
     96,
-    372
+    373
    ],
    [
     55,
-    268,
-    295,
-    323,
-    361,
-    560
+    269,
+    296,
+    324,
+    362,
+    562
    ],
    [
     [
@@ -13099,7 +13120,7 @@
    "Provider catalog selection contracts shared with room services.",
    [],
    [
-    301
+    302
    ],
    [
     [
@@ -13128,8 +13149,8 @@
    "List a provider CLI's locally-stored sessions so the agent-create flow can",
    [],
    [
-    269,
-    560
+    270,
+    562
    ],
    [
     [
@@ -13149,11 +13170,11 @@
    "",
    [],
    [
-    275,
-    277,
+    276,
     278,
-    281,
-    534
+    279,
+    282,
+    536
    ],
    []
   ],
@@ -13167,16 +13188,16 @@
    333,
    "",
    [
-    456,
-    468,
-    489
+    458,
+    470,
+    491
    ],
    [
-    450,
-    455,
-    472,
-    473,
-    512
+    452,
+    457,
+    474,
+    475,
+    514
    ],
    [
     [
@@ -13208,15 +13229,15 @@
    381,
    "",
    [
-    309,
-    342,
-    383
+    310,
+    343,
+    384
    ],
    [
-    285,
-    341,
-    384,
-    404
+    286,
+    342,
+    385,
+    405
    ],
    [
     [
@@ -13244,15 +13265,15 @@
    411,
    "Sanitized account usage from provider-native terminal panels.",
    [
-    309,
-    341,
+    310,
     342,
-    363,
-    403
+    343,
+    364,
+    404
    ],
    [
-    311,
-    368
+    312,
+    369
    ],
    [
     [
@@ -13271,16 +13292,16 @@
    29,
    "Provider-owned structured transcript parsers.",
    [
-    394,
     395,
     396,
     397,
     398,
     399,
-    400
+    400,
+    401
    ],
    [
-    343
+    344
    ],
    []
   ],
@@ -13294,12 +13315,12 @@
    163,
    "",
    [
-    397,
-    468
+    398,
+    470
    ],
    [
-    393,
-    399
+    394,
+    400
    ],
    [
     [
@@ -13323,12 +13344,12 @@
    194,
    "",
    [
-    397,
-    468
+    398,
+    470
    ],
    [
-    393,
-    399
+    394,
+    400
    ],
    [
     [
@@ -13352,12 +13373,12 @@
    130,
    "",
    [
-    397,
-    468
+    398,
+    470
    ],
    [
-    393,
-    399
+    394,
+    400
    ],
    [
     [
@@ -13381,17 +13402,17 @@
    464,
    "",
    [
-    342,
-    468
+    343,
+    470
    ],
    [
-    393,
     394,
     395,
     396,
-    398,
+    397,
     399,
-    400
+    400,
+    401
    ],
    [
     [
@@ -13436,11 +13457,11 @@
    95,
    "",
    [
-    397
+    398
    ],
    [
-    393,
-    399
+    394,
+    400
    ],
    [
     [
@@ -13464,16 +13485,16 @@
    53,
    "",
    [
-    394,
     395,
     396,
     397,
     398,
-    400,
-    468
+    399,
+    401,
+    470
    ],
    [
-    393
+    394
    ],
    []
   ],
@@ -13487,12 +13508,12 @@
    65,
    "",
    [
-    397,
-    468
+    398,
+    470
    ],
    [
-    393,
-    399
+    394,
+    400
    ],
    [
     [
@@ -13517,8 +13538,8 @@
    "Render the provider-visible text for an already-built room turn packet.",
    [],
    [
-    312,
-    472
+    313,
+    474
    ],
    []
   ],
@@ -13533,15 +13554,15 @@
    "Shared inactivity deadline for provider turns.",
    [],
    [
-    312,
-    330,
-    337,
-    339,
-    341,
-    351,
-    353,
-    356,
-    404
+    313,
+    331,
+    338,
+    340,
+    342,
+    352,
+    354,
+    357,
+    405
    ],
    [
     [
@@ -13561,12 +13582,12 @@
    "Provider usage interfaces shared without importing the usage registry.",
    [],
    [
-    311,
-    320,
-    323,
-    361,
-    368,
-    392
+    312,
+    321,
+    324,
+    362,
+    369,
+    393
    ],
    [
     [
@@ -13599,16 +13620,16 @@
    381,
    "",
    [
-    342,
     343,
-    363,
-    391,
-    402,
-    468
+    344,
+    364,
+    392,
+    403,
+    470
    ],
    [
-    384,
-    576
+    385,
+    578
    ],
    [
     [
@@ -13628,7 +13649,7 @@
    "Local desktop folder selection for server-owned Agent Sessions.",
    [],
    [
-    560
+    562
    ],
    [
     [
@@ -13697,7 +13718,7 @@
    13,
    "Compatibility exports for agentsassemble.providers.remote_bridge_config.",
    [
-    370
+    371
    ],
    [],
    []
@@ -13728,9 +13749,9 @@
    "Current room domain contracts and behavior.",
    [],
    [
-    449,
     451,
-    473
+    453,
+    475
    ],
    []
   ],
@@ -13744,18 +13765,18 @@
    213,
    "",
    [
-    229,
-    301,
-    340,
-    416,
-    431,
-    444,
-    445,
-    456,
-    468
+    230,
+    302,
+    341,
+    417,
+    432,
+    446,
+    447,
+    458,
+    470
    ],
    [
-    455
+    457
    ],
    [
     [
@@ -13776,18 +13797,18 @@
    [
     88,
     96,
-    340,
-    365,
-    420,
-    431,
+    341,
+    366,
+    421,
     432,
-    444,
-    456,
-    468
+    433,
+    446,
+    458,
+    470
    ],
    [
-    455,
-    486
+    457,
+    488
    ],
    [
     [
@@ -13815,15 +13836,15 @@
    131,
    "",
    [
-    424,
-    431,
-    444,
-    447,
-    456,
-    468
+    425,
+    432,
+    446,
+    449,
+    458,
+    470
    ],
    [
-    455
+    457
    ],
    [
     [
@@ -13842,16 +13863,16 @@
    159,
    "",
    [
-    340,
-    431,
+    341,
     432,
-    444,
-    447,
-    456,
-    468
+    433,
+    446,
+    449,
+    458,
+    470
    ],
    [
-    455
+    457
    ],
    [
     [
@@ -13870,16 +13891,16 @@
    237,
    "",
    [
-    229,
-    301,
-    340,
-    431,
-    456,
-    468
+    230,
+    302,
+    341,
+    432,
+    458,
+    470
    ],
    [
-    412,
-    455
+    413,
+    457
    ],
    [
     [
@@ -13907,19 +13928,19 @@
    523,
    "",
    [
-    468
+    470
    ],
    [
     48,
     49,
     65,
-    429,
-    438,
-    455,
-    546,
-    550,
-    554,
-    565
+    430,
+    440,
+    457,
+    548,
+    552,
+    556,
+    567
    ],
    [
     [
@@ -13959,11 +13980,11 @@
     96
    ],
    [
-    419,
-    449,
+    420,
     451,
-    455,
-    473
+    453,
+    457,
+    475
    ],
    []
   ],
@@ -13977,21 +13998,21 @@
    397,
    "",
    [
-    340,
-    348,
-    365,
-    382,
+    341,
+    349,
+    366,
     383,
-    418,
-    424,
-    431,
+    384,
+    419,
+    425,
     432,
-    444,
-    456,
-    468
+    433,
+    446,
+    458,
+    470
    ],
    [
-    455
+    457
    ],
    [
     [
@@ -14010,11 +14031,11 @@
    153,
    "",
    [
-    468
+    470
    ],
    [
     68,
-    413
+    414
    ],
    [
     [
@@ -14049,11 +14070,11 @@
    [
     103,
     105,
-    433,
-    460,
-    475,
-    494,
-    567
+    434,
+    462,
+    477,
+    496,
+    569
    ],
    [
     [
@@ -14077,12 +14098,12 @@
    214,
    "",
    [
-    424,
-    431,
-    456
+    425,
+    432,
+    458
    ],
    [
-    455
+    457
    ],
    [
     [
@@ -14102,14 +14123,14 @@
    "room",
    "current",
    "in-target-package",
-   88,
+   92,
    "Shared identity admission for canonical room commands.",
    [
-    425,
-    431
+    426,
+    432
    ],
    [
-    455
+    457
    ],
    []
   ],
@@ -14120,28 +14141,29 @@
    "room",
    "current",
    "in-target-package",
-   225,
+   228,
    "",
    [
-    433,
-    456,
-    489
+    434,
+    458,
+    491
    ],
    [
-    414,
-    419,
-    422,
-    435,
+    415,
+    420,
+    423,
     436,
     437,
     438,
-    442,
-    443,
-    449,
-    455,
-    461,
-    473,
-    495
+    439,
+    440,
+    444,
+    445,
+    451,
+    457,
+    463,
+    475,
+    497
    ],
    [
     [
@@ -14175,17 +14197,17 @@
    "room",
    "current",
    "in-target-package",
-   104,
+   107,
    "",
    [
-    434,
-    468
+    435,
+    470
    ],
    [
-    239,
-    423,
-    455,
-    496
+    240,
+    424,
+    457,
+    498
    ],
    [
     [
@@ -14213,12 +14235,12 @@
    162,
    "",
    [
-    432,
-    456,
-    468
+    433,
+    458,
+    470
    ],
    [
-    455
+    457
    ],
    [
     [
@@ -14246,13 +14268,13 @@
    139,
    "",
    [
-    456,
-    468
+    458,
+    470
    ],
    [
     87,
-    472,
-    497
+    474,
+    499
    ],
    [
     [
@@ -14274,7 +14296,7 @@
     88
    ],
    [
-    455
+    457
    ],
    [
     [
@@ -14293,13 +14315,13 @@
    120,
    "",
    [
-    417,
-    432,
-    447,
-    456
+    418,
+    433,
+    449,
+    458
    ],
    [
-    455
+    457
    ],
    [
     [
@@ -14318,12 +14340,12 @@
    155,
    "",
    [
-    431,
-    456,
-    468
+    432,
+    458,
+    470
    ],
    [
-    455
+    457
    ],
    [
     [
@@ -14344,37 +14366,37 @@
    [],
    [
     30,
-    412,
     413,
     414,
     415,
     416,
-    419,
-    422,
+    417,
+    420,
     423,
-    430,
-    435,
+    424,
+    431,
     436,
-    438,
+    437,
     440,
     442,
-    443,
-    447,
+    444,
+    445,
     449,
-    450,
     451,
-    455,
-    458,
-    461,
-    465,
-    469,
-    473,
-    479,
-    500,
-    553,
-    565,
-    566,
-    568
+    452,
+    453,
+    457,
+    460,
+    463,
+    467,
+    471,
+    475,
+    481,
+    502,
+    555,
+    567,
+    568,
+    570
    ],
    [
     [
@@ -14399,23 +14421,23 @@
    "",
    [
     12,
-    444,
-    468
+    446,
+    470
    ],
    [
-    413,
-    415,
-    419,
-    426,
-    429,
-    435,
-    449,
-    450,
-    455,
-    463,
-    473,
-    501,
-    574
+    414,
+    416,
+    420,
+    427,
+    430,
+    436,
+    451,
+    452,
+    457,
+    465,
+    475,
+    503,
+    576
    ],
    [
     [
@@ -14447,24 +14469,24 @@
    336,
    "Canonical room-global settings shared by every repository backend.",
    [
-    244,
-    421,
-    459,
-    470
+    245,
+    422,
+    461,
+    472
    ],
    [
     198,
-    200,
-    220,
+    201,
     221,
     222,
-    424,
-    456,
-    461,
-    462,
+    223,
+    425,
+    458,
     463,
-    504,
-    564
+    464,
+    465,
+    506,
+    566
    ],
    [
     [
@@ -14506,14 +14528,15 @@
    45,
    "Canonical principal projection for room authorization and visibility.",
    [
-    468
+    470
    ],
    [
-    425,
-    444,
-    449,
-    455,
-    463
+    426,
+    440,
+    446,
+    451,
+    457,
+    465
    ],
    []
   ],
@@ -14527,13 +14550,13 @@
    124,
    "",
    [
-    424,
-    431,
+    425,
     432,
-    456
+    433,
+    458
    ],
    [
-    455
+    457
    ],
    [
     [
@@ -14552,12 +14575,12 @@
    28,
    "",
    [
-    424,
-    431,
-    437
+    425,
+    432,
+    438
    ],
    [
-    455
+    457
    ],
    []
   ],
@@ -14573,15 +14596,34 @@
    [
     33,
     193,
-    424,
-    439,
-    456,
-    468
+    425,
+    441,
+    458,
+    470
    ],
    [
-    436,
-    509,
-    568
+    437,
+    511,
+    570
+   ],
+   []
+  ],
+  [
+   "agentsassemble.room.message_mutation_commands",
+   "agentsassemble/room/message_mutation_commands.py",
+   "room",
+   "room",
+   "current",
+   "in-target-package",
+   74,
+   "Durable edit/delete command routing and post-commit cleanup.",
+   [
+    425,
+    440,
+    470
+   ],
+   [
+    457
    ],
    []
   ],
@@ -14592,23 +14634,25 @@
    "room",
    "current",
    "in-target-package",
-   264,
+   415,
    "",
    [
-    417,
-    424,
-    431,
-    453,
-    457,
-    464,
-    467,
-    468,
+    418,
+    425,
+    432,
+    435,
+    455,
+    459,
+    466,
     469,
-    473,
-    478
+    470,
+    471,
+    475,
+    480
    ],
    [
-    455
+    439,
+    457
    ],
    [
     [
@@ -14630,9 +14674,9 @@
     193
    ],
    [
-    437,
-    455,
-    567
+    438,
+    457,
+    569
    ],
    []
   ],
@@ -14646,11 +14690,11 @@
    91,
    "Resolve observation publications from the server-owned RoomPortal boundary.",
    [
-    431,
-    468
+    432,
+    470
    ],
    [
-    473
+    475
    ],
    [
     [
@@ -14669,16 +14713,16 @@
    126,
    "Ordered-conversation target selection and room-observation queueing.",
    [
-    340,
-    383,
-    456,
-    468,
-    473,
-    502,
-    517
+    341,
+    384,
+    458,
+    470,
+    475,
+    504,
+    519
    ],
    [
-    455
+    457
    ],
    [
     [
@@ -14697,15 +14741,15 @@
    482,
    "",
    [
-    424,
-    431,
-    444,
+    425,
+    432,
     446,
-    456,
-    468
+    448,
+    458,
+    470
    ],
    [
-    455
+    457
    ],
    [
     [
@@ -14728,14 +14772,14 @@
    452,
    "",
    [
-    424,
-    431,
-    446,
-    456,
-    468
+    425,
+    432,
+    448,
+    458,
+    470
    ],
    [
-    455
+    457
    ],
    [
     [
@@ -14755,32 +14799,32 @@
    "",
    [
     96,
-    434,
-    468,
-    474
+    435,
+    470,
+    476
    ],
    [
-    283,
-    308,
-    312,
-    317,
-    335,
-    356,
-    358,
-    412,
+    284,
+    309,
+    313,
+    318,
+    336,
+    357,
+    359,
     413,
     414,
     415,
-    419,
-    432,
-    442,
-    450,
-    451,
-    455,
-    463,
+    416,
+    420,
+    433,
+    444,
+    452,
+    453,
+    457,
     465,
-    473,
-    511
+    467,
+    475,
+    513
    ],
    []
   ],
@@ -14794,12 +14838,12 @@
    97,
    "Server-owned provider call budgets for canonical Agent Sessions.",
    [
-    339,
-    456
+    340,
+    458
    ],
    [
-    412,
-    473
+    413,
+    475
    ],
    []
   ],
@@ -14814,8 +14858,8 @@
    "",
    [],
    [
-    442,
-    443
+    444,
+    445
    ],
    []
   ],
@@ -14829,16 +14873,16 @@
    115,
    "",
    [
-    340,
-    431,
-    468
+    341,
+    432,
+    470
    ],
    [
-    414,
     415,
-    429,
-    450,
-    455
+    416,
+    430,
+    452,
+    457
    ],
    [
     [
@@ -14857,10 +14901,10 @@
    249,
    "",
    [
-    468
+    470
    ],
    [
-    449
+    451
    ],
    [
     [
@@ -14884,19 +14928,19 @@
    521,
    "",
    [
-    411,
-    418,
-    424,
-    431,
+    412,
+    419,
+    425,
     432,
-    434,
-    448,
-    456,
-    468
+    433,
+    435,
+    450,
+    458,
+    470
    ],
    [
-    455,
-    465
+    457,
+    467
    ],
    [
     [
@@ -14915,18 +14959,18 @@
    535,
    "",
    [
-    340,
-    348,
-    390,
-    431,
+    341,
+    349,
+    391,
     432,
-    444,
-    447,
-    456,
-    468
+    433,
+    446,
+    449,
+    458,
+    470
    ],
    [
-    455
+    457
    ],
    [
     [
@@ -14945,16 +14989,16 @@
    205,
    "Provider streaming ingress and exact-sensitive-value buffering.",
    [
-    411,
-    418,
-    431,
-    444,
-    456,
-    468,
-    476
+    412,
+    419,
+    432,
+    446,
+    458,
+    470,
+    478
    ],
    [
-    473
+    475
    ],
    [
     [
@@ -14970,11 +15014,11 @@
    "room",
    "current",
    "in-target-package",
-   147,
+   152,
    "Authoritative public room event contract shared with the frontend.",
    [],
    [
-    474
+    476
    ],
    [
     [
@@ -15070,11 +15114,11 @@
    63,
    "Validated server-side randomness for canonical room tools.",
    [
-    454
+    456
    ],
    [
-    380,
-    438
+    381,
+    440
    ],
    [
     [
@@ -15098,11 +15142,11 @@
    90,
    "Pure bounds and normalization for official room randomness.",
    [
-    468
+    470
    ],
    [
-    453,
-    467
+    455,
+    469
    ],
    [
     [
@@ -15127,22 +15171,21 @@
    "room",
    "current",
    "in-target-package",
-   1866,
+   1861,
    "",
    [
     16,
     26,
     88,
     193,
-    200,
-    229,
-    237,
-    239,
-    301,
-    340,
-    383,
-    390,
-    412,
+    201,
+    230,
+    238,
+    240,
+    302,
+    341,
+    384,
+    391,
     413,
     414,
     415,
@@ -15150,54 +15193,56 @@
     417,
     418,
     419,
-    422,
+    420,
     423,
     424,
     425,
     426,
-    428,
+    427,
     429,
     430,
     431,
     432,
-    434,
+    433,
     435,
     436,
-    438,
+    437,
     439,
+    440,
     441,
-    442,
     443,
     444,
-    447,
+    445,
+    446,
     449,
-    450,
-    456,
+    451,
+    452,
     458,
-    461,
+    460,
     463,
     465,
-    468,
-    472,
-    473,
+    467,
+    470,
     474,
-    477,
-    478,
+    475,
+    476,
     479,
-    490,
-    491,
+    480,
+    481,
     492,
-    502,
-    517
+    493,
+    494,
+    504,
+    519
    ],
    [
     48,
     49,
     57,
     116,
-    513,
-    543,
-    549
+    515,
+    545,
+    551
    ],
    [
     [
@@ -15222,11 +15267,11 @@
    "room",
    "current",
    "in-target-package",
-   398,
+   400,
    "",
    [
-    433,
-    489
+    434,
+    491
    ],
    [
     14,
@@ -15241,46 +15286,46 @@
     116,
     136,
     138,
-    200,
-    222,
-    390,
-    412,
+    201,
+    223,
+    391,
     413,
     414,
     415,
     416,
-    419,
-    422,
-    424,
-    426,
+    417,
+    420,
+    423,
+    425,
     427,
-    429,
+    428,
     430,
-    435,
-    437,
-    441,
-    442,
+    431,
+    436,
+    438,
     443,
+    444,
     445,
-    449,
-    450,
+    447,
     451,
-    455,
-    458,
-    462,
-    463,
+    452,
+    453,
+    457,
+    460,
+    464,
     465,
-    472,
-    473,
-    479,
-    490,
+    467,
+    474,
+    475,
+    481,
     492,
-    514,
-    525,
-    543,
-    549,
-    550,
-    570
+    494,
+    516,
+    527,
+    545,
+    551,
+    552,
+    572
    ],
    [
     [
@@ -15313,23 +15358,23 @@
    254,
    "",
    [
-    468,
-    476
+    470,
+    478
    ],
    [
     191,
-    199,
     200,
-    210,
-    218,
+    201,
+    211,
     219,
     220,
     221,
     222,
-    438,
-    462,
-    516,
-    554
+    223,
+    440,
+    464,
+    518,
+    556
    ],
    []
   ],
@@ -15343,12 +15388,12 @@
    95,
    "",
    [
-    431,
-    456,
-    468
+    432,
+    458,
+    470
    ],
    [
-    455
+    457
    ],
    [
     [
@@ -15368,10 +15413,10 @@
    "Shared value rules for room-global settings and legacy migration.",
    [],
    [
-    433,
-    460,
+    434,
     462,
-    520
+    464,
+    522
    ],
    []
   ],
@@ -15385,12 +15430,12 @@
    220,
    "Legacy file-backed room preferences retained during repository migration.",
    [
-    421,
-    459,
-    470
+    422,
+    461,
+    472
    ],
    [
-    521
+    523
    ],
    []
   ],
@@ -15404,13 +15449,13 @@
    77,
    "Canonical room-global settings mutation through the room command boundary.",
    [
-    424,
-    431,
-    433,
-    468
+    425,
+    432,
+    434,
+    470
    ],
    [
-    455
+    457
    ],
    [
     [
@@ -15430,15 +15475,15 @@
    "Compose repository-owned room settings with identity-owned preferences.",
    [
     139,
-    433,
-    456,
-    457,
+    434,
+    458,
     459,
-    475
+    461,
+    477
    ],
    [
-    522,
-    569
+    524,
+    571
    ],
    []
   ],
@@ -15452,15 +15497,15 @@
    267,
    "",
    [
-    432,
     433,
     434,
-    444,
-    456,
-    468
+    435,
+    446,
+    458,
+    470
    ],
    [
-    455
+    457
    ],
    [
     [
@@ -15489,9 +15534,9 @@
    "Server-governed room speech helpers.",
    [],
    [
-    438,
-    523,
-    567
+    440,
+    525,
+    569
    ],
    [
     [
@@ -15519,15 +15564,15 @@
    156,
    "",
    [
-    431,
-    444,
-    449,
-    456,
-    468,
-    473
+    432,
+    446,
+    451,
+    458,
+    470,
+    475
    ],
    [
-    455
+    457
    ],
    [
     [
@@ -15546,12 +15591,12 @@
    149,
    "Validation and canonical event fields for structured room publications.",
    [
-    468,
-    478
+    470,
+    480
    ],
    [
-    473,
-    474
+    475,
+    476
    ],
    [
     [
@@ -15588,13 +15633,13 @@
    238,
    "Validate provider-reported room tool results for canonical system messages.",
    [
-    454,
-    468
+    456,
+    470
    ],
    [
-    375,
-    438,
-    473
+    376,
+    440,
+    475
    ],
    [
     [
@@ -15666,123 +15711,125 @@
     198,
     199,
     200,
-    205,
-    209,
-    213,
+    201,
+    206,
+    210,
     214,
-    216,
-    218,
+    215,
+    217,
     219,
     220,
     221,
     222,
-    233,
-    237,
+    223,
+    234,
     238,
     239,
-    241,
+    240,
     242,
     243,
     244,
     245,
-    271,
+    246,
     272,
-    283,
-    285,
-    296,
-    308,
-    312,
+    273,
+    284,
+    286,
+    297,
+    309,
     313,
-    315,
-    317,
-    325,
-    327,
-    329,
+    314,
+    316,
+    318,
+    326,
+    328,
     330,
     331,
-    333,
-    335,
+    332,
+    334,
     336,
     337,
     338,
     339,
     340,
     341,
-    347,
-    349,
-    351,
-    353,
-    356,
-    358,
-    360,
-    365,
-    367,
-    372,
-    374,
+    342,
+    348,
+    350,
+    352,
+    354,
+    357,
+    359,
+    361,
+    366,
+    368,
+    373,
     375,
     376,
-    382,
-    385,
-    390,
-    394,
+    377,
+    383,
+    386,
+    391,
     395,
     396,
     397,
-    399,
+    398,
     400,
-    404,
-    412,
+    401,
+    405,
     413,
     414,
     415,
     416,
     417,
-    419,
+    418,
     420,
-    425,
+    421,
     426,
     427,
-    430,
-    432,
-    434,
-    437,
+    428,
+    431,
+    433,
+    435,
     438,
+    439,
     440,
-    441,
     442,
     443,
     444,
-    447,
-    448,
+    445,
+    446,
     449,
     450,
     451,
-    454,
-    455,
+    452,
+    453,
+    456,
     457,
-    458,
-    461,
+    459,
+    460,
     463,
     465,
-    466,
     467,
-    472,
-    473,
-    478,
-    479,
-    489,
-    490,
+    468,
+    469,
+    474,
+    475,
+    480,
+    481,
     491,
     492,
-    517,
-    525,
-    553,
-    554,
-    563,
-    566,
-    567,
+    493,
+    494,
+    519,
+    527,
+    555,
+    556,
+    565,
     568,
-    570
+    569,
+    570,
+    572
    ],
    []
   ],
@@ -15796,12 +15843,12 @@
    21,
    "Server command authorization for room-scoped optional tools.",
    [
-    431,
-    470
+    432,
+    472
    ],
    [
-    438,
-    473
+    440,
+    475
    ],
    []
   ],
@@ -15816,11 +15863,11 @@
    "Server-owned room tool availability independent of conversation routing.",
    [],
    [
-    374,
     375,
-    433,
-    460,
-    469
+    376,
+    434,
+    462,
+    471
    ],
    []
   ],
@@ -15835,7 +15882,7 @@
    "Serialization boundary for assigning one provider observation turn.",
    [],
    [
-    473
+    475
    ],
    []
   ],
@@ -15849,20 +15896,20 @@
    655,
    "",
    [
-    200,
-    226,
-    229,
-    340,
-    390,
-    401,
-    427,
-    456,
-    468
+    201,
+    227,
+    230,
+    341,
+    391,
+    402,
+    428,
+    458,
+    470
    ],
    [
     57,
-    455,
-    526
+    457,
+    528
    ],
    [
     [
@@ -15882,36 +15929,36 @@
    "",
    [
     88,
-    340,
-    348,
-    365,
-    383,
-    390,
-    411,
-    418,
-    424,
-    431,
+    341,
+    349,
+    366,
+    384,
+    391,
+    412,
+    419,
+    425,
     432,
-    440,
-    444,
-    445,
-    451,
-    456,
-    466,
-    467,
+    433,
+    442,
+    446,
+    447,
+    453,
+    458,
     468,
     469,
+    470,
     471,
-    474,
-    489,
-    525
+    473,
+    476,
+    491,
+    527
    ],
    [
-    438,
-    441,
-    455,
-    465,
-    527
+    440,
+    443,
+    457,
+    467,
+    529
    ],
    [
     [
@@ -15930,14 +15977,14 @@
    115,
    "Shared room event, participant, session, command, and turn shapes.",
    [
-    452,
-    466
+    454,
+    468
    ],
    [
-    444,
-    455,
-    473,
-    528
+    446,
+    457,
+    475,
+    530
    ],
    [
     [
@@ -15996,16 +16043,16 @@
    127,
    "Strict user-owned notification and read preferences for one room.",
    [
-    421
+    422
    ],
    [
     139,
     191,
     194,
-    210,
-    212,
-    462,
-    529
+    211,
+    213,
+    464,
+    531
    ],
    [
     [
@@ -16041,8 +16088,9 @@
    [
     198,
     221,
-    451,
-    457
+    222,
+    453,
+    459
    ],
    []
   ],
@@ -16057,9 +16105,9 @@
    "Ephemeral voice-channel presence: who is currently connected to a voice",
    [],
    [
-    455,
-    539,
-    567
+    457,
+    541,
+    569
    ],
    []
   ],
@@ -16073,14 +16121,14 @@
    251,
    "Canonical room vote validation and tallying.",
    [
-    468
+    470
    ],
    [
-    376,
-    438,
-    455,
-    466,
-    530
+    377,
+    440,
+    457,
+    468,
+    532
    ],
    []
   ],
@@ -16094,12 +16142,12 @@
    229,
    "One admission budget for authenticated room writes across every provider.",
    [
-    431,
-    456,
-    468
+    432,
+    458,
+    470
    ],
    [
-    455
+    457
    ],
    [
     [
@@ -16198,7 +16246,7 @@
    "Compatibility exports for the provider Agent Bridge.",
    [
     31,
-    283
+    284
    ],
    [],
    []
@@ -16213,7 +16261,7 @@
    28,
    "Compatibility exports for Agent Session process lifecycle orchestration.",
    [
-    413
+    414
    ],
    [],
    []
@@ -16228,7 +16276,7 @@
    24,
    "Compatibility exports for the OpenAI-compatible API provider adapter.",
    [
-    286
+    287
    ],
    [],
    []
@@ -16258,20 +16306,20 @@
    179,
    "",
    [
-    468
+    470
    ],
    [
     197,
-    200,
-    218,
-    222,
-    390,
-    424,
-    456,
-    473,
-    491,
-    492,
-    525
+    201,
+    219,
+    223,
+    391,
+    425,
+    458,
+    475,
+    493,
+    494,
+    527
    ],
    [
     [
@@ -16312,12 +16360,12 @@
    139,
    "",
    [
-    456,
-    468,
-    491
+    458,
+    470,
+    493
    ],
    [
-    455
+    457
    ],
    [
     [
@@ -16336,13 +16384,13 @@
    277,
    "",
    [
-    468,
-    489,
-    499
+    470,
+    491,
+    501
    ],
    [
-    455,
-    490
+    457,
+    492
    ],
    []
   ],
@@ -16356,12 +16404,12 @@
    493,
    "",
    [
-    456,
-    468,
-    489
+    458,
+    470,
+    491
    ],
    [
-    455
+    457
    ],
    [
     [
@@ -16388,7 +16436,7 @@
    14,
    "Compatibility exports for server-owned Agent Bridge processes.",
    [
-    295
+    296
    ],
    [],
    []
@@ -16403,7 +16451,7 @@
    38,
    "Compatibility exports for custom room channel rules.",
    [
-    421
+    422
    ],
    [],
    []
@@ -16418,7 +16466,7 @@
    16,
    "Compatibility exports for the durable room command unit of work.",
    [
-    424
+    425
    ],
    [],
    []
@@ -16433,7 +16481,7 @@
    18,
    "Compatibility exports for room command validation and capability policy.",
    [
-    425
+    426
    ],
    [],
    []
@@ -16448,7 +16496,7 @@
    18,
    "Compatibility exports for bounded room context projection.",
    [
-    427
+    428
    ],
    [],
    []
@@ -16479,9 +16527,9 @@
    "Shared participant-engagement rules for every room participation path.",
    [],
    [
-    491,
-    502,
-    517
+    493,
+    504,
+    519
    ],
    []
   ],
@@ -16495,7 +16543,7 @@
    6,
    "Compatibility exports for room errors.",
    [
-    431
+    432
    ],
    [],
    []
@@ -16510,7 +16558,7 @@
    14,
    "Compatibility exports for canonical room event fanout.",
    [
-    432
+    433
    ],
    [],
    []
@@ -16525,11 +16573,11 @@
    111,
    "",
    [
-    499
+    501
    ],
    [
-    441,
-    455
+    443,
+    457
    ],
    [
     [
@@ -16563,7 +16611,7 @@
    36,
    "Compatibility exports for canonical room-global settings.",
    [
-    433
+    434
    ],
    [],
    []
@@ -16640,7 +16688,7 @@
    25,
    "Compatibility exports for agentsassemble.room.members.",
    [
-    437
+    438
    ],
    [],
    []
@@ -16670,7 +16718,7 @@
    26,
    "Compatibility exports for public room-state projection.",
    [
-    444
+    446
    ],
    [],
    []
@@ -16685,7 +16733,7 @@
    22,
    "Compatibility exports for provider room-sync cursors.",
    [
-    390
+    391
    ],
    [],
    []
@@ -16700,7 +16748,7 @@
    26,
    "Compatibility exports for canonical room realtime orchestration.",
    [
-    455
+    457
    ],
    [],
    []
@@ -16715,7 +16763,7 @@
    24,
    "Compatibility exports for the canonical room repository contract.",
    [
-    456
+    458
    ],
    [],
    []
@@ -16745,7 +16793,7 @@
    48,
    "Compatibility exports for canonical room repository record normalization.",
    [
-    457
+    459
    ],
    [],
    []
@@ -16760,13 +16808,13 @@
    135,
    "",
    [
-    340,
-    468,
-    499
+    341,
+    470,
+    501
    ],
    [
-    441,
-    455
+    443,
+    457
    ],
    [
     [
@@ -16815,7 +16863,7 @@
    24,
    "Compatibility exports for shared room setting value rules.",
    [
-    459
+    461
    ],
    [],
    []
@@ -16830,7 +16878,7 @@
    39,
    "Compatibility exports for agentsassemble.room.settings.",
    [
-    460
+    462
    ],
    [],
    []
@@ -16845,7 +16893,7 @@
    12,
    "Compatibility exports for canonical room settings composition.",
    [
-    462
+    464
    ],
    [],
    []
@@ -16860,7 +16908,7 @@
    38,
    "Compatibility exports for server-governed room speech policy.",
    [
-    464
+    466
    ],
    [],
    []
@@ -16875,7 +16923,7 @@
    10,
    "Compatibility export for the local SQLite room repository.",
    [
-    200
+    201
    ],
    [],
    []
@@ -16890,13 +16938,13 @@
    300,
    "",
    [
-    340,
-    456,
-    468,
-    489
+    341,
+    458,
+    470,
+    491
    ],
    [
-    473
+    475
    ],
    [
     [
@@ -16924,7 +16972,7 @@
    36,
    "Compatibility exports for provider turn-context assembly.",
    [
-    472
+    474
    ],
    [],
    []
@@ -16939,7 +16987,7 @@
    42,
    "Compatibility exports for canonical room turn coordination.",
    [
-    473
+    475
    ],
    [],
    []
@@ -16954,7 +17002,7 @@
    20,
    "Compatibility exports for shared room shapes.",
    [
-    474
+    476
    ],
    [],
    []
@@ -16969,7 +17017,7 @@
    28,
    "Compatibility exports for room user notification and read preferences.",
    [
-    475
+    477
    ],
    [],
    []
@@ -16984,7 +17032,7 @@
    9,
    "Compatibility exports for agentsassemble.room.votes.",
    [
-    478
+    480
    ],
    [],
    []
@@ -16999,7 +17047,7 @@
    74,
    "Compatibility exports for the web-owned WebSocket protocol codec.",
    [
-    575
+    577
    ],
    [],
    []
@@ -17014,7 +17062,7 @@
    29,
    "Compatibility exports for agentsassemble.providers.sandbox_launcher.",
    [
-    385
+    386
    ],
    [],
    []
@@ -17044,7 +17092,7 @@
    11,
    "Compatibility exports for agentsassemble.providers.speech_policy.",
    [
-    389
+    390
    ],
    [],
    []
@@ -17074,7 +17122,7 @@
    12,
    "Compatibility exports for shared SSE and WebSocket transport cadence.",
    [
-    572
+    574
    ],
    [],
    []
@@ -17119,7 +17167,7 @@
    19,
    "Compatibility exports for agentsassemble.room.voice_presence.",
    [
-    477
+    479
    ],
    [],
    []
@@ -17178,7 +17226,7 @@
     50,
     114,
     116,
-    546
+    548
    ],
    [
     [
@@ -17198,15 +17246,15 @@
    "HTTP handler transport for the local GUI server.",
    [
     48,
-    455,
-    456,
-    545,
-    546,
-    550,
-    571,
-    572,
+    457,
+    458,
+    547,
+    548,
+    552,
     573,
-    574
+    574,
+    575,
+    576
    ],
    [
     116
@@ -17223,7 +17271,7 @@
    126,
    "HTTP server policy for the browser-facing GUI.",
    [
-    545
+    547
    ],
    [
     116
@@ -17251,9 +17299,9 @@
    "Absolute read deadlines for browser-facing HTTP requests.",
    [],
    [
-    543,
-    544,
-    550
+    545,
+    546,
+    552
    ],
    [
     [
@@ -17281,12 +17329,12 @@
    192,
    "HTTP response writers shared by the GUI request handler.",
    [
-    417,
-    542
+    418,
+    544
    ],
    [
     123,
-    543
+    545
    ],
    [
     [
@@ -17306,14 +17354,14 @@
    "Canonical Python room client over HTTP admission and WebSocket transport.",
    [
     27,
-    575
+    577
    ],
    [
     31,
     55,
     56,
     57,
-    577
+    579
    ],
    [
     [
@@ -17343,15 +17391,15 @@
    [
     12,
     139,
-    239,
-    575
+    240,
+    577
    ],
    [
     48,
     49,
-    549,
-    574,
-    578
+    551,
+    576,
+    580
    ],
    [
     [
@@ -17397,10 +17445,10 @@
    "Compose current canonical room WebSocket dependencies.",
    [
     48,
-    239,
-    455,
-    456,
-    548
+    240,
+    457,
+    458,
+    550
    ],
    [
     116
@@ -17425,10 +17473,10 @@
     109,
     136,
     139,
-    417,
-    456,
-    545,
-    571
+    418,
+    458,
+    547,
+    573
    ],
    [
     101,
@@ -17438,9 +17486,7 @@
     113,
     116,
     127,
-    543,
-    552,
-    553,
+    545,
     554,
     555,
     556,
@@ -17458,8 +17504,10 @@
     568,
     569,
     570,
-    573,
-    574
+    571,
+    572,
+    575,
+    576
    ],
    [
     [
@@ -17503,10 +17551,10 @@
     133,
     135,
     139,
-    550
+    552
    ],
    [
-    556
+    558
    ],
    []
   ],
@@ -17520,13 +17568,13 @@
    91,
    "HTTP compatibility adapters for canonical Agent Session commands.",
    [
-    431,
-    468,
-    550
+    432,
+    470,
+    552
    ],
    [
     124,
-    562
+    564
    ],
    []
   ],
@@ -17540,14 +17588,14 @@
    297,
    "Canonical room attachment upload and download routes.",
    [
-    417,
-    457,
-    468,
-    550
+    418,
+    459,
+    470,
+    552
    ],
    [
     117,
-    556
+    558
    ],
    [
     [
@@ -17567,10 +17615,10 @@
    "Loopback-only browser return routes for central desktop login.",
    [
     35,
-    550
+    552
    ],
    [
-    556
+    558
    ],
    []
   ],
@@ -17591,20 +17639,20 @@
     108,
     113,
     135,
-    550,
     552,
     554,
-    555,
+    556,
     557,
-    558,
     559,
     560,
     561,
     562,
     563,
-    569,
-    570,
-    574
+    564,
+    565,
+    571,
+    572,
+    576
    ],
    [
     116
@@ -17622,11 +17670,11 @@
    "HTTP boundary for issuing and redeeming guest recovery codes.",
    [
     138,
-    550,
-    571
+    552,
+    573
    ],
    [
-    556
+    558
    ],
    [
     [
@@ -17647,11 +17695,11 @@
    [
     91,
     92,
-    550
+    552
    ],
    [
     119,
-    556
+    558
    ],
    []
   ],
@@ -17665,11 +17713,11 @@
    80,
    "Local-operator routes for the imported bot-card and Risu-module library.",
    [
-    229,
-    550
+    230,
+    552
    ],
    [
-    556
+    558
    ],
    []
   ],
@@ -17683,20 +17731,20 @@
    362,
    "Provider catalog, local login, and credential HTTP routes.",
    [
-    270,
-    273,
-    301,
+    271,
+    274,
     302,
-    361,
-    368,
-    386,
-    388,
-    405,
-    550
+    303,
+    362,
+    369,
+    387,
+    389,
+    406,
+    552
    ],
    [
     120,
-    556
+    558
    ],
    [
     [
@@ -17749,11 +17797,11 @@
    [
     34,
     60,
-    550
+    552
    ],
    [
     121,
-    556
+    558
    ],
    [
     [
@@ -17777,16 +17825,16 @@
    37,
    "Register every current canonical room HTTP adapter.",
    [
-    550,
-    553,
-    564,
-    565,
+    552,
+    555,
     566,
     567,
-    568
+    568,
+    569,
+    570
    ],
    [
-    556
+    558
    ],
    []
   ],
@@ -17800,11 +17848,11 @@
    114,
    "Explicit canonical room creation for the browser room directory.",
    [
-    468,
-    550
+    470,
+    552
    ],
    [
-    556
+    558
    ],
    []
   ],
@@ -17819,11 +17867,11 @@
    "Canonical room history, registry, message, and vote HTTP routes.",
    [
     33,
-    433,
-    550
+    434,
+    552
    ],
    [
-    562
+    564
    ],
    []
   ],
@@ -17844,13 +17892,13 @@
     112,
     136,
     139,
-    417,
-    431,
-    550
+    418,
+    432,
+    552
    ],
    [
     125,
-    562
+    564
    ],
    []
   ],
@@ -17864,12 +17912,12 @@
    191,
    "Canonical participant and room lifecycle HTTP routes.",
    [
-    431,
-    468,
-    550
+    432,
+    470,
+    552
    ],
    [
-    562
+    564
    ],
    []
   ],
@@ -17884,15 +17932,15 @@
    "Current custom text-channel and voice-presence HTTP routes.",
    [
     98,
-    421,
-    439,
-    464,
-    468,
-    477,
-    550
+    422,
+    441,
+    466,
+    470,
+    479,
+    552
    ],
    [
-    562
+    564
    ],
    []
   ],
@@ -17906,13 +17954,13 @@
    123,
    "Canonical room roster and member HTTP routes.",
    [
-    431,
-    437,
-    468,
-    550
+    432,
+    438,
+    470,
+    552
    ],
    [
-    562
+    564
    ],
    []
   ],
@@ -17926,12 +17974,12 @@
    77,
    "Room settings HTTP routes for the GUI server.",
    [
-    462,
-    550
+    464,
+    552
    ],
    [
     126,
-    556
+    558
    ],
    []
   ],
@@ -17945,12 +17993,12 @@
    145,
    "Host-only runtime lifecycle routes.",
    [
-    456,
-    468,
-    550
+    458,
+    470,
+    552
    ],
    [
-    556
+    558
    ],
    [
     [
@@ -17974,13 +18022,13 @@
    272,
    "Host, origin, and public-route trust policy for the GUI server.",
    [
-    372
+    373
    ],
    [
     122,
-    543,
-    550,
-    557
+    545,
+    552,
+    559
    ],
    []
   ],
@@ -17995,9 +18043,9 @@
    "",
    [],
    [
-    536,
-    543,
-    574
+    538,
+    545,
+    576
    ],
    []
   ],
@@ -18011,13 +18059,13 @@
    162,
    "React application and bootstrap-document delivery for the GUI server.",
    [
-    241,
-    550
+    242,
+    552
    ],
    [
     116,
     130,
-    543
+    545
    ],
    [
     [
@@ -18036,16 +18084,16 @@
    236,
    "WebSocket HTTP upgrade and connection lifecycle for the GUI server.",
    [
-    432,
-    548,
+    433,
     550,
-    572,
-    575
+    552,
+    574,
+    577
    ],
    [
     131,
-    543,
-    556
+    545,
+    558
    ],
    []
   ],
@@ -18061,10 +18109,10 @@
    [],
    [
     31,
-    531,
-    547,
-    548,
-    574
+    533,
+    549,
+    550,
+    576
    ],
    [
     [
@@ -18096,7 +18144,7 @@
    6,
    "Compatibility export for the Windows ConPTY provider runtime.",
    [
-    404
+    405
    ],
    [],
    []
@@ -18111,7 +18159,7 @@
    24,
    "Compatibility exports for the web-owned canonical room client.",
    [
-    547
+    549
    ],
    [],
    []
@@ -18126,7 +18174,7 @@
    30,
    "Compatibility exports for the web-owned room WebSocket session protocol.",
    [
-    548
+    550
    ],
    [],
    []
@@ -18190,8 +18238,8 @@
     182,
     185,
     187,
-    215,
-    216
+    217,
+    218
    ],
    [
     92
@@ -18207,6 +18255,7 @@
    ],
    [
     0,
+    110,
     147,
     148,
     192,
@@ -18323,9 +18372,10 @@
     207,
     208,
     212,
-    213,
     214,
-    216
+    215,
+    216,
+    218
    ]
   ],
   [
@@ -18486,7 +18536,7 @@
   [
    "frontend/src/api/roomHistory.ts",
    "api",
-   358,
+   360,
    "",
    [
     4,
@@ -19315,7 +19365,7 @@
     176,
     178,
     185,
-    214
+    216
    ]
   ],
   [
@@ -19349,7 +19399,7 @@
   [
    "frontend/src/lib/roomEventProjection.test.ts",
    "lib",
-   376,
+   415,
    "",
    [
     2,
@@ -19360,7 +19410,7 @@
   [
    "frontend/src/lib/roomEventProjection.ts",
    "lib",
-   243,
+   271,
    "",
    [
     2
@@ -19488,7 +19538,7 @@
     109,
     110,
     212,
-    214
+    216
    ]
   ],
   [
@@ -19570,7 +19620,7 @@
   [
    "frontend/src/roomSocketClient.ts",
    "(src root)",
-   790,
+   797,
    "",
    [
     2,
@@ -19613,7 +19663,7 @@
     199,
     200,
     211,
-    215
+    217
    ]
   ],
   [
@@ -19649,7 +19699,7 @@
   [
    "frontend/src/types/generatedRoomEvent.ts",
    "types",
-   131,
+   136,
    "Generated by scripts/generate_room_event_types.py. Do not edit.",
    [
     3
@@ -19755,7 +19805,7 @@
     36,
     98,
     124,
-    216
+    218
    ],
    [
     0
@@ -19795,9 +19845,10 @@
   [
    "frontend/src/views/LobbyView.tsx",
    "views",
-   640,
+   694,
    "",
    [
+    1,
     2,
     60,
     66,
@@ -19811,9 +19862,9 @@
     167,
     193,
     212,
-    213,
-    214,
-    216
+    215,
+    216,
+    218
    ],
    [
     0,
@@ -21186,17 +21237,41 @@
   [
    "frontend/src/views/lobby/LobbyEventRows.tsx",
    "views",
-   428,
+   444,
    "",
    [
     2,
     88,
     131,
     146,
-    163
+    163,
+    214
    ],
    [
     110
+   ]
+  ],
+  [
+   "frontend/src/views/lobby/MessageMutationControls.css",
+   "views",
+   130,
+   "",
+   [],
+   [
+    214
+   ]
+  ],
+  [
+   "frontend/src/views/lobby/MessageMutationControls.tsx",
+   "views",
+   203,
+   "",
+   [
+    2,
+    213
+   ],
+   [
+    212
    ]
   ],
   [
@@ -21264,7 +21339,7 @@
  "hubs": [
   {
    "name": "agentsassemble.room.text",
-   "imported_by": 156,
+   "imported_by": 158,
    "doc": "Bounded text normalization shared by current room code."
   },
   {
@@ -21304,7 +21379,7 @@
   },
   {
    "name": "agentsassemble.room.command_uow",
-   "imported_by": 14,
+   "imported_by": 15,
    "doc": ""
   },
   {
@@ -21317,20 +21392,20 @@
   {
    "name": "agentsassemble",
    "note": "Backend package (Python)",
-   "files": 579,
-   "lines": 100990
+   "files": 581,
+   "lines": 101339
   },
   {
    "name": "frontend/src",
    "note": "React room client (TS/TSX)",
-   "files": 218,
-   "lines": 50411
+   "files": 220,
+   "lines": 50895
   },
   {
    "name": "tests",
    "note": "Backend test suite",
-   "files": 246,
-   "lines": 65113
+   "files": 248,
+   "lines": 65382
   },
   {
    "name": "scripts",
@@ -21342,7 +21417,7 @@
    "name": "docs",
    "note": "Product and architecture docs",
    "files": 90,
-   "lines": 30649
+   "lines": 30662
   },
   {
    "name": "configs",

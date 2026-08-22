@@ -97,6 +97,10 @@ from agentsassemble.room.moderation import (
 )
 from agentsassemble.room.attachments import FileAttachmentStore
 from agentsassemble.room.messages import RoomMessageService
+from agentsassemble.room.message_mutation_commands import (
+    MESSAGE_MUTATION_ACTIONS,
+    execute_message_mutation,
+)
 from agentsassemble.room.member_mute import RoomMemberMuteService
 from agentsassemble.room.member_roles import update_member_role_in_unit
 from agentsassemble.room.ordered_message_routing import RoomOrderedMessageRouter
@@ -923,13 +927,19 @@ class RoomRealtimeController:
                     request_id,
                     action,
                     payload,
-                    lambda unit: self._send_message(
+                    lambda unit: self._messages.send_in_unit(
                         identity,
                         payload,
                         unit=unit,
                         compatibility_muted=compatibility_muted,
                     ),
                 )
+        if action in MESSAGE_MUTATION_ACTIONS:
+            return execute_message_mutation(
+                action, identity, room_id, request_id, payload, self._messages,
+                self._lock, self._require_capability, self._execute_durable_command,
+                self._is_room_owner, self.store.unpin_message,
+            )
         if action in {"room.random.roll", "room.random.choose"}:
             self._require_capability(identity, "room.random")
             with self._lock:
@@ -1354,21 +1364,6 @@ class RoomRealtimeController:
         if action == "turn.failed":
             return self._turn_coordinator.turn_failed(identity, room_id, payload)
         raise RoomCommandRejected(f"Unsupported room command: {action}", code="unknown_action")
-
-    def _send_message(
-        self,
-        identity: dict[str, object],
-        payload: dict[str, object],
-        *,
-        unit: RoomCommandUnitOfWork,
-        compatibility_muted: bool,
-    ) -> dict[str, object]:
-        return self._messages.send_in_unit(
-            identity,
-            payload,
-            unit=unit,
-            compatibility_muted=compatibility_muted,
-        )
 
     def _create_agent(
         self,

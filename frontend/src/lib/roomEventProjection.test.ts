@@ -53,6 +53,45 @@ describe("projectRoomEventsToTimeline", () => {
     });
   });
 
+  it("folds edit and delete events into the original canonical message", () => {
+    const updated = projectRoomEventsToTimeline([
+      event({ id: "message-1", content: "draft" }),
+      event({
+        id: "edit-1",
+        seq: 2,
+        type: "message_updated",
+        target_event_id: "message-1",
+        content: "final",
+        edited_at: "2026-01-01T00:01:00Z",
+      }),
+    ]);
+
+    expect(updated).toHaveLength(1);
+    expect(updated[0]).toMatchObject({
+      record_id: "message-1",
+      message: "final",
+      edited_at: "2026-01-01T00:01:00Z",
+    });
+
+    const deleted = projectRoomEventsToTimeline([
+      event({ id: "message-1", content: "private", attachments: [] }),
+      event({
+        id: "delete-1",
+        seq: 2,
+        type: "message_deleted",
+        target_event_id: "message-1",
+      }),
+    ]);
+
+    expect(deleted).toHaveLength(1);
+    expect(deleted[0]).toMatchObject({
+      record_id: "message-1",
+      message_deleted: true,
+      attachments: [],
+    });
+    expect(deleted[0].message).not.toContain("private");
+  });
+
   it("groups legacy delta and final events by source event and actor", () => {
     const timeline = projectRoomEventsToTimeline([
       event({ id: "legacy-delta", seq: 1, type: "message_delta", source_event_id: "human-1", content: "clean" }),

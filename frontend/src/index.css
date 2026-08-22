@@ -4027,7 +4027,7 @@ body[data-sidebar-resizing="true"] {
   top: -8px;
   right: 18px;
   display: inline-flex;
-  overflow: hidden;
+  overflow: visible;
   border: 1px solid rgba(255, 255, 255, 0.08);
   border-radius: 4px;
   background: #1e1f22;

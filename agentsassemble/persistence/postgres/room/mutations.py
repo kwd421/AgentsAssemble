@@ -22,6 +22,7 @@ from agentsassemble.room.repository_records import (
     update_session_record,
     utc_now,
 )
+from agentsassemble.room.visibility import VISIBLE
 
 
 def create_room(
@@ -284,6 +285,31 @@ def append_event(
         ),
     )
     return event
+
+
+def update_event_fields(
+    connection: Connection,
+    room_id: str,
+    event_id: str,
+    updates: dict[str, object],
+) -> dict[str, object]:
+    row = connection.execute(
+        "SELECT payload_json FROM room_events "
+        "WHERE room_id = %s AND event_id = %s AND visibility = %s",
+        (room_id, event_id, VISIBLE),
+    ).fetchone()
+    event = payload_from_row(row, column="payload_json")
+    if not event:
+        raise ValueError(f"Room event was not found: {event_id}")
+    immutable = {"id", "seq", "room_id", "type", "created_at", "actor"}
+    if immutable.intersection(updates):
+        raise ValueError("Canonical room event identity fields cannot be changed")
+    updated = {**event, **updates}
+    connection.execute(
+        "UPDATE room_events SET payload_json = %s WHERE room_id = %s AND event_id = %s",
+        (Jsonb(updated), room_id, event_id),
+    )
+    return updated
 
 
 def update_room_status(

@@ -112,7 +112,10 @@ def _channel_event(
 ) -> dict[str, object]:
     if channel_id == LOBBY_CHANNEL_ID:
         event = ctx.deps.rooms.event_by_id(room_id, event_id)
-        if str(event.get("type") or "") != "message_final":
+        if (
+            str(event.get("type") or "") != "message_final"
+            or event.get("message_deleted") is True
+        ):
             return {}
         return event
     filename = channel_stream_filename(channel_id)

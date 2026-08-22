@@ -36,6 +36,7 @@ import type {
 } from "../lib/providerRequestModel";
 import ProviderRequestCard from "./components/ProviderRequestCard";
 import { projectRoomEventsToTimeline } from "../lib/roomEventProjection";
+import { useRoomSocket } from "../RoomSocketContext";
 import {
   useRoomMessageSearch,
   type RoomMessageSearchController,
@@ -117,6 +118,7 @@ export default function LobbyView({
   onSearchTargetHandled?: () => void;
   onOpenCrossChannelSearchResult?: (result: RoomSearchResult) => void;
 }) {
+  const roomSocket = useRoomSocket();
   const {
     handleLobbyPosted,
     handleLobbyScroll,
@@ -154,6 +156,35 @@ export default function LobbyView({
     sessionToken: roomSessionToken,
   });
   const messageSearch = sharedMessageSearch || localMessageSearch;
+
+  const agentOwnerIds = useMemo(
+    () => new Map(
+      agents.map((agent) => [
+        agent.agent_id,
+        new Set(
+          [agent.owner_participant_id, agent.owner_id, agent.created_by]
+            .map((value) => String(value || "").trim())
+            .filter(Boolean)
+        ),
+      ])
+    ),
+    [agents]
+  );
+
+  async function editMessage(event: LobbyEvent, content: string) {
+    if (!roomSocket?.ready()) throw new Error("방 연결이 준비되지 않았습니다.");
+    await roomSocket.command("message.edit", {
+      event_id: event.record_id || event.id,
+      content,
+    });
+  }
+
+  async function deleteMessage(event: LobbyEvent) {
+    if (!roomSocket?.ready()) throw new Error("방 연결이 준비되지 않았습니다.");
+    await roomSocket.command("message.delete", {
+      event_id: event.record_id || event.id,
+    });
+  }
 
   const reloadPins = useCallback(async () => {
     setPinsLoading(true);
@@ -579,11 +610,34 @@ export default function LobbyView({
                 }
                 roomSessionToken={roomSessionToken}
                 pinned={pinnedEventIds.has(event.record_id || event.id)}
-                canPin={canPostMessages && !pinBusyIds.has(event.record_id || event.id)}
+                canPin={
+                  canPostMessages &&
+                  !event.message_deleted &&
+                  !pinBusyIds.has(event.record_id || event.id)
+                }
                 onTogglePin={() => {
                   const eventId = event.record_id || event.id;
                   void setPinned(eventId, !pinnedEventIds.has(eventId));
                 }}
+                canEdit={
+                  canPostMessages &&
+                  !event.message_deleted &&
+                  event.kind === "message" &&
+                  event.actor_type === "human" &&
+                  event.actor_id === viewerParticipantId
+                }
+                canDelete={
+                  canPostMessages &&
+                  !event.message_deleted &&
+                  event.kind === "message" &&
+                  (
+                    canManageRoom ||
+                    (event.actor_type === "human" && event.actor_id === viewerParticipantId) ||
+                    agentOwnerIds.get(event.actor_id || "")?.has(viewerParticipantId) === true
+                  )
+                }
+                onEdit={(content) => editMessage(event, content)}
+                onDelete={() => deleteMessage(event)}
               />
             );
           })

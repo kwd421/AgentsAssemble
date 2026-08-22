@@ -38,6 +38,7 @@ from agentsassemble.persistence.postgres.room.mutations import (
     create_room as create_room_record,
     detach_participant_sessions as detach_sessions,
     record_command_result as persist_command_result,
+    update_event_fields as persist_event_fields,
     update_participant,
     update_room_settings as persist_room_settings,
     update_room_status,
@@ -123,6 +124,13 @@ class _PostgresRoomTransaction:
             self._room_id,
             clean_event,
             include_hidden=False,
+        )
+
+    def update_event_fields(self, event_id: str, **updates: object) -> dict[str, object]:
+        return persist_event_fields(
+            self._connection, self._room_id,
+            clean_room_text(event_id, limit=128),
+            dict(updates),
         )
 
     def room_settings(self) -> RoomGlobalSettingsRecord:

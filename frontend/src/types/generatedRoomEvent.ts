@@ -99,6 +99,11 @@ export interface RoomEvent {
   provider_kind?: string;
   role?: string;
   content?: string;
+  target_event_id?: string;
+  target_seq?: number;
+  edited_at?: string;
+  deleted_at?: string;
+  message_deleted?: boolean;
   message_kind?: string;
   target_agent_id?: string;
   vote_id?: string;

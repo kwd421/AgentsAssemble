@@ -10,7 +10,6 @@ import {
   FileText,
   Globe,
   LoaderCircle,
-  MoreHorizontal,
   Pin,
   Search,
   Terminal,
@@ -23,6 +22,7 @@ import type { RoomTypingIndicator } from "../../lib/roomTypingIndicators";
 import DiscordText, { type MentionLabels } from "../components/DiscordText";
 import LobbyAttachments from "../components/LobbyAttachments";
 import ProviderLogo from "../components/ProviderLogo";
+import MessageMutationControls from "./MessageMutationControls";
 
 
 function timeLabel(iso: string): string {
@@ -353,6 +353,10 @@ export function LobbyMessageRow({
   pinned = false,
   canPin = false,
   onTogglePin,
+  canEdit = false,
+  canDelete = false,
+  onEdit,
+  onDelete,
 }: {
   event: LobbyEvent;
   providerKind?: string;
@@ -363,6 +367,10 @@ export function LobbyMessageRow({
   pinned?: boolean;
   canPin?: boolean;
   onTogglePin?: () => void;
+  canEdit?: boolean;
+  canDelete?: boolean;
+  onEdit?: (content: string) => Promise<void>;
+  onDelete?: () => Promise<void>;
 }) {
   const systemLike =
     event.kind === "system" || event.kind === "flow_event" || event.kind === "vote_cast";
@@ -394,14 +402,15 @@ export function LobbyMessageRow({
             <Pin size={14} fill={pinned ? "currentColor" : "none"} />
           </button>
         )}
-        <button
-          type="button"
-          className="dc-message-action-button"
-          aria-label="더 보기"
-          title="더 보기"
-        >
-          <MoreHorizontal size={15} />
-        </button>
+        {onEdit && onDelete && (
+          <MessageMutationControls
+            event={event}
+            canEdit={canEdit}
+            canDelete={canDelete}
+            onEdit={onEdit}
+            onDelete={onDelete}
+          />
+        )}
       </div>
       <div className="min-w-0">
         {showHeader && (
@@ -416,12 +425,19 @@ export function LobbyMessageRow({
         )}
         {voteCard ? (
           voteCard
+        ) : event.message_deleted ? (
+          <div className="text-[14px] italic leading-relaxed text-text-muted">
+            삭제된 메시지입니다
+          </div>
         ) : (
           <div className="text-[14px] leading-relaxed text-text-secondary preserve-words">
             <DiscordText text={event.message || ""} mentionLabels={mentionLabels} />
+            {event.edited_at && <span className="ml-1 text-[10px] text-text-muted">(수정됨)</span>}
           </div>
         )}
-        <LobbyAttachments attachments={event.attachments} sessionToken={roomSessionToken} />
+        {!event.message_deleted && (
+          <LobbyAttachments attachments={event.attachments} sessionToken={roomSessionToken} />
+        )}
       </div>
     </div>
   );
