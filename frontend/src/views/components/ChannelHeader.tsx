@@ -38,6 +38,8 @@ export type ChannelSearchItem = {
   onSelect: () => void;
 };
 
+export type ChannelSearchScope = "channel" | "all";
+
 /**
  * Discord-style channel header: a fixed bar at the top of the central column
  * with the channel name, an optional topic, optional right-aligned actions,
@@ -59,7 +61,10 @@ export default function ChannelHeader({
   searchLoading = false,
   searchError = "",
   externalSearch = false,
+  searchQuery: controlledSearchQuery,
+  searchScope = "channel",
   onSearchQueryChange,
+  onSearchScopeChange,
   onLoadMoreSearch,
 }: {
   icon: ReactNode;
@@ -77,13 +82,19 @@ export default function ChannelHeader({
   searchLoading?: boolean;
   searchError?: string;
   externalSearch?: boolean;
+  searchQuery?: string;
+  searchScope?: ChannelSearchScope;
   onSearchQueryChange?: (query: string) => void;
+  onSearchScopeChange?: (scope: ChannelSearchScope) => void;
   onLoadMoreSearch?: () => void;
 }) {
-  const [activePanel, setActivePanel] = useState<HeaderPanel | null>(null);
-  const [searchQuery, setSearchQuery] = useState("");
+  const [activePanel, setActivePanel] = useState<HeaderPanel | null>(() =>
+    controlledSearchQuery?.trim() ? "search" : null
+  );
+  const [uncontrolledSearchQuery, setUncontrolledSearchQuery] = useState("");
   const [activeSearchIndex, setActiveSearchIndex] = useState(-1);
   const popupSearchRef = useRef<HTMLInputElement | null>(null);
+  const searchQuery = controlledSearchQuery ?? uncontrolledSearchQuery;
 
   useEffect(() => {
     function handleWindowKeyDown(event: KeyboardEvent) {
@@ -111,7 +122,7 @@ export default function ChannelHeader({
 
   function handleSearchChange(event: ChangeEvent<HTMLInputElement>) {
     const nextQuery = event.currentTarget.value;
-    setSearchQuery(nextQuery);
+    if (controlledSearchQuery === undefined) setUncontrolledSearchQuery(nextQuery);
     setActiveSearchIndex(-1);
     setActivePanel(nextQuery.trim() ? "search" : null);
     onSearchQueryChange?.(nextQuery);
@@ -346,6 +357,24 @@ export default function ChannelHeader({
             {activePanel === "search" && (
               <>
                 <p className="dc-head-popover-title">채널 검색</p>
+                {onSearchScopeChange && (
+                  <div className="dc-head-search-scope" role="group" aria-label="검색 범위">
+                    <button
+                      type="button"
+                      aria-pressed={searchScope === "channel"}
+                      onClick={() => onSearchScopeChange("channel")}
+                    >
+                      현재 채널
+                    </button>
+                    <button
+                      type="button"
+                      aria-pressed={searchScope === "all"}
+                      onClick={() => onSearchScopeChange("all")}
+                    >
+                      모든 채널
+                    </button>
+                  </div>
+                )}
                 <label className="dc-head-popover-search">
                   <span className="sr-only">{title} 검색어</span>
                   <Search size={14} aria-hidden />
@@ -367,7 +396,7 @@ export default function ChannelHeader({
                 </label>
                 {!searchNeedle ? (
                   <p className="dc-head-popover-copy preserve-words">
-                    검색어를 입력하면 이 채널의 전체 메시지에서 찾습니다.
+                    검색어를 입력하면 {searchScope === "all" ? "읽을 수 있는 모든 채널" : "이 채널"}의 전체 메시지에서 찾습니다.
                   </p>
                 ) : searchLoading && !searchMatches.length ? (
                   <p className="dc-head-popover-copy preserve-words">검색하는 중입니다.</p>

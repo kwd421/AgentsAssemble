@@ -8,12 +8,16 @@ import {
   fetchMessagePins,
   setMessagePinned,
   type MessagePin,
+  type RoomSearchResult,
 } from "../api";
 import type { RoomDockItem } from "../lib/roomDockModel";
 import VotePollCard from "./components/VotePollCard";
 import LobbyComposer from "./components/LobbyComposer";
 import ChannelHeader from "./components/ChannelHeader";
-import type { ChannelHeaderActions } from "./components/ChannelHeader";
+import type {
+  ChannelHeaderActions,
+  ChannelSearchScope,
+} from "./components/ChannelHeader";
 import type { RoomAppearance } from "../lib/roomAppearance";
 import type { RoomPostingMode } from "../lib/roomGuestPosting";
 import type { RoomTypingIndicator } from "../lib/roomTypingIndicators";
@@ -32,7 +36,10 @@ import type {
 } from "../lib/providerRequestModel";
 import ProviderRequestCard from "./components/ProviderRequestCard";
 import { projectRoomEventsToTimeline } from "../lib/roomEventProjection";
-import { useRoomMessageSearch } from "./useRoomMessageSearch";
+import {
+  useRoomMessageSearch,
+  type RoomMessageSearchController,
+} from "./useRoomMessageSearch";
 
 export default function LobbyView({
   activeRoom,
@@ -61,6 +68,13 @@ export default function LobbyView({
   loadCanonicalHistory,
   providerRequests = [],
   resolveProviderRequest,
+  sharedMessageSearch,
+  messageSearchScope = "channel",
+  onMessageSearchScopeChange,
+  messageSearchChannelLabels = {},
+  pendingSearchTargetEventId = "",
+  onSearchTargetHandled,
+  onOpenCrossChannelSearchResult,
 }: {
   activeRoom: RoomDockItem;
   agents: LiveAgent[];
@@ -95,6 +109,13 @@ export default function LobbyView({
     providerRequestId: string,
     resolution: ProviderRequestResolution
   ) => Promise<void>;
+  sharedMessageSearch?: RoomMessageSearchController;
+  messageSearchScope?: ChannelSearchScope;
+  onMessageSearchScopeChange?: (scope: ChannelSearchScope) => void;
+  messageSearchChannelLabels?: Record<string, string>;
+  pendingSearchTargetEventId?: string;
+  onSearchTargetHandled?: () => void;
+  onOpenCrossChannelSearchResult?: (result: RoomSearchResult) => void;
 }) {
   const {
     handleLobbyPosted,
@@ -127,11 +148,12 @@ export default function LobbyView({
   const [pinsError, setPinsError] = useState("");
   const [pinBusyIds, setPinBusyIds] = useState<Set<string>>(() => new Set());
   const [pendingMessageTarget, setPendingMessageTarget] = useState("");
-  const messageSearch = useRoomMessageSearch({
+  const localMessageSearch = useRoomMessageSearch({
     roomId: activeRoom.meetingId,
     channelId: "lobby",
     sessionToken: roomSessionToken,
   });
+  const messageSearch = sharedMessageSearch || localMessageSearch;
 
   const reloadPins = useCallback(async () => {
     setPinsLoading(true);
@@ -173,16 +195,19 @@ export default function LobbyView({
     () => {
       const serverItems = messageSearch.results.map((result) => {
         const date = new Date(result.created_at);
+        const timeLabel = date.toLocaleString("ko-KR", {
+          month: "numeric",
+          day: "numeric",
+          hour: "2-digit",
+          minute: "2-digit",
+        });
         return {
           id: result.event_id,
           author: result.author || "Room",
           body: result.content || result.attachment_filenames.join(", "),
-          meta: date.toLocaleString("ko-KR", {
-            month: "numeric",
-            day: "numeric",
-            hour: "2-digit",
-            minute: "2-digit",
-          }),
+          meta: messageSearchScope === "all"
+            ? `#${messageSearchChannelLabels[result.channel_id] || result.channel_id} · ${timeLabel}`
+            : timeLabel,
           exactTime: date.toLocaleString("ko-KR", {
             year: "numeric",
             month: "long",
@@ -192,6 +217,10 @@ export default function LobbyView({
             second: "2-digit",
           }),
           onSelect: () => {
+            if (result.channel_id !== "lobby" && onOpenCrossChannelSearchResult) {
+              onOpenCrossChannelSearchResult(result);
+              return;
+            }
             void navigateToMessage(result.event_id).catch((reason) => {
               setPendingMessageTarget("");
               messageSearch.setError(
@@ -221,7 +250,14 @@ export default function LobbyView({
           onSelect: () => jumpToEvent(event.id),
         }));
     },
-    [messageSearch.query, messageSearch.results, visibleEvents]
+    [
+      messageSearch.query,
+      messageSearch.results,
+      messageSearchChannelLabels,
+      messageSearchScope,
+      onOpenCrossChannelSearchResult,
+      visibleEvents,
+    ]
   );
   const latestReadSequence = useMemo(
     () => visibleEvents.reduce((latest, event) => Math.max(latest, Number(event.seq) || 0), 0),
@@ -283,6 +319,24 @@ export default function LobbyView({
       projectRoomEventsToTimeline(context.events as RoomEvent[], { viewerParticipantId })
     );
   }
+
+  useEffect(() => {
+    if (!pendingSearchTargetEventId) return;
+    let active = true;
+    void navigateToMessage(pendingSearchTargetEventId)
+      .catch((reason) => {
+        setPendingMessageTarget("");
+        messageSearch.setError(
+          reason instanceof Error ? reason.message : "검색한 메시지로 이동하지 못했습니다."
+        );
+      })
+      .finally(() => {
+        if (active) onSearchTargetHandled?.();
+      });
+    return () => {
+      active = false;
+    };
+  }, [pendingSearchTargetEventId]);
 
   async function selectPin(pin: MessagePin) {
     setPinsError("");
@@ -378,6 +432,9 @@ export default function LobbyView({
         onOpenMobileInfo={onOpenMobileInfo}
         searchItems={channelSearchItems}
         externalSearch
+        searchQuery={messageSearch.query}
+        searchScope={messageSearchScope}
+        onSearchScopeChange={onMessageSearchScopeChange}
         searchLoading={messageSearch.loading}
         searchError={messageSearch.error}
         onSearchQueryChange={messageSearch.updateQuery}

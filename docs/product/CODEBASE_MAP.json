@@ -6,7 +6,7 @@
   "backend_modules": 578,
   "backend_lines": 100191,
   "frontend_files": 218,
-  "frontend_lines": 50132,
+  "frontend_lines": 50411,
   "packages": 30,
   "import_cycles": 0,
   "classifications": {
@@ -484,7 +484,7 @@
    "kind": "frontend",
    "doc": "Frontend entry files (App, main, API client, styles) living directly under src/.",
    "files": 17,
-   "lines": 13741,
+   "lines": 13814,
    "domains": {},
    "classes": {},
    "x": 102.0,
@@ -548,7 +548,7 @@
    "kind": "frontend",
    "doc": "Frontend source files grouped under src/styles/.",
    "files": 3,
-   "lines": 170,
+   "lines": 193,
    "domains": {},
    "classes": {},
    "x": 444.0,
@@ -580,7 +580,7 @@
    "kind": "frontend",
    "doc": "Top-level room views rendered by the shell.",
    "files": 111,
-   "lines": 22272,
+   "lines": 22455,
    "domains": {},
    "classes": {},
    "x": 558.0,
@@ -1000,7 +1000,7 @@
   {
    "from": "fe:(src root)",
    "to": "fe:views",
-   "count": 25,
+   "count": 26,
    "points": [
     [
      310.0,
@@ -3838,7 +3838,7 @@
      "fe:views"
     ],
     "internal_edges": 17,
-    "lines": 49962,
+    "lines": 50218,
     "heaviest": "fe:views"
    }
   ],
@@ -18053,7 +18053,7 @@
   [
    "frontend/src/App.tsx",
    "(src root)",
-   2004,
+   2077,
    "",
    [
     1,
@@ -18107,7 +18107,8 @@
     182,
     185,
     187,
-    215
+    215,
+    216
    ],
    [
     92
@@ -19535,7 +19536,7 @@
   [
    "frontend/src/styles/channel-search.css",
    "styles",
-   107,
+   130,
    "",
    [],
    [
@@ -19664,7 +19665,7 @@
   [
    "frontend/src/views/CustomChannelView.tsx",
    "views",
-   533,
+   604,
    "",
    [
     2,
@@ -19711,7 +19712,7 @@
   [
    "frontend/src/views/LobbyView.tsx",
    "views",
-   583,
+   640,
    "",
    [
     2,
@@ -19910,7 +19911,7 @@
   [
    "frontend/src/views/components/ChannelHeader.test.tsx",
    "views",
-   48,
+   72,
    "",
    [
     124
@@ -19920,7 +19921,7 @@
   [
    "frontend/src/views/components/ChannelHeader.tsx",
    "views",
-   431,
+   460,
    "",
    [
     7,
@@ -21156,12 +21157,13 @@
   [
    "frontend/src/views/useRoomMessageSearch.ts",
    "views",
-   99,
+   101,
    "",
    [
     2
    ],
    [
+    0,
     107,
     110
    ]
@@ -21239,7 +21241,7 @@
    "name": "frontend/src",
    "note": "React room client (TS/TSX)",
    "files": 218,
-   "lines": 50132
+   "lines": 50411
   },
   {
    "name": "tests",

@@ -28,6 +28,29 @@
   overflow-y: auto;
 }
 
+.dc-head-search-scope {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 2px;
+  margin: 8px 0;
+  padding: 2px;
+  border-radius: 7px;
+  background: color-mix(in srgb, var(--color-panel) 75%, transparent);
+}
+
+.dc-head-search-scope button {
+  min-height: 28px;
+  border-radius: 5px;
+  color: var(--color-text-muted);
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.dc-head-search-scope button[aria-pressed="true"] {
+  background: var(--color-accent);
+  color: white;
+}
+
 .dc-head-search-results button {
   display: grid;
   grid-template-columns: minmax(0, 1fr) auto;

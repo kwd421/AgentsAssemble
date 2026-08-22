@@ -97,3 +97,5 @@ export function useRoomMessageSearch({
     updateQuery,
   };
 }
+
+export type RoomMessageSearchController = ReturnType<typeof useRoomMessageSearch>;

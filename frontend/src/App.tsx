@@ -35,6 +35,7 @@ import {
   type RoomMember,
   type ProviderUsageId,
   type ProviderUsageSnapshot,
+  type RoomSearchResult,
 } from "./api";
 import { useRoomAdmission } from "./app/useRoomAdmission";
 import { useFriendsDirectory } from "./app/useFriendsDirectory";
@@ -51,7 +52,11 @@ import LobbyView from "./views/LobbyView";
 import RimWorldPluginView from "./views/plugins/rimworld/RimWorldPluginView";
 import { RoomSocketProvider } from "./RoomSocketContext";
 import ChannelContextMenu from "./views/components/ChannelContextMenu";
-import type { ChannelHeaderActions } from "./views/components/ChannelHeader";
+import type {
+  ChannelHeaderActions,
+  ChannelSearchScope,
+} from "./views/components/ChannelHeader";
+import { useRoomMessageSearch } from "./views/useRoomMessageSearch";
 import AgentCreateModal from "./views/components/AgentCreateModal";
 import GuestIdentityRecoveryPanel from "./views/components/GuestIdentityRecoveryPanel";
 import GuestJoinProfilePanel from "./views/components/GuestJoinProfilePanel";
@@ -386,6 +391,11 @@ export default function App() {
   );
   const [channelSearchQuery, setChannelSearchQuery] = useState("");
   const [rightPanelSearchQuery, setRightPanelSearchQuery] = useState("");
+  const [messageSearchScope, setMessageSearchScope] = useState<ChannelSearchScope>("channel");
+  const [pendingMessageSearchTarget, setPendingMessageSearchTarget] = useState<{
+    channelId: string;
+    eventId: string;
+  } | null>(null);
   const [mobileSidebarOpen, setMobileSidebarOpen] = useState(mobileViewportMatches);
   const [mobileRoomInfoOpen, setMobileRoomInfoOpen] = useState(false);
   const [mobileRoomInfoInitialMode, setMobileRoomInfoInitialMode] =
@@ -783,6 +793,29 @@ export default function App() {
   const activeChannelSettings = roomSettings.channelSettingsFor(activeRoom);
   const activeCustomChannels = roomChannels.activeChannels;
   const activeCustomChannel = roomChannels.activeChannelFor(channel);
+  const messageSearchChannelId = messageSearchScope === "all"
+    ? "all"
+    : channel === "lobby" || activeCustomChannel
+      ? channel
+      : "lobby";
+  const roomMessageSearch = useRoomMessageSearch({
+    roomId: activeOperationalMeetingId,
+    channelId: messageSearchChannelId,
+    sessionToken: admittedSessionToken,
+  });
+  const messageSearchChannelLabels = useMemo(
+    () => Object.fromEntries([
+      ["lobby", "general"],
+      ...activeCustomChannels
+        .filter((item) => item.type === "text")
+        .map((item) => [item.id, item.name]),
+    ]),
+    [activeCustomChannels]
+  );
+  useEffect(() => {
+    setMessageSearchScope("channel");
+    setPendingMessageSearchTarget(null);
+  }, [activeRoom.meetingId]);
   const menuRoom = roomMenu ? rooms.find((room) => room.id === roomMenu.roomId) : undefined;
   const menuChannel = channelMenu
     ? CHANNELS.find((item) => item.id === channelMenu.channelId)
@@ -1068,6 +1101,24 @@ export default function App() {
     setAdminOpen(false);
     setChannelMenu(null);
     closeMobileOverlays();
+  }
+
+  function openCrossChannelSearchResult(result: RoomSearchResult) {
+    const targetChannel = result.channel_id;
+    if (
+      targetChannel !== "lobby"
+      && !activeCustomChannels.some(
+        (item) => item.id === targetChannel && item.type === "text"
+      )
+    ) {
+      roomMessageSearch.setError("검색 결과의 채널을 더 이상 열 수 없습니다.");
+      return;
+    }
+    setPendingMessageSearchTarget({
+      channelId: targetChannel,
+      eventId: result.event_id,
+    });
+    goToChannel(targetChannel);
   }
 
   async function createChannel(params: { name: string; type: "text" | "voice" }) {
@@ -1824,6 +1875,17 @@ export default function App() {
               loadCanonicalHistory={loadCanonicalRoomHistory}
               providerRequests={canonicalRoom.providerRequests}
               resolveProviderRequest={canonicalRoom.sendProviderRequestResolution}
+              sharedMessageSearch={roomMessageSearch}
+              messageSearchScope={messageSearchScope}
+              onMessageSearchScopeChange={setMessageSearchScope}
+              messageSearchChannelLabels={messageSearchChannelLabels}
+              pendingSearchTargetEventId={
+                pendingMessageSearchTarget?.channelId === "lobby"
+                  ? pendingMessageSearchTarget.eventId
+                  : ""
+              }
+              onSearchTargetHandled={() => setPendingMessageSearchTarget(null)}
+              onOpenCrossChannelSearchResult={openCrossChannelSearchResult}
             />
             )
           ) : activeCustomChannel ? (
@@ -1838,6 +1900,17 @@ export default function App() {
               onToggleMembers={toggleMembers}
               onOpenMobileSidebar={openMobileSidebar}
               onOpenMobileInfo={openMobileRoomInfo}
+              sharedMessageSearch={roomMessageSearch}
+              messageSearchScope={messageSearchScope}
+              onMessageSearchScopeChange={setMessageSearchScope}
+              messageSearchChannelLabels={messageSearchChannelLabels}
+              pendingSearchTargetEventId={
+                pendingMessageSearchTarget?.channelId === activeCustomChannel.id
+                  ? pendingMessageSearchTarget.eventId
+                  : ""
+              }
+              onSearchTargetHandled={() => setPendingMessageSearchTarget(null)}
+              onOpenCrossChannelSearchResult={openCrossChannelSearchResult}
             />
           ) : (
             <DeferredViewFallback />

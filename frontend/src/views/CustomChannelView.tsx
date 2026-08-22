@@ -12,14 +12,21 @@ import {
   setMessagePinned,
   type LobbyEvent,
   type MessagePin,
+  type RoomSearchResult,
   type RoomChannel,
   type VoiceParticipant,
 } from "../api";
 import { usePoll } from "../hooks";
 import ChannelHeader from "./components/ChannelHeader";
-import type { ChannelHeaderActions } from "./components/ChannelHeader";
+import type {
+  ChannelHeaderActions,
+  ChannelSearchScope,
+} from "./components/ChannelHeader";
 import "../styles/custom-channel.css";
-import { useRoomMessageSearch } from "./useRoomMessageSearch";
+import {
+  useRoomMessageSearch,
+  type RoomMessageSearchController,
+} from "./useRoomMessageSearch";
 
 /**
  * A custom (user-created) channel: a text channel renders its own message
@@ -39,6 +46,13 @@ export default function CustomChannelView({
   onOpenMobileSidebar,
   onOpenMobileInfo,
   headerActions,
+  sharedMessageSearch,
+  messageSearchScope = "channel",
+  onMessageSearchScopeChange,
+  messageSearchChannelLabels = {},
+  pendingSearchTargetEventId = "",
+  onSearchTargetHandled,
+  onOpenCrossChannelSearchResult,
 }: {
   channel: RoomChannel;
   meetingId: string;
@@ -50,6 +64,13 @@ export default function CustomChannelView({
   onOpenMobileSidebar?: () => void;
   onOpenMobileInfo?: () => void;
   headerActions?: ChannelHeaderActions;
+  sharedMessageSearch?: RoomMessageSearchController;
+  messageSearchScope?: ChannelSearchScope;
+  onMessageSearchScopeChange?: (scope: ChannelSearchScope) => void;
+  messageSearchChannelLabels?: Record<string, string>;
+  pendingSearchTargetEventId?: string;
+  onSearchTargetHandled?: () => void;
+  onOpenCrossChannelSearchResult?: (result: RoomSearchResult) => void;
 }) {
   if (channel.type === "voice") {
     return (
@@ -79,6 +100,13 @@ export default function CustomChannelView({
       onOpenMobileSidebar={onOpenMobileSidebar}
       onOpenMobileInfo={onOpenMobileInfo}
       headerActions={headerActions}
+      sharedMessageSearch={sharedMessageSearch}
+      messageSearchScope={messageSearchScope}
+      onMessageSearchScopeChange={onMessageSearchScopeChange}
+      messageSearchChannelLabels={messageSearchChannelLabels}
+      pendingSearchTargetEventId={pendingSearchTargetEventId}
+      onSearchTargetHandled={onSearchTargetHandled}
+      onOpenCrossChannelSearchResult={onOpenCrossChannelSearchResult}
     />
   );
 }
@@ -94,6 +122,13 @@ function TextChannelBody({
   onOpenMobileSidebar,
   onOpenMobileInfo,
   headerActions,
+  sharedMessageSearch,
+  messageSearchScope,
+  onMessageSearchScopeChange,
+  messageSearchChannelLabels,
+  pendingSearchTargetEventId,
+  onSearchTargetHandled,
+  onOpenCrossChannelSearchResult,
 }: {
   channel: RoomChannel;
   meetingId: string;
@@ -105,6 +140,13 @@ function TextChannelBody({
   onOpenMobileSidebar?: () => void;
   onOpenMobileInfo?: () => void;
   headerActions?: ChannelHeaderActions;
+  sharedMessageSearch?: RoomMessageSearchController;
+  messageSearchScope: ChannelSearchScope;
+  onMessageSearchScopeChange?: (scope: ChannelSearchScope) => void;
+  messageSearchChannelLabels: Record<string, string>;
+  pendingSearchTargetEventId: string;
+  onSearchTargetHandled?: () => void;
+  onOpenCrossChannelSearchResult?: (result: RoomSearchResult) => void;
 }) {
   const [draft, setDraft] = useState("");
   const [sendError, setSendError] = useState("");
@@ -116,11 +158,12 @@ function TextChannelBody({
   const [contextEvents, setContextEvents] = useState<LobbyEvent[]>([]);
   const [pendingMessageTarget, setPendingMessageTarget] = useState("");
   const scrollRef = useRef<HTMLDivElement | null>(null);
-  const messageSearch = useRoomMessageSearch({
+  const localMessageSearch = useRoomMessageSearch({
     roomId: meetingId,
     channelId: channel.id,
     sessionToken,
   });
+  const messageSearch = sharedMessageSearch || localMessageSearch;
 
   const fetcher = useCallback(
     () => fetchChannelLobby(channel.id, { sessionToken: sessionToken || undefined, meetingId }),
@@ -131,16 +174,19 @@ function TextChannelBody({
   const pinnedEventIds = new Set(pinnedItems.map((pin) => pin.event_id));
   const channelSearchItems = messageSearch.results.map((result) => {
     const date = new Date(result.created_at);
+    const timeLabel = date.toLocaleString("ko-KR", {
+      month: "numeric",
+      day: "numeric",
+      hour: "2-digit",
+      minute: "2-digit",
+    });
     return {
       id: result.event_id,
       author: result.author || "익명",
       body: result.content || result.attachment_filenames.join(", "),
-      meta: date.toLocaleString("ko-KR", {
-        month: "numeric",
-        day: "numeric",
-        hour: "2-digit",
-        minute: "2-digit",
-      }),
+      meta: messageSearchScope === "all"
+        ? `#${messageSearchChannelLabels[result.channel_id] || result.channel_id} · ${timeLabel}`
+        : timeLabel,
       exactTime: date.toLocaleString("ko-KR", {
         year: "numeric",
         month: "long",
@@ -150,6 +196,10 @@ function TextChannelBody({
         second: "2-digit",
       }),
       onSelect: () => {
+        if (result.channel_id !== channel.id && onOpenCrossChannelSearchResult) {
+          onOpenCrossChannelSearchResult(result);
+          return;
+        }
         void navigateToMessage(result.event_id).catch((reason) => {
           setPendingMessageTarget("");
           messageSearch.setError(
@@ -195,6 +245,24 @@ function TextChannelBody({
     });
     setContextEvents(context.events as LobbyEvent[]);
   }
+
+  useEffect(() => {
+    if (!pendingSearchTargetEventId) return;
+    let active = true;
+    void navigateToMessage(pendingSearchTargetEventId)
+      .catch((reason) => {
+        setPendingMessageTarget("");
+        messageSearch.setError(
+          reason instanceof Error ? reason.message : "검색한 메시지로 이동하지 못했습니다."
+        );
+      })
+      .finally(() => {
+        if (active) onSearchTargetHandled?.();
+      });
+    return () => {
+      active = false;
+    };
+  }, [pendingSearchTargetEventId]);
 
   async function send() {
     const message = draft.trim();
@@ -294,6 +362,9 @@ function TextChannelBody({
         headerActions={effectiveHeaderActions}
         searchItems={channelSearchItems}
         externalSearch
+        searchQuery={messageSearch.query}
+        searchScope={messageSearchScope}
+        onSearchScopeChange={onMessageSearchScopeChange}
         searchLoading={messageSearch.loading}
         searchError={messageSearch.error}
         onSearchQueryChange={messageSearch.updateQuery}
