@@ -280,8 +280,11 @@ owner may moderate any public message. Edits update the canonical event and
 append a sequenced `message_updated` projection without waking providers.
 Deletes replace the body and attachments with a durable tombstone, append
 `message_deleted`, remove the message from search and pins, and delete its
-stored attachment bytes. Finalized Agent Session messages are not editable.
-Custom-channel and vote-message mutation remain separate unfinished slices.
+stored attachment bytes. Deleting a vote message also removes the canonical
+poll, every ballot and ballot identity, and its totals while retaining one
+ordinary tombstone; the deleted poll can no longer be read or voted on.
+Finalized Agent Session messages are not editable. Custom-channel message
+mutation remains a separate unfinished slice.
 
 A supported Codex/Claude-style app or interactive CLI can instead register
 `assemble room connector-mcp` once. Giving that current conversation a normal

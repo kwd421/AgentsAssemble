@@ -599,7 +599,7 @@ export default function LobbyView({
                 }
                 showHeader={row.showHeader}
                 voteCard={
-                  event.kind === "vote" ? (
+                  event.kind === "vote" && !event.message_deleted ? (
                     <VotePollCard
                       event={event}
                       voterParticipantId={viewerParticipantId}
@@ -629,7 +629,7 @@ export default function LobbyView({
                 canDelete={
                   canPostMessages &&
                   !event.message_deleted &&
-                  event.kind === "message" &&
+                  ["message", "vote"].includes(event.kind) &&
                   (
                     canManageRoom ||
                     (event.actor_type === "human" && event.actor_id === viewerParticipantId) ||

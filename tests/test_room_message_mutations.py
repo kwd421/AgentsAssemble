@@ -209,6 +209,79 @@ class RoomMessageMutationCommandTests(unittest.TestCase):
         self.assertTrue(stored["message_deleted"])
         self.assertEqual(stored["content"], "")
 
+    def test_deleting_vote_removes_poll_totals_and_ballot_identity(self) -> None:
+        poll = self._command(
+            "vote-delete-poll",
+            "message.send",
+            {
+                "kind": "vote",
+                "vote_question": "Ship it?",
+                "vote_options": ["Yes", "No"],
+            },
+        )["result"]["event"]
+        guest = {
+            **HOST,
+            "agent_id": "vote-guest",
+            "display_name": "Vote Guest",
+            "operator": False,
+        }
+        self.controller.connect(guest)
+        ballot = self._command(
+            "vote-delete-ballot",
+            "message.send",
+            {
+                "kind": "vote_cast",
+                "vote_id": poll["id"],
+                "vote_choice": "Yes",
+            },
+            guest,
+        )["result"]["event"]
+        self.assertEqual(
+            self._command(
+                "vote-delete-summary-before",
+                "room.vote.summary",
+                {"vote_id": poll["id"]},
+            )["result"]["total_votes"],
+            1,
+        )
+
+        self._command(
+            "vote-delete-command",
+            "message.delete",
+            {"event_id": poll["id"]},
+        )
+
+        self.assertEqual(self.controller.store.vote_events("general", poll["id"]), [])
+        deleted_poll = self.controller.store.event_by_id("general", poll["id"])
+        deleted_ballot = self.controller.store.event_by_id("general", ballot["id"])
+        self.assertTrue(deleted_poll["message_deleted"])
+        self.assertTrue(deleted_ballot["message_deleted"])
+        self.assertEqual(deleted_ballot.get("vote_id"), "")
+        self.assertEqual(deleted_ballot.get("vote_choice"), "")
+        self.assertEqual(deleted_ballot.get("actor"), {})
+        self.assertEqual(deleted_ballot.get("actor_id"), "")
+        self.assertEqual(deleted_ballot.get("participant_id"), "")
+
+        with self.assertRaises(RoomCommandRejected) as missing_summary:
+            self._command(
+                "vote-delete-summary-after",
+                "room.vote.summary",
+                {"vote_id": poll["id"]},
+            )
+        self.assertEqual(missing_summary.exception.code, "vote_not_found")
+        with self.assertRaises(RoomCommandRejected) as missing_vote:
+            self._command(
+                "vote-delete-late-ballot",
+                "message.send",
+                {
+                    "kind": "vote_cast",
+                    "vote_id": poll["id"],
+                    "vote_choice": "No",
+                },
+                guest,
+            )
+        self.assertEqual(missing_vote.exception.code, "vote_not_found")
+
 
 if __name__ == "__main__":
     unittest.main()

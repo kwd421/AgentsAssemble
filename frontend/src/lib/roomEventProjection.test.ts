@@ -92,6 +92,58 @@ describe("projectRoomEventsToTimeline", () => {
     expect(deleted[0].message).not.toContain("private");
   });
 
+  it("keeps one tombstone and removes ballot rows when a vote is deleted", () => {
+    const timeline = projectRoomEventsToTimeline([
+      event({
+        id: "vote-1",
+        actor: { participant_id: "host-1", participant_type: "human" },
+        message_kind: "vote",
+        vote_question: "Ship it?",
+        vote_options: ["Yes", "No"],
+      }),
+      event({
+        id: "ballot-1",
+        seq: 2,
+        actor: { participant_id: "guest-1", participant_type: "human" },
+        message_kind: "vote_cast",
+        vote_id: "vote-1",
+        vote_choice: "Yes",
+      }),
+      event({
+        id: "delete-vote-1",
+        seq: 3,
+        type: "message_deleted",
+        target_event_id: "vote-1",
+      }),
+    ]);
+
+    expect(timeline).toHaveLength(1);
+    expect(timeline[0]).toMatchObject({
+      record_id: "vote-1",
+      kind: "vote",
+      message_deleted: true,
+    });
+
+    const boundedHistory = projectRoomEventsToTimeline([
+      event({
+        id: "ballot-2",
+        seq: 100,
+        actor: { participant_id: "guest-2", participant_type: "human" },
+        message_kind: "vote_cast",
+        vote_id: "old-vote",
+        vote_choice: "No",
+      }),
+      event({
+        id: "delete-old-vote",
+        seq: 101,
+        type: "message_deleted",
+        target_event_id: "old-vote",
+      }),
+    ]);
+
+    expect(boundedHistory).toEqual([]);
+  });
+
   it("groups legacy delta and final events by source event and actor", () => {
     const timeline = projectRoomEventsToTimeline([
       event({ id: "legacy-delta", seq: 1, type: "message_delta", source_event_id: "human-1", content: "clean" }),

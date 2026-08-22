@@ -116,7 +116,11 @@ def vote_poll(
         or (event.get("id") if kind == "vote" else "")
         or ""
     )
-    if kind != "vote" or event_vote_id != clean_vote_id:
+    if (
+        kind != "vote"
+        or event_vote_id != clean_vote_id
+        or event.get("message_deleted") is True
+    ):
         raise ValueError(f"Vote {clean_vote_id} was not found.")
     return event
 
@@ -152,6 +156,8 @@ def vote_summary(events: list[dict[str, object]], vote_id: str) -> dict[str, obj
     poll: dict[str, object] | None = None
     latest_choice_by_voter: dict[str, tuple[str, str]] = {}
     for event in events:
+        if event.get("message_deleted") is True:
+            continue
         kind = str(event.get("message_kind") or event.get("kind") or "")
         event_vote_id = str(
             event.get("vote_id")

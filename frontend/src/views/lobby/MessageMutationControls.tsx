@@ -170,7 +170,11 @@ export default function MessageMutationControls({
                   <strong>{event.name}</strong>
                   <time>{new Date(event.created_at).toLocaleString("ko-KR")}</time>
                 </p>
-                <div>{event.message || "첨부파일 메시지"}</div>
+                <div>
+                  {event.kind === "vote"
+                    ? event.vote_question || "투표"
+                    : event.message || "첨부파일 메시지"}
+                </div>
               </div>
             )}
 

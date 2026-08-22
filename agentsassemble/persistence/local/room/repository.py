@@ -31,7 +31,9 @@ from agentsassemble.persistence.local.room.database import (
     open_room_database,
 )
 from agentsassemble.persistence.local.room.event_mutations import (
+    _VOTE_BALLOT_EVENTS_QUERY,
     read_event_by_id,
+    read_vote_events,
     update_event_fields as update_room_event_fields,
 )
 from agentsassemble.persistence.local.room.message_pins import SQLiteMessagePinRepositoryMixin
@@ -67,16 +69,6 @@ _STORE_LOCKS: dict[str, threading.RLock] = {}
 _EVENT_LISTENERS: dict[str, list[Callable[[dict[str, object]], None]]] = {}
 _INITIALIZED_DATABASES: dict[str, tuple[tuple[int, int], dict[str, object]]] = {}
 _LOGGER = logging.getLogger(__name__)
-_VOTE_BALLOT_EVENTS_QUERY = """SELECT payload_json FROM room_events
-                               WHERE room_id = ?
-                                 AND visibility = ?
-                                 AND event_type = 'message_final'
-                                 AND json_extract(payload_json, '$.message_kind') = 'vote_cast'
-                                 AND json_extract(payload_json, '$.vote_id') = ?
-                                 AND seq > ?
-                               ORDER BY seq"""
-
-
 def _store_lock(output_root: Path) -> threading.RLock:
     key = str(output_root.expanduser().resolve())
     with _STORE_REGISTRY_LOCK:
@@ -128,6 +120,9 @@ class _SQLiteRoomTransaction:
             event_id,
             dict(updates),
         )
+
+    def vote_events(self, vote_id: str) -> list[dict[str, object]]:
+        return read_vote_events(self._connection, self._room_id, vote_id)
 
     def room_settings(self) -> RoomGlobalSettingsRecord:
         return self._store._room_settings(self._connection, self._room_id)
@@ -840,26 +835,7 @@ class RoomStore(SQLiteMessagePinRepositoryMixin):
         if not clean_vote_id:
             return []
         with self._connection() as connection:
-            poll = read_event_by_id(connection, clean_room_id, clean_vote_id)
-            if (
-                not poll
-                or str(poll.get("type") or "") != "message_final"
-                or str(poll.get("message_kind") or "") != "vote"
-            ):
-                return []
-            rows = connection.execute(
-                _VOTE_BALLOT_EVENTS_QUERY,
-                (
-                    clean_room_id,
-                    VISIBLE,
-                    clean_vote_id,
-                    int(poll.get("seq") or 0),
-                ),
-            ).fetchall()
-        return [
-            poll,
-            *[_row_payload(row, column="payload_json") for row in rows],
-        ]
+            return read_vote_events(connection, clean_room_id, clean_vote_id)
 
     def event_sequence(self, room_id: str, event_id: str) -> int:
         clean_room_id = _clean_room_id(room_id)

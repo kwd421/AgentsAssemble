@@ -176,7 +176,7 @@ class RoomMessageService:
         *,
         unit: RoomCommandUnitOfWork,
     ) -> dict[str, object]:
-        event = self._editable_message(payload, unit=unit)
+        event = self._mutable_message(payload, unit=unit, allowed_kinds={"", "message"})
         participant_id = clean_room_text(identity.get("agent_id"), 128)
         actor_id = self._event_actor_id(event)
         if (
@@ -224,7 +224,11 @@ class RoomMessageService:
         unit: RoomCommandUnitOfWork,
         can_moderate: bool,
     ) -> dict[str, object]:
-        event = self._editable_message(payload, unit=unit)
+        event = self._mutable_message(
+            payload,
+            unit=unit,
+            allowed_kinds={"", "message", "vote"},
+        )
         actor_id = self._event_actor_id(event)
         principals = room_identity_principals(identity)
         participant = unit.participant(actor_id)
@@ -241,17 +245,49 @@ class RoomMessageService:
                 "You cannot delete this message.",
                 code="permission_denied",
             )
-        attachments = (
-            event.get("attachments")
-            if isinstance(event.get("attachments"), list)
-            else []
-        )
+        message_kind = clean_room_text(event.get("message_kind"), 64)
+        vote_events = unit.vote_events(str(event["id"])) if message_kind == "vote" else [event]
         attachment_ids = [
             clean_room_text(item.get("id"), 64)
-            for item in attachments
-            if isinstance(item, dict) and clean_room_text(item.get("id"), 64)
+            for record in vote_events
+            for item in (
+                record.get("attachments")
+                if isinstance(record.get("attachments"), list)
+                else []
+            )
+            if isinstance(item, dict)
+            and clean_room_text(item.get("id"), 64)
         ]
         deleted_at = utc_now()
+        if message_kind == "vote":
+            for ballot in vote_events[1:]:
+                unit.update_event_fields(
+                    str(ballot["id"]),
+                    content="",
+                    attachments=[],
+                    message_deleted=True,
+                    deleted_at=deleted_at,
+                    target_agent_id="",
+                    vote_id="",
+                    vote_choice="",
+                    vote_question="",
+                    vote_options=[],
+                    actor={},
+                    actor_id="",
+                    actor_type="",
+                    participant_id="",
+                    display_name="",
+                )
+        vote_tombstone = (
+            {
+                "vote_question": "",
+                "vote_options": [],
+                "vote_duration_seconds": None,
+                "vote_deadline_at": "",
+            }
+            if message_kind == "vote"
+            else {}
+        )
         updated = unit.update_event_fields(
             str(event["id"]),
             content="",
@@ -259,6 +295,7 @@ class RoomMessageService:
             message_deleted=True,
             deleted_at=deleted_at,
             target_agent_id="",
+            **vote_tombstone,
         )
         participant_id = clean_room_text(identity.get("agent_id"), 128)
         mutation = unit.append_event(
@@ -301,10 +338,11 @@ class RoomMessageService:
         )
 
     @staticmethod
-    def _editable_message(
+    def _mutable_message(
         payload: dict[str, object],
         *,
         unit: RoomCommandUnitOfWork,
+        allowed_kinds: set[str],
     ) -> dict[str, object]:
         event_id = clean_room_text(payload.get("event_id"), 128)
         event = unit.event_by_id(event_id) if event_id else {}
@@ -312,7 +350,7 @@ class RoomMessageService:
             raise RoomCommandRejected("Message was not found.", code="message_not_found")
         if event.get("message_deleted") is True:
             raise RoomCommandRejected("Message was already deleted.", code="message_deleted")
-        if clean_room_text(event.get("message_kind"), 64) not in {"", "message"}:
+        if clean_room_text(event.get("message_kind"), 64) not in allowed_kinds:
             raise RoomCommandRejected(
                 "This message type cannot be changed here.",
                 code="unsupported_message_type",

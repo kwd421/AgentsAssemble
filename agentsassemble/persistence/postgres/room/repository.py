@@ -128,10 +128,10 @@ class _PostgresRoomTransaction:
 
     def update_event_fields(self, event_id: str, **updates: object) -> dict[str, object]:
         return persist_event_fields(
-            self._connection, self._room_id,
-            clean_room_text(event_id, limit=128),
-            dict(updates),
-        )
+            self._connection, self._room_id, clean_room_text(event_id, limit=128), dict(updates))
+
+    def vote_events(self, vote_id: str) -> list[dict[str, object]]:
+        return read_vote_events(self._connection, self._room_id, vote_id)
 
     def room_settings(self) -> RoomGlobalSettingsRecord:
         return read_room_settings(self._connection, self._room_id)

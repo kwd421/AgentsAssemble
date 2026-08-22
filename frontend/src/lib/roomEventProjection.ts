@@ -60,6 +60,7 @@ export function projectRoomEventsToTimeline(
   const timeline: LobbyEvent[] = [];
   const turnIndex = new Map<string, number>();
   const recordIndex = new Map<string, number>();
+  const deletedVoteIds = new Set<string>();
   const activityIndex = new Map<string, number>();
   const viewerParticipantId = String(options.viewerParticipantId || "");
   const participantProfiles = options.participantProfiles || {};
@@ -136,6 +137,7 @@ export function projectRoomEventsToTimeline(
       const messageKind = String(event.message_kind || existing?.kind || "message");
       const voteChoice = String(event.vote_choice || existing?.vote_choice || "");
       const isVoteResult = event.type === "message_final" && messageKind === "vote_cast";
+      if (isVoteResult && event.message_deleted === true) return;
       const message =
         isVoteResult
           ? `🗳️ ${speaker.name}의 선택: 「${voteChoice || "선택 없음"}」`
@@ -191,6 +193,7 @@ export function projectRoomEventsToTimeline(
       if (projected.message_deleted) {
         projected.message = "삭제된 메시지입니다";
         projected.attachments = [];
+        if (messageKind === "vote") deletedVoteIds.add(String(event.id));
       }
       if (existingIndex === undefined) {
         turnIndex.set(key, timeline.length);
@@ -204,6 +207,9 @@ export function projectRoomEventsToTimeline(
     }
 
     if (event.type === "message_updated" || event.type === "message_deleted") {
+      if (event.type === "message_deleted") {
+        deletedVoteIds.add(String(event.target_event_id || ""));
+      }
       const targetIndex = recordIndex.get(String(event.target_event_id || ""));
       if (targetIndex === undefined) return;
       const existing = timeline[targetIndex];
@@ -228,7 +234,9 @@ export function projectRoomEventsToTimeline(
     return;
   });
 
-  return timeline;
+  return timeline.filter(
+    (item) => item.kind !== "vote_cast" || !item.vote_id || !deletedVoteIds.has(item.vote_id)
+  );
 }
 
 export function projectRoomEventProgress(
