@@ -3,10 +3,42 @@ import unittest
 from agentsassemble.providers.runtime_contracts import AdapterContractError
 from agentsassemble.providers.terminal_interactions import (
     AntigravityRoomPortalInteraction,
+    is_safe_room_portal_command,
 )
 
 
 class AntigravityRoomPortalInteractionTests(unittest.TestCase):
+    def test_search_and_collaboration_commands_are_approved_without_shell_expansion(self):
+        policy = AntigravityRoomPortalInteraction()
+        policy.begin_turn()
+
+        for command in (
+            "agentsassemble-room participants",
+            "agentsassemble-room search 'deployment failure' all",
+            "agentsassemble-room search-context lobby event-42",
+            "agentsassemble-room vote-create 'Which route?' '[\"north\",\"south\"]' 30",
+            "agentsassemble-room vote-cast vote-1 north",
+            "agentsassemble-room vote-summary vote-1",
+            "agentsassemble-room choose '[\"north\",\"south\"]'",
+        ):
+            with self.subTest(command=command):
+                output = (
+                    f"Requesting permission for: {command}\n"
+                    "Do you want to proceed?"
+                ).encode()
+                self.assertEqual(policy.response_for(output), b"\x1b[B\r")
+
+        self.assertFalse(
+            is_safe_room_portal_command(
+                "agentsassemble-room search \"$HOME\" all"
+            )
+        )
+        self.assertFalse(
+            is_safe_room_portal_command(
+                "agentsassemble-room search 'deployment failure' all && whoami"
+            )
+        )
+
     def test_exact_room_read_receives_one_time_terminal_approval(self):
         policy = AntigravityRoomPortalInteraction()
         policy.begin_turn()

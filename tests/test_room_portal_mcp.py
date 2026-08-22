@@ -59,6 +59,8 @@ class RoomPortalMcpTests(unittest.TestCase):
             tool_names,
             [
                 "read_discussion",
+                "search_messages",
+                "read_message_context",
                 "list_participants",
                 "publish_message",
                 "decline_to_speak",

@@ -25,6 +25,44 @@ ROOM_TOOL_SCHEMAS: tuple[dict[str, object], ...] = (
     {
         "type": "function",
         "function": {
+            "name": "search_messages",
+            "description": (
+                "Search complete readable room history. Use the returned cursor for another page."
+            ),
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "query": {"type": "string"},
+                    "channel_id": {
+                        "type": "string",
+                        "description": "A concrete channel id, or all for every readable channel.",
+                    },
+                    "cursor": {"type": "string"},
+                },
+                "required": ["query"],
+                "additionalProperties": False,
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "read_message_context",
+            "description": "Read bounded context around one result from search_messages.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "channel_id": {"type": "string"},
+                    "event_id": {"type": "string"},
+                },
+                "required": ["channel_id", "event_id"],
+                "additionalProperties": False,
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
             "name": "list_participants",
             "description": "List the people and agents currently visible in the shared room.",
             "parameters": {"type": "object", "properties": {}, "additionalProperties": False},
@@ -282,6 +320,17 @@ def execute_room_tool(
         raise RuntimeError(f"Provider requested unavailable room tool: {name or '(missing)'}.")
     if name == "read_discussion":
         result: object = portal.read_discussion()
+    elif name == "search_messages":
+        result = portal.search_messages(
+            arguments.get("query"),
+            channel_id=arguments.get("channel_id", "all"),
+            cursor=arguments.get("cursor", ""),
+        )
+    elif name == "read_message_context":
+        result = portal.read_message_context(
+            arguments.get("channel_id"),
+            arguments.get("event_id"),
+        )
     elif name == "list_participants":
         result = portal.list_participants()
     elif name == "publish_message":

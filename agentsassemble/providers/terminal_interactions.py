@@ -18,6 +18,7 @@ _PERMISSION_BLOCK = re.compile(
 )
 _ATTACHMENT_ID = re.compile(r"^[A-Za-z0-9_-]{8,64}$")
 _AGENT_ID = re.compile(r"^[A-Za-z0-9_.-]{1,128}$")
+_SEARCH_CURSOR = re.compile(r"^[A-Za-z0-9_-]{1,2048}={0,2}$")
 _PLUGIN_ACTION = re.compile(r"^[a-z][a-z0-9_-]{0,63}$")
 _DECLINE_REASON_CODES = frozenset({"nothing_useful_to_add", "not_addressed", "duplicate"})
 _DICE_NOTATION = re.compile(
@@ -162,12 +163,39 @@ def is_safe_room_portal_command(command: str) -> bool:
         return not arguments
     if action == "read":
         return not arguments
+    if action == "participants":
+        return not arguments
+    if action == "search":
+        return _is_safe_search_command(arguments, command)
+    if action == "search-context":
+        return bool(
+            len(arguments) == 2
+            and arguments[0] != "all"
+            and _AGENT_ID.fullmatch(arguments[0])
+            and _AGENT_ID.fullmatch(arguments[1])
+        )
     if action == "decline":
         return len(arguments) == 1 and arguments[0] in _DECLINE_REASON_CODES
+    if action == "vote-create":
+        return _is_safe_vote_create_command(arguments, command)
+    if action == "vote-cast":
+        return bool(
+            len(arguments) == 2
+            and _AGENT_ID.fullmatch(arguments[0])
+            and arguments[1]
+            and not _has_shell_expansion_outside_single_quotes(command)
+        )
+    if action == "vote-summary":
+        return len(arguments) == 1 and bool(_AGENT_ID.fullmatch(arguments[0]))
     if action == "media":
         return len(arguments) == 1 and bool(_ATTACHMENT_ID.fullmatch(arguments[0]))
     if action == "roll":
         return len(arguments) == 1 and _is_bounded_dice_notation(arguments[0])
+    if action == "choose":
+        return bool(
+            not _has_shell_expansion_outside_single_quotes(command)
+            and _is_safe_json_text_options(arguments, minimum=2, maximum=50)
+        )
     if action == "speak-to":
         if len(arguments) < 2 or _AGENT_ID.fullmatch(arguments[0]) is None:
             return False
@@ -181,6 +209,57 @@ def is_safe_room_portal_command(command: str) -> bool:
     return not any(
         argument.startswith("~")
         for argument in arguments
+    )
+
+
+def _is_safe_search_command(arguments: list[str], command: str) -> bool:
+    if not 1 <= len(arguments) <= 3 or not arguments[0] or len(arguments[0]) > 200:
+        return False
+    if _has_shell_expansion_outside_single_quotes(command):
+        return False
+    if any(argument.startswith("~") for argument in arguments):
+        return False
+    if len(arguments) >= 2 and _AGENT_ID.fullmatch(arguments[1]) is None:
+        return False
+    return not (
+        len(arguments) == 3
+        and arguments[2]
+        and _SEARCH_CURSOR.fullmatch(arguments[2]) is None
+    )
+
+
+def _is_safe_vote_create_command(arguments: list[str], command: str) -> bool:
+    if len(arguments) not in {2, 3} or not arguments[0] or len(arguments[0]) > 300:
+        return False
+    if _has_shell_expansion_outside_single_quotes(command):
+        return False
+    if not _is_safe_json_text_options(arguments[1:2], minimum=2, maximum=10):
+        return False
+    if len(arguments) == 2:
+        return True
+    try:
+        duration = int(arguments[2])
+    except ValueError:
+        return False
+    return duration == 0 or 30 <= duration <= 86400
+
+
+def _is_safe_json_text_options(
+    arguments: list[str],
+    *,
+    minimum: int,
+    maximum: int,
+) -> bool:
+    if len(arguments) != 1:
+        return False
+    try:
+        options = json.loads(arguments[0])
+    except (json.JSONDecodeError, ValueError):
+        return False
+    return bool(
+        isinstance(options, list)
+        and minimum <= len(options) <= maximum
+        and all(isinstance(value, str) and value.strip() for value in options)
     )
 
 

@@ -10,6 +10,8 @@ ROOM_TOOL_MODES = frozenset({CHAT_TOOL_MODE, TABLETOP_TOOL_MODE})
 CORE_ROOM_TOOLS = frozenset(
     {
         "read_discussion",
+        "search_messages",
+        "read_message_context",
         "list_participants",
         "publish_message",
         "decline_to_speak",

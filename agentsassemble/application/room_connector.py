@@ -8,7 +8,7 @@ import threading
 from collections import deque
 from collections.abc import Iterable
 from urllib.error import HTTPError
-from urllib.parse import parse_qs, urlsplit, urlunsplit
+from urllib.parse import parse_qs, urlencode, urlsplit, urlunsplit
 from urllib.request import Request, urlopen
 from uuid import uuid4
 
@@ -25,6 +25,7 @@ ROOM_CONNECTOR_DEDUPE_LIMIT = 200
 ROOM_CONNECTOR_COMMAND_TIMEOUT_SECONDS = 30.0
 ROOM_CONNECTOR_JOIN_TIMEOUT_SECONDS = 10.0
 ROOM_CONNECTOR_SOCKET_IDLE_SECONDS = 30.0
+ROOM_CONNECTOR_SEARCH_RESPONSE_LIMIT_BYTES = 2 * 1024 * 1024
 
 
 class RoomConnectorError(RuntimeError):
@@ -173,6 +174,41 @@ class RoomConnector:
                 "last_seq": self._last_seq,
             }
 
+    def search_messages(
+        self,
+        query: str,
+        *,
+        channel_id: str = "all",
+        cursor: str = "",
+    ) -> dict[str, object]:
+        clean_query = clean_room_text(query, limit=200)
+        if not clean_query:
+            raise RoomConnectorError("Room message search requires a query.")
+        return self._search_get(
+            "/api/room-search",
+            {
+                "q": clean_query,
+                "channel_id": clean_room_text(channel_id, limit=128) or "all",
+                "cursor": clean_room_text(cursor, limit=2048),
+            },
+        )
+
+    def read_message_context(
+        self,
+        channel_id: str,
+        event_id: str,
+    ) -> dict[str, object]:
+        clean_channel = clean_room_text(channel_id, limit=128)
+        clean_event = clean_room_text(event_id, limit=128)
+        if not clean_channel or clean_channel == "all" or not clean_event:
+            raise RoomConnectorError(
+                "Message context requires a concrete channel id and event id."
+            )
+        return self._search_get(
+            "/api/room-search/context",
+            {"channel_id": clean_channel, "event_id": clean_event},
+        )
+
     def wait_next(self) -> dict[str, object]:
         """Block without a model-visible timeout until a new public message exists."""
 
@@ -258,6 +294,45 @@ class RoomConnector:
         if not isinstance(event, dict):
             raise RoomConnectorError("The room acknowledged the command without an event.")
         return {"event": dict(event)}
+
+    def _search_get(
+        self,
+        path: str,
+        parameters: dict[str, str],
+    ) -> dict[str, object]:
+        with self._condition:
+            self._require_joined()
+            self._raise_if_closed()
+            server_url = self._server_url
+            session_token = self._session_token
+            room_id = self._room_id
+        request = Request(
+            f"{server_url.rstrip('/')}{path}?{urlencode({'room_id': room_id, **parameters})}",
+            headers={"Authorization": f"Bearer {session_token}"},
+            method="GET",
+        )
+        try:
+            with urlopen(
+                request,
+                timeout=ROOM_CONNECTOR_COMMAND_TIMEOUT_SECONDS,
+            ) as response:
+                raw = response.read(ROOM_CONNECTOR_SEARCH_RESPONSE_LIMIT_BYTES + 1)
+                if len(raw) > ROOM_CONNECTOR_SEARCH_RESPONSE_LIMIT_BYTES:
+                    raise RoomConnectorError(
+                        "Room search response exceeded its bounded size."
+                    )
+                payload = json.loads(raw.decode("utf-8"))
+        except HTTPError as error:
+            details = error.read(4096).decode("utf-8", "replace")
+            error.close()
+            raise RoomConnectorError(
+                details or f"Room search failed with HTTP {error.code}."
+            ) from error
+        except (OSError, UnicodeDecodeError, json.JSONDecodeError) as error:
+            raise RoomConnectorError(f"Room search failed: {error}") from error
+        if not isinstance(payload, dict):
+            raise RoomConnectorError("Room search returned an invalid response.")
+        return payload
 
     def _command_result(
         self,

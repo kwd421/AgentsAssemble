@@ -20,6 +20,7 @@ from agentsassemble.providers.remote_openai import remote_openai_endpoint
 from agentsassemble.providers.runtime_config import ProviderRuntimeConfig, ProviderRuntimeProfile
 from agentsassemble.providers.runtime_factory import runtime_from_config
 from agentsassemble.providers.room_portal import RoomPortal, room_session_orientation
+from agentsassemble.providers.room_portal_search import RoomPortalSearchBroker
 from agentsassemble.providers.secrets import (
     PROVIDER_SECRETS,
     secret_provider_id_for_kind,
@@ -76,6 +77,7 @@ class AgentAttendee:
         workspace = Path(self._workspace_argument or temporary.name).expanduser().resolve()
         workspace.mkdir(parents=True, exist_ok=True)
         session_token = ""
+        search_broker: RoomPortalSearchBroker | None = None
         try:
             joined = join_agent_room_session(
                 self.server_url,
@@ -99,6 +101,14 @@ class AgentAttendee:
                 participant_id=participant_id,
             )
             portal.prepare()
+            search_broker = RoomPortalSearchBroker(
+                portal.root,
+                server_url=self.server_url,
+                session_token=session_token,
+                room_id=room_id,
+                tool_allowed=portal.tool_allowed,
+            )
+            search_broker.start()
             environment = portal.provider_environment(os.environ.get("PATH", ""))
             self._runtime = self._build_runtime(
                 participant_id,
@@ -143,11 +153,24 @@ class AgentAttendee:
                 if not self._stop.wait(1.0):
                     continue
         finally:
+            search_broker_error: Exception | None = None
+            if search_broker is not None:
+                try:
+                    search_broker.stop()
+                except Exception as error:
+                    search_broker_error = error
             self.last_cleanup_report = self._cleanup(
                 session_token=session_token,
                 temporary=temporary,
                 portal_temporary=portal_temporary,
             )
+            if search_broker_error is not None:
+                self.last_cleanup_report.record_failure(
+                    "room_search_broker.stop",
+                    search_broker_error,
+                    handle_id="room-search-broker",
+                    orphaned=True,
+                )
             emit_cleanup_failure(self.last_cleanup_report)
         return 0 if self.last_cleanup_report.ok else 1
 

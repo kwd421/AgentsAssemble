@@ -180,6 +180,17 @@ class RoomConnectorTests(unittest.TestCase):
                 [message["content"] for message in connector.read()["messages"]],
                 ["before join"],
             )
+            search = connector.search_messages("before join", channel_id="all")
+            self.assertEqual(len(search["results"]), 1)
+            self.assertEqual(search["results"][0]["content"], "before join")
+            context = connector.read_message_context(
+                search["results"][0]["channel_id"],
+                search["results"][0]["event_id"],
+            )
+            self.assertEqual(
+                [event["content"] for event in context["events"]],
+                ["before join"],
+            )
 
             delivered: dict[str, object] = {}
 

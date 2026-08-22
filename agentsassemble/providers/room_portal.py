@@ -27,6 +27,7 @@ from agentsassemble.providers.room_portal_helper import (
     helper_script,
     windows_helper_wrapper,
 )
+from agentsassemble.providers.room_portal_search import RoomPortalSearchTools
 from agentsassemble.providers.room_portal_collaboration import (
     RoomPortalCollaboration,
     RoomPortalError,
@@ -64,6 +65,8 @@ def room_session_orientation(provider_kind: object = "") -> str:
 - You are an ongoing participant in a shared AgentsAssemble room.
 - Structured room votes are available through `create_vote`, `cast_vote`, and
   `vote_summary` when those names appear under Available room tools.
+- `search_messages` searches the complete readable room record; use
+  `read_message_context` on one result when an older discussion matters.
 - Public room messages follow the language of the latest human or host message,
   unless that message explicitly asks for another language.
 - The private room mirror shows your canonical room role. In ordered mode, a
@@ -101,7 +104,7 @@ class RoomObservationResultBatch:
         )
 
 
-class RoomPortal:
+class RoomPortal(RoomPortalSearchTools):
     """Maintain a bounded, private room mirror and one-turn publication outbox."""
 
     def __init__(

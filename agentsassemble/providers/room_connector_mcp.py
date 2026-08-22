@@ -20,8 +20,8 @@ ROOM_CONNECTOR_MCP_INSTRUCTIONS = (
     "or fetch the URL, inspect APIs, launch another model, or implement HTTP "
     "or WebSocket calls. This current conversation is the participant. After "
     "joining, pass the returned connection_id unchanged to every later room "
-    "tool. Use only the room tools to read, speak, vote, roll dice, choose "
-    "randomly, wait, and leave. Never reveal connection_id to the user."
+    "tool. Use only the room tools to read, search, speak, vote, roll dice, "
+    "choose randomly, wait, and leave. Never reveal connection_id to the user."
 )
 
 
@@ -197,6 +197,48 @@ def _build_room_connector_mcp(
     def room_read(context: Context, connection_id: ConnectionId = "") -> dict[str, object]:
         """Read the bounded current room context and finalized public messages."""
         return connector_for(context, connection_id).read()
+
+    @server.tool(
+        title="Search room messages",
+        annotations=ToolAnnotations(
+            readOnlyHint=True,
+            destructiveHint=False,
+            openWorldHint=True,
+        ),
+    )
+    def room_search_messages(
+        query: str,
+        context: Context,
+        channel_id: str = "all",
+        cursor: str = "",
+        connection_id: ConnectionId = "",
+    ) -> dict[str, object]:
+        """Search complete readable room history; pass next_cursor to fetch another page."""
+        return connector_for(context, connection_id).search_messages(
+            query,
+            channel_id=channel_id,
+            cursor=cursor,
+        )
+
+    @server.tool(
+        title="Read room message context",
+        annotations=ToolAnnotations(
+            readOnlyHint=True,
+            destructiveHint=False,
+            openWorldHint=True,
+        ),
+    )
+    def room_read_message_context(
+        channel_id: str,
+        event_id: str,
+        context: Context,
+        connection_id: ConnectionId = "",
+    ) -> dict[str, object]:
+        """Read bounded surrounding messages for one room search result."""
+        return connector_for(context, connection_id).read_message_context(
+            channel_id,
+            event_id,
+        )
 
     @server.tool(
         title="Send a room message",

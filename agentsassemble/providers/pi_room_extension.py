@@ -12,6 +12,8 @@ PI_READ_ONLY_TOOLS = (
     "find",
     "ls",
     "read_discussion",
+    "search_messages",
+    "read_message_context",
     "list_participants",
     "publish_message",
     "decline_to_speak",
@@ -92,6 +94,28 @@ export default function (pi: ExtensionAPI) {{
     description: "Read the bounded private room mirror for the active observation.",
     parameters: Type.Object({{}}),
     execute: async () => result(await room(["read"])),
+  }});
+  pi.registerTool({{
+    name: "search_messages",
+    label: "Search room messages",
+    description: "Search complete readable room history.",
+    parameters: Type.Object({{
+      query: Type.String(),
+      channel_id: Type.Optional(Type.String()),
+      cursor: Type.Optional(Type.String()),
+    }}),
+    execute: async (_id, params) => result(await room([
+      "search", params.query, params.channel_id || "all", params.cursor || "",
+    ])),
+  }});
+  pi.registerTool({{
+    name: "read_message_context",
+    label: "Read message context",
+    description: "Read bounded context around one room search result.",
+    parameters: Type.Object({{ channel_id: Type.String(), event_id: Type.String() }}),
+    execute: async (_id, params) => result(await room([
+      "search-context", params.channel_id, params.event_id,
+    ])),
   }});
   pi.registerTool({{
     name: "list_participants",

@@ -28,6 +28,20 @@ def serve_room_portal_mcp(root: str | Path) -> None:
         return portal.read_discussion()
 
     @server.tool()
+    def search_messages(
+        query: str,
+        channel_id: str = "all",
+        cursor: str = "",
+    ) -> dict[str, object]:
+        """Search complete readable room history; pass the returned cursor for the next page."""
+        return portal.search_messages(query, channel_id=channel_id, cursor=cursor)
+
+    @server.tool()
+    def read_message_context(channel_id: str, event_id: str) -> dict[str, object]:
+        """Read bounded context around one result from search_messages."""
+        return portal.read_message_context(channel_id, event_id)
+
+    @server.tool()
     def list_participants() -> list[dict[str, str]]:
         """List the people and agents currently visible in the shared room."""
         return portal.list_participants()
