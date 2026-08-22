@@ -111,8 +111,7 @@ export interface AgentSessionActionResponse {
   sessions?: Array<Record<string, unknown>>;
 }
 
-// agentSessions is the normal room UI creation path; legacy live-agent create
-// endpoints stay internal/compatibility-only.
+// Agent Sessions are the room UI's only provider creation path.
 export interface FrontendLiveAgentCreateRequest {
   meetingId: string;
   providerId: string;

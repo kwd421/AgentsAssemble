@@ -1,16 +1,24 @@
-import { useMemo } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { Hash } from "lucide-react";
 import {
   type LiveAgent,
   type LobbyEvent,
+  type RoomEvent,
+  fetchRoomMessageContext,
+  fetchMessagePins,
+  setMessagePinned,
+  type MessagePin,
+  type RoomSearchResult,
 } from "../api";
 import type { RoomDockItem } from "../lib/roomDockModel";
 import VotePollCard from "./components/VotePollCard";
 import LobbyComposer from "./components/LobbyComposer";
 import ChannelHeader from "./components/ChannelHeader";
-import type { ChannelHeaderActions } from "./components/ChannelHeader";
+import type {
+  ChannelHeaderActions,
+  ChannelSearchScope,
+} from "./components/ChannelHeader";
 import type { RoomAppearance } from "../lib/roomAppearance";
-import type { LobbyThreadSummary } from "../lib/sideChatThreadModel";
 import type { RoomPostingMode } from "../lib/roomGuestPosting";
 import type { RoomTypingIndicator } from "../lib/roomTypingIndicators";
 import type { Mentionable } from "../lib/mentionComposerModel";
@@ -27,6 +35,12 @@ import type {
   ProviderRequestResolution,
 } from "../lib/providerRequestModel";
 import ProviderRequestCard from "./components/ProviderRequestCard";
+import { projectRoomEventsToTimeline } from "../lib/roomEventProjection";
+import { useRoomSocket } from "../RoomSocketContext";
+import {
+  useRoomMessageSearch,
+  type RoomMessageSearchController,
+} from "./useRoomMessageSearch";
 
 export default function LobbyView({
   activeRoom,
@@ -42,9 +56,7 @@ export default function LobbyView({
   onOpenMobileSidebar,
   onOpenMobileInfo,
   appearance,
-  onOpenSideThread,
   onGuestSessionExpired,
-  threadSummaries = {},
   roomSessionToken = "",
   viewerParticipantId = "",
   typingIndicators = [],
@@ -57,6 +69,13 @@ export default function LobbyView({
   loadCanonicalHistory,
   providerRequests = [],
   resolveProviderRequest,
+  sharedMessageSearch,
+  messageSearchScope = "channel",
+  onMessageSearchScopeChange,
+  messageSearchChannelLabels = {},
+  pendingSearchTargetEventId = "",
+  onSearchTargetHandled,
+  onOpenCrossChannelSearchResult,
 }: {
   activeRoom: RoomDockItem;
   agents: LiveAgent[];
@@ -72,9 +91,7 @@ export default function LobbyView({
   onOpenMobileSidebar?: () => void;
   onOpenMobileInfo?: () => void;
   appearance?: RoomAppearance;
-  onOpenSideThread?: (event: LobbyEvent) => void;
   onGuestSessionExpired?: () => void;
-  threadSummaries?: Record<string, LobbyThreadSummary>;
   roomSessionToken?: string;
   viewerParticipantId?: string;
   bindLobbyStream?: (receive: (events: LobbyEvent[]) => void) => () => void;
@@ -93,16 +110,29 @@ export default function LobbyView({
     providerRequestId: string,
     resolution: ProviderRequestResolution
   ) => Promise<void>;
+  sharedMessageSearch?: RoomMessageSearchController;
+  messageSearchScope?: ChannelSearchScope;
+  onMessageSearchScopeChange?: (scope: ChannelSearchScope) => void;
+  messageSearchChannelLabels?: Record<string, string>;
+  pendingSearchTargetEventId?: string;
+  onSearchTargetHandled?: () => void;
+  onOpenCrossChannelSearchResult?: (result: RoomSearchResult) => void;
 }) {
+  const roomSocket = useRoomSocket();
   const {
     handleLobbyPosted,
     handleLobbyScroll,
+    showHistoryWindow,
     hasMoreHistory,
+    historyLoadError,
+    historyWindowActive,
+    loadOlderHistory,
     loaded,
     loadingOlder,
     pinnedToLatest,
     scrollRef,
     scrollToLatest,
+    suppressAutomaticHistoryLoad,
     voteRevisions,
     visibleEvents,
   } = useLobbyHistory({
@@ -115,6 +145,64 @@ export default function LobbyView({
     canonicalHasMoreHistory,
     loadCanonicalHistory,
   });
+  const [pinnedItems, setPinnedItems] = useState<MessagePin[]>([]);
+  const [pinsLoading, setPinsLoading] = useState(false);
+  const [pinsError, setPinsError] = useState("");
+  const [pinBusyIds, setPinBusyIds] = useState<Set<string>>(() => new Set());
+  const [pendingMessageTarget, setPendingMessageTarget] = useState("");
+  const localMessageSearch = useRoomMessageSearch({
+    roomId: activeRoom.meetingId,
+    channelId: "lobby",
+    sessionToken: roomSessionToken,
+  });
+  const messageSearch = sharedMessageSearch || localMessageSearch;
+
+  const agentOwnerIds = useMemo(
+    () => new Map(
+      agents.map((agent) => [
+        agent.agent_id,
+        new Set(
+          [agent.owner_participant_id, agent.owner_id, agent.created_by]
+            .map((value) => String(value || "").trim())
+            .filter(Boolean)
+        ),
+      ])
+    ),
+    [agents]
+  );
+
+  async function editMessage(event: LobbyEvent, content: string) {
+    if (!roomSocket?.ready()) throw new Error("방 연결이 준비되지 않았습니다.");
+    await roomSocket.command("message.edit", {
+      event_id: event.record_id || event.id,
+      content,
+    });
+  }
+
+  async function deleteMessage(event: LobbyEvent) {
+    if (!roomSocket?.ready()) throw new Error("방 연결이 준비되지 않았습니다.");
+    await roomSocket.command("message.delete", {
+      event_id: event.record_id || event.id,
+    });
+  }
+
+  const reloadPins = useCallback(async () => {
+    setPinsLoading(true);
+    setPinsError("");
+    try {
+      setPinnedItems(
+        await fetchMessagePins({
+          roomId: activeRoom.meetingId,
+          channelId: "lobby",
+          sessionToken: roomSessionToken,
+        })
+      );
+    } catch (error) {
+      setPinsError(error instanceof Error ? error.message : "고정 메시지를 불러오지 못했습니다.");
+    } finally {
+      setPinsLoading(false);
+    }
+  }, [activeRoom.meetingId, roomSessionToken]);
 
   const mentionables = useMemo(
     () =>
@@ -134,6 +222,204 @@ export default function LobbyView({
     () => Object.fromEntries(mentionables.map(({ token, label }) => [token, label])),
     [mentionables]
   );
+  const channelSearchItems = useMemo(
+    () => {
+      const serverItems = messageSearch.results.map((result) => {
+        const date = new Date(result.created_at);
+        const timeLabel = date.toLocaleString("ko-KR", {
+          month: "numeric",
+          day: "numeric",
+          hour: "2-digit",
+          minute: "2-digit",
+        });
+        return {
+          id: result.event_id,
+          author: result.author || "Room",
+          body: result.content || result.attachment_filenames.join(", "),
+          meta: messageSearchScope === "all"
+            ? `#${messageSearchChannelLabels[result.channel_id] || result.channel_id} · ${timeLabel}`
+            : timeLabel,
+          exactTime: date.toLocaleString("ko-KR", {
+            year: "numeric",
+            month: "long",
+            day: "numeric",
+            hour: "2-digit",
+            minute: "2-digit",
+            second: "2-digit",
+          }),
+          onSelect: () => {
+            if (result.channel_id !== "lobby" && onOpenCrossChannelSearchResult) {
+              onOpenCrossChannelSearchResult(result);
+              return;
+            }
+            void navigateToMessage(result.event_id).catch((reason) => {
+              setPendingMessageTarget("");
+              messageSearch.setError(
+                reason instanceof Error ? reason.message : "검색한 메시지로 이동하지 못했습니다."
+              );
+            });
+          },
+        };
+      });
+      if (serverItems.length) return serverItems;
+      const needle = messageSearch.query.trim().toLocaleLowerCase();
+      if (!needle) return [];
+      return visibleEvents
+        .filter((event) => `${event.name}\n${event.message}`.toLocaleLowerCase().includes(needle))
+        .slice()
+        .reverse()
+        .map((event) => ({
+          id: event.id,
+          author: event.name || "Room",
+          body: event.message,
+          meta: new Date(event.created_at).toLocaleString("ko-KR", {
+            month: "numeric",
+            day: "numeric",
+            hour: "2-digit",
+            minute: "2-digit",
+          }),
+          onSelect: () => jumpToEvent(event.id),
+        }));
+    },
+    [
+      messageSearch.query,
+      messageSearch.results,
+      messageSearchChannelLabels,
+      messageSearchScope,
+      onOpenCrossChannelSearchResult,
+      visibleEvents,
+    ]
+  );
+  const latestReadSequence = useMemo(
+    () => visibleEvents.reduce((latest, event) => Math.max(latest, Number(event.seq) || 0), 0),
+    [visibleEvents]
+  );
+  const lastReadSequence = useMemo(() => {
+    const match = /^seq:(\d+)$/.exec(headerActions?.lastReadCursor || "");
+    return match ? Number(match[1]) : 0;
+  }, [headerActions?.lastReadCursor]);
+  const firstUnreadEvent = useMemo(
+    () =>
+      headerActions?.onMarkRead
+        ? visibleEvents.find(
+            (event) => Number(event.seq) > lastReadSequence && event.kind !== "thinking"
+          )
+        : undefined,
+    [headerActions?.onMarkRead, lastReadSequence, visibleEvents]
+  );
+  const unreadCount = useMemo(
+    () =>
+      firstUnreadEvent
+        ? visibleEvents.filter(
+            (event) => Number(event.seq) > lastReadSequence && event.kind !== "thinking"
+          ).length
+        : 0,
+    [firstUnreadEvent, lastReadSequence, visibleEvents]
+  );
+  function jumpToEvent(eventId: string) {
+    const target = Array.from(
+      scrollRef.current?.querySelectorAll<HTMLElement>("[data-room-event-id]") || []
+    ).find((candidate) => candidate.dataset.roomEventId === eventId);
+    target?.scrollIntoView({ block: "center" });
+    target?.focus({ preventScroll: true });
+    if (target) {
+      target.dataset.searchTarget = "true";
+      window.setTimeout(() => delete target.dataset.searchTarget, 1800);
+    }
+  }
+  useEffect(() => {
+    if (!pendingMessageTarget) return;
+    const match = visibleEvents.find(
+      (event) => event.record_id === pendingMessageTarget || event.id === pendingMessageTarget
+    );
+    if (!match) return;
+    window.requestAnimationFrame(() => jumpToEvent(match.id));
+    setPendingMessageTarget("");
+  }, [pendingMessageTarget, visibleEvents]);
+
+  async function navigateToMessage(eventId: string) {
+    suppressAutomaticHistoryLoad();
+    setPendingMessageTarget(eventId);
+    const context = await fetchRoomMessageContext({
+      roomId: activeRoom.meetingId,
+      channelId: "lobby",
+      eventId,
+      sessionToken: roomSessionToken,
+    });
+    showHistoryWindow(
+      projectRoomEventsToTimeline(context.events as RoomEvent[], { viewerParticipantId })
+    );
+  }
+
+  useEffect(() => {
+    if (!pendingSearchTargetEventId) return;
+    let active = true;
+    void navigateToMessage(pendingSearchTargetEventId)
+      .catch((reason) => {
+        setPendingMessageTarget("");
+        messageSearch.setError(
+          reason instanceof Error ? reason.message : "검색한 메시지로 이동하지 못했습니다."
+        );
+      })
+      .finally(() => {
+        if (active) onSearchTargetHandled?.();
+      });
+    return () => {
+      active = false;
+    };
+  }, [pendingSearchTargetEventId]);
+
+  async function selectPin(pin: MessagePin) {
+    setPinsError("");
+    try {
+      await navigateToMessage(pin.event_id);
+    } catch (error) {
+      setPendingMessageTarget("");
+      setPinsError(error instanceof Error ? error.message : "고정 메시지로 이동하지 못했습니다.");
+    }
+  }
+
+  async function setPinned(eventId: string, pinned: boolean) {
+    if (!eventId || pinBusyIds.has(eventId)) return;
+    setPinBusyIds((current) => new Set(current).add(eventId));
+    setPinsError("");
+    try {
+      setPinnedItems(
+        await setMessagePinned({
+          roomId: activeRoom.meetingId,
+          channelId: "lobby",
+          eventId,
+          pinned,
+          sessionToken: roomSessionToken,
+        })
+      );
+    } catch (error) {
+      setPinsError(error instanceof Error ? error.message : "고정 상태를 바꾸지 못했습니다.");
+    } finally {
+      setPinBusyIds((current) => {
+        const next = new Set(current);
+        next.delete(eventId);
+        return next;
+      });
+    }
+  }
+
+  const pinnedEventIds = useMemo(
+    () => new Set(pinnedItems.map((pin) => pin.event_id)),
+    [pinnedItems]
+  );
+  const effectiveHeaderActions = {
+    ...(headerActions || {}),
+    latestReadCursor: latestReadSequence ? `seq:${latestReadSequence}` : "",
+    pinnedItems,
+    pinsLoading,
+    pinsError,
+    onSelectPin: (pin: MessagePin) => void selectPin(pin),
+    onOpenPins: () => void reloadPins(),
+    onUnpin: canPostMessages
+      ? (pin: MessagePin) => void setPinned(pin.event_id, false)
+      : undefined,
+  };
   const activeThinking = useMemo(() => {
     const indicatorByTurn = new Map<string, RoomTypingIndicator>();
     typingIndicators.forEach((indicator) => {
@@ -172,10 +458,36 @@ export default function LobbyView({
         subtitle="사람과 에이전트가 함께 보는 기본 채널"
         membersOpen={membersOpen}
         onToggleMembers={onToggleMembers}
-        headerActions={headerActions}
+        headerActions={effectiveHeaderActions}
         onOpenMobileSidebar={onOpenMobileSidebar}
         onOpenMobileInfo={onOpenMobileInfo}
+        searchItems={channelSearchItems}
+        externalSearch
+        searchQuery={messageSearch.query}
+        searchScope={messageSearchScope}
+        onSearchScopeChange={onMessageSearchScopeChange}
+        searchLoading={messageSearch.loading}
+        searchError={messageSearch.error}
+        onSearchQueryChange={messageSearch.updateQuery}
+        searchHasMore={messageSearch.hasMore}
+        searchLoadingMore={messageSearch.loadingMore}
+        onLoadMoreSearch={() => void messageSearch.loadMore()}
       />
+
+      {!historyWindowActive && firstUnreadEvent && latestReadSequence > lastReadSequence && (
+        <div className="dc-unread-bar" role="region" aria-label="안 읽은 메시지">
+          <button type="button" onClick={() => jumpToEvent(firstUnreadEvent.id)}>
+            {unreadCount}개의 안 읽은 메시지
+          </button>
+          <button
+            type="button"
+            aria-label="현재까지 읽음으로 표시"
+            onClick={() => headerActions?.onMarkRead?.(`seq:${latestReadSequence}`)}
+          >
+            읽음으로 표시하기
+          </button>
+        </div>
+      )}
 
       {!canManageRoom && (
         <div className="dc-room-status-line">
@@ -199,17 +511,27 @@ export default function LobbyView({
         className="relative min-h-0 flex-1 overflow-y-auto py-4 chat-scroll"
         style={{ overflowAnchor: "none" }}
       >
-        {!pinnedToLatest && visibleEvents.length > 0 && (
-          <button
-            type="button"
-            onClick={scrollToLatest}
-            aria-label="최신 메시지로 이동"
-            className="ops-button sticky top-2 z-[1] mr-3 ml-auto block rounded-full px-3 py-1.5 text-[12px] font-bold text-accent shadow-lg lg:mr-4"
+        {historyLoadError && (
+          <div
+            role="alert"
+            className="sticky top-2 z-[2] mx-auto mb-2 flex w-fit items-center gap-3 rounded-md border border-error/40 bg-panel px-3 py-2 text-[12px] text-text-secondary shadow-lg"
           >
-            최신으로
-          </button>
+            <span>이전 대화를 불러오지 못했습니다.</span>
+            <button
+              type="button"
+              className="font-bold text-accent hover:underline"
+              onClick={() => loadOlderHistory(scrollRef.current?.scrollTop)}
+            >
+              다시 시도
+            </button>
+          </div>
         )}
-        {loaded && !hasMoreHistory && (
+        {loaded && historyWindowActive && (
+          <p className="px-4 pb-3 text-center text-[12px] text-text-muted">
+            검색한 메시지 주변 기록
+          </p>
+        )}
+        {loaded && !historyWindowActive && !hasMoreHistory && (
           // The channel intro marks the true beginning of history, like Discord.
           <section className="dc-channel-intro px-4 pb-5 pt-2">
             <span className="dc-channel-intro-icon" data-has-image={Boolean(appearance?.iconImage)}>
@@ -259,10 +581,10 @@ export default function LobbyView({
               );
             }
             const event = row.event;
+            if (["vote_cast", "vote_withdraw", "vote_close"].includes(event.kind)) return null;
             if (
               event.kind === "system" ||
-              event.kind === "flow_event" ||
-              event.kind === "vote_cast"
+              event.kind === "flow_event"
             ) {
               return <LobbySystemRow key={row.key} event={event} mentionLabels={mentionLabels} />;
             }
@@ -276,19 +598,53 @@ export default function LobbyView({
                   providerKindByParticipant.get(event.actor_id || "")
                 }
                 showHeader={row.showHeader}
-                onOpenSideThread={onOpenSideThread}
-                threadSummary={threadSummaries[event.id]}
                 voteCard={
-                  event.kind === "vote" ? (
+                  event.kind === "vote" && !event.message_deleted ? (
                     <VotePollCard
                       event={event}
-                      voterParticipantId={viewerParticipantId}
                       canVote={canPostMessages}
+                      canClose={
+                        canPostMessages &&
+                        (
+                          canManageRoom ||
+                          event.actor_id === viewerParticipantId ||
+                          agentOwnerIds.get(event.actor_id || "")?.has(viewerParticipantId) === true
+                        )
+                      }
                       revision={voteRevisions[event.vote_id || event.id] || ""}
                     />
                   ) : undefined
                 }
                 roomSessionToken={roomSessionToken}
+                pinned={pinnedEventIds.has(event.record_id || event.id)}
+                canPin={
+                  canPostMessages &&
+                  !event.message_deleted &&
+                  !pinBusyIds.has(event.record_id || event.id)
+                }
+                onTogglePin={() => {
+                  const eventId = event.record_id || event.id;
+                  void setPinned(eventId, !pinnedEventIds.has(eventId));
+                }}
+                canEdit={
+                  canPostMessages &&
+                  !event.message_deleted &&
+                  event.kind === "message" &&
+                  event.actor_type === "human" &&
+                  event.actor_id === viewerParticipantId
+                }
+                canDelete={
+                  canPostMessages &&
+                  !event.message_deleted &&
+                  ["message", "vote"].includes(event.kind) &&
+                  (
+                    canManageRoom ||
+                    (event.actor_type === "human" && event.actor_id === viewerParticipantId) ||
+                    agentOwnerIds.get(event.actor_id || "")?.has(viewerParticipantId) === true
+                  )
+                }
+                onEdit={(content) => editMessage(event, content)}
+                onDelete={() => deleteMessage(event)}
               />
             );
           })
@@ -310,6 +666,14 @@ export default function LobbyView({
 
       {/* Composer */}
       <div className="shrink-0 px-4 pb-5">
+        {!pinnedToLatest && visibleEvents.length > 0 && (
+          <div className="dc-old-history-notice" role="status">
+            <span>오래된 메시지를 보고 있어요</span>
+            <button type="button" onClick={scrollToLatest} aria-label="최신 메시지로 이동">
+              최근으로 이동하기
+            </button>
+          </div>
+        )}
         {resolveProviderRequest && providerRequests.length > 0 && (
           <div className="dc-provider-request-stack">
             {providerRequests.map((request) => (

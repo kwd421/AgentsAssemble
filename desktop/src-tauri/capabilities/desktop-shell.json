@@ -1,11 +1,13 @@
 {
   "$schema": "../gen/schemas/desktop-schema.json",
   "identifier": "desktop-shell",
-  "description": "Allow the bundled desktop connection screen to start and open the local room server.",
+  "description": "Allow the bundled desktop connection screen to start the local engine and open only configured central login handoffs.",
   "windows": ["main"],
   "local": true,
   "permissions": [
     "allow-client-platform",
+    "allow-central-directory-url",
+    "allow-open-central-google-login",
     "allow-check-desktop-update",
     "allow-install-desktop-update",
     "allow-start-local-runtime",

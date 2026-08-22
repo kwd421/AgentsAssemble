@@ -11,42 +11,18 @@ from agentsassemble.admission.invite_service import InviteApplicationService
 from agentsassemble.admission.preflight import RoomAdmissionService
 from agentsassemble.admission.repository import InviteSessionRepository
 from agentsassemble.admission.session_service import RoomSessionService
+from agentsassemble.application.central_directory_host import CentralDirectoryHost
+from agentsassemble.features.side_chat.service import SideChatStore
 from agentsassemble.application.transaction import ApplicationTransactionBoundary
 from agentsassemble.room.attachments import FileAttachmentStore
 from agentsassemble.identity.pairing import OperatorPairingService
 from agentsassemble.identity.repository import IdentityBackend
-from agentsassemble.admission.projection import LegacyAdmissionProjection
 from agentsassemble.providers.bridge_process import NativeCliBridgeProcessManager
 from agentsassemble.application.public_tunnel import PublicTunnelManager
 from agentsassemble.application.public_invite_runtime import PublicInviteRuntime
 from agentsassemble.room.realtime import RoomRealtimeController
 from agentsassemble.room.repository import RoomRepository
 from agentsassemble.web.room_session import WsTicketStore
-
-
-class SessionRunMonitor(Protocol):
-    default_server: str
-
-    def start(self) -> None: ...
-
-    def stop(self) -> None: ...
-
-
-class FlowSupervisor(Protocol):
-    def status(
-        self,
-        *,
-        meeting_id: str = "",
-        quota_viewer: dict[str, object] | None = None,
-    ) -> dict[str, object]: ...
-
-
-class ProcessSupervisor(Protocol):
-    def start_monitor(self, *, interval_seconds: float = 2.0) -> None: ...
-
-    def stop_monitor(self, *, timeout_seconds: float = 5.0) -> None: ...
-
-    def close(self) -> None: ...
 
 
 class ApplicationDatabase(ApplicationTransactionBoundary, Protocol):
@@ -74,24 +50,20 @@ class GuiApplicationServices:
     identity_backend: IdentityBackend
     invite_store_path: Path
     media_store: FileAttachmentStore
-    process_supervisor: ProcessSupervisor
-    session_run_controller: object
-    session_run_monitor: SessionRunMonitor
-    flow_supervisor: FlowSupervisor
+    side_chat_store: SideChatStore
     public_tunnel_manager: PublicTunnelManager
     ws_ticket_store: WsTicketStore
     native_cli_bridge_manager: NativeCliBridgeProcessManager | None
     room_realtime_controller: RoomRealtimeController
-    legacy_admission_projection: LegacyAdmissionProjection
     provider_usage_service: object | None = None
     application_database: ApplicationDatabase | None = None
     identity_registry_cleanup: Callable[[], object] | None = None
+    central_directory_host: CentralDirectoryHost | None = None
     owns_room_repository: bool = True
     owns_invite_repository: bool = True
     owns_identity_backend: bool = False
-    owns_process_supervisor: bool = True
-    owns_session_run_monitor: bool = True
     owns_public_tunnel_manager: bool = True
+    owns_central_directory_host: bool = True
     owns_room_realtime_controller: bool = True
     owns_application_database: bool = False
     _state: str = field(default="new", init=False, repr=False)
@@ -101,7 +73,6 @@ class GuiApplicationServices:
         self,
         server_url: str,
         *,
-        before_session_monitor: Callable[[str], None] | None = None,
         start_public_tunnel: bool = False,
     ) -> None:
         """Start background services once, after the HTTP server is bound."""
@@ -119,18 +90,22 @@ class GuiApplicationServices:
             self._state = "starting"
             rollback_actions: list[tuple[str, Callable[[], object]]] = []
             try:
-                rollback_actions.append(
-                    ("process_monitor", lambda: self.process_supervisor.stop_monitor())
-                )
-                self.process_supervisor.start_monitor()
                 self.public_tunnel_manager.set_local_url(clean_server_url)
-                self.session_run_monitor.default_server = clean_server_url
-                if before_session_monitor is not None:
-                    before_session_monitor(clean_server_url)
-                rollback_actions.append(
-                    ("session_run_monitor", self.session_run_monitor.stop)
-                )
-                self.session_run_monitor.start()
+                if self.central_directory_host is None:
+                    try:
+                        server_id = self.identity_backend.server_id()
+                        self.central_directory_host = CentralDirectoryHost.from_environment(
+                            output_root=self.output_root,
+                            server_id=server_id,
+                            public_url_runtime=self.public_invite,
+                        )
+                    except Exception:
+                        self.central_directory_host = None
+                if self.central_directory_host is not None:
+                    rollback_actions.append(
+                        ("central_directory_host", self.central_directory_host.close)
+                    )
+                    self.central_directory_host.start()
                 if start_public_tunnel:
                     rollback_actions.append(
                         ("public_tunnel", self.public_tunnel_manager.stop)
@@ -192,12 +167,10 @@ class GuiApplicationServices:
             except BaseException as error:
                 errors.append(error)
 
-        if self.owns_session_run_monitor:
-            attempt(self.session_run_monitor.stop)
         if self.owns_public_tunnel_manager:
             attempt(self.public_tunnel_manager.stop)
-        if self.owns_process_supervisor and not preserve_provider_runtimes:
-            attempt(self.process_supervisor.close)
+        if self.owns_central_directory_host and self.central_directory_host is not None:
+            attempt(self.central_directory_host.close)
         if self.owns_room_realtime_controller:
             attempt(
                 lambda: self.room_realtime_controller.close(

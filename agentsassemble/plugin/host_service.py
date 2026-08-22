@@ -111,6 +111,7 @@ def reset_plugin_host_for_tests() -> None:
         _REGISTRY = None
         _EVENTS.clear()
         _NEXT_SEQUENCE.clear()
+        _EVENT_LISTENERS.clear()
     if registry is not None:
         registry.deactivate("")
 

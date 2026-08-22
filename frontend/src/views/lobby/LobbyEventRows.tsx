@@ -10,8 +10,7 @@ import {
   FileText,
   Globe,
   LoaderCircle,
-  MessageCircle,
-  MoreHorizontal,
+  Pin,
   Search,
   Terminal,
   Wrench,
@@ -19,11 +18,11 @@ import {
 } from "lucide-react";
 
 import type { LobbyEvent } from "../../api";
-import type { LobbyThreadSummary } from "../../lib/sideChatThreadModel";
 import type { RoomTypingIndicator } from "../../lib/roomTypingIndicators";
 import DiscordText, { type MentionLabels } from "../components/DiscordText";
 import LobbyAttachments from "../components/LobbyAttachments";
 import ProviderLogo from "../components/ProviderLogo";
+import MessageMutationControls from "./MessageMutationControls";
 
 
 function timeLabel(iso: string): string {
@@ -347,24 +346,38 @@ export function LobbySystemRow({
 export function LobbyMessageRow({
   event,
   providerKind,
-  onOpenSideThread,
-  threadSummary,
   voteCard,
   showHeader = true,
   mentionLabels,
   roomSessionToken = "",
+  pinned = false,
+  canPin = false,
+  onTogglePin,
+  canEdit = false,
+  canDelete = false,
+  onEdit,
+  onDelete,
 }: {
   event: LobbyEvent;
   providerKind?: string;
-  onOpenSideThread?: (event: LobbyEvent) => void;
-  threadSummary?: LobbyThreadSummary;
   voteCard?: ReactNode;
   showHeader?: boolean;
   mentionLabels: MentionLabels;
   roomSessionToken?: string;
+  pinned?: boolean;
+  canPin?: boolean;
+  onTogglePin?: () => void;
+  canEdit?: boolean;
+  canDelete?: boolean;
+  onEdit?: (content: string) => Promise<void>;
+  onDelete?: () => Promise<void>;
 }) {
   const systemLike =
-    event.kind === "system" || event.kind === "flow_event" || event.kind === "vote_cast";
+    event.kind === "system" ||
+    event.kind === "flow_event" ||
+    event.kind === "vote_cast" ||
+    event.kind === "vote_withdraw" ||
+    event.kind === "vote_close";
   return (
     <div
       className={`dc-message grid grid-cols-[40px_minmax(0,1fr)] gap-3 px-4 ${
@@ -381,25 +394,27 @@ export function LobbyMessageRow({
         system={systemLike}
       />
       <div className="dc-message-actions" aria-label="메시지 작업">
-        {onOpenSideThread && (
+        {canPin && onTogglePin && (
           <button
             type="button"
             className="dc-message-action-button"
-            onClick={() => onOpenSideThread(event)}
-            aria-label="스레드로 열기"
-            title="스레드"
+            aria-label={pinned ? "메시지 고정 해제" : "메시지 고정"}
+            title={pinned ? "고정 해제" : "메시지 고정"}
+            aria-pressed={pinned}
+            onClick={onTogglePin}
           >
-            <MessageCircle size={15} />
+            <Pin size={14} fill={pinned ? "currentColor" : "none"} />
           </button>
         )}
-        <button
-          type="button"
-          className="dc-message-action-button"
-          aria-label="더 보기"
-          title="더 보기"
-        >
-          <MoreHorizontal size={15} />
-        </button>
+        {onEdit && onDelete && (
+          <MessageMutationControls
+            event={event}
+            canEdit={canEdit}
+            canDelete={canDelete}
+            onEdit={onEdit}
+            onDelete={onDelete}
+          />
+        )}
       </div>
       <div className="min-w-0">
         {showHeader && (
@@ -414,26 +429,18 @@ export function LobbyMessageRow({
         )}
         {voteCard ? (
           voteCard
+        ) : event.message_deleted ? (
+          <div className="text-[14px] italic leading-relaxed text-text-muted">
+            삭제된 메시지입니다
+          </div>
         ) : (
           <div className="text-[14px] leading-relaxed text-text-secondary preserve-words">
             <DiscordText text={event.message || ""} mentionLabels={mentionLabels} />
+            {event.edited_at && <span className="ml-1 text-[10px] text-text-muted">(수정됨)</span>}
           </div>
         )}
-        <LobbyAttachments attachments={event.attachments} sessionToken={roomSessionToken} />
-        {threadSummary && onOpenSideThread && (
-          <button
-            type="button"
-            className="dc-message-thread-chip"
-            onClick={() => onOpenSideThread(event)}
-            aria-label={`스레드 보기, 답장 ${threadSummary.replyCount}개`}
-          >
-            <MessageCircle size={14} />
-            <span>답장 {threadSummary.replyCount}개</span>
-            <span className="dc-message-thread-last preserve-words">
-              {threadSummary.lastReplyName || "사이드"} ·{" "}
-              {timeLabel(threadSummary.lastReplyAt)}
-            </span>
-          </button>
+        {!event.message_deleted && (
+          <LobbyAttachments attachments={event.attachments} sessionToken={roomSessionToken} />
         )}
       </div>
     </div>

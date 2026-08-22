@@ -4,7 +4,7 @@ from __future__ import annotations
 from pathlib import Path
 
 
-POSTGRES_ROOM_SCHEMA_REVISION = "0021_membership_scope_audit"
+POSTGRES_ROOM_SCHEMA_REVISION = "0023_room_message_pins"
 POSTGRES_ROOM_AUTHORITY_ID = "canonical-room-repository"
 POSTGRES_ROOM_REQUIRED_TABLES = (
     "rooms",
@@ -14,6 +14,7 @@ POSTGRES_ROOM_REQUIRED_TABLES = (
     "room_events",
     "command_results",
     "room_write_budgets",
+    "room_message_pins",
     "deleted_rooms",
     "agent_attention_state",
     "attention_jobs",

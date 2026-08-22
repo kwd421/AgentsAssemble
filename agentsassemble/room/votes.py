@@ -1,9 +1,10 @@
 """Canonical room vote validation and tallying.
 
 A poll is one room message (message_kind "vote"; its event id is the vote_id)
-and any number of ballots (message_kind "vote_cast" referencing that vote_id).
-The log is the source of truth — no separate vote store — and the latest cast
-per voter wins, so re-voting just changes your choice.
+and any number of vote state changes referencing that vote_id. ``vote_cast``
+sets or replaces a choice, ``vote_withdraw`` removes it, and ``vote_close``
+ends the poll early. The log is the source of truth — no separate vote store —
+and the latest ballot change per voter before closure wins.
 """
 from __future__ import annotations
 
@@ -20,6 +21,9 @@ MAX_VOTE_DURATION_SECONDS = 86400
 VOTE_QUESTION_LIMIT = 300
 VOTE_OPTION_LIMIT = 100
 MAX_VOTE_OPTIONS = 10
+VOTE_BALLOT_EVENT_KINDS = frozenset({"vote_cast", "vote_withdraw"})
+VOTE_CLOSE_EVENT_KIND = "vote_close"
+VOTE_STATE_EVENT_KINDS = frozenset({*VOTE_BALLOT_EVENT_KINDS, VOTE_CLOSE_EVENT_KIND})
 
 
 def normalize_vote_definition(
@@ -116,7 +120,11 @@ def vote_poll(
         or (event.get("id") if kind == "vote" else "")
         or ""
     )
-    if kind != "vote" or event_vote_id != clean_vote_id:
+    if (
+        kind != "vote"
+        or event_vote_id != clean_vote_id
+        or event.get("message_deleted") is True
+    ):
         raise ValueError(f"Vote {clean_vote_id} was not found.")
     return event
 
@@ -131,6 +139,10 @@ def _participant_id(event: dict[str, object]) -> str:
     )
 
 
+def vote_creator_participant_id(poll: dict[str, object]) -> str:
+    return _participant_id(poll)
+
+
 def _display_name(event: dict[str, object], participant_id: str) -> str:
     return (
         clean_lobby_text(
@@ -141,7 +153,12 @@ def _display_name(event: dict[str, object], participant_id: str) -> str:
     )
 
 
-def vote_summary(events: list[dict[str, object]], vote_id: str) -> dict[str, object]:
+def vote_summary(
+    events: list[dict[str, object]],
+    vote_id: str,
+    *,
+    viewer_participant_id: str = "",
+) -> dict[str, object]:
     """Aggregate one poll from chronological canonical vote events.
 
     Raises ValueError when the poll event is missing from the given events.
@@ -150,8 +167,11 @@ def vote_summary(events: list[dict[str, object]], vote_id: str) -> dict[str, obj
     if not clean_vote_id:
         raise ValueError("vote_id is required.")
     poll: dict[str, object] | None = None
-    latest_choice_by_voter: dict[str, tuple[str, str]] = {}
+    latest_choice_by_voter: dict[str, str] = {}
+    closed_at = ""
     for event in events:
+        if event.get("message_deleted") is True:
+            continue
         kind = str(event.get("message_kind") or event.get("kind") or "")
         event_vote_id = str(
             event.get("vote_id")
@@ -163,31 +183,36 @@ def vote_summary(events: list[dict[str, object]], vote_id: str) -> dict[str, obj
         if kind == "vote" and poll is None:
             poll = event
             continue
-        if kind != "vote_cast" or poll is None:
+        if kind == VOTE_CLOSE_EVENT_KIND and poll is not None:
+            if not closed_at:
+                closed_at = clean_lobby_text(event.get("created_at"), limit=128)
+            continue
+        if kind not in VOTE_BALLOT_EVENT_KINDS or poll is None or closed_at:
+            continue
+        participant_id = _participant_id(event)
+        if not participant_id:
+            continue
+        if kind == "vote_withdraw":
+            latest_choice_by_voter.pop(participant_id, None)
             continue
         choice = str(event.get("vote_choice") or "")
         options = poll.get("vote_options") if isinstance(poll.get("vote_options"), list) else []
         matched = resolve_vote_choice(choice, options)
         if not matched:
             continue
-        participant_id = _participant_id(event)
-        if not participant_id:
-            continue
-        latest_choice_by_voter[participant_id] = (
-            matched,
-            _display_name(event, participant_id),
-        )
+        latest_choice_by_voter[participant_id] = matched
     if poll is None:
         raise ValueError(f"Vote {clean_vote_id} was not found.")
 
+    deadline_closed = vote_deadline_has_passed(poll.get("vote_deadline_at"))
+    if deadline_closed and not closed_at:
+        closed_at = clean_lobby_text(poll.get("vote_deadline_at"), limit=128)
+
     options = [str(option) for option in poll.get("vote_options") or []]
     tallies = {option: 0 for option in options}
-    voters: dict[str, list[str]] = {option: [] for option in options}
-    voter_ids: dict[str, list[str]] = {option: [] for option in options}
-    for participant_id, (choice, display_name) in latest_choice_by_voter.items():
+    for choice in latest_choice_by_voter.values():
         tallies[choice] += 1
-        voters[choice].append(display_name)
-        voter_ids[choice].append(participant_id)
+    clean_viewer_id = clean_lobby_text(viewer_participant_id, limit=128)
     return {
         "vote_id": clean_vote_id,
         "question": str(poll.get("vote_question") or ""),
@@ -197,15 +222,19 @@ def vote_summary(events: list[dict[str, object]], vote_id: str) -> dict[str, obj
         "created_by": str(poll.get("name") or poll.get("display_name") or ""),
         "created_at": str(poll.get("created_at") or ""),
         "tallies": tallies,
-        "voters": voters,
-        "voter_ids": voter_ids,
+        "own_choice": latest_choice_by_voter.get(clean_viewer_id, ""),
         "total_votes": len(latest_choice_by_voter),
+        "closed": bool(closed_at),
+        "closed_at": closed_at,
+        "close_reason": "deadline" if deadline_closed else ("manual" if closed_at else ""),
     }
 
 
 def legacy_vote_summary(
     events: list[dict[str, object]],
     vote_id: str,
+    *,
+    viewer_participant_id: str = "",
 ) -> dict[str, object]:
     """Preserve retained lobby ballots that predate participant identities.
 
@@ -230,7 +259,11 @@ def legacy_vote_summary(
                 "actor_id": f"legacy-name:{display_name.casefold()}",
             }
         )
-    return vote_summary(adapted_events, vote_id)
+    return vote_summary(
+        adapted_events,
+        vote_id,
+        viewer_participant_id=viewer_participant_id,
+    )
 
 
 def resolve_vote_choice(choice: object, options: list[object]) -> str:

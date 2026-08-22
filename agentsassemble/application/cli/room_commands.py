@@ -9,7 +9,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Callable, Collection
 
-from agentsassemble.application.agent_sessions import clean_agent_session_provider_kind
+from agentsassemble.providers.codex_app_server import clean_agent_session_provider_kind
 
 
 JsonObject = dict[str, Any]
@@ -181,6 +181,17 @@ def run_room_command(args: argparse.Namespace, *, runtime: RoomCliRuntime) -> in
         )
 
         serve_room_connector_mcp()
+        return 0
+
+    if args.room_command == "connector-mcp-remote":
+        from agentsassemble.providers.room_connector_mcp import (
+            serve_remote_room_connector_mcp,
+        )
+
+        serve_remote_room_connector_mcp(
+            allowed_room_origins=args.allowed_room_origins,
+            port=args.port,
+        )
         return 0
 
     if args.room_command == "smoke":

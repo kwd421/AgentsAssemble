@@ -5,7 +5,7 @@ import {
   fetchProviderCredentialStatus,
   refreshProviderCatalog,
   setProviderCredential,
-  startFrontendLiveAgentLogin,
+  startProviderLogin as requestProviderLogin,
   type FrontendLiveAgentCreateRequest,
   type ProviderCredentialStatus,
 } from "../../api";
@@ -332,7 +332,7 @@ export default function AgentCreateModal({
     }
   }
 
-  async function startProviderLogin() {
+  async function handleProviderLogin() {
     if (!selectedProvider?.login_available || loginBusy) return;
     setLoginBusy(true);
     setStatus(
@@ -341,7 +341,7 @@ export default function AgentCreateModal({
         : ""
     );
     try {
-      const result = await startFrontendLiveAgentLogin(selectedProvider.id);
+      const result = await requestProviderLogin(selectedProvider.id);
       setStatus(
         result.message ||
           `${selectedProvider.display_name} 로그인 창을 열었습니다.`
@@ -604,7 +604,7 @@ export default function AgentCreateModal({
                     <button
                       type="button"
                       disabled={loginBusy}
-                      onClick={() => void startProviderLogin()}
+                      onClick={() => void handleProviderLogin()}
                     >
                       {loginBusy
                         ? selectedProvider.login_flow === "browser_oauth"

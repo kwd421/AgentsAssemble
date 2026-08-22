@@ -4,7 +4,6 @@ import shutil
 from pathlib import Path
 from typing import Callable
 
-from agentsassemble.features.side_chat.service import delete_room_side_chat_events
 from agentsassemble.room.attachments import delete_room_attachments
 from agentsassemble.room.event_broker import RoomEventBroker
 from agentsassemble.room.provider_registry import RoomProviderRegistry
@@ -31,6 +30,7 @@ class RoomDeletedCleanupService:
         delete_identity_room: RoomCleanup,
         remove_event_listener: RoomCleanup,
         schedule_cleanup: CleanupScheduler,
+        delete_side_chat: RoomCleanup | None = None,
     ) -> None:
         self.store = store
         self.broker = broker
@@ -44,6 +44,7 @@ class RoomDeletedCleanupService:
         self._delete_identity_room = delete_identity_room
         self._remove_event_listener = remove_event_listener
         self._schedule_cleanup = schedule_cleanup
+        self._delete_side_chat = delete_side_chat or (lambda _room_id: 0)
 
     def complete(
         self,
@@ -103,7 +104,7 @@ class RoomDeletedCleanupService:
             if path.exists() and path.is_dir():
                 shutil.rmtree(path)
         delete_room_attachments(self.output_root, room_id)
-        delete_room_side_chat_events(self.output_root, room_id)
+        self._delete_side_chat(room_id)
 
     def _schedule_disconnect(self, room_id: str) -> None:
         self._schedule_cleanup(

@@ -30,9 +30,13 @@ export type LobbyAttachmentUploadOptions = {
 
 export interface LobbyEvent {
   id: string;
+  record_id?: string;
+  seq?: number;
   kind: string;
   name: string;
   message: string;
+  edited_at?: string;
+  message_deleted?: boolean;
   side: string;
   created_at: string;
   official_record?: boolean;
@@ -73,9 +77,11 @@ export interface VoteSummary {
   created_by: string;
   created_at: string;
   tallies: Record<string, number>;
-  voters: Record<string, string[]>;
-  voter_ids: Record<string, string[]>;
+  own_choice: string;
   total_votes: number;
+  closed?: boolean;
+  closed_at?: string;
+  close_reason?: "deadline" | "manual" | "";
 }
 
 export interface LobbyPostResponse {
@@ -91,7 +97,6 @@ export interface SideChatEvent {
   side: string;
   created_at: string;
   flow_meeting_id?: string;
-  thread_source_event_id?: string;
   channel?: string;
   audience?: string;
   official_record?: boolean;
@@ -103,13 +108,6 @@ export interface SideChatPostResponse {
 }
 
 export type RoomEvent = GeneratedRoomEvent;
-
-export function fetchLobby(meetingId = "", options: { before?: string; limit?: number } = {}) {
-  const limitText = options.limit ? String(options.limit) : undefined;
-  return fetchJson<{ events: LobbyEvent[]; has_more?: boolean }>(
-    `/api/lobby${queryString({ meeting_id: meetingId, before: options.before, limit: limitText })}`
-  );
-}
 
 export function uploadLobbyAttachment(
   file: File,
@@ -132,43 +130,6 @@ export function uploadLobbyAttachment(
     );
   }).then((payload) => {
     return payload.attachment;
-  });
-}
-
-export function postLobbyMessage({
-  name,
-  side = "mine",
-  kind = "message",
-  message,
-  attachments = [],
-  meetingId = "",
-  voteId = "",
-  voteQuestion = "",
-  voteOptions = [],
-  voteChoice = "",
-}: {
-  name: string;
-  side?: string;
-  kind?: "message" | "ready" | "deploy" | "vote" | "vote_cast";
-  message: string;
-  attachments?: LobbyAttachmentRef[];
-  meetingId?: string;
-  voteId?: string;
-  voteQuestion?: string;
-  voteOptions?: string[];
-  voteChoice?: string;
-}) {
-  return postJson<LobbyPostResponse>("/api/lobby", {
-    name,
-    side,
-    kind,
-    message,
-    attachments,
-    flow_meeting_id: meetingId,
-    vote_id: voteId,
-    vote_question: voteQuestion,
-    vote_options: voteOptions,
-    vote_choice: voteChoice,
   });
 }
 
@@ -259,10 +220,6 @@ export function leaveVoiceChannel(params: {
   return result.then((payload) => normalizeVoiceParticipants(payload.participants));
 }
 
-export function fetchLobbyVote(meetingId: string, voteId: string) {
-  return fetchJson<VoteSummary>(`/api/lobby/vote${queryString({ meeting_id: meetingId, vote_id: voteId })}`);
-}
-
 export function fetchRoomVote(sessionToken: string, voteId: string) {
   return fetchJsonWithToken<VoteSummary>(`/api/room/vote${queryString({ vote_id: voteId })}`, sessionToken);
 }
@@ -277,14 +234,12 @@ export function postSideChatMessage({
   kind = "message",
   message,
   meetingId = "",
-  threadSourceEventId = "",
 }: {
   name: string;
   side?: string;
   kind?: "message";
   message: string;
   meetingId?: string;
-  threadSourceEventId?: string;
 }) {
   return postJson<SideChatPostResponse>("/api/side-chat", {
     name,
@@ -292,7 +247,6 @@ export function postSideChatMessage({
     kind,
     message,
     flow_meeting_id: meetingId,
-    thread_source_event_id: threadSourceEventId,
   });
 }
 

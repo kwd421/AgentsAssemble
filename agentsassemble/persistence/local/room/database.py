@@ -19,6 +19,7 @@ from agentsassemble.persistence.local.room.tool_mode_migration import (
     add_room_tool_mode_setting,
 )
 from agentsassemble.persistence.local.room.write_budget import create_room_write_budget_schema
+from agentsassemble.persistence.local.room.message_pins import create_message_pin_schema
 
 try:
     import fcntl
@@ -27,7 +28,7 @@ except ImportError:  # pragma: no cover - AgentsAssemble's supported hosts are U
 
 
 ROOM_DATABASE_FILENAME = "rooms.sqlite3"
-ROOM_SCHEMA_VERSION = 10
+ROOM_SCHEMA_VERSION = 11
 VOTE_BALLOT_INDEX_NAME = "idx_events_vote_ballots"
 VOTE_BALLOT_INDEX_STATEMENT = f"""
 CREATE INDEX IF NOT EXISTS {VOTE_BALLOT_INDEX_NAME}
@@ -397,6 +398,7 @@ def _create_schema(connection: sqlite3.Connection) -> None:
     _create_vote_ballot_index(connection)
     _create_attention_schema(connection)
     create_room_write_budget_schema(connection)
+    create_message_pin_schema(connection)
 
 
 def _validate_schema_version(connection: sqlite3.Connection) -> None:
@@ -419,7 +421,7 @@ def _migrate_schema(connection: sqlite3.Connection) -> None:
         raise RoomDatabaseMigrationError(
             f"Unsupported room database schema version {version}; expected {ROOM_SCHEMA_VERSION}."
         )
-    if version not in {1, 2, 3, 4, 5, 6, 7, 8, 9}:
+    if version not in {1, 2, 3, 4, 5, 6, 7, 8, 9, 10}:
         raise RoomDatabaseMigrationError(f"Unsupported room database schema version {version}.")
     connection.execute("BEGIN IMMEDIATE")
     try:
@@ -488,6 +490,9 @@ def _migrate_schema(connection: sqlite3.Connection) -> None:
         if version == 9:
             create_room_write_budget_schema(connection)
             version = 10
+        if version == 10:
+            create_message_pin_schema(connection)
+            version = 11
         connection.execute(
             "INSERT OR REPLACE INTO schema_meta(key, value) VALUES('schema_version', ?)",
             (str(version),),

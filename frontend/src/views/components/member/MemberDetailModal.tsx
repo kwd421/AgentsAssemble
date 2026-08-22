@@ -1,23 +1,19 @@
 import { useRef } from "react";
 import { Camera, X } from "lucide-react";
-import type { LiveAgentProcessGroup, RoomAgentSession } from "../../../api";
+import type { RoomAgentSession } from "../../../api";
 import type { AgentProfileSettings } from "../../../lib/agentProfileSettings";
-import AgentSessionDetails, {
-  type AgentSessionControlAction,
-} from "../AgentSessionDetails";
+import type { AgentSessionControlAction } from "../AgentSessionDetails";
 import type { NativeCliProviderAvailability } from "../../../roomSocketClient";
 import ProviderLogo from "../ProviderLogo";
 import AgentIdentitySettings from "./AgentIdentitySettings";
-import AgentSessionControls from "./AgentSessionControls";
 import MemberUsage from "./MemberUsage";
-import SessionOnlyMemberDetails from "./SessionOnlyMemberDetails";
+import AgentSessionMemberDetails from "./AgentSessionMemberDetails";
 import type { MemberEntry } from "./memberTypes";
 
 export type MemberDetailModalProps = {
   entry: MemberEntry;
   roomSessionToken?: string;
   onClose: () => void;
-  processGroups?: LiveAgentProcessGroup[];
   onSessionActionComplete?: () => void;
   onAgentProfileSettingsChange?: (settings: Record<string, AgentProfileSettings>) => void;
   onParticipantKick?: (participantId: string) => void | Promise<void>;
@@ -38,7 +34,6 @@ export default function MemberDetailModal({
   entry,
   roomSessionToken = "",
   onClose,
-  processGroups = [],
   onSessionActionComplete,
   onAgentProfileSettingsChange,
   onParticipantKick,
@@ -78,7 +73,7 @@ export default function MemberDetailModal({
               <X size={18} />
             </button>
           </header>
-          <SessionOnlyMemberDetails
+          <AgentSessionMemberDetails
             entry={entry}
             session={entry.agentSession}
             onClose={onClose}
@@ -148,31 +143,23 @@ export default function MemberDetailModal({
           agent={agent}
           avatarInputRef={agentAvatarInputRef}
           roomSessionToken={roomSessionToken}
-          processGroups={processGroups}
           onSessionActionComplete={onSessionActionComplete}
           onAgentProfileSettingsChange={onAgentProfileSettingsChange}
           onAgentConfigure={onAgentConfigure}
         />
         {entry.agentSession && (
-          <AgentSessionDetails
+          <AgentSessionMemberDetails
+            entry={entry}
             session={entry.agentSession}
-            provider={availableProviders.find(
-              (provider) => provider.provider_kind === entry.agentSession?.provider_kind
-            )}
-            onControl={onAgentControl}
-            onConfigure={onAgentConfigure}
+            onClose={onClose}
+            onParticipantKick={onParticipantKick}
+            onAgentControl={onAgentControl}
+            availableProviders={availableProviders}
+            onAgentConfigure={onAgentConfigure}
             activityVisible={activityVisible}
             onActivityVisibilityChange={onActivityVisibilityChange}
           />
         )}
-        <AgentSessionControls
-          entry={entry}
-          agent={agent}
-          processGroups={processGroups}
-          onSessionActionComplete={onSessionActionComplete}
-          onParticipantKick={onParticipantKick}
-          onClose={onClose}
-        />
         <MemberUsage entry={entry} agent={agent} />
       </section>
     </div>

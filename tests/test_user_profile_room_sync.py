@@ -61,10 +61,7 @@ class UserProfileRoomSyncTests(unittest.TestCase):
             ttl_seconds=3600,
         )
         self.router = Router()
-        register_room_friend_profile_routes(
-            self.router,
-            post_direct_dm=lambda _ctx, _payload: {},
-        )
+        register_room_friend_profile_routes(self.router)
         self.deps = GuiDeps(
             output_root=self.root,
             room_repository=self.rooms,
@@ -91,6 +88,7 @@ class UserProfileRoomSyncTests(unittest.TestCase):
                 "participant_type": "human",
                 "client_type": "browser",
                 "invite_scope": "read_write",
+                "principal_user_id": user["user_id"],
             }
         )
         return user, token
@@ -167,7 +165,7 @@ class UserProfileRoomSyncTests(unittest.TestCase):
         self.assertEqual(other_loaded.sent_json["profile"]["display_name"], "Other")
 
     def test_profile_update_reaches_an_existing_room_without_a_membership_cache_row(self) -> None:
-        guest, token = self._guest("legacy", "Before")
+        guest, token = self._guest("uncached", "Before")
         self.rooms.ensure_room("room-existing")
         self.rooms.upsert_participant(
             "room-existing",
@@ -189,7 +187,7 @@ class UserProfileRoomSyncTests(unittest.TestCase):
         )
 
         self.assertIsNone(saved.sent_error)
-        participant = self.rooms.participant("room-existing", "guest-legacy")
+        participant = self.rooms.participant("room-existing", "guest-uncached")
         self.assertEqual(participant["display_name"], "After")
         self.assertEqual(
             participant["avatar_image_url"],

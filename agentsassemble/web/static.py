@@ -22,8 +22,6 @@ REACT_APP_EXACT_PATHS = frozenset(
         "/app/",
         "/join",
         "/join/",
-        "/legacy",
-        "/legacy/",
         "/pair",
         "/pair/",
     }
@@ -59,12 +57,6 @@ class ReactStaticTransport:
     ) -> bool:
         if path == "/":
             handler._send_react_app_index(self.frontend_root)
-            return True
-        if path in {"/legacy", "/legacy/"}:
-            handler._send_error(
-                HTTPStatus.NOT_FOUND,
-                "Legacy console is retired. Use the Discord-style React room client at /.",
-            )
             return True
         if path in {"/app", "/app/"}:
             handler._send_react_app_index(self.frontend_root)
@@ -105,12 +97,6 @@ class ReactStaticTransport:
                     react_app_content_type(app_path),
                     cache_control=react_app_cache_control(app_path),
                 )
-            return True
-        if path.startswith("/legacy/static/") or path.startswith("/static/"):
-            handler._send_error(
-                HTTPStatus.NOT_FOUND,
-                "Legacy static assets are retired.",
-            )
             return True
         if path.startswith("/plugins/"):
             relative_path = unquote(path.removeprefix("/plugins/"))

@@ -1,12 +1,14 @@
 {
   "$schema": "../gen/schemas/mobile-schema.json",
   "identifier": "mobile-shell",
-  "description": "Allow the bundled mobile connection screen to reopen cached rooms and scan a room or recovery QR code.",
+  "description": "Allow the bundled mobile connection screen to sign in centrally, reopen verified servers, and scan room or recovery QR codes.",
   "windows": ["main"],
   "platforms": ["iOS", "android"],
   "local": true,
   "permissions": [
     "allow-client-platform",
+    "allow-central-directory-url",
+    "allow-open-central-google-login",
     "allow-open-server",
     "allow-open-server-link",
     "allow-load-cached-room-directory",

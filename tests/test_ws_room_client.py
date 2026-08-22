@@ -7,10 +7,10 @@ from collections import deque
 from http.server import ThreadingHTTPServer
 from pathlib import Path
 from unittest.mock import patch
+from urllib.request import Request, urlopen
 
 import agentsassemble.web.room_client as ws_room_client
 from agentsassemble.gui import _make_handler
-from agentsassemble.admission.invite import create_room_invite, join_room_with_invite, reset_state
 from agentsassemble.room_store import RoomStore
 from agentsassemble.web.websocket_codec import (
     OP_PING,
@@ -113,9 +113,12 @@ class SendUnitTests(unittest.TestCase):
 
     def test_subscribe_sends_masked_frame(self):
         client, sock = self._opened()
-        client.subscribe(["lobby", "roster"])
+        client.subscribe(["room_events", "side_chat"])
         msgs = sock.sent_messages()
-        self.assertEqual(msgs[-1], {"op": "subscribe", "streams": ["lobby", "roster"]})
+        self.assertEqual(
+            msgs[-1],
+            {"op": "subscribe", "streams": ["room_events", "side_chat"]},
+        )
 
     def test_say_convenience_uses_canonical_correlated_message_command(self):
         client, sock = self._opened()
@@ -247,14 +250,42 @@ class ReceiveUnitTests(unittest.TestCase):
 
 class LiveRoundTripTests(unittest.TestCase):
     def setUp(self):
-        reset_state()
         self._servers: list[ThreadingHTTPServer] = []
 
     def tearDown(self):
         for server in self._servers:
             server.shutdown()
             server.server_close()
-        reset_state()
+
+    def _create_invite(
+        self,
+        base: str,
+        *,
+        room_id: str,
+        agent_id: str,
+        display_name: str,
+        client_type: str = "browser",
+        provider_kind: str = "manual",
+    ) -> dict[str, object]:
+        request = Request(
+            f"{base}/api/room-invite/create",
+            data=json.dumps(
+                {
+                    "meeting_id": room_id,
+                    "agent_id": agent_id,
+                    "display_name": display_name,
+                    "participant_type": "agent",
+                    "client_type": client_type,
+                    "provider_kind": provider_kind,
+                    "max_uses": 1,
+                    "local_dev_preview": True,
+                }
+            ).encode("utf-8"),
+            headers={"Content-Type": "application/json"},
+            method="POST",
+        )
+        with urlopen(request, timeout=4) as response:
+            return json.loads(response.read().decode("utf-8"))
 
     def _start(self, root: Path) -> str:
         server = ThreadingHTTPServer(("127.0.0.1", 0), _make_handler(root))
@@ -275,12 +306,22 @@ class LiveRoundTripTests(unittest.TestCase):
             root = Path(tmp)
             RoomStore(root).create_room("room-1", label="Room 1")
             base = self._start(root)
-            invite = create_room_invite(
-                room_url=base, meeting_id="room-1", agent_id="agent-ws", display_name="WS봇", max_uses=1
+            invite = self._create_invite(
+                base,
+                room_id="room-1",
+                agent_id="agent-ws",
+                display_name="WS봇",
             )
-            token = str(join_room_with_invite(str(invite["invite_token"]))["session_token"])
+            token = str(
+                join_room_session(
+                    base,
+                    str(invite["invite_token"]),
+                    display_name="WS봇",
+                    participant_type="agent",
+                )["session_token"]
+            )
 
-            client = connect_room_ws(base, token, ["lobby"])
+            client = connect_room_ws(base, token, ["room_events"])
             try:
                 self._drain(client, "subscribed")
                 client.say("hello from python client")
@@ -295,12 +336,11 @@ class LiveRoundTripTests(unittest.TestCase):
             root = Path(tmp)
             RoomStore(root).create_room("room-join", label="Join room")
             base = self._start(root)
-            invite = create_room_invite(
-                room_url=base,
-                meeting_id="room-join",
+            invite = self._create_invite(
+                base,
+                room_id="room-join",
                 agent_id="runner",
                 display_name="Runner",
-                max_uses=1,
             )
 
             joined = join_room_session(
@@ -321,12 +361,11 @@ class LiveRoundTripTests(unittest.TestCase):
             root = Path(tmp)
             RoomStore(root).create_room("room-agent", label="Agent room")
             base = self._start(root)
-            invite = create_room_invite(
-                room_url=base,
-                meeting_id="room-agent",
+            invite = self._create_invite(
+                base,
+                room_id="room-agent",
                 agent_id="remote-codex",
                 display_name="Remote Codex",
-                max_uses=1,
                 client_type="agent_bridge",
                 provider_kind="codex",
             )
@@ -382,7 +421,7 @@ class ConnectRoomWsTests(unittest.TestCase):
             patch("agentsassemble.web.room_client.socket_module.create_connection", return_value=sock),
             patch.object(ws_room_client, "ssl", FakeSslModule, create=True),
         ):
-            client = connect_room_ws("https://room.example", "session-token", ["lobby"])
+            client = connect_room_ws("https://room.example", "session-token", ["room_events"])
 
         try:
             self.assertEqual(context.wrapped, [(sock, "room.example")])
@@ -397,7 +436,11 @@ class ConnectRoomWsTests(unittest.TestCase):
             patch("agentsassemble.web.room_client.request_ws_ticket", return_value="ticket"),
             patch("agentsassemble.web.room_client.socket_module.create_connection", return_value=sock),
         ):
-            client = connect_room_ws("http://localhost:8765/aa", "session-token", ["lobby"])
+            client = connect_room_ws(
+                "http://localhost:8765/aa",
+                "session-token",
+                ["room_events"],
+            )
 
         try:
             self.assertIn(b"GET /aa/ws?ticket=ticket HTTP/1.1", sock.sent)

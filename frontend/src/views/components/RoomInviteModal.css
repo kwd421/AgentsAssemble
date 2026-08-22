@@ -94,6 +94,92 @@
   cursor: default;
 }
 
+.dc-invite-options {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.dc-invite-options label {
+  display: grid;
+  gap: 6px;
+  color: var(--color-text-muted);
+  font-size: 12px;
+  font-weight: 750;
+}
+
+.dc-invite-options select {
+  width: 100%;
+  padding: 9px 10px;
+  color: var(--color-text-primary);
+  background: var(--color-input);
+  border: 1px solid var(--color-panel-border);
+  border-radius: 8px;
+  font: inherit;
+}
+
+.dc-invite-expiry-note {
+  display: inline-flex;
+  width: fit-content;
+  margin-top: 9px;
+  padding: 4px 8px;
+  color: #a7adff;
+  background: color-mix(in srgb, #5865f2 15%, transparent);
+  border-radius: 999px;
+  font-size: 11px;
+  font-weight: 800;
+}
+
+.dc-invite-confirm-backdrop {
+  position: fixed;
+  z-index: 30;
+  inset: 0;
+  display: grid;
+  padding: 20px;
+  place-items: center;
+  background: rgb(0 0 0 / 62%);
+}
+
+.dc-invite-confirm {
+  width: min(430px, 100%);
+  padding: 22px;
+  background: var(--color-panel);
+  border: 1px solid var(--color-panel-border);
+  border-radius: 14px;
+  box-shadow: 0 24px 70px rgb(0 0 0 / 42%);
+}
+
+.dc-invite-confirm h3 {
+  margin: 0;
+  color: var(--color-text-primary);
+  font-size: 18px;
+  font-weight: 900;
+}
+
+.dc-invite-confirm p {
+  margin: 10px 0 0;
+  color: var(--color-text-muted);
+  font-size: 13px;
+  line-height: 1.6;
+}
+
+.dc-invite-confirm-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 9px;
+  margin-top: 20px;
+}
+
+.dc-invite-confirm-primary {
+  padding: 9px 13px;
+  color: white;
+  background: #5865f2;
+  border: 0;
+  border-radius: 8px;
+  font-size: 13px;
+  font-weight: 850;
+}
+
 @keyframes dc-invite-hosting-spin {
   to {
     transform: rotate(360deg);
@@ -111,5 +197,14 @@
 
   .dc-invite-hosting-actions button {
     flex: 1;
+  }
+
+  .dc-invite-options {
+    grid-template-columns: 1fr;
+  }
+
+  .dc-invite-confirm-actions {
+    align-items: stretch;
+    flex-direction: column-reverse;
   }
 }

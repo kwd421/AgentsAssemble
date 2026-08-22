@@ -126,6 +126,21 @@ def room_wake_orientation(
   `agentsassemble-room roll '<NdS±M>'`. If another roll is needed, wait for the
   first result and use a separate tool call. Shell chaining such as `&&`, `;`,
   or `|` is rejected."""
+    search_note = ""
+    if "search_messages" in available_tools and kind in {
+        "claude_code",
+        "antigravity_live_session",
+    }:
+        search_note = """
+- When an older discussion matters, use `agentsassemble-room search '<query>'
+  [channel-id|all] [cursor]`, then `search-context <channel-id> <event-id>` for
+  the bounded surrounding messages. Search does not replace the required room
+  mirror read for this wake."""
+    elif "search_messages" in available_tools:
+        search_note = """
+- When an older discussion matters, use `search_messages`, then
+  `read_message_context` for one result. Search does not replace the required
+  room mirror read for this wake."""
     activity_note = ""
     if "rimworld.observe" in available_tools and kind in {
         "claude_code",
@@ -162,7 +177,7 @@ def room_wake_orientation(
 - Ordinary assistant output is private on this turn and is never published.
   Do not merely draft the intended public message as your final answer.
 - Never invent or simulate a room tool. Only operations listed under Available
-  room tools in the private room mirror are real for this turn.{floor_note}{random_note}{activity_note}{provider_note}"""
+  room tools in the private room mirror are real for this turn.{floor_note}{random_note}{search_note}{activity_note}{provider_note}"""
 
 
 def first_room_wake_input(

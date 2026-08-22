@@ -12,11 +12,7 @@ from urllib.parse import parse_qs, urlparse
 from agentsassemble.application.gui import GuiApplicationServices
 from agentsassemble.room.realtime import RoomRealtimeController
 from agentsassemble.room.repository import RoomRepository
-from agentsassemble.web.response import (
-    GuiResponseMethods,
-    _last_payload_event_id,
-    _sse_event,
-)
+from agentsassemble.web.response import GuiResponseMethods, _sse_event
 from agentsassemble.web.request_limits import RequestDeadlineHandlerMixin
 from agentsassemble.web.router import GuiDeps, RequestContext, Router
 from agentsassemble.web.security import (
@@ -26,6 +22,7 @@ from agentsassemble.web.security import (
     _host_header_is_trusted,
     _origin_matches_public_url,
     _public_invite_route_allowed,
+    _public_server_identity_route_allowed,
     _request_trusted,
     _split_authority_host_port,
 )
@@ -48,11 +45,9 @@ def make_gui_http_handler(
     room_realtime_controller: RoomRealtimeController,
     ws_room_deps_factory: Callable[..., object],
     room_repository: RoomRepository,
-    stream_snapshot_payload: Callable[..., dict[str, object]],
     room_sse_frames_after_cursor: Callable[..., list[str]],
     sse_stream_error_payload: Callable[..., dict[str, object]],
     sse_frame_id: Callable[[str], str],
-    payload_signature: Callable[[dict[str, object]], str | None],
 ) -> type[BaseHTTPRequestHandler]:
     """Build the transport handler around already-composed GUI services."""
 
@@ -106,6 +101,8 @@ def make_gui_http_handler(
                 method = str(self.headers.get("Access-Control-Request-Method") or "").upper()
             if not method or not _public_invite_route_allowed(path, method):
                 return ""
+            if _public_server_identity_route_allowed(path, method):
+                return "*"
             if _origin_matches_public_url(
                 origin,
                 public_url=services.public_invite.public_url(),
@@ -118,10 +115,14 @@ def make_gui_http_handler(
             if not allow_origin:
                 return
             self.send_header("Access-Control-Allow-Origin", allow_origin)
-            self.send_header("Access-Control-Allow-Methods", _PUBLIC_INVITE_CORS_METHODS)
-            self.send_header("Access-Control-Allow-Headers", _PUBLIC_INVITE_CORS_HEADERS)
+            if allow_origin == "*":
+                self.send_header("Access-Control-Allow-Methods", "GET, POST, OPTIONS")
+                self.send_header("Access-Control-Allow-Headers", "Content-Type")
+            else:
+                self.send_header("Access-Control-Allow-Methods", _PUBLIC_INVITE_CORS_METHODS)
+                self.send_header("Access-Control-Allow-Headers", _PUBLIC_INVITE_CORS_HEADERS)
+                self.send_header("Vary", "Origin")
             self.send_header("Access-Control-Max-Age", "600")
-            self.send_header("Vary", "Origin")
 
         def do_GET(self) -> None:
             parsed = urlparse(self.path)
@@ -191,66 +192,6 @@ def make_gui_http_handler(
                 room_realtime_controller=room_realtime_controller,
                 ws_room_deps_factory=ws_room_deps_factory,
             )
-
-        def _send_sse_stream(
-            self,
-            event_name: str,
-            stream: str,
-            meeting_id: str | None = None,
-            last_event_id: str | None = None,
-        ) -> None:
-            self.close_connection = True
-            self.send_response(HTTPStatus.OK)
-            self.send_header("Content-Type", "text/event-stream; charset=utf-8")
-            self.send_header("Cache-Control", "no-cache")
-            self.send_header("Connection", "close")
-            self._send_public_invite_cors_headers()
-            self.end_headers()
-            current_last_event_id = last_event_id
-            current_payload_signature: str | None = None
-            last_write_at = 0.0
-            while True:
-                try:
-                    payload = stream_snapshot_payload(
-                        output_root,
-                        stream,
-                        meeting_id=meeting_id,
-                        last_event_id=current_last_event_id,
-                        repository=room_repository,
-                        sessions=(
-                            services.sessions.active_summary()
-                            if stream == "roster"
-                            else None
-                        ),
-                    )
-                    latest_event_id = _last_payload_event_id(payload)
-                    wrote_frame = False
-                    if latest_event_id:
-                        self.wfile.write(_sse_event(event_name, payload, event_id=latest_event_id))
-                        current_last_event_id = latest_event_id
-                        current_payload_signature = payload_signature(payload)
-                        wrote_frame = True
-                    elif payload_signature(payload) and payload_signature(payload) != current_payload_signature:
-                        self.wfile.write(_sse_event(event_name, payload))
-                        current_payload_signature = payload_signature(payload)
-                        wrote_frame = True
-                    elif time.monotonic() - last_write_at >= SSE_KEEPALIVE_INTERVAL_SECONDS:
-                        self.wfile.write(b": keep-alive\n\n")
-                        wrote_frame = True
-                    if wrote_frame:
-                        self.wfile.flush()
-                        last_write_at = time.monotonic()
-                    time.sleep(SSE_EVENT_POLL_INTERVAL_SECONDS)
-                except (ValueError, FileNotFoundError) as error:
-                    error_payload = sse_stream_error_payload(stream, error, meeting_id=meeting_id)
-                    try:
-                        self.wfile.write(_sse_event("error", error_payload))
-                        self.wfile.flush()
-                    except (BrokenPipeError, ConnectionResetError):
-                        return
-                    return
-                except (BrokenPipeError, ConnectionResetError):
-                    return
 
         def _send_room_events_sse_stream(self, *, room_id: str, cursor: str | None = None) -> None:
             self.close_connection = True

@@ -368,9 +368,10 @@ class PostgresCrossAuthorityTransactionTests(unittest.TestCase):
         self.assertEqual(len(self.rooms.participants("room-a")), 1)
         self.assertEqual(len(self.identities.list_memberships("room-a")), 1)
         self.assertEqual(len(self.invite_repository.list_sessions()), 1)
+        # Same device + same reusable invite collapses to one admission workflow.
         self.assertEqual(
             self.invite_repository.invite(str(invite["invite_id"]))["use_count"],
-            2,
+            1,
         )
 
     def test_independent_apps_redeem_pairing_for_only_one_device(self) -> None:

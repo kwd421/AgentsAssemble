@@ -46,3 +46,27 @@ describe("ChannelHeader member access", () => {
     expect(handlers.onOpenMobileInfo).not.toHaveBeenCalled();
   });
 });
+
+describe("ChannelHeader room search scope", () => {
+  it("keeps the controlled query visible and lets the user search every readable channel", () => {
+    const onSearchScopeChange = vi.fn();
+    render(
+      <ChannelHeader
+        icon="#"
+        title="release-notes"
+        externalSearch
+        searchQuery="배포 오류"
+        searchScope="channel"
+        onSearchQueryChange={vi.fn()}
+        onSearchScopeChange={onSearchScopeChange}
+      />
+    );
+
+    expect(
+      (screen.getByRole("searchbox", { name: "release-notes 검색어" }) as HTMLInputElement).value
+    ).toBe("배포 오류");
+    fireEvent.click(screen.getByRole("button", { name: "모든 채널" }));
+
+    expect(onSearchScopeChange).toHaveBeenCalledWith("all");
+  });
+});

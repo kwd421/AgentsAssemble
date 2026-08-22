@@ -215,7 +215,7 @@ _VOTE_BALLOT_EVENTS_QUERY = """SELECT payload_json FROM room_events
                                WHERE room_id = %s
                                  AND visibility = %s
                                  AND event_type = 'message_final'
-                                 AND payload_json->>'message_kind' = 'vote_cast'
+                                 AND payload_json->>'message_kind' IN ('vote_cast', 'vote_withdraw', 'vote_close')
                                  AND payload_json->>'vote_id' = %s
                                  AND seq > %s
                                ORDER BY seq"""
@@ -236,6 +236,7 @@ def read_vote_events(
         not poll
         or str(poll.get("type") or "") != "message_final"
         or str(poll.get("message_kind") or "") != "vote"
+        or poll.get("message_deleted") is True
     ):
         return []
     rows = connection.execute(
@@ -247,10 +248,13 @@ def read_vote_events(
             int(poll.get("seq") or 0),
         ),
     ).fetchall()
-    return [
-        poll,
-        *[payload_from_row(row, column="payload_json") for row in rows],
+    ballots = [
+        payload
+        for row in rows
+        if (payload := payload_from_row(row, column="payload_json")).get("message_deleted")
+        is not True
     ]
+    return [poll, *ballots]
 
 
 def read_event_sequence(connection: Connection, room_id: str, event_id: str) -> int:

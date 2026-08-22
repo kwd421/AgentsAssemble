@@ -38,6 +38,7 @@ from agentsassemble.persistence.postgres.room.mutations import (
     create_room as create_room_record,
     detach_participant_sessions as detach_sessions,
     record_command_result as persist_command_result,
+    update_event_fields as persist_event_fields,
     update_participant,
     update_room_settings as persist_room_settings,
     update_room_status,
@@ -65,6 +66,7 @@ from agentsassemble.persistence.postgres.room.queries import (
     room_is_deleted as query_room_is_deleted,
 )
 from agentsassemble.persistence.postgres.room.write_budget import reserve_room_write_budget
+from agentsassemble.persistence.postgres.room.message_pins import PostgresMessagePinRepositoryMixin
 from agentsassemble.persistence.postgres.schema import upgrade_postgres_room_schema
 from agentsassemble.room_attention import AgentAttentionState, AttentionEvaluation
 from agentsassemble.room.global_settings import RoomGlobalSettingsRecord
@@ -123,6 +125,13 @@ class _PostgresRoomTransaction:
             clean_event,
             include_hidden=False,
         )
+
+    def update_event_fields(self, event_id: str, **updates: object) -> dict[str, object]:
+        return persist_event_fields(
+            self._connection, self._room_id, clean_room_text(event_id, limit=128), dict(updates))
+
+    def vote_events(self, vote_id: str) -> list[dict[str, object]]:
+        return read_vote_events(self._connection, self._room_id, vote_id)
 
     def room_settings(self) -> RoomGlobalSettingsRecord:
         return read_room_settings(self._connection, self._room_id)
@@ -308,7 +317,7 @@ class _PostgresRoomTransaction:
         return cancel_attention_job(self._connection, self._room_id, job_id)
 
 
-class PostgresRoomRepository:
+class PostgresRoomRepository(PostgresMessagePinRepositoryMixin):
     """Canonical room repository backed by PostgreSQL and explicit psycopg SQL."""
 
     def __init__(

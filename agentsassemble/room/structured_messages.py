@@ -11,13 +11,19 @@ from agentsassemble.room.votes import (
     normalize_vote_definition,
     normalize_vote_duration_seconds,
     resolve_vote_choice,
+    VOTE_CLOSE_EVENT_KIND,
+    VOTE_STATE_EVENT_KINDS,
     vote_deadline_has_passed,
+    vote_creator_participant_id,
     vote_poll,
+    vote_summary,
 )
 
 
 class RoomEventReader(Protocol):
     def event_by_id(self, event_id: str) -> dict[str, object]: ...
+
+    def vote_events(self, vote_id: str) -> list[dict[str, object]]: ...
 
 
 class StructuredMessageError(ValueError):
@@ -39,7 +45,7 @@ class StructuredRoomMessage:
 
 def prepare_structured_message(payload: dict[str, object]) -> StructuredRoomMessage:
     message_kind = _clean_text(payload.get("kind"), limit=64) or "message"
-    if message_kind not in {"message", "vote", "vote_cast"}:
+    if message_kind not in {"message", "vote", *VOTE_STATE_EVENT_KINDS}:
         raise StructuredMessageError(
             "Provider final message kind is unsupported.",
             code="invalid_message_kind",
@@ -72,14 +78,14 @@ def prepare_structured_message(payload: dict[str, object]) -> StructuredRoomMess
         )
     vote_id = _clean_text(payload.get("vote_id"), limit=128)
     vote_choice = _clean_text(payload.get("vote_choice"), limit=100)
-    if not vote_id or not vote_choice:
+    if not vote_id or (message_kind == "vote_cast" and not vote_choice):
         raise StructuredMessageError(
             "A vote id and choice are required.",
             code="invalid_vote_choice",
         )
     return StructuredRoomMessage(
         content="",
-        message_kind="vote_cast",
+        message_kind=message_kind,
         vote_id=vote_id,
         vote_choice=vote_choice,
     )
@@ -89,6 +95,7 @@ def canonical_structured_fields(
     message: StructuredRoomMessage,
     *,
     events: RoomEventReader,
+    participant_id: str = "",
 ) -> dict[str, object]:
     fields: dict[str, object] = {
         "message_kind": message.message_kind,
@@ -107,7 +114,7 @@ def canonical_structured_fields(
             vote_choice=None,
         )
         return fields
-    if message.message_kind != "vote_cast":
+    if message.message_kind not in VOTE_STATE_EVENT_KINDS:
         return fields
     try:
         poll = vote_poll(events.event_by_id(message.vote_id), message.vote_id)
@@ -115,12 +122,24 @@ def canonical_structured_fields(
         raise StructuredMessageError(str(error), code="vote_not_found") from error
     if vote_deadline_has_passed(poll.get("vote_deadline_at")):
         raise StructuredMessageError("This vote has ended.", code="vote_expired")
-    choice = resolve_vote_choice(message.vote_choice, list(poll.get("vote_options") or []))
-    if not choice:
+    if vote_summary(events.vote_events(message.vote_id), message.vote_id).get("closed"):
+        raise StructuredMessageError("This vote has ended.", code="vote_closed")
+    if (
+        message.message_kind == VOTE_CLOSE_EVENT_KIND
+        and vote_creator_participant_id(poll) != clean_room_text(participant_id, limit=128)
+    ):
         raise StructuredMessageError(
-            "vote_choice must match one of the vote options.",
-            code="invalid_vote_choice",
+            "Only the vote creator can close this vote from an Agent Session.",
+            code="permission_denied",
         )
+    choice = ""
+    if message.message_kind == "vote_cast":
+        choice = resolve_vote_choice(message.vote_choice, list(poll.get("vote_options") or []))
+        if not choice:
+            raise StructuredMessageError(
+                "vote_choice must match one of the vote options.",
+                code="invalid_vote_choice",
+            )
     fields.update(vote_question=None, vote_options=None, vote_choice=choice)
     return fields
 

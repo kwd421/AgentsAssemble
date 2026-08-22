@@ -1,17 +1,5 @@
-import { useState } from "react";
-import { Bot, MessageCircle, Play, Square, Trash2 } from "lucide-react";
-import {
-  resumeAgentSession,
-  stopLiveAgentSessionAgent,
-  type LiveAgentProcessGroup,
-  type RoomFriend,
-} from "../../api";
-import {
-  findProcessGroupForAgent,
-  processGroupCanControlSingleAgent,
-  processGroupIndividualControlReason,
-} from "../../lib/liveAgentProcessControls";
-import { agentSessionResumeStatus } from "../../lib/agentSessionStatus";
+import { Bot, Trash2 } from "lucide-react";
+import { type RoomFriend } from "../../api";
 import { participantTypeMeta } from "../../lib/participantTypes";
 import { presenceStatusLabel } from "../../lib/presenceStatus";
 
@@ -21,19 +9,11 @@ function friendInitial(friend: RoomFriend) {
 
 export default function FriendProfileCard({
   friend,
-  onStartDm,
   onDelete,
-  processGroups = [],
-  onSessionActionComplete,
 }: {
   friend: RoomFriend | null;
-  onStartDm?: (friend: RoomFriend) => void;
   onDelete?: (friend: RoomFriend) => void;
-  processGroups?: LiveAgentProcessGroup[];
-  onSessionActionComplete?: () => void;
 }) {
-  const [sessionActionBusy, setSessionActionBusy] = useState(false);
-  const [sessionActionStatus, setSessionActionStatus] = useState("");
   if (!friend) {
     return (
       <div className="dc-activity-card">
@@ -43,79 +23,14 @@ export default function FriendProfileCard({
     );
   }
 
-  const activeFriend = friend;
   const meta = participantTypeMeta(friend.participant_type);
   const Icon = meta.icon || Bot;
-  const sourceAgentId = String(friend.source_agent_id || friend.agent_id || "").trim();
-  const hasSourceAgentId = Boolean(sourceAgentId);
-  const processIdentity = { agent_id: sourceAgentId, display_name: friend.display_name };
-  const sessionGroup = findProcessGroupForAgent(processGroups, processIdentity);
-  const canControlSingleAgent = processGroupCanControlSingleAgent(sessionGroup, processIdentity);
-  const processOwnsAgent = Boolean(sessionGroup);
-  const individualControlReason = processGroupIndividualControlReason(
-    sessionGroup,
-    processIdentity,
-    friend.display_name || "이 AI"
-  );
-  const processRunning = sessionGroup?.status === "running";
-  const showIndividualControlReason = Boolean(individualControlReason && processRunning);
-  const canResumeSession = Boolean(
-    hasSourceAgentId &&
-      processOwnsAgent &&
-      sessionGroup?.group_id &&
-      sessionGroup?.meeting_id &&
-      sessionGroup?.config_path &&
-      !processRunning
-  );
-  const canStopSession = Boolean(
-    hasSourceAgentId && canControlSingleAgent && sessionGroup?.group_id && sessionGroup?.meeting_id && processRunning
-  );
   const facts = [
     ["타입", meta.label],
     ["상태", presenceStatusLabel(friend.status)],
     ["Agent Session", friend.source_agent_id || friend.agent_id || "미지정"],
     ["최근 방", friend.last_meeting_id || "기록 없음"],
   ];
-
-  async function handleResumeSession() {
-    if (!sessionGroup || !canResumeSession) return;
-    setSessionActionBusy(true);
-    setSessionActionStatus("RESUME 요청 중...");
-    try {
-      const response = await resumeAgentSession({
-        roomId: sessionGroup.meeting_id,
-        agentId: sourceAgentId,
-        sessionId: sourceAgentId,
-        displayName: activeFriend.display_name,
-        providerKind: activeFriend.provider_kind,
-      });
-      setSessionActionStatus(`RESUME 완료 · ${agentSessionResumeStatus(response)}`);
-      onSessionActionComplete?.();
-    } catch (error) {
-      setSessionActionStatus(error instanceof Error ? error.message : "RESUME 실패");
-    } finally {
-      setSessionActionBusy(false);
-    }
-  }
-
-  async function handleStopSession() {
-    if (!sessionGroup || !canStopSession) return;
-    setSessionActionBusy(true);
-    setSessionActionStatus("STOP(KILL) 요청 중...");
-    try {
-      const response = await stopLiveAgentSessionAgent({
-        meetingId: sessionGroup.meeting_id,
-        groupId: sessionGroup.group_id,
-        agentId: sourceAgentId,
-      });
-      setSessionActionStatus(`STOP(KILL) 완료${response.status ? ` · ${response.status}` : ""}`);
-      onSessionActionComplete?.();
-    } catch (error) {
-      setSessionActionStatus(error instanceof Error ? error.message : "STOP(KILL) 실패");
-    } finally {
-      setSessionActionBusy(false);
-    }
-  }
 
   return (
     <article className="dc-friend-profile-card" data-type={meta.tone}>
@@ -131,36 +46,6 @@ export default function FriendProfileCard({
         </p>
         <p className="dc-friend-profile-type preserve-words">{meta.detail}</p>
         <div className="dc-friend-profile-actions">
-          <button
-            type="button"
-            className="dc-friend-profile-secondary"
-            onClick={() => onStartDm?.(friend)}
-          >
-            <MessageCircle size={15} />
-            DM
-          </button>
-          {sessionGroup && (canResumeSession || canStopSession) && (
-            <>
-              <button
-                type="button"
-                className="dc-friend-profile-secondary"
-                onClick={handleResumeSession}
-                disabled={!canResumeSession || sessionActionBusy}
-              >
-                <Play size={15} />
-                RESUME
-              </button>
-              <button
-                type="button"
-                className="dc-friend-profile-danger"
-                onClick={handleStopSession}
-                disabled={!canStopSession || sessionActionBusy}
-              >
-                <Square size={15} />
-                STOP(KILL)
-              </button>
-            </>
-          )}
           {onDelete && (
             <button type="button" className="dc-friend-profile-danger" onClick={() => onDelete(friend)}>
               <Trash2 size={15} />
@@ -176,10 +61,6 @@ export default function FriendProfileCard({
             </div>
           ))}
         </dl>
-        {showIndividualControlReason && (
-          <p className="dc-friend-profile-note preserve-words">{individualControlReason}</p>
-        )}
-        {sessionActionStatus && <p className="dc-friend-profile-note preserve-words">{sessionActionStatus}</p>}
         <p className="dc-friend-profile-note preserve-words">
           저장된 친구 정보는 AgentsAssemble 안에만 남습니다.
         </p>

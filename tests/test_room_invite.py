@@ -104,7 +104,7 @@ class TestRoomInviteCreateJoinFlow(unittest.TestCase):
 
     def test_create_invite_returns_token(self):
         invite = create_room_invite(
-            room_url="http://192.168.1.10:8765",
+            room_url="https://192.168.1.10:8765",
             meeting_id="test-meeting",
             agent_id="guest-1",
             display_name="Guest One",
@@ -116,7 +116,7 @@ class TestRoomInviteCreateJoinFlow(unittest.TestCase):
 
     def test_agent_bridge_invite_normalizes_provider_id_to_canonical_kind(self):
         invite = create_room_invite(
-            room_url="http://192.168.1.10:8765",
+            room_url="https://192.168.1.10:8765",
             meeting_id="test-meeting",
             agent_id="claude-guest",
             client_type="agent_bridge",
@@ -131,7 +131,7 @@ class TestRoomInviteCreateJoinFlow(unittest.TestCase):
     def test_agent_bridge_invite_rejects_unknown_provider_before_issuing_token(self):
         with self.assertRaisesRegex(ValueError, "supported provider"):
             create_room_invite(
-                room_url="http://192.168.1.10:8765",
+                room_url="https://192.168.1.10:8765",
                 meeting_id="test-meeting",
                 agent_id="unknown-guest",
                 client_type="agent_bridge",
@@ -161,7 +161,7 @@ class TestRoomInviteCreateJoinFlow(unittest.TestCase):
 
     def test_create_invite_returns_remote_client_entry_packet(self):
         invite = create_room_invite(
-            room_url="http://192.168.1.10:8765",
+            room_url="https://192.168.1.10:8765",
             meeting_id="test-meeting",
             agent_id="guest-1",
             display_name="Guest One",
@@ -182,7 +182,7 @@ class TestRoomInviteCreateJoinFlow(unittest.TestCase):
 
     def test_join_with_valid_token(self):
         invite = create_room_invite(
-            room_url="http://192.168.1.10:8765",
+            room_url="https://192.168.1.10:8765",
             meeting_id="test-meeting",
             agent_id="guest-1",
             display_name="Guest One",
@@ -198,7 +198,7 @@ class TestRoomInviteCreateJoinFlow(unittest.TestCase):
 
     def test_join_token_single_use(self):
         invite = create_room_invite(
-            room_url="http://192.168.1.10:8765",
+            room_url="https://192.168.1.10:8765",
             meeting_id="test-meeting",
             agent_id="guest-1",
             max_uses=1,
@@ -215,7 +215,7 @@ class TestRoomInviteCreateJoinFlow(unittest.TestCase):
 
     def test_session_token_verification(self):
         invite = create_room_invite(
-            room_url="http://192.168.1.10:8765",
+            room_url="https://192.168.1.10:8765",
             meeting_id="test-meeting",
             agent_id="guest-1",
             max_uses=1,
@@ -228,7 +228,7 @@ class TestRoomInviteCreateJoinFlow(unittest.TestCase):
     def test_default_invite_is_unlimited_and_mints_unique_ids(self):
         # Discord-style default: one open link admits many, each with a unique id.
         invite = create_room_invite(
-            room_url="http://192.168.1.10:8765",
+            room_url="https://192.168.1.10:8765",
             meeting_id="test-meeting",
             agent_id="guest",
         )
@@ -243,7 +243,7 @@ class TestRoomInviteCreateJoinFlow(unittest.TestCase):
 
     def test_read_only_invite_scope_survives_join_and_session_verification(self):
         invite = create_room_invite(
-            room_url="http://192.168.1.10:8765",
+            room_url="https://192.168.1.10:8765",
             meeting_id="test-meeting",
             agent_id="guest-1",
             invite_scope="read_only",
@@ -260,7 +260,7 @@ class TestRoomInviteCreateJoinFlow(unittest.TestCase):
 
     def test_session_revoke(self):
         invite = create_room_invite(
-            room_url="http://192.168.1.10:8765",
+            room_url="https://192.168.1.10:8765",
             meeting_id="test-meeting",
             agent_id="guest-1",
         )
@@ -271,7 +271,7 @@ class TestRoomInviteCreateJoinFlow(unittest.TestCase):
 
     def test_active_sessions_summary(self):
         invite = create_room_invite(
-            room_url="http://192.168.1.10:8765",
+            room_url="https://192.168.1.10:8765",
             meeting_id="test-meeting",
             agent_id="guest-1",
             display_name="Guest One",
@@ -286,14 +286,14 @@ class TestRoomInviteCreateJoinFlow(unittest.TestCase):
 
     def test_create_invite_auto_generates_agent_id(self):
         invite = create_room_invite(
-            room_url="http://192.168.1.10:8765",
+            room_url="https://192.168.1.10:8765",
             meeting_id="test-meeting",
         )
         self.assertTrue(invite["agent_id"].startswith("guest-"))
 
     def test_meeting_id_mismatch_rejected(self):
         invite = create_room_invite(
-            room_url="http://192.168.1.10:8765",
+            room_url="https://192.168.1.10:8765",
             meeting_id="meeting-a",
             agent_id="guest-1",
         )
@@ -307,7 +307,7 @@ class TestRoomInviteCreateJoinFlow(unittest.TestCase):
             configure_room_invite_store(store_path)
             set_runtime_host_token("host-secret-that-must-not-persist")
             invite = create_room_invite(
-                room_url="http://192.168.1.10:8765",
+                room_url="https://192.168.1.10:8765",
                 meeting_id="test-meeting",
                 agent_id="guest-1",
                 display_name="Guest One",
@@ -341,7 +341,7 @@ class TestRoomInviteCreateJoinFlow(unittest.TestCase):
             store_path = Path(temp_dir) / "room-invite-state.json"
             configure_room_invite_store(store_path)
             invite = create_room_invite(
-                room_url="http://192.168.1.10:8765",
+                room_url="https://192.168.1.10:8765",
                 meeting_id="test-meeting",
                 agent_id="guest-1",
             )
@@ -360,7 +360,7 @@ class TestRoomInviteCreateJoinFlow(unittest.TestCase):
             store_path = Path(temp_dir) / "room-invite-state.json"
             configure_room_invite_store(store_path)
             invite = create_room_invite(
-                room_url="http://192.168.1.10:8765",
+                room_url="https://192.168.1.10:8765",
                 meeting_id="test-meeting",
                 agent_id="guest-1",
             )

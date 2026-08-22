@@ -1,0 +1,24 @@
+name = "agentsassemble-identity-directory"
+main = "src/index.js"
+compatibility_date = "2026-04-01"
+workers_dev = true
+
+[[d1_databases]]
+binding = "DB"
+database_name = "agentsassemble-identity"
+database_id = "9f6ce9f8-79cf-47a8-81c7-691ddb48a59b"
+migrations_dir = "migrations"
+
+[vars]
+SESSION_TTL_SECONDS = "2592000"
+MAX_ENDPOINT_LEASE_SECONDS = "900"
+ALLOW_TRYCLOUDFLARE_ORIGINS = "false"
+CENTRAL_ALLOWED_ORIGINS = "tauri://localhost,http://tauri.localhost,https://tauri.localhost"
+
+# Set these with `wrangler secret put` rather than committing values:
+#   RECOVERY_PEPPER
+#   IDENTITY_PEPPER
+#   GOOGLE_DESKTOP_CLIENT_ID
+
+[triggers]
+crons = ["17 3 * * *"]

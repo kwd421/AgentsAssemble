@@ -7,6 +7,14 @@ use std::{
 
 use url::Url;
 
+const DEFAULT_CENTRAL_DIRECTORY_ORIGIN: &str =
+    "https://agentsassemble-identity-directory.seinel.workers.dev";
+
+pub fn central_directory_origin() -> &'static str {
+    option_env!("AGENTSASSEMBLE_CENTRAL_URL")
+        .unwrap_or(DEFAULT_CENTRAL_DIRECTORY_ORIGIN)
+}
+
 fn plaintext_http_allowed(url: &Url) -> bool {
     let Some(host) = url.host_str() else {
         return false;
@@ -75,30 +83,75 @@ pub fn same_origin(candidate: &Url, server: &Url) -> bool {
         && candidate.port_or_known_default() == server.port_or_known_default()
 }
 
-pub fn google_account_handoff_url(raw: &str, server: &Url) -> Result<Url, String> {
-    let url = Url::parse(raw.trim()).map_err(|_| "Google login URL is invalid".to_owned())?;
-    if !same_origin(&url, server) || url.path() != "/" || url.query().is_some() {
-        return Err("Google login URL must stay on the selected server".to_owned());
-    }
-    if !url.username().is_empty() || url.password().is_some() {
-        return Err("Google login URL must not contain credentials".to_owned());
-    }
-    let fragment = url
-        .fragment()
-        .ok_or_else(|| "Google login URL is missing its one-time token".to_owned())?;
-    let values = url::form_urlencoded::parse(fragment.as_bytes()).collect::<Vec<_>>();
-    if values.len() != 1 || values[0].0 != "google_handoff" {
-        return Err("Google login URL has an invalid handoff fragment".to_owned());
-    }
-    let token = values[0].1.as_ref();
-    if !(32..=128).contains(&token.len())
-        || !token
+fn base64url_token(value: &str, min: usize, max: usize) -> bool {
+    (min..=max).contains(&value.len())
+        && value
             .bytes()
-            .all(|value| value.is_ascii_alphanumeric() || matches!(value, b'-' | b'_'))
+            .all(|byte| byte.is_ascii_alphanumeric() || matches!(byte, b'-' | b'_'))
+}
+
+fn google_desktop_client_id(value: &str) -> bool {
+    let Some(prefix) = value.strip_suffix(".apps.googleusercontent.com") else {
+        return false;
+    };
+    (8..=160).contains(&prefix.len())
+        && prefix
+            .bytes()
+            .all(|byte| byte.is_ascii_alphanumeric() || byte == b'-')
+}
+
+fn native_google_callback(value: &str) -> bool {
+    let Ok(callback) = Url::parse(value) else {
+        return false;
+    };
+    callback.scheme() == "http"
+        && matches!(callback.host_str(), Some("127.0.0.1" | "::1"))
+        && callback.port().is_some()
+        && callback.path() == "/api/central-login/callback"
+        && callback.query().is_none()
+        && callback.fragment().is_none()
+        && callback.username().is_empty()
+        && callback.password().is_none()
+}
+
+fn native_google_authorization_url(url: &Url) -> bool {
+    if url.scheme() != "https"
+        || url.host_str() != Some("accounts.google.com")
+        || url.port().is_some()
+        || url.path() != "/o/oauth2/v2/auth"
+        || url.fragment().is_some()
+        || !url.username().is_empty()
+        || url.password().is_some()
     {
-        return Err("Google login URL has an invalid one-time token".to_owned());
+        return false;
     }
-    Ok(url)
+    let values = url.query_pairs().collect::<Vec<_>>();
+    let one = |key: &str| {
+        let matches = values
+            .iter()
+            .filter(|(candidate, _)| candidate == key)
+            .collect::<Vec<_>>();
+        (matches.len() == 1).then(|| matches[0].1.as_ref())
+    };
+    values.len() == 9
+        && one("client_id").is_some_and(google_desktop_client_id)
+        && one("redirect_uri").is_some_and(native_google_callback)
+        && one("response_type") == Some("code")
+        && one("scope") == Some("openid")
+        && one("state").is_some_and(|value| base64url_token(value, 32, 128))
+        && one("nonce").is_some_and(|value| base64url_token(value, 16, 128))
+        && one("code_challenge").is_some_and(|value| base64url_token(value, 43, 43))
+        && one("code_challenge_method") == Some("S256")
+        && one("prompt") == Some("select_account")
+}
+
+pub fn central_google_handoff_url(raw: &str) -> Result<Url, String> {
+    let url =
+        Url::parse(raw.trim()).map_err(|_| "central Google login URL is invalid".to_owned())?;
+    if native_google_authorization_url(&url) {
+        return Ok(url);
+    }
+    Err("central Google login URL must be Google's scoped desktop OAuth endpoint".to_owned())
 }
 
 pub fn is_local_app_url(candidate: &Url) -> bool {
@@ -215,26 +268,29 @@ mod tests {
     }
 
     #[test]
-    fn google_login_handoff_opens_only_a_scoped_same_origin_token_url() {
-        let server = normalized_server_url("https://rooms.example.test:9443").unwrap();
-        let valid =
-            "https://rooms.example.test:9443/#google_handoff=abcdefghijklmnopqrstuvwxyz_123456";
-        assert_eq!(
-            google_account_handoff_url(valid, &server).unwrap().as_str(),
-            valid
+    fn central_google_login_opens_only_scoped_native_oauth_urls() {
+        let native = concat!(
+            "https://accounts.google.com/o/oauth2/v2/auth?",
+            "client_id=desktop-client.apps.googleusercontent.com&",
+            "redirect_uri=http%3A%2F%2F127.0.0.1%3A43123%2Fapi%2Fcentral-login%2Fcallback&",
+            "response_type=code&scope=openid&",
+            "state=abcdefghijklmnopqrstuvwxyz_1234567890ABCDEFG&",
+            "nonce=abcdefghijklmnopqrstuvwxyz_1234567890&",
+            "code_challenge=abcdefghijklmnopqrstuvwxyz_1234567890ABCDEF&",
+            "code_challenge_method=S256&prompt=select_account"
         );
+        assert_eq!(central_google_handoff_url(native).unwrap().as_str(), native);
 
         for raw in [
-            "https://evil.example.test/#google_handoff=abcdefghijklmnopqrstuvwxyz_123456",
-            "https://rooms.example.test:9443/account#google_handoff=abcdefghijklmnopqrstuvwxyz_123456",
-            "https://rooms.example.test:9443/?next=evil#google_handoff=abcdefghijklmnopqrstuvwxyz_123456",
-            "https://rooms.example.test:9443/#google_handoff=short",
-            "https://rooms.example.test:9443/#google_handoff=abcdefghijklmnopqrstuvwxyz_123456&next=evil",
+            "https://agentsassemble-identity-directory.seinel.workers.dev/auth/google#handoff=goh_abcdefghijklmnop&browser=abcdefghijklmnopqrstuvwxyz_1234567890ABCDEFG".to_owned(),
+            native.replace("accounts.google.com", "accounts.google.com.evil.test"),
+            native.replace(
+                "http%3A%2F%2F127.0.0.1%3A43123%2Fapi%2Fcentral-login%2Fcallback",
+                "https%3A%2F%2Fattacker.example%2Fcallback",
+            ),
+            native.replace("scope=openid", "scope=openid+email"),
         ] {
-            assert!(
-                google_account_handoff_url(raw, &server).is_err(),
-                "accepted {raw}"
-            );
+            assert!(central_google_handoff_url(&raw).is_err(), "accepted {raw}");
         }
     }
 }

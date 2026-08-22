@@ -1,0 +1,36 @@
+.dc-composer-emoji-picker {
+  position: absolute;
+  right: 38px;
+  bottom: calc(100% + 8px);
+  z-index: 20;
+  display: grid;
+  grid-template-columns: repeat(6, 34px);
+  gap: 4px;
+  border: 1px solid var(--color-line);
+  border-radius: 8px;
+  background: #232428;
+  box-shadow: 0 14px 32px rgba(0, 0, 0, 0.42);
+  padding: 8px;
+}
+
+.dc-composer-emoji-picker button {
+  display: grid;
+  width: 34px;
+  height: 34px;
+  place-items: center;
+  border-radius: 5px;
+  font-size: 20px;
+}
+
+.dc-composer-emoji-picker button:hover,
+.dc-composer-emoji-picker button:focus-visible {
+  background: var(--color-sidebar-hover);
+  outline: none;
+}
+
+@media (max-width: 760px) {
+  .dc-composer-emoji-picker {
+    right: 0;
+    grid-template-columns: repeat(4, 40px);
+  }
+}

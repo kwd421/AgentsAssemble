@@ -2,7 +2,6 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from agentsassemble.room.moderation import set_room_member_muted
 from agentsassemble.room.members import (
     read_room_members,
     room_members_payload,
@@ -106,7 +105,7 @@ class RoomMembersPresenceTests(unittest.TestCase):
             canonical=False,
         )
         payload = room_members_payload(
-            self.output_root, [], meeting_id=ROOM, sessions=[], repository=self.repository
+            self.output_root, meeting_id=ROOM, sessions=[], repository=self.repository
         )
         self.assertEqual(payload["members"], [])
 
@@ -122,7 +121,7 @@ class RoomMembersPresenceTests(unittest.TestCase):
             }
         ]
         payload = room_members_payload(
-            self.output_root, [], meeting_id=ROOM, sessions=sessions, repository=self.repository
+            self.output_root, meeting_id=ROOM, sessions=sessions, repository=self.repository
         )
         members = payload["members"]
         self.assertEqual(len(members), 1)
@@ -133,7 +132,7 @@ class RoomMembersPresenceTests(unittest.TestCase):
         self._saved_guest("guest-aaaa02", "친절한페이블찡", updated_at="2026-06-11T02:00:00+00:00")
         self._saved_guest("guest-aaaa03", "친절한페이블찡", updated_at="2026-06-11T03:00:00+00:00")
         payload = room_members_payload(
-            self.output_root, [], meeting_id=ROOM, sessions=[], repository=self.repository
+            self.output_root, meeting_id=ROOM, sessions=[], repository=self.repository
         )
         members = payload["members"]
         self.assertEqual(len(members), 3)
@@ -166,7 +165,7 @@ class RoomMembersPresenceTests(unittest.TestCase):
             }
         ]
         payload = room_members_payload(
-            self.output_root, [], meeting_id=ROOM, sessions=sessions, repository=self.repository
+            self.output_root, meeting_id=ROOM, sessions=sessions, repository=self.repository
         )
         members = payload["members"]
         self.assertEqual(len(members), 1)
@@ -193,33 +192,10 @@ class RoomMembersPresenceTests(unittest.TestCase):
         self._canonical_member("guest-cccc01", "Guest")
         self._canonical_member("guest-cccc02", "Guest")
         payload = room_members_payload(
-            self.output_root, [], meeting_id=ROOM, sessions=sessions, repository=self.repository
+            self.output_root, meeting_id=ROOM, sessions=sessions, repository=self.repository
         )
         self.assertEqual(len(payload["members"]), 2)
         self.assertTrue(all(member["status"] == "online" for member in payload["members"]))
-
-    def test_live_agent_status_not_overridden_by_session_presence(self):
-        agents = [
-            {
-                "agent_id": "agent-haiku",
-                "display_name": "하이쿠",
-                "meeting_id": ROOM,
-                "provider_kind": "claude",
-                "status": "working",
-            }
-        ]
-        self._canonical_member(
-            "agent-haiku",
-            "하이쿠",
-            participant_type="agent",
-            role="agent",
-        )
-        payload = room_members_payload(
-            self.output_root, agents, meeting_id=ROOM, sessions=[], repository=self.repository
-        )
-        members = payload["members"]
-        self.assertEqual(len(members), 1)
-        self.assertEqual(members[0]["status"], "working")
 
     def test_declared_agent_session_keeps_agent_role_for_grouping(self):
         sessions = [
@@ -238,7 +214,7 @@ class RoomMembersPresenceTests(unittest.TestCase):
             role="agent",
         )
         payload = room_members_payload(
-            self.output_root, [], meeting_id=ROOM, sessions=sessions, repository=self.repository
+            self.output_root, meeting_id=ROOM, sessions=sessions, repository=self.repository
         )
         members = payload["members"]
         self.assertEqual(len(members), 1)
@@ -249,59 +225,10 @@ class RoomMembersPresenceTests(unittest.TestCase):
         self._saved_guest("guest-dddd01", "보관됨", updated_at="2026-06-11T01:00:00+00:00")
         self._saved_guest("guest-dddd02", "보관됨", updated_at="2026-06-11T02:00:00+00:00")
         room_members_payload(
-            self.output_root, [], meeting_id=ROOM, sessions=[], repository=self.repository
+            self.output_root, meeting_id=ROOM, sessions=[], repository=self.repository
         )
         saved = read_room_members(self.output_root, meeting_id=ROOM)
         self.assertEqual(len(saved), 2)
-
-
-class RosterStreamSnapshotTests(unittest.TestCase):
-    """The R6 roster SSE stream emits a frame only when the roster changes."""
-
-    def setUp(self):
-        self._tmp = tempfile.TemporaryDirectory()
-        self.output_root = Path(self._tmp.name)
-        self.addCleanup(self._tmp.cleanup)
-        self.repository = RoomStore(self.output_root)
-        self.addCleanup(self.repository.close)
-
-    def test_roster_snapshot_signature_changes_only_with_roster(self):
-        from agentsassemble.gui import _stream_snapshot_payload
-
-        upsert_room_member(
-            self.output_root,
-            {"meeting_id": ROOM, "participant_id": "guest-1", "display_name": "사람"},
-        )
-        self.repository.create_room(ROOM)
-        self.repository.upsert_participant(
-            ROOM,
-            {
-                "participant_id": "guest-1",
-                "display_name": "사람",
-                "participant_type": "human",
-                "role": "human",
-                "status": "joined",
-            },
-        )
-        first = _stream_snapshot_payload(
-            self.output_root, "roster", meeting_id=ROOM, repository=self.repository
-        )
-        self.assertEqual(first["stream"], "roster")
-        self.assertEqual(len(first["members"]), 1)
-        again = _stream_snapshot_payload(
-            self.output_root, "roster", meeting_id=ROOM, repository=self.repository
-        )
-        self.assertEqual(first["payload_signature"], again["payload_signature"])
-
-        set_room_member_muted(
-            self.output_root, meeting_id=ROOM, participant_id="guest-1", muted=True
-        )
-        after_mute = _stream_snapshot_payload(
-            self.output_root, "roster", meeting_id=ROOM, repository=self.repository
-        )
-        self.assertNotEqual(first["payload_signature"], after_mute["payload_signature"])
-        self.assertTrue(after_mute["members"][0]["muted"])
-
 
 if __name__ == "__main__":
     unittest.main()

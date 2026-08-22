@@ -13,7 +13,7 @@ from urllib.parse import parse_qs, urlparse
 from urllib.request import Request, urlopen
 from uuid import uuid4
 
-from agentsassemble import room_invite
+from agentsassemble.application.public_invite_runtime import PublicInviteRuntime
 from agentsassemble.gui import _make_handler
 from agentsassemble.persistence.local.room.repository import RoomStore
 from agentsassemble.providers.secrets import ProviderSecretStoreUnavailable
@@ -166,7 +166,7 @@ class ProviderRouteTests(unittest.TestCase):
                 ("GET", "/api/provider-usage/deepseek"),
                 ("GET", "/api/provider-usage/grok"),
                 ("GET", "/api/provider-usage/opencode"),
-                ("POST", "/api/live-agent-create/login"),
+                ("POST", "/api/providers/login"),
                 ("POST", "/api/local/workspace-picker"),
                 ("POST", "/api/provider-catalog/refresh"),
                 ("POST", "/api/provider-credentials/cerebras"),
@@ -222,7 +222,7 @@ class ProviderRouteTests(unittest.TestCase):
     def test_provider_login_is_local_only_and_delegates_to_login_service(self):
         started = self.dispatch(
             "POST",
-            "/api/live-agent-create/login",
+            "/api/providers/login",
             body=json.dumps({"provider_id": "grok"}).encode(),
         )
 
@@ -241,7 +241,7 @@ class ProviderRouteTests(unittest.TestCase):
             workspace_picker=lambda: self.fail("denied workspace picker must not run"),
         )
         denied = FakeHandler(
-            "/api/live-agent-create/login",
+            "/api/providers/login",
             body=json.dumps({"provider_id": "codex"}).encode(),
         )
         self.assertTrue(denied_router.dispatch("POST", _context(denied, denied.path)))
@@ -277,7 +277,7 @@ class ProviderRouteTests(unittest.TestCase):
         )
 
     def test_invalid_provider_login_json_is_audited_without_launch(self):
-        response = self.dispatch("POST", "/api/live-agent-create/login", body=b"{bad")
+        response = self.dispatch("POST", "/api/providers/login", body=b"{bad")
 
         self.assertEqual(response.sent_error, (HTTPStatus.BAD_REQUEST, "Invalid JSON"))
         self.assertEqual(self.login.invalid_json_count, 1)
@@ -376,10 +376,6 @@ class ProviderRouteTests(unittest.TestCase):
 
 
 class ProviderHandlerDispatchTests(unittest.TestCase):
-    def setUp(self) -> None:
-        room_invite.reset_state()
-        self.addCleanup(room_invite.reset_state)
-
     def test_delete_reaches_registered_router_route(self):
         store = FakeSecretStore()
         with tempfile.TemporaryDirectory() as temp_dir:
@@ -409,9 +405,13 @@ class ProviderHandlerDispatchTests(unittest.TestCase):
         store: FakeSecretStore,
         *,
         headers: dict[str, str],
+        public_invite: PublicInviteRuntime,
     ) -> tuple[int, dict[str, object]]:
         with patch("agentsassemble.web.routes.providers.PROVIDER_SECRETS", store):
-            server = ThreadingHTTPServer(("127.0.0.1", 0), _make_handler(root))
+            server = ThreadingHTTPServer(
+                ("127.0.0.1", 0),
+                _make_handler(root, public_invite_runtime_override=public_invite),
+            )
             thread = threading.Thread(target=server.serve_forever, daemon=True)
             thread.start()
             try:
@@ -433,7 +433,8 @@ class ProviderHandlerDispatchTests(unittest.TestCase):
                 server.server_close()
 
     def test_remote_caller_without_host_credential_is_rejected(self):
-        room_invite.set_runtime_public_url("https://public.example.test")
+        public_invite = PublicInviteRuntime()
+        public_invite.set_public_url("https://public.example.test")
         store = FakeSecretStore()
 
         with tempfile.TemporaryDirectory() as temp_dir:
@@ -441,6 +442,7 @@ class ProviderHandlerDispatchTests(unittest.TestCase):
                 Path(temp_dir),
                 store,
                 headers={"Host": "public.example.test"},
+                public_invite=public_invite,
             )
 
         self.assertEqual(status, HTTPStatus.FORBIDDEN)
@@ -448,8 +450,9 @@ class ProviderHandlerDispatchTests(unittest.TestCase):
         self.assertEqual(store.calls, [])
 
     def test_remote_host_token_over_http_is_rejected_with_exact_https_error(self):
-        room_invite.set_runtime_host_token("host-secret")
-        room_invite.set_runtime_public_url("https://public.example.test")
+        public_invite = PublicInviteRuntime()
+        public_invite.set_host_token("host-secret")
+        public_invite.set_public_url("https://public.example.test")
         store = FakeSecretStore()
 
         with tempfile.TemporaryDirectory() as temp_dir:
@@ -457,6 +460,7 @@ class ProviderHandlerDispatchTests(unittest.TestCase):
                 Path(temp_dir),
                 store,
                 headers={"Host": "public.example.test", "X-Host-Token": "host-secret"},
+                public_invite=public_invite,
             )
 
         self.assertEqual(status, HTTPStatus.FORBIDDEN)
@@ -464,15 +468,19 @@ class ProviderHandlerDispatchTests(unittest.TestCase):
         self.assertEqual(store.calls, [])
 
     def test_remote_operator_room_session_cannot_manage_server_provider_credentials(self):
-        room_invite.set_runtime_host_token("host-secret")
-        room_invite.set_runtime_public_url("https://public.example.test")
+        public_invite = PublicInviteRuntime()
+        public_invite.set_host_token("host-secret")
+        public_invite.set_public_url("https://public.example.test")
         store = FakeSecretStore()
 
         with tempfile.TemporaryDirectory() as temp_dir:
             root = Path(temp_dir)
             RoomStore(root).create_room("provider-room", label="Provider room")
             with patch("agentsassemble.web.routes.providers.PROVIDER_SECRETS", store):
-                server = ThreadingHTTPServer(("127.0.0.1", 0), _make_handler(root))
+                server = ThreadingHTTPServer(
+                    ("127.0.0.1", 0),
+                    _make_handler(root, public_invite_runtime_override=public_invite),
+                )
                 thread = threading.Thread(target=server.serve_forever, daemon=True)
                 thread.start()
                 try:
@@ -536,8 +544,9 @@ class ProviderHandlerDispatchTests(unittest.TestCase):
         self.assertEqual(store.calls, [])
 
     def test_unregistered_loopback_proxy_cannot_assert_https_with_forwarding_headers(self):
-        room_invite.set_runtime_host_token("host-secret")
-        room_invite.set_runtime_public_url("https://public.example.test")
+        public_invite = PublicInviteRuntime()
+        public_invite.set_host_token("host-secret")
+        public_invite.set_public_url("https://public.example.test")
         store = FakeSecretStore()
 
         with tempfile.TemporaryDirectory() as temp_dir:
@@ -550,6 +559,7 @@ class ProviderHandlerDispatchTests(unittest.TestCase):
                     "X-Forwarded-Proto": "https",
                     "CF-Connecting-IP": "198.51.100.20",
                 },
+                public_invite=public_invite,
             )
 
         self.assertEqual(status, HTTPStatus.FORBIDDEN)
@@ -560,8 +570,9 @@ class ProviderHandlerDispatchTests(unittest.TestCase):
         self.assertEqual(store.calls, [])
 
     def test_authenticated_public_proxy_can_manage_credentials_without_key_disclosure(self):
-        room_invite.set_runtime_host_token("host-secret")
-        room_invite.set_runtime_public_url("https://public.example.test")
+        public_invite = PublicInviteRuntime()
+        public_invite.set_host_token("host-secret")
+        public_invite.set_public_url("https://public.example.test")
         store = FakeSecretStore()
 
         with patch.dict(
@@ -578,6 +589,7 @@ class ProviderHandlerDispatchTests(unittest.TestCase):
                         "X-Forwarded-Proto": "https",
                         "X-AgentsAssemble-Proxy-Token": "proxy-shared-secret",
                     },
+                    public_invite=public_invite,
                 )
 
         self.assertEqual(status, HTTPStatus.OK)

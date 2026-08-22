@@ -16,14 +16,11 @@ import {
 } from "../api";
 import { getOrCreateDeviceToken } from "../lib/deviceIdentity";
 import {
-  inviteFriendDmMessage,
   remoteClientPacketPreview,
   secureInviteCopyTarget,
 } from "../lib/roomInviteCopy";
 import { localPreviewInviteUrlForRoom, type RoomDockItem } from "../lib/roomDockModel";
 import type { RoomAppearance } from "../lib/roomAppearance";
-import { isActivePresence } from "../lib/presenceStatus";
-import { postCurrentUserFriendDm } from "./currentUserFriendDm";
 
 type InviteModalState = { roomId: string } | null;
 
@@ -33,6 +30,11 @@ type InviteRemoteClientPacketState = {
 };
 
 export type PublicAccessTransition = "idle" | "starting" | "stopping";
+
+export type HumanInviteOptions = {
+  maxUses: number;
+  ttlSeconds: number;
+};
 
 type UseRoomInviteControllerOptions = {
   guestLocked: boolean;
@@ -236,10 +238,12 @@ export function useRoomInviteController({
     );
   }
 
-  async function requirePublicInviteReady() {
-    const status = await preparePublicInvite();
+  async function requirePublicInviteReady(startTunnelIfNeeded = false) {
+    const status = startTunnelIfNeeded
+      ? await preparePublicInvite()
+      : await refreshPublicInviteState();
     if (!status.public_url) {
-      throw new Error("공개 URL을 먼저 설정하세요. Paste public URL / Start tunnel first.");
+      throw new Error("외부 접속을 먼저 열어 주세요.");
     }
     if (status.tunnel?.phase === "starting" && !status.tunnel.public_url) {
       throw new Error("터널 시작 중입니다. 공개 URL이 표시될 때까지 기다려 주세요.");
@@ -253,13 +257,19 @@ export function useRoomInviteController({
     agentId,
     displayName,
     inviteScope,
+    ttlSeconds = 86400,
+    maxUses = 1,
+    startTunnelIfNeeded = false,
   }: {
     room: RoomDockItem;
     agentId: string;
     displayName: string;
     inviteScope: RoomAppearance["inviteScope"];
+    ttlSeconds?: number;
+    maxUses?: number;
+    startTunnelIfNeeded?: boolean;
   }) {
-    await requirePublicInviteReady();
+    await requirePublicInviteReady(startTunnelIfNeeded);
     const localPreviewUrl = localPreviewInviteUrlForRoom(room);
     let invite;
     try {
@@ -268,6 +278,8 @@ export function useRoomInviteController({
         agentId,
         displayName,
         inviteScope,
+        ttlSeconds,
+        maxUses,
         sessionToken,
       });
     } catch (error) {
@@ -278,6 +290,8 @@ export function useRoomInviteController({
         agentId,
         displayName,
         inviteScope,
+        ttlSeconds,
+        maxUses,
         sessionToken,
       });
     }
@@ -372,6 +386,9 @@ export function useRoomInviteController({
       }
       if (!payload.public_invite) await refreshPublicInviteState();
       setPublicUrlDraft("");
+      setSecureInviteUrl("");
+      setAgentInviteUrl("");
+      setOperatorPairingUrl("");
       setCopyStatus("외부 접속을 닫았습니다. 룸은 이 컴퓨터에서 계속 작동합니다.");
     } catch (error) {
       setCopyStatus(error instanceof Error ? error.message : "서버 비공개 전환 실패");
@@ -380,7 +397,13 @@ export function useRoomInviteController({
     }
   }
 
-  async function generateSecureInvite(room: RoomDockItem, inviteScope: RoomAppearance["inviteScope"]) {
+  async function generateSecureInvite(
+    room: RoomDockItem,
+    inviteScope: RoomAppearance["inviteScope"],
+    options: HumanInviteOptions = { maxUses: 1, ttlSeconds: 86400 },
+    startTunnelIfNeeded = false
+  ) {
+    setSecureInviteUrl("");
     setCopyStatus("보안 초대 링크 생성 중...");
     try {
       const { target } = await createSecureInviteForRoom({
@@ -388,6 +411,8 @@ export function useRoomInviteController({
         agentId: "guest",
         displayName: "Guest",
         inviteScope,
+        ...options,
+        startTunnelIfNeeded,
       });
       setCopyStatus(target.copyUrl ? "보안 초대 링크 생성됨" : target.status);
     } catch (error) {
@@ -395,10 +420,11 @@ export function useRoomInviteController({
     }
   }
 
-  async function generateAgentInvite(room: RoomDockItem) {
-    setCopyStatus("현재 AI 세션 초대 링크 생성 중...");
+  async function generateAgentInvite(room: RoomDockItem, startTunnelIfNeeded = false) {
+    setAgentInviteUrl("");
+    setCopyStatus("외부 AI 세션 초대 링크 생성 중...");
     try {
-      await requirePublicInviteReady();
+      await requirePublicInviteReady(startTunnelIfNeeded);
       const invite = await createRoomInvite({
         meetingId: room.meetingId,
         agentId: "external-agent",
@@ -417,22 +443,22 @@ export function useRoomInviteController({
       });
       if (!target.copyUrl) throw new Error(target.status);
       setAgentInviteUrl(target.copyUrl);
-      setCopyStatus("현재 AI 세션 1회용 초대 링크 생성됨");
+      setCopyStatus("외부 AI 세션 1회용 초대 링크 생성됨");
     } catch (error) {
-      setCopyStatus(error instanceof Error ? error.message : "현재 AI 세션 초대 생성 실패");
+      setCopyStatus(error instanceof Error ? error.message : "외부 AI 세션 초대 생성 실패");
     }
   }
 
   async function copyAgentInvite() {
     if (!agentInviteUrl) return;
     const copied = await copyText(agentInviteUrl);
-    setCopyStatus(copied ? "현재 AI 세션 초대 링크 복사됨" : "초대 링크 복사 실패");
+    setCopyStatus(copied ? "외부 AI 세션 초대 링크 복사됨" : "초대 링크 복사 실패");
   }
 
   async function generateOperatorPairing(room: RoomDockItem) {
     setCopyStatus("공개 주소용 운영자 연결 링크 생성 중...");
     try {
-      await requirePublicInviteReady();
+      await requirePublicInviteReady(false);
       const pairing = await createOperatorPairing({
         meetingId: room.meetingId,
         sessionToken,
@@ -479,24 +505,25 @@ export function useRoomInviteController({
     friend,
     room,
     appearance,
+    startTunnelIfNeeded = false,
   }: {
     friend: RoomFriend;
     room: RoomDockItem;
     appearance?: RoomAppearance;
+    startTunnelIfNeeded?: boolean;
   }) {
     const friendId = friend.friend_id;
     setFriendStatuses((previous) => ({ ...previous, [friendId]: "초대 중" }));
     try {
       const isAiFriend = friend.participant_type !== "human";
-      const isLiveSession = isActivePresence(friend.status);
       const inviteScope = appearance?.inviteScope || room.inviteScope || "room";
-      const readOnlyInvite = inviteScope === "read_only";
       const participantId = friend.source_agent_id || friend.friend_id;
-      const { invite, target } = await createSecureInviteForRoom({
+      const { invite } = await createSecureInviteForRoom({
         room,
         agentId: participantId,
         displayName: friend.display_name,
         inviteScope,
+        startTunnelIfNeeded,
       });
       const packetPreview = isAiFriend
         ? remoteClientPacketPreview(invite.remote_client_packet)
@@ -505,21 +532,9 @@ export function useRoomInviteController({
         friendName: packetPreview ? friend.display_name : "",
         preview: packetPreview,
       });
-      if (isAiFriend) {
-        await postCurrentUserFriendDm({
-          friendId,
-          message: inviteFriendDmMessage({
-            roomLabel: room.label,
-            link: target.copyUrl,
-            isAiFriend,
-            isLiveSession,
-            readOnlyInvite,
-          }),
-        });
-      }
       setFriendStatuses((previous) => ({
         ...previous,
-        [friendId]: isAiFriend ? (isLiveSession ? "호출됨" : "실행 필요") : "초대됨",
+        [friendId]: isAiFriend ? "입장 패킷 생성됨" : "초대 링크 생성됨",
       }));
     } catch (error) {
       setFriendStatuses((previous) => ({

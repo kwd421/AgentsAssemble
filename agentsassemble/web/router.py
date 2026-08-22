@@ -1,18 +1,13 @@
-"""Route-table dispatcher + unified request identity for the GUI HTTP server.
+"""Route-table dispatcher and unified request identity for the GUI server.
 
-R2 of docs/improvement-plan-20260611.md. Domain modules register handlers on a
-Router with ``@router.get("/api/...")`` / ``@router.post("/api/...")``; the GUI
-dispatches to the table first and falls back to the legacy do_GET/do_POST
-if-chains for routes not yet migrated. New endpoints must register here
-instead of growing the if-chains.
+Domain modules register HTTP handlers on ``Router``. The generated server
+delegates API requests here and serves the React application separately.
 
 The RequestContext is also the single place that answers "who is calling?"
 (host operator / invited session / anonymous), so endpoints stop
 re-implementing token checks (R2-b). DB-3 extends this to account-based
 identity.
 
-Note: tests/test_legacy_react_parity_inventory.py parses route registrations
-textually — keep the decorator call on one line with a string literal path.
 """
 from __future__ import annotations
 
@@ -27,7 +22,6 @@ from urllib.parse import unquote
 from agentsassemble.admission.coordinator import RoomAdmissionCoordinator
 from agentsassemble.admission.invite_service import InviteApplicationService
 from agentsassemble.admission.preflight import RoomAdmissionService
-from agentsassemble.admission.projection import LegacyAdmissionProjection
 from agentsassemble.admission.session_service import RoomSessionService
 from agentsassemble.room.attachments import FileAttachmentStore
 from agentsassemble.identity.pairing import OperatorPairingService
@@ -39,6 +33,7 @@ from agentsassemble.identity.repository import (
     device_auth_key,
 )
 from agentsassemble.application.public_invite_runtime import PublicInviteRuntime
+from agentsassemble.features.side_chat.service import SideChatStore
 from agentsassemble.room.repository import RoomRepository
 from agentsassemble.web.security import (
     _LOOPBACK_HOSTNAMES,
@@ -86,21 +81,13 @@ class GuiDeps:
     operator_pairing_service: OperatorPairingService | None = None
     public_invite_runtime: PublicInviteRuntime | None = None
     attachment_store: FileAttachmentStore | None = None
-    legacy_admission_projection: LegacyAdmissionProjection | None = None
+    side_chat_store: SideChatStore | None = None
     room_command_handler: Callable[
         [dict[str, object], dict[str, object]], dict[str, object]
     ] | None = None
     room_runtime_command_handler: Callable[
         [dict[str, object], dict[str, object], str], dict[str, object]
     ] | None = None
-    process_supervisor: Any = None
-    read_lobby: Callable[..., list[dict[str, object]]] | None = None
-    read_lobby_before: Callable[..., dict[str, object]] | None = None
-    append_lobby_event: Callable[..., dict[str, object]] | None = None
-    lobby_payload_with_attachments: Callable[..., dict[str, object]] | None = None
-    public_lobby_allows_room_scope: Callable[[dict[str, object]], bool] | None = None
-    history_page_limit: Callable[[dict[str, list[str]]], int] | None = None
-    read_legacy_agents: Callable[[Path], list[dict[str, object]]] | None = None
 
     @property
     def rooms(self) -> RoomRepository:
@@ -129,10 +116,6 @@ class GuiDeps:
         if service is None:
             raise RuntimeError("GUI room session service is not configured.")
         return service
-
-    def legacy_agents(self) -> list[dict[str, object]]:
-        reader = self.read_legacy_agents
-        return [] if reader is None else reader(self.output_root)
 
     @property
     def admission_preflight(self) -> RoomAdmissionService:
@@ -170,11 +153,11 @@ class GuiDeps:
         return store
 
     @property
-    def admission_projection(self) -> LegacyAdmissionProjection:
-        projection = self.legacy_admission_projection
-        if projection is None:
-            raise RuntimeError("GUI legacy admission projection is not configured.")
-        return projection
+    def side_chat(self) -> SideChatStore:
+        store = self.side_chat_store
+        if store is None:
+            raise RuntimeError("GUI side chat store is not configured.")
+        return store
 
     def handle_room_command(
         self,
@@ -353,22 +336,6 @@ class RequestContext:
         header_value = str(self.headers.get("Last-Event-ID") or "").strip()
         query_value = str(self.query.get("last_event_id", [""])[0] or "").strip()
         return header_value or query_value or None
-
-    def send_sse_stream(
-        self,
-        event_name: str,
-        stream: str,
-        *,
-        meeting_id: str | None = None,
-        last_event_id: str | None = None,
-    ) -> None:
-        """Delegate a legacy SSE stream to the server transport."""
-        self.handler._send_sse_stream(
-            event_name,
-            stream,
-            meeting_id=meeting_id,
-            last_event_id=last_event_id,
-        )
 
     def send_room_events_sse_stream(self, *, room_id: str, cursor: str | None) -> bool:
         sender = getattr(self.handler, "_send_room_events_sse_stream", None)
@@ -667,7 +634,7 @@ class Router:
         ]
 
     def dispatch(self, method: str, ctx: RequestContext) -> bool:
-        """Run the registered handler; False when no route matches (legacy fallback)."""
+        """Run the registered handler; return False when no route matches."""
         handler = self._routes.get(method.upper(), {}).get(ctx.path)
         if handler is not None:
             if not self._authorized(method, ctx.path, ctx):

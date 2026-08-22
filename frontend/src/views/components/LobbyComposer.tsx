@@ -8,7 +8,8 @@ import {
   type KeyboardEvent,
 } from "react";
 import type { LucideIcon } from "lucide-react";
-import { AtSign, Gift, Paperclip, Send, Smile, Sparkles, Sticker, X } from "lucide-react";
+import { AtSign, Paperclip, Send, Smile, Sparkles, X } from "lucide-react";
+import "../../styles/lobby-composer-emoji.css";
 import {
   uploadLobbyAttachment,
   type LobbyAttachmentRef,
@@ -37,7 +38,7 @@ import VoteComposerDialog, {
 } from "./VoteComposerDialog";
 
 type ComposerAccessory = {
-  id: "gift" | "gif" | "sticker" | "apps";
+  id: "apps";
   label: string;
   title: string;
   notice: string;
@@ -57,29 +58,6 @@ const EMPTY_LOBBY_COMPOSER_DRAFT: LobbyComposerDraft = {
 
 const COMPOSER_ACCESSORIES: ComposerAccessory[] = [
   {
-    id: "gift",
-    label: "선물",
-    title: "선물",
-    notice: "선물 기능은 외부 Discord로 전송하지 않습니다. 로컬 메시지에 선물 설명을 남길 수 있습니다.",
-    insertText: "[선물: ]",
-    icon: Gift,
-  },
-  {
-    id: "gif",
-    label: "GIF",
-    title: "GIF",
-    notice: "GIF 검색은 외부 Discord로 전송하지 않습니다. 로컬 메시지에 GIF 설명을 남길 수 있습니다.",
-    insertText: "[GIF: ]",
-  },
-  {
-    id: "sticker",
-    label: "스티커",
-    title: "스티커",
-    notice: "스티커는 외부 Discord로 전송하지 않습니다. 로컬 메시지에 스티커 설명을 남길 수 있습니다.",
-    insertText: "[스티커: ]",
-    icon: Sticker,
-  },
-  {
     id: "apps",
     label: "앱",
     title: "앱",
@@ -88,6 +66,8 @@ const COMPOSER_ACCESSORIES: ComposerAccessory[] = [
     icon: Sparkles,
   },
 ];
+
+const COMPOSER_EMOJIS = ["🙂", "😂", "😍", "🤔", "👍", "👏", "🎉", "❤️", "🔥", "✅", "👀", "🚀"];
 
 export default function LobbyComposer({
   meetingId,
@@ -112,11 +92,13 @@ export default function LobbyComposer({
   const inputRef = useRef<HTMLTextAreaElement>(null);
   const restoreFocusAfterSubmitRef = useRef(false);
   const commandListId = useId();
+  const emojiListId = useId();
   const [draftsByRoom, setDraftsByRoom] = useState<Record<string, LobbyComposerDraft>>({});
   const [busy, setBusy] = useState(false);
   const [uploading, setUploading] = useState(false);
   const [error, setError] = useState("");
   const [accessoryNotice, setAccessoryNotice] = useState("");
+  const [emojiOpen, setEmojiOpen] = useState(false);
   const [voteDialogOpen, setVoteDialogOpen] = useState(false);
   const [activeCommandIndex, setActiveCommandIndex] = useState(0);
   const [dismissedCommandMessage, setDismissedCommandMessage] = useState("");
@@ -185,6 +167,7 @@ export default function LobbyComposer({
 
   useEffect(() => {
     setVoteDialogOpen(false);
+    setEmojiOpen(false);
   }, [meetingId]);
 
   useEffect(() => {
@@ -516,15 +499,41 @@ export default function LobbyComposer({
         </button>
         <button
           type="button"
-          onClick={() => insertText("🙂")}
+          onClick={() => setEmojiOpen((current) => !current)}
           disabled={busy || disabled}
           className="dc-composer-button"
           data-role="emoji"
           aria-label="이모지 삽입"
+          aria-expanded={emojiOpen}
+          aria-controls={emojiListId}
           title="이모지"
         >
           <Smile size={17} />
         </button>
+        {emojiOpen && (
+          <div
+            id={emojiListId}
+            className="dc-composer-emoji-picker"
+            role="listbox"
+            aria-label="이모지 선택"
+          >
+            {COMPOSER_EMOJIS.map((emoji) => (
+              <button
+                key={emoji}
+                type="button"
+                role="option"
+                aria-selected="false"
+                aria-label={emoji}
+                onClick={() => {
+                  insertText(emoji);
+                  setEmojiOpen(false);
+                }}
+              >
+                {emoji}
+              </button>
+            ))}
+          </div>
+        )}
         <button
           type="button"
           onClick={handleSubmit}

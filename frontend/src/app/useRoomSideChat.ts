@@ -1,132 +1,151 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import {
   fetchSideChat,
   mergeSideChatEvents,
-  type LobbyEvent,
   type SideChatEvent,
 } from "../api";
 import {
-  sideChatEventsForThreadContext,
-  threadSummariesForSideChat,
-  type SideChatThreadContext,
-} from "../lib/sideChatThreadModel";
+  loadRoomGuestSession,
+  roomGuestSessionExpired,
+} from "../lib/roomGuestSession";
 
 type UseRoomSideChatOptions = {
   meetingId: string;
   enabled?: boolean;
 };
 
+function sideChatPrincipalScope(meetingId: string): string {
+  if (typeof window === "undefined" || !meetingId) return "";
+  const guestSession = loadRoomGuestSession();
+  if (
+    guestSession?.meetingId === meetingId &&
+    !roomGuestSessionExpired(guestSession)
+  ) {
+    return `session:${guestSession.sessionToken}:${guestSession.agentId}`;
+  }
+  const hostname = window.location.hostname.toLowerCase();
+  const loopback = hostname === "localhost" || hostname === "127.0.0.1" || hostname === "::1";
+  const entrancePath = window.location.pathname.replace(/\/+$/, "") || "/";
+  const guestEntrance = entrancePath === "/join" || entrancePath === "/pair";
+  return loopback && !guestEntrance ? "local-host" : "";
+}
+
 export function useRoomSideChat({ meetingId, enabled = true }: UseRoomSideChatOptions) {
   const [events, setEvents] = useState<SideChatEvent[]>([]);
   const [error, setError] = useState<Error | null>(null);
-  const [selectedThread, setSelectedThread] = useState<SideChatThreadContext | null>(null);
-  const [draftsByContext, setDraftsByContext] = useState<Record<string, string>>({});
-  const activeMeetingIdRef = useRef(meetingId);
-  activeMeetingIdRef.current = meetingId;
+  const [draftsByScope, setDraftsByScope] = useState<Record<string, Record<string, string>>>({});
+  const [acceptedScopeKey, setAcceptedScopeKey] = useState("");
+  const acceptedScopeKeyRef = useRef("");
+  const requestedScopeKeyRef = useRef("");
+  const requestGenerationRef = useRef(0);
+  const principalScope = sideChatPrincipalScope(meetingId);
+  const requestedScopeKey = enabled && meetingId && principalScope
+    ? JSON.stringify([window.location.origin, meetingId, principalScope])
+    : "";
+  requestedScopeKeyRef.current = requestedScopeKey;
+  const scopeIsCurrent =
+    Boolean(requestedScopeKey) && acceptedScopeKey === requestedScopeKey;
 
   useEffect(() => {
-    let cancelled = false;
+    const requestGeneration = requestGenerationRef.current + 1;
+    requestGenerationRef.current = requestGeneration;
+    const requestIsCurrent = () =>
+      requestGenerationRef.current === requestGeneration &&
+      requestedScopeKeyRef.current === requestedScopeKey;
+
+    acceptedScopeKeyRef.current = "";
+    setAcceptedScopeKey("");
     setEvents([]);
     setError(null);
-    setSelectedThread(null);
-    if (!enabled || !meetingId) return undefined;
+    if (!requestedScopeKey) return undefined;
+
+    acceptedScopeKeyRef.current = requestedScopeKey;
+    setAcceptedScopeKey(requestedScopeKey);
     fetchSideChat(meetingId)
       .then((payload) => {
-        if (cancelled) return;
+        if (!requestIsCurrent() || acceptedScopeKeyRef.current !== requestedScopeKey) return;
         if (Array.isArray(payload.events)) {
-          setEvents(payload.events);
+          setEvents((previous) => mergeSideChatEvents(previous, payload.events));
         }
         setError(null);
       })
       .catch((errorValue) => {
-        if (!cancelled) {
+        if (
+          requestIsCurrent() &&
+          acceptedScopeKeyRef.current === requestedScopeKey
+        ) {
           setError(errorValue instanceof Error ? errorValue : new Error("Side chat unavailable"));
         }
       });
     return () => {
-      cancelled = true;
+      if (requestGenerationRef.current === requestGeneration) {
+        requestGenerationRef.current += 1;
+        acceptedScopeKeyRef.current = "";
+      }
     };
-  }, [enabled, meetingId]);
+  }, [meetingId, requestedScopeKey]);
+
+  const scopeAcceptsUpdates = useCallback(
+    () =>
+      Boolean(requestedScopeKey) &&
+      requestedScopeKeyRef.current === requestedScopeKey &&
+      acceptedScopeKeyRef.current === requestedScopeKey,
+    [requestedScopeKey]
+  );
 
   const handleRealtimeEvents = useCallback(
     (incoming: SideChatEvent[]) => {
-      if (!enabled || activeMeetingIdRef.current !== meetingId) return;
+      if (!scopeAcceptsUpdates()) return;
       setError(null);
       setEvents((previous) => mergeSideChatEvents(previous, incoming));
     },
-    [enabled, meetingId]
+    [scopeAcceptsUpdates]
   );
 
   const handlePostedEvents = useCallback(
     (incoming: SideChatEvent[]) => {
-      if (!enabled || activeMeetingIdRef.current !== meetingId) return;
+      if (!scopeAcceptsUpdates()) return;
       setEvents((previous) => mergeSideChatEvents(previous, incoming));
     },
-    [enabled, meetingId]
+    [scopeAcceptsUpdates]
   );
 
   const handleRealtimeError = useCallback(
     (errorValue: Event | Error) => {
-      if (!enabled || activeMeetingIdRef.current !== meetingId) return;
+      if (!scopeAcceptsUpdates()) return;
       if (errorValue instanceof Error && errorValue.message.includes("Side chat")) {
         setError(errorValue);
       }
     },
-    [enabled, meetingId]
+    [scopeAcceptsUpdates]
   );
 
-  const selectThread = useCallback((event: LobbyEvent, channelLabel: string) => {
-    setSelectedThread({
-      sourceEventId: event.id,
-      sourceName: event.name || "Room",
-      sourceMessage: event.message || "",
-      channelLabel,
-    });
-  }, []);
-
-  const clearThread = useCallback(() => {
-    setSelectedThread(null);
-  }, []);
-
   const updateDraft = useCallback((key: string, value: string) => {
-    setDraftsByContext((previous) => {
-      if ((previous[key] || "") === value) return previous;
-      const next = { ...previous };
+    if (!scopeAcceptsUpdates()) return;
+    const scopeKey = requestedScopeKeyRef.current;
+    if (!scopeKey) return;
+    setDraftsByScope((previous) => {
+      const current = previous[scopeKey] || {};
+      if ((current[key] || "") === value) return previous;
+      const next = { ...current };
       if (value) {
         next[key] = value;
       } else {
         delete next[key];
       }
-      return next;
+      return { ...previous, [scopeKey]: next };
     });
-  }, []);
+  }, [scopeAcceptsUpdates]);
 
-  const sideChatEvents = useMemo(
-    () => sideChatEventsForThreadContext(events, null),
-    [events]
-  );
-  const threadEvents = useMemo(
-    () =>
-      selectedThread
-        ? sideChatEventsForThreadContext(events, selectedThread)
-        : [],
-    [events, selectedThread]
-  );
-  const threadSummaries = useMemo(() => threadSummariesForSideChat(events), [events]);
-
+  const visibleEvents = scopeIsCurrent ? events : [];
   return {
-    events,
-    error,
-    selectedThread,
-    draftsByContext,
-    sideChatEvents,
-    threadEvents,
-    threadSummaries,
+    events: visibleEvents,
+    error: scopeIsCurrent ? error : null,
+    draftsByContext: scopeIsCurrent ? draftsByScope[requestedScopeKey] || {} : {},
+    sideChatEvents: visibleEvents,
     handleRealtimeEvents,
     handlePostedEvents,
     handleRealtimeError,
-    selectThread,
-    clearThread,
     updateDraft,
   };
 }

@@ -12,11 +12,15 @@ PI_READ_ONLY_TOOLS = (
     "find",
     "ls",
     "read_discussion",
+    "search_messages",
+    "read_message_context",
     "list_participants",
     "publish_message",
     "decline_to_speak",
     "create_vote",
     "cast_vote",
+    "withdraw_vote",
+    "close_vote",
     "vote_summary",
 )
 
@@ -94,6 +98,28 @@ export default function (pi: ExtensionAPI) {{
     execute: async () => result(await room(["read"])),
   }});
   pi.registerTool({{
+    name: "search_messages",
+    label: "Search room messages",
+    description: "Search complete readable room history.",
+    parameters: Type.Object({{
+      query: Type.String(),
+      channel_id: Type.Optional(Type.String()),
+      cursor: Type.Optional(Type.String()),
+    }}),
+    execute: async (_id, params) => result(await room([
+      "search", params.query, params.channel_id || "all", params.cursor || "",
+    ])),
+  }});
+  pi.registerTool({{
+    name: "read_message_context",
+    label: "Read message context",
+    description: "Read bounded context around one room search result.",
+    parameters: Type.Object({{ channel_id: Type.String(), event_id: Type.String() }}),
+    execute: async (_id, params) => result(await room([
+      "search-context", params.channel_id, params.event_id,
+    ])),
+  }});
+  pi.registerTool({{
     name: "list_participants",
     label: "List room participants",
     description: "List participants in the current room.",
@@ -143,6 +169,20 @@ export default function (pi: ExtensionAPI) {{
     description: "Cast a vote in a structured room vote.",
     parameters: Type.Object({{ vote_id: Type.String(), choice: Type.String() }}),
     execute: async (_id, params) => result(await room(["vote-cast", params.vote_id, params.choice])),
+  }});
+  pi.registerTool({{
+    name: "withdraw_vote",
+    label: "Withdraw room vote",
+    description: "Withdraw the current ballot from a structured room vote.",
+    parameters: Type.Object({{ vote_id: Type.String() }}),
+    execute: async (_id, params) => result(await room(["vote-withdraw", params.vote_id])),
+  }});
+  pi.registerTool({{
+    name: "close_vote",
+    label: "Close room vote",
+    description: "Close a structured room vote created by this Agent Session.",
+    parameters: Type.Object({{ vote_id: Type.String() }}),
+    execute: async (_id, params) => result(await room(["vote-close", params.vote_id])),
   }});
   pi.registerTool({{
     name: "vote_summary",

@@ -51,6 +51,36 @@ class RoomProjectionTests(unittest.TestCase):
                 },
             )
 
+    def test_browser_ballot_projection_hides_voter_and_choice(self):
+        ballot = {
+            "id": "ballot-1",
+            "seq": 7,
+            "room_id": "general",
+            "type": "message_final",
+            "message_kind": "vote_cast",
+            "vote_id": "vote-1",
+            "vote_choice": "남쪽",
+            "actor": {
+                "participant_id": "guest-1",
+                "participant_type": "human",
+            },
+            "participant_id": "guest-1",
+            "actor_id": "guest-1",
+            "display_name": "민지",
+        }
+
+        projected = public_event_for_identity(
+            ballot,
+            {"client_type": "browser", "agent_id": "host-1"},
+        )
+
+        self.assertEqual(projected["actor"], {})
+        self.assertEqual(projected["vote_id"], "vote-1")
+        self.assertNotIn("vote_choice", projected)
+        self.assertNotIn("participant_id", projected)
+        self.assertNotIn("actor_id", projected)
+        self.assertNotIn("display_name", projected)
+
     def test_public_session_keeps_room_state_and_removes_runtime_secrets(self):
         session = {
             "session_id": "agent-1",

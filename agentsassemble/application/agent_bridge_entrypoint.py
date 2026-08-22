@@ -18,6 +18,7 @@ from agentsassemble.providers.bridge_launch_secrets import (
 from agentsassemble.providers.redacting_room_client import CredentialRedactingRoomClient
 from agentsassemble.providers.bridge_failure_reporting import FailedBridgeRuntime
 from agentsassemble.providers.room_portal import RoomPortal, room_session_orientation
+from agentsassemble.providers.room_portal_search import RoomPortalSearchBroker
 from agentsassemble.providers.runtime_config import CanonicalBridgeLaunchConfig
 from agentsassemble.providers.runtime_factory import runtime_from_config
 from agentsassemble.web.room_client import connect_room_ws, connect_room_ws_with_ticket
@@ -49,6 +50,14 @@ def main() -> int:
         participant_id=config.runtime.participant_id,
     )
     portal.prepare()
+    search_broker = RoomPortalSearchBroker(
+        portal.root,
+        server_url=server_url,
+        session_token=session_token,
+        room_id=config.room_id,
+        tool_allowed=portal.tool_allowed,
+    )
+    search_broker.start()
     provider_environment = portal.provider_environment(os.environ.get("PATH", ""))
     try:
         runtime = runtime_from_config(
@@ -142,6 +151,11 @@ def main() -> int:
             time.sleep(0.25)
     finally:
         current_bridge[0] = None
+        try:
+            search_broker.stop()
+        except Exception as error:
+            print(f"Room search broker cleanup failed: {error}", file=sys.stderr)
+            exit_code = 1
         if not runtime_stopped:
             try:
                 runtime.stop(timeout_seconds=2.0)

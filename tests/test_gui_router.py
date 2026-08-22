@@ -2,12 +2,16 @@ import io
 import json
 import tempfile
 import unittest
+from datetime import UTC, datetime, timedelta
 from http import HTTPStatus
 from pathlib import Path
 from urllib.parse import parse_qs, urlparse
 
 from agentsassemble import room_invite
 from agentsassemble.features.side_chat.routes import register_side_chat_routes
+from agentsassemble.features.side_chat.service import SideChatStore
+from agentsassemble.features.message_pins.routes import register_message_pin_routes
+from agentsassemble.persistence.local.room.repository import RoomStore
 from agentsassemble.web.router import GuiDeps, RequestContext, Router
 from agentsassemble.web.routes.gui import install_gui_route_authorization
 
@@ -35,6 +39,14 @@ class FakeRoomSessions:
         return None
 
 
+class TokenRoomSessions:
+    def __init__(self, sessions):
+        self.sessions = sessions
+
+    def verify(self, token):
+        return self.sessions.get(token)
+
+
 def _context(handler, path="/api/test"):
     parsed = urlparse(path)
     deps = GuiDeps(
@@ -46,6 +58,31 @@ def _context(handler, path="/api/test"):
 
 
 class RouterDispatchTests(unittest.TestCase):
+    def test_side_chat_store_enforces_time_and_count_retention(self):
+        now = [datetime(2030, 1, 1, tzinfo=UTC)]
+        store = SideChatStore(
+            clock=lambda: now[0],
+            max_events_per_room=2,
+            ttl=timedelta(hours=1),
+        )
+
+        for message in ("first", "second"):
+            store.append({"flow_meeting_id": "room-a", "message": message})
+            now[0] += timedelta(minutes=20)
+        self.assertEqual(
+            [event["message"] for event in store.read("room-a")],
+            ["first", "second"],
+        )
+
+        store.append({"flow_meeting_id": "room-a", "message": "third"})
+        self.assertEqual(
+            [event["message"] for event in store.read("room-a")],
+            ["second", "third"],
+        )
+
+        now[0] += timedelta(hours=2)
+        self.assertEqual(store.read("room-a"), [])
+
     def test_dispatch_runs_registered_handler_and_reports_handled(self):
         router = Router()
         seen = []
@@ -134,16 +171,16 @@ class RouterDispatchTests(unittest.TestCase):
                     "flow_meeting_id": "room-a",
                 }
             ).encode("utf-8")
-            deps = GuiDeps(output_root=root)
+            deps = GuiDeps(output_root=root, side_chat_store=SideChatStore())
             router = Router()
-            register_side_chat_routes(router)
+            router.post("/api/compatibility-only")(lambda ctx: ctx.send_json({"ok": True}))
             install_gui_route_authorization(router)
 
             remote = NetworkHandler(body=body, local=False)
             remote_ctx = RequestContext(
                 remote,
                 deps,
-                urlparse("/api/side-chat"),
+                urlparse("/api/compatibility-only"),
                 {},
             )
             self.assertTrue(router.dispatch("POST", remote_ctx))
@@ -154,12 +191,162 @@ class RouterDispatchTests(unittest.TestCase):
             local_ctx = RequestContext(
                 local,
                 deps,
-                urlparse("/api/side-chat"),
+                urlparse("/api/compatibility-only"),
                 {},
             )
             self.assertTrue(router.dispatch("POST", local_ctx))
             self.assertIsNone(local.sent_error)
-            self.assertTrue((root / "side_chat.jsonl").exists())
+            self.assertFalse((root / "side_chat.jsonl").exists())
+            self.assertEqual(local.sent_json, {"ok": True})
+
+    def test_side_chat_allows_room_browser_and_rejects_agent_bridge(self):
+        class NetworkHandler(FakeHandler):
+            def __init__(self, *, token: str, body: bytes = b""):
+                super().__init__(
+                    headers={
+                        "Host": "room.example",
+                        "Origin": "https://room.example",
+                        "Authorization": f"Bearer {token}",
+                    },
+                    body=body,
+                )
+                self.client_address = ("203.0.113.8", 43100)
+                self.server = type("Server", (), {"server_address": ("0.0.0.0", 8765)})()
+
+        sessions = TokenRoomSessions(
+            {
+                "browser-token": {
+                    "agent_id": "human-1",
+                    "display_name": "Human",
+                    "participant_type": "human",
+                    "client_type": "browser",
+                    "invite_scope": "read_write",
+                    "meeting_id": "room-a",
+                },
+                "agent-token": {
+                    "agent_id": "agent-1",
+                    "display_name": "Agent",
+                    "participant_type": "agent",
+                    "client_type": "agent_bridge",
+                    "invite_scope": "read_write",
+                    "meeting_id": "room-a",
+                },
+            }
+        )
+        store = SideChatStore()
+        deps = GuiDeps(
+            output_root=Path("."),
+            room_sessions=sessions,
+            public_invite_runtime=room_invite.compatibility_public_invite_runtime(),
+            side_chat_store=store,
+        )
+        router = Router()
+        register_side_chat_routes(router)
+        install_gui_route_authorization(router)
+
+        body = json.dumps(
+            {"name": "spoofed", "message": "human aside", "flow_meeting_id": "room-a"}
+        ).encode()
+        browser = NetworkHandler(token="browser-token", body=body)
+        browser_ctx = RequestContext(browser, deps, urlparse("/api/side-chat"), {})
+        self.assertTrue(router.dispatch("POST", browser_ctx))
+        self.assertIsNone(browser.sent_error)
+        self.assertEqual(browser.sent_json["event"]["name"], "Human")
+
+        agent = NetworkHandler(token="agent-token")
+        parsed = urlparse("/api/side-chat?meeting_id=room-a")
+        agent_ctx = RequestContext(agent, deps, parsed, parse_qs(parsed.query))
+        self.assertTrue(router.dispatch("GET", agent_ctx))
+        self.assertEqual(agent.sent_error[0], HTTPStatus.FORBIDDEN)
+        self.assertIsNone(agent.sent_json)
+
+    def test_message_pins_allow_writable_people_and_reject_read_only_or_agents(self):
+        class NetworkHandler(FakeHandler):
+            def __init__(self, *, token: str, body: bytes = b""):
+                super().__init__(
+                    headers={
+                        "Host": "room.example",
+                        "Origin": "https://room.example",
+                        "Authorization": f"Bearer {token}",
+                    },
+                    body=body,
+                )
+                self.client_address = ("203.0.113.8", 43100)
+                self.server = type("Server", (), {"server_address": ("0.0.0.0", 8765)})()
+
+        sessions = TokenRoomSessions(
+            {
+                "writer": {
+                    "agent_id": "human-writer",
+                    "participant_type": "human",
+                    "client_type": "browser",
+                    "invite_scope": "room",
+                    "meeting_id": "room-a",
+                },
+                "reader": {
+                    "agent_id": "human-reader",
+                    "participant_type": "human",
+                    "client_type": "browser",
+                    "invite_scope": "read_only",
+                    "meeting_id": "room-a",
+                },
+                "agent": {
+                    "agent_id": "agent-a",
+                    "participant_type": "agent",
+                    "client_type": "browser",
+                    "invite_scope": "room",
+                    "meeting_id": "room-a",
+                },
+            }
+        )
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            rooms = RoomStore(root)
+            rooms.create_room("room-a")
+            message = rooms.append_event(
+                "room-a",
+                "message_final",
+                participant_id="human-writer",
+                participant_type="human",
+                display_name="Writer",
+                content="pin this",
+                message_kind="message",
+            )
+            deps = GuiDeps(
+                output_root=root,
+                room_repository=rooms,
+                room_sessions=sessions,
+                public_invite_runtime=room_invite.compatibility_public_invite_runtime(),
+            )
+            router = Router()
+            register_message_pin_routes(router)
+            install_gui_route_authorization(router)
+
+            body = json.dumps(
+                {
+                    "room_id": "room-a",
+                    "channel_id": "lobby",
+                    "event_id": message["id"],
+                    "pinned": True,
+                }
+            ).encode()
+            writer = NetworkHandler(token="writer", body=body)
+            writer_ctx = RequestContext(writer, deps, urlparse("/api/room-pins"), {})
+            self.assertTrue(router.dispatch("POST", writer_ctx))
+            self.assertIsNone(writer.sent_error)
+            self.assertEqual(writer.sent_json["pins"][0]["event_id"], message["id"])
+
+            for token in ("reader", "agent"):
+                denied = NetworkHandler(token=token, body=body)
+                denied_ctx = RequestContext(denied, deps, urlparse("/api/room-pins"), {})
+                self.assertTrue(router.dispatch("POST", denied_ctx))
+                self.assertEqual(denied.sent_error[0], HTTPStatus.FORBIDDEN)
+
+            parsed = urlparse("/api/room-pins?room_id=room-a&channel_id=lobby")
+            reader = NetworkHandler(token="reader")
+            reader_ctx = RequestContext(reader, deps, parsed, parse_qs(parsed.query))
+            self.assertTrue(router.dispatch("GET", reader_ctx))
+            self.assertEqual(reader.sent_json["pins"][0]["content"], "pin this")
 
 
 class RequestContextBodyTests(unittest.TestCase):

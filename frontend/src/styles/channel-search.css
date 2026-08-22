@@ -1,0 +1,130 @@
+.dc-head-popover-search {
+  display: flex;
+  height: 34px;
+  align-items: center;
+  gap: 7px;
+  margin-top: 9px;
+  border-radius: 5px;
+  background: #111214;
+  padding: 0 9px;
+  color: var(--color-text-muted);
+}
+
+.dc-head-popover-search input {
+  min-width: 0;
+  flex: 1;
+  border: 0;
+  background: transparent;
+  color: var(--color-text-primary);
+  font-size: 12px;
+  outline: none;
+}
+
+.dc-head-search-results {
+  display: grid;
+  max-height: 280px;
+  gap: 4px;
+  margin-top: 9px;
+  overflow-y: auto;
+}
+
+.dc-head-search-scope {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 2px;
+  margin: 8px 0;
+  padding: 2px;
+  border-radius: 7px;
+  background: color-mix(in srgb, var(--color-panel) 75%, transparent);
+}
+
+.dc-head-search-scope button {
+  min-height: 28px;
+  border-radius: 5px;
+  color: var(--color-text-muted);
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.dc-head-search-scope button[aria-pressed="true"] {
+  background: var(--color-accent);
+  color: white;
+}
+
+.dc-head-search-results button {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 2px 8px;
+  border-radius: 5px;
+  padding: 8px;
+  color: var(--color-text-secondary);
+  text-align: left;
+}
+
+.dc-head-search-results button:hover,
+.dc-head-search-results button:focus-visible,
+.dc-head-search-results button[data-active="true"] {
+  background: var(--color-sidebar-hover);
+  color: var(--color-text-primary);
+  outline: none;
+}
+
+.dc-head-search-result-author {
+  overflow: hidden;
+  color: var(--color-text-primary);
+  font-size: 12px;
+  font-weight: 850;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.dc-head-search-result-meta {
+  color: var(--color-text-muted);
+  font-size: 10px;
+}
+
+.dc-head-search-result-body {
+  grid-column: 1 / -1;
+  display: -webkit-box;
+  overflow: hidden;
+  font-size: 12px;
+  line-height: 1.4;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+}
+
+.dc-pinned-message-card {
+  position: relative;
+  border: 1px solid var(--color-line);
+  border-radius: 6px;
+  background: color-mix(in srgb, var(--color-panel) 92%, transparent);
+}
+
+.dc-pinned-message-card > button:first-child {
+  width: 100%;
+  padding-right: 78px;
+}
+
+.dc-pinned-message-card > .dc-pinned-message-remove {
+  position: absolute;
+  top: 6px;
+  right: 6px;
+  display: block;
+  padding: 4px 6px;
+  color: var(--color-text-muted);
+  font-size: 10px;
+}
+
+.dc-pinned-message-card > .dc-pinned-message-remove:hover,
+.dc-pinned-message-card > .dc-pinned-message-remove:focus-visible {
+  color: var(--color-text-primary);
+}
+.dc-message[data-search-target="true"],
+.dc-channel-message[data-search-target="true"] {
+  animation: dc-search-target-flash 1.8s ease-out;
+}
+
+@keyframes dc-search-target-flash {
+  0%, 35% { background: color-mix(in srgb, var(--color-accent) 22%, transparent); }
+  100% { background: transparent; }
+}

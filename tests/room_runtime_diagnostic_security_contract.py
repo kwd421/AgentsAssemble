@@ -113,7 +113,10 @@ class RoomRuntimeDiagnosticSecurityContract:
 
         activities = [
             event
-            for event in RoomStore(self.root).read_events("general")
+            for event in RoomStore(self.root).read_events(
+                "general",
+                include_hidden=True,
+            )
             if event.get("type") == "activity_delta"
         ]
         split_field_event = activities[-3]

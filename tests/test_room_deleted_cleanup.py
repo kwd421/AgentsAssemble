@@ -6,10 +6,7 @@ from collections.abc import Callable
 from pathlib import Path
 from unittest.mock import Mock
 
-from agentsassemble.features.side_chat.service import (
-    append_side_chat_event,
-    read_side_chat,
-)
+from agentsassemble.features.side_chat.service import SideChatStore
 from agentsassemble.persistence.local.room.repository import RoomStore
 from agentsassemble.room.attachments import store_uploaded_attachment
 from agentsassemble.room.deleted_cleanup import RoomDeletedCleanupService
@@ -90,16 +87,15 @@ class RoomDeletedCleanupServiceTests(unittest.TestCase):
                 "room_id": "other-room",
             },
         )
-        append_side_chat_event(
-            self.root,
+        self.side_chat = SideChatStore()
+        self.side_chat.append(
             {
                 "flow_meeting_id": "general",
                 "display_name": "Owner",
                 "message": "delete me",
             },
         )
-        append_side_chat_event(
-            self.root,
+        self.side_chat.append(
             {
                 "flow_meeting_id": "other-room",
                 "display_name": "Other",
@@ -123,6 +119,7 @@ class RoomDeletedCleanupServiceTests(unittest.TestCase):
             schedule_cleanup=lambda delay, callback: (
                 self.scheduled_cleanup.append((delay, callback))
             ),
+            delete_side_chat=self.side_chat.clear_room,
         )
 
     def tearDown(self) -> None:
@@ -190,14 +187,11 @@ class RoomDeletedCleanupServiceTests(unittest.TestCase):
                 / str(self.other_attachment["id"])
             ).exists()
         )
-        self.assertEqual(read_side_chat(self.root, meeting_id="general"), [])
+        self.assertEqual(self.side_chat.read("general"), [])
         self.assertEqual(
             [
                 event["message"]
-                for event in read_side_chat(
-                    self.root,
-                    meeting_id="other-room",
-                )
+                for event in self.side_chat.read("other-room")
             ],
             ["keep me"],
         )

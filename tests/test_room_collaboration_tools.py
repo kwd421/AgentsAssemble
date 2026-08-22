@@ -16,6 +16,67 @@ from tests.test_room_agent_bridge import (
 
 
 class RoomPortalCollaborationTests(unittest.TestCase):
+    def test_vote_creator_agent_can_stage_an_early_close(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            portal = RoomPortal(Path(temp_dir) / "portal", participant_id="codex")
+            portal.prepare()
+            portal.ingest_frame(
+                {
+                    "room_settings": {"tool_mode": "chat"},
+                    "stream": "room_events",
+                    "events": [
+                        {
+                            "id": "vote-1",
+                            "seq": 1,
+                            "type": "message_final",
+                            "participant_id": "codex",
+                            "message_kind": "vote",
+                            "vote_question": "Continue?",
+                            "vote_options": ["Yes", "No"],
+                        }
+                    ],
+                }
+            )
+            portal.begin_observation("close-vote", input_up_to_seq=1)
+
+            receipt = portal.close_vote("vote-1")
+            publication = portal.consume_publication_result("close-vote")
+
+        self.assertEqual(receipt, {"queued": True, "vote_id": "vote-1"})
+        self.assertEqual(publication.message_kind, "vote_close")
+        self.assertEqual(publication.vote_id, "vote-1")
+
+    def test_room_portal_stages_an_explicit_vote_withdrawal(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            portal = RoomPortal(Path(temp_dir) / "portal", participant_id="codex")
+            portal.prepare()
+            portal.ingest_frame(
+                {
+                    "room_settings": {"tool_mode": "chat"},
+                    "stream": "room_events",
+                    "events": [
+                        {
+                            "id": "vote-1",
+                            "seq": 1,
+                            "type": "message_final",
+                            "participant_id": "host-id",
+                            "message_kind": "vote",
+                            "vote_question": "Continue?",
+                            "vote_options": ["Yes", "No"],
+                        }
+                    ],
+                }
+            )
+            portal.begin_observation("withdraw-vote", input_up_to_seq=1)
+
+            receipt = portal.withdraw_vote("vote-1")
+            publication = portal.consume_publication_result("withdraw-vote")
+
+        self.assertEqual(receipt, {"queued": True, "vote_id": "vote-1"})
+        self.assertEqual(publication.message_kind, "vote_withdraw")
+        self.assertEqual(publication.vote_id, "vote-1")
+        self.assertEqual(publication.vote_choice, "")
+
     def test_terminal_helper_discovers_people_and_casts_a_structured_ballot(self):
         with tempfile.TemporaryDirectory() as temp_dir:
             portal = RoomPortal(Path(temp_dir) / "portal", participant_id="gemini")
@@ -49,11 +110,33 @@ class RoomPortalCollaborationTests(unittest.TestCase):
                             "message_kind": "vote",
                             "vote_question": "Continue?",
                             "vote_options": ["Yes", "No"],
-                        }
+                        },
+                        {
+                            "id": "ballot-1",
+                            "seq": 2,
+                            "type": "message_final",
+                            "participant_id": "host-id",
+                            "participant_type": "human",
+                            "display_name": "Host",
+                            "message_kind": "vote_cast",
+                            "vote_id": "vote-1",
+                            "vote_choice": "Yes",
+                        },
+                        {
+                            "id": "ballot-2",
+                            "seq": 3,
+                            "type": "message_final",
+                            "participant_id": "gemini",
+                            "participant_type": "agent",
+                            "display_name": "Gemini",
+                            "message_kind": "vote_cast",
+                            "vote_id": "vote-1",
+                            "vote_choice": "No",
+                        },
                     ],
                 }
             )
-            portal.begin_observation("terminal-vote", input_up_to_seq=1)
+            portal.begin_observation("terminal-vote", input_up_to_seq=3)
 
             participants = subprocess.run(
                 [str(portal.helper_path), "participants"],
@@ -67,6 +150,12 @@ class RoomPortalCollaborationTests(unittest.TestCase):
                 capture_output=True,
                 text=True,
             )
+            summary = subprocess.run(
+                [str(portal.helper_path), "vote-summary", "vote-1"],
+                check=True,
+                capture_output=True,
+                text=True,
+            )
             publication = portal.consume_publication_result("terminal-vote")
 
         listed = json.loads(participants.stdout)
@@ -75,6 +164,10 @@ class RoomPortalCollaborationTests(unittest.TestCase):
             [("gemini", "Gemini"), ("host-id", "Host")],
         )
         self.assertEqual(json.loads(ballot.stdout)["choice"], "No")
+        terminal_summary = json.loads(summary.stdout)
+        self.assertEqual(terminal_summary["tallies"], {"Yes": 1, "No": 1})
+        self.assertEqual(terminal_summary["own_choice"], "No")
+        self.assertNotIn("voters", terminal_summary)
         self.assertEqual(
             (publication.message_kind, publication.vote_id, publication.vote_choice),
             ("vote_cast", "vote-1", "No"),
@@ -82,11 +175,13 @@ class RoomPortalCollaborationTests(unittest.TestCase):
 
     def test_bridge_reports_structured_vote_and_explicit_decline(self):
         class CollaborationRuntime(RoomPortalRuntime):
+            created_vote: dict[str, object] | None = None
+
             def send(self, text):
                 FakeRuntime.send(self, text)
                 self.observed_views.append(self.portal.read_discussion())
                 if len(self.observed_views) == 1:
-                    self.portal.create_vote(
+                    self.created_vote = self.portal.create_vote(
                         "Deploy?",
                         ["Yes", "No"],
                         duration_seconds=300,
@@ -168,9 +263,15 @@ class RoomPortalCollaborationTests(unittest.TestCase):
             for action, payload, _ in client.commands
             if action == "turn.decline" and payload.get("turn_id") == "decline-wake"
         )
+        self.assertNotIn("kind", vote)
+        self.assertNotIn("vote_options", vote)
         self.assertEqual(
-            (vote["kind"], vote["vote_options"], vote["vote_duration_seconds"]),
-            ("vote", ["Yes", "No"], 300),
+            (
+                runtime.created_vote["question"],
+                runtime.created_vote["options"],
+                runtime.created_vote["duration_seconds"],
+            ),
+            ("Deploy?", ["Yes", "No"], 300),
         )
         self.assertEqual(decline["reason_code"], "duplicate")
 
@@ -187,7 +288,8 @@ class CanonicalAgentVoteTests(unittest.TestCase):
     def tearDown(self):
         self.room.tearDown()
 
-    def test_agent_vote_and_ballot_reach_the_canonical_tally(self):
+    def test_agent_vote_ballot_and_close_reach_the_canonical_tally(self):
+        self.room._command("agent-start", "agent.start", {"agent_id": "codex"})
         identity, channel = self.room._connect_bridge("codex")
         channel.drain()
         self.room.controller.store.update_room_settings(
@@ -202,9 +304,8 @@ class CanonicalAgentVoteTests(unittest.TestCase):
         vote_wake = next(
             message for message in channel.drain() if message.get("op") == "room.wake"
         )
-        poll = self.room._command(
+        poll = self.room._publish_observation_final(
             "agent-vote-final",
-            "message.final",
             {
                 "turn_id": vote_wake["turn_id"],
                 "kind": "vote",
@@ -223,9 +324,8 @@ class CanonicalAgentVoteTests(unittest.TestCase):
         ballot_wake = next(
             message for message in channel.drain() if message.get("op") == "room.wake"
         )
-        ballot = self.room._command(
+        ballot = self.room._publish_observation_final(
             "agent-ballot-final",
-            "message.final",
             {
                 "turn_id": ballot_wake["turn_id"],
                 "kind": "vote_cast",
@@ -240,6 +340,29 @@ class CanonicalAgentVoteTests(unittest.TestCase):
             "room.vote.summary",
             {"vote_id": poll["id"]},
         )["result"]
+        self.room._command(
+            "agent-close-request",
+            "message.send",
+            {"content": "Close the latest poll"},
+        )
+        close_wake = next(
+            message for message in channel.drain() if message.get("op") == "room.wake"
+        )
+        closed = self.room._publish_observation_final(
+            "agent-close-final",
+            {
+                "turn_id": close_wake["turn_id"],
+                "kind": "vote_close",
+                "vote_id": poll["id"],
+                "observed_through_seq": close_wake["input_up_to_seq"],
+            },
+            identity,
+        )["result"]["event"]
+        closed_summary = self.room._command(
+            "agent-closed-summary",
+            "room.vote.summary",
+            {"vote_id": poll["id"]},
+        )["result"]
 
         self.assertEqual(
             (poll["participant_type"], poll["message_kind"], poll["vote_options"]),
@@ -249,3 +372,5 @@ class CanonicalAgentVoteTests(unittest.TestCase):
             (ballot["message_kind"], ballot["vote_choice"], summary["tallies"]),
             ("vote_cast", "Large", {"Small": 0, "Large": 1}),
         )
+        self.assertEqual(closed["message_kind"], "vote_close")
+        self.assertTrue(closed_summary["closed"])

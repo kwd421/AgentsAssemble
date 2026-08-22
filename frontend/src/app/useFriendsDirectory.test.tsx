@@ -113,7 +113,7 @@ describe("useFriendsDirectory", () => {
     expect(apiMocks.fetchRoomFriends).toHaveBeenCalledTimes(2);
   });
 
-  it("keeps narrow selection actions narrow and preserves broad home transitions", async () => {
+  it("keeps selection actions narrow and preserves home transitions", async () => {
     const human = makeFriend("human", { participant_type: "human" });
     const agent = makeFriend("agent", { participant_type: "subscription_ai" });
     const { result } = await renderLoaded(makePayload([human, agent]));
@@ -122,42 +122,14 @@ describe("useFriendsDirectory", () => {
     expect(result.current.selectedFriendId).toBe("agent");
     expect(result.current.homeFilter).toBe("friends");
     expect(result.current.friendListFilter).toBe("online");
-    expect(result.current.activeDmFriendId).toBe("");
-
-    act(() => result.current.showFriendProfile(human));
-    expect(result.current.selectedFriendId).toBe("human");
-    expect(result.current.homeFilter).toBe("friends");
-    expect(result.current.friendListFilter).toBe("online");
-    expect(result.current.activeDmFriendId).toBe("");
-
-    act(() => result.current.openFriendDm(agent));
-    expect(result.current.homeFilter).toBe("friends");
-    expect(result.current.friendListFilter).toBe("all");
-    expect(result.current.activeDmFriendId).toBe("agent");
-
-    act(() => result.current.selectFriend(human));
-    expect(result.current.selectedFriendId).toBe("human");
-    expect(result.current.homeFilter).toBe("friends");
-    expect(result.current.friendListFilter).toBe("all");
-    expect(result.current.activeDmFriendId).toBe("agent");
-
-    act(() => result.current.showFriendProfile(human));
-    expect(result.current.selectedFriendId).toBe("human");
-    expect(result.current.homeFilter).toBe("friends");
-    expect(result.current.friendListFilter).toBe("all");
-    expect(result.current.activeDmFriendId).toBe("");
-
-    act(() => result.current.selectHomeFriend(agent, "profile"));
+    act(() => result.current.selectHomeFriend(agent));
     expect(result.current.selectedFriendId).toBe("agent");
     expect(result.current.friendListFilter).toBe("all");
     expect(result.current.homeFilter).toBe("subscription_ai");
-    expect(result.current.activeDmFriendId).toBe("");
-
-    act(() => result.current.selectHomeFriend(human, "dm"));
+    act(() => result.current.selectHomeFriend(human));
     expect(result.current.selectedFriendId).toBe("human");
-    expect(result.current.homeFilter).toBe("friends");
+    expect(result.current.homeFilter).toBe("human");
     expect(result.current.friendListFilter).toBe("all");
-    expect(result.current.activeDmFriendId).toBe("human");
 
     act(() => {
       result.current.showDirectory("add");
@@ -165,13 +137,11 @@ describe("useFriendsDirectory", () => {
     });
     expect(result.current.friendListFilter).toBe("all");
     expect(result.current.homeFilter).toBe("api");
-    expect(result.current.activeDmFriendId).toBe("");
 
     act(() => result.current.openAddFriend("  new friend  "));
     expect(result.current.addDraftName).toBe("new friend");
     expect(result.current.homeFilter).toBe("friends");
     expect(result.current.friendListFilter).toBe("add");
-    expect(result.current.activeDmFriendId).toBe("");
   });
 
   it("clears loaded friend state when disabled and refetches after re-enable", async () => {
@@ -186,7 +156,7 @@ describe("useFriendsDirectory", () => {
     await waitFor(() => expect(hook.result.current.selectedFriendId).toBe("first"));
 
     act(() => {
-      hook.result.current.openFriendDm(second);
+      hook.result.current.selectFriend(second);
       void hook.result.current.addManual({
         displayName: "",
         participantType: "human",
@@ -198,7 +168,6 @@ describe("useFriendsDirectory", () => {
     hook.rerender({ enabled: false });
     expect(hook.result.current.payload).toEqual({ friends: [], candidates: [] });
     expect(hook.result.current.selectedFriendId).toBe("");
-    expect(hook.result.current.activeDmFriendId).toBe("");
     expect(hook.result.current.status).toBe("");
 
     apiMocks.fetchRoomFriends.mockResolvedValueOnce(makePayload([current]));
@@ -280,7 +249,6 @@ describe("useFriendsDirectory", () => {
     expect(result.current.payload.candidates).toEqual([candidate]);
     expect(result.current.selectedFriendId).toBe("manual");
     expect(result.current.friendListFilter).toBe("all");
-    expect(result.current.activeDmFriendId).toBe("");
     expect(result.current.status).toBe("Manual friend 추가됨");
   });
 
@@ -370,13 +338,13 @@ describe("useFriendsDirectory", () => {
     expect(result.current.selectedFriendId).toBe("added");
   });
 
-  it("clears stale selected and DM ids while retaining valid ids, and preserves payload on refresh failure", async () => {
+  it("clears a stale selection and preserves payload on refresh failure", async () => {
     const first = makeFriend("first");
     const second = makeFriend("second");
     const third = makeFriend("third");
     const { result } = await renderLoaded(makePayload([first, second, third]));
 
-    act(() => result.current.openFriendDm(second));
+    act(() => result.current.selectFriend(second));
     apiMocks.deleteRoomFriend.mockResolvedValueOnce({
       friends: [first, third],
       candidates: [],
@@ -386,7 +354,6 @@ describe("useFriendsDirectory", () => {
       await result.current.deleteFriend(second);
     });
     expect(result.current.selectedFriendId).toBe("");
-    expect(result.current.activeDmFriendId).toBe("");
 
     act(() => result.current.selectFriend(first));
     apiMocks.fetchRoomFriends.mockRejectedValueOnce(new Error("refresh failed"));
@@ -398,13 +365,13 @@ describe("useFriendsDirectory", () => {
     expect(result.current.status).toBe("refresh failed");
   });
 
-  it("uses the preferred next visible friend after deleting the selected DM", async () => {
+  it("uses the preferred next visible friend after deleting the selection", async () => {
     const first = makeFriend("first");
     const second = makeFriend("second");
     const third = makeFriend("third");
     const { result } = await renderLoaded(makePayload([first, second, third]));
 
-    act(() => result.current.openFriendDm(second));
+    act(() => result.current.selectFriend(second));
     apiMocks.deleteRoomFriend.mockResolvedValueOnce({
       friends: [first, third],
       candidates: [],
@@ -415,16 +382,15 @@ describe("useFriendsDirectory", () => {
     });
 
     expect(result.current.selectedFriendId).toBe("third");
-    expect(result.current.activeDmFriendId).toBe("");
   });
 
-  it("preserves unrelated selected and active DM ids when deleting another friend", async () => {
+  it("preserves an unrelated selection when deleting another friend", async () => {
     const first = makeFriend("first");
     const second = makeFriend("second");
     const third = makeFriend("third");
     const { result } = await renderLoaded(makePayload([first, second, third]));
 
-    act(() => result.current.openFriendDm(first));
+    act(() => result.current.selectFriend(first));
     apiMocks.deleteRoomFriend.mockResolvedValueOnce({
       friends: [first, third],
       candidates: [],
@@ -435,6 +401,5 @@ describe("useFriendsDirectory", () => {
     });
 
     expect(result.current.selectedFriendId).toBe("first");
-    expect(result.current.activeDmFriendId).toBe("first");
   });
 });

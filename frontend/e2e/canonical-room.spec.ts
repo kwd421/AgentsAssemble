@@ -9,29 +9,50 @@ const PROFILE_PNG = Buffer.from(
 const HOST_TOKEN_STORAGE_KEY = "agentsassemble.hostToken.v1";
 const E2E_HOST_TOKEN = "e2e-host-token";
 const GUEST_SESSION_STORAGE_KEY = "agentsassemble.roomGuestSession.v1";
+const STARTUP_IDENTITY_STORAGE_KEY = "agentsassemble.startupIdentity.v1";
+const DEVICE_TOKEN_STORAGE_KEY = "agentsassemble.deviceToken.v1";
+const E2E_DEVICE_TOKEN = "e2e-device-token";
 
-async function installHostCredential(page: import("@playwright/test").Page) {
+const HOST_API_HEADERS = {
+  "X-Host-Token": E2E_HOST_TOKEN,
+  "X-Device-Token": E2E_DEVICE_TOKEN,
+};
+
+async function installHostRuntime(page: import("@playwright/test").Page) {
   await page.addInitScript(
-    ([key, token]) => window.sessionStorage.setItem(key, token),
-    [HOST_TOKEN_STORAGE_KEY, E2E_HOST_TOKEN]
+    ([hostKey, hostToken, identityKey, deviceKey, deviceToken]) => {
+      window.sessionStorage.setItem(hostKey, hostToken);
+      window.localStorage.setItem(identityKey, "selected");
+      window.localStorage.setItem(deviceKey, deviceToken);
+    },
+    [
+      HOST_TOKEN_STORAGE_KEY,
+      E2E_HOST_TOKEN,
+      STARTUP_IDENTITY_STORAGE_KEY,
+      DEVICE_TOKEN_STORAGE_KEY,
+      E2E_DEVICE_TOKEN,
+    ]
   );
 }
 
 async function openHostInviteDialog(page: import("@playwright/test").Page) {
-  await installHostCredential(page);
+  await installHostRuntime(page);
   await page.goto("/");
   await page.getByRole("button", { name: "#general", exact: true }).click();
   await page.getByRole("button", { name: "서버에 초대하기" }).first().click();
-  return page.getByRole("dialog", { name: /친구를 .*초대하기/ });
+  return page.getByRole("dialog", { name: /초대 및 연결/ });
+}
+
+function toLocalFixtureUrl(inviteUrl: string) {
+  const remote = new URL(inviteUrl);
+  return `http://127.0.0.1:8898${remote.pathname}${remote.search}`;
 }
 
 async function createGuestInviteUrl(page: import("@playwright/test").Page) {
   const inviteDialog = await openHostInviteDialog(page);
-  await inviteDialog.getByRole("button", { name: "친구 초대 링크 생성" }).click();
-  const guestInviteInput = inviteDialog.getByPlaceholder(
-    "공개 URL을 먼저 설정하면 /join?token=... 링크가 여기에 표시됩니다"
-  );
-  await expect(guestInviteInput).toHaveValue(/^http:\/\/public\.localhost:\d+\/join\?token=/);
+  await inviteDialog.getByRole("region", { name: "사람 초대" }).getByRole("button", { name: "생성" }).click();
+  const guestInviteInput = inviteDialog.getByRole("textbox", { name: "사람 초대 링크" });
+  await expect(guestInviteInput).toHaveValue(/^https?:\/\/[^/]+\/join\?token=/);
   return guestInviteInput.inputValue();
 }
 
@@ -44,7 +65,7 @@ async function joinGuest(
   inviteUrl: string,
   displayName: string
 ) {
-  await page.goto(inviteUrl);
+  await page.goto(toLocalFixtureUrl(inviteUrl));
   const profile = page.getByRole("region", { name: "입장 프로필" });
   await expect(profile).toBeVisible();
   await profile.getByRole("textbox", { name: "이름" }).fill(displayName);
@@ -55,7 +76,7 @@ async function joinGuest(
 }
 
 async function roomWithLabel(page: import("@playwright/test").Page, label: string) {
-  const response = await page.request.get("/api/rooms");
+  const response = await page.request.get("/api/rooms", { headers: HOST_API_HEADERS });
   expect(response.ok()).toBe(true);
   const payload = (await response.json()) as {
     rooms?: Array<{ room_id?: string; label?: string }>;
@@ -73,10 +94,20 @@ async function openActiveServerSettings(page: import("@playwright/test").Page) {
   await page.getByRole("menuitem", { name: "서버 설정", exact: true }).click();
 }
 
+test("keeps the first screen login-first and hides the room rail until identity is chosen", async ({
+  page,
+}) => {
+  await page.goto("/");
+  await expect(page.getByRole("button", { name: "#general", exact: true })).toHaveCount(0);
+  await expect(
+    page.getByRole("heading", { name: /어떻게 사용할까요\?|먼저 로그인해 주세요/ })
+  ).toBeVisible();
+});
+
 test("leaves server voice presence when the user navigates away from a joined channel", async ({
   page,
 }) => {
-  await installHostCredential(page);
+  await installHostRuntime(page);
   await page.goto("/");
   await page.getByRole("button", { name: "#general", exact: true }).click();
 
@@ -88,7 +119,9 @@ test("leaves server voice presence when the user navigates away from a joined ch
   await page.getByRole("button", { name: "음성 참여" }).click();
   await expect(page.getByRole("button", { name: "나가기" })).toBeVisible();
 
-  const channelsResponse = await page.request.get("/api/room-channels?meeting_id=general");
+  const channelsResponse = await page.request.get("/api/room-channels?meeting_id=general", {
+    headers: HOST_API_HEADERS,
+  });
   expect(channelsResponse.ok()).toBe(true);
   const channelsPayload = (await channelsResponse.json()) as {
     channels?: Array<{ id?: string; name?: string }>;
@@ -100,7 +133,8 @@ test("leaves server voice presence when the user navigates away from a joined ch
 
   const voiceParticipants = async () => {
     const response = await page.request.get(
-      `/api/room/voice?channel_id=${encodeURIComponent(channelId)}&meeting_id=general`
+      `/api/room/voice?channel_id=${encodeURIComponent(channelId)}&meeting_id=general`,
+      { headers: HOST_API_HEADERS }
     );
     expect(response.ok()).toBe(true);
     const payload = (await response.json()) as { participants?: unknown[] };
@@ -116,12 +150,15 @@ test("leaves server voice presence when the user navigates away from a joined ch
 test("keeps the confirmed profile visible and the editor open when saving fails", async ({
   page,
 }) => {
-  const originalResponse = await page.request.get("/api/user-profile");
+  const originalResponse = await page.request.get("/api/user-profile", {
+    headers: HOST_API_HEADERS,
+  });
   expect(originalResponse.ok()).toBe(true);
   const originalPayload = (await originalResponse.json()) as {
     profile?: Record<string, unknown>;
   };
   const confirmedResponse = await page.request.post("/api/user-profile", {
+    headers: HOST_API_HEADERS,
     data: {
       ...(originalPayload.profile || {}),
       display_name: "Confirmed Profile",
@@ -145,13 +182,13 @@ test("keeps the confirmed profile visible and the editor open when saving fails"
   });
 
   try {
-    await installHostCredential(page);
+    await installHostRuntime(page);
     await page.goto("/");
     const userArea = page.locator(".dc-user-area");
     await expect(userArea.locator(".dc-user-identity")).toContainText("Confirmed Profile");
 
     await userArea.getByRole("button", { name: "사용자 설정" }).click();
-    const dialog = page.getByRole("dialog", { name: "프로필 편집" });
+    const dialog = page.getByRole("dialog", { name: "사용자 설정" });
     await dialog.getByRole("textbox", { name: "표시 이름" }).fill("Unsaved Profile");
     await dialog.getByRole("button", { name: "저장", exact: true }).click();
 
@@ -162,14 +199,18 @@ test("keeps the confirmed profile visible and the editor open when saving fails"
     );
     await expect(userArea.locator(".dc-user-identity")).toContainText("Confirmed Profile");
 
-    const durableResponse = await page.request.get("/api/user-profile");
+    const durableResponse = await page.request.get("/api/user-profile", {
+      headers: HOST_API_HEADERS,
+    });
     expect(durableResponse.ok()).toBe(true);
     const durablePayload = (await durableResponse.json()) as {
       profile?: { display_name?: string };
     };
     expect(durablePayload.profile?.display_name).toBe("Confirmed Profile");
   } finally {
+    await page.unroute("**/api/user-profile");
     const restoreResponse = await page.request.post("/api/user-profile", {
+      headers: HOST_API_HEADERS,
       data: originalPayload.profile || {},
     });
     expect(restoreResponse.ok()).toBe(true);
@@ -182,28 +223,27 @@ test("keeps ordinary invites separate from one-time cross-origin operator pairin
 }) => {
   const inviteDialog = await openHostInviteDialog(page);
 
-  await inviteDialog.getByRole("button", { name: "친구 초대 링크 생성" }).click();
-  const guestInviteInput = inviteDialog.getByPlaceholder(
-    "공개 URL을 먼저 설정하면 /join?token=... 링크가 여기에 표시됩니다"
-  );
-  await expect(guestInviteInput).toHaveValue(/^http:\/\/public\.localhost:\d+\/join\?token=/);
+  await inviteDialog.getByRole("region", { name: "사람 초대" }).getByRole("button", { name: "생성" }).click();
+  const guestInviteInput = inviteDialog.getByRole("textbox", { name: "사람 초대 링크" });
+  await expect(guestInviteInput).toHaveValue(/^https?:\/\/[^/]+\/join\?token=/);
   const guestInviteUrl = await guestInviteInput.inputValue();
 
+  await inviteDialog.locator("summary", { hasText: "고급 연결 설정" }).click();
   await inviteDialog.getByRole("button", { name: "운영자 기기 연결 링크 생성" }).click();
   const pairingInput = inviteDialog.getByPlaceholder("일회용 운영자 기기 연결 링크");
-  await expect(pairingInput).toHaveValue(/^http:\/\/public\.localhost:\d+\/pair\?token=aap1_/);
+  await expect(pairingInput).toHaveValue(/^https?:\/\/[^/]+\/pair\?token=aap1_/);
   const pairingUrl = await pairingInput.inputValue();
 
   const unknownContext = await browser.newContext();
   const unknownPage = await unknownContext.newPage();
-  await unknownPage.goto(guestInviteUrl);
+  await unknownPage.goto(toLocalFixtureUrl(guestInviteUrl));
   await expect(unknownPage.getByRole("region", { name: "입장 프로필" })).toBeVisible();
   await expect(unknownPage.getByRole("textbox", { name: "이름" })).toBeVisible();
 
   const wrongOriginContext = await browser.newContext();
   const wrongOriginPage = await wrongOriginContext.newPage();
-  const wrongOriginUrl = new URL(pairingUrl);
-  wrongOriginUrl.hostname = "127.0.0.1";
+  const wrongOriginUrl = new URL(toLocalFixtureUrl(pairingUrl));
+  wrongOriginUrl.hostname = "localhost";
   await wrongOriginPage.goto(wrongOriginUrl.toString());
   await expect(wrongOriginPage.getByRole("region", { name: "운영자 기기 연결" })).toContainText(
     "pairing_origin_mismatch"
@@ -212,7 +252,7 @@ test("keeps ordinary invites separate from one-time cross-origin operator pairin
 
   const pairedContext = await browser.newContext();
   const pairedPage = await pairedContext.newPage();
-  await pairedPage.goto(pairingUrl);
+  await pairedPage.goto(toLocalFixtureUrl(pairingUrl));
   await expect.poll(() => new URL(pairedPage.url()).search).toBe("");
   await expect(pairedPage.getByRole("button", { name: "#general", exact: true })).toBeVisible();
   const pairedSession = await readGuestSession(pairedPage);
@@ -225,7 +265,7 @@ test("keeps ordinary invites separate from one-time cross-origin operator pairin
 
   const replayContext = await browser.newContext();
   const replayPage = await replayContext.newPage();
-  await replayPage.goto(pairingUrl);
+  await replayPage.goto(toLocalFixtureUrl(pairingUrl));
   await expect(replayPage.getByRole("region", { name: "운영자 기기 연결" })).toContainText(
     "pairing_already_used"
   );
@@ -250,7 +290,7 @@ test("rejoins a same-origin browser without changing its participant identity", 
 
   const first = await joinGuest(guestPage, guestInviteUrl, "Returning Guest");
 
-  await guestPage.goto(guestInviteUrl);
+  await guestPage.goto(toLocalFixtureUrl(guestInviteUrl));
   await expect(guestPage.getByRole("region", { name: "입장 프로필" })).toHaveCount(0);
   await expect.poll(() => new URL(guestPage.url()).search).toBe("");
   const existingSession = await readGuestSession(guestPage);
@@ -258,7 +298,7 @@ test("rejoins a same-origin browser without changing its participant identity", 
   expect(existingSession.sessionToken).toBe(first.sessionToken);
 
   await guestPage.evaluate((key) => window.localStorage.setItem(key, "null"), GUEST_SESSION_STORAGE_KEY);
-  await guestPage.goto(guestInviteUrl);
+  await guestPage.goto(toLocalFixtureUrl(guestInviteUrl));
   await expect(guestPage.getByRole("region", { name: "입장 프로필" })).toHaveCount(0);
   await expect.poll(() => readGuestSession(guestPage)).not.toBeNull();
   const existingMember = await readGuestSession(guestPage);
@@ -270,7 +310,7 @@ test("rejoins a same-origin browser without changing its participant identity", 
     session.expiresAt = "2000-01-01T00:00:00+00:00";
     window.localStorage.setItem(key, JSON.stringify(session));
   }, GUEST_SESSION_STORAGE_KEY);
-  await guestPage.goto(guestInviteUrl);
+  await guestPage.goto(toLocalFixtureUrl(guestInviteUrl));
   await expect(guestPage.getByRole("region", { name: "입장 프로필" })).toHaveCount(0);
   await expect
     .poll(async () => {
@@ -306,7 +346,7 @@ test("recovers a failed join and keeps incognito credentials distinct", async ({
     }
     await route.continue();
   });
-  await recoveringPage.goto(guestInviteUrl);
+  await recoveringPage.goto(toLocalFixtureUrl(guestInviteUrl));
   const recoveringProfile = recoveringPage.getByRole("region", { name: "입장 프로필" });
   await recoveringProfile.getByRole("textbox", { name: "이름" }).fill("Same Display Name");
   const joinButton = recoveringProfile.getByRole("button", { name: "입장", exact: true });
@@ -344,7 +384,7 @@ test("removes a kicked participant immediately and after roster reload", async (
       .poll(async () => {
         const response = await page.request.get(
           "/api/room-members?meeting_id=general",
-          { headers: { "X-Host-Token": E2E_HOST_TOKEN } }
+          { headers: HOST_API_HEADERS }
         );
         if (!response.ok()) return [`http-${response.status()}`];
         const payload = (await response.json()) as {
@@ -401,11 +441,14 @@ test("expires a stale stored guest session and offers a working exit", async ({ 
 
   await expect.poll(() => new URL(page.url()).pathname).toBe("/");
   await expect(page.getByLabel("게스트 프로필")).toHaveCount(0);
-  await expect(page.getByRole("button", { name: "새 방 만들기" })).toBeVisible();
+  await expect(page.getByRole("button", { name: "#general", exact: true })).toHaveCount(0);
+  await expect(
+    page.getByRole("heading", { name: /어떻게 사용할까요\?|먼저 로그인해 주세요/ })
+  ).toBeVisible();
 });
 
 test("sends and restores an attachment-only canonical room message", async ({ browser, page }) => {
-  await installHostCredential(page);
+  await installHostRuntime(page);
   await page.goto("/");
   await page.getByRole("button", { name: "#general", exact: true }).click();
 
@@ -426,7 +469,7 @@ test("sends and restores an attachment-only canonical room message", async ({ br
 
   const observerContext = await browser.newContext();
   const observerPage = await observerContext.newPage();
-  await installHostCredential(observerPage);
+  await installHostRuntime(observerPage);
   await observerPage.goto("/");
   await observerPage.getByRole("button", { name: "#general", exact: true }).click();
   await expect(observerPage.getByRole("img", { name: "attachment-only.png" })).toBeVisible();
@@ -436,7 +479,7 @@ test("sends and restores an attachment-only canonical room message", async ({ br
 test("keeps unsent lobby and side-chat drafts scoped to their server", async ({ page }) => {
   const serverLabel = "E2E Draft Scope Server";
   await page.setViewportSize({ width: 1440, height: 900 });
-  await installHostCredential(page);
+  await installHostRuntime(page);
   await page.goto("/");
   await page.getByRole("button", { name: "새 방 만들기" }).click();
   await openActiveServerSettings(page);
@@ -529,6 +572,7 @@ test("uses the current canonical user profile as the friend-DM sender", async ({
     });
   });
   const savedProfile = await page.request.post("/api/user-profile", {
+    headers: HOST_API_HEADERS,
     data: {
       display_name: "E2E Profile Owner",
       handle: "e2e.owner",
@@ -543,12 +587,13 @@ test("uses the current canonical user profile as the friend-DM sender", async ({
   });
   expect(savedProfile.ok()).toBe(true);
   const savedFriend = await page.request.post("/api/room-friends", {
+    headers: HOST_API_HEADERS,
     data: friend,
   });
   expect(savedFriend.ok()).toBe(true);
 
   try {
-    await installHostCredential(page);
+    await installHostRuntime(page);
     await page.goto("/");
     await page.getByRole("button", { name: "친구와 DM" }).click();
     await page.locator(".dc-dm-row").filter({ hasText: friendName }).click();
@@ -563,8 +608,11 @@ test("uses the current canonical user profile as the friend-DM sender", async ({
       dmPanel.getByText("canonical profile sender", { exact: true })
     ).toBeVisible();
   } finally {
-    await page.request.delete(`/api/room-friends?friend_id=${encodeURIComponent(friendId)}`);
+    await page.request.delete(`/api/room-friends?friend_id=${encodeURIComponent(friendId)}`, {
+      headers: HOST_API_HEADERS,
+    });
     await page.request.post("/api/user-profile", {
+      headers: HOST_API_HEADERS,
       data: {
         display_name: "SeiNel",
         handle: "seinel.",
@@ -586,7 +634,7 @@ test("persists a created server and removes it from every connected browser", as
 }) => {
   const serverLabel = "E2E Lifecycle Server";
   const serverTopic = "Persists through reload and disappears after deletion";
-  await installHostCredential(page);
+  await installHostRuntime(page);
   await page.goto("/");
   await page.getByRole("button", { name: "새 방 만들기" }).click();
   await openActiveServerSettings(page);
@@ -615,7 +663,7 @@ test("persists a created server and removes it from every connected browser", as
   const observerContext = await browser.newContext();
   try {
     const observerPage = await observerContext.newPage();
-    await installHostCredential(observerPage);
+    await installHostRuntime(observerPage);
     await observerPage.goto("/");
     const observerRoomButton = observerPage.getByRole("button", {
       name: serverLabel,
@@ -644,7 +692,7 @@ test("persists a created server and removes it from every connected browser", as
 });
 
 test("streams on desktop and controls the same canonical session on mobile", async ({ page }) => {
-  await installHostCredential(page);
+  await installHostRuntime(page);
   await page.setViewportSize({ width: 1440, height: 900 });
   await page.goto("/");
 
@@ -673,18 +721,17 @@ test("streams on desktop and controls the same canonical session on mobile", asy
   await expect(page.getByText("FAKE_CLI_READY", { exact: true })).toHaveCount(0);
 
   await desktopMember.click();
-  const profileDialog = page.getByRole("dialog", { name: "나's Fake Interactive CLI" });
-  await profileDialog.getByRole("textbox", { name: "이름" }).fill("Makima");
-  await profileDialog.locator('input[type="file"]').setInputFiles({
+  const profileDialog = page.getByRole("dialog", { name: /Fake Interactive CLI/ });
+  await profileDialog.getByLabel("표시 이름").fill("Makima");
+  await profileDialog.getByLabel("에이전트 프로필 사진 선택").setInputFiles({
     name: "makima.png",
     mimeType: "image/png",
     buffer: PROFILE_PNG,
   });
   await profileDialog.getByRole("button", { name: "적용", exact: true }).click();
-  await expect(profileDialog.getByText("프로필 사진 준비됨", { exact: true })).toBeVisible();
-  await profileDialog.getByRole("button", { name: "저장", exact: true }).click();
-  const renamedProfileDialog = page.getByRole("dialog", { name: "나's Makima" });
-  await expect(renamedProfileDialog.getByText("에이전트 프로필 저장됨", { exact: true })).toBeVisible();
+  await profileDialog.getByRole("button", { name: "프로필 저장" }).click();
+  const renamedProfileDialog = page.getByRole("dialog", { name: /Makima/ });
+  await expect(renamedProfileDialog.getByText("프로필 사진 저장됨", { exact: true })).toBeVisible();
   const savedAvatar = renamedProfileDialog.locator("img.dc-member-avatar-image").first();
   await expect(savedAvatar).toBeVisible();
   const savedAvatarUrl = await savedAvatar.getAttribute("src");

@@ -23,6 +23,7 @@ from uuid import uuid4
 
 
 ROLLING_LISTENER_FD_ENV = "AGENTSASSEMBLE_ROLLING_LISTENER_FD"
+ROLLING_ENGINE_LOCK_FD_ENV = "AGENTSASSEMBLE_ROLLING_ENGINE_LOCK_FD"
 ROLLING_READY_FD_ENV = "AGENTSASSEMBLE_ROLLING_READY_FD"
 ROLLING_GO_FD_ENV = "AGENTSASSEMBLE_ROLLING_GO_FD"
 ROLLING_OPERATION_ID_ENV = "AGENTSASSEMBLE_ROLLING_OPERATION_ID"
@@ -59,12 +60,14 @@ class RollingChildBootstrap:
     operation_id: str
     generation: int
     parent_instance_id: str
+    engine_lock_fd: int = -1
 
     @classmethod
     def from_environment(cls) -> RollingChildBootstrap | None:
         raw_listener = os.environ.pop(ROLLING_LISTENER_FD_ENV, "")
         if not raw_listener:
             return None
+        raw_engine_lock = os.environ.pop(ROLLING_ENGINE_LOCK_FD_ENV, "")
         raw_ready = os.environ.pop(ROLLING_READY_FD_ENV, "")
         raw_go = os.environ.pop(ROLLING_GO_FD_ENV, "")
         operation_id = os.environ.pop(ROLLING_OPERATION_ID_ENV, "")
@@ -72,11 +75,12 @@ class RollingChildBootstrap:
         parent_instance_id = os.environ.pop(ROLLING_PARENT_INSTANCE_ENV, "")
         try:
             listener_fd = int(raw_listener)
+            engine_lock_fd = int(raw_engine_lock)
             ready_fd = int(raw_ready)
             go_fd = int(raw_go)
         except ValueError as error:
             raise RuntimeError("Rolling restart inherited invalid file descriptors.") from error
-        if min(listener_fd, ready_fd, go_fd) < 0 or not operation_id:
+        if min(listener_fd, engine_lock_fd, ready_fd, go_fd) < 0 or not operation_id:
             raise RuntimeError("Rolling restart bootstrap is incomplete.")
         return cls(
             listener_fd=listener_fd,
@@ -85,10 +89,11 @@ class RollingChildBootstrap:
             operation_id=operation_id,
             generation=_safe_nonnegative_int(generation),
             parent_instance_id=str(parent_instance_id or ""),
+            engine_lock_fd=engine_lock_fd,
         )
 
     def report_ready_and_wait(self, *, timeout_seconds: float = ROLLING_READY_TIMEOUT_SECONDS) -> None:
-        """Tell the parent startup succeeded, then wait until it stops accepting."""
+        """Tell the parent startup succed, then wait until it stops accepting."""
 
         try:
             os.write(self.ready_fd, b"ready\n")
@@ -114,6 +119,7 @@ class RollingRestartCoordinator:
         server: RollingServer,
         *,
         output_root: Path,
+        engine_lock_fd: int = -1,
         generation: int = 0,
         instance_id: str = "",
         command: list[str] | None = None,
@@ -123,6 +129,7 @@ class RollingRestartCoordinator:
     ) -> None:
         self.server = server
         self.output_root = Path(output_root)
+        self.engine_lock_fd = int(engine_lock_fd)
         self.generation = _safe_nonnegative_int(generation)
         self.instance_id = str(instance_id or f"gui-{uuid4().hex[:16]}")
         self.command = list(command or rolling_restart_command())
@@ -162,6 +169,14 @@ class RollingRestartCoordinator:
                 "accepted": False,
                 "error": "Rolling restart currently requires POSIX descriptor handoff.",
             }
+        try:
+            os.fstat(self.engine_lock_fd)
+        except OSError:
+            return {
+                **self.status(),
+                "accepted": False,
+                "error": "Rolling restart cannot transfer the authoritative engine lock.",
+            }
         if blockers:
             return {
                 **self.status(),
@@ -179,12 +194,14 @@ class RollingRestartCoordinator:
             operation_id = f"roll-{uuid4().hex[:16]}"
             listener_fd = self.server.fileno()
             os.set_inheritable(listener_fd, True)
+            os.set_inheritable(self.engine_lock_fd, True)
             ready_read_fd, ready_write_fd = os.pipe()
             go_read_fd, go_write_fd = os.pipe()
             child_environment = dict(os.environ)
             child_environment.update(
                 {
                     ROLLING_LISTENER_FD_ENV: str(listener_fd),
+                    ROLLING_ENGINE_LOCK_FD_ENV: str(self.engine_lock_fd),
                     ROLLING_READY_FD_ENV: str(ready_write_fd),
                     ROLLING_GO_FD_ENV: str(go_read_fd),
                     ROLLING_OPERATION_ID_ENV: operation_id,
@@ -206,7 +223,12 @@ class RollingRestartCoordinator:
                     self.command,
                     cwd=str(Path.cwd()),
                     env=child_environment,
-                    pass_fds=(listener_fd, ready_write_fd, go_read_fd),
+                    pass_fds=(
+                        listener_fd,
+                        self.engine_lock_fd,
+                        ready_write_fd,
+                        go_read_fd,
+                    ),
                     stdin=subprocess.DEVNULL,
                     stdout=child_log,
                     stderr=subprocess.STDOUT,
@@ -222,11 +244,13 @@ class RollingRestartCoordinator:
                 for fd in (ready_read_fd, ready_write_fd, go_read_fd, go_write_fd):
                     os.close(fd)
                 os.set_inheritable(listener_fd, False)
+                os.set_inheritable(self.engine_lock_fd, False)
                 raise
             child_log.close()
             os.close(ready_write_fd)
             os.close(go_read_fd)
             os.set_inheritable(listener_fd, False)
+            os.set_inheritable(self.engine_lock_fd, False)
             self._state = "starting_replacement"
             self._operation_id = operation_id
             self._child = child
@@ -351,6 +375,7 @@ def rolling_restart_command() -> list[str]:
 
 
 __all__ = [
+    "ROLLING_ENGINE_LOCK_FD_ENV",
     "ROLLING_GENERATION_ENV",
     "ROLLING_GO_FD_ENV",
     "ROLLING_LISTENER_FD_ENV",

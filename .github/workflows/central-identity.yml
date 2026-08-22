@@ -1,0 +1,139 @@
+name: central-identity
+
+on:
+  push:
+    branches:
+      - agent/cloudflare-identity-directory
+    paths:
+      - ".github/workflows/central-identity.yml"
+      - "infra/identity-directory/**"
+      - "desktop/**"
+      - "agentsassemble/application/central_directory_host.py"
+      - "agentsassemble/application/server_identity_challenge.py"
+      - "agentsassemble/application/gui.py"
+      - "agentsassemble/web/gui_server.py"
+      - "agentsassemble/web/routes/public_invite.py"
+      - "agentsassemble/web/security.py"
+      - "frontend/src/lib/centralIdentity.ts"
+      - "frontend/src/main.tsx"
+      - "frontend/src/views/components/StartupIdentityBoundary.tsx"
+      - "frontend/src/views/components/StartupIdentityGate.tsx"
+      - "tests/test_central_directory_host.py"
+      - "tests/test_server_identity_challenge.py"
+      - "tests/test_startup_identity_source.py"
+  pull_request:
+    paths:
+      - ".github/workflows/central-identity.yml"
+      - "infra/identity-directory/**"
+      - "desktop/**"
+      - "agentsassemble/application/central_directory_host.py"
+      - "agentsassemble/application/server_identity_challenge.py"
+      - "agentsassemble/application/gui.py"
+      - "agentsassemble/web/gui_server.py"
+      - "agentsassemble/web/routes/public_invite.py"
+      - "agentsassemble/web/security.py"
+      - "frontend/src/lib/centralIdentity.ts"
+      - "frontend/src/main.tsx"
+      - "frontend/src/views/components/StartupIdentityBoundary.tsx"
+      - "frontend/src/views/components/StartupIdentityGate.tsx"
+      - "tests/test_central_directory_host.py"
+      - "tests/test_server_identity_challenge.py"
+      - "tests/test_startup_identity_source.py"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: central-identity-${{ github.head_ref || github.ref_name }}
+  cancel-in-progress: true
+
+jobs:
+  worker:
+    name: Worker and D1 contract
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+      - name: Check Worker JavaScript syntax
+        run: npm --prefix infra/identity-directory run check
+      - name: Run Worker and D1 contract tests
+        run: npm --prefix infra/identity-directory test
+      - name: Validate Wrangler configuration and bundle
+        working-directory: infra/identity-directory
+        run: npx --yes wrangler@4 deploy --dry-run --outdir .wrangler-dist
+
+  host-client:
+    name: Host and login-first client
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+      - name: Install Python package
+        run: python -m pip install -e .
+      - name: Install frontend dependencies
+        run: npm --prefix frontend ci
+      - name: Run central host and startup contracts
+        run: >-
+          python -m unittest
+          tests.test_central_directory_host
+          tests.test_server_identity_challenge
+          tests.test_startup_identity_source
+      - name: Build login-first frontend
+        run: npm --prefix frontend run build
+
+  tauri-macos:
+    name: Tauri shell on macOS
+    runs-on: macos-latest
+    timeout-minutes: 30
+    env:
+      CARGO_TERM_COLOR: always
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: desktop/package-lock.json
+      - name: Install desktop dependencies
+        run: npm --prefix desktop ci
+      - name: Show Rust toolchain
+        run: |
+          rustc --version
+          cargo --version
+      - name: Check trusted shell JavaScript syntax
+        run: |
+          node --check desktop/shell/shell.js
+          node --check desktop/shell/central-identity.js
+      - name: Bundle trusted shell with esbuild for parser diagnostics
+        working-directory: desktop
+        run: >-
+          npx --yes esbuild@0.25.10 shell/shell.js
+          --bundle --platform=browser --outfile=/tmp/agentsassemble-shell.js
+      - name: Build trusted connection shell with Vite diagnostics
+        working-directory: desktop
+        env:
+          DEBUG: "vite:*"
+        run: npm run shell:build
+      - name: Prepare non-shipping CI sidecar placeholder
+        shell: bash
+        run: |
+          target="$(rustc -vV | sed -n 's/^host: //p')"
+          test -n "$target"
+          sidecar="desktop/src-tauri/binaries/agentsassemble-server-${target}"
+          mkdir -p "$(dirname "$sidecar")"
+          printf '#!/bin/sh\n# CI metadata placeholder; never packaged or executed.\nexit 70\n' > "$sidecar"
+          chmod 700 "$sidecar"
+      - name: Compile and run Rust tests with the lockfile
+        run: cargo test --locked --manifest-path desktop/src-tauri/Cargo.toml

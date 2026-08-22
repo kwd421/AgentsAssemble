@@ -40,7 +40,6 @@ export function useFriendsDirectory({ enabled }: UseFriendsDirectoryOptions) {
   const [homeFilter, setHomeFilter] = useState<HomeFilter>("friends");
   const [friendListFilter, setFriendListFilter] = useState<FriendListFilter>("online");
   const [selectedFriendId, setSelectedFriendId] = useState("");
-  const [activeDmFriendId, setActiveDmFriendId] = useState("");
   const [addDraftName, setAddDraftName] = useState("");
 
   const enabledRef = useRef(enabled);
@@ -51,7 +50,6 @@ export function useFriendsDirectory({ enabled }: UseFriendsDirectoryOptions) {
   const mutationQueueRef = useRef(Promise.resolve());
   const payloadRef = useRef(payload);
   const selectedFriendIdRef = useRef(selectedFriendId);
-  const activeDmFriendIdRef = useRef(activeDmFriendId);
   if (previousEnabledRef.current !== enabled) {
     previousEnabledRef.current = enabled;
     enableEpochRef.current += 1;
@@ -60,11 +58,9 @@ export function useFriendsDirectory({ enabled }: UseFriendsDirectoryOptions) {
   if (enabled) {
     payloadRef.current = payload;
     selectedFriendIdRef.current = selectedFriendId;
-    activeDmFriendIdRef.current = activeDmFriendId;
   } else {
     payloadRef.current = EMPTY_PAYLOAD;
     selectedFriendIdRef.current = "";
-    activeDmFriendIdRef.current = "";
   }
 
   const replacePayload = useCallback((nextPayload: RoomFriendsResponse) => {
@@ -80,11 +76,6 @@ export function useFriendsDirectory({ enabled }: UseFriendsDirectoryOptions) {
             : "";
       selectedFriendIdRef.current = nextSelection;
       return nextSelection;
-    });
-    setActiveDmFriendId((previous) => {
-      const nextActiveDm = previous && friendIds.has(previous) ? previous : "";
-      activeDmFriendIdRef.current = nextActiveDm;
-      return nextActiveDm;
     });
   }, []);
 
@@ -130,10 +121,8 @@ export function useFriendsDirectory({ enabled }: UseFriendsDirectoryOptions) {
     if (!enabled) {
       payloadRef.current = EMPTY_PAYLOAD;
       selectedFriendIdRef.current = "";
-      activeDmFriendIdRef.current = "";
       setPayload(EMPTY_PAYLOAD);
       setSelectedFriendId("");
-      setActiveDmFriendId("");
       setStatus("");
       setBusyId("");
       setLoading(false);
@@ -183,8 +172,6 @@ export function useFriendsDirectory({ enabled }: UseFriendsDirectoryOptions) {
 
   const changeHomeFilter = useCallback((filter: HomeFilter) => {
     setHomeFilter(filter);
-    setActiveDmFriendId("");
-    activeDmFriendIdRef.current = "";
     setFriendListFilter((previous) => {
       if (previous !== "add") return previous;
       return filter === "friends" ? "online" : "all";
@@ -193,8 +180,6 @@ export function useFriendsDirectory({ enabled }: UseFriendsDirectoryOptions) {
 
   const showDirectory = useCallback((filter: FriendListFilter) => {
     setFriendListFilter(filter);
-    setActiveDmFriendId("");
-    activeDmFriendIdRef.current = "";
   }, []);
 
   const selectFriend = useCallback((friend: RoomFriend) => {
@@ -202,42 +187,18 @@ export function useFriendsDirectory({ enabled }: UseFriendsDirectoryOptions) {
     selectedFriendIdRef.current = friend.friend_id;
   }, []);
 
-  const openFriendDm = useCallback((friend: RoomFriend) => {
-    setSelectedFriendId(friend.friend_id);
-    selectedFriendIdRef.current = friend.friend_id;
-    setFriendListFilter("all");
-    setHomeFilter("friends");
-    setActiveDmFriendId(friend.friend_id);
-    activeDmFriendIdRef.current = friend.friend_id;
-  }, []);
-
-  const showFriendProfile = useCallback((friend: RoomFriend) => {
-    setSelectedFriendId(friend.friend_id);
-    selectedFriendIdRef.current = friend.friend_id;
-    setActiveDmFriendId("");
-    activeDmFriendIdRef.current = "";
-  }, []);
-
   const selectHomeFriend = useCallback(
-    (friend: RoomFriend, intent: "profile" | "dm" = "profile") => {
-      if (intent === "dm") {
-        openFriendDm(friend);
-        return;
-      }
+    (friend: RoomFriend) => {
       setSelectedFriendId(friend.friend_id);
       selectedFriendIdRef.current = friend.friend_id;
       setFriendListFilter("all");
       setHomeFilter(homeFilterForFriend(friend));
-      setActiveDmFriendId("");
-      activeDmFriendIdRef.current = "";
     },
-    [openFriendDm]
+    []
   );
 
   const openAddFriend = useCallback((draftName = "") => {
     setAddDraftName(draftName.trim());
-    setActiveDmFriendId("");
-    activeDmFriendIdRef.current = "";
     setHomeFilter("friends");
     setFriendListFilter("add");
   }, []);
@@ -255,8 +216,6 @@ export function useFriendsDirectory({ enabled }: UseFriendsDirectoryOptions) {
             replacePayload({ friends: result.friends, candidates: nextCandidates });
             setSelectedFriendId(result.friend.friend_id);
             selectedFriendIdRef.current = result.friend.friend_id;
-            setActiveDmFriendId("");
-            activeDmFriendIdRef.current = "";
             setFriendListFilter("all");
             setStatus(`${friend.display_name} 추가됨`);
           };
@@ -288,8 +247,6 @@ export function useFriendsDirectory({ enabled }: UseFriendsDirectoryOptions) {
             replacePayload({ friends: result.friends, candidates: nextCandidates });
             setSelectedFriendId(result.friend.friend_id);
             selectedFriendIdRef.current = result.friend.friend_id;
-            setActiveDmFriendId("");
-            activeDmFriendIdRef.current = "";
             setFriendListFilter("all");
             setStatus(`${name} 추가됨`);
           };
@@ -308,9 +265,7 @@ export function useFriendsDirectory({ enabled }: UseFriendsDirectoryOptions) {
           const result = await deleteRoomFriend(friend.friend_id);
           const friendIds = new Set(result.friends.map((candidate) => candidate.friend_id));
           const selectedBeforeDelete = selectedFriendIdRef.current;
-          const activeDmBeforeDelete = activeDmFriendIdRef.current;
-          const shouldMoveSelection =
-            selectedBeforeDelete === friend.friend_id || activeDmBeforeDelete === friend.friend_id;
+          const shouldMoveSelection = selectedBeforeDelete === friend.friend_id;
           return () => {
             payloadRef.current = result;
             setPayload(result);
@@ -325,12 +280,6 @@ export function useFriendsDirectory({ enabled }: UseFriendsDirectoryOptions) {
                       : "";
               selectedFriendIdRef.current = nextSelection;
               return nextSelection;
-            });
-            setActiveDmFriendId((previous) => {
-              const nextActiveDm =
-                previous === friend.friend_id || !previous || !friendIds.has(previous) ? "" : previous;
-              activeDmFriendIdRef.current = nextActiveDm;
-              return nextActiveDm;
             });
             setStatus(`${friend.display_name} 삭제됨`);
           };
@@ -348,15 +297,12 @@ export function useFriendsDirectory({ enabled }: UseFriendsDirectoryOptions) {
     homeFilter,
     friendListFilter,
     selectedFriendId: enabled ? selectedFriendId : "",
-    activeDmFriendId: enabled ? activeDmFriendId : "",
     addDraftName,
     refresh,
     changeHomeFilter,
     showDirectory,
     selectHomeFriend,
     selectFriend,
-    openFriendDm,
-    showFriendProfile,
     openAddFriend,
     addCandidate,
     addManual,

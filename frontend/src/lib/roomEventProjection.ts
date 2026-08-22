@@ -59,6 +59,8 @@ export function projectRoomEventsToTimeline(
 ): LobbyEvent[] {
   const timeline: LobbyEvent[] = [];
   const turnIndex = new Map<string, number>();
+  const recordIndex = new Map<string, number>();
+  const deletedVoteIds = new Set<string>();
   const activityIndex = new Map<string, number>();
   const viewerParticipantId = String(options.viewerParticipantId || "");
   const participantProfiles = options.participantProfiles || {};
@@ -76,6 +78,7 @@ export function projectRoomEventsToTimeline(
     if (["thinking_delta", "activity_delta"].includes(event.type) && String(event.content || "").trim()) {
       const projected: LobbyEvent = {
         id: event.id,
+        seq: Number(event.seq) || undefined,
         created_at: event.created_at,
         name: speaker.name,
         avatar_image_url: speaker.avatarImageUrl || undefined,
@@ -132,22 +135,23 @@ export function projectRoomEventsToTimeline(
       const existingIndex = turnIndex.get(key);
       const existing = existingIndex === undefined ? null : timeline[existingIndex];
       const messageKind = String(event.message_kind || existing?.kind || "message");
-      const voteChoice = String(event.vote_choice || existing?.vote_choice || "");
-      const isVoteResult = event.type === "message_final" && messageKind === "vote_cast";
-      const message =
-        isVoteResult
-          ? `🗳️ ${speaker.name}의 선택: 「${voteChoice || "선택 없음"}」`
-          : event.type === "message_final"
-          ? String(event.content || "")
-          : `${existing?.message || ""}${event.content || ""}`;
+      if (
+        event.type === "message_final" &&
+        ["vote_cast", "vote_withdraw", "vote_close"].includes(messageKind)
+      ) return;
+      const message = event.type === "message_final"
+        ? String(event.content || "")
+        : `${existing?.message || ""}${event.content || ""}`;
       const projected: LobbyEvent = {
         id: key,
+        record_id: event.type === "message_final" ? event.id : existing?.record_id,
+        seq: Number(event.seq) || existing?.seq,
         created_at: event.created_at,
-        name: isVoteResult ? "투표" : speaker.name,
+        name: speaker.name,
         avatar_image_url: speaker.avatarImageUrl || undefined,
         provider_kind: speaker.providerKind || undefined,
         role: speaker.role || undefined,
-        side: isVoteResult ? "other" : speaker.side,
+        side: speaker.side,
         kind: messageKind,
         message,
         actor_id: eventActor.id,
@@ -177,17 +181,47 @@ export function projectRoomEventsToTimeline(
         vote_deadline_at:
           String(event.vote_deadline_at || existing?.vote_deadline_at || "") ||
           undefined,
-        vote_choice: voteChoice || undefined,
         attachments: Array.isArray(event.attachments)
           ? event.attachments
           : existing?.attachments,
+        edited_at: String(event.edited_at || existing?.edited_at || "") || undefined,
+        message_deleted: event.message_deleted === true,
       };
+      if (projected.message_deleted) {
+        projected.message = "삭제된 메시지입니다";
+        projected.attachments = [];
+        if (messageKind === "vote") deletedVoteIds.add(String(event.id));
+      }
       if (existingIndex === undefined) {
         turnIndex.set(key, timeline.length);
+        if (event.type === "message_final") recordIndex.set(String(event.id), timeline.length);
         timeline.push(projected);
       } else {
         timeline[existingIndex] = projected;
+        if (event.type === "message_final") recordIndex.set(String(event.id), existingIndex);
       }
+      return;
+    }
+
+    if (event.type === "message_updated" || event.type === "message_deleted") {
+      if (event.type === "message_deleted") {
+        deletedVoteIds.add(String(event.target_event_id || ""));
+      }
+      const targetIndex = recordIndex.get(String(event.target_event_id || ""));
+      if (targetIndex === undefined) return;
+      const existing = timeline[targetIndex];
+      timeline[targetIndex] = event.type === "message_deleted"
+        ? {
+            ...existing,
+            message: "삭제된 메시지입니다",
+            attachments: [],
+            message_deleted: true,
+          }
+        : {
+            ...existing,
+            message: String(event.content || ""),
+            edited_at: String(event.edited_at || "") || undefined,
+          };
       return;
     }
 
@@ -197,7 +231,12 @@ export function projectRoomEventsToTimeline(
     return;
   });
 
-  return timeline;
+  return timeline.filter(
+    (item) =>
+      !["vote_cast", "vote_withdraw", "vote_close"].includes(item.kind) ||
+      !item.vote_id ||
+      !deletedVoteIds.has(item.vote_id)
+  );
 }
 
 export function projectRoomEventProgress(

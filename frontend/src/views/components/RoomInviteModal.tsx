@@ -1,7 +1,10 @@
 import { useEffect, useMemo, useState } from "react";
 import { Copy, Globe2, LoaderCircle, LockKeyhole, Search, X } from "lucide-react";
 import type { RoomFriend, RoomMember } from "../../api";
-import type { PublicAccessTransition } from "../../app/useRoomInviteController";
+import type {
+  HumanInviteOptions,
+  PublicAccessTransition,
+} from "../../app/useRoomInviteController";
 import { roomFriendMatchesSearch } from "../../lib/friendSearch";
 import { participantTypeMeta } from "../../lib/participantTypes";
 import { isActivePresence, presenceStatusLabel } from "../../lib/presenceStatus";
@@ -35,6 +38,11 @@ function inviteFriendSubtitle(friend: RoomFriend, typeLabel: string): string {
     "";
   return detail ? `${typeLabel} · ${detail}` : typeLabel;
 }
+
+type PendingPublicAction =
+  | { kind: "human"; options: HumanInviteOptions }
+  | { kind: "agent" }
+  | { kind: "friend"; friend: RoomFriend };
 
 export default function RoomInviteModal({
   roomLabel,
@@ -97,9 +105,9 @@ export default function RoomInviteModal({
   remoteClientPacketPreview?: string;
   remoteClientPacketFriendName?: string;
   onClose: () => void;
-  onGenerateSecureInvite: () => void;
+  onGenerateSecureInvite: (options: HumanInviteOptions, startTunnelIfNeeded: boolean) => void;
   onCopy: () => void;
-  onGenerateAgentInvite: () => void;
+  onGenerateAgentInvite: (startTunnelIfNeeded: boolean) => void;
   onCopyAgentInvite: () => void;
   onGenerateOperatorPairing: () => void;
   onCopyOperatorPairing: () => void;
@@ -111,13 +119,24 @@ export default function RoomInviteModal({
   onStartTunnel: () => void;
   onStopTunnel: () => void;
   onCopyRemoteClientPacket?: () => void;
-  onInviteFriend: (friend: RoomFriend) => void;
+  onInviteFriend: (friend: RoomFriend, startTunnelIfNeeded: boolean) => void;
 }) {
   const [query, setQuery] = useState("");
+  const [humanMaxUses, setHumanMaxUses] = useState(1);
+  const [humanTtlSeconds, setHumanTtlSeconds] = useState(86400);
+  const [generatedHumanOptions, setGeneratedHumanOptions] =
+    useState<HumanInviteOptions | null>(null);
+  const [pendingPublicAction, setPendingPublicAction] =
+    useState<PendingPublicAction | null>(null);
   const searchQuery = query.trim();
   const searchNeedle = searchQuery.toLowerCase();
   const readOnlyInvite = inviteScope === "read_only";
-  const secureInviteReady = isExternalInviteUrl(secureInviteUrl);
+  const currentHumanOptions = { maxUses: humanMaxUses, ttlSeconds: humanTtlSeconds };
+  const secureInviteReady = Boolean(
+    isExternalInviteUrl(secureInviteUrl) &&
+      generatedHumanOptions?.maxUses === humanMaxUses &&
+      generatedHumanOptions?.ttlSeconds === humanTtlSeconds
+  );
   const publicAccessStarting =
     publicAccessTransition === "starting" || tunnelStatus?.phase === "starting";
   const publicAccessStopping = publicAccessTransition === "stopping";
@@ -125,17 +144,50 @@ export default function RoomInviteModal({
     publicUrl || tunnelStatus?.public_url || tunnelStatus?.phase === "running"
   );
   const publicAccessBusy = publicAccessStarting || publicAccessStopping;
+  function requestPublicAction(action: PendingPublicAction) {
+    if (publicAccessRunning) {
+      if (action.kind === "human") {
+        setGeneratedHumanOptions(action.options);
+        onGenerateSecureInvite(action.options, false);
+      } else if (action.kind === "agent") {
+        onGenerateAgentInvite(false);
+      } else {
+        onInviteFriend(action.friend, false);
+      }
+      return;
+    }
+    setPendingPublicAction(action);
+  }
+
+  function confirmPublicAction() {
+    const action = pendingPublicAction;
+    setPendingPublicAction(null);
+    if (!action) return;
+    if (action.kind === "human") {
+      setGeneratedHumanOptions(action.options);
+      onGenerateSecureInvite(action.options, true);
+    } else if (action.kind === "agent") {
+      onGenerateAgentInvite(true);
+    } else {
+      onInviteFriend(action.friend, true);
+    }
+  }
   const visibleFriends = useMemo(() => {
     if (!searchNeedle) return friends;
     return friends.filter((friend) => roomFriendMatchesSearch(friend, searchNeedle));
   }, [friends, searchNeedle]);
   useEffect(() => {
     function closeOnEscape(event: KeyboardEvent) {
-      if (event.key === "Escape") onClose();
+      if (event.key !== "Escape") return;
+      if (pendingPublicAction) {
+        setPendingPublicAction(null);
+        return;
+      }
+      onClose();
     }
     window.addEventListener("keydown", closeOnEscape);
     return () => window.removeEventListener("keydown", closeOnEscape);
-  }, [onClose]);
+  }, [onClose, pendingPublicAction]);
 
   return (
     <div className="dc-modal-backdrop" role="presentation" onClick={onClose}>
@@ -152,7 +204,7 @@ export default function RoomInviteModal({
               {roomLabel} 초대 및 연결
             </h2>
             <p className="mt-1 text-[13px] text-text-muted preserve-words">
-              사람이나 현재 열려 있는 AI 대화를 초대합니다. 서버가 계속 관리할 에이전트는 이 창이 아니라 에이전트 추가에서 만드세요.
+              사람이나 외부 AI 세션을 초대합니다. 서버가 계속 관리할 에이전트는 이 창이 아니라 에이전트 추가에서 만드세요.
             </p>
           </div>
           <button
@@ -188,8 +240,8 @@ export default function RoomInviteModal({
                   : publicAccessStopping
                     ? "외부 접속 닫는 중"
                     : publicAccessRunning
-                      ? "외부 접속 가능"
-                      : "로컬 전용"}
+                      ? "외부 접속 열림"
+                      : "외부 접속 꺼짐"}
               </span>
             </div>
             <p>
@@ -205,7 +257,7 @@ export default function RoomInviteModal({
               disabled={publicAccessBusy || publicAccessRunning}
               onClick={onStartTunnel}
             >
-              서버 공개
+              외부 접속 열기
             </button>
             <button
               type="button"
@@ -213,7 +265,7 @@ export default function RoomInviteModal({
               disabled={publicAccessBusy || !publicAccessRunning}
               onClick={onStopTunnel}
             >
-              로컬로 전환
+              외부 접속 끄기
             </button>
           </div>
         </section>
@@ -223,9 +275,39 @@ export default function RoomInviteModal({
             <div>
               <h3 id="human-invite-heading">사람 초대</h3>
               <p>
-                브라우저에서 여는 1회용 보안 링크입니다.
+                브라우저에서 여는 보안 링크입니다. 초대 인원과 만료 시간을 선택할 수 있습니다.
                 {readOnlyInvite ? " 이 방에서는 읽기 전용으로 참가합니다." : ""}
               </p>
+            </div>
+            <div className="dc-invite-options">
+              <label>
+                <span>초대 가능 인원</span>
+                <select
+                  value={humanMaxUses}
+                  onChange={(event) => {
+                    setHumanMaxUses(Number(event.currentTarget.value));
+                    setGeneratedHumanOptions(null);
+                  }}
+                >
+                  <option value={1}>1명 (권장)</option>
+                  <option value={5}>5명</option>
+                  <option value={0}>제한 없음</option>
+                </select>
+              </label>
+              <label>
+                <span>링크 유효시간</span>
+                <select
+                  value={humanTtlSeconds}
+                  onChange={(event) => {
+                    setHumanTtlSeconds(Number(event.currentTarget.value));
+                    setGeneratedHumanOptions(null);
+                  }}
+                >
+                  <option value={3600}>1시간</option>
+                  <option value={86400}>24시간 (권장)</option>
+                  <option value={604800}>7일</option>
+                </select>
+              </label>
             </div>
             <div className="dc-invite-link-row">
               <input
@@ -239,7 +321,8 @@ export default function RoomInviteModal({
               <button
                 type="button"
                 className="dc-invite-copy-button"
-                onClick={onGenerateSecureInvite}
+                aria-label="사람 초대 링크 생성"
+                onClick={() => requestPublicAction({ kind: "human", options: currentHumanOptions })}
               >
                 생성
               </button>
@@ -257,21 +340,27 @@ export default function RoomInviteModal({
 
           <section className="dc-invite-card" aria-labelledby="ai-invite-heading">
             <div>
-              <h3 id="ai-invite-heading">현재 AI 대화 참가</h3>
+              <h3 id="ai-invite-heading">외부 AI 세션 초대</h3>
               <p>
-                Codex·Claude 앱이나 대화형 CLI에 링크를 붙여 넣으면 그 대화가 직접 참가합니다. 새 provider나 관리형 세션은 만들지 않습니다.
+                Room Connector가 등록된 Codex·Claude 앱이나 대화형 CLI에 링크를 붙여 넣으면 그 세션이 직접 참가합니다. 새 provider나 관리형 세션은 만들지 않습니다.
               </p>
+              <span className="dc-invite-expiry-note">1회 사용 · 1시간 후 만료</span>
             </div>
             <div className="dc-invite-link-row">
               <input
                 className="dc-invite-link-input"
                 value={agentInviteUrl}
-                placeholder="1회용 AI 대화 초대 링크"
+                placeholder="외부 AI 세션 초대 링크"
                 readOnly
-                aria-label="현재 AI 대화 초대 링크"
+                aria-label="외부 AI 세션 초대 링크"
                 onFocus={(event) => event.currentTarget.select()}
               />
-              <button type="button" className="dc-invite-copy-button" onClick={onGenerateAgentInvite}>
+              <button
+                type="button"
+                className="dc-invite-copy-button"
+                aria-label="외부 AI 세션 초대 링크 생성"
+                onClick={() => requestPublicAction({ kind: "agent" })}
+              >
                 생성
               </button>
               <button
@@ -359,7 +448,7 @@ export default function RoomInviteModal({
                       data-state={needsRun ? "attention" : done ? "done" : "idle"}
                       disabled={disabled}
                       title={needsRun ? "provider/CLI 세션을 먼저 시작하거나 resume해야 합니다." : undefined}
-                      onClick={() => onInviteFriend(friend)}
+                      onClick={() => requestPublicAction({ kind: "friend", friend })}
                     >
                       {inviteFriendButtonLabel({ status, isAiFriend, readOnlyInvite })}
                     </button>
@@ -495,6 +584,42 @@ export default function RoomInviteModal({
               ? "이 미리보기 링크는 로컬/dev 확인용입니다. 외부 공유에는 공개 URL 기반 보안 초대 링크가 필요합니다."
               : "사람은 보안 /join?token=... 링크로 입장합니다. 오프라인 AI는 provider/CLI 세션을 먼저 시작하거나 resume해야 합니다.")}
         </p>
+        {pendingPublicAction && (
+          <div
+            className="dc-invite-confirm-backdrop"
+            role="presentation"
+            onClick={() => setPendingPublicAction(null)}
+          >
+            <section
+              className="dc-invite-confirm"
+              role="alertdialog"
+              aria-modal="true"
+              aria-labelledby="public-access-confirm-title"
+              onClick={(event) => event.stopPropagation()}
+            >
+              <h3 id="public-access-confirm-title">외부 접속을 열까요?</h3>
+              <p>
+                이 컴퓨터의 서버에 임시 공개 주소를 연결한 뒤 초대 링크를 만듭니다. 링크를 가진 사람이나 AI 세션만 참가할 수 있습니다.
+              </p>
+              <div className="dc-invite-confirm-actions">
+                <button
+                  type="button"
+                  className="dc-invite-copy-button"
+                  onClick={() => setPendingPublicAction(null)}
+                >
+                  취소
+                </button>
+                <button
+                  type="button"
+                  className="dc-invite-confirm-primary"
+                  onClick={confirmPublicAction}
+                >
+                  외부 접속 열고 링크 만들기
+                </button>
+              </div>
+            </section>
+          </div>
+        )}
       </section>
     </div>
   );

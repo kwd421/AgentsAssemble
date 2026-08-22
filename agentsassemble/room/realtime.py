@@ -97,6 +97,10 @@ from agentsassemble.room.moderation import (
 )
 from agentsassemble.room.attachments import FileAttachmentStore
 from agentsassemble.room.messages import RoomMessageService
+from agentsassemble.room.message_mutation_commands import (
+    MESSAGE_MUTATION_ACTIONS,
+    execute_message_mutation,
+)
 from agentsassemble.room.member_mute import RoomMemberMuteService
 from agentsassemble.room.member_roles import update_member_role_in_unit
 from agentsassemble.room.ordered_message_routing import RoomOrderedMessageRouter
@@ -194,6 +198,7 @@ class RoomRealtimeController:
         attention_shadow_mode: str = "off",
         reconcile_startup_sessions: bool = True,
         write_budget_policy: RoomWriteBudgetPolicy | None = None,
+        delete_side_chat: Callable[[str], object] | None = None,
     ) -> None:
         self.output_root = Path(output_root)
         self.store = repository or RoomStore(self.output_root)
@@ -469,13 +474,12 @@ class RoomRealtimeController:
                 )
                 .purged_count
             ),
-            delete_identity_room=lambda room_id: (
-                identity_store_for_output_root(
-                    self.output_root
-                ).delete_room(room_id)
-            ),
+            delete_identity_room=lambda room_id: identity_store_for_output_root(
+                self.output_root
+            ).delete_room(room_id),
             remove_event_listener=self._remove_room_event_listener,
             schedule_cleanup=self._deferred_cleanup.schedule,
+            delete_side_chat=delete_side_chat,
         )
         self._room_runtime_cleanup = RoomRuntimeCleanupService(
             store=self.store,
@@ -872,6 +876,10 @@ class RoomRealtimeController:
                 result = vote_summary(
                     self.store.vote_events(room_id, vote_id),
                     vote_id,
+                    viewer_participant_id=clean_lobby_text(
+                        identity.get("agent_id"),
+                        limit=128,
+                    ),
                 )
             except ValueError as error:
                 raise RoomCommandRejected(
@@ -923,13 +931,20 @@ class RoomRealtimeController:
                     request_id,
                     action,
                     payload,
-                    lambda unit: self._send_message(
+                    lambda unit: self._messages.send_in_unit(
                         identity,
                         payload,
                         unit=unit,
                         compatibility_muted=compatibility_muted,
+                        can_moderate=self._is_room_owner(identity, room_id) or room_identity_is_operator(identity),
                     ),
                 )
+        if action in MESSAGE_MUTATION_ACTIONS:
+            return execute_message_mutation(
+                action, identity, room_id, request_id, payload, self._messages,
+                self._lock, self._require_capability, self._execute_durable_command,
+                self._is_room_owner, self.store.unpin_message,
+            )
         if action in {"room.random.roll", "room.random.choose"}:
             self._require_capability(identity, "room.random")
             with self._lock:
@@ -1355,21 +1370,6 @@ class RoomRealtimeController:
             return self._turn_coordinator.turn_failed(identity, room_id, payload)
         raise RoomCommandRejected(f"Unsupported room command: {action}", code="unknown_action")
 
-    def _send_message(
-        self,
-        identity: dict[str, object],
-        payload: dict[str, object],
-        *,
-        unit: RoomCommandUnitOfWork,
-        compatibility_muted: bool,
-    ) -> dict[str, object]:
-        return self._messages.send_in_unit(
-            identity,
-            payload,
-            unit=unit,
-            compatibility_muted=compatibility_muted,
-        )
-
     def _create_agent(
         self,
         room_id: str,
@@ -1590,7 +1590,7 @@ class RoomRealtimeController:
             return
         if (
             event.get("message_source") == "room_tool_result"
-            or event.get("message_kind") == "vote_cast"
+            or event.get("message_kind") in {"vote_cast", "vote_withdraw", "vote_close"}
         ):
             return
         with self._lock:

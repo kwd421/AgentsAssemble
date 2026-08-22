@@ -15,7 +15,11 @@ from pathlib import Path
 from urllib.request import urlopen
 
 from agentsassemble.application.cli import core_commands
-from agentsassemble.application.rolling_restart import RollingRestartCoordinator
+from agentsassemble.application.engine_instance_lock import EngineInstanceLock
+from agentsassemble.application.rolling_restart import (
+    ROLLING_ENGINE_LOCK_FD_ENV,
+    RollingRestartCoordinator,
+)
 from agentsassemble.web.http_server import AgentsAssembleHTTPServer
 
 
@@ -109,35 +113,63 @@ class RollingRestartTests(unittest.TestCase):
     @unittest.skipUnless(os.name == "posix", "Rolling child startup uses POSIX descriptors.")
     def test_failed_replacement_keeps_current_server_accepting(self) -> None:
         server = _ObservedServer()
+        captured: dict[str, object] = {}
 
         def exited_child(*args: object, **kwargs: object) -> _ExitedChild:
-            del args, kwargs
+            captured.update(kwargs)
+            del args
             return _ExitedChild()
 
         with tempfile.TemporaryDirectory() as temp_dir:
-            coordinator = RollingRestartCoordinator(
-                server,
-                output_root=Path(temp_dir),
-                command=["replacement-gui"],
-                popen_factory=exited_child,
-                ready_timeout_seconds=1.0,
-            )
-            result = coordinator.request(blockers=[])
-            deadline = time.monotonic() + 2.0
-            while coordinator.status()["state"] != "failed" and time.monotonic() < deadline:
-                time.sleep(0.01)
+            root = Path(temp_dir)
+            with EngineInstanceLock.acquire(root) as engine_lock:
+                coordinator = RollingRestartCoordinator(
+                    server,
+                    output_root=root,
+                    engine_lock_fd=engine_lock.fileno(),
+                    command=["replacement-gui"],
+                    popen_factory=exited_child,
+                    ready_timeout_seconds=1.0,
+                )
+                result = coordinator.request(blockers=[])
+                deadline = time.monotonic() + 2.0
+                while coordinator.status()["state"] != "failed" and time.monotonic() < deadline:
+                    time.sleep(0.01)
 
-            status = coordinator.status()
+                status = coordinator.status()
+                child_environment = captured.get("env")
+                pass_fds = tuple(captured.get("pass_fds") or ())
+                self.assertIsInstance(child_environment, dict)
+                assert isinstance(child_environment, dict)
+                self.assertEqual(
+                    child_environment[ROLLING_ENGINE_LOCK_FD_ENV],
+                    str(engine_lock.fileno()),
+                )
+                self.assertIn(engine_lock.fileno(), pass_fds)
 
         self.assertTrue(result["accepted"])
         self.assertEqual(status["state"], "failed")
         self.assertFalse(server.shutdown_called.is_set())
 
+    @unittest.skipUnless(os.name == "posix", "Rolling child startup uses POSIX descriptors.")
+    def test_restart_is_refused_without_an_authoritative_engine_lock(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            coordinator = RollingRestartCoordinator(
+                _ObservedServer(),
+                output_root=Path(temp_dir),
+                command=["replacement-gui"],
+            )
+            result = coordinator.request(blockers=[])
+
+        self.assertFalse(result["accepted"])
+        self.assertIn("engine lock", str(result["error"]).casefold())
+
     @unittest.skipUnless(os.name == "posix", "Desktop process ownership uses POSIX groups.")
     def test_desktop_replacement_remains_in_the_shell_owned_process_group(self) -> None:
         server = _ObservedServer()
         with tempfile.TemporaryDirectory() as temp_dir:
-            group_path = Path(temp_dir) / "replacement-group.txt"
+            root = Path(temp_dir)
+            group_path = root / "replacement-group.txt"
             command = [
                 os.environ.get("PYTHON", "python3"),
                 "-c",
@@ -147,23 +179,25 @@ class RollingRestartTests(unittest.TestCase):
                     "time.sleep(10)"
                 ),
             ]
-            coordinator = RollingRestartCoordinator(
-                server,
-                output_root=Path(temp_dir),
-                command=command,
-                ready_timeout_seconds=1.0,
-            )
-            with patch.dict(os.environ, {"AGENTSASSEMBLE_DESKTOP_RUNTIME": "1"}):
-                result = coordinator.request(blockers=[])
-            deadline = time.monotonic() + 2.0
-            while not group_path.exists() and time.monotonic() < deadline:
-                time.sleep(0.01)
-            try:
-                self.assertTrue(result["accepted"])
-                self.assertTrue(group_path.exists())
-                self.assertEqual(int(group_path.read_text()), os.getpgrp())
-            finally:
-                coordinator.abandon_replacement("test complete")
+            with EngineInstanceLock.acquire(root) as engine_lock:
+                coordinator = RollingRestartCoordinator(
+                    server,
+                    output_root=root,
+                    engine_lock_fd=engine_lock.fileno(),
+                    command=command,
+                    ready_timeout_seconds=1.0,
+                )
+                with patch.dict(os.environ, {"AGENTSASSEMBLE_DESKTOP_RUNTIME": "1"}):
+                    result = coordinator.request(blockers=[])
+                deadline = time.monotonic() + 2.0
+                while not group_path.exists() and time.monotonic() < deadline:
+                    time.sleep(0.01)
+                try:
+                    self.assertTrue(result["accepted"])
+                    self.assertTrue(group_path.exists())
+                    self.assertEqual(int(group_path.read_text()), os.getpgrp())
+                finally:
+                    coordinator.abandon_replacement("test complete")
 
 
 class RollingRestartCliTests(unittest.TestCase):
