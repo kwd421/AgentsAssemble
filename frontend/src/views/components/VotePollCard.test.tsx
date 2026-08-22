@@ -123,6 +123,45 @@ describe("VotePollCard", () => {
     expect(screen.getByText("투표가 마감되었습니다")).toBeTruthy();
   });
 
+  it("shows when an open vote has no deadline", async () => {
+    const command = vi.fn().mockResolvedValue({
+      op: "ack",
+      request_id: "summary-no-deadline",
+      accepted: true,
+      action: "room.vote.summary",
+      result: {
+        vote_id: "vote-1",
+        question: "어느 길로 갈까?",
+        options: ["북쪽", "남쪽"],
+        vote_duration_seconds: 0,
+        vote_deadline_at: "",
+        created_by: "호스트",
+        created_at: "2026-01-01T00:00:00Z",
+        tallies: { 북쪽: 0, 남쪽: 0 },
+        own_choice: "",
+        total_votes: 0,
+        closed: false,
+      },
+    });
+    const socket: RoomSocketHandle = {
+      close: vi.fn(),
+      ready: () => true,
+      command,
+      say: vi.fn().mockResolvedValue({ events: [] }),
+      historyBefore: vi.fn(),
+    };
+    render(
+      <RoomSocketProvider socket={socket}>
+        <VotePollCard event={pollEvent()} />
+      </RoomSocketProvider>
+    );
+
+    expect(await screen.findByText("마감 시간 없음")).toBeTruthy();
+    expect(
+      (screen.getByText("북쪽").closest("button") as HTMLButtonElement).disabled
+    ).toBe(false);
+  });
+
   it("lets an authorized participant close an open vote through the room socket", async () => {
     const command = vi.fn().mockResolvedValue({
       op: "ack",

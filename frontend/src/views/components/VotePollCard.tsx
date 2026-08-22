@@ -120,7 +120,7 @@ export default function VotePollCard({
     ? "마감됨"
     : hasDeadline
       ? `남은 시간 ${remainingTimeLabel(deadlineMs - clockMs)}`
-      : "";
+      : "마감 시간 없음";
 
   return (
     <section className="dc-vote-card" aria-label={`투표: ${question}`}>

@@ -41,6 +41,7 @@ export default function VoteComposerDialog({
   const [question, setQuestion] = useState("");
   const [options, setOptions] = useState(["", ""]);
   const [durationMinutes, setDurationMinutes] = useState(DEFAULT_DURATION_MINUTES);
+  const [noDeadline, setNoDeadline] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
 
@@ -124,9 +125,10 @@ export default function VoteComposerDialog({
       return;
     }
     if (
-      !Number.isInteger(durationMinutes) ||
-      durationMinutes < 1 ||
-      durationMinutes > 1440
+      !noDeadline &&
+      (!Number.isInteger(durationMinutes) ||
+        durationMinutes < 1 ||
+        durationMinutes > 1440)
     ) {
       setError("투표 기간은 1분에서 1440분 사이여야 합니다.");
       return;
@@ -138,7 +140,7 @@ export default function VoteComposerDialog({
       await onSubmit({
         question: trimmedQuestion,
         options: trimmedOptions,
-        durationSeconds: durationMinutes * 60,
+        durationSeconds: noDeadline ? 0 : durationMinutes * 60,
       });
       onClose();
     } catch (errorValue) {
@@ -234,30 +236,43 @@ export default function VoteComposerDialog({
             </button>
           </fieldset>
 
-          <label className="dc-create-channel-name">
-            투표 기간 (분)
-            <input
-              className="ops-input"
-              type="number"
-              min={1}
-              max={1440}
-              step={1}
-              value={durationMinutes}
-              onChange={(event) => {
-                const nextValue = event.currentTarget.valueAsNumber;
-                setDurationMinutes(Number.isFinite(nextValue) ? nextValue : 0);
-              }}
-              disabled={busy}
-              aria-label="투표 기간 (분)"
-              aria-describedby={durationHelpId}
-            />
+          <div className="grid gap-2">
+            <label className="dc-create-channel-name">
+              투표 기간 (분)
+              <input
+                className="ops-input"
+                type="number"
+                min={1}
+                max={1440}
+                step={1}
+                value={durationMinutes}
+                onChange={(event) => {
+                  const nextValue = event.currentTarget.valueAsNumber;
+                  setDurationMinutes(Number.isFinite(nextValue) ? nextValue : 0);
+                }}
+                disabled={busy || noDeadline}
+                aria-label="투표 기간 (분)"
+                aria-describedby={durationHelpId}
+              />
+            </label>
+            <label className="inline-flex items-center gap-2 text-sm font-semibold">
+              <input
+                type="checkbox"
+                checked={noDeadline}
+                onChange={(event) => setNoDeadline(event.currentTarget.checked)}
+                disabled={busy}
+              />
+              마감 시간 없음
+            </label>
             <span
               id={durationHelpId}
               className="text-[12px] font-medium text-text-muted"
             >
-              설정한 시간이 지나면 서버가 새 투표를 받지 않습니다.
+              {noDeadline
+                ? "투표를 만든 사람이나 방 관리자/호스트가 직접 종료할 때까지 열립니다."
+                : "설정한 시간이 지나면 서버가 새 투표를 받지 않습니다."}
             </span>
-          </label>
+          </div>
 
           {error && (
             <p
