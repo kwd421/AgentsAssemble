@@ -3,6 +3,8 @@ import { Hash } from "lucide-react";
 import {
   type LiveAgent,
   type LobbyEvent,
+  type RoomEvent,
+  fetchRoomMessageContext,
   fetchMessagePins,
   setMessagePinned,
   type MessagePin,
@@ -29,6 +31,8 @@ import type {
   ProviderRequestResolution,
 } from "../lib/providerRequestModel";
 import ProviderRequestCard from "./components/ProviderRequestCard";
+import { projectRoomEventsToTimeline } from "../lib/roomEventProjection";
+import { useRoomMessageSearch } from "./useRoomMessageSearch";
 
 export default function LobbyView({
   activeRoom,
@@ -95,14 +99,17 @@ export default function LobbyView({
   const {
     handleLobbyPosted,
     handleLobbyScroll,
+    showHistoryWindow,
     hasMoreHistory,
     historyLoadError,
+    historyWindowActive,
     loadOlderHistory,
     loaded,
     loadingOlder,
     pinnedToLatest,
     scrollRef,
     scrollToLatest,
+    suppressAutomaticHistoryLoad,
     voteRevisions,
     visibleEvents,
   } = useLobbyHistory({
@@ -119,7 +126,12 @@ export default function LobbyView({
   const [pinsLoading, setPinsLoading] = useState(false);
   const [pinsError, setPinsError] = useState("");
   const [pinBusyIds, setPinBusyIds] = useState<Set<string>>(() => new Set());
-  const [pendingPinTarget, setPendingPinTarget] = useState("");
+  const [pendingMessageTarget, setPendingMessageTarget] = useState("");
+  const messageSearch = useRoomMessageSearch({
+    roomId: activeRoom.meetingId,
+    channelId: "lobby",
+    sessionToken: roomSessionToken,
+  });
 
   const reloadPins = useCallback(async () => {
     setPinsLoading(true);
@@ -158,9 +170,44 @@ export default function LobbyView({
     [mentionables]
   );
   const channelSearchItems = useMemo(
-    () =>
-      visibleEvents
-        .filter((event) => Boolean(event.message?.trim()))
+    () => {
+      const serverItems = messageSearch.results.map((result) => {
+        const date = new Date(result.created_at);
+        return {
+          id: result.event_id,
+          author: result.author || "Room",
+          body: result.content || result.attachment_filenames.join(", "),
+          meta: date.toLocaleString("ko-KR", {
+            month: "numeric",
+            day: "numeric",
+            hour: "2-digit",
+            minute: "2-digit",
+          }),
+          exactTime: date.toLocaleString("ko-KR", {
+            year: "numeric",
+            month: "long",
+            day: "numeric",
+            hour: "2-digit",
+            minute: "2-digit",
+            second: "2-digit",
+          }),
+          onSelect: () => {
+            void navigateToMessage(result.event_id).catch((reason) => {
+              setPendingMessageTarget("");
+              messageSearch.setError(
+                reason instanceof Error ? reason.message : "검색한 메시지로 이동하지 못했습니다."
+              );
+            });
+          },
+        };
+      });
+      if (serverItems.length) return serverItems;
+      const needle = messageSearch.query.trim().toLocaleLowerCase();
+      if (!needle) return [];
+      return visibleEvents
+        .filter((event) => `${event.name}\n${event.message}`.toLocaleLowerCase().includes(needle))
+        .slice()
+        .reverse()
         .map((event) => ({
           id: event.id,
           author: event.name || "Room",
@@ -171,15 +218,10 @@ export default function LobbyView({
             hour: "2-digit",
             minute: "2-digit",
           }),
-          onSelect: () => {
-            const target = Array.from(
-              scrollRef.current?.querySelectorAll<HTMLElement>("[data-room-event-id]") || []
-            ).find((candidate) => candidate.dataset.roomEventId === event.id);
-            target?.scrollIntoView({ block: "center" });
-            target?.focus({ preventScroll: true });
-          },
-        })),
-    [scrollRef, visibleEvents]
+          onSelect: () => jumpToEvent(event.id),
+        }));
+    },
+    [messageSearch.query, messageSearch.results, visibleEvents]
   );
   const latestReadSequence = useMemo(
     () => visibleEvents.reduce((latest, event) => Math.max(latest, Number(event.seq) || 0), 0),
@@ -213,32 +255,41 @@ export default function LobbyView({
     ).find((candidate) => candidate.dataset.roomEventId === eventId);
     target?.scrollIntoView({ block: "center" });
     target?.focus({ preventScroll: true });
+    if (target) {
+      target.dataset.searchTarget = "true";
+      window.setTimeout(() => delete target.dataset.searchTarget, 1800);
+    }
   }
   useEffect(() => {
-    if (!pendingPinTarget) return;
+    if (!pendingMessageTarget) return;
     const match = visibleEvents.find(
-      (event) => event.record_id === pendingPinTarget || event.id === pendingPinTarget
+      (event) => event.record_id === pendingMessageTarget || event.id === pendingMessageTarget
     );
     if (!match) return;
     window.requestAnimationFrame(() => jumpToEvent(match.id));
-    setPendingPinTarget("");
-  }, [pendingPinTarget, visibleEvents]);
+    setPendingMessageTarget("");
+  }, [pendingMessageTarget, visibleEvents]);
+
+  async function navigateToMessage(eventId: string) {
+    suppressAutomaticHistoryLoad();
+    setPendingMessageTarget(eventId);
+    const context = await fetchRoomMessageContext({
+      roomId: activeRoom.meetingId,
+      channelId: "lobby",
+      eventId,
+      sessionToken: roomSessionToken,
+    });
+    showHistoryWindow(
+      projectRoomEventsToTimeline(context.events as RoomEvent[], { viewerParticipantId })
+    );
+  }
 
   async function selectPin(pin: MessagePin) {
     setPinsError("");
     try {
-      setPendingPinTarget(pin.event_id);
-      if (!loadCanonicalHistory || !pin.seq || canonicalOldestSeq <= pin.seq) return;
-      let beforeSeq = canonicalOldestSeq;
-      let hasMore = canonicalHasMoreHistory;
-      while (hasMore && pin.seq < beforeSeq) {
-        const page = await loadCanonicalHistory(beforeSeq);
-        if (!page.loadedCount || page.oldestSeq >= beforeSeq) break;
-        beforeSeq = page.oldestSeq;
-        hasMore = page.hasMoreBefore;
-      }
+      await navigateToMessage(pin.event_id);
     } catch (error) {
-      setPendingPinTarget("");
+      setPendingMessageTarget("");
       setPinsError(error instanceof Error ? error.message : "고정 메시지로 이동하지 못했습니다.");
     }
   }
@@ -326,12 +377,16 @@ export default function LobbyView({
         onOpenMobileSidebar={onOpenMobileSidebar}
         onOpenMobileInfo={onOpenMobileInfo}
         searchItems={channelSearchItems}
-        searchHasMore={hasMoreHistory}
-        searchLoadingMore={loadingOlder}
-        onLoadMoreSearch={() => loadOlderHistory(scrollRef.current?.scrollTop)}
+        externalSearch
+        searchLoading={messageSearch.loading}
+        searchError={messageSearch.error}
+        onSearchQueryChange={messageSearch.updateQuery}
+        searchHasMore={messageSearch.hasMore}
+        searchLoadingMore={messageSearch.loadingMore}
+        onLoadMoreSearch={() => void messageSearch.loadMore()}
       />
 
-      {firstUnreadEvent && latestReadSequence > lastReadSequence && (
+      {!historyWindowActive && firstUnreadEvent && latestReadSequence > lastReadSequence && (
         <div className="dc-unread-bar" role="region" aria-label="안 읽은 메시지">
           <button type="button" onClick={() => jumpToEvent(firstUnreadEvent.id)}>
             {unreadCount}개의 안 읽은 메시지
@@ -383,7 +438,12 @@ export default function LobbyView({
             </button>
           </div>
         )}
-        {loaded && !hasMoreHistory && (
+        {loaded && historyWindowActive && (
+          <p className="px-4 pb-3 text-center text-[12px] text-text-muted">
+            검색한 메시지 주변 기록
+          </p>
+        )}
+        {loaded && !historyWindowActive && !hasMoreHistory && (
           // The channel intro marks the true beginning of history, like Discord.
           <section className="dc-channel-intro px-4 pb-5 pt-2">
             <span className="dc-channel-intro-icon" data-has-image={Boolean(appearance?.iconImage)}>

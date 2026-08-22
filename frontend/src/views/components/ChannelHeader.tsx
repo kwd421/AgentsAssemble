@@ -34,6 +34,7 @@ export type ChannelSearchItem = {
   author: string;
   body: string;
   meta?: string;
+  exactTime?: string;
   onSelect: () => void;
 };
 
@@ -55,6 +56,10 @@ export default function ChannelHeader({
   searchItems = [],
   searchHasMore = false,
   searchLoadingMore = false,
+  searchLoading = false,
+  searchError = "",
+  externalSearch = false,
+  onSearchQueryChange,
   onLoadMoreSearch,
 }: {
   icon: ReactNode;
@@ -69,6 +74,10 @@ export default function ChannelHeader({
   searchItems?: ChannelSearchItem[];
   searchHasMore?: boolean;
   searchLoadingMore?: boolean;
+  searchLoading?: boolean;
+  searchError?: string;
+  externalSearch?: boolean;
+  onSearchQueryChange?: (query: string) => void;
   onLoadMoreSearch?: () => void;
 }) {
   const [activePanel, setActivePanel] = useState<HeaderPanel | null>(null);
@@ -81,7 +90,10 @@ export default function ChannelHeader({
       if ((event.metaKey || event.ctrlKey) && event.key.toLocaleLowerCase() === "f") {
         event.preventDefault();
         setActivePanel("search");
-        window.requestAnimationFrame(() => popupSearchRef.current?.focus());
+        window.requestAnimationFrame(() => {
+          popupSearchRef.current?.focus();
+          popupSearchRef.current?.select();
+        });
         return;
       }
       if (event.key === "Escape" && activePanel) {
@@ -102,6 +114,7 @@ export default function ChannelHeader({
     setSearchQuery(nextQuery);
     setActiveSearchIndex(-1);
     setActivePanel(nextQuery.trim() ? "search" : null);
+    onSearchQueryChange?.(nextQuery);
   }
 
   function openMemberSurface() {
@@ -121,17 +134,18 @@ export default function ChannelHeader({
   const searchNeedle = searchQuery.trim().toLocaleLowerCase();
   const searchMatches = useMemo(() => {
     if (!searchNeedle) return [];
+    if (externalSearch) return searchItems;
     return searchItems
       .filter((item) =>
         `${item.author}\n${item.body}`.toLocaleLowerCase().includes(searchNeedle)
       )
       .slice()
       .reverse();
-  }, [searchItems, searchNeedle]);
+  }, [externalSearch, searchItems, searchNeedle]);
 
   function selectSearchItem(item: ChannelSearchItem) {
     item.onSelect();
-    setActivePanel(null);
+    if (!externalSearch) setActivePanel(null);
   }
 
   function handleSearchKeyDown(event: ReactKeyboardEvent<HTMLInputElement>) {
@@ -353,7 +367,13 @@ export default function ChannelHeader({
                 </label>
                 {!searchNeedle ? (
                   <p className="dc-head-popover-copy preserve-words">
-                    검색어를 입력하면 현재까지 불러온 메시지에서 찾습니다.
+                    검색어를 입력하면 이 채널의 전체 메시지에서 찾습니다.
+                  </p>
+                ) : searchLoading && !searchMatches.length ? (
+                  <p className="dc-head-popover-copy preserve-words">검색하는 중입니다.</p>
+                ) : searchError ? (
+                  <p className="dc-head-popover-copy preserve-words" role="alert">
+                    {searchError}
                   </p>
                 ) : searchMatches.length ? (
                   <>
@@ -368,6 +388,7 @@ export default function ChannelHeader({
                           type="button"
                           data-active={index === (activeSearchIndex < 0 ? 0 : activeSearchIndex)}
                           onClick={() => selectSearchItem(item)}
+                          title={item.exactTime}
                         >
                           <span className="dc-head-search-result-author preserve-words">
                             {item.author || "Room"}
@@ -386,7 +407,7 @@ export default function ChannelHeader({
                   </>
                 ) : (
                   <p className="dc-head-popover-copy preserve-words">
-                    현재 불러온 메시지에는 일치하는 결과가 없습니다.
+                    일치하는 메시지가 없습니다.
                   </p>
                 )}
                 {searchNeedle && searchHasMore && onLoadMoreSearch && (
@@ -396,7 +417,7 @@ export default function ChannelHeader({
                       disabled={searchLoadingMore}
                       onClick={onLoadMoreSearch}
                     >
-                      {searchLoadingMore ? "이전 대화 불러오는 중..." : "이전 대화 더 검색"}
+                      {searchLoadingMore ? "검색 결과 불러오는 중..." : "검색 결과 더 보기"}
                     </button>
                   </div>
                 )}

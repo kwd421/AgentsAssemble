@@ -10,6 +10,7 @@ import {
 
 import {
   mergeLobbyEvents,
+  mergeLobbyEventsByCreatedAt,
   type LobbyEvent,
 } from "../../api";
 import type { RoomDockItem } from "../../lib/roomDockModel";
@@ -58,6 +59,8 @@ export function useLobbyHistory({
   const historyRoomRef = useRef(activeRoom.id);
   const initialBackfillFailedRoomRef = useRef("");
   const loadingOlderRoomRef = useRef("");
+  const historyLoadSuppressedUntilRef = useRef(0);
+  const historyWindowActiveRef = useRef(false);
   const prependAnchorRef = useRef<{
     roomId: string;
     eventId: string;
@@ -71,12 +74,14 @@ export function useLobbyHistory({
   const [hasMoreHistory, setHasMoreHistory] = useState(true);
   const [loadingOlder, setLoadingOlder] = useState(false);
   const [historyLoadError, setHistoryLoadError] = useState(false);
+  const [historyWindowActive, setHistoryWindowActive] = useState(false);
   const loaded = loadedRoomId === activeRoom.id;
   if (historyRoomRef.current !== activeRoom.id) {
     historyRoomRef.current = activeRoom.id;
     historyReadyRef.current = false;
     initialBackfillFailedRoomRef.current = "";
     prependAnchorRef.current = null;
+    historyWindowActiveRef.current = false;
   }
 
   const visibleEvents = useMemo(() => {
@@ -112,14 +117,23 @@ export function useLobbyHistory({
   }, []);
 
   const scrollToLatest = useCallback(() => {
+    if (historyWindowActiveRef.current) {
+      historyWindowActiveRef.current = false;
+      setHistoryWindowActive(false);
+      setEvents(canonicalEvents || []);
+      setHasMoreHistory(canonicalHasMoreHistory);
+    }
     const element = scrollRef.current;
     if (!element) return;
-    element.scrollTop = element.scrollHeight;
+    window.requestAnimationFrame(() => {
+      element.scrollTop = element.scrollHeight;
+    });
     updatePinnedToLatest(true);
-  }, [updatePinnedToLatest]);
+  }, [canonicalEvents, canonicalHasMoreHistory, updatePinnedToLatest]);
 
   const loadOlderHistory = useCallback((triggerScrollTop?: number) => {
     if (
+      Date.now() < historyLoadSuppressedUntilRef.current ||
       !historyReadyRef.current ||
       loadingOlderRoomRef.current === activeRoom.id ||
       !hasMoreHistory ||
@@ -185,8 +199,15 @@ export function useLobbyHistory({
 
   const handleLobbyScroll = useCallback(
     (event: UIEvent<HTMLDivElement>) => {
+      if (historyWindowActiveRef.current) {
+        updatePinnedToLatest(false);
+        return;
+      }
       updatePinnedToLatest(feedIsNearBottom(event.currentTarget));
-      if (event.currentTarget.scrollTop <= HISTORY_TOP_THRESHOLD) {
+      if (
+        Date.now() >= historyLoadSuppressedUntilRef.current
+        && event.currentTarget.scrollTop <= HISTORY_TOP_THRESHOLD
+      ) {
         loadOlderHistory(event.currentTarget.scrollTop);
       }
     },
@@ -248,9 +269,15 @@ export function useLobbyHistory({
   useEffect(() => {
     updatePinnedToLatest(true);
     setHistoryLoadError(false);
+    setHistoryWindowActive(false);
   }, [activeRoom.id, updatePinnedToLatest]);
 
   useEffect(() => {
+    if (historyWindowActiveRef.current && historyRoomRef.current === activeRoom.id) {
+      setHasMoreHistory(false);
+      setLoadedRoomId(activeRoom.id);
+      return;
+    }
     setEvents(canonicalEvents || []);
     setHasMoreHistory(canonicalHasMoreHistory);
     if (!canonicalHistoryReady) {
@@ -312,6 +339,7 @@ export function useLobbyHistory({
 
   const handleStreamEvents = useCallback((incoming: LobbyEvent[]) => {
     setEvents((previous) => {
+      if (historyWindowActiveRef.current) return previous;
       const next = mergeLobbyEvents(previous, incoming);
       if (next.length === previous.length) {
         const changed = next.some((event, index) => event !== previous[index]);
@@ -327,14 +355,33 @@ export function useLobbyHistory({
   }, [bindLobbyStream, handleStreamEvents]);
 
   const handleLobbyPosted = useCallback((postedEvents: LobbyEvent[]) => {
-    setEvents((previous) => mergeLobbyEvents(previous, postedEvents));
+    historyWindowActiveRef.current = false;
+    setHistoryWindowActive(false);
+    setEvents(mergeLobbyEvents(canonicalEvents || [], postedEvents));
+    setHasMoreHistory(canonicalHasMoreHistory);
+  }, [canonicalEvents, canonicalHasMoreHistory]);
+
+  const showHistoryWindow = useCallback((historyEvents: LobbyEvent[]) => {
+    historyWindowActiveRef.current = true;
+    setHistoryWindowActive(true);
+    setEvents(mergeLobbyEventsByCreatedAt([], historyEvents));
+    setHasMoreHistory(false);
+    setLoadedRoomId(activeRoom.id);
+    updatePinnedToLatest(false);
+  }, [activeRoom.id, updatePinnedToLatest]);
+
+  const suppressAutomaticHistoryLoad = useCallback((durationMs = 1200) => {
+    historyLoadSuppressedUntilRef.current = Date.now() + durationMs;
   }, []);
 
   return {
     handleLobbyPosted,
     handleLobbyScroll,
+    showHistoryWindow,
+    suppressAutomaticHistoryLoad,
     hasMoreHistory,
     historyLoadError,
+    historyWindowActive,
     loadOlderHistory,
     loaded,
     loadingOlder,

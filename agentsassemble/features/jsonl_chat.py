@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import json
+from collections import deque
 from datetime import UTC, datetime
 from pathlib import Path
 from uuid import uuid4
@@ -48,11 +49,13 @@ def build_chat_event(
     }
 
 
-def read_chat_events(path: Path, *, limit: int = 120) -> list[dict[str, object]]:
-    if not path.exists() or limit <= 0:
+def read_chat_events(path: Path, *, limit: int | None = 120) -> list[dict[str, object]]:
+    if not path.exists() or (limit is not None and limit <= 0):
         return []
     try:
-        lines = path.read_text(encoding="utf-8").splitlines()[-limit:]
+        lines = path.read_text(encoding="utf-8").splitlines()
+        if limit is not None:
+            lines = lines[-limit:]
     except OSError:
         return []
     events: list[dict[str, object]] = []
@@ -81,6 +84,43 @@ def read_chat_events_after(
     return events
 
 
+def read_chat_event_context(
+    path: Path,
+    event_id: str,
+    *,
+    radius: int = 15,
+) -> list[dict[str, object]]:
+    """Read only a bounded window around one event while streaming the file."""
+
+    if not path.exists() or not event_id or radius < 0:
+        return []
+    before: deque[dict[str, object]] = deque(maxlen=radius)
+    context: list[dict[str, object]] = []
+    remaining_after = radius
+    try:
+        with path.open("r", encoding="utf-8") as stream:
+            for line in stream:
+                try:
+                    payload = json.loads(line)
+                except json.JSONDecodeError:
+                    continue
+                if not isinstance(payload, dict):
+                    continue
+                if context:
+                    if remaining_after <= 0:
+                        break
+                    context.append(payload)
+                    remaining_after -= 1
+                    continue
+                if str(payload.get("id") or "") == event_id:
+                    context = [*before, payload]
+                else:
+                    before.append(payload)
+    except OSError:
+        return []
+    return context
+
+
 def _side(value: object) -> str:
     side = clean_room_text(value, limit=32)
     return side if side in {"mine", "my-agent", "other", "other-agent"} else "other"
@@ -97,4 +137,5 @@ __all__ = [
     "build_chat_event",
     "read_chat_events",
     "read_chat_events_after",
+    "read_chat_event_context",
 ]

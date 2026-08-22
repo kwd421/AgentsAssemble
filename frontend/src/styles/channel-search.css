@@ -96,3 +96,12 @@
 .dc-pinned-message-card > .dc-pinned-message-remove:focus-visible {
   color: var(--color-text-primary);
 }
+.dc-message[data-search-target="true"],
+.dc-channel-message[data-search-target="true"] {
+  animation: dc-search-target-flash 1.8s ease-out;
+}
+
+@keyframes dc-search-target-flash {
+  0%, 35% { background: color-mix(in srgb, var(--color-accent) 22%, transparent); }
+  100% { background: transparent; }
+}

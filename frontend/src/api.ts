@@ -11,6 +11,7 @@ export * from "./api/agentSessions";
 export * from "./api/invites";
 export * from "./api/identity";
 export * from "./api/messagePins";
+export * from "./api/messageSearch";
 export * from "./api/moderation";
 export * from "./api/personas";
 export * from "./api/room";
