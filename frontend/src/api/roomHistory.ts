@@ -30,6 +30,7 @@ export type LobbyAttachmentUploadOptions = {
 
 export interface LobbyEvent {
   id: string;
+  record_id?: string;
   seq?: number;
   kind: string;
   name: string;

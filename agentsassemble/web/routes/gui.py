@@ -6,6 +6,7 @@ from http import HTTPStatus
 
 from agentsassemble.application.gui import GuiApplicationServices
 from agentsassemble.features.mafia.routes import register_mafia_routes
+from agentsassemble.features.message_pins.routes import register_message_pin_routes
 from agentsassemble.features.side_chat.routes import register_side_chat_routes
 from agentsassemble.features.social.routes import register_room_friend_profile_routes
 from agentsassemble.identity.google import GoogleAccountLoginService
@@ -56,6 +57,7 @@ _HANDLER_AUTHORIZED_MUTATIONS = frozenset(
         "/api/public-invite/tunnel/start",
         "/api/public-invite/tunnel/stop",
         "/api/room/channel-say",
+        "/api/room-pins",
         "/api/room/voice/join",
         "/api/room/voice/leave",
         "/api/room-channels",
@@ -126,6 +128,7 @@ def register_current_gui_routes(
     )
     register_room_creation_routes(route_table)
     register_room_routes(route_table)
+    register_message_pin_routes(route_table)
     register_room_settings_routes(route_table)
     register_runtime_routes(
         route_table,

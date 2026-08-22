@@ -14,10 +14,12 @@ from agentsassemble.persistence.local.room.database import (
 from agentsassemble.persistence.local.room.repository import _VOTE_BALLOT_EVENTS_QUERY
 from agentsassemble.room_store import RoomStore
 from tests.room_repository_contract import RoomRepositoryContractMixin
+from tests.message_pin_repository_contract import MessagePinRepositoryContractMixin
 from tests.room_write_budget_contract import RoomWriteBudgetRepositoryContractMixin
 
 
 class SQLiteRoomRepositoryContractTests(
+    MessagePinRepositoryContractMixin,
     RoomWriteBudgetRepositoryContractMixin,
     RoomRepositoryContractMixin,
     unittest.TestCase,

@@ -69,3 +69,30 @@
   -webkit-box-orient: vertical;
   -webkit-line-clamp: 2;
 }
+
+.dc-pinned-message-card {
+  position: relative;
+  border: 1px solid var(--color-line);
+  border-radius: 6px;
+  background: color-mix(in srgb, var(--color-panel) 92%, transparent);
+}
+
+.dc-pinned-message-card > button:first-child {
+  width: 100%;
+  padding-right: 78px;
+}
+
+.dc-pinned-message-card > .dc-pinned-message-remove {
+  position: absolute;
+  top: 6px;
+  right: 6px;
+  display: block;
+  padding: 4px 6px;
+  color: var(--color-text-muted);
+  font-size: 10px;
+}
+
+.dc-pinned-message-card > .dc-pinned-message-remove:hover,
+.dc-pinned-message-card > .dc-pinned-message-remove:focus-visible {
+  color: var(--color-text-primary);
+}

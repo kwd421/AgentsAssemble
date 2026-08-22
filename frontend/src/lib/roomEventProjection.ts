@@ -143,6 +143,7 @@ export function projectRoomEventsToTimeline(
           : `${existing?.message || ""}${event.content || ""}`;
       const projected: LobbyEvent = {
         id: key,
+        record_id: event.type === "message_final" ? event.id : existing?.record_id,
         seq: Number(event.seq) || existing?.seq,
         created_at: event.created_at,
         name: isVoteResult ? "투표" : speaker.name,

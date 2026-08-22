@@ -14,6 +14,7 @@ from uuid import uuid4
 from agentsassemble.room.command_uow import RoomCommandUnitOfWork
 from agentsassemble.application.room_repository_factory import RoomRepositorySettings, build_room_repository
 from tests.room_repository_contract import RoomRepositoryContractMixin
+from tests.message_pin_repository_contract import MessagePinRepositoryContractMixin
 from tests.room_write_budget_contract import RoomWriteBudgetRepositoryContractMixin
 
 
@@ -177,6 +178,7 @@ class PostgresRoomRepositoryPoolIntegrationTests(unittest.TestCase):
     "AGENTSASSEMBLE_TEST_POSTGRES_DSN and the postgres extra are required",
 )
 class PostgresRoomRepositoryContractTests(
+    MessagePinRepositoryContractMixin,
     RoomWriteBudgetRepositoryContractMixin,
     RoomRepositoryContractMixin,
     unittest.TestCase,

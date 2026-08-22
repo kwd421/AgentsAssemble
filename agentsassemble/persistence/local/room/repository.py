@@ -30,6 +30,7 @@ from agentsassemble.persistence.local.room.database import (
     migration_report,
     open_room_database,
 )
+from agentsassemble.persistence.local.room.message_pins import SQLiteMessagePinRepositoryMixin
 from agentsassemble.persistence.local.room.write_budget import reserve_room_write_budget
 from agentsassemble.room_attention import AgentAttentionState, AttentionEvaluation
 from agentsassemble.room.global_settings import (
@@ -298,7 +299,7 @@ class _SQLiteRoomTransaction:
         return cancel_attention_job(self._connection, self._room_id, job_id)
 
 
-class RoomStore:
+class RoomStore(SQLiteMessagePinRepositoryMixin):
     """SQLite source of truth for room, participant, session, and event state."""
 
     def __init__(self, output_root: Path) -> None:

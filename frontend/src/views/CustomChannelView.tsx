@@ -1,18 +1,22 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import { Hash, Mic, MicOff, PhoneOff, Send, Volume2 } from "lucide-react";
+import { Hash, Mic, MicOff, PhoneOff, Pin, Send, Volume2 } from "lucide-react";
 import {
   fetchChannelLobby,
+  fetchMessagePins,
   fetchVoicePresence,
   joinVoiceChannel,
   leaveVoiceChannel,
   postChannelSay,
+  setMessagePinned,
   type LobbyEvent,
+  type MessagePin,
   type RoomChannel,
   type VoiceParticipant,
 } from "../api";
 import { usePoll } from "../hooks";
 import ChannelHeader from "./components/ChannelHeader";
 import type { ChannelHeaderActions } from "./components/ChannelHeader";
+import "../styles/custom-channel.css";
 
 /**
  * A custom (user-created) channel: a text channel renders its own message
@@ -102,6 +106,10 @@ function TextChannelBody({
   const [draft, setDraft] = useState("");
   const [sendError, setSendError] = useState("");
   const [sending, setSending] = useState(false);
+  const [pinnedItems, setPinnedItems] = useState<MessagePin[]>([]);
+  const [pinsLoading, setPinsLoading] = useState(false);
+  const [pinsError, setPinsError] = useState("");
+  const [pinBusyIds, setPinBusyIds] = useState<Set<string>>(() => new Set());
   const scrollRef = useRef<HTMLDivElement | null>(null);
 
   const fetcher = useCallback(
@@ -110,6 +118,7 @@ function TextChannelBody({
   );
   const [events, , error, refresh] = usePoll<LobbyEvent[]>(fetcher, 2500);
   const messages = events || [];
+  const pinnedEventIds = new Set(pinnedItems.map((pin) => pin.event_id));
   const channelSearchItems = messages
     .filter((event) => Boolean(event.message?.trim()))
     .map((event) => ({
@@ -152,6 +161,73 @@ function TextChannelBody({
     }
   }
 
+  async function reloadPins() {
+    setPinsLoading(true);
+    setPinsError("");
+    try {
+      setPinnedItems(
+        await fetchMessagePins({
+          roomId: meetingId,
+          channelId: channel.id,
+          sessionToken,
+        })
+      );
+    } catch (err) {
+      setPinsError(err instanceof Error ? err.message : "고정 메시지를 불러오지 못했습니다.");
+    } finally {
+      setPinsLoading(false);
+    }
+  }
+
+  async function setPinned(eventId: string, pinned: boolean) {
+    if (!eventId || pinBusyIds.has(eventId)) return;
+    setPinBusyIds((current) => new Set(current).add(eventId));
+    setPinsError("");
+    try {
+      setPinnedItems(
+        await setMessagePinned({
+          roomId: meetingId,
+          channelId: channel.id,
+          eventId,
+          pinned,
+          sessionToken,
+        })
+      );
+    } catch (err) {
+      setPinsError(err instanceof Error ? err.message : "고정 상태를 바꾸지 못했습니다.");
+    } finally {
+      setPinBusyIds((current) => {
+        const next = new Set(current);
+        next.delete(eventId);
+        return next;
+      });
+    }
+  }
+
+  function selectPin(pin: MessagePin) {
+    const target = Array.from(
+      scrollRef.current?.querySelectorAll<HTMLElement>("[data-channel-event-id]") || []
+    ).find((candidate) => candidate.dataset.channelEventId === pin.event_id);
+    if (!target) {
+      setPinsError("현재 불러온 채널 기록에서 이 메시지를 찾지 못했습니다.");
+      return;
+    }
+    target.scrollIntoView({ block: "center" });
+    target.focus({ preventScroll: true });
+  }
+
+  const effectiveHeaderActions = {
+    ...(headerActions || {}),
+    pinnedItems,
+    pinsLoading,
+    pinsError,
+    onOpenPins: () => void reloadPins(),
+    onSelectPin: selectPin,
+    onUnpin: canPost
+      ? (pin: MessagePin) => void setPinned(pin.event_id, false)
+      : undefined,
+  };
+
   return (
     <div className="flex min-h-0 min-w-0 flex-1 flex-col">
       <ChannelHeader
@@ -162,7 +238,7 @@ function TextChannelBody({
         onToggleMembers={onToggleMembers}
         onOpenMobileSidebar={onOpenMobileSidebar}
         onOpenMobileInfo={onOpenMobileInfo}
-        headerActions={headerActions}
+        headerActions={effectiveHeaderActions}
         searchItems={channelSearchItems}
       />
       <div ref={scrollRef} className="min-h-0 flex-1 overflow-y-auto px-4 py-3 chat-scroll">
@@ -181,8 +257,22 @@ function TextChannelBody({
                 data-channel-event-id={event.id}
                 tabIndex={0}
               >
-                <span className="dc-channel-message-author preserve-words">
-                  {event.name || "익명"}
+                <span className="dc-channel-message-author-line">
+                  <span className="dc-channel-message-author preserve-words">
+                    {event.name || "익명"}
+                  </span>
+                  {canPost && (
+                    <button
+                      type="button"
+                      className="dc-channel-message-pin"
+                      data-pinned={pinnedEventIds.has(event.id)}
+                      disabled={pinBusyIds.has(event.id)}
+                      aria-label={pinnedEventIds.has(event.id) ? "메시지 고정 해제" : "메시지 고정"}
+                      onClick={() => void setPinned(event.id, !pinnedEventIds.has(event.id))}
+                    >
+                      <Pin size={13} fill={pinnedEventIds.has(event.id) ? "currentColor" : "none"} />
+                    </button>
+                  )}
                 </span>
                 <span className="dc-channel-message-body preserve-words">{event.message}</span>
               </li>

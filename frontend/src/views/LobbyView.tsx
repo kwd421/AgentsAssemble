@@ -1,8 +1,11 @@
-import { useMemo } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { Hash } from "lucide-react";
 import {
   type LiveAgent,
   type LobbyEvent,
+  fetchMessagePins,
+  setMessagePinned,
+  type MessagePin,
 } from "../api";
 import type { RoomDockItem } from "../lib/roomDockModel";
 import VotePollCard from "./components/VotePollCard";
@@ -112,6 +115,29 @@ export default function LobbyView({
     canonicalHasMoreHistory,
     loadCanonicalHistory,
   });
+  const [pinnedItems, setPinnedItems] = useState<MessagePin[]>([]);
+  const [pinsLoading, setPinsLoading] = useState(false);
+  const [pinsError, setPinsError] = useState("");
+  const [pinBusyIds, setPinBusyIds] = useState<Set<string>>(() => new Set());
+  const [pendingPinTarget, setPendingPinTarget] = useState("");
+
+  const reloadPins = useCallback(async () => {
+    setPinsLoading(true);
+    setPinsError("");
+    try {
+      setPinnedItems(
+        await fetchMessagePins({
+          roomId: activeRoom.meetingId,
+          channelId: "lobby",
+          sessionToken: roomSessionToken,
+        })
+      );
+    } catch (error) {
+      setPinsError(error instanceof Error ? error.message : "고정 메시지를 불러오지 못했습니다.");
+    } finally {
+      setPinsLoading(false);
+    }
+  }, [activeRoom.meetingId, roomSessionToken]);
 
   const mentionables = useMemo(
     () =>
@@ -181,16 +207,6 @@ export default function LobbyView({
         : 0,
     [firstUnreadEvent, lastReadSequence, visibleEvents]
   );
-  const effectiveHeaderActions = useMemo(
-    () =>
-      headerActions
-        ? {
-            ...headerActions,
-            latestReadCursor: latestReadSequence ? `seq:${latestReadSequence}` : "",
-          }
-        : undefined,
-    [headerActions, latestReadSequence]
-  );
   function jumpToEvent(eventId: string) {
     const target = Array.from(
       scrollRef.current?.querySelectorAll<HTMLElement>("[data-room-event-id]") || []
@@ -198,6 +214,76 @@ export default function LobbyView({
     target?.scrollIntoView({ block: "center" });
     target?.focus({ preventScroll: true });
   }
+  useEffect(() => {
+    if (!pendingPinTarget) return;
+    const match = visibleEvents.find(
+      (event) => event.record_id === pendingPinTarget || event.id === pendingPinTarget
+    );
+    if (!match) return;
+    window.requestAnimationFrame(() => jumpToEvent(match.id));
+    setPendingPinTarget("");
+  }, [pendingPinTarget, visibleEvents]);
+
+  async function selectPin(pin: MessagePin) {
+    setPinsError("");
+    try {
+      setPendingPinTarget(pin.event_id);
+      if (!loadCanonicalHistory || !pin.seq || canonicalOldestSeq <= pin.seq) return;
+      let beforeSeq = canonicalOldestSeq;
+      let hasMore = canonicalHasMoreHistory;
+      while (hasMore && pin.seq < beforeSeq) {
+        const page = await loadCanonicalHistory(beforeSeq);
+        if (!page.loadedCount || page.oldestSeq >= beforeSeq) break;
+        beforeSeq = page.oldestSeq;
+        hasMore = page.hasMoreBefore;
+      }
+    } catch (error) {
+      setPendingPinTarget("");
+      setPinsError(error instanceof Error ? error.message : "고정 메시지로 이동하지 못했습니다.");
+    }
+  }
+
+  async function setPinned(eventId: string, pinned: boolean) {
+    if (!eventId || pinBusyIds.has(eventId)) return;
+    setPinBusyIds((current) => new Set(current).add(eventId));
+    setPinsError("");
+    try {
+      setPinnedItems(
+        await setMessagePinned({
+          roomId: activeRoom.meetingId,
+          channelId: "lobby",
+          eventId,
+          pinned,
+          sessionToken: roomSessionToken,
+        })
+      );
+    } catch (error) {
+      setPinsError(error instanceof Error ? error.message : "고정 상태를 바꾸지 못했습니다.");
+    } finally {
+      setPinBusyIds((current) => {
+        const next = new Set(current);
+        next.delete(eventId);
+        return next;
+      });
+    }
+  }
+
+  const pinnedEventIds = useMemo(
+    () => new Set(pinnedItems.map((pin) => pin.event_id)),
+    [pinnedItems]
+  );
+  const effectiveHeaderActions = {
+    ...(headerActions || {}),
+    latestReadCursor: latestReadSequence ? `seq:${latestReadSequence}` : "",
+    pinnedItems,
+    pinsLoading,
+    pinsError,
+    onSelectPin: (pin: MessagePin) => void selectPin(pin),
+    onOpenPins: () => void reloadPins(),
+    onUnpin: canPostMessages
+      ? (pin: MessagePin) => void setPinned(pin.event_id, false)
+      : undefined,
+  };
   const activeThinking = useMemo(() => {
     const indicatorByTurn = new Map<string, RoomTypingIndicator>();
     typingIndicators.forEach((indicator) => {
@@ -375,6 +461,12 @@ export default function LobbyView({
                   ) : undefined
                 }
                 roomSessionToken={roomSessionToken}
+                pinned={pinnedEventIds.has(event.record_id || event.id)}
+                canPin={canPostMessages && !pinBusyIds.has(event.record_id || event.id)}
+                onTogglePin={() => {
+                  const eventId = event.record_id || event.id;
+                  void setPinned(eventId, !pinnedEventIds.has(eventId));
+                }}
               />
             );
           })

@@ -915,6 +915,7 @@ Detailed product policy: `docs/product/OPERATING_MODEL.md`.
 | Friends and local-profile HTTP | saved-friend records in `features/social/friends.py`; local UI profile in `features/social/profile.py`; routes in `features/social/routes.py` |
 | Play Mode Mafia HTTP | routes in `features/mafia/routes.py`; game state and rules in `features/mafia/game.py`; root compatibility exports in `gui_mafia_http.py` and `mafia_game.py` |
 | Ephemeral human-only side chat | process-memory retention and room scoping in `features/side_chat/service.py`; event normalization in `features/jsonl_chat.py`; human/browser HTTP authorization in `features/side_chat/routes.py`; Agent Bridge subscription rejection in `web/room_session.py` |
+| Channel-scoped pinned message pointers | local and PostgreSQL persistence in `persistence/`; human-only mutation and read projection in `features/message_pins/routes.py`; channel header and message actions in `frontend/src/views/` |
 | CLI parser registration | focused parsers and commands under `application/cli/`; dispatch in `cli.py` |
 | Canonical React transport and sequenced history | `frontend/src/useCanonicalRoom.ts`, `frontend/src/roomSocketClient.ts` |
 | React room composition | `frontend/src/App.tsx`; domain state belongs in focused hooks under `frontend/src/app/` |

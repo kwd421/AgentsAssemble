@@ -65,6 +65,7 @@ from agentsassemble.persistence.postgres.room.queries import (
     room_is_deleted as query_room_is_deleted,
 )
 from agentsassemble.persistence.postgres.room.write_budget import reserve_room_write_budget
+from agentsassemble.persistence.postgres.room.message_pins import PostgresMessagePinRepositoryMixin
 from agentsassemble.persistence.postgres.schema import upgrade_postgres_room_schema
 from agentsassemble.room_attention import AgentAttentionState, AttentionEvaluation
 from agentsassemble.room.global_settings import RoomGlobalSettingsRecord
@@ -308,7 +309,7 @@ class _PostgresRoomTransaction:
         return cancel_attention_job(self._connection, self._room_id, job_id)
 
 
-class PostgresRoomRepository:
+class PostgresRoomRepository(PostgresMessagePinRepositoryMixin):
     """Canonical room repository backed by PostgreSQL and explicit psycopg SQL."""
 
     def __init__(

@@ -11,6 +11,7 @@ import {
   Globe,
   LoaderCircle,
   MoreHorizontal,
+  Pin,
   Search,
   Terminal,
   Wrench,
@@ -349,6 +350,9 @@ export function LobbyMessageRow({
   showHeader = true,
   mentionLabels,
   roomSessionToken = "",
+  pinned = false,
+  canPin = false,
+  onTogglePin,
 }: {
   event: LobbyEvent;
   providerKind?: string;
@@ -356,6 +360,9 @@ export function LobbyMessageRow({
   showHeader?: boolean;
   mentionLabels: MentionLabels;
   roomSessionToken?: string;
+  pinned?: boolean;
+  canPin?: boolean;
+  onTogglePin?: () => void;
 }) {
   const systemLike =
     event.kind === "system" || event.kind === "flow_event" || event.kind === "vote_cast";
@@ -375,6 +382,18 @@ export function LobbyMessageRow({
         system={systemLike}
       />
       <div className="dc-message-actions" aria-label="메시지 작업">
+        {canPin && onTogglePin && (
+          <button
+            type="button"
+            className="dc-message-action-button"
+            aria-label={pinned ? "메시지 고정 해제" : "메시지 고정"}
+            title={pinned ? "고정 해제" : "메시지 고정"}
+            aria-pressed={pinned}
+            onClick={onTogglePin}
+          >
+            <Pin size={14} fill={pinned ? "currentColor" : "none"} />
+          </button>
+        )}
         <button
           type="button"
           className="dc-message-action-button"

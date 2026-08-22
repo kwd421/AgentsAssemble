@@ -8,6 +8,7 @@ import {
   type ReactNode,
 } from "react";
 import { ArrowLeft, Bell, ChevronRight, Pin, Search, Users, PanelRight } from "lucide-react";
+import type { MessagePin } from "../../api/messagePins";
 import "../../styles/channel-search.css";
 
 type HeaderPanel = "notifications" | "pins" | "search";
@@ -18,6 +19,12 @@ export type ChannelHeaderActions = {
   lastReadCursor?: string;
   latestReadCursor?: string;
   pinnedSummary?: string;
+  pinnedItems?: MessagePin[];
+  pinsLoading?: boolean;
+  pinsError?: string;
+  onSelectPin?: (pin: MessagePin) => void;
+  onUnpin?: (pin: MessagePin) => void;
+  onOpenPins?: () => void;
   onMarkRead?: (cursor?: string) => void;
   onOpenSettings?: () => void;
 };
@@ -216,7 +223,10 @@ export default function ChannelHeader({
           className="dc-head-icon"
           aria-label="고정 메시지"
           aria-pressed={activePanel === "pins"}
-          onClick={() => togglePanel("pins")}
+          onClick={() => {
+            if (activePanel !== "pins") headerActions?.onOpenPins?.();
+            togglePanel("pins");
+          }}
         >
           <Pin size={17} />
         </button>
@@ -280,7 +290,43 @@ export default function ChannelHeader({
             {activePanel === "pins" && (
               <>
                 <p className="dc-head-popover-title">고정 메시지</p>
-                <p className="dc-head-popover-copy preserve-words">{pinnedSummary}</p>
+                {headerActions?.pinsLoading ? (
+                  <p className="dc-head-popover-copy preserve-words">고정 메시지를 불러오는 중입니다.</p>
+                ) : headerActions?.pinsError ? (
+                  <p className="dc-head-popover-copy preserve-words" role="alert">
+                    {headerActions.pinsError}
+                  </p>
+                ) : headerActions?.pinnedItems?.length ? (
+                  <div className="dc-head-search-results" role="list" aria-label="고정 메시지 목록">
+                    {headerActions.pinnedItems.map((pin) => (
+                      <div className="dc-pinned-message-card" role="listitem" key={pin.event_id}>
+                        <button type="button" onClick={() => headerActions.onSelectPin?.(pin)}>
+                          <span className="dc-head-search-result-author preserve-words">
+                            {pin.author || "Room"}
+                          </span>
+                          <span className="dc-head-search-result-meta preserve-words">
+                            {new Date(pin.created_at).toLocaleString("ko-KR")}
+                          </span>
+                          <span className="dc-head-search-result-body preserve-words">
+                            {pin.content || pin.attachment_filenames.join(", ")}
+                          </span>
+                        </button>
+                        {headerActions.onUnpin && (
+                          <button
+                            type="button"
+                            className="dc-pinned-message-remove"
+                            onClick={() => headerActions.onUnpin?.(pin)}
+                            aria-label={`${pin.author || "Room"} 메시지 고정 해제`}
+                          >
+                            고정 해제
+                          </button>
+                        )}
+                      </div>
+                    ))}
+                  </div>
+                ) : (
+                  <p className="dc-head-popover-copy preserve-words">{pinnedSummary}</p>
+                )}
               </>
             )}
             {activePanel === "search" && (
