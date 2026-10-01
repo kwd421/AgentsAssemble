@@ -214,7 +214,7 @@ export async function signedHostRequest(
   bodyValue,
   options = {}
 ) {
-  const pathname = `/v1/servers/${serverId}/endpoint`;
+  const pathname = options.pathname || `/v1/servers/${serverId}/endpoint`;
   const bodyText = JSON.stringify(bodyValue);
   const timestamp = options.timestamp || Math.floor(Date.now() / 1000);
   const nonce = options.nonce || randomBase64Url(18);

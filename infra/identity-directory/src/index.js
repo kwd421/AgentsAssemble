@@ -20,6 +20,10 @@ import {
   registerServer,
   updateEndpoint,
 } from "./servers.js";
+import {
+  createServerConnectGrant,
+  redeemServerConnectGrant,
+} from "./server_connect_grants.js";
 
 async function route(request, env) {
   const url = new URL(request.url);
@@ -79,6 +83,18 @@ async function route(request, env) {
       true
     );
   }
+  const connectGrantRedeemMatch = url.pathname.match(
+    /^\/v1\/servers\/([^/]+)\/connect-grants\/redeem$/
+  );
+  if (connectGrantRedeemMatch && request.method === "POST") {
+    return redeemServerConnectGrant(
+      request,
+      env,
+      cleanIdentifier(connectGrantRedeemMatch[1], "server_id"),
+      text,
+      now
+    );
+  }
 
   const session = await authenticated(request, env, text, now);
   if (request.method === "GET" && url.pathname === "/v1/bootstrap") {
@@ -99,6 +115,18 @@ async function route(request, env) {
   }
   if (request.method === "POST" && url.pathname === "/v1/servers") {
     return registerServer(session, env, text, now);
+  }
+  const connectGrantMatch = url.pathname.match(
+    /^\/v1\/servers\/([^/]+)\/connect-grants$/
+  );
+  if (connectGrantMatch && request.method === "POST") {
+    return createServerConnectGrant(
+      session,
+      env,
+      cleanIdentifier(connectGrantMatch[1], "server_id"),
+      text,
+      now
+    );
   }
   const serverMatch = url.pathname.match(/^\/v1\/servers\/([^/]+)$/);
   if (serverMatch && request.method === "DELETE") {
@@ -198,6 +226,9 @@ async function cleanup(env) {
       .bind(now - 86400),
     env.DB
       .prepare("DELETE FROM google_handoffs WHERE expires_at < ?")
+      .bind(now),
+    env.DB
+      .prepare("DELETE FROM server_connect_grants WHERE expires_at < ?")
       .bind(now),
     env.DB
       .prepare(

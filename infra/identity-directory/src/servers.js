@@ -146,7 +146,7 @@ export async function deleteServer(session, env, serverId) {
   return json({ status: "server_deleted", server_id: serverId });
 }
 
-async function hostAuthentication(request, env, serverId, body, now) {
+export async function hostAuthentication(request, env, serverId, body, now) {
   const server = await env.DB
     .prepare(
       "SELECT host_public_key_jwk FROM servers WHERE server_id = ? AND revoked_at IS NULL"

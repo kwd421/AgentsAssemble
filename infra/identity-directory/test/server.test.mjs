@@ -107,6 +107,169 @@ test("host-signed endpoint leases are monotonic and immediately revocable", asyn
   assert.equal((await payload(afterStop)).servers[0].endpoint.status, "offline");
 });
 
+test("owner connect grants stay bound to the current session, host, and endpoint lease", async () => {
+  const env = environment();
+  const { key, created } = await createGuestIdentity(env);
+  const host = await hostKey();
+  const serverId = "connect-grant-server-0001";
+  const register = await signedDeviceRequest(
+    env,
+    created.session,
+    key.pair,
+    "/v1/servers",
+    "POST",
+    {
+      server_id: serverId,
+      label: "Home Mac",
+      host_public_key_jwk: host.publicJwk,
+      host_registration_proof: await hostRegistrationProof(
+        host.pair,
+        serverId,
+        created.person.person_id
+      ),
+    }
+  );
+  assert.equal(register.status, 201);
+  const now = Math.floor(Date.now() / 1000);
+  const endpointBody = {
+    origin: "https://owner-connect.trycloudflare.com",
+    generation: 101,
+    issued_at: now,
+    lease_expires_at: now + 600,
+  };
+  assert.equal(
+    (await signedHostRequest(env, serverId, host.pair, "PUT", endpointBody)).status,
+    200
+  );
+
+  const issued = await signedDeviceRequest(
+    env,
+    created.session,
+    key.pair,
+    `/v1/servers/${serverId}/connect-grants`,
+    "POST",
+    {}
+  );
+  assert.equal(issued.status, 201);
+  const grant = await payload(issued);
+  assert.match(grant.grant_token, /^aacg1\.[A-Za-z0-9_-]{43}$/);
+  assert.equal(grant.origin, endpointBody.origin);
+  assert.equal(grant.generation, endpointBody.generation);
+
+  const redeemPath = `/v1/servers/${serverId}/connect-grants/redeem`;
+  const redeemBody = {
+    grant_token: grant.grant_token,
+    origin: grant.origin,
+    generation: grant.generation,
+  };
+  const redeemed = await signedHostRequest(
+    env,
+    serverId,
+    host.pair,
+    "POST",
+    redeemBody,
+    { pathname: redeemPath }
+  );
+  assert.equal(redeemed.status, 200);
+  assert.deepEqual(await payload(redeemed), {
+    status: "authorized",
+    server_id: serverId,
+    person_id: created.person.person_id,
+    device_id: created.session.device_id,
+    origin: grant.origin,
+    generation: grant.generation,
+    expires_at: grant.expires_at,
+  });
+
+  const movedEndpoint = {
+    ...endpointBody,
+    origin: "https://owner-connect-next.trycloudflare.com",
+    generation: 102,
+  };
+  assert.equal(
+    (await signedHostRequest(env, serverId, host.pair, "PUT", movedEndpoint)).status,
+    200
+  );
+  const staleGrant = await signedHostRequest(
+    env,
+    serverId,
+    host.pair,
+    "POST",
+    redeemBody,
+    { pathname: redeemPath }
+  );
+  assert.equal(staleGrant.status, 401);
+  assert.equal((await staleGrant.json()).error.code, "connect_grant_invalid");
+});
+
+test("logout immediately invalidates an issued owner connect grant", async () => {
+  const env = environment();
+  const { key, created } = await createGuestIdentity(env);
+  const host = await hostKey();
+  const serverId = "logout-grant-server-0001";
+  assert.equal(
+    (
+      await signedDeviceRequest(env, created.session, key.pair, "/v1/servers", "POST", {
+        server_id: serverId,
+        host_public_key_jwk: host.publicJwk,
+        host_registration_proof: await hostRegistrationProof(
+          host.pair,
+          serverId,
+          created.person.person_id
+        ),
+      })
+    ).status,
+    201
+  );
+  const now = Math.floor(Date.now() / 1000);
+  const endpointBody = {
+    origin: "https://logout-grant.trycloudflare.com",
+    generation: 1,
+    issued_at: now,
+    lease_expires_at: now + 600,
+  };
+  assert.equal(
+    (await signedHostRequest(env, serverId, host.pair, "PUT", endpointBody)).status,
+    200
+  );
+  const issued = await signedDeviceRequest(
+    env,
+    created.session,
+    key.pair,
+    `/v1/servers/${serverId}/connect-grants`,
+    "POST",
+    {}
+  );
+  const grant = await payload(issued);
+  assert.equal(
+    (
+      await signedDeviceRequest(
+        env,
+        created.session,
+        key.pair,
+        "/v1/logout",
+        "POST",
+        {}
+      )
+    ).status,
+    200
+  );
+  const rejected = await signedHostRequest(
+    env,
+    serverId,
+    host.pair,
+    "POST",
+    {
+      grant_token: grant.grant_token,
+      origin: grant.origin,
+      generation: grant.generation,
+    },
+    { pathname: `/v1/servers/${serverId}/connect-grants/redeem` }
+  );
+  assert.equal(rejected.status, 401);
+  assert.equal((await rejected.json()).error.code, "connect_grant_invalid");
+});
+
 test("one central identity cannot register more than twenty servers", async () => {
   const env = environment();
   const { key, created } = await createGuestIdentity(env);
