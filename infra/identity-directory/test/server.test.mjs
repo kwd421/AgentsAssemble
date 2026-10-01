@@ -202,6 +202,60 @@ test("owner connect grants stay bound to the current session, host, and endpoint
   assert.equal((await staleGrant.json()).error.code, "connect_grant_invalid");
 });
 
+test("concurrent owner connect grants preserve the per-session capacity", async () => {
+  const env = environment();
+  const { key, created } = await createGuestIdentity(env);
+  const host = await hostKey();
+  const serverId = "connect-grant-capacity-0001";
+  assert.equal(
+    (
+      await signedDeviceRequest(env, created.session, key.pair, "/v1/servers", "POST", {
+        server_id: serverId,
+        host_public_key_jwk: host.publicJwk,
+        host_registration_proof: await hostRegistrationProof(
+          host.pair,
+          serverId,
+          created.person.person_id
+        ),
+      })
+    ).status,
+    201
+  );
+  const now = Math.floor(Date.now() / 1000);
+  assert.equal(
+    (
+      await signedHostRequest(env, serverId, host.pair, "PUT", {
+        origin: "https://grant-capacity.trycloudflare.com",
+        generation: 1,
+        issued_at: now,
+        lease_expires_at: now + 600,
+      })
+    ).status,
+    200
+  );
+
+  const responses = await Promise.all(
+    Array.from({ length: 24 }, () =>
+      signedDeviceRequest(
+        env,
+        created.session,
+        key.pair,
+        `/v1/servers/${serverId}/connect-grants`,
+        "POST",
+        {}
+      )
+    )
+  );
+  assert.equal(responses.filter((response) => response.status === 201).length, 16);
+  assert.equal(responses.filter((response) => response.status === 409).length, 8);
+  assert.equal(
+    env.DB.database
+      .prepare("SELECT COUNT(*) AS count FROM server_connect_grants")
+      .get().count,
+    16
+  );
+});
+
 test("logout immediately invalidates an issued owner connect grant", async () => {
   const env = environment();
   const { key, created } = await createGuestIdentity(env);

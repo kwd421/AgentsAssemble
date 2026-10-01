@@ -40,27 +40,22 @@ export async function createServerConnectGrant(session, env, serverId, text, now
     .prepare("DELETE FROM server_connect_grants WHERE expires_at <= ?")
     .bind(now)
     .run();
-  const active = await env.DB
-    .prepare(
-      "SELECT COUNT(*) AS count FROM server_connect_grants WHERE session_id = ? AND expires_at > ?"
-    )
-    .bind(session.session_id, now)
-    .first();
-  if (Number(active?.count || 0) >= MAX_ACTIVE_GRANTS_PER_SESSION) {
-    throw new HttpError(409, "connect_grant_capacity");
-  }
   const secret = `${GRANT_PREFIX}${randomBase64Url(32)}`;
   const expiresAt = Math.min(
     now + GRANT_TTL_SECONDS,
     Number(session.expires_at),
     Number(endpoint.lease_expires_at)
   );
-  await env.DB
+  const inserted = await env.DB
     .prepare(
       `INSERT INTO server_connect_grants
        (grant_id, secret_hash, session_id, person_id, device_id, server_id,
         endpoint_origin, endpoint_generation, created_at, expires_at)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+       SELECT ?, ?, ?, ?, ?, ?, ?, ?, ?, ?
+       WHERE (
+         SELECT COUNT(*) FROM server_connect_grants
+         WHERE session_id = ? AND expires_at > ?
+       ) < ?`
     )
     .bind(
       `scg_${randomBase64Url(18)}`,
@@ -72,9 +67,15 @@ export async function createServerConnectGrant(session, env, serverId, text, now
       endpoint.origin,
       Number(endpoint.generation),
       now,
-      expiresAt
+      expiresAt,
+      session.session_id,
+      now,
+      MAX_ACTIVE_GRANTS_PER_SESSION
     )
     .run();
+  if (Number(inserted.meta?.changes || 0) !== 1) {
+    throw new HttpError(409, "connect_grant_capacity");
+  }
   return json(
     {
       grant_token: secret,
