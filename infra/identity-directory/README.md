@@ -63,6 +63,17 @@ fills the metadata once. Later login never overwrites it. No email scope is used
 The Rust profile owner fetches and canonicalizes the photo once into its existing
 local avatar storage; edited local profiles remain authoritative.
 
+Explicit desktop logout makes the next login allocate a fresh durable device
+credential instead of reusing a slot permanently bound to the previous account.
+This preserves the old guest/account and its recovery path. The bundled local
+operator may claim this server's directory registration for the newly signed-in
+account using a distinct `AA-HOST-CLAIM-1` proof and signed device request.
+Claims require the exact previously registered host key and a single-use nonce;
+ordinary registration still rejects a different owner or substituted key. One D1
+transaction changes the owner relation, keeps the old account's bookmark and
+preserves the endpoint. The existing 20-server bound also guards concurrent claims.
+No local rooms/messages, room permissions or Google identities are merged.
+
 `CENTRAL_ALLOWED_ORIGINS` is the exact comma-separated allowlist for trusted bundled
 client origins. Loopback HTTP origins are also accepted so the local desktop engine
 can complete first-run setup. Production keeps

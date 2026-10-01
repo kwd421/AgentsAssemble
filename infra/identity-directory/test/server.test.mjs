@@ -161,6 +161,43 @@ test("one central identity cannot register more than twenty servers", async () =
   );
 });
 
+test("concurrent host ownership claims preserve the twenty-server account limit", async () => {
+  const env = environment();
+  const target = await createGuestIdentity(env, { deviceId: "claim-target-device" });
+  const source = await createGuestIdentity(env, { deviceId: "claim-source-device" });
+  const host = await hostKey();
+  async function register(identity, serverId, claim = false) {
+    return signedDeviceRequest(env, identity.created.session, identity.key.pair, "/v1/servers", "POST", {
+      server_id: serverId, host_public_key_jwk: host.publicJwk,
+      ...(claim ? { claim_ownership: true } : {}),
+      host_registration_proof: await hostRegistrationProof(host.pair, serverId, identity.created.person.person_id, claim),
+    });
+  }
+  for (let index = 0; index < 19; index += 1) {
+    assert.equal((await register(target, `claim-existing-${index}`)).status, 201);
+  }
+  const incoming = ["claim-incoming-one", "claim-incoming-two"];
+  for (const serverId of incoming) assert.equal((await register(source, serverId)).status, 201);
+  // Both requests reach the public transactional storage boundary after their
+  // precheck sees nineteen servers. Only the atomic SQL guard may admit one.
+  const batch = env.DB.batch.bind(env.DB);
+  let release;
+  let arrivals = 0;
+  const bothReady = new Promise(resolve => { release = resolve; });
+  env.DB.batch = async statements => {
+    if (++arrivals === 2) release();
+    await bothReady;
+    return batch(statements);
+  };
+  const responses = await Promise.all(incoming.map(serverId => register(target, serverId, true)));
+  assert.deepEqual(responses.map(response => response.status).sort(), [200, 409]);
+  const failure = responses.find(response => response.status === 409);
+  assert.equal((await failure.json()).error.code, "server_limit_reached");
+  assert.equal((await env.DB.prepare("SELECT COUNT(*) AS count FROM servers WHERE owner_person_id=?").bind(target.created.person.person_id).first()).count, 20);
+  assert.equal((await env.DB.prepare("SELECT COUNT(*) AS count FROM person_servers WHERE person_id=? AND relation='owner'").bind(target.created.person.person_id).first()).count, 20);
+  assert.equal((await env.DB.prepare("SELECT COUNT(*) AS count FROM servers WHERE owner_person_id=?").bind(source.created.person.person_id).first()).count, 1);
+});
+
 test("an owner can revoke a server key and register a replacement", async () => {
   const env = environment();
   const { key, created } = await createGuestIdentity(env);

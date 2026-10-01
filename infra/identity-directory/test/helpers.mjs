@@ -111,7 +111,7 @@ export async function hostKey() {
   };
 }
 
-export async function hostRegistrationProof(pair, serverId, ownerPersonId) {
+export async function hostRegistrationProof(pair, serverId, ownerPersonId, claimOwnership = false) {
   const issuedAt = Math.floor(Date.now() / 1000);
   const nonce = randomBase64Url(18);
   const canonical = hostRegistrationCanonical({
@@ -119,6 +119,7 @@ export async function hostRegistrationProof(pair, serverId, ownerPersonId) {
     ownerPersonId,
     issuedAt,
     nonce,
+    claimOwnership,
   });
   const signature = await crypto.subtle.sign(
     "Ed25519",
@@ -130,6 +131,7 @@ export async function hostRegistrationProof(pair, serverId, ownerPersonId) {
     issued_at: issuedAt,
     nonce,
     signature: bytesToBase64Url(signature),
+    ...(claimOwnership ? { claim_ownership: true } : {}),
   };
 }
 

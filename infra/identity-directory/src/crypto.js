@@ -138,9 +138,9 @@ export async function deviceRequestCanonical({ method, pathname, timestamp, nonc
 }
 
 
-export function hostRegistrationCanonical({ serverId, ownerPersonId, issuedAt, nonce }) {
+export function hostRegistrationCanonical({ serverId, ownerPersonId, issuedAt, nonce, claimOwnership = false }) {
   return [
-    "AA-HOST-REGISTER-1",
+    claimOwnership ? "AA-HOST-CLAIM-1" : "AA-HOST-REGISTER-1",
     serverId,
     ownerPersonId,
     String(issuedAt),

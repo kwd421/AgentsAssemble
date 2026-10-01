@@ -14,6 +14,7 @@ import {
   parseJson,
 } from "./http.js";
 import { normalizeServerOrigin } from "./origin.js";
+import { claimServerOwnership } from "./server_owner_claim.js";
 
 const CLOCK_SKEW_SECONDS = 300;
 const NONCE_TTL_SECONDS = 600;
@@ -28,8 +29,10 @@ export async function registerServer(session, env, text, now) {
   const nonce = String(proof?.nonce || "");
   const ownerPersonId = String(proof?.owner_person_id || "");
   const signature = String(proof?.signature || "");
+  const claimOwnership = body.claim_ownership === true;
   if (
     ownerPersonId !== session.person_id ||
+    (proof?.claim_ownership === true) !== claimOwnership ||
     !Number.isInteger(issuedAt) ||
     Math.abs(now - issuedAt) > CLOCK_SKEW_SECONDS ||
     nonce.length < 16 ||
@@ -47,6 +50,7 @@ export async function registerServer(session, env, text, now) {
       ownerPersonId,
       issuedAt,
       nonce,
+      claimOwnership,
     })
   );
   if (!registrationValid) {
@@ -61,7 +65,7 @@ export async function registerServer(session, env, text, now) {
     .first();
   if (
     existing &&
-    (existing.owner_person_id !== session.person_id ||
+    ((!claimOwnership && existing.owner_person_id !== session.person_id) ||
       existing.host_key_fingerprint !== fingerprint)
   ) {
     throw new HttpError(
@@ -71,6 +75,11 @@ export async function registerServer(session, env, text, now) {
     );
   }
   const label = cleanText(body.label, 80);
+  if (existing && claimOwnership) {
+    return claimServerOwnership(env.DB, { serverId, personId: session.person_id,
+      fingerprint, label, previousOwner: existing.owner_person_id, nonce, now,
+      maxServers: MAX_SERVERS_PER_PERSON });
+  }
   if (existing) {
     await env.DB
       .prepare(

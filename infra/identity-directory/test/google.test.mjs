@@ -7,6 +7,11 @@ import {
   environment,
   payload,
   request,
+  createGuestIdentity,
+  hostKey,
+  hostRegistrationProof,
+  signedDeviceRequest,
+  signedHostRequest,
 } from "./helpers.mjs";
 
 async function googleSigner(env) {
@@ -106,6 +111,64 @@ test("native Google login rejects missing client-secret configuration before sta
   }
   const handoffs = await env.DB.prepare("SELECT COUNT(*) AS count FROM google_handoffs").first();
   assert.equal(handoffs.count, 0);
+});
+
+test("guest logout then existing Google login uses a new device slot and explicit host ownership claim", async () => {
+  const env = environment();
+  const signer = await googleSigner(env);
+  const originalFetch = globalThis.fetch;
+  async function login(device, deviceId) {
+    const handoff = await startNativeHandoff(env, device, deviceId);
+    const credential = await googleToken(signer, env, new URL(handoff.authorization_url).searchParams.get("nonce"), "same-account-on-two-computers");
+    globalThis.fetch = async () => Response.json({ id_token: credential });
+    return request(env, "/v1/auth/google/native/exchange", { method: "POST", body: JSON.stringify({ handoff_id: handoff.handoff_id, authorization_code: "4/fixture-account-switch-code", code_verifier: handoff.verifier }) });
+  }
+  try {
+    const macKey = await deviceKey();
+    const mac = await payload(await login(macKey, "mac-google-device"));
+    const { key: guestKey, created: guest } = await createGuestIdentity(env);
+    const host = await hostKey();
+    const serverId = "windows-guest-server";
+    const registration = { server_id: serverId, host_public_key_jwk: host.publicJwk,
+      host_registration_proof: await hostRegistrationProof(host.pair, serverId, guest.person.person_id) };
+    assert.equal((await signedDeviceRequest(env, guest.session, guestKey.pair, "/v1/servers", "POST", registration)).status, 201);
+    const now = Math.floor(Date.now() / 1000);
+    assert.equal((await signedHostRequest(env, serverId, host.pair, "PUT", {
+      origin: "https://fixture-switch.trycloudflare.com", generation: 1,
+      issued_at: now, lease_expires_at: now + 600,
+    })).status, 200);
+    assert.equal((await signedDeviceRequest(env, guest.session, guestKey.pair, "/v1/logout", "POST")).status, 200);
+    const oldSlot = await login(guestKey, guest.session.device_id);
+    assert.equal(oldSlot.status, 409);
+    assert.equal((await oldSlot.json()).error.code, "device_identity_conflict");
+
+    const windowsKey = await deviceKey();
+    const windowsResponse = await login(windowsKey, "windows-new-account-slot");
+    assert.equal(windowsResponse.status, 200);
+    const windows = await payload(windowsResponse);
+    assert.equal(windows.person.person_id, mac.person.person_id);
+    registration.host_registration_proof = await hostRegistrationProof(host.pair, serverId, windows.person.person_id);
+    const send = body => signedDeviceRequest(env, windows.session, windowsKey.pair, "/v1/servers", "POST", body);
+    assert.equal((await send(registration)).status, 409);
+    assert.equal((await send({ ...registration, claim_ownership: true })).status, 401);
+    const wrongHost = await hostKey();
+    const wrong = { ...registration, host_public_key_jwk: wrongHost.publicJwk, claim_ownership: true,
+      host_registration_proof: await hostRegistrationProof(wrongHost.pair, serverId, windows.person.person_id, true) };
+    assert.equal((await send(wrong)).status, 409);
+    const claim = { ...registration, claim_ownership: true,
+      host_registration_proof: await hostRegistrationProof(host.pair, serverId, windows.person.person_id, true) };
+    assert.equal((await send(claim)).status, 200);
+    assert.equal((await send(claim)).status, 409);
+    assert.equal((await env.DB.prepare("SELECT owner_person_id FROM servers WHERE server_id=?").bind(serverId).first()).owner_person_id, mac.person.person_id);
+    assert.equal((await env.DB.prepare("SELECT relation FROM person_servers WHERE person_id=? AND server_id=?").bind(guest.person.person_id, serverId).first()).relation, "bookmark");
+    assert.equal((await env.DB.prepare("SELECT COUNT(*) AS count FROM persons").first()).count, 2);
+    const listed = await signedDeviceRequest(env, mac.session, macKey.pair, "/v1/bootstrap");
+    assert.equal(listed.status, 200);
+    const server = (await payload(listed)).servers.find(row => row.server_id === serverId);
+    assert.equal(server.relation, "owner");
+    assert.equal(server.endpoint.origin, "https://fixture-switch.trycloudflare.com");
+    assert.equal(server.endpoint.generation, 1);
+  } finally { globalThis.fetch = originalFetch; }
 });
 
 test("native Google handoff opens Google's account chooser and exchanges its PKCE code", async () => {
