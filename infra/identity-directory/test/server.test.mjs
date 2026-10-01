@@ -256,6 +256,66 @@ test("concurrent owner connect grants preserve the per-session capacity", async 
   );
 });
 
+test("a server going offline between admission read and insertion cannot issue a grant", async () => {
+  const env = environment();
+  const { key, created } = await createGuestIdentity(env);
+  const host = await hostKey();
+  const serverId = "grant-offline-race-0001";
+  assert.equal(
+    (await signedDeviceRequest(env, created.session, key.pair, "/v1/servers", "POST", {
+      server_id: serverId,
+      host_public_key_jwk: host.publicJwk,
+      host_registration_proof: await hostRegistrationProof(
+        host.pair, serverId, created.person.person_id
+      ),
+    })).status,
+    201
+  );
+  const now = Math.floor(Date.now() / 1000);
+  assert.equal(
+    (await signedHostRequest(env, serverId, host.pair, "PUT", {
+      origin: "https://grant-race.trycloudflare.com",
+      generation: 1,
+      issued_at: now,
+      lease_expires_at: now + 600,
+    })).status,
+    200
+  );
+
+  const prepare = env.DB.prepare.bind(env.DB);
+  let interrupted = false;
+  env.DB.prepare = (sql) => {
+    const statement = prepare(sql);
+    if (!sql.includes("SELECT servers.owner_person_id")) return statement;
+    const bind = statement.bind.bind(statement);
+    statement.bind = (...values) => {
+      const bound = bind(...values);
+      const first = bound.first.bind(bound);
+      bound.first = async () => {
+        const result = await first();
+        if (!interrupted) {
+          interrupted = true;
+          env.DB.database.prepare(
+            "UPDATE server_endpoints SET state = 'offline', generation = 2 WHERE server_id = ?"
+          ).run(serverId);
+        }
+        return result;
+      };
+      return bound;
+    };
+    return statement;
+  };
+  const response = await signedDeviceRequest(
+    env, created.session, key.pair, `/v1/servers/${serverId}/connect-grants`, "POST", {}
+  );
+  assert.equal(interrupted, true);
+  assert.equal(response.status, 409);
+  assert.equal(
+    env.DB.database.prepare("SELECT COUNT(*) AS count FROM server_connect_grants").get().count,
+    0
+  );
+});
+
 test("logout immediately invalidates an issued owner connect grant", async () => {
   const env = environment();
   const { key, created } = await createGuestIdentity(env);

@@ -41,48 +41,66 @@ export async function createServerConnectGrant(session, env, serverId, text, now
     .bind(now)
     .run();
   const secret = `${GRANT_PREFIX}${randomBase64Url(32)}`;
-  const expiresAt = Math.min(
-    now + GRANT_TTL_SECONDS,
-    Number(session.expires_at),
-    Number(endpoint.lease_expires_at)
-  );
   const inserted = await env.DB
     .prepare(
       `INSERT INTO server_connect_grants
        (grant_id, secret_hash, session_id, person_id, device_id, server_id,
         endpoint_origin, endpoint_generation, created_at, expires_at)
-       SELECT ?, ?, ?, ?, ?, ?, ?, ?, ?, ?
-       WHERE (
+       SELECT ?, ?, sessions.session_id, sessions.person_id, sessions.device_id,
+              servers.server_id, server_endpoints.origin, server_endpoints.generation,
+              ?, MIN(?, sessions.expires_at, server_endpoints.lease_expires_at)
+       FROM sessions
+       JOIN devices ON devices.device_id = sessions.device_id
+                   AND devices.person_id = sessions.person_id
+       JOIN persons ON persons.person_id = sessions.person_id
+       JOIN servers ON servers.server_id = ?
+       JOIN server_endpoints ON server_endpoints.server_id = servers.server_id
+       WHERE sessions.session_id = ? AND sessions.person_id = ?
+         AND sessions.device_id = ? AND sessions.revoked_at IS NULL
+         AND sessions.expires_at > ? AND devices.revoked_at IS NULL
+         AND persons.status = 'active' AND servers.owner_person_id = sessions.person_id
+         AND servers.revoked_at IS NULL AND server_endpoints.state = 'online'
+         AND server_endpoints.origin != '' AND server_endpoints.lease_expires_at > ?
+         AND (
          SELECT COUNT(*) FROM server_connect_grants
-         WHERE session_id = ? AND expires_at > ?
-       ) < ?`
+         WHERE session_id = sessions.session_id AND expires_at > ?
+       ) < ?
+       RETURNING endpoint_origin, endpoint_generation, expires_at`
     )
     .bind(
       `scg_${randomBase64Url(18)}`,
       await sha256Base64Url(secret),
+      now,
+      now + GRANT_TTL_SECONDS,
+      serverId,
       session.session_id,
       session.person_id,
       session.device_id,
-      serverId,
-      endpoint.origin,
-      Number(endpoint.generation),
       now,
-      expiresAt,
-      session.session_id,
+      now,
       now,
       MAX_ACTIVE_GRANTS_PER_SESSION
     )
-    .run();
-  if (Number(inserted.meta?.changes || 0) !== 1) {
-    throw new HttpError(409, "connect_grant_capacity");
+    .first();
+  if (!inserted) {
+    const capacity = await env.DB.prepare(
+      `SELECT COUNT(*) AS count FROM server_connect_grants
+       WHERE session_id = ? AND expires_at > ?`
+    ).bind(session.session_id, now).first();
+    throw new HttpError(
+      409,
+      Number(capacity?.count || 0) >= MAX_ACTIVE_GRANTS_PER_SESSION
+        ? "connect_grant_capacity"
+        : "server_endpoint_unavailable"
+    );
   }
   return json(
     {
       grant_token: secret,
       server_id: serverId,
-      origin: endpoint.origin,
-      generation: Number(endpoint.generation),
-      expires_at: expiresAt,
+      origin: inserted.endpoint_origin,
+      generation: Number(inserted.endpoint_generation),
+      expires_at: Number(inserted.expires_at),
     },
     201
   );
