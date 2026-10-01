@@ -35,7 +35,8 @@ async function googleToken(
   env,
   nonce,
   subject = "raw-google-subject-must-not-be-stored",
-  clientId = env.GOOGLE_DESKTOP_CLIENT_ID
+  clientId = env.GOOGLE_DESKTOP_CLIENT_ID,
+  profileName = "Sensitive Google Name"
 ) {
   const now = Math.floor(Date.now() / 1000);
   const header = bytesToBase64Url(
@@ -54,9 +55,9 @@ async function googleToken(
         aud: clientId,
         sub: subject,
         nonce,
-        name: "Sensitive Google Name",
+        name: profileName,
         email: "sensitive@example.test",
-        picture: "https://profiles.example.test/sensitive.png",
+        picture: "https://lh3.googleusercontent.com/fixture-avatar",
         iat: now,
         exp: now + 600,
       })
@@ -96,6 +97,17 @@ async function startNativeHandoff(env, device, deviceId) {
   };
 }
 
+test("native Google login rejects missing client-secret configuration before starting a handoff", async () => {
+  const env = environment({ GOOGLE_DESKTOP_CLIENT_SECRET: undefined });
+  for (const path of ["/v1/auth/google/native/start", "/v1/auth/google/native/exchange"]) {
+    const response = await request(env, path, { method: "POST", body: "{}" });
+    assert.equal(response.status, 503);
+    assert.equal((await response.json()).error.code, "google_login_unavailable");
+  }
+  const handoffs = await env.DB.prepare("SELECT COUNT(*) AS count FROM google_handoffs").first();
+  assert.equal(handoffs.count, 0);
+});
+
 test("native Google handoff opens Google's account chooser and exchanges its PKCE code", async () => {
   const env = environment();
   const signer = await googleSigner(env);
@@ -120,7 +132,8 @@ test("native Google handoff opens Google's account chooser and exchanges its PKC
     "http://127.0.0.1:43123/api/central-login/callback"
   );
   assert.equal(authorizationUrl.searchParams.get("response_type"), "code");
-  assert.equal(authorizationUrl.searchParams.get("scope"), "openid");
+  assert.equal(authorizationUrl.searchParams.get("scope"), "openid profile");
+  assert.equal(authorizationUrl.searchParams.has("client_secret"), false);
   assert.equal(authorizationUrl.searchParams.get("state"), started.state);
   assert.equal(
     authorizationUrl.searchParams.get("code_challenge_method"),
@@ -153,6 +166,7 @@ test("native Google handoff opens Google's account chooser and exchanges its PKC
     const form = new URLSearchParams(String(init.body));
     assert.equal(form.get("code"), authorizationCode);
     assert.equal(form.get("client_id"), env.GOOGLE_DESKTOP_CLIENT_ID);
+    assert.equal(form.get("client_secret"), env.GOOGLE_DESKTOP_CLIENT_SECRET);
     assert.equal(form.get("code_verifier"), started.verifier);
     return new Response(JSON.stringify({ id_token: credential }), {
       status: 200,
@@ -172,6 +186,8 @@ test("native Google handoff opens Google's account chooser and exchanges its PKC
     );
     assert.equal(exchanged.status, "complete");
     assert.equal(exchanged.person.identity_kind, "google");
+    assert.equal(exchanged.person.display_name, "Sensitive Google Name");
+    assert.equal(exchanged.person.avatar_url, "https://lh3.googleusercontent.com/fixture-avatar");
 
     const replay = await request(env, "/v1/auth/google/native/exchange", {
       method: "POST",
@@ -207,4 +223,32 @@ test("native Google handoff rejects redirects outside the local app", async () =
   });
   assert.equal(response.status, 400);
   assert.equal((await response.json()).error.code, "invalid_redirect_uri");
+});
+
+test("Google profile defaults upgrade a placeholder once and never replace saved metadata", async () => {
+  const env = environment();
+  const signer = await googleSigner(env);
+  const device = await deviceKey();
+  const originalFetch = globalThis.fetch;
+  let personId;
+  try {
+    for (const name of ["Initial name", "Imported name", "Changed Google name"]) {
+      const started = await startNativeHandoff(env, device, "profile-relogin-device");
+      const nonce = new URL(started.authorization_url).searchParams.get("nonce");
+      const credential = await googleToken(signer, env, nonce, "same-profile-subject", env.GOOGLE_DESKTOP_CLIENT_ID, name);
+      globalThis.fetch = async () => Response.json({ id_token: credential });
+      const response = await request(env, "/v1/auth/google/native/exchange", { method: "POST", body: JSON.stringify({ handoff_id: started.handoff_id, authorization_code: "4/fixture-code-for-profile-test", code_verifier: started.verifier }) });
+      assert.equal(response.status, 200);
+      const result = await payload(response);
+      if (!personId) {
+        personId = result.person.person_id;
+        await env.DB.prepare("UPDATE persons SET display_name='Google user', avatar_url=NULL WHERE person_id=?").bind(personId).run();
+      } else {
+        assert.equal(result.person.person_id, personId);
+        assert.equal(result.person.display_name, "Imported name");
+        assert.equal(result.person.avatar_url, "https://lh3.googleusercontent.com/fixture-avatar");
+      }
+    }
+    assert.equal((await env.DB.prepare("SELECT COUNT(*) AS count FROM persons").first()).count, 1);
+  } finally { globalThis.fetch = originalFetch; }
 });

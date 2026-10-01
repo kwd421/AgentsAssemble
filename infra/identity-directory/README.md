@@ -14,12 +14,13 @@ and invite credentials remain on each AgentsAssemble engine.
   and are stored in D1 only as an HMAC verifier. A successful recovery rotates the
   code and revokes prior sessions for that device.
 - Google subjects are stored only as an HMAC keyed by `IDENTITY_PEPPER`; Google ID
-  tokens, raw subjects, names, email addresses, and profile images are never persisted.
+  tokens, raw subjects and email addresses are never persisted. Verified name/photo
+  URL metadata seeds display defaults; image bytes belong to each local engine.
 - Desktop Google login opens Google's standard installed-app authorization page,
   returns through an exact loopback callback, and exchanges the one-time Google
   authorization code with PKCE. The browser URL alone cannot claim the resulting
-  central session, and users do not copy a confirmation code. Only the `openid`
-  scope is requested; profile, email, name, birthday, and contacts are not requested.
+  central session, and users do not copy a confirmation code. The `openid profile`
+  scopes supply identity and display defaults; no email or contacts scope is used.
 - Signed sessions can revoke every other session or delete their central identity.
   Account deletion cascades through devices, sessions, recovery state, and owned
   server registrations.
@@ -42,13 +43,25 @@ wrangler d1 create agentsassemble-identity
 wrangler secret put RECOVERY_PEPPER
 wrangler secret put IDENTITY_PEPPER
 wrangler secret put GOOGLE_DESKTOP_CLIENT_ID   # Google Desktop app OAuth client
+wrangler secret put GOOGLE_DESKTOP_CLIENT_SECRET
 wrangler d1 migrations apply agentsassemble-identity --remote
 wrangler deploy
 ```
 
 Use independently generated 32-byte-or-longer values for both peppers. Do not reuse
 Cloudflare account API tokens, tunnel tokens, host tokens, or room credentials.
-The Desktop OAuth client is public and has no client secret in the app or Worker.
+The Desktop OAuth client ID is public. Keep its client secret only in the Worker
+secret binding; never include it in the app, browser authorization URL, or logs.
+Both bindings must be configured before native Google login is advertised.
+
+Native login requests `openid profile`. Only the verified Google subject identifies
+an account; its name and HTTPS Google profile-photo URL seed display defaults.
+Migration `0004_google_profile.sql` adds nullable `persons.avatar_url`: NULL means
+that an older Google placeholder has not received verified profile metadata;
+an empty string means the verified account has no supplied photo. First import
+fills the metadata once. Later login never overwrites it. No email scope is used.
+The Rust profile owner fetches and canonicalizes the photo once into its existing
+local avatar storage; edited local profiles remain authoritative.
 
 `CENTRAL_ALLOWED_ORIGINS` is the exact comma-separated allowlist for trusted bundled
 client origins. Loopback HTTP origins are also accepted so the local desktop engine

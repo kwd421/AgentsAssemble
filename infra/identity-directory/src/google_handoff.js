@@ -66,7 +66,7 @@ function pkceVerifier(value) {
 }
 
 export async function startNativeGoogleHandoff(request, env, text, now) {
-  if (!env.GOOGLE_DESKTOP_CLIENT_ID) {
+  if (!env.GOOGLE_DESKTOP_CLIENT_ID || !env.GOOGLE_DESKTOP_CLIENT_SECRET) {
     throw new HttpError(503, "google_login_unavailable");
   }
   await consumeRateLimit(
@@ -115,7 +115,7 @@ export async function startNativeGoogleHandoff(request, env, text, now) {
     client_id: String(env.GOOGLE_DESKTOP_CLIENT_ID),
     redirect_uri: redirectUri,
     response_type: "code",
-    scope: "openid",
+    scope: "openid profile",
     state,
     nonce,
     code_challenge: challenge,
@@ -142,6 +142,13 @@ async function findExternalPerson(env, issuer, subjectHmac) {
     .first();
 }
 
+async function initializeGoogleProfile(env, personId, identity, now) {
+  await env.DB.prepare(
+    `UPDATE persons SET display_name = CASE WHEN display_name = 'Google user' THEN ? ELSE display_name END,
+     avatar_url = ?, updated_at = ? WHERE person_id = ? AND avatar_url IS NULL`
+  ).bind(identity.name || "Google user", identity.picture, now, personId).run();
+}
+
 async function resolveGooglePerson(env, identity, now) {
   const issuer = "https://accounts.google.com";
   const subjectHmac = await hmacBase64Url(
@@ -149,7 +156,10 @@ async function resolveGooglePerson(env, identity, now) {
     `${issuer}\u0000${identity.subject}`
   );
   let external = await findExternalPerson(env, issuer, subjectHmac);
-  if (external?.person_id) return external.person_id;
+  if (external?.person_id) {
+    await initializeGoogleProfile(env, external.person_id, identity, now);
+    return external.person_id;
+  }
 
   const personId = `per_${randomBase64Url(18)}`;
   try {
@@ -158,10 +168,10 @@ async function resolveGooglePerson(env, identity, now) {
         .prepare(
           `INSERT INTO persons
            (person_id, identity_kind, display_name, status, created_at,
-            updated_at)
-           VALUES (?, 'google', ?, 'active', ?, ?)`
+            updated_at, avatar_url)
+           VALUES (?, 'google', ?, 'active', ?, ?, ?)`
         )
-        .bind(personId, "Google user", now, now),
+        .bind(personId, identity.name || "Google user", now, now, identity.picture),
       env.DB
         .prepare(
           `INSERT INTO external_identities
@@ -179,7 +189,10 @@ async function resolveGooglePerson(env, identity, now) {
     return personId;
   } catch (error) {
     external = await findExternalPerson(env, issuer, subjectHmac);
-    if (external?.person_id) return external.person_id;
+    if (external?.person_id) {
+      await initializeGoogleProfile(env, external.person_id, identity, now);
+      return external.person_id;
+    }
     throw error;
   }
 }
@@ -239,7 +252,7 @@ async function issueHandoffSession(env, row, now) {
     });
     const person = await env.DB
       .prepare(
-        "SELECT person_id, identity_kind, display_name FROM persons WHERE person_id = ?"
+        "SELECT person_id, identity_kind, display_name, avatar_url FROM persons WHERE person_id = ?"
       )
       .bind(row.person_id)
       .first();
@@ -284,6 +297,7 @@ async function exchangeGoogleAuthorizationCode(env, row, code, verifier) {
       body: new URLSearchParams({
         code,
         client_id: String(env.GOOGLE_DESKTOP_CLIENT_ID),
+        client_secret: String(env.GOOGLE_DESKTOP_CLIENT_SECRET),
         redirect_uri: row.redirect_uri,
         grant_type: "authorization_code",
         code_verifier: verifier,
@@ -308,7 +322,7 @@ async function exchangeGoogleAuthorizationCode(env, row, code, verifier) {
 }
 
 export async function exchangeNativeGoogleHandoff(env, text, now) {
-  if (!env.GOOGLE_DESKTOP_CLIENT_ID) {
+  if (!env.GOOGLE_DESKTOP_CLIENT_ID || !env.GOOGLE_DESKTOP_CLIENT_SECRET) {
     throw new HttpError(503, "google_login_unavailable");
   }
   const body = parseJson(text);

@@ -343,3 +343,14 @@ test("deleting an account requires explicit confirmation and removes central dat
   );
   assert.equal(expired.status, 401);
 });
+
+test("logout revokes only this device session and preserves the identity and other device", async () => {
+  const env = environment();
+  const { key, created } = await createGuestIdentity(env);
+  const second = await deviceKey();
+  const recovered = await payload(await request(env, "/v1/auth/recover", { method: "POST", body: JSON.stringify({ recovery_code: created.recovery_code, device_id: "logout-second-device", device_public_key_jwk: second.publicJwk }) }));
+  assert.equal((await signedDeviceRequest(env, created.session, key.pair, "/v1/logout", "POST")).status, 200);
+  assert.equal((await signedDeviceRequest(env, created.session, key.pair, "/v1/bootstrap")).status, 401);
+  assert.equal((await signedDeviceRequest(env, recovered.session, second.pair, "/v1/bootstrap")).status, 200);
+  assert.equal((await env.DB.prepare("SELECT COUNT(*) AS count FROM persons").first()).count, 1);
+});

@@ -85,7 +85,7 @@ export async function authenticated(request, env, body, now) {
 export async function bootstrap(session, env, now) {
   const person = await env.DB
     .prepare(
-      "SELECT person_id, identity_kind, display_name FROM persons WHERE person_id = ?"
+      "SELECT person_id, identity_kind, display_name, avatar_url FROM persons WHERE person_id = ?"
     )
     .bind(session.person_id)
     .first();

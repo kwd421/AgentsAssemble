@@ -1,4 +1,5 @@
 import { base64UrlToBytes, utf8 } from "./crypto.js";
+import { cleanText } from "./http.js";
 
 let cachedJwks = null;
 let cachedJwksUntil = 0;
@@ -66,5 +67,17 @@ export async function verifyGoogleIdToken(token, { clientId, nonce, nowSeconds, 
   if (!String(claims.sub || "").trim()) throw new Error("invalid Google credential");
   return {
     subject: String(claims.sub),
+    name: typeof claims.name === "string" ? cleanText(claims.name, 120) : "",
+    picture: typeof claims.picture === "string" ? googlePicture(claims.picture) : "",
   };
+}
+
+function googlePicture(value) {
+  const url = new URL(value);
+  if (value.length > 2048 || url.protocol !== "https:" ||
+      !["lh3.googleusercontent.com", "lh4.googleusercontent.com", "lh5.googleusercontent.com", "lh6.googleusercontent.com"].includes(url.hostname) ||
+      url.username || url.password || url.port || url.hash) {
+    throw new Error("invalid Google profile picture");
+  }
+  return url.href;
 }
