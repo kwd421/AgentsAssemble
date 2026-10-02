@@ -23,8 +23,8 @@ export async function claimServerOwnership(db, { serverId, personId, fingerprint
         .bind(serverId, personId, serverId, personId),
       db.prepare(`INSERT INTO person_servers (person_id, server_id, relation, alias, first_seen_at, last_connected_at)
         SELECT ?, server_id, 'owner', ?, ?, NULL FROM servers WHERE server_id = ? AND owner_person_id = ?
-        ON CONFLICT(person_id, server_id) DO UPDATE SET relation = 'owner', alias = excluded.alias`)
-        .bind(personId, label, now, serverId, personId),
+        ON CONFLICT(person_id, server_id) DO UPDATE SET relation = 'owner'`)
+        .bind(personId, "", now, serverId, personId),
     ]);
   } catch (error) {
     if (/UNIQUE constraint failed: host_request_nonces/.test(String(error?.message))) {

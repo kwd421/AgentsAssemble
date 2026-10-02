@@ -81,12 +81,13 @@ export async function registerServer(session, env, text, now) {
       maxServers: MAX_SERVERS_PER_PERSON });
   }
   if (existing) {
-    await env.DB
+    const result = await env.DB
       .prepare(
-        "UPDATE servers SET label = ?, revoked_at = NULL WHERE server_id = ?"
+        "UPDATE servers SET label = ?, revoked_at = NULL WHERE server_id = ? AND owner_person_id = ? AND host_key_fingerprint = ?"
       )
-      .bind(label, serverId)
+      .bind(label, serverId, session.person_id, fingerprint)
       .run();
+    if (Number(result.meta?.changes || 0) !== 1) throw new HttpError(409, "server_identity_conflict");
   } else {
     const count = await env.DB
       .prepare("SELECT COUNT(*) AS count FROM servers WHERE owner_person_id = ?")
@@ -119,7 +120,7 @@ export async function registerServer(session, env, text, now) {
               last_connected_at)
              VALUES (?, ?, 'owner', ?, ?, NULL)`
           )
-          .bind(session.person_id, serverId, label, now),
+          .bind(session.person_id, serverId, "", now),
       ]);
     } catch (error) {
       const message = String(error instanceof Error ? error.message : error);

@@ -15,6 +15,7 @@ import {
   exchangeNativeGoogleHandoff,
   startNativeGoogleHandoff,
 } from "./google_handoff.js";
+import { renameServer } from "./server_names.js";
 import { authenticated, bootstrap } from "./session.js";
 import {
   bookmark,
@@ -138,6 +139,10 @@ async function route(request, env) {
       text,
       now
     );
+  }
+  const nameMatch = url.pathname.match(/^\/v1\/servers\/([^/]+)\/name$/);
+  if (nameMatch && request.method === "POST") {
+    return renameServer(session, env, cleanIdentifier(nameMatch[1], "server_id"), text);
   }
   const serverMatch = url.pathname.match(/^\/v1\/servers\/([^/]+)$/);
   if (serverMatch && request.method === "DELETE") {
