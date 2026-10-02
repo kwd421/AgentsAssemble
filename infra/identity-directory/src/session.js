@@ -92,7 +92,7 @@ export async function bootstrap(session, env, now) {
   const result = await env.DB
     .prepare(
       `SELECT person_servers.server_id, person_servers.relation,
-              person_servers.alias, servers.label,
+              person_servers.alias, servers.label, servers.host_os,
               servers.host_public_key_jwk, servers.host_key_fingerprint,
               server_endpoints.origin, server_endpoints.state,
               server_endpoints.generation, server_endpoints.lease_expires_at,
@@ -109,6 +109,7 @@ export async function bootstrap(session, env, now) {
     server_id: row.server_id,
     relation: row.relation,
     alias: row.alias || (row.relation === "owner" ? row.label : "") || row.server_id,
+    host_os: row.relation === "owner" ? row.host_os : null,
     host_public_key_jwk: JSON.parse(row.host_public_key_jwk),
     host_key_fingerprint: row.host_key_fingerprint,
     endpoint:

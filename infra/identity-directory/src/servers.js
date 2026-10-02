@@ -74,18 +74,22 @@ export async function registerServer(session, env, text, now) {
       "This server identity is already registered."
     );
   }
+  const hostOs = body.host_os === undefined ? null : body.host_os;
+  if (body.host_os !== undefined && !["macos", "windows", "linux", "other"].includes(hostOs)) {
+    throw new HttpError(400, "invalid_host_os");
+  }
   const label = cleanText(body.label, 80);
   if (existing && claimOwnership) {
     return claimServerOwnership(env.DB, { serverId, personId: session.person_id,
-      fingerprint, label, previousOwner: existing.owner_person_id, nonce, now,
+      fingerprint, label, hostOs, previousOwner: existing.owner_person_id, nonce, now,
       maxServers: MAX_SERVERS_PER_PERSON });
   }
   if (existing) {
     const result = await env.DB
       .prepare(
-        "UPDATE servers SET label = ?, revoked_at = NULL WHERE server_id = ? AND owner_person_id = ? AND host_key_fingerprint = ?"
+        "UPDATE servers SET label = ?, host_os = COALESCE(?, host_os), revoked_at = NULL WHERE server_id = ? AND owner_person_id = ? AND host_key_fingerprint = ?"
       )
-      .bind(label, serverId, session.person_id, fingerprint)
+      .bind(label, hostOs, serverId, session.person_id, fingerprint)
       .run();
     if (Number(result.meta?.changes || 0) !== 1) throw new HttpError(409, "server_identity_conflict");
   } else {
@@ -102,8 +106,8 @@ export async function registerServer(session, env, text, now) {
           .prepare(
             `INSERT INTO servers
              (server_id, owner_person_id, host_public_key_jwk,
-              host_key_fingerprint, label, created_at, revoked_at)
-             VALUES (?, ?, ?, ?, ?, ?, NULL)`
+              host_key_fingerprint, label, host_os, created_at, revoked_at)
+             VALUES (?, ?, ?, ?, ?, ?, ?, NULL)`
           )
           .bind(
             serverId,
@@ -111,6 +115,7 @@ export async function registerServer(session, env, text, now) {
             canonicalJson(hostJwk),
             fingerprint,
             label,
+            hostOs,
             now
           ),
         env.DB

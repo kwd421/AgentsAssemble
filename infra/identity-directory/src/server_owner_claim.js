@@ -4,7 +4,7 @@ import { HttpError, json } from "./http.js";
 // native host signature and the exact existing host key. Preserve both accounts,
 // the endpoint and local room authority while moving this directory registration.
 export async function claimServerOwnership(db, { serverId, personId, fingerprint,
-  label, previousOwner, nonce, now, maxServers }) {
+  label, hostOs, previousOwner, nonce, now, maxServers }) {
   if (previousOwner !== personId) {
     const count = await db.prepare("SELECT COUNT(*) AS count FROM servers WHERE owner_person_id = ?").bind(personId).first();
     if (Number(count?.count || 0) >= maxServers) throw new HttpError(409, "server_limit_reached");
@@ -13,10 +13,10 @@ export async function claimServerOwnership(db, { serverId, personId, fingerprint
     await db.batch([
       db.prepare("INSERT INTO host_request_nonces (server_id, nonce, expires_at) VALUES (?, ?, ?)")
         .bind(serverId, `claim:${nonce}`, now + 600),
-      db.prepare(`UPDATE servers SET owner_person_id = ?, label = ?, revoked_at = NULL
+      db.prepare(`UPDATE servers SET owner_person_id = ?, label = ?, host_os = COALESCE(?, host_os), revoked_at = NULL
         WHERE server_id = ? AND owner_person_id = ? AND host_key_fingerprint = ?
         AND (owner_person_id = ? OR (SELECT COUNT(*) FROM servers WHERE owner_person_id = ?) < ?)`)
-        .bind(personId, label, serverId, previousOwner, fingerprint, personId, personId, maxServers),
+        .bind(personId, label, hostOs, serverId, previousOwner, fingerprint, personId, personId, maxServers),
       db.prepare(`UPDATE person_servers SET relation = 'bookmark'
         WHERE server_id = ? AND relation = 'owner' AND person_id <> ?
         AND EXISTS (SELECT 1 FROM servers WHERE server_id = ? AND owner_person_id = ?)`)
