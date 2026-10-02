@@ -91,3 +91,27 @@ separate policies.
 npm test
 npm run check
 ```
+
+## Browser account entry
+
+The fixed Worker origin serves the shared Rust frontend. A direct room-host URL
+links here instead of receiving central credentials. Google Identity Services uses
+`GOOGLE_CLIENT_ID` (a Web client with this exact Worker origin in Authorized
+JavaScript origins). Its ID token is checked with a one-use ten-minute nonce and
+browser-held verifier bound to the device public key. Only same-origin web start
+and completion requests are accepted; production CORS is unchanged. Google email
+claims are ignored and never stored. Native Desktop OAuth retains its original
+client and loopback callback. Both flows resolve the same canonical Google person.
+
+Build the Rust frontend before deploying the Worker together with its shared assets:
+
+```sh
+npm --prefix "$RUST_CHECKOUT/frontend" run build
+wrangler deploy --assets "$RUST_CHECKOUT/frontend/dist"
+```
+
+Keep the non-secret frontend `VITE_AGENTSASSEMBLE_CENTRAL_URL` equal to the deployed
+Worker origin. No schema migration is needed. The browser validates its central
+session, lists owner/bookmark records and opens an online owned server through the
+existing short connect grant. It cannot claim a host or initialize native authority.
+The central bearer/signing key stay at the central origin; hosts receive only grants.

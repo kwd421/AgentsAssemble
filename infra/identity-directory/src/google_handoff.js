@@ -197,7 +197,7 @@ async function resolveGooglePerson(env, identity, now) {
   }
 }
 
-async function verifiedGooglePerson(env, credential, clientId, row, now) {
+export async function verifiedGooglePerson(env, credential, clientId, row, now) {
   await consumeRateLimit(
     env.DB,
     `google-complete:${row.handoff_id}`,
@@ -224,7 +224,7 @@ async function verifiedGooglePerson(env, credential, clientId, row, now) {
   return personId;
 }
 
-async function issueHandoffSession(env, row, now) {
+export async function issueHandoffSession(env, row, now) {
   await requireCompatibleDevice(env.DB, row.device_id, row.person_id);
   const claimed = await env.DB
     .prepare(

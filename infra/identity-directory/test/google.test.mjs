@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import { bytesToBase64Url, utf8 } from "../src/crypto.js";
+import { bytesToBase64Url, utf8, sha256Base64Url } from "../src/crypto.js";
 import {
   deviceKey,
   environment,
@@ -314,4 +314,94 @@ test("Google profile defaults upgrade a placeholder once and never replace saved
     }
     assert.equal((await env.DB.prepare("SELECT COUNT(*) AS count FROM persons").first()).count, 1);
   } finally { globalThis.fetch = originalFetch; }
+});
+
+// Protects web completion at the HTTP and durable identity boundary. Removing
+// verifier/nonce/origin checks or allowing replay must issue an unexpected session.
+test("web Google login uses the existing person and rejects forged or replayed handoffs", async () => {
+  const env = environment({ GOOGLE_CLIENT_ID: "web-client.apps.googleusercontent.com" });
+  const pair = await googleSigner(env);
+  const device = await deviceKey();
+  const verifier = bytesToBase64Url(crypto.getRandomValues(new Uint8Array(32)));
+  const webRequest = (path, body, origin = "https://central.example") => request(env, path, {
+    method: "POST", headers: { origin }, body: JSON.stringify(body),
+  });
+  const body = { device_id: "browser-device-primary", device_public_key_jwk: device.publicJwk,
+    code_challenge: await sha256Base64Url(verifier) };
+  const rejected = await webRequest("/v1/auth/google/web/start", body, "http://127.0.0.1:43123");
+  assert.equal(rejected.status, 403);
+  const response = await webRequest("/v1/auth/google/web/start", body);
+  assert.equal(response.status, 201);
+  const started = await payload(response);
+  const credential = await googleToken(pair, env, started.nonce, undefined, env.GOOGLE_CLIENT_ID);
+  const complete = { handoff_id: started.handoff_id, credential, code_verifier: verifier };
+  assert.equal((await webRequest("/v1/auth/google/web/complete", { ...complete,
+    code_verifier: "x".repeat(43) })).status, 401);
+  for (const token of [await googleToken(pair, env, "wrong-nonce", undefined, env.GOOGLE_CLIENT_ID),
+    await googleToken(pair, env, started.nonce)]) {
+    assert.equal((await webRequest("/v1/auth/google/web/complete", { ...complete, credential: token })).status, 401);
+  }
+  assert.equal((await webRequest("/v1/auth/google/web/complete", complete, "http://127.0.0.1:43123")).status, 403);
+  assert.equal(env.DB.database.prepare("SELECT count(*) AS n FROM sessions").get().n, 0);
+  const result = await webRequest("/v1/auth/google/web/complete", complete);
+  assert.equal(result.status, 200);
+  const session = await payload(result);
+  const bootstrap = await signedDeviceRequest(env, session.session, device.pair, "/v1/bootstrap");
+  assert.equal(bootstrap.status, 200);
+  assert.equal((await payload(bootstrap)).person.person_id, session.person.person_id);
+  assert.equal((await webRequest("/v1/auth/google/web/complete", complete)).status, 409);
+  assert.equal(env.DB.database.prepare("SELECT count(*) AS n FROM sessions").get().n, 1);
+  const second = await payload(await webRequest("/v1/auth/google/web/start", { ...body, device_id: "browser-device-secondary" }));
+  const secondResult = await payload(await webRequest("/v1/auth/google/web/complete", {
+    handoff_id: second.handoff_id, code_verifier: verifier,
+    credential: await googleToken(pair, env, second.nonce, undefined, env.GOOGLE_CLIENT_ID),
+  }));
+  assert.equal(secondResult.person.person_id, session.person.person_id);
+  assert.equal(env.DB.database.prepare("SELECT count(*) AS n FROM persons").get().n, 1);
+});
+
+// Desktop and browser must resolve one canonical identity, not duplicate accounts.
+test("web and native Google login resolve the same canonical person", async () => {
+  const env = environment({ GOOGLE_CLIENT_ID: "web-client.apps.googleusercontent.com" });
+  const signer = await googleSigner(env);
+  const desktop = await startNativeHandoff(env, await deviceKey(), "desktop-shared-person");
+  const originalFetch = globalThis.fetch;
+  let native;
+  try {
+    const idToken = await googleToken(signer, env, new URL(desktop.authorization_url).searchParams.get("nonce"));
+    globalThis.fetch = async () => Response.json({ id_token: idToken });
+    native = await payload(await request(env, "/v1/auth/google/native/exchange", { method: "POST", body: JSON.stringify({
+      handoff_id: desktop.handoff_id, authorization_code: "4/fixture-shared-person-code", code_verifier: desktop.verifier,
+    }) }));
+  } finally { globalThis.fetch = originalFetch; }
+  const web = await deviceKey();
+  const verifier = bytesToBase64Url(crypto.getRandomValues(new Uint8Array(32)));
+  const started = await payload(await request(env, "/v1/auth/google/web/start", { method: "POST", headers: { origin: "https://central.example" }, body: JSON.stringify({
+    device_id: "web-shared-person", device_public_key_jwk: web.publicJwk, code_challenge: await sha256Base64Url(verifier),
+  }) }));
+  const body = JSON.stringify({ handoff_id: started.handoff_id, code_verifier: verifier,
+    credential: await googleToken(signer, env, started.nonce, undefined, env.GOOGLE_CLIENT_ID) });
+  const results = await Promise.all([1, 2].map(() => request(env, "/v1/auth/google/web/complete", { method: "POST", headers: { origin: "https://central.example" }, body })));
+  assert.deepEqual(results.map((r) => r.status).sort(), [200, 409]);
+  assert.equal((await payload(results.find((r) => r.status === 200))).person.person_id, native.person.person_id);
+  assert.equal(env.DB.database.prepare("SELECT count(*) AS n FROM persons").get().n, 1);
+  assert.equal(env.DB.database.prepare("SELECT count(*) AS n FROM sessions").get().n, 2);
+});
+
+test("expired or unconfigured web handoffs cannot issue a central session", async () => {
+  const env = environment();
+  const options = { method: "POST", headers: { origin: "https://central.example" }, body: "{}" };
+  assert.equal((await request(env, "/v1/auth/google/web/start", options)).status, 503);
+  env.GOOGLE_CLIENT_ID = "web-client.apps.googleusercontent.com";
+  const device = await deviceKey();
+  const verifier = bytesToBase64Url(crypto.getRandomValues(new Uint8Array(32)));
+  const started = await payload(await request(env, "/v1/auth/google/web/start", { ...options, body: JSON.stringify({
+    device_id: "browser-expiry-device", device_public_key_jwk: device.publicJwk, code_challenge: await sha256Base64Url(verifier),
+  }) }));
+  env.DB.database.prepare("UPDATE google_handoffs SET expires_at = 0 WHERE handoff_id = ?").run(started.handoff_id);
+  const result = await request(env, "/v1/auth/google/web/complete", { ...options, body: JSON.stringify({
+    handoff_id: started.handoff_id, code_verifier: verifier, credential: "expired-fixture",
+  }) });
+  assert.equal(result.status, 401);
+  assert.equal(env.DB.database.prepare("SELECT count(*) AS n FROM sessions").get().n, 0);
 });

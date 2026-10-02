@@ -1,3 +1,5 @@
+import { startWebGoogleHandoff, completeWebGoogleHandoff } from "./google_web.js";
+import { serveWebEntry } from "./web_entry.js";
 import { allowedBrowserOrigin } from "./origin.js";
 import { deleteAccount, logoutOtherSessions } from "./account.js";
 import { createGuest, recoverGuest } from "./guest.js";
@@ -28,12 +30,15 @@ import {
 async function route(request, env) {
   const url = new URL(request.url);
   const now = nowSeconds();
+  const web = await serveWebEntry(request, env);
+  if (web) return web;
   if (request.method === "GET" && url.pathname === "/healthz") {
     return json({ status: "ok" });
   }
   if (request.method === "GET" && url.pathname === "/v1/config") {
     return json({
       google_enabled: Boolean(env.GOOGLE_DESKTOP_CLIENT_ID && env.GOOGLE_DESKTOP_CLIENT_SECRET),
+      google_web_enabled: Boolean(env.GOOGLE_CLIENT_ID),
       google_native_enabled: Boolean(env.GOOGLE_DESKTOP_CLIENT_ID && env.GOOGLE_DESKTOP_CLIENT_SECRET),
       protocol_version: 3,
     });
@@ -59,6 +64,12 @@ async function route(request, env) {
     url.pathname === "/v1/auth/google/native/exchange"
   ) {
     return exchangeNativeGoogleHandoff(env, text, now);
+  }
+  if (request.method === "POST" && url.pathname === "/v1/auth/google/web/start") {
+    return startWebGoogleHandoff(request, env, text, now);
+  }
+  if (request.method === "POST" && url.pathname === "/v1/auth/google/web/complete") {
+    return completeWebGoogleHandoff(request, env, text, now);
   }
   const endpointMatch = url.pathname.match(
     /^\/v1\/servers\/([^/]+)\/endpoint$/

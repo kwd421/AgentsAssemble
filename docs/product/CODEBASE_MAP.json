@@ -21489,8 +21489,8 @@
   {
    "name": "infra",
    "note": "Deployment / infrastructure",
-   "files": 40,
-   "lines": 4645
+   "files": 31,
+   "lines": 4281
   }
  ]
 }
