@@ -29,8 +29,9 @@ test("owner names survive registration and claims; stale and foreign edits canno
   assert.equal(await name(), "Office Mac");
   assert.equal((await call(owner, path, "POST", body, { nonce: "rename_nonce_123456789" })).status, 200);
   assert.equal((await call(owner, path, "POST", body, { nonce: "rename_nonce_123456789" })).status, 409);
+  assert.equal((await call(owner, path, "POST", body)).status, 200);
   assert.equal((await call(owner, path, "POST", { ...body, name: "stale tab" })).status, 409);
-  for (const invalid of ["", "  ", "x\nname", "x".repeat(81), {}, null]) {
+  for (const invalid of ["", "  ", "x\nname", "x\u0085name", "x".repeat(81), {}, null]) {
     assert.equal((await call(owner, path, "POST", { name: invalid, expected_name: "내 메인 서버" })).status, 400);
   }
   await register("Changed OS name");
@@ -68,4 +69,27 @@ test("legacy repair changes only the automatically copied owner label", async ()
   assert.deepEqual(results.map((row) => [row.server_id, row.alias]), [
     ["bookmark-0003", "이 기기"], ["custom-0002", "작업 서버"], ["different-0004", "이 기기"], ["legacy-0001", ""],
   ]);
+});
+
+
+test("ownership transfer stops disclosing live host names to the previous account", async () => {
+  const env = environment();
+  const old = await createGuestIdentity(env);
+  const next = await createGuestIdentity(env, { deviceId: "next-owner-0003" });
+  const host = await hostKey();
+  const id = "transferred-host-0001";
+  async function register(who, label, claim = false) {
+    return signedDeviceRequest(env, who.created.session, who.key.pair, "/v1/servers", "POST", {
+      server_id: id, label, host_public_key_jwk: host.publicJwk,
+      host_registration_proof: await hostRegistrationProof(host.pair, id, who.created.person.person_id, claim),
+      ...(claim ? { claim_ownership: true } : {}),
+    });
+  }
+  const list = async (who) => (await payload(await signedDeviceRequest(env, who.created.session, who.key.pair, "/v1/bootstrap"))).servers;
+  assert.equal((await register(old, "Old computer")).status, 201);
+  assert.equal((await register(next, "Private new computer", true)).status, 200);
+  assert.equal((await list(next))[0].alias, "Private new computer");
+  assert.equal((await list(old))[0].alias, id);
+  await register(next, "New private hostname");
+  assert.equal((await list(old))[0].alias, id);
 });

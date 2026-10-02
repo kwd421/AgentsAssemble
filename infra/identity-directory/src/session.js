@@ -108,7 +108,7 @@ export async function bootstrap(session, env, now) {
   const servers = (result.results || []).map((row) => ({
     server_id: row.server_id,
     relation: row.relation,
-    alias: row.alias || row.label || row.server_id,
+    alias: row.alias || (row.relation === "owner" ? row.label : "") || row.server_id,
     host_public_key_jwk: JSON.parse(row.host_public_key_jwk),
     host_key_fingerprint: row.host_key_fingerprint,
     endpoint:
