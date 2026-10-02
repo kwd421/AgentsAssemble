@@ -285,7 +285,9 @@ function googleAuthorizationCode(value) {
   return clean;
 }
 
-async function exchangeGoogleAuthorizationCode(env, row, code, verifier) {
+async function exchangeGoogleAuthorizationCode(env, row, code, verifier, client = {
+  id: env.GOOGLE_DESKTOP_CLIENT_ID, secret: env.GOOGLE_DESKTOP_CLIENT_SECRET,
+}) {
   let response;
   try {
     response = await fetch("https://oauth2.googleapis.com/token", {
@@ -296,8 +298,8 @@ async function exchangeGoogleAuthorizationCode(env, row, code, verifier) {
       },
       body: new URLSearchParams({
         code,
-        client_id: String(env.GOOGLE_DESKTOP_CLIENT_ID),
-        client_secret: String(env.GOOGLE_DESKTOP_CLIENT_SECRET),
+        client_id: String(client.id),
+        client_secret: String(client.secret),
         redirect_uri: row.redirect_uri,
         grant_type: "authorization_code",
         code_verifier: verifier,
@@ -321,8 +323,14 @@ async function exchangeGoogleAuthorizationCode(env, row, code, verifier) {
   return payload.id_token;
 }
 
-export async function exchangeNativeGoogleHandoff(env, text, now) {
-  if (!env.GOOGLE_DESKTOP_CLIENT_ID || !env.GOOGLE_DESKTOP_CLIENT_SECRET) {
+export function exchangeNativeGoogleHandoff(env, text, now) {
+  return exchangeGoogleHandoff(env, text, now, "native", {
+    id: env.GOOGLE_DESKTOP_CLIENT_ID, secret: env.GOOGLE_DESKTOP_CLIENT_SECRET,
+  });
+}
+
+export async function exchangeGoogleHandoff(env, text, now, flowKind, client) {
+  if (!client.id || !client.secret) {
     throw new HttpError(503, "google_login_unavailable");
   }
   const body = parseJson(text);
@@ -333,7 +341,7 @@ export async function exchangeNativeGoogleHandoff(env, text, now) {
     .prepare("SELECT * FROM google_handoffs WHERE handoff_id = ?")
     .bind(handoffId)
     .first();
-  if (!row || row.expires_at <= now || row.flow_kind !== "native") {
+  if (!row || row.expires_at <= now || row.flow_kind !== flowKind) {
     throw new HttpError(401, "invalid_handoff");
   }
   const authorizationCodeHash = await sha256Base64Url(authorizationCode);
@@ -354,12 +362,13 @@ export async function exchangeNativeGoogleHandoff(env, text, now) {
     env,
     row,
     authorizationCode,
-    verifier
+    verifier,
+    client
   );
   const personId = await verifiedGooglePerson(
     env,
     credential,
-    env.GOOGLE_DESKTOP_CLIENT_ID,
+    client.id,
     row,
     now
   );
@@ -367,9 +376,9 @@ export async function exchangeNativeGoogleHandoff(env, text, now) {
     .prepare(
       `UPDATE google_handoffs
        SET status = 'ready', person_id = ?, authorization_code_hash = ?
-       WHERE handoff_id = ? AND status = 'pending' AND flow_kind = 'native'`
+       WHERE handoff_id = ? AND status = 'pending' AND flow_kind = ?`
     )
-    .bind(personId, authorizationCodeHash, row.handoff_id)
+    .bind(personId, authorizationCodeHash, row.handoff_id, flowKind)
     .run();
   if (Number(ready.meta?.changes || 0) !== 1) {
     throw new HttpError(409, "handoff_consumed");

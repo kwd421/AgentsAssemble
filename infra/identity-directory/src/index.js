@@ -39,7 +39,7 @@ async function route(request, env) {
   if (request.method === "GET" && url.pathname === "/v1/config") {
     return json({
       google_enabled: Boolean(env.GOOGLE_DESKTOP_CLIENT_ID && env.GOOGLE_DESKTOP_CLIENT_SECRET),
-      google_web_enabled: Boolean(env.GOOGLE_CLIENT_ID),
+      google_web_enabled: Boolean(env.GOOGLE_CLIENT_ID && env.GOOGLE_WEB_CLIENT_SECRET),
       google_native_enabled: Boolean(env.GOOGLE_DESKTOP_CLIENT_ID && env.GOOGLE_DESKTOP_CLIENT_SECRET),
       protocol_version: 3,
     });

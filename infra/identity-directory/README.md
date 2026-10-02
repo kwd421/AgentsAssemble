@@ -44,6 +44,8 @@ wrangler secret put RECOVERY_PEPPER
 wrangler secret put IDENTITY_PEPPER
 wrangler secret put GOOGLE_DESKTOP_CLIENT_ID   # Google Desktop app OAuth client
 wrangler secret put GOOGLE_DESKTOP_CLIENT_SECRET
+wrangler secret put GOOGLE_CLIENT_ID           # Existing Google Web OAuth client
+wrangler secret put GOOGLE_WEB_CLIENT_SECRET
 wrangler d1 migrations apply agentsassemble-identity --remote
 wrangler deploy
 ```
@@ -95,13 +97,17 @@ npm run check
 ## Browser account entry
 
 The fixed Worker origin serves the shared Rust frontend. A direct room-host URL
-links here instead of receiving central credentials. Google Identity Services uses
-`GOOGLE_CLIENT_ID` (a Web client with this exact Worker origin in Authorized
-JavaScript origins). Its ID token is checked with a one-use ten-minute nonce and
-browser-held verifier bound to the device public key. Only same-origin web start
-and completion requests are accepted; production CORS is unchanged. Google email
-claims are ignored and never stored. Native Desktop OAuth retains its original
-client and loopback callback. Both flows resolve the same canonical Google person.
+links here instead of receiving central credentials. App and browser use the same
+startup, guest recovery and server chooser components. The shared Google button
+opens standard Google authorization with `openid profile`, PKCE and tab-bound state.
+`GOOGLE_CLIENT_ID` and `GOOGLE_WEB_CLIENT_SECRET` identify the existing Web OAuth
+client; register the exact Worker root URL (including its trailing slash) under
+Authorized redirect URIs. Keep the secret only in the Worker secret binding.
+A one-use ten-minute handoff binds the device key, verifier and Google nonce. Code
+exchange and ID-token verification share the native handoff owner. Only same-origin
+web start/completion requests are accepted; production CORS is unchanged. Google
+email claims are ignored and never stored. Native Desktop OAuth retains its client
+and loopback callback. Both flows resolve the same canonical Google person.
 
 Build the Rust frontend before deploying the Worker together with its shared assets:
 
