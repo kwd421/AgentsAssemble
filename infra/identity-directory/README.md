@@ -507,6 +507,37 @@ node test/local_auth_capacity.mjs "$(npm root -g)/wrangler/package.json"
 node test/local_admission_isolation.mjs "$(npm root -g)/wrangler/package.json"
 ```
 
+Migration 0010 SQL compatibility verification (Wrangler 4.98.0): the installed
+`wrangler-dist/cli.js` exports `unstable_splitSqlQuery`. The original SQL splits
+into 10 chunks instead of 17: `END)` does not match its compound-statement end
+rule (`\sEND[;\s]$`), merging the last eight triggers. Local D1 accepts those
+multi-statement chunks, masking this problem. The remote migration path instead
+sends the entire SQL plus its migration-record INSERT to D1's query API; it does
+not call this client splitter. Therefore the reported remote `incomplete input`
+is consistent with SQL parsing incompatibility, but a remote server-side
+`CASE ... END;` split has not been directly established.
+
+0010 now uses `SELECT RAISE(...) WHERE ...` and separates remaining CASE tokens
+from parentheses, leaving `END;` only at trigger boundaries. All ten triggers
+split independently (17 statements total). Migrations 0001–0009 have no CASE
+expressions; their only trigger is 0002's plain `SELECT RAISE(...)` guard and
+they are unchanged. No production migration or remote command was run.
+
+Run the additional splitter regression with the same installed Wrangler package
+used by the other local workerd checks:
+
+```sh
+node test/local_migrations.mjs /path/to/node_modules/wrangler/package.json
+```
+
+It uses the exported splitter without depending on private bundle layout. Each
+chunk is prepared separately in SQLite, then source rejection, budget charges,
+failed-write rollback and the complete resulting schema are checked. The test
+failed on the original 0010 because an over-limit source INSERT was accepted;
+it passes after the SQL change. This is a separate local check, not part of the
+77-test Node suite. The local cleanup, abuse, admission-isolation and full-day
+auth-capacity workerd/D1 regressions also pass with the changed migration.
+
 Current revision: **77/77 Node tests**, syntax check and `npm run dry-run:ci`
 pass. CI generates a temporary config beside `wrangler.toml` that omits only
 `[assets]`, preserves relative Worker/D1 paths, bundles with `--dry-run`, and then
