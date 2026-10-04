@@ -19,6 +19,7 @@ import { renameServer } from "./server_names.js";
 import { getServerIcon, setServerIcon } from "./server_icons.js";
 import { ICON_REQUEST_BYTES } from "./server_icon_image.js";
 import { authenticated, bootstrap } from "./session.js";
+import { exchangeOwnerConnection, renewOwnerConnection } from "./server_owner_connections.js";
 import {
   bookmark,
   deleteServer,
@@ -75,6 +76,10 @@ async function route(request, env) {
   if (request.method === "POST" && url.pathname === "/v1/auth/google/web/complete") {
     return completeWebGoogleHandoff(request, env, text, now);
   }
+  const endpointRenewMatch = url.pathname.match(/^\/v1\/servers\/([^/]+)\/endpoint\/renew$/);
+  if (endpointRenewMatch && request.method === "POST") {
+    return updateEndpoint(request, env, cleanIdentifier(endpointRenewMatch[1], "server_id"), text, now, false, true);
+  }
   const endpointMatch = url.pathname.match(
     /^\/v1\/servers\/([^/]+)\/endpoint$/
   );
@@ -97,6 +102,11 @@ async function route(request, env) {
       now,
       true
     );
+  }
+  const ownerConnection = url.pathname.match(/^\/v1\/servers\/([^/]+)\/owner-connections\/(exchange|renew)$/);
+  if (ownerConnection && request.method === "POST") {
+    return (ownerConnection[2] === "exchange" ? exchangeOwnerConnection : renewOwnerConnection)(
+      request, env, cleanIdentifier(ownerConnection[1], "server_id"), text, now);
   }
   const connectGrantRedeemMatch = url.pathname.match(
     /^\/v1\/servers\/([^/]+)\/connect-grants\/redeem$/
@@ -257,6 +267,10 @@ async function cleanup(env) {
     env.DB
       .prepare("DELETE FROM server_connect_grants WHERE expires_at < ?")
       .bind(now),
+    env.DB.prepare(`DELETE FROM server_owner_connections WHERE lease_expires_at <= ?
+      AND NOT EXISTS (SELECT 1 FROM server_connect_grants
+        WHERE grant_id = server_owner_connections.grant_id AND expires_at > ?)`)
+      .bind(now, now),
     env.DB
       .prepare(
         `DELETE FROM sessions WHERE expires_at < ? OR

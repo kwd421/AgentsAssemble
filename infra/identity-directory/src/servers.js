@@ -205,7 +205,8 @@ export async function updateEndpoint(
   serverId,
   text,
   now,
-  offline = false
+  offline = false,
+  renew = false
 ) {
   await hostAuthentication(request, env, serverId, text, now);
   const body = parseJson(text);
@@ -248,7 +249,9 @@ export async function updateEndpoint(
   }
   const result = await env.DB
     .prepare(
-      `INSERT INTO server_endpoints
+      renew ? `UPDATE server_endpoints SET lease_expires_at = ?, updated_at = ?
+       WHERE server_id = ? AND origin = ? AND generation = ? AND state = 'online'
+         AND lease_expires_at > ? AND lease_expires_at <= ?` : `INSERT INTO server_endpoints
        (server_id, origin, state, generation, lease_expires_at, updated_at)
        VALUES (?, ?, ?, ?, ?, ?)
        ON CONFLICT(server_id) DO UPDATE SET
@@ -259,7 +262,8 @@ export async function updateEndpoint(
          updated_at = excluded.updated_at
        WHERE excluded.generation > server_endpoints.generation`
     )
-    .bind(serverId, origin, state, generation, leaseExpiresAt, now)
+    .bind(...(renew ? [leaseExpiresAt, now, serverId, origin, generation, now, leaseExpiresAt]
+      : [serverId, origin, state, generation, leaseExpiresAt, now]))
     .run();
   if (Number(result.meta?.changes || 0) !== 1) {
     throw new HttpError(409, "stale_endpoint_generation");
