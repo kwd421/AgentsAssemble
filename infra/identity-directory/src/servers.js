@@ -1,3 +1,4 @@
+import { limitHost } from "./abuse.js";
 import {
   canonicalJson,
   hostRegistrationCanonical,
@@ -156,7 +157,7 @@ export async function deleteServer(session, env, serverId) {
 export async function hostAuthentication(request, env, serverId, body, now) {
   const server = await env.DB
     .prepare(
-      "SELECT host_public_key_jwk FROM servers WHERE server_id = ? AND revoked_at IS NULL"
+      "SELECT host_public_key_jwk, host_key_fingerprint FROM servers WHERE server_id = ? AND revoked_at IS NULL"
     )
     .bind(serverId)
     .first();
@@ -187,6 +188,7 @@ export async function hostAuthentication(request, env, serverId, body, now) {
     canonical
   );
   if (!valid) throw new HttpError(401, "invalid_host_signature");
+  await limitHost(request, env, serverId, server.host_key_fingerprint);
   try {
     await env.DB
       .prepare(
