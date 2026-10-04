@@ -1,4 +1,5 @@
 import { authWrite } from "./auth_capacity.js";
+import { networkSource } from "./network_source.js";
 import {
   canonicalJson,
   hmacBase64Url,
@@ -121,12 +122,9 @@ export function envSecret(env, name) {
 }
 
 export async function ipBucket(request, env, purpose) {
-  const address =
-    request.headers.get("cf-connecting-ip") ||
-    "unknown";
   const networkKey = await hmacBase64Url(
     envSecret(env, "RECOVERY_PEPPER"),
-    String(address).split(",")[0].trim()
+    networkSource(request)
   );
   return `${purpose}:${networkKey}`;
 }
@@ -139,6 +137,7 @@ export async function consumeRateLimit(
   now,
   source
 ) {
+  if (source?.purpose !== "AUTH") bucket = `anonymous:${bucket}`;
   const windowStart = Math.floor(now / windowSeconds) * windowSeconds;
   const statement = db
     .prepare(
@@ -174,8 +173,8 @@ export async function issueSession(
     .prepare(
       `INSERT INTO sessions
        (session_id, person_id, device_id, token_hash, created_at, expires_at,
-        last_seen_at, revoked_at)
-       VALUES (?, ?, ?, ?, ?, ?, ?, NULL)`
+        last_seen_at, revoked_at, purpose)
+       VALUES (?, ?, ?, ?, ?, ?, ?, NULL, ?)`
     )
     .bind(
       sessionId,
@@ -184,7 +183,8 @@ export async function issueSession(
       tokenHash,
       now,
       expiresAt,
-      now
+      now,
+      env.authSource?.purpose === "AUTH" ? "AUTH" : "ANONYMOUS"
     ), 7);
   return { token, expires_at: expiresAt, device_id: deviceId };
 }

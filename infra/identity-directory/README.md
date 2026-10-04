@@ -96,6 +96,7 @@ separate policies.
 npm ci --ignore-scripts
 npm test
 npm run check
+npm run dry-run:ci
 ```
 
 ## Browser account entry
@@ -211,8 +212,9 @@ Cleanup reserves at most **10,000 writes/day (10%)**, leaving at least 90,000
 of that allowance for other work. This is not a guarantee of remaining account
 quota: other databases, normal requests, cascades and migrations also consume it.
 
-Migration `0010_daily_maintenance_budget.sql` adds a cleanup singleton, five fixed creation-budget rows,
-nonce-purpose columns and six atomic insert-admission triggers. Cleanup claims the UTC day with one
+Migration `0010_daily_maintenance_budget.sql` adds a cleanup singleton, six fixed creation-budget rows,
+nonce/session-purpose columns and atomic admission triggers. This migration is
+still pending production application; do not overwrite an already-applied 0010. Cleanup claims the UTC day with one
 conditional UPDATE. Concurrent calls, repeated cron delivery, isolate restarts
 and retries cannot reserve it twice. Failure burns the unused daily allowance;
 there is no same-day retry/reclaim. Missing `meta.rows_written` stops the run.
@@ -256,9 +258,10 @@ day**, partitioned into non-borrowing purpose pools:
 
 | Purpose | Daily deletion-write budget | Charged work |
 | --- | ---: | --- |
-| AUTH | 1,400 | New precision/source counter rows, Google handoffs (3 each), sessions (7) |
+| AUTH | 700 | Verified recovery/Google completion counters (3 each) and sessions (7) |
+| ANONYMOUS | 700 | Guest creation including sessions, Google starts, invalid recovery/credentials; counters/handoffs (3), sessions (7) |
 | GENERAL | 700 | Other signed device/host nonces, including ownership claims (3) |
-| ENDPOINT | 4,800 | Endpoint publish/renew/delete host nonces (3) |
+| ENDPOINT | 4,800 | Accepted endpoint nonces (3) and daily server/host counters (3 each) |
 | OWNER_GRANT | 800 | Verified owner request nonce (3) and grant row (5) |
 | OWNER_REDEEM | 300 | Signed grant-redemption host nonce (3) |
 | Total | **8,000** | Below >=9,993/day cleanup capacity |
@@ -269,57 +272,82 @@ before nonce insertion. Headers/body fields cannot choose a pool. Nonce uniquene
 still spans all purposes. Unrelated activity cannot spend either owner reserve.
 New expiring rows charge their weight atomically; precision-counter UPSERT
 updates, including later rate-limit denials, create no new cleanup debt and do
-not charge the shared pool. Failed statements roll back their reservation. A
-nonce already committed before a later validation/grant failure is still charged.
-The five global ledger rows never expire or grow. Total successful expiry debt
+not charge the shared pool. Failed statements roll back their reservation. Other-purpose
+nonces committed before a later validation/grant failure are still charged.
+ENDPOINT validates the body first, then batches both daily source reservations,
+the guarded endpoint mutation and nonce insertion. A zero-row mutation aborts
+via the nonce NOT NULL constraint, and replay/cap failures roll everything back.
+The six global ledger rows never expire or grow. Total successful expiry debt
 stays <=8,000/day, leaving >=1,993/day for backlog when cleanup succeeds.
 Long-lived rows and failed runs still delay reclamation.
 
-AUTH first reserves cleanup units against durable **200/IP and 100/verified
-person per UTC day** caps. Every AUTH route shares the IP key derived from the
-trusted `CF-Connecting-IP` header (HMAC only; missing header shares `unknown`);
+AUTH and ANONYMOUS each reserve cleanup units against separate durable
+**200/source and 100/person per UTC day** caps. The trusted `CF-Connecting-IP`
+header is normalized to an **IPv6 /64** network in both coarse and durable keys;
+IPv4 addresses are unchanged. Equivalent IPv6 spellings share the same key.
+Durable network keys are HMACs; missing/invalid IPv6 headers share `unknown`.
 `X-Forwarded-For`, flow type, device IDs and rotated recovery codes cannot reset
-it. Valid recovery owners are resolved before any expiring write, so rotating
-IPs cannot spend new counters after the person allowance is used. Google
-completion/session writes use the verified person; anonymous Google starts and
-invalid credentials can only be attributed to an IP until identity is verified.
-The 1,400-unit AUTH pool remains the aggregate backstop against multiple sources.
+the network allowance. Anonymous and verified precision/source counters have
+separate namespaces, so a guest flood cannot consume the verified recovery
+source allowance even behind the same IP.
+
+Guest creation, its issued session, Google start/handoff creation and invalid
+recovery/Google credentials spend only ANONYMOUS. A valid recovery owner is
+resolved before any expiring write; verified recovery and Google completion /
+session issuance spend AUTH. A person cap is not Sybil resistance: a newly minted
+guest can later prove its recovery code, and many verified identities/networks
+can still exhaust AUTH. Both 700-unit pools remain finite aggregate backstops.
+The shared per-minute AUTH edge gate still throttles anonymous and verified
+traffic from the same network; these reservations isolate durable daily spending.
 
 Source counters are UTC-day rows in `rate_limits`, use its existing bounded
-cleanup queue, and include their own three-unit expiry cost in both the source
-allowances and shared AUTH pool. Each protected write batches person then IP
-reservations with the actual insert; any cap failure rolls back the entire
-batch, including new source rows and global charges. A read before the batch
-estimates new-row debt; racing first uses may conservatively reserve extra
-source units, but never extra shared debt. A midnight race fails closed and the
-next request can retry in the new UTC day. No unbounded new cleanup queue or
-permanent IP ledger is introduced.
+cleanup queue, and include their own three-unit expiry cost in the selected
+pool. Each protected auth write batches person then IP reservations with the
+actual insert; any cap failure rolls back the entire batch, including new
+source rows and global charges. A read before the batch estimates new-row debt;
+racing first uses may conservatively reserve extra source units, but never extra
+shared debt. A midnight race fails closed and the next request can retry in the
+new UTC day. No permanent IP ledger is introduced.
+
+ENDPOINT additionally admits at most **320 accepted calls per server ID AND per
+host signing-key fingerprint per UTC day**, before spending shared nonce capacity.
+The exact D1 counters are independent of edge location. Re-registering a deleted
+server or reusing a key for another server cannot reset them. Their UTC-day rows
+survive registration deletion, then expire through the existing cleanup queue.
+Malformed JSON, invalid generation/origin/lease, stale generations, mismatched or
+expired renewals, replay and capacity denial commit neither nonce nor endpoint
+mutation nor daily reservation. The transaction rechecks the registered host key
+and guards against a batch crossing UTC midnight.
 
 With no retries or failed attempts, the owner pools support **100 grant issuances
 and 100 redemptions/day**, hence **100 complete owner entries** across the entire
-directory. ENDPOINT supports **1,600 calls/day**:
+directory. ENDPOINT's 4,800 units cover nonces plus six counter units per distinct
+server/key pair per day:
 
-| Continuously online hosts | Five-minute calls/day | Cleanup units/day | Spare endpoint calls/day |
+| Continuously online hosts | Five-minute calls/day | Cleanup units/day including counters | Shared pool spare calls/day |
 | ---: | ---: | ---: | ---: |
-| 3 | 864 | 2,592 | 736 |
-| 4 | 1,152 | 3,456 | 448 |
-| 5 | 1,440 | 4,320 | 160 |
+| 3 | 864 | 2,610 | 730 |
+| 4 | 1,152 | 3,480 | 440 |
+| 5 | 1,440 | 4,350 | 150 |
 
-Initial publication, shutdown, retries and failed signed requests consume the
-same endpoint pool. Existing burst limits, 600-second host leases and the
-16-active-grant/session constraint still apply. The 160-call margin is shared
-by all five hosts, not per host. **Follow-up:** increasing heartbeat and lease
-intervals together could reduce daily endpoint debt and allow a different
-balance (for example restoring 200 entries/day); that needs a separately
+The pool margin is also constrained by each server/key's 320-call ceiling:
+288 scheduled calls leave **32 accepted extra calls per host**. Five hosts can
+share the 150-call pool margin (30 each). Initial publication, shutdown and
+accepted retries use this margin; invalid or stale requests do not. Existing
+600-second host leases and the 16-active-grant/session constraint still apply.
+**Follow-up:** increasing heartbeat and lease intervals together could reduce
+daily endpoint debt and allow a different balance; that needs a separately
 reviewed Rust host change. This release does not change the host cadence.
 
-**Exhaustion experience:** each pool and AUTH source cap returns HTTP 429,
+**Exhaustion experience:** each pool and durable source cap returns HTTP 429,
 `temporary_capacity_exhausted`, with “Daily temporary storage capacity reached.
 Retry after 00:00 UTC.” There is no borrowing, refund, or unlimited-entry guarantee.
 
-- AUTH login/create/recovery screens display the message. A spent source blocks
-  that IP/person until UTC midnight; unrelated sources can still log in while
-  shared AUTH capacity remains. Global AUTH exhaustion blocks fresh login.
+- ANONYMOUS exhaustion blocks guest creation and new Google starts. AUTH
+  exhaustion blocks verified recovery/Google session issuance. The screens
+  display the capacity message. A spent daily source blocks only that pool
+  for its network/person; unrelated sources may proceed while shared capacity
+  remains. These daily allowances reset at UTC midnight.
 - OWNER_GRANT/OWNER_REDEEM callers receive the JSON error. This checkout has no
   integrated connect-grant frontend consumer. Retries and failed signed requests
   reduce practical capacity below 100 entries.
@@ -333,6 +361,23 @@ Retry after 00:00 UTC.” There is no borrowing, refund, or unlimited-entry guar
 Isolation protects grant/redeem for an already valid session and live endpoint;
 platform account-wide quotas can still stop all purposes. Rejected inserts
 persist neither the row nor their counter increment.
+
+### 감수하는 제품 제약
+
+무료 플랜의 유한한 하루 몫은 많은 IP(/64 네트워크 포함)와 계정을 가진
+공격자에게 고갈될 수 있다. 그 경우 해당 몫을 쓰는 새 로그인·게스트 생성은
+UTC 자정까지 실패한다. IPv6 정규화와 익명/검증 예산 분리는 공격 비용을
+높이고 피해 범위를 제한하지만 사람 확인이나 Sybil 공격 방지를 보장하지 않는다.
+무료로 만든 게스트도 복구 코드를 증명하면 검증된 recovery 몫을 쓸 수 있다.
+
+ANONYMOUS/AUTH 고갈은 이미 방에 연결된 세션과 소유자 입장 예약 몫
+(OWNER_GRANT/OWNER_REDEEM)에 영향을 주지 않는다. 소유자의 새 입장에는
+여전히 유효한 세션과 살아 있는 endpoint가 필요하다. ENDPOINT나 Cloudflare
+계정 전체 할당량의 고갈은 별도 장애이며, 모든 연결 가능성을 보장하지 않는다.
+
+후속 대책은 [Cloudflare Turnstile 무료 사람 확인](https://developers.cloudflare.com/turnstile/plans/),
+커스텀 도메인의 WAF 정책, 실제 사용량에 맞는 유료 플랜이다. 이번 변경에서는
+이 대책을 활성화하거나 운영 배포하지 않는다.
 
 ### 배포 런북
 
@@ -446,21 +491,45 @@ steps, not part of local verification.
 ```sh
 npm test
 npm run check
+npm run dry-run:ci
 wrangler deploy --dry-run --assets "$RUST_CHECKOUT/frontend/dist"
 node test/local_cleanup.mjs "$(npm root -g)/wrangler/package.json"
 node test/local_abuse.mjs "$(npm root -g)/wrangler/package.json"
 node test/local_auth_capacity.mjs "$(npm root -g)/wrangler/package.json"
+node test/local_admission_isolation.mjs "$(npm root -g)/wrangler/package.json"
 ```
 
-Current revision: **69/69 Node tests**, syntax check and asset-backed dry-run
-pass. Full-day regressions cover 14,400 syntactically valid attempts from one IP,
-1,440 rotating-IP recovery attempts for one person, UTC reset/transaction rollover,
-and five hosts with 160 spare calls plus 100 complete entries. Local workerd/D1
-measures **198 IP units / 89 additional person units**, preserves unrelated login,
-and rolls rejected batches back. Disabling either source cap or the midnight
-guard makes its regression fail; restoring ENDPOINT to 3,000 fails at 16h40m.
-All controlled mutations were restored. Cleanup and owner-isolation workerd
-checks also pass; no production migration, deployment or Rust change was made.
+Current revision: **76/76 Node tests**, syntax check and `npm run dry-run:ci`
+pass. CI generates a temporary config beside `wrangler.toml` that omits only
+`[assets]`, preserves relative Worker/D1 paths, bundles with `--dry-run`, and then
+removes the config. This proves Worker/config validity, not the separately built
+Rust frontend assets; production must still supply the matching `--assets` path.
+No Rust checkout is read or changed by this CI check.
+
+All seven new admission regressions failed on 851a6b50 and pass after the fix:
+IPv6 /64 rotation at coarse/D1 boundaries; guest and both Google-start floods
+preserving verified recovery/session issuance; exact host/server daily admission;
+and invalid/stale/replayed endpoint transaction rollback. Five normal hosts still
+complete 1,440 scheduled calls, 150 spare calls and 100 complete owner entries.
+Local workerd/D1 also reproduces /64 throttling, anonymous exhaustion followed by
+successful recovery, 100 invalid endpoints leaving no state, and one host
+stopping at **320 calls / 966 units** while an unrelated host remains online.
+The 966 units include two three-unit counters and 320 three-unit nonces.
+Full-day workerd checks measure **198 anonymous source units** over 14,400
+attempts and **99 AUTH person units** over 1,440 attempts, preserving unrelated
+login and rolling denied batches back. The runner reuses loopback connections
+after Miniflare's per-request socket reset exhausted macOS ephemeral ports.
+Removing either source cap, the midnight guard, either endpoint dimension, the
+stale-mutation guard or guest-session pool isolation makes its regression fail;
+reducing ENDPOINT to 3,000 fails the five-host day. All mutations were restored.
+Cleanup and owner-isolation workerd checks pass. No production migration,
+deployment or Rust change was made.
+
+Historical verification (the previous 69-test revision): full-day regressions
+covered 14,400 attempts from one IP, 1,440 rotating-IP recoveries for one person,
+UTC reset/transaction rollover and five hosts with 160 spare calls before daily
+endpoint source counters were added. Earlier mutation evidence below describes
+that revision, not an additional current production check.
 
 Budget regression against the original cleanup failed after 120,999 logical
 changes. The workerd/D1 all-queue regression also fails its 10,000-write bound
@@ -482,7 +551,8 @@ exhaustion and owner success. Temporarily routing the device or host nonce back
 to GENERAL makes workerd fail at issue (429/201) or redeem (429/200), respectively;
 all mutations were restored. Cron-off and cron-on trigger dry-runs also pass.
 Bare `wrangler deploy --dry-run` fails without the required assets directory;
-provide `--assets` as above. The generated trigger configs include that directory
+provide matching `--assets` as above, or use `npm run dry-run:ci` for the
+Worker-only CI check. The generated trigger configs include that directory
 because `triggers deploy` validates it too. Local owner
 entry/retry, endpoint generation/renewal and logout smoke pass. An isolated
 workerd build of `25fad46a` also passes that owner smoke with corrected
@@ -513,7 +583,7 @@ limits; migration 0010 owns daily creation budgets.
 | OWNER_REDEEM | POST `/v1/servers/:id/connect-grants/redeem` | 120 | 60 |
 | ENDPOINT | PUT/DELETE endpoint and POST endpoint/renew | 120 | 6 |
 
-The IP gate runs before body parsing, signature verification, D1 reads, precision
+The IP gate normalizes IPv6 to /64 (IPv4 unchanged) and runs before body parsing, signature verification, D1 reads, precision
 counters and nonce insertion. It uses only Cloudflare's `CF-Connecting-IP`;
 `X-Forwarded-For` cannot rotate its key. Missing edge IPs share `unknown` (including
 local development). Public static assets, health/config and CORS preflight have
@@ -584,6 +654,7 @@ Run the local abuse integration check as well:
 ```sh
 node test/local_abuse.mjs "$(npm root -g)/wrangler/package.json"
 node test/local_auth_capacity.mjs "$(npm root -g)/wrangler/package.json"
+node test/local_admission_isolation.mjs "$(npm root -g)/wrangler/package.json"
 ```
 
 Current local abuse integration: 220 coarse-limit denials write zero rows.

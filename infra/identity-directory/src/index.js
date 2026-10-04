@@ -51,7 +51,8 @@ async function route(request, env) {
   }
   await limitRequestIp(request, env);
   if (requestPurpose(request) === "AUTH") {
-    env = { ...env, authSource: { ip: await ipBucket(request, env, "auth-ip") } };
+    // Only a verified recovery/Google completion may promote spending to AUTH.
+    env = { ...env, authSource: { ip: await ipBucket(request, env, "auth-ip"), purpose: "ANONYMOUS" } };
   }
   const text =
     request.method === "GET" || request.method === "HEAD"

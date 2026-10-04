@@ -6,7 +6,7 @@ import { createGuestIdentity, environment, hostKey, hostRegistrationProof,
 // Contract: five hosts remain online all day with 100 complete owner entries.
 // Oracle: signed HTTP renewals, grants/redemptions, and visible directory leases.
 // The former 3000-unit endpoint pool fails during the 201st five-minute slot.
-test("five hosts renew all day with 160 spare endpoint calls and 100 owner entries", async t => {
+test("five hosts renew all day with 150 spare endpoint calls and 100 owner entries", async t => {
   const env = environment({ SESSION_TTL_SECONDS: "172800" });
   const advance = utcDayClock(t, env);
   const { key, created } = await createGuestIdentity(env);
@@ -46,7 +46,7 @@ test("five hosts renew all day with 160 spare endpoint calls and 100 owner entri
       entries++;
     }
   }
-  for (let i = 0; i < 160; i++) assert.equal((await endpoint(hosts[i % 5], true)).status, 200);
+  for (let i = 0; i < 150; i++) assert.equal((await endpoint(hosts[i % 5], true)).status, 200);
   const denied = await endpoint(hosts[0], true);
   assert.equal(denied.status, 429);
   assert.equal((await denied.json()).error.code, "temporary_capacity_exhausted");

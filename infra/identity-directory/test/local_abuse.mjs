@@ -117,6 +117,7 @@ try {
     .bind(created.session.device_id).first();
   for (const [purpose, insert, values] of [
     ["AUTH", "INSERT INTO rate_limits (bucket, window_start, count) SELECT 'capacity-auth-' || x, 0, 1 FROM n", []],
+    ["ANONYMOUS", "INSERT INTO rate_limits (bucket, window_start, count) SELECT 'anonymous:capacity-' || x, 0, 1 FROM n", []],
     ["GENERAL", "INSERT INTO request_nonces (session_id, nonce, expires_at) SELECT ?, 'capacity-general-' || x, 4000000000 FROM n", [sessionRow.session_id]],
     ["ENDPOINT", "INSERT INTO host_request_nonces (server_id, nonce, expires_at, purpose) SELECT ?, 'capacity-endpoint-' || x, 4000000000, 'ENDPOINT' FROM n", [serverId]],
   ]) {

@@ -43,7 +43,7 @@ try {
   await db.prepare("INSERT INTO persons (person_id, identity_kind, display_name, status, created_at, updated_at) VALUES ('p', 'guest', '', 'active', 0, 0)").run();
   await db.prepare("INSERT INTO devices VALUES ('d', 'p', '{}', '', 0, 0, NULL)").run();
   await db.prepare("INSERT INTO servers (server_id, owner_person_id, host_public_key_jwk, host_key_fingerprint, created_at) VALUES ('s', 'p', '{}', 'f', 0)").run();
-  await db.prepare("INSERT INTO sessions VALUES ('live', 'p', 'd', 'live', 0, 4000000000, 0, NULL)").run();
+  await db.prepare("INSERT INTO sessions (session_id, person_id, device_id, token_hash, created_at, expires_at, last_seen_at, revoked_at) VALUES ('live', 'p', 'd', 'live', 0, 4000000000, 0, NULL)").run();
   const prefix = `WITH RECURSIVE n(x) AS (SELECT 1 UNION ALL SELECT x+1 FROM n WHERE x<2000) `;
   const inserts = [
     "INSERT INTO request_nonces (session_id, nonce, expires_at) SELECT 'live', 'n-' || x, 1 FROM n",
@@ -51,7 +51,7 @@ try {
     "INSERT INTO rate_limits SELECT 'r-' || x, 0, 1 FROM n",
     "INSERT INTO google_handoffs (handoff_id, device_id, device_public_key_jwk, browser_token_hash, poll_token_hash, google_nonce, status, created_at, expires_at) SELECT 'g-' || x, 'd', '{}', '', '', '', 'pending', 0, 1 FROM n",
     "INSERT INTO server_connect_grants (grant_id, secret_hash, session_id, person_id, device_id, server_id, endpoint_origin, endpoint_generation, created_at, expires_at) SELECT 'c-' || x, 'c-' || x, 'live', 'p', 'd', 's', '', 1, 0, 1 FROM n",
-    "INSERT INTO sessions SELECT 'e-' || x, 'p', 'd', 'e-' || x, 0, 1, 0, 1 FROM n",
+    "INSERT INTO sessions (session_id, person_id, device_id, token_hash, created_at, expires_at, last_seen_at, revoked_at) SELECT 'e-' || x, 'p', 'd', 'e-' || x, 0, 1, 0, 1 FROM n",
   ];
   for (const insert of inserts) await db.prepare(prefix + insert).run();
   // Expired parent with live children must survive: no cascading deletion.

@@ -134,7 +134,8 @@ export async function recoverGuest(request, env, text, now) {
      WHERE verifier = ? AND recovery_credentials.revoked_at IS NULL
        AND persons.status = 'active'`
   ).bind(verifier).first() : null;
-  env = { ...env, authSource: { ...env.authSource, personId: credential?.person_id } };
+  env = { ...env, authSource: { ...env.authSource, personId: credential?.person_id,
+    purpose: credential ? "AUTH" : "ANONYMOUS" } };
   await consumeRateLimit(env.DB, await ipBucket(request, env, "guest-recover"),
     10, 900, now, env.authSource);
   if (code) await consumeRateLimit(env.DB, `recovery-code:${verifier}`,

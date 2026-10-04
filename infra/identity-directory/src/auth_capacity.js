@@ -3,8 +3,9 @@
 // Keep the source reservations and the protected insert in one D1 transaction.
 export async function authWrite(db, source, statement, cost, rate = {}) {
   if (!source?.ip) throw new Error("AUTH source is required");
-  const person = source.personId ? `auth-person:${source.personId}` : "";
-  const ip = source.ip;
+  const prefix = source.purpose === "AUTH" ? "" : "anonymous:";
+  const person = source.personId ? `${prefix}auth-person:${source.personId}` : "";
+  const ip = `${prefix}${source.ip}`;
   const reservation = await db.prepare(`WITH clock AS (
       SELECT CAST(strftime('%s', 'now') AS INTEGER) / 86400 * 86400 AS day
     ) SELECT day,

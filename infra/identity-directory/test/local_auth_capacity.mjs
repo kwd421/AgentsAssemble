@@ -35,7 +35,10 @@ for (const mode of ["ip", "person"]) {
     }
     const start = Math.floor(Date.now() / 86400000) * 86400;
     let seconds = 0;
-    const call = (pathname, body, ip) => mf.dispatchFetch(`https://central.example${pathname}`, {
+    // Reuse HTTP connections: Miniflare dispatchFetch resets a socket per call,
+    // exhausting macOS ephemeral ports during the 14,400-request scenario.
+    const base = await mf.ready;
+    const call = (pathname, body, ip) => fetch(new URL(pathname, base), {
       method: "POST", headers: { "cf-connecting-ip": ip, "content-type": "application/json",
         "x-test-time": String(start + seconds) }, body: JSON.stringify(body),
     });
@@ -49,7 +52,8 @@ for (const mode of ["ip", "person"]) {
       assert.equal(created.status, 201, await created.clone().text());
       code = (await created.json()).recovery_code;
     }
-    const debt = async () => (await db.prepare("SELECT creation_writes FROM creation_budgets WHERE purpose = 'AUTH'").first()).creation_writes;
+    const debt = async () => (await db.prepare("SELECT creation_writes FROM creation_budgets WHERE purpose = ?")
+      .bind(mode === "ip" ? "ANONYMOUS" : "AUTH").first()).creation_writes;
     const initial = await debt();
     let denied = 0;
     for (let minute = 0; minute < 1440; minute++) {
@@ -58,7 +62,7 @@ for (const mode of ["ip", "person"]) {
         const response = await call("/v1/auth/recover", {
           recovery_code: code || createRecoveryCode(),
           device_id: `capacity-device-${minute}`, device_public_key_jwk: publicKey,
-        }, mode === "ip" ? "203.0.113.1" : `2001:db8::${minute.toString(16)}`);
+        }, mode === "ip" ? "203.0.113.1" : `2001:db8:${minute.toString(16)}::1`);
         const body = await response.json();
         if (response.status === 200) code = body.recovery_code;
         else {

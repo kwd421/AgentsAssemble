@@ -205,7 +205,7 @@ export async function verifiedGooglePerson(env, credential, clientId, row, now) 
     8,
     HANDOFF_TTL_SECONDS,
     now,
-    { ...env.authSource, personId }
+    { ...env.authSource, personId, purpose: personId ? "AUTH" : "ANONYMOUS" }
   );
   let identity;
   try {
@@ -229,6 +229,7 @@ export async function verifiedGooglePerson(env, credential, clientId, row, now) 
 }
 
 export async function issueHandoffSession(env, row, now) {
+  env = { ...env, authSource: { ...env.authSource, purpose: "AUTH" } };
   await requireCompatibleDevice(env.DB, row.device_id, row.person_id);
   const claimed = await env.DB
     .prepare(

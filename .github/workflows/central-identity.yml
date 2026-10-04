@@ -64,9 +64,9 @@ jobs:
         run: npm --prefix infra/identity-directory run check
       - name: Run Worker and D1 contract tests
         run: npm --prefix infra/identity-directory test
-      - name: Validate Wrangler configuration and bundle
+      - name: Validate Worker configuration and bundle without separately built Rust assets
         working-directory: infra/identity-directory
-        run: npx --yes wrangler@4 deploy --dry-run --outdir .wrangler-dist
+        run: npm run dry-run:ci
 
   host-client:
     name: Host and login-first client

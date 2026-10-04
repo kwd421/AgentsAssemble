@@ -1,4 +1,5 @@
 import { HttpError } from "./http.js";
+import { networkSource } from "./network_source.js";
 
 // Purpose comes only from an exact method/path, never a caller-supplied role.
 // Unimplemented member APIs and all directory activity use GENERAL, so adding a
@@ -31,7 +32,7 @@ async function consume(env, binding, key) {
 export async function limitRequestIp(request, env) {
   // Cloudflare supplies this header. Never trust X-Forwarded-For; local clients
   // without the edge header intentionally share one conservative bucket.
-  const ip = request.headers.get("cf-connecting-ip") || "unknown";
+  const ip = networkSource(request);
   await consume(env, `ABUSE_${requestPurpose(request)}_IP`, `ip:${ip}`);
 }
 

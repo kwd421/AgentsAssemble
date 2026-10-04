@@ -155,7 +155,7 @@ export async function deleteServer(session, env, serverId) {
   return json({ status: "server_deleted", server_id: serverId });
 }
 
-export async function hostAuthentication(request, env, serverId, body, now) {
+async function verifyHostRequest(request, env, serverId, body, now) {
   const server = await env.DB
     .prepare(
       "SELECT host_public_key_jwk, host_key_fingerprint FROM servers WHERE server_id = ? AND revoked_at IS NULL"
@@ -190,6 +190,11 @@ export async function hostAuthentication(request, env, serverId, body, now) {
   );
   if (!valid) throw new HttpError(401, "invalid_host_signature");
   await limitHost(request, env, serverId, server.host_key_fingerprint);
+  return { nonce, fingerprint: server.host_key_fingerprint };
+}
+
+export async function hostAuthentication(request, env, serverId, body, now) {
+  const { nonce } = await verifyHostRequest(request, env, serverId, body, now);
   try {
     await env.DB
       .prepare(
@@ -211,7 +216,7 @@ export async function updateEndpoint(
   offline = false,
   renew = false
 ) {
-  await hostAuthentication(request, env, serverId, text, now);
+  const { nonce, fingerprint } = await verifyHostRequest(request, env, serverId, text, now);
   const body = parseJson(text);
   const generation = Number(body.generation);
   const issuedAt = Number(body.issued_at);
@@ -250,13 +255,15 @@ export async function updateEndpoint(
     }
     state = "online";
   }
-  const result = await env.DB
+  const mutation = env.DB
     .prepare(
       renew ? `UPDATE server_endpoints SET lease_expires_at = ?, updated_at = ?
        WHERE server_id = ? AND origin = ? AND generation = ? AND state = 'online'
-         AND lease_expires_at > ? AND lease_expires_at <= ?` : `INSERT INTO server_endpoints
+         AND lease_expires_at > ? AND lease_expires_at <= ?
+         AND EXISTS (SELECT 1 FROM servers WHERE server_id = ? AND host_key_fingerprint = ? AND revoked_at IS NULL)` : `INSERT INTO server_endpoints
        (server_id, origin, state, generation, lease_expires_at, updated_at)
-       VALUES (?, ?, ?, ?, ?, ?)
+       SELECT ?, ?, ?, ?, ?, ? FROM servers
+       WHERE server_id = ? AND host_key_fingerprint = ? AND revoked_at IS NULL
        ON CONFLICT(server_id) DO UPDATE SET
          origin = excluded.origin,
          state = excluded.state,
@@ -265,11 +272,38 @@ export async function updateEndpoint(
          updated_at = excluded.updated_at
        WHERE excluded.generation > server_endpoints.generation`
     )
-    .bind(...(renew ? [leaseExpiresAt, now, serverId, origin, generation, now, leaseExpiresAt]
-      : [serverId, origin, state, generation, leaseExpiresAt, now]))
-    .run();
-  if (Number(result.meta?.changes || 0) !== 1) {
-    throw new HttpError(409, "stale_endpoint_generation");
+    .bind(...(renew ? [leaseExpiresAt, now, serverId, origin, generation, now, leaseExpiresAt, serverId, fingerprint]
+      : [serverId, origin, state, generation, leaseExpiresAt, now, serverId, fingerprint]));
+  const { day } = await env.DB.prepare(
+    "SELECT CAST(strftime('%s', 'now') AS INTEGER) / 86400 * 86400 AS day"
+  ).first();
+  const sources = [`endpoint-server:${serverId}`, `endpoint-host:${fingerprint}`];
+  try {
+    await env.DB.batch([
+      ...sources.map(bucket => env.DB.prepare(
+        `INSERT INTO rate_limits (bucket, window_start, count) VALUES (?, ?, 1)
+         ON CONFLICT(bucket, window_start) DO UPDATE SET count = rate_limits.count + 1`
+      ).bind(bucket, day)),
+      mutation,
+      // A zero-row mutation (stale generation, expired/mismatched renewal, or
+      // replaced key) must abort the whole batch. The NOT NULL nonce constraint
+      // is the transaction guard; changes() observes the preceding mutation.
+      env.DB.prepare(`INSERT INTO host_request_nonces (server_id, nonce, expires_at, purpose)
+        VALUES (?, CASE WHEN changes() = 1 THEN ? ELSE NULL END, ?, 'ENDPOINT')`)
+        .bind(serverId, nonce, now + NONCE_TTL_SECONDS),
+      // As with AUTH, a batch spanning midnight cannot mix two daily budgets.
+      env.DB.prepare("UPDATE rate_limits SET count = count WHERE bucket = ? AND window_start = ?")
+        .bind(sources[0], day),
+    ]);
+  } catch (error) {
+    const message = String(error?.message || error);
+    if (message.includes("NOT NULL constraint failed: host_request_nonces.nonce")) {
+      throw new HttpError(409, "stale_endpoint_generation");
+    }
+    if (message.includes("UNIQUE constraint failed: host_request_nonces")) {
+      throw new HttpError(409, "replayed_request");
+    }
+    throw temporaryCapacityError(error) || error;
   }
   return json({
     server_id: serverId,
