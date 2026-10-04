@@ -122,60 +122,27 @@ export async function redeemServerConnectGrant(request, env, serverId, text, now
   ) {
     throw new HttpError(401, "connect_grant_invalid");
   }
-  const grant = await env.DB
-    .prepare(
-      `SELECT server_connect_grants.grant_id,
-              server_connect_grants.session_id,
-              server_connect_grants.person_id,
-              server_connect_grants.device_id,
-              server_connect_grants.endpoint_origin,
-              server_connect_grants.endpoint_generation,
-              server_connect_grants.expires_at,
-              sessions.revoked_at AS session_revoked_at,
-              sessions.expires_at AS session_expires_at,
-              devices.revoked_at AS device_revoked_at,
-              persons.status AS person_status,
-              servers.owner_person_id,
-              servers.revoked_at AS server_revoked_at,
-              server_endpoints.origin AS current_origin,
-              server_endpoints.state AS endpoint_state,
-              server_endpoints.generation AS current_generation,
-              server_endpoints.lease_expires_at
-       FROM server_connect_grants
-       JOIN sessions ON sessions.session_id = server_connect_grants.session_id
-                    AND sessions.person_id = server_connect_grants.person_id
-                    AND sessions.device_id = server_connect_grants.device_id
-       JOIN devices ON devices.device_id = server_connect_grants.device_id
-                   AND devices.person_id = server_connect_grants.person_id
-       JOIN persons ON persons.person_id = server_connect_grants.person_id
-       JOIN servers ON servers.server_id = server_connect_grants.server_id
-       JOIN server_endpoints ON server_endpoints.server_id = server_connect_grants.server_id
-       WHERE server_connect_grants.server_id = ? AND secret_hash = ?`
-    )
-    .bind(serverId, await sha256Base64Url(grantToken))
-    .first();
-  if (
-    !grant ||
-    Number(grant.expires_at) <= now ||
-    grant.session_revoked_at ||
-    Number(grant.session_expires_at) <= now ||
-    grant.device_revoked_at ||
-    grant.person_status !== "active" ||
-    grant.server_revoked_at ||
-    grant.owner_person_id !== grant.person_id ||
-    grant.endpoint_state !== "online" ||
-    Number(grant.lease_expires_at) <= now ||
-    grant.endpoint_origin !== origin ||
-    grant.current_origin !== origin ||
-    Number(grant.endpoint_generation) !== generation ||
-    Number(grant.current_generation) !== generation
-  ) {
-    throw new HttpError(401, "connect_grant_invalid");
-  }
-  await env.DB
-    .prepare("UPDATE server_connect_grants SET last_used_at = ? WHERE grant_id = ?")
-    .bind(now, grant.grant_id)
-    .run();
+  // The authority check and redemption write are one SQL operation. A logout,
+  // owner transfer or endpoint replacement racing admission cannot pass a cached read.
+  const grant = await env.DB.prepare(`UPDATE server_connect_grants SET last_used_at = ?
+    WHERE grant_id IN (
+      SELECT source.grant_id FROM server_connect_grants source
+      JOIN sessions ON sessions.session_id = source.session_id
+        AND sessions.person_id = source.person_id AND sessions.device_id = source.device_id
+      JOIN devices ON devices.device_id = source.device_id AND devices.person_id = source.person_id
+      JOIN persons ON persons.person_id = source.person_id
+      JOIN servers ON servers.server_id = source.server_id
+      JOIN server_endpoints ON server_endpoints.server_id = source.server_id
+      WHERE source.server_id = ? AND source.secret_hash = ? AND source.expires_at > ?
+        AND sessions.revoked_at IS NULL AND sessions.expires_at > ?
+        AND devices.revoked_at IS NULL AND persons.status = 'active'
+        AND servers.revoked_at IS NULL AND servers.owner_person_id = source.person_id
+        AND server_endpoints.state = 'online' AND server_endpoints.lease_expires_at > ?
+        AND source.endpoint_origin = ? AND server_endpoints.origin = source.endpoint_origin
+        AND source.endpoint_generation = ? AND server_endpoints.generation = source.endpoint_generation
+    ) RETURNING server_id, person_id, device_id, expires_at`)
+    .bind(now, serverId, await sha256Base64Url(grantToken), now, now, now, origin, generation).first();
+  if (!grant) throw new HttpError(401, "connect_grant_invalid");
   return json({
     status: "authorized",
     server_id: serverId,

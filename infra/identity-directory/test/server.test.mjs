@@ -316,6 +316,49 @@ test("a server going offline between admission read and insertion cannot issue a
   );
 });
 
+test("mutable authority changes before the redemption write cannot authorize a cached grant", async (t) => {
+  for (const cause of ["logout", "transfer", "offline", "deleted_person", "revoked_device"]) {
+    await t.test(cause, async () => {
+      const env = environment();
+      const { key, created } = await createGuestIdentity(env);
+      const { created: other } = await createGuestIdentity(env, { deviceId: "other-race-device" });
+      const host = await hostKey();
+      const serverId = `redeem-race-${cause}`;
+      assert.equal((await signedDeviceRequest(env, created.session, key.pair, "/v1/servers", "POST", {
+        server_id: serverId, host_public_key_jwk: host.publicJwk,
+        host_registration_proof: await hostRegistrationProof(host.pair, serverId, created.person.person_id),
+      })).status, 201);
+      const now = Math.floor(Date.now() / 1000);
+      assert.equal((await signedHostRequest(env, serverId, host.pair, "PUT", {
+        origin: "https://redeem-race.trycloudflare.com", generation: 1,
+        issued_at: now, lease_expires_at: now + 600,
+      })).status, 200);
+      const grant = await payload(await signedDeviceRequest(env, created.session, key.pair,
+        `/v1/servers/${serverId}/connect-grants`, "POST", {}));
+      const prepare = env.DB.prepare.bind(env.DB);
+      let interrupted = false;
+      env.DB.prepare = sql => {
+        if (sql.includes("UPDATE server_connect_grants SET last_used_at") && !interrupted) {
+          interrupted = true;
+          if (cause === "logout") env.DB.database.prepare("UPDATE sessions SET revoked_at = ? WHERE device_id = ?").run(now, created.session.device_id);
+          if (cause === "transfer") env.DB.database.prepare("UPDATE servers SET owner_person_id = ? WHERE server_id = ?").run(other.person.person_id, serverId);
+          if (cause === "offline") env.DB.database.prepare("UPDATE server_endpoints SET state = 'offline' WHERE server_id = ?").run(serverId);
+          if (cause === "deleted_person") env.DB.database.prepare("DELETE FROM persons WHERE person_id = ?").run(created.person.person_id);
+          if (cause === "revoked_device") env.DB.database.prepare("UPDATE devices SET revoked_at = ? WHERE device_id = ?").run(now, created.session.device_id);
+        }
+        return prepare(sql);
+      };
+      const response = await signedHostRequest(env, serverId, host.pair, "POST", {
+        grant_token: grant.grant_token, origin: grant.origin, generation: grant.generation,
+      }, { pathname: `/v1/servers/${serverId}/connect-grants/redeem` });
+      assert.equal(interrupted, true);
+      assert.equal(response.status, 401);
+      assert.equal((await payload(response)).error.code, "connect_grant_invalid");
+      assert.equal(env.DB.database.prepare("SELECT last_used_at FROM server_connect_grants").get()?.last_used_at ?? null, null);
+    });
+  }
+});
+
 test("logout immediately invalidates an issued owner connect grant", async () => {
   const env = environment();
   const { key, created } = await createGuestIdentity(env);

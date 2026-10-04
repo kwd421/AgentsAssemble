@@ -121,46 +121,32 @@ Keep the non-secret frontend `VITE_AGENTSASSEMBLE_CENTRAL_URL` equal to the depl
 Worker origin. The browser validates its central
 session, lists owner/bookmark records and opens an online owned server through the
 existing short connect grant. It cannot claim a host or initialize native authority.
-The central bearer/signing key stay at the central origin; hosts exchange the short
-entry grant for the renewable owner connection described below.
+The central bearer/signing key stay at the central origin. A host redeems the short
+entry grant at `POST /v1/servers/:id/connect-grants/redeem`, using its signed
+`{grant_token, origin, generation}` request. Current account/session/device, owner
+relation and endpoint checks run atomically with redemption. The host then owns
+its admitted workspace, device-session list and revocation; it makes no central
+owner renewal calls. Logout, account removal and ownership transfer affect the next
+admission, not an already connected host workspace. New page/reconnection requires
+fresh central admission. There is no `owner-connections` API or migration 0009.
 
+The host renews a still-online endpoint using signed
+`POST /v1/servers/:id/endpoint/renew` with the existing
+`{origin,generation,issued_at,lease_expires_at}` body. Exact origin/generation is
+preserved; renewal cannot shrink or revive an expired/offline endpoint. PUT
+publication and DELETE retirement advance generation. This is server discovery,
+not connected-user authorization: 288 requests per online server per 24 hours at
+5-minute intervals. Owner keep-alive uses 0 requests and 0 D1 writes. Admission
+uses 2 requests (grant issue and redemption), with signed list/login operations
+counted separately. Admission changes 4 logical rows before indexes/expiry cleanup;
+D1 usage counts actual rows written, including indexed updates.
 
-## Renewable owner connections (2026-10-04)
-
-Migration `0009_owner_connections.sql` is additive. Production migration/deployment
-require user approval. A signed host exchanges an unexpired connect grant once via
-`POST /v1/servers/:id/owner-connections/exchange`, body `{grant_token, origin,
-generation, browser_fingerprint}`; browser_fingerprint is the host's SHA-256 device
-credential fingerprint, never the central device key. Exact retries return the same
-connection, another browser cannot consume it. A host-signed
-`/owner-connections/renew` accepts `{connection_id, origin, generation,
-browser_fingerprint}`. Both return `{status:"authorized",connection_id,server_id,
-person_id,device_id,browser_fingerprint,origin,generation,expires_at,session_expires_at,renew_at}`.
-
-Leases are at most 60s, bounded by the issuing central login and current endpoint
-lease. Renew at 20s, with the host's 8s request deadline: definite logout, device/person
-revocation, ownership transfer, server revocation or endpoint replacement is normally
-observed within 28s. Unreachable central authority cannot extend an existing lease.
-Expired connections cannot renew or be re-exchanged; a new signed central entry is
-required. Successful renewal preserves the connection ID and does not depend on the
-initial grant's expiry. Central credentials stay at the central origin. At most 16
-live connections per central session; expired records are reclaimed after the entry
-grant expires so a consumed grant cannot create another connection.
-
-The host renews a still-online endpoint using signed `POST /v1/servers/:id/endpoint/renew`
-with the existing `{origin,generation,issued_at,lease_expires_at}` body. The exact
-origin/generation is preserved, the lease cannot shrink or revive an expired/offline
-endpoint. Ordinary PUT publication and DELETE retirement still advance generation.
-Room credentials use the parent central login's fixed upper deadline; every request
-also validates the parent's renewable lease. That upper deadline never grants use
-after the 60s lease or definitive revocation.
-
-Local verification applies all migrations to isolated workerd D1, then runs
+Local verification applies the eight migrations to isolated workerd D1 and runs
 `node test/local_owner_connections.mjs http://127.0.0.1:8799`. The runner rejects
-non-loopback URLs and uses synthetic credentials; it checks exact exchange replay,
-foreign-browser rejection, stable endpoint generation, renewal and signed logout.
-The 43 unit tests also cover use past 300s, expired/consumed grants and mutable
-authority revocation. These checks do not establish actual production browser use.
+non-loopback URLs and uses synthetic credentials. It exercises entry redemption,
+exact retry, stable endpoint generation and logout preventing the next admission.
+Host lifetime/revocation and actual browser use are verified by the Rust product.
+Production Worker deployment and migrations require explicit user approval.
 
 ## Server icons (backend contract, 2026-10-04)
 
