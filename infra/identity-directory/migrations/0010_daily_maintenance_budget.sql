@@ -93,4 +93,3 @@ BEGIN
         creation_day = CAST(strftime('%s', 'now') AS INTEGER) / 86400
     WHERE id = 1;
 END;
-

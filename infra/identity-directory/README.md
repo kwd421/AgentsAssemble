@@ -202,7 +202,7 @@ changes are part of this feature.
 
 `d54aebc7` is the original stage 1: additive migration 0009, daily bounded
 cleanup, no purpose limiter code/bindings. `8e2bfb37` is stage 2. The follow-up
-**daily maintenance budget fix** is appended on top of `8e2bfb37`; it already
+**daily maintenance budget fix `eda1b8d0`** is appended on top of `8e2bfb37`; it already
 contains all nine purpose limiter bindings and their enforcement. It is a
 corrected stage-2 release, **not a new stage-1 rollback baseline**. Cleanup
 budgeting is stage-1 scope, but its position in history cannot remove the
@@ -244,8 +244,8 @@ bound. Nonempty queues rotate; empty queues stop consuming query slots.
 
 There are at most 49 D1 statements (one claim + 48 chunks), within the
 [50-query Free invocation limit](https://developers.cloudflare.com/d1/platform/limits/).
-With eligible backlog and the current schema, at least 9,994 of 10,000 writes
-can be used before the remaining budget cannot fit a row. Even the cheapest
+With eligible backlog and the current schema, at least 9,993 deletion writes
+can be used after the one-write day claim before the remaining budget cannot fit a row. Even the cheapest
 3-write rows require only 34 full/partial chunks; six queue exhaustion checks
 still fit the statement cap. SQL/time/quota failures can reduce that throughput.
 Changing indexes, triggers or cascades requires rechecking these costs and the
@@ -264,8 +264,8 @@ statements roll back the reservation. This deliberately overcounts counter
 UPSERTs and sessions that never acquire a revoked-index entry. The singleton
 adds one normal-traffic write per admitted attempt, at most floor(8,000/3) =
 2,666/day; its size never grows. All callers and locations share the same cap.
-Successful expiry debt is at most 8,000/day versus >=9,994/day cleanup capacity,
-leaving >=1,994/day for older backlog in steady state. Uneven expiry dates,
+Successful expiry debt is at most 8,000/day versus >=9,993/day cleanup capacity,
+leaving >=1,993/day for older backlog in steady state. Uneven expiry dates,
 long-lived sessions, unavailable D1 and failed runs can still cause temporary
 backlog; this is a service-rate calculation, not a maximum retention promise.
 
@@ -293,8 +293,8 @@ Never run migrations indiscriminately from HEAD while preparing old stage 1.
    rollback target is **`25fad46a`**, with 0009 retained. Do not leave this old
    high-budget cleanup running as the long-term solution.
 2. Once stage 1 is verified, check account-wide uniqueness of namespace IDs
-   260501–260509. Apply **0010**, then deploy the **daily maintenance budget fix
-   commit on top of `8e2bfb37`**, retaining the one daily cron. Skip deploying the
+   260501–260509. Apply **0010**, then deploy the **`eda1b8d0` (daily maintenance budget fix,
+   or its documentation-only follow-up)**, retaining the one daily cron. Skip deploying the
    unfixed `8e2bfb37`. If stage 2 is already deployed, apply 0010 and update directly
    to this fix, using the previously recorded stage-1 version. Verify login,
    owner grant/redeem, endpoint renewal, budget denials and daily cleanup before
