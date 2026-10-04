@@ -3,6 +3,7 @@ import test from "node:test";
 import { readFileSync, readdirSync } from "node:fs";
 import { DatabaseSync } from "node:sqlite";
 import { randomFillSync } from "node:crypto";
+import { crc32 } from "node:zlib";
 import { encode } from "fast-png";
 import { createGuestIdentity, deviceKey, environment, hostKey, hostRegistrationProof,
   payload, request, signedDeviceRequest } from "./helpers.mjs";
@@ -10,6 +11,17 @@ import { createGuestIdentity, deviceKey, environment, hostKey, hostRegistrationP
 const png = (value = 80, width = 512) => encode({ width, height: 512,
   channels: 4, data: new Uint8Array(width * 512 * 4).fill(value) });
 const image = (bytes) => `data:image/png;base64,${Buffer.from(bytes).toString("base64")}`;
+const exifChunk = (size = 68) => {
+  const chunk = Buffer.alloc(size + 12);
+  chunk.writeUInt32BE(size); chunk.write("eXIf", 4);
+  Buffer.from([0x4d, 0x4d, 0, 42, 0, 0, 0, 8]).copy(chunk, 8);
+  chunk.writeUInt32BE(crc32(chunk.subarray(4, -4)), chunk.length - 4);
+  return chunk;
+};
+const withExif = (...chunks) => {
+  const bytes = png();
+  return Buffer.concat([bytes.subarray(0, 33), ...chunks, bytes.subarray(33)]);
+};
 
 async function fixture() {
   const env = environment();
@@ -104,6 +116,23 @@ test("invalid or expansive image uploads cannot alter the canonical icon", async
   const huge = image(new Uint8Array(1_100_001));
   assert.equal((await edit(owner, huge, "")).status, 413);
   assert.equal((await list()).icon, "");
+});
+
+test("uncompressed canvas Exif is accepted with bounded count, placement, size and CRC", async () => {
+  const { owner, call, list, edit } = await fixture();
+  const bytes = withExif(exifChunk());
+  const saved = await edit(owner, image(bytes), "");
+  assert.equal(saved.status, 200);
+  const { icon } = await payload(saved);
+  assert.deepEqual(new Uint8Array(await (await call(owner, icon)).arrayBuffer()), new Uint8Array(bytes));
+  const corrupt = exifChunk(); corrupt[corrupt.length - 1] ^= 1;
+  const plain = png();
+  const postData = Buffer.concat([plain.subarray(0, -12), exifChunk(), plain.subarray(-12)]);
+  for (const bad of [withExif(exifChunk(7)), withExif(exifChunk(4097)),
+    withExif(exifChunk(), exifChunk()), withExif(corrupt), postData]) {
+    assert.equal((await edit(owner, image(bad), icon)).status, 400);
+    assert.equal((await list()).icon, icon);
+  }
 });
 
 test("icon write and blob are atomic, revoked registrations reject edits, and deletion cascades", async () => {

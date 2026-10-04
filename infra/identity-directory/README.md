@@ -155,7 +155,8 @@ room credentials or put credentials in URLs.
   Response is `no-store`/`nosniff`; missing/replaced/removed/inaccessible references
   return 404 `server_icon_not_found`. No authentication returns 401.
 - Upload exactly 512x512 static, noninterlaced 8-bit RGB/RGBA PNG, maximum 1,100,000
-  file bytes. Only fixed-size canvas colour/density metadata is accepted; APNG,
+  file bytes. Fixed-size canvas colour/density metadata and one uncompressed
+  pre-IDAT Exif chunk (8–4096 bytes, as produced by WebKit) are accepted; APNG,
   compressed/text metadata, external URLs and other formats are rejected. Invalid
   input returns 400 `invalid_server_icon`; file oversize returns 413
   `server_icon_too_large`, HTTP body oversize returns 413 `request_too_large`.

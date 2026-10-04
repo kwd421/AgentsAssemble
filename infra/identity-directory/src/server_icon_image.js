@@ -52,6 +52,7 @@ function inspectPng(bytes) {
   let total = 0;
   let count = 0;
   let ended = false;
+  let hasExif = false;
   for (let offset = 33; offset < bytes.length;) {
     if (offset + 12 > bytes.length || ++count > 128) throw invalid();
     const size = view.getUint32(offset);
@@ -68,6 +69,11 @@ function inspectPng(bytes) {
       let position = 0;
       for (const chunk of chunks) { compressed.set(chunk, position); position += chunk.length; }
       return { compressed, scanlineBytes: 512 * (512 * (bytes[25] === 6 ? 4 : 3) + 1) };
+    } else if (type === "eXIf") {
+      // WebKit's canvas exporter adds uncompressed Exif (68 bytes in the verified
+      // app). Bound one pre-IDAT chunk; fast-png skips its payload and checks CRC.
+      if (hasExif || chunks.length || size < 8 || size > 4096) throw invalid();
+      hasExif = true;
     } else {
       // Canvas PNG colour/density metadata is fixed-size; no animation or compressed ancillary data.
       if (chunks.length) ended = true;
