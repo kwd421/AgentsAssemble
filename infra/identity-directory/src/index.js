@@ -1,5 +1,4 @@
 import { cleanup } from "./cleanup.js";
-import { limitRequestIp } from "./abuse.js";
 import { startWebGoogleHandoff, completeWebGoogleHandoff } from "./google_web.js";
 import { serveWebEntry } from "./web_entry.js";
 import { allowedBrowserOrigin } from "./origin.js";
@@ -48,7 +47,6 @@ async function route(request, env) {
       protocol_version: 3,
     });
   }
-  await limitRequestIp(request, env);
   const text =
     request.method === "GET" || request.method === "HEAD"
       ? ""

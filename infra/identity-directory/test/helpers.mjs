@@ -76,12 +76,6 @@ class D1Database {
 
 export function environment(overrides = {}) {
   return {
-    // Existing protocol tests isolate D1 precision/capacity behavior. Abuse tests
-    // supply stateful/failing bindings explicitly; missing production bindings fail.
-    ...Object.fromEntries(["AUTH_IP", "GENERAL_IP", "GENERAL_ACTOR",
-      "OWNER_GRANT_IP", "OWNER_GRANT_ACTOR", "OWNER_REDEEM_IP", "OWNER_REDEEM_ACTOR",
-      "ENDPOINT_IP", "ENDPOINT_ACTOR"].map((name) =>
-      [`ABUSE_${name}`, { async limit() { return { success: true }; } }])),
     DB: new D1Database(),
     RECOVERY_PEPPER: "recovery-test-pepper-at-least-32-characters",
     IDENTITY_PEPPER: "identity-test-pepper-at-least-32-characters",
