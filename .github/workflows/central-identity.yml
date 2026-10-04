@@ -58,6 +58,8 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: "22"
+      - name: Install Worker image decoder from lockfile
+        run: npm --prefix infra/identity-directory ci --ignore-scripts
       - name: Check Worker JavaScript syntax
         run: npm --prefix infra/identity-directory run check
       - name: Run Worker and D1 contract tests

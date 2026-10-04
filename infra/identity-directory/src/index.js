@@ -16,6 +16,8 @@ import {
   startNativeGoogleHandoff,
 } from "./google_handoff.js";
 import { renameServer } from "./server_names.js";
+import { getServerIcon, setServerIcon } from "./server_icons.js";
+import { ICON_REQUEST_BYTES } from "./server_icon_image.js";
 import { authenticated, bootstrap } from "./session.js";
 import {
   bookmark,
@@ -47,7 +49,8 @@ async function route(request, env) {
   const text =
     request.method === "GET" || request.method === "HEAD"
       ? ""
-      : await bodyText(request);
+      : await bodyText(request, request.method === "POST" && /^\/v1\/servers\/[^/]+\/icon$/.test(url.pathname)
+        ? ICON_REQUEST_BYTES : 32_768);
   if (request.method === "POST" && url.pathname === "/v1/auth/guest") {
     return createGuest(request, env, text, now);
   }
@@ -143,6 +146,14 @@ async function route(request, env) {
   const nameMatch = url.pathname.match(/^\/v1\/servers\/([^/]+)\/name$/);
   if (nameMatch && request.method === "POST") {
     return renameServer(session, env, cleanIdentifier(nameMatch[1], "server_id"), text);
+  }
+  const iconMatch = url.pathname.match(/^\/v1\/servers\/([^/]+)\/icon$/);
+  if (iconMatch && request.method === "POST") {
+    return setServerIcon(session, env, cleanIdentifier(iconMatch[1], "server_id"), text);
+  }
+  const imageMatch = url.pathname.match(/^\/v1\/servers\/([^/]+)\/icon\/[A-Za-z0-9_-]{43}\.png$/);
+  if (imageMatch && request.method === "GET") {
+    return getServerIcon(session, env, cleanIdentifier(imageMatch[1], "server_id"), url.pathname);
   }
   const serverMatch = url.pathname.match(/^\/v1\/servers\/([^/]+)$/);
   if (serverMatch && request.method === "DELETE") {

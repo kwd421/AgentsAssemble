@@ -71,11 +71,24 @@ export async function bodyText(request, maxBytes = 32_768) {
   if (Number.isFinite(declaredLength) && declaredLength > maxBytes) {
     throw new HttpError(413, "request_too_large");
   }
-  const text = await request.text();
-  if (new TextEncoder().encode(text).byteLength > maxBytes) {
-    throw new HttpError(413, "request_too_large");
+  if (!request.body) return "";
+  const reader = request.body.getReader();
+  const decoder = new TextDecoder();
+  let text = "";
+  let length = 0;
+  try {
+    for (;;) {
+      const next = await reader.read();
+      if (next.done) break;
+      length += next.value.byteLength;
+      if (length > maxBytes) throw new HttpError(413, "request_too_large");
+      text += decoder.decode(next.value, { stream: true });
+    }
+    return text + decoder.decode();
+  } finally {
+    await reader.cancel();
+    reader.releaseLock();
   }
-  return text;
 }
 
 export function parseJson(text) {

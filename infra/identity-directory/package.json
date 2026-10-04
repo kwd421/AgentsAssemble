@@ -6,5 +6,8 @@
   "scripts": {
     "test": "node --test test/*.test.mjs",
     "check": "node --check src/*.js"
+  },
+  "dependencies": {
+    "fast-png": "8.0.0"
   }
 }

@@ -146,7 +146,8 @@ export async function deleteServer(session, env, serverId) {
     .prepare("DELETE FROM servers WHERE server_id = ? AND owner_person_id = ?")
     .bind(serverId, session.person_id)
     .run();
-  if (Number(result.meta?.changes || 0) !== 1) {
+  // D1 includes cascaded registration/icon rows in its change count.
+  if (Number(result.meta?.changes || 0) < 1) {
     throw new HttpError(404, "server_not_found");
   }
   return json({ status: "server_deleted", server_id: serverId });

@@ -16,6 +16,6 @@ export async function serveWebEntry(request, env) {
   headers.set("x-content-type-options", "nosniff");
   headers.set("referrer-policy", "no-referrer");
   headers.set("cross-origin-opener-policy", "same-origin-allow-popups");
-  headers.set("content-security-policy", "default-src 'self'; script-src 'self'; style-src 'self'; connect-src 'self'; frame-src 'none'; img-src 'self' data: https://*.googleusercontent.com; object-src 'none'; base-uri 'none'; frame-ancestors 'none'; form-action 'self'");
+  headers.set("content-security-policy", "default-src 'self'; script-src 'self'; style-src 'self'; connect-src 'self'; frame-src 'none'; img-src 'self' blob: data: https://*.googleusercontent.com; object-src 'none'; base-uri 'none'; frame-ancestors 'none'; form-action 'self'");
   return new Response(asset.body, { status: asset.status, headers });
 }

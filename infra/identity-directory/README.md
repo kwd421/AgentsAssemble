@@ -90,6 +90,7 @@ separate policies.
 ## Tests
 
 ```bash
+npm ci --ignore-scripts
 npm test
 npm run check
 ```
@@ -121,3 +122,48 @@ Worker origin. No schema migration is needed. The browser validates its central
 session, lists owner/bookmark records and opens an online owned server through the
 existing short connect grant. It cannot claim a host or initialize native authority.
 The central bearer/signing key stay at the central origin; hosts receive only grants.
+
+
+## Server icons (backend contract, 2026-10-04)
+
+The directory owns server icon images, separate from room appearance and local
+profile photos. The current Rust contract's Central server icons section records acceptance.
+One bounded PNG per registration is stored in D1; bootstrap returns only its
+versioned reference. Existing rows have an empty icon. Owner-only observed-value
+editing and device-signed image retrieval use existing central authentication.
+Production application of migration 0008 and Worker deployment are separate from
+local implementation/verification.
+
+
+All icon requests use the existing signed central device headers (Bearer session,
+`x-aa-device-id`, `x-aa-timestamp`, `x-aa-nonce`, `x-aa-signature`). Do not send host
+room credentials or put credentials in URLs.
+
+- `POST /v1/servers/:server_id/icon`, JSON:
+  `{"icon":"data:image/png;base64,...","expected_icon":""}`. To remove, send
+  `icon: ""` and the currently observed reference as `expected_icon`.
+- Success 200: `{"server_id":"...","icon":"/v1/servers/.../icon/<sha256>.png"}`;
+  removal returns `icon: ""`. The same desired bytes/removal can be retried with a
+  new signed nonce. Stale different edits/non-owners/bookmarks return 409
+  `server_icon_conflict`; replayed signed requests retain `replayed_request`.
+- `GET /v1/bootstrap` includes `servers[].icon` for owners and bookmarks, including
+  offline servers. Empty string means no icon. This is a reference relative to the
+  fixed central origin, independent of the selected host endpoint.
+- Signed `GET` of the exact returned reference returns `image/png`. Fetch it with
+  central credentials and display a local object URL; the shared web response's
+  image CSP permits `blob:`. A plain `<img src=reference>` has no signed headers.
+  Response is `no-store`/`nosniff`; missing/replaced/removed/inaccessible references
+  return 404 `server_icon_not_found`. No authentication returns 401.
+- Upload exactly 512x512 static, noninterlaced 8-bit RGB/RGBA PNG, maximum 1,100,000
+  file bytes. Only fixed-size canvas colour/density metadata is accepted; APNG,
+  compressed/text metadata, external URLs and other formats are rejected. Invalid
+  input returns 400 `invalid_server_icon`; file oversize returns 413
+  `server_icon_too_large`, HTTP body oversize returns 413 `request_too_large`.
+
+Migration `0008_server_icons.sql` preserves existing registrations with `icon: ""`.
+Reference and bounded current PNG change atomically; replacement does not accumulate
+old images. Account/server deletion cascades the blob. D1's delete change count
+includes child rows, so registration deletion accepts a positive count rather than
+misreporting a successful cascade as 404. Only the current canonical owner may edit,
+even during a host ownership claim. No frontend source, room icon or host authority
+changes are part of this feature.
