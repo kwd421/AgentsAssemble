@@ -1,4 +1,4 @@
-import { limitHost } from "./abuse.js";
+import { limitHost, requestPurpose } from "./abuse.js";
 import {
   canonicalJson,
   hostRegistrationCanonical,
@@ -193,9 +193,9 @@ export async function hostAuthentication(request, env, serverId, body, now) {
   try {
     await env.DB
       .prepare(
-        "INSERT INTO host_request_nonces (server_id, nonce, expires_at) VALUES (?, ?, ?)"
+        "INSERT INTO host_request_nonces (server_id, nonce, expires_at, purpose) VALUES (?, ?, ?, ?)"
       )
-      .bind(serverId, nonce, now + NONCE_TTL_SECONDS)
+      .bind(serverId, nonce, now + NONCE_TTL_SECONDS, requestPurpose(request))
       .run();
   } catch (error) {
     throw temporaryCapacityError(error) || new HttpError(409, "replayed_request");

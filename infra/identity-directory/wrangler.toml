@@ -31,7 +31,8 @@ crons = ["17 3 * * *"]
 binding = "ASSETS"
 run_worker_first = true
 
-# Corrected stage 2: apply 0010; retain d54aebc7 as the limiter-free rollback.
+# Apply corrected 0010 with cron off, then deploy this release directly.
+# Roll back directly to recorded 25fad46a with cleanup disabled; see README.
 # Follow README deployment runbook; never increase cron frequency.
 # Proposed account-local IDs; account-wide collision check remains unverified.
 # Never reuse these for another purpose.

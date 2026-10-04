@@ -1,4 +1,4 @@
-import { limitSession } from "./abuse.js";
+import { limitSession, requestPurpose } from "./abuse.js";
 import {
   deviceRequestCanonical,
   sha256Base64Url,
@@ -70,9 +70,9 @@ export async function authenticated(request, env, body, now) {
   try {
     await env.DB
       .prepare(
-        "INSERT INTO request_nonces (session_id, nonce, expires_at) VALUES (?, ?, ?)"
+        "INSERT INTO request_nonces (session_id, nonce, expires_at, purpose) VALUES (?, ?, ?, ?)"
       )
-      .bind(session.session_id, nonce, now + NONCE_TTL_SECONDS)
+      .bind(session.session_id, nonce, now + NONCE_TTL_SECONDS, requestPurpose(request))
       .run();
   } catch (error) {
     throw temporaryCapacityError(error) || new HttpError(

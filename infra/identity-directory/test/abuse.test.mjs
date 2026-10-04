@@ -25,15 +25,16 @@ async function fixture() {
     server_id: id, host_public_key_jwk: host.publicJwk,
     host_registration_proof: await hostRegistrationProof(host.pair, id, owner.created.person.person_id),
   })).status, 201);
+  let generation = Date.now();
   const endpoint = () => signedHostRequest(env, id, host.pair, "PUT", {
-    origin: "https://abuse.trycloudflare.com", generation: Date.now(),
+    origin: "https://abuse.trycloudflare.com", generation: ++generation,
     issued_at: Math.floor(Date.now() / 1000), lease_expires_at: Math.floor(Date.now() / 1000) + 600,
   });
   assert.equal((await endpoint()).status, 200);
   const issue = () => device(`/v1/servers/${id}/connect-grants`, "POST", {});
   const grant = await payload(await issue());
-  const redeem = () => signedHostRequest(env, id, host.pair, "POST", {
-    grant_token: grant.grant_token, origin: grant.origin, generation: grant.generation,
+  const redeem = (redeemed = grant) => signedHostRequest(env, id, host.pair, "POST", {
+    grant_token: redeemed.grant_token, origin: redeemed.origin, generation: redeemed.generation,
   }, { pathname: `/v1/servers/${id}/connect-grants/redeem` });
   const general = () => device("/v1/bookmarks", "POST", { server_id: id });
   return { env, owner, device, issue, redeem, endpoint, general };
@@ -162,4 +163,44 @@ test("grant issuance leaves unrelated expired grants for scheduled cleanup", asy
   db.prepare("UPDATE server_connect_grants SET expires_at = 1").run();
   assert.equal((await f.issue()).status, 201);
   assert.equal(db.prepare("SELECT COUNT(*) AS n FROM server_connect_grants WHERE expires_at = 1").get().n, 1);
+});
+
+// Contract: unrelated expiry debt cannot consume owner admission reserves.
+// Regression oracle: signed HTTP issue + redemption after every non-owner pool
+// denies admission. The original shared 8000 ledger fails the issue assertion.
+test("non-owner creation exhaustion preserves owner issue and redemption reserves", async () => {
+  const f = await fixture();
+  const exhaust = async (call, success) => {
+    for (let i = 0; i < 3000; i++) {
+      const response = await call();
+      if (response.status === 429) {
+        assert.equal((await response.json()).error.code, "temporary_capacity_exhausted");
+        return;
+      }
+      assert.equal(response.status, success, await response.text());
+    }
+    assert.fail("creation admission must be bounded");
+  };
+  await exhaust(() => f.device("/v1/bootstrap"), 200);
+  // Authentication counters include failed login attempts. Seed through their
+  // actual INSERT trigger rather than invoking expensive password derivation.
+  const db = f.env.DB.database;
+  for (let i = 0; ; i++) {
+    try { db.prepare("INSERT INTO rate_limits VALUES (?, 0, 1)").run(`auth-debt-${i}`); }
+    catch (error) { assert.match(error.message, /temporary_capacity_exhausted/); break; }
+    assert.ok(i < 3000);
+  }
+  await exhaust(f.endpoint, 200);
+  const issued = await f.issue();
+  assert.equal(issued.status, 201, await issued.clone().text());
+  const grant = await issued.json();
+  const redeemed = await f.redeem(grant);
+  assert.equal(redeemed.status, 200, await redeemed.clone().text());
+  assert.equal((await redeemed.json()).status, "authorized");
+  // Redeem and issuance have independent finite reserves. Invalid issue bodies
+  // still spend a verified nonce, without hitting the 16-active-grant limit.
+  await exhaust(() => f.device("/v1/servers/abuse-server-0001/connect-grants", "POST", { invalid: true }), 400);
+  assert.equal((await f.redeem(grant)).status, 200);
+  await exhaust(() => f.redeem(grant), 200);
+  assert.equal((await f.issue()).status, 429);
 });

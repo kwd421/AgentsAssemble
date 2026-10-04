@@ -36,8 +36,8 @@ and invite credentials remain on each AgentsAssemble engine.
 
 ## Setup
 
-For an existing deployment, follow the two-stage rollout below before deploying
-the branch tip. The stage-1 Worker version must exist as the rollback baseline.
+For an existing deployment, follow the deployment runbook below. Deploy the corrected tip directly;
+record the production Worker version corresponding to `25fad46a` for rollback.
 
 ```bash
 cd infra/identity-directory
@@ -144,7 +144,7 @@ uses 2 requests (grant issue and redemption), with signed list/login operations
 counted separately. Admission changes 4 logical rows before indexes/expiry cleanup;
 D1 usage counts actual rows written, including indexed updates.
 
-Local verification applies the nine migrations to isolated workerd D1 and runs
+Local verification applies all ten migrations to isolated workerd D1 and runs
 `node test/local_owner_connections.mjs http://127.0.0.1:8799`. The runner rejects
 non-loopback URLs and uses synthetic credentials. It exercises entry redemption,
 exact retry, stable endpoint generation and logout preventing the next admission.
@@ -196,18 +196,12 @@ misreporting a successful cascade as 404. Only the current canonical owner may e
 even during a host ownership claim. No frontend source, room icon or host authority
 changes are part of this feature.
 
-## Two-stage cleanup and abuse rollout
+## Cleanup and abuse rollout
 
-### Stage 1 remains the rollback baseline
-
-`d54aebc7` is the original stage 1: additive migration 0009, daily bounded
-cleanup, no purpose limiter code/bindings. `8e2bfb37` is stage 2. The follow-up
-**daily maintenance budget fix `eda1b8d0`** is appended on top of `8e2bfb37`; it already
-contains all nine purpose limiter bindings and their enforcement. It is a
-corrected stage-2 release, **not a new stage-1 rollback baseline**. Cleanup
-budgeting is stage-1 scope, but its position in history cannot remove the
-inherited limiter. No history is rewritten and no deployed state is inferred
-from a local branch. Record actual Cloudflare Worker version IDs separately.
+Do not deploy `d54aebc7` or `8e2bfb37`: their scheduled cleanup is unsafe.
+Deploy the owner-budget-corrected successor of `e8c62941` directly. No history
+is rewritten. Git hashes are not Cloudflare Worker version IDs; record the
+actual `25fad46a` production version separately for direct rollback.
 
 ### Shared UTC-day cleanup and creation budgets
 
@@ -217,8 +211,8 @@ Cleanup reserves at most **10,000 writes/day (10%)**, leaving at least 90,000
 of that allowance for other work. This is not a guarantee of remaining account
 quota: other databases, normal requests, cascades and migrations also consume it.
 
-Migration `0010_daily_maintenance_budget.sql` adds a fixed singleton ledger and
-six atomic insert-admission triggers. Cleanup claims the UTC day with one
+Migration `0010_daily_maintenance_budget.sql` adds a cleanup singleton, five fixed creation-budget rows,
+nonce-purpose columns and six atomic insert-admission triggers. Cleanup claims the UTC day with one
 conditional UPDATE. Concurrent calls, repeated cron delivery, isolate restarts
 and retries cannot reserve it twice. Failure burns the unused daily allowance;
 there is no same-day retry/reclaim. Missing `meta.rows_written` stops the run.
@@ -257,65 +251,150 @@ constraint), or 6 endpoint calls/minute = 8,640 host nonces/day = **25,920 clean
 writes**. Accounts, IPs and locations multiply these rates. Lowering only an
 individual account limit would not bound total generation.
 
-The new database-wide admission ceiling therefore reserves **8,000 eventual
-cleanup writes/UTC day**, summing all six queues with the above weights. Every
-INSERT attempt, including an UPSERT, charges its queue weight atomically; failed
-statements roll back the reservation. This deliberately overcounts counter
-UPSERTs and sessions that never acquire a revoked-index entry. The singleton
-adds one normal-traffic write per admitted attempt, at most floor(8,000/3) =
-2,666/day; its size never grows. All callers and locations share the same cap.
-Successful expiry debt is at most 8,000/day versus >=9,993/day cleanup capacity,
-leaving >=1,993/day for older backlog in steady state. Uneven expiry dates,
-long-lived sessions, unavailable D1 and failed runs can still cause temporary
-backlog; this is a service-rate calculation, not a maximum retention promise.
+The database-wide admission ceiling remains **8,000 eventual cleanup writes/UTC
+day**, partitioned into non-borrowing purpose pools:
 
-Concrete upper bounds (each assumes no other spending): 2,666 host nonces/day,
-1,600 grant rows/day, or **1,000 grant issuances/day including their device
-nonces** (5 + 3 writes). One host renewing every five minutes creates 288 nonces
-= 864 cleanup writes/day; nine hosts use 7,776, ten exceed the creation budget.
-Authentication, redemption, retries and directory reads also spend this shared
-allowance, so practical supported host count is lower. Existing 16 active grants
-per session and all purpose burst limits remain additional restrictions.
-Capacity exhaustion returns HTTP 429 `temporary_capacity_exhausted` and resumes
-after 00:00 UTC; it does not insert the rejected nonce/grant/counter. Purpose
-isolation applies to the coarse limiter, not this explicit shared storage cap.
+| Purpose | Daily deletion-write budget | Charged work |
+| --- | ---: | --- |
+| AUTH | 1,400 | Precision counters, Google handoffs (3 each), sessions (7) |
+| GENERAL | 1,400 | Other signed device/host nonces, including ownership claims (3) |
+| ENDPOINT | 3,000 | Endpoint publish/renew/delete host nonces (3) |
+| OWNER_GRANT | 1,600 | Verified owner request nonce (3) and grant row (5) |
+| OWNER_REDEEM | 600 | Signed grant-redemption host nonce (3) |
+| Total | **8,000** | Below >=9,993/day cleanup capacity |
+
+Only the server-derived exact method/path selects nonce purpose, after signature
+verification and the existing purpose gates; grant requests also verify ownership
+before nonce insertion. Headers/body fields cannot choose a pool. Nonce uniqueness
+still spans all purposes. Unrelated activity cannot spend either owner reserve.
+Each INSERT attempt, including an UPSERT, charges its weight atomically; failed
+statements roll back their reservation. A nonce already committed before a later
+validation/grant failure is still charged. The five ledger rows never expire or
+grow; each admitted attempt adds one counter UPDATE (at most 2,666/day).
+Total successful expiry debt stays <=8,000/day, leaving >=1,993/day for backlog
+when cleanup succeeds. Long-lived rows and failed runs still delay reclamation.
+
+With no retries or failed attempts, the owner pools support **200 grant issuances
+and 200 redemptions/day** across the entire directory. ENDPOINT supports 1,000
+calls/day: a host renewing every five minutes uses 864 units, so three such hosts
+fit before other endpoint calls; four do not. Existing burst limits, endpoint
+leases and the 16-active-grant/session constraint still apply.
+
+**Explicit product constraint:** the reserves are finite and shared among owners.
+Exhausting OWNER_GRANT or OWNER_REDEEM returns HTTP 429
+`temporary_capacity_exhausted` until 00:00 UTC, even for a legitimate owner.
+There is no borrowing, refund, or unlimited-entry guarantee. Isolation protects
+grant/redeem for an already valid session and live endpoint; exhausted AUTH can
+block a fresh login, exhausted ENDPOINT can prevent lease renewal, and platform
+account-wide quotas can stop all purposes. Rejected inserts persist neither the
+row nor their counter increment.
 
 ### 배포 런북
 
 This is an operator runbook only; this change performs no production deployment
-or remote migration. Keep deployment outside the 03:17 UTC cleanup window and
-wait for in-flight scheduled work to finish before changing code or migrations.
-Never run migrations indiscriminately from HEAD while preparing old stage 1.
+or remote migration. Run the commands from the exact reviewed, owner-budget-fixed
+successor of `e8c62941` in `infra/identity-directory`. Do not use a moving/unreviewed
+HEAD. Set `IDENTITY_ASSETS` to its matching, already-built frontend assets; these
+commands do not build or modify the Rust checkout.
 
-1. Record the deployed version, schema, cron schedule and D1 usage. If stage 1
-   has never been established, deploy **`d54aebc7` with migrations through 0009
-   only**, verify owner flows, and record its Worker version as stage 1. Its
-   rollback target is **`25fad46a`**, with 0009 retained. Do not leave this old
-   high-budget cleanup running as the long-term solution.
-2. Once stage 1 is verified, check account-wide uniqueness of namespace IDs
-   260501–260509. Apply **0010**, then deploy the **`eda1b8d0` (daily maintenance budget fix,
-   or its documentation-only follow-up)**, retaining the one daily cron. Skip deploying the
-   unfixed `8e2bfb37`. If stage 2 is already deployed, apply 0010 and update directly
-   to this fix, using the previously recorded stage-1 version. Verify login,
-   owner grant/redeem, endpoint renewal, budget denials and daily cleanup before
-   treating the rollout as accepted. No migration down-step is needed.
-3. **Rollback corrected stage 2 → recorded `d54aebc7` is mandatory**; never jump
-   directly to `25fad46a`. First pause scheduled cleanup and wait for any active
-   run to finish, because the old code has no 10,000-write protection. Retain 0009
-   and 0010: the additive schema is readable by old code and the creation cap
-   continues to protect storage, though old versions can report its denial as
-   409 replay/500 instead of the new 429. This is a temporary recovery state;
-   verify owner flows below capacity and restore a budget-fixed version promptly.
-4. If stage 1 itself must be rolled back, **`d54aebc7` → `25fad46a` is allowed**.
-   Keep cleanup paused and retain both additive migrations if already applied.
-   Resume only the original daily cron after restoring the budget-fixed release;
-   never clear the ledger to force a retry. Pausing reduces frequency: **increasing
-   cron frequency anywhere in this rollback chain is forbidden**.
+1. Record the production Worker version ID corresponding to **`25fad46a`**,
+   applied migrations **0001–0008**, account-wide D1 usage and existing cron.
+   Confirm namespace IDs **260501–260509** do not share another Worker's counters.
+   Use `wrangler deployments list`, `wrangler versions list` and
+   `wrangler versions view <version-id>` plus deployment records to establish the
+   Git/version mapping. Stop if that rollback version cannot be identified.
+2. Outside the **03:17 UTC** window, disable cron with **`crons = []`**. Create
+   two configs beside the original so relative source/migration paths
+   remain valid. Both include the assets directory because even trigger-only
+   commands validate the assets configuration:
 
-Cron triggers are [managed separately from Worker versions](https://developers.cloudflare.com/workers/configuration/cron-triggers/);
-code rollback does not undo their configuration. Neither `8e2bfb37` nor this
-combined follow-up is a substitute for the limiter-free stage-1 baseline. An
-operator who has no verified stage-1 version must establish it before proceeding.
+   ```sh
+   export IDENTITY_ASSETS=/absolute/path/to/reviewed/frontend/dist
+   export IDENTITY_ROLLBACK_VERSION=recorded-25fad46a-worker-version-id
+   python3 - <<'PY'
+   from pathlib import Path
+   import json, os
+   source = Path('wrangler.toml').read_text()
+   assets = Path(os.environ['IDENTITY_ASSETS']).resolve(strict=True)
+   assert assets.is_dir()
+   assert source.count('[assets]') == 1
+   source = source.replace('[assets]', '[assets]\ndirectory = ' + json.dumps(str(assets)))
+   cron = 'crons = ["17 3 * * *"]'
+   assert source.count(cron) == 1
+   with Path('wrangler.cleanup-on.toml').open('x') as output:
+       output.write(source)
+   with Path('wrangler.cleanup-off.toml').open('x') as output:
+       output.write(source.replace(cron, 'crons = []'))
+   PY
+   wrangler triggers deploy --config wrangler.cleanup-off.toml --dry-run
+   wrangler triggers deploy --config wrangler.cleanup-off.toml
+   ```
+
+   `triggers deploy` updates schedules without deploying new Worker code. Verify
+   the config preserves the current production routes/domains before applying it;
+   that command can manage those too. Confirm no cron remains in the dashboard,
+   wait the **full 15 minutes** for propagation, then confirm in Workers invocation
+   logs/metrics that no scheduled invocation is still active. Wait for completion
+   if one remains; do not proceed merely because the timer elapsed. See
+   [Cron Trigger propagation](https://developers.cloudflare.com/workers/configuration/cron-triggers/).
+3. Confirm only **0009 and 0010** are pending and that the account has headroom
+   for 0009's two session-index builds (plus 0010's additive schema work):
+
+   ```sh
+   wrangler d1 migrations list agentsassemble-identity --remote --config wrangler.cleanup-off.toml
+   ```
+
+   0010 was not applied in production and is corrected in this release. Stop if
+   an earlier 0010 is already recorded; do not reapply or overwrite its history.
+4. Apply **0009, then 0010**. With exactly those two pending, Wrangler applies
+   them in order; inspect the prompt before confirming:
+
+   ```sh
+   wrangler d1 migrations apply agentsassemble-identity --remote --config wrangler.cleanup-off.toml
+   wrangler d1 migrations list agentsassemble-identity --remote --config wrangler.cleanup-off.toml
+   ```
+
+   A [failed migration rolls back](https://developers.cloudflare.com/d1/wrangler-commands/),
+   while earlier successful migrations remain applied. Stop on failure.
+5. Deploy the **corrected tip directly**, with cron still off, matching assets,
+   and all nine verified limiter bindings. **Never deploy `d54aebc7` or `8e2bfb37`.**
+
+   ```sh
+   wrangler deploy --dry-run --config wrangler.cleanup-off.toml --assets "$IDENTITY_ASSETS"
+   wrangler deploy --config wrangler.cleanup-off.toml --assets "$IDENTITY_ASSETS"
+   ```
+
+6. Restore **exactly one `17 3 * * *`** trigger with the generated on config:
+
+   ```sh
+   wrangler triggers deploy --config wrangler.cleanup-on.toml
+   ```
+
+   Confirm the resulting schedule, smoke-test login and owner grant/redeem (also
+   endpoint renewal), and verify the next scheduled run stays within **10,000
+   indexed writes**. Local logical-delete metadata alone is not billing evidence.
+   Do not increase cron frequency or manually clear the daily claim.
+7. If rollback is needed, disable cron again, wait **15 minutes plus completion
+   of any active invocation**, then roll back **directly to recorded `25fad46a`**:
+
+   ```sh
+   wrangler triggers deploy --config wrangler.cleanup-off.toml
+   # Confirm no triggers; wait 15 minutes and confirm no active scheduled run.
+   wrangler rollback "$IDENTITY_ROLLBACK_VERSION" --config wrangler.cleanup-off.toml
+   ```
+
+   Retain **0009/0010**, and keep cleanup **disabled for the entire time `25fad46a`
+   is active**. Cron configuration is separate from code rollback: recheck that
+   it remains empty. Old code defaults nonce spending to GENERAL and may report
+   capacity denial as 409/500; owner isolation is guaranteed only by the fixed
+   release. Smoke-test below capacity, restore the budget-fixed release with the
+   off config, then re-enable only the original cron. **No `d54aebc7` intermediate
+   hop.** A future limiter-free rollback build must include corrected cleanup
+   and be separately verified; the historical unsafe versions are not one.
+
+Keep both local configs for the rollout/rollback window; do not commit them.
+Only `wrangler.cleanup-on.toml` re-enables cleanup. All remote commands above are operator
+steps, not part of local verification.
 
 ### Verification
 
@@ -338,14 +417,26 @@ queues make progress. The creation-cap regression observes HTTP 429 and no
 persisted nonce; temporarily raising the SQL ceiling to 800,000 makes it fail
 with HTTP 200. The mutation is restored, not committed.
 
-63 Node tests, syntax check and Wrangler 4.98.0 dry-run pass. Local owner
-entry/retry, endpoint generation/renewal and logout smoke pass. The separate
+64 Node tests, syntax check and Wrangler 4.98.0 asset-backed dry-run pass.
+The new signed-HTTP regression failed against the original shared ledger at
+owner issuance (429 instead of 201); it now exhausts AUTH/GENERAL/ENDPOINT and
+successfully issues and redeems a new owner grant. It also checks that each owner
+reserve eventually denies with 429. Local workerd/D1 reproduces non-owner pool
+exhaustion and owner success. Temporarily routing the device or host nonce back
+to GENERAL makes workerd fail at issue (429/201) or redeem (429/200), respectively;
+all mutations were restored. Cron-off and cron-on trigger dry-runs also pass.
+Bare `wrangler deploy --dry-run` fails without the required assets directory;
+provide `--assets` as above. The generated trigger configs include that directory
+because `triggers deploy` validates it too. Local owner
+entry/retry, endpoint generation/renewal and logout smoke pass. An isolated
+workerd build of `25fad46a` also passes that owner smoke with corrected
+0009/0010 retained and no scheduled cleanup invocation. The separate
 abuse integration still records zero writes for 220 coarse-limit denials.
 Local workerd tests do not establish production CPU, quota availability or
 account-wide rate-limit namespace uniqueness. Rust source/build outputs are
 read-only inputs to dry-run, and no Rust repository is modified.
 
-### Stage 2: purpose abuse limits (C2)
+### Purpose abuse limits (C2)
 
 The Worker uses [Cloudflare Workers Rate Limiting bindings](https://developers.cloudflare.com/workers/runtime-apis/bindings/rate-limit/).
 All periods are 60 seconds; each row below has its own IP namespace and, where
@@ -355,7 +446,8 @@ Account-wide uniqueness is **unverified**: Wrangler 4.98.0 `whoami` confirmed
 account access, but its CLI exposes no account-wide Worker/rate-limit-namespace
 inventory command. Local configuration contains nine distinct IDs; this does
 not prove absence of collisions with other Workers. The operator must check
-account-wide bindings before production stage 2. `wrangler.toml` is the budget authority.
+account-wide bindings before production deployment. `wrangler.toml` owns burst
+limits; migration 0010 owns daily creation budgets.
 
 | Purpose | Routes | Per IP/minute | Per authenticated key/minute |
 | --- | --- | ---: | ---: |
@@ -392,7 +484,7 @@ member admission API: signed bookmark activity and unimplemented member API
 paths use GENERAL. A future member admission route must stay outside all three
 owner purposes and preserve these isolation tests. General activity can exhaust
 its own coarse bootstrap/bookmark allowance without spending an owner coarse
-allowance. Admitted activity still shares the explicit global creation budget.
+allowance. Admitted activity uses the matching non-borrowing daily creation pool.
 Attackers directly targeting an owner API can still exhaust its IP allowance,
 including for legitimate clients behind the same NAT.
 
@@ -405,7 +497,7 @@ is 100,000 Worker requests/day, 100,000 D1 rows written/day and 10 ms CPU/reques
 this change does not claim to prove the production CPU ceiling. The unchanged
 0.1.x host retry loop can settle at about 32 seconds during failure; ENDPOINT's
 6/minute host/server budget admits that steady retry cadence while bounding
-bursts, until the global daily creation allowance is exhausted. No Rust client or retry policy was changed.
+bursts, until the ENDPOINT daily creation allowance is exhausted. No Rust client or retry policy was changed.
 
 #### Grant retry decision
 
@@ -427,9 +519,9 @@ remain unchanged. Expired rows are excluded from capacity without hot-path
 cleanup.
 
 
-Original stage 2 (`8e2bfb37`) retained the stage-1 cleanup implementation. The
-budget follow-up above supersedes that cleanup capacity, preserving all purpose
-limiters. Follow the deployment runbook and rollback through `d54aebc7`.
+The corrected release preserves all purpose limiters and bounded cleanup.
+Follow the deployment runbook for direct deployment and direct `25fad46a` rollback
+with cleanup disabled; never deploy the historical unsafe cleanup versions.
 
 Run the local abuse integration check as well:
 
@@ -438,7 +530,8 @@ node test/local_abuse.mjs "$(npm root -g)/wrangler/package.json"
 ```
 
 Current local abuse integration: 220 coarse-limit denials write zero rows.
-Owner issuance, redemption and endpoint renewal still work after GENERAL
-coarse-limiter saturation. Cleanup removes all 200 expired grants in that
-fixture (201 local rows_written including the day claim, 814 rows_read).
+Owner issuance and redemption work after GENERAL coarse-limiter saturation
+and exhaustion of all three non-owner creation pools. The initial owner smoke
+covers endpoint renewal before ENDPOINT exhaustion. Cleanup removes all 200
+expired grants plus eligible authentication counters in that fixture.
 See the all-queue, index-inclusive budget verification above for daily capacity.

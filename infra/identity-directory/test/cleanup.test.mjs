@@ -19,8 +19,8 @@ test("scheduled cleanup bounds all tables and does not cascade live nonce/grant 
     host_registration_proof: await hostRegistrationProof(host.pair, serverId, created.person.person_id),
   })).status, 201);
   for (let i = 0; i < 1000; i++) {
-    db.prepare("INSERT INTO request_nonces VALUES (?, ?, ?)").run(sessionId, `old-${i}`, now - 1);
-    db.prepare("INSERT INTO host_request_nonces VALUES (?, ?, ?)").run(serverId, `old-${i}`, now - 1);
+    db.prepare("INSERT INTO request_nonces (session_id, nonce, expires_at) VALUES (?, ?, ?)").run(sessionId, `old-${i}`, now - 1);
+    db.prepare("INSERT INTO host_request_nonces (server_id, nonce, expires_at) VALUES (?, ?, ?)").run(serverId, `old-${i}`, now - 1);
     db.prepare("INSERT INTO rate_limits VALUES (?, ?, 1)").run(`old-${i}`, now - 90000);
     db.prepare(`INSERT INTO google_handoffs (handoff_id, device_id, device_public_key_jwk,
       browser_token_hash, poll_token_hash, google_nonce, status, created_at, expires_at)
@@ -34,12 +34,12 @@ test("scheduled cleanup bounds all tables and does not cascade live nonce/grant 
   }
   // An expired parent can still have recent nonce children. A bounded parent
   // DELETE must not trigger an unbounded ON DELETE CASCADE on those children.
-  for (let i = 0; i < 600; i++) db.prepare("INSERT INTO request_nonces VALUES ('old-0', ?, ?)").run(`live-${i}`, now + 600);
+  for (let i = 0; i < 600; i++) db.prepare("INSERT INTO request_nonces (session_id, nonce, expires_at) VALUES ('old-0', ?, ?)").run(`live-${i}`, now + 600);
   // Exceed daily capacity to observe both throughput and bounded termination.
   db.prepare("DELETE FROM host_request_nonces").run();
   db.prepare(`WITH RECURSIVE backlog(n) AS (
     SELECT 1 UNION ALL SELECT n + 1 FROM backlog WHERE n < 120001
-  ) INSERT INTO host_request_nonces SELECT ?, 'backlog-' || n, ? FROM backlog`)
+  ) INSERT INTO host_request_nonces (server_id, nonce, expires_at) SELECT ?, 'backlog-' || n, ? FROM backlog`)
     .run(serverId, now - 1);
   for (const { sql } of triggers) db.exec(sql);
   const tables = ["request_nonces", "host_request_nonces", "rate_limits", "google_handoffs", "server_connect_grants", "sessions"];
@@ -67,25 +67,25 @@ test("scheduled cleanup bounds all tables and does not cascade live nonce/grant 
   assert.equal((await signedDeviceRequest(env, created.session, key.pair, "/v1/bootstrap")).status, 200);
 });
 
-// Contract: global expiry debt stays serviceable. Observe HTTP denial and durable
-// nonce state; raising the SQL cap to 800000 makes this regression fail.
+// Contract: purpose expiry debt stays serviceable. Observe HTTP denial and durable
+// nonce state; raising the GENERAL cap to 800000 makes this regression fail.
 test("daily creation cap rejects signed traffic and resets on a new UTC day", async () => {
   const env = environment();
   const { key, created } = await createGuestIdentity(env);
   const db = env.DB.database;
   for (let i = 0; ; i++) {
-    const { creation_writes: used } = db.prepare("SELECT creation_writes FROM maintenance_budget").get();
-    if (used > 7997) break;
-    db.prepare("INSERT INTO rate_limits VALUES (?, 0, 1)").run(`capacity-${i}`);
+    const { creation_writes: used } = db.prepare("SELECT creation_writes FROM creation_budgets WHERE purpose = 'GENERAL'").get();
+    if (used > 1397) break;
+    db.prepare("INSERT INTO request_nonces (session_id, nonce, expires_at) SELECT session_id, ?, 0 FROM sessions LIMIT 1").run(`capacity-${i}`);
   }
   const before = db.prepare("SELECT COUNT(*) AS n FROM request_nonces").get().n;
-  const used = db.prepare("SELECT creation_writes FROM maintenance_budget").get().creation_writes;
+  const used = db.prepare("SELECT creation_writes FROM creation_budgets WHERE purpose = 'GENERAL'").get().creation_writes;
   const response = await signedDeviceRequest(env, created.session, key.pair, "/v1/bootstrap");
   assert.equal(response.status, 429);
   assert.equal((await response.json()).error.code, "temporary_capacity_exhausted");
   assert.equal(db.prepare("SELECT COUNT(*) AS n FROM request_nonces").get().n, before);
-  assert.equal(db.prepare("SELECT creation_writes FROM maintenance_budget").get().creation_writes, used);
-  db.prepare("UPDATE maintenance_budget SET creation_day = creation_day - 1").run();
+  assert.equal(db.prepare("SELECT creation_writes FROM creation_budgets WHERE purpose = 'GENERAL'").get().creation_writes, used);
+  db.prepare("UPDATE creation_budgets SET creation_day = creation_day - 1 WHERE purpose = 'GENERAL'").run();
   assert.equal((await signedDeviceRequest(env, created.session, key.pair, "/v1/bootstrap")).status, 200);
   assert.equal(db.prepare("SELECT COUNT(*) AS n FROM request_nonces").get().n, before + 1);
 });

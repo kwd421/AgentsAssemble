@@ -46,8 +46,8 @@ try {
   await db.prepare("INSERT INTO sessions VALUES ('live', 'p', 'd', 'live', 0, 4000000000, 0, NULL)").run();
   const prefix = `WITH RECURSIVE n(x) AS (SELECT 1 UNION ALL SELECT x+1 FROM n WHERE x<2000) `;
   const inserts = [
-    "INSERT INTO request_nonces SELECT 'live', 'n-' || x, 1 FROM n",
-    "INSERT INTO host_request_nonces SELECT 's', 'n-' || x, 1 FROM n",
+    "INSERT INTO request_nonces (session_id, nonce, expires_at) SELECT 'live', 'n-' || x, 1 FROM n",
+    "INSERT INTO host_request_nonces (server_id, nonce, expires_at) SELECT 's', 'n-' || x, 1 FROM n",
     "INSERT INTO rate_limits SELECT 'r-' || x, 0, 1 FROM n",
     "INSERT INTO google_handoffs (handoff_id, device_id, device_public_key_jwk, browser_token_hash, poll_token_hash, google_nonce, status, created_at, expires_at) SELECT 'g-' || x, 'd', '{}', '', '', '', 'pending', 0, 1 FROM n",
     "INSERT INTO server_connect_grants (grant_id, secret_hash, session_id, person_id, device_id, server_id, endpoint_origin, endpoint_generation, created_at, expires_at) SELECT 'c-' || x, 'c-' || x, 'live', 'p', 'd', 's', '', 1, 0, 1 FROM n",
@@ -55,17 +55,17 @@ try {
   ];
   for (const insert of inserts) await db.prepare(prefix + insert).run();
   // Expired parent with live children must survive: no cascading deletion.
-  await db.prepare("INSERT INTO request_nonces VALUES ('e-1', 'keep', 4000000000)").run();
+  await db.prepare("INSERT INTO request_nonces (session_id, nonce, expires_at) VALUES ('e-1', 'keep', 4000000000)").run();
   for (const { sql } of triggers) await db.prepare(sql).run();
-  // All insert queues share one durable admission budget. Each allowed row
+  // Insert queues reserve debt from fixed purpose pools. Each allowed row
   // charges its indexed expiry debt; a full day rejects every queue atomically.
   for (const insert of inserts) await db.prepare("WITH n(x) AS (SELECT 2001) " + insert).run();
-  assert.equal((await db.prepare("SELECT creation_writes AS n FROM maintenance_budget").first()).n, 24);
-  await db.prepare("UPDATE maintenance_budget SET creation_writes = 7998").run();
+  assert.equal((await db.prepare("SELECT SUM(creation_writes) AS n FROM creation_budgets").first()).n, 24);
+  await db.prepare("UPDATE creation_budgets SET creation_writes = daily_limit, creation_day = CAST(strftime('%s', 'now') AS INTEGER) / 86400").run();
   for (const insert of inserts) {
     await assert.rejects(db.prepare("WITH n(x) AS (SELECT 2002) " + insert).run(), /temporary_capacity_exhausted/);
   }
-  assert.equal((await db.prepare("SELECT creation_writes AS n FROM maintenance_budget").first()).n, 7998);
+  assert.equal((await db.prepare("SELECT SUM(creation_writes) AS n FROM creation_budgets").first()).n, 8000);
   const tables = ["request_nonces", "host_request_nonces", "rate_limits", "google_handoffs", "server_connect_grants", "sessions"];
   const snapshot = () => Promise.all(tables.map(async table => (await db.prepare(`SELECT COUNT(*) AS n FROM ${table}`).first()).n));
   const before = await snapshot();

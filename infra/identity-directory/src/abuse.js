@@ -3,7 +3,7 @@ import { HttpError } from "./http.js";
 // Purpose comes only from an exact method/path, never a caller-supplied role.
 // Unimplemented member APIs and all directory activity use GENERAL, so adding a
 // member route cannot silently spend the existing owner admission budget.
-function purpose(request) {
+export function requestPurpose(request) {
   const { pathname } = new URL(request.url);
   const method = request.method;
   if (method === "POST" && /^\/v1\/servers\/[^/]+\/connect-grants$/.test(pathname)) return "OWNER_GRANT";
@@ -32,11 +32,11 @@ export async function limitRequestIp(request, env) {
   // Cloudflare supplies this header. Never trust X-Forwarded-For; local clients
   // without the edge header intentionally share one conservative bucket.
   const ip = request.headers.get("cf-connecting-ip") || "unknown";
-  await consume(env, `ABUSE_${purpose(request)}_IP`, `ip:${ip}`);
+  await consume(env, `ABUSE_${requestPurpose(request)}_IP`, `ip:${ip}`);
 }
 
 export async function limitSession(request, env, session) {
-  const kind = purpose(request);
+  const kind = requestPurpose(request);
   const subjects = [
     ["account", session.person_id], ["session", session.session_id], ["device", session.device_id],
   ];
@@ -55,7 +55,7 @@ export async function limitSession(request, env, session) {
 }
 
 export async function limitHost(request, env, serverId, fingerprint) {
-  const binding = `ABUSE_${purpose(request)}_ACTOR`;
+  const binding = `ABUSE_${requestPurpose(request)}_ACTOR`;
   await consume(env, binding, `host:${fingerprint}`);
   await consume(env, binding, `server:${serverId}`);
 }

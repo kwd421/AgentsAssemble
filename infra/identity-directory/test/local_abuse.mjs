@@ -110,6 +110,29 @@ try {
   };
   const origin = "https://local-abuse.trycloudflare.com";
   assert.equal((await hostCall("endpoint", "PUT", { origin, generation: 1, issued_at: now(), lease_expires_at: now() + 600 })).status, 200);
+  // Contract: non-owner expiry debt cannot deny signed owner issue/redemption.
+  // Seed through real D1 triggers, then observe denial and admission over HTTP.
+  // Routing either owner nonce back to GENERAL makes this regression fail.
+  const sessionRow = await db.prepare("SELECT session_id FROM sessions WHERE device_id = ?")
+    .bind(created.session.device_id).first();
+  for (const [purpose, insert, values] of [
+    ["AUTH", "INSERT INTO rate_limits (bucket, window_start, count) SELECT 'capacity-auth-' || x, 0, 1 FROM n", []],
+    ["GENERAL", "INSERT INTO request_nonces (session_id, nonce, expires_at) SELECT ?, 'capacity-general-' || x, 4000000000 FROM n", [sessionRow.session_id]],
+    ["ENDPOINT", "INSERT INTO host_request_nonces (server_id, nonce, expires_at, purpose) SELECT ?, 'capacity-endpoint-' || x, 4000000000, 'ENDPOINT' FROM n", [serverId]],
+  ]) {
+    const pool = await db.prepare("SELECT daily_limit, creation_writes FROM creation_budgets WHERE purpose = ?").bind(purpose).first();
+    const count = Math.floor((pool.daily_limit - pool.creation_writes) / 3);
+    if (count) await db.prepare(`WITH RECURSIVE n(x) AS (SELECT 1 UNION ALL SELECT x+1 FROM n WHERE x < ?) ${insert}`)
+      .bind(count, ...values).run();
+  }
+  for (const response of [
+    await deviceCall("/v1/bootstrap", "GET"),
+    await hostCall("endpoint/renew", "POST", { origin, generation: 1, issued_at: now(), lease_expires_at: now() + 600 }),
+    await call("/v1/auth/recover", "POST", "{}"),
+  ]) {
+    assert.equal(response.status, 429, await response.clone().text());
+    assert.equal((await response.json()).error.code, "temporary_capacity_exhausted");
+  }
   // No member API exists yet. Unsupported member paths use GENERAL, too.
   for (let i = 0; i < 120; i++) await call(`/v1/servers/${serverId}/member-connect-grants`, "POST", "{}");
   const member = await noWrites(() => call(`/v1/servers/${serverId}/member-connect-grants`, "POST", "{}"), 100);
@@ -120,7 +143,7 @@ try {
   assert.equal((await hostCall("connect-grants/redeem", "POST", {
     grant_token: grant.grant_token, origin, generation: 1,
   })).status, 200);
-  assert.equal((await hostCall("endpoint/renew", "POST", { origin, generation: 1, issued_at: now(), lease_expires_at: now() + 600 })).status, 200);
+  // The earlier owner smoke covers successful renewal; ENDPOINT is now full.
   for (let i = 1; i < 12; i++) assert.equal((await issue()).status, 201);
   const actor = await noWrites(issue, 20);
   for (let i = 0; i < 10; i++) await call("/v1/auth/recover", "POST", "{}");
@@ -133,7 +156,7 @@ try {
   const cleanup = await call("/__test/cleanup", "POST");
   assert.equal(cleanup.status, 200);
   assert.equal((await db.prepare("SELECT COUNT(*) AS n FROM server_connect_grants WHERE expires_at = 1").first()).n, 0);
-  console.log(JSON.stringify({ member, actor, login, cleanup: {
+  console.log(JSON.stringify({ owner_after_non_owner_exhaustion: "issued and redeemed", member, actor, login, cleanup: {
     grants_deleted: 200, rows_written: Number(cleanup.headers.get("x-test-rows-written")),
     rows_read: Number(cleanup.headers.get("x-test-rows-read")),
   } }, null, 2));
