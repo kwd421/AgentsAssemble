@@ -149,7 +149,7 @@ try {
   for (let i = 0; i < 10; i++) await call("/v1/auth/recover", "POST", "{}");
   const login = await noWrites(() => call("/v1/auth/recover", "POST", "{}"), 100);
   const template = await db.prepare("SELECT * FROM server_connect_grants WHERE server_id = ? LIMIT 1").bind(serverId).first();
-  for (let i = 0; i < 200; i++) await db.prepare(`INSERT INTO server_connect_grants
+  for (let i = 0; i < 100; i++) await db.prepare(`INSERT INTO server_connect_grants
     (grant_id, secret_hash, session_id, person_id, device_id, server_id, endpoint_origin, endpoint_generation, created_at, expires_at)
     VALUES (?, ?, ?, ?, ?, ?, ?, 1, 0, 1)`).bind(`expired-${i}`, `expired-hash-${i}`, template.session_id,
       template.person_id, template.device_id, serverId, origin).run();
@@ -157,7 +157,7 @@ try {
   assert.equal(cleanup.status, 200);
   assert.equal((await db.prepare("SELECT COUNT(*) AS n FROM server_connect_grants WHERE expires_at = 1").first()).n, 0);
   console.log(JSON.stringify({ owner_after_non_owner_exhaustion: "issued and redeemed", member, actor, login, cleanup: {
-    grants_deleted: 200, rows_written: Number(cleanup.headers.get("x-test-rows-written")),
+    grants_deleted: 100, rows_written: Number(cleanup.headers.get("x-test-rows-written")),
     rows_read: Number(cleanup.headers.get("x-test-rows-read")),
   } }, null, 2));
 } finally { await mf.dispose(); }

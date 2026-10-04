@@ -61,10 +61,9 @@ class D1Database {
     this.database.exec("BEGIN IMMEDIATE");
     try {
       const results = statements.map((statement) => {
-        const info = statement.database
-          .prepare(statement.sql)
-          .run(...statement.values);
-        return { meta: { changes: Number(info.changes || 0) } };
+        const results = statement.database.prepare(statement.sql).all(...statement.values);
+        const { changes } = statement.database.prepare("SELECT changes() AS changes").get();
+        return { results, meta: { changes } };
       });
       this.database.exec("COMMIT");
       return results;
@@ -93,6 +92,14 @@ export function environment(overrides = {}) {
     ALLOW_TRYCLOUDFLARE_ORIGINS: "false",
     ...overrides,
   };
+}
+
+export function utcDayClock(t, env) {
+  const start = Math.floor(Date.now() / 86400000) * 86400000;
+  let now = start;
+  t.mock.timers.enable({ apis: ["Date"], now });
+  env.DB.database.function("strftime", { varargs: true }, () => String(Math.floor(now / 1000)));
+  return seconds => { now = start + seconds * 1000; t.mock.timers.setTime(now); };
 }
 
 export async function deviceKey() {

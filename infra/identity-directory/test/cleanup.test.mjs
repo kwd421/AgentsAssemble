@@ -75,7 +75,7 @@ test("daily creation cap rejects signed traffic and resets on a new UTC day", as
   const db = env.DB.database;
   for (let i = 0; ; i++) {
     const { creation_writes: used } = db.prepare("SELECT creation_writes FROM creation_budgets WHERE purpose = 'GENERAL'").get();
-    if (used > 1397) break;
+    if (used > 697) break;
     db.prepare("INSERT INTO request_nonces (session_id, nonce, expires_at) SELECT session_id, ?, 0 FROM sessions LIMIT 1").run(`capacity-${i}`);
   }
   const before = db.prepare("SELECT COUNT(*) AS n FROM request_nonces").get().n;

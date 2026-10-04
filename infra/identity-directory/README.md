@@ -256,38 +256,83 @@ day**, partitioned into non-borrowing purpose pools:
 
 | Purpose | Daily deletion-write budget | Charged work |
 | --- | ---: | --- |
-| AUTH | 1,400 | Precision counters, Google handoffs (3 each), sessions (7) |
-| GENERAL | 1,400 | Other signed device/host nonces, including ownership claims (3) |
-| ENDPOINT | 3,000 | Endpoint publish/renew/delete host nonces (3) |
-| OWNER_GRANT | 1,600 | Verified owner request nonce (3) and grant row (5) |
-| OWNER_REDEEM | 600 | Signed grant-redemption host nonce (3) |
+| AUTH | 1,400 | New precision/source counter rows, Google handoffs (3 each), sessions (7) |
+| GENERAL | 700 | Other signed device/host nonces, including ownership claims (3) |
+| ENDPOINT | 4,800 | Endpoint publish/renew/delete host nonces (3) |
+| OWNER_GRANT | 800 | Verified owner request nonce (3) and grant row (5) |
+| OWNER_REDEEM | 300 | Signed grant-redemption host nonce (3) |
 | Total | **8,000** | Below >=9,993/day cleanup capacity |
 
 Only the server-derived exact method/path selects nonce purpose, after signature
 verification and the existing purpose gates; grant requests also verify ownership
 before nonce insertion. Headers/body fields cannot choose a pool. Nonce uniqueness
 still spans all purposes. Unrelated activity cannot spend either owner reserve.
-Each INSERT attempt, including an UPSERT, charges its weight atomically; failed
-statements roll back their reservation. A nonce already committed before a later
-validation/grant failure is still charged. The five ledger rows never expire or
-grow; each admitted attempt adds one counter UPDATE (at most 2,666/day).
-Total successful expiry debt stays <=8,000/day, leaving >=1,993/day for backlog
-when cleanup succeeds. Long-lived rows and failed runs still delay reclamation.
+New expiring rows charge their weight atomically; precision-counter UPSERT
+updates, including later rate-limit denials, create no new cleanup debt and do
+not charge the shared pool. Failed statements roll back their reservation. A
+nonce already committed before a later validation/grant failure is still charged.
+The five global ledger rows never expire or grow. Total successful expiry debt
+stays <=8,000/day, leaving >=1,993/day for backlog when cleanup succeeds.
+Long-lived rows and failed runs still delay reclamation.
 
-With no retries or failed attempts, the owner pools support **200 grant issuances
-and 200 redemptions/day** across the entire directory. ENDPOINT supports 1,000
-calls/day: a host renewing every five minutes uses 864 units, so three such hosts
-fit before other endpoint calls; four do not. Existing burst limits, endpoint
-leases and the 16-active-grant/session constraint still apply.
+AUTH first reserves cleanup units against durable **200/IP and 100/verified
+person per UTC day** caps. Every AUTH route shares the IP key derived from the
+trusted `CF-Connecting-IP` header (HMAC only; missing header shares `unknown`);
+`X-Forwarded-For`, flow type, device IDs and rotated recovery codes cannot reset
+it. Valid recovery owners are resolved before any expiring write, so rotating
+IPs cannot spend new counters after the person allowance is used. Google
+completion/session writes use the verified person; anonymous Google starts and
+invalid credentials can only be attributed to an IP until identity is verified.
+The 1,400-unit AUTH pool remains the aggregate backstop against multiple sources.
 
-**Explicit product constraint:** the reserves are finite and shared among owners.
-Exhausting OWNER_GRANT or OWNER_REDEEM returns HTTP 429
-`temporary_capacity_exhausted` until 00:00 UTC, even for a legitimate owner.
-There is no borrowing, refund, or unlimited-entry guarantee. Isolation protects
-grant/redeem for an already valid session and live endpoint; exhausted AUTH can
-block a fresh login, exhausted ENDPOINT can prevent lease renewal, and platform
-account-wide quotas can stop all purposes. Rejected inserts persist neither the
-row nor their counter increment.
+Source counters are UTC-day rows in `rate_limits`, use its existing bounded
+cleanup queue, and include their own three-unit expiry cost in both the source
+allowances and shared AUTH pool. Each protected write batches person then IP
+reservations with the actual insert; any cap failure rolls back the entire
+batch, including new source rows and global charges. A read before the batch
+estimates new-row debt; racing first uses may conservatively reserve extra
+source units, but never extra shared debt. A midnight race fails closed and the
+next request can retry in the new UTC day. No unbounded new cleanup queue or
+permanent IP ledger is introduced.
+
+With no retries or failed attempts, the owner pools support **100 grant issuances
+and 100 redemptions/day**, hence **100 complete owner entries** across the entire
+directory. ENDPOINT supports **1,600 calls/day**:
+
+| Continuously online hosts | Five-minute calls/day | Cleanup units/day | Spare endpoint calls/day |
+| ---: | ---: | ---: | ---: |
+| 3 | 864 | 2,592 | 736 |
+| 4 | 1,152 | 3,456 | 448 |
+| 5 | 1,440 | 4,320 | 160 |
+
+Initial publication, shutdown, retries and failed signed requests consume the
+same endpoint pool. Existing burst limits, 600-second host leases and the
+16-active-grant/session constraint still apply. The 160-call margin is shared
+by all five hosts, not per host. **Follow-up:** increasing heartbeat and lease
+intervals together could reduce daily endpoint debt and allow a different
+balance (for example restoring 200 entries/day); that needs a separately
+reviewed Rust host change. This release does not change the host cadence.
+
+**Exhaustion experience:** each pool and AUTH source cap returns HTTP 429,
+`temporary_capacity_exhausted`, with “Daily temporary storage capacity reached.
+Retry after 00:00 UTC.” There is no borrowing, refund, or unlimited-entry guarantee.
+
+- AUTH login/create/recovery screens display the message. A spent source blocks
+  that IP/person until UTC midnight; unrelated sources can still log in while
+  shared AUTH capacity remains. Global AUTH exhaustion blocks fresh login.
+- OWNER_GRANT/OWNER_REDEEM callers receive the JSON error. This checkout has no
+  integrated connect-grant frontend consumer. Retries and failed signed requests
+  reduce practical capacity below 100 entries.
+- ENDPOINT hosts currently log only `HTTP 429` and retry with backoff. After the
+  last 600-second lease expires, they appear offline until a successful retry
+  after UTC midnight. Reserved owner grants still need a live endpoint.
+- GENERAL exhaustion during remembered-session startup may fall back silently
+  or display cached data with a generic central-connectivity warning rather
+  than the capacity message.
+
+Isolation protects grant/redeem for an already valid session and live endpoint;
+platform account-wide quotas can still stop all purposes. Rejected inserts
+persist neither the row nor their counter increment.
 
 ### 배포 런북
 
@@ -404,7 +449,18 @@ npm run check
 wrangler deploy --dry-run --assets "$RUST_CHECKOUT/frontend/dist"
 node test/local_cleanup.mjs "$(npm root -g)/wrangler/package.json"
 node test/local_abuse.mjs "$(npm root -g)/wrangler/package.json"
+node test/local_auth_capacity.mjs "$(npm root -g)/wrangler/package.json"
 ```
+
+Current revision: **69/69 Node tests**, syntax check and asset-backed dry-run
+pass. Full-day regressions cover 14,400 syntactically valid attempts from one IP,
+1,440 rotating-IP recovery attempts for one person, UTC reset/transaction rollover,
+and five hosts with 160 spare calls plus 100 complete entries. Local workerd/D1
+measures **198 IP units / 89 additional person units**, preserves unrelated login,
+and rolls rejected batches back. Disabling either source cap or the midnight
+guard makes its regression fail; restoring ENDPOINT to 3,000 fails at 16h40m.
+All controlled mutations were restored. Cleanup and owner-isolation workerd
+checks also pass; no production migration, deployment or Rust change was made.
 
 Budget regression against the original cleanup failed after 120,999 logical
 changes. The workerd/D1 all-queue regression also fails its 10,000-write bound
@@ -417,7 +473,7 @@ queues make progress. The creation-cap regression observes HTTP 429 and no
 persisted nonce; temporarily raising the SQL ceiling to 800,000 makes it fail
 with HTTP 200. The mutation is restored, not committed.
 
-64 Node tests, syntax check and Wrangler 4.98.0 asset-backed dry-run pass.
+The earlier 64-test baseline, syntax check and Wrangler 4.98.0 asset-backed dry-run passed.
 The new signed-HTTP regression failed against the original shared ledger at
 owner issuance (429 instead of 201); it now exhausts AUTH/GENERAL/ENDPOINT and
 successfully issues and redeems a new owner grant. It also checks that each owner
@@ -527,6 +583,7 @@ Run the local abuse integration check as well:
 
 ```sh
 node test/local_abuse.mjs "$(npm root -g)/wrangler/package.json"
+node test/local_auth_capacity.mjs "$(npm root -g)/wrangler/package.json"
 ```
 
 Current local abuse integration: 220 coarse-limit denials write zero rows.

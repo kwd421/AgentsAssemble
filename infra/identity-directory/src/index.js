@@ -1,5 +1,5 @@
 import { cleanup } from "./cleanup.js";
-import { limitRequestIp } from "./abuse.js";
+import { limitRequestIp, requestPurpose } from "./abuse.js";
 import { startWebGoogleHandoff, completeWebGoogleHandoff } from "./google_web.js";
 import { serveWebEntry } from "./web_entry.js";
 import { allowedBrowserOrigin } from "./origin.js";
@@ -11,6 +11,7 @@ import {
   cleanIdentifier,
   errorResponse,
   json,
+  ipBucket,
   nowSeconds,
 } from "./http.js";
 import {
@@ -49,6 +50,9 @@ async function route(request, env) {
     });
   }
   await limitRequestIp(request, env);
+  if (requestPurpose(request) === "AUTH") {
+    env = { ...env, authSource: { ip: await ipBucket(request, env, "auth-ip") } };
+  }
   const text =
     request.method === "GET" || request.method === "HEAD"
       ? ""

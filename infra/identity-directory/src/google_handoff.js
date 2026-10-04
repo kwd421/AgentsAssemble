@@ -1,3 +1,4 @@
+import { authWrite } from "./auth_capacity.js";
 import {
   canonicalJson,
   constantTimeEqual,
@@ -74,7 +75,8 @@ export async function startNativeGoogleHandoff(request, env, text, now) {
     await ipBucket(request, env, "google-native-start"),
     20,
     3600,
-    now
+    now,
+    env.authSource
   );
   const body = parseJson(text);
   const deviceId = cleanIdentifier(body.device_id, "device_id");
@@ -84,7 +86,7 @@ export async function startNativeGoogleHandoff(request, env, text, now) {
   const challenge = pkceChallenge(body.code_challenge);
   const handoffId = `goh_${randomBase64Url(18)}`;
   const nonce = randomBase64Url(24);
-  await env.DB
+  await authWrite(env.DB, env.authSource, env.DB
     .prepare(
       `INSERT INTO google_handoffs
        (handoff_id, device_id, device_public_key_jwk, device_label,
@@ -106,8 +108,7 @@ export async function startNativeGoogleHandoff(request, env, text, now) {
       now + HANDOFF_TTL_SECONDS,
       challenge,
       redirectUri
-    )
-    .run();
+    ), 3);
   const authorizationUrl = new URL(
     "https://accounts.google.com/o/oauth2/v2/auth"
   );
@@ -198,12 +199,13 @@ async function resolveGooglePerson(env, identity, now) {
 }
 
 export async function verifiedGooglePerson(env, credential, clientId, row, now) {
-  await consumeRateLimit(
+  const limitCompletion = personId => consumeRateLimit(
     env.DB,
     `google-complete:${row.handoff_id}`,
     8,
     HANDOFF_TTL_SECONDS,
-    now
+    now,
+    { ...env.authSource, personId }
   );
   let identity;
   try {
@@ -214,9 +216,11 @@ export async function verifiedGooglePerson(env, credential, clientId, row, now) 
       env,
     });
   } catch {
+    await limitCompletion();
     throw new HttpError(401, "invalid_google_credential");
   }
   const personId = await resolveGooglePerson(env, identity, now);
+  await limitCompletion(personId);
   // A device identifier and its signing key are one central identity slot. Do
   // not let a completed Google flow silently replace a guest or another Google
   // identity already bound to that slot; an explicit merge flow belongs later.

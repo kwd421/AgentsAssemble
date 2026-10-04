@@ -25,7 +25,8 @@ export async function createGuest(request, env, text, now) {
     await ipBucket(request, env, "guest-create"),
     12,
     3600,
-    now
+    now,
+    env.authSource
   );
   const body = parseJson(text);
   const deviceId = cleanIdentifier(body.device_id, "device_id");
@@ -124,46 +125,22 @@ export async function createGuest(request, env, text, now) {
 export async function recoverGuest(request, env, text, now) {
   const body = parseJson(text);
   const code = normalizeRecoveryCode(body.recovery_code);
-  await consumeRateLimit(
-    env.DB,
-    await ipBucket(request, env, "guest-recover"),
-    10,
-    900,
-    now
-  );
-  if (!code) {
-    throw new HttpError(
-      401,
-      "invalid_recovery_code",
-      "The recovery code is invalid or expired."
-    );
-  }
-  const verifier = await hmacBase64Url(
-    envSecret(env, "RECOVERY_PEPPER"),
-    code
-  );
-  await consumeRateLimit(
-    env.DB,
-    `recovery-code:${verifier}`,
-    5,
-    900,
-    now
-  );
-  const credential = await env.DB
-    .prepare(
-      `SELECT recovery_credentials.person_id, persons.display_name
-       FROM recovery_credentials JOIN persons USING(person_id)
-       WHERE verifier = ? AND recovery_credentials.revoked_at IS NULL
-         AND persons.status = 'active'`
-    )
-    .bind(verifier)
-    .first();
+  const verifier = await hmacBase64Url(envSecret(env, "RECOVERY_PEPPER"), code);
+  // Identify a valid recovery owner before ANY expiring write. A spent person
+  // must not create fresh IP/code counters by rotating networks or credentials.
+  const credential = code ? await env.DB.prepare(
+    `SELECT recovery_credentials.person_id, persons.display_name
+     FROM recovery_credentials JOIN persons USING(person_id)
+     WHERE verifier = ? AND recovery_credentials.revoked_at IS NULL
+       AND persons.status = 'active'`
+  ).bind(verifier).first() : null;
+  env = { ...env, authSource: { ...env.authSource, personId: credential?.person_id } };
+  await consumeRateLimit(env.DB, await ipBucket(request, env, "guest-recover"),
+    10, 900, now, env.authSource);
+  if (code) await consumeRateLimit(env.DB, `recovery-code:${verifier}`,
+    5, 900, now, env.authSource);
   if (!credential) {
-    throw new HttpError(
-      401,
-      "invalid_recovery_code",
-      "The recovery code is invalid or expired."
-    );
+    throw new HttpError(401, "invalid_recovery_code", "The recovery code is invalid or expired.");
   }
 
   const deviceId = cleanIdentifier(body.device_id, "device_id");

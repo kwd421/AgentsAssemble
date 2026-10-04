@@ -19,26 +19,13 @@ import {
 } from "./helpers.mjs";
 
 function failNextSessionInsert(env) {
-  const originalPrepare = env.DB.prepare.bind(env.DB);
   let armed = true;
-  env.DB.prepare = (sql) => {
-    const statement = originalPrepare(sql);
-    if (!armed || !/INSERT INTO sessions/i.test(String(sql))) return statement;
-    const originalBind = statement.bind.bind(statement);
-    statement.bind = (...values) => {
-      const bound = originalBind(...values);
-      const originalRun = bound.run.bind(bound);
-      bound.run = async () => {
-        if (armed) {
-          armed = false;
-          throw new Error("simulated session write failure");
-        }
-        return originalRun();
-      };
-      return bound;
-    };
-    return statement;
-  };
+  env.DB.database.function("session_write_fault", () => {
+    if (armed) { armed = false; throw new Error("simulated session write failure"); }
+    return 0;
+  });
+  env.DB.database.exec(`CREATE TEMP TRIGGER session_write_fault BEFORE INSERT ON sessions
+    BEGIN SELECT session_write_fault(); END`);
 }
 
 test("guest identity uses a device-bound session and rejects replay/tampering", async () => {

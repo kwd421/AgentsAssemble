@@ -1,3 +1,4 @@
+import { authWrite } from "./auth_capacity.js";
 import {
   canonicalJson,
   hmacBase64Url,
@@ -122,7 +123,6 @@ export function envSecret(env, name) {
 export async function ipBucket(request, env, purpose) {
   const address =
     request.headers.get("cf-connecting-ip") ||
-    request.headers.get("x-forwarded-for") ||
     "unknown";
   const networkKey = await hmacBase64Url(
     envSecret(env, "RECOVERY_PEPPER"),
@@ -136,17 +136,19 @@ export async function consumeRateLimit(
   bucket,
   limit,
   windowSeconds,
-  now
+  now,
+  source
 ) {
   const windowStart = Math.floor(now / windowSeconds) * windowSeconds;
-  const row = await db
+  const statement = db
     .prepare(
       `INSERT INTO rate_limits (bucket, window_start, count) VALUES (?, ?, 1)
        ON CONFLICT(bucket, window_start) DO UPDATE SET count = rate_limits.count + 1
        RETURNING count`
     )
-    .bind(bucket, windowStart)
-    .first();
+    .bind(bucket, windowStart);
+  const result = await authWrite(db, source, statement, 3, { bucket, windowStart });
+  const row = result.results[0];
   if (Number(row?.count || 0) > limit) {
     throw new HttpError(
       429,
@@ -168,7 +170,7 @@ export async function issueSession(
     Math.min(90 * 86400, Number(env.SESSION_TTL_SECONDS || 30 * 86400))
   );
   const expiresAt = now + ttl;
-  await db
+  await authWrite(db, { ...env.authSource, personId }, db
     .prepare(
       `INSERT INTO sessions
        (session_id, person_id, device_id, token_hash, created_at, expires_at,
@@ -183,8 +185,7 @@ export async function issueSession(
       now,
       expiresAt,
       now
-    )
-    .run();
+    ), 7);
   return { token, expires_at: expiresAt, device_id: deviceId };
 }
 
