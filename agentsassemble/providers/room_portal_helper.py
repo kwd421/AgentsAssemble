@@ -43,8 +43,10 @@ import os
 import re
 import secrets
 import sys
+import time
 from datetime import datetime, timezone
 from pathlib import Path
+from uuid import uuid4
 
 ROOT = Path(__file__).resolve().parent.parent
 VIEW = ROOT / "current.md"
@@ -57,6 +59,8 @@ ACTIVITY = ROOT / "activity.jsonl"
 PLUGIN_STATE = ROOT / "activity-plugin-state.json"
 PLUGIN_ACTION = ROOT / "activity-plugin-action.json"
 PLUGIN_SPEECH = ROOT / "activity-plugin-speech.json"
+SEARCH_REQUESTS = ROOT / "search-requests"
+SEARCH_RESPONSES = ROOT / "search-responses"
 
 def fail(message):
     print(message, file=sys.stderr)
@@ -124,6 +128,43 @@ def stage_publication(payload):
 def clean_text(value, limit):
     return str(value or "").replace("\x00", "").strip()[:limit]
 
+def search_exchange(operation, arguments):
+    request_id = uuid4().hex
+    request_path = SEARCH_REQUESTS / f"{request_id}.json"
+    response_path = SEARCH_RESPONSES / f"{request_id}.json"
+    SEARCH_REQUESTS.mkdir(parents=True, exist_ok=True)
+    SEARCH_RESPONSES.mkdir(parents=True, exist_ok=True)
+    atomic_json(request_path, {
+        "request_id": request_id,
+        "operation": operation,
+        "arguments": arguments,
+    })
+    deadline = time.monotonic() + 10.0
+    try:
+        while time.monotonic() < deadline:
+            try:
+                raw = response_path.read_bytes()
+            except FileNotFoundError:
+                time.sleep(0.025)
+                continue
+            if len(raw) > 2 * 1024 * 1024:
+                fail("room search response exceeded its bounded size")
+            try:
+                response = json.loads(raw.decode("utf-8"))
+            except (UnicodeDecodeError, json.JSONDecodeError):
+                fail("room search returned an invalid response")
+            if not isinstance(response, dict) or response.get("ok") is not True:
+                message = clean_text(response.get("error") if isinstance(response, dict) else "", 500)
+                fail(message or "room search failed")
+            result = response.get("result")
+            if not isinstance(result, dict):
+                fail("room search returned an invalid result")
+            return result
+        fail("room search timed out; no result was hidden")
+    finally:
+        request_path.unlink(missing_ok=True)
+        response_path.unlink(missing_ok=True)
+
 def load_messages():
     try:
         values = json.loads(MESSAGES.read_text(encoding="utf-8")).get("messages", [])
@@ -170,6 +211,30 @@ if command == "read":
     content = VIEW.read_text(encoding="utf-8")
     audit("read")
     sys.stdout.write(content)
+elif command == "search":
+    require_tool("search_messages")
+    if len(sys.argv) not in {3, 4, 5}:
+        fail("usage: agentsassemble-room search '<query>' [channel-id|all] [cursor]")
+    query = clean_text(sys.argv[2], 200)
+    if not query:
+        fail("room message search requires a query")
+    result = search_exchange("search_messages", {
+        "query": query,
+        "channel_id": clean_text(sys.argv[3], 128) if len(sys.argv) >= 4 else "all",
+        "cursor": clean_text(sys.argv[4], 2048) if len(sys.argv) >= 5 else "",
+    })
+    audit("search_messages")
+    print(json.dumps(result, ensure_ascii=False))
+elif command == "search-context":
+    require_tool("read_message_context")
+    if len(sys.argv) != 4:
+        fail("usage: agentsassemble-room search-context <channel-id> <event-id>")
+    result = search_exchange("read_message_context", {
+        "channel_id": clean_text(sys.argv[2], 128),
+        "event_id": clean_text(sys.argv[3], 128),
+    })
+    audit("read_message_context")
+    print(json.dumps(result, ensure_ascii=False))
 elif command == "participants":
     require_tool("list_participants")
     try:
@@ -260,6 +325,8 @@ elif command == "vote-cast":
             fail("vote deadline is invalid")
         if deadline_at <= datetime.now(timezone.utc):
             fail("this vote has ended")
+    if poll.get("vote_closed") is True:
+        fail("this vote has ended")
     choice = resolve_choice(sys.argv[3], list(poll.get("vote_options") or []))
     turn_id = active_turn()
     stage_publication({
@@ -272,6 +339,58 @@ elif command == "vote-cast":
     details = {"vote_id": vote_id, "choice": choice}
     audit("cast_vote", turn_id, details)
     print(json.dumps({"queued": True, **details}, ensure_ascii=False))
+elif command == "vote-withdraw":
+    require_tool("withdraw_vote")
+    if len(sys.argv) != 3:
+        fail("usage: agentsassemble-room vote-withdraw <vote-id>")
+    vote_id = clean_text(sys.argv[2], 128)
+    poll = find_poll(vote_id)
+    deadline = str(poll.get("vote_deadline_at") or "")
+    if deadline:
+        try:
+            deadline_at = datetime.fromisoformat(deadline.replace("Z", "+00:00"))
+        except ValueError:
+            fail("vote deadline is invalid")
+        if deadline_at <= datetime.now(timezone.utc):
+            fail("this vote has ended")
+    if poll.get("vote_closed") is True:
+        fail("this vote has ended")
+    turn_id = active_turn()
+    stage_publication({
+        "content": "",
+        "target_agent_id": "",
+        "message_kind": "vote_withdraw",
+        "vote_id": vote_id,
+    })
+    details = {"vote_id": vote_id}
+    audit("withdraw_vote", turn_id, details)
+    print(json.dumps({"queued": True, **details}, ensure_ascii=False))
+elif command == "vote-close":
+    require_tool("close_vote")
+    if len(sys.argv) != 3:
+        fail("usage: agentsassemble-room vote-close <vote-id>")
+    vote_id = clean_text(sys.argv[2], 128)
+    poll = find_poll(vote_id)
+    deadline = str(poll.get("vote_deadline_at") or "")
+    if deadline:
+        try:
+            deadline_at = datetime.fromisoformat(deadline.replace("Z", "+00:00"))
+        except ValueError:
+            fail("vote deadline is invalid")
+        if deadline_at <= datetime.now(timezone.utc):
+            fail("this vote has ended")
+    if poll.get("vote_closed") is True:
+        fail("this vote has ended")
+    turn_id = active_turn()
+    stage_publication({
+        "content": "",
+        "target_agent_id": "",
+        "message_kind": "vote_close",
+        "vote_id": vote_id,
+    })
+    details = {"vote_id": vote_id}
+    audit("close_vote", turn_id, details)
+    print(json.dumps({"queued": True, **details}, ensure_ascii=False))
 elif command == "vote-summary":
     require_tool("vote_summary")
     if len(sys.argv) != 3:
@@ -279,29 +398,34 @@ elif command == "vote-summary":
     vote_id = clean_text(sys.argv[2], 128)
     poll = find_poll(vote_id)
     options = [str(value) for value in poll.get("vote_options") or []]
-    latest = {}
-    for item in load_messages():
-        if not isinstance(item, dict) or item.get("message_kind") != "vote_cast":
-            continue
-        if str(item.get("vote_id") or "") != vote_id:
-            continue
-        participant_id = str(item.get("participant_id") or "")
-        if not participant_id:
-            continue
-        choice = resolve_choice(item.get("vote_choice"), options)
-        latest[participant_id] = (choice, str(item.get("display_name") or participant_id))
-    tallies = {option: 0 for option in options}
-    voters = {option: [] for option in options}
-    for choice, display_name in latest.values():
-        tallies[choice] += 1
-        voters[choice].append(display_name)
+    raw_tallies = poll.get("vote_tallies")
+    if not isinstance(raw_tallies, dict):
+        raw_tallies = {}
+    tallies = {}
+    for option in options:
+        value = raw_tallies.get(option, 0)
+        if isinstance(value, bool):
+            value = 0
+        try:
+            tallies[option] = max(0, int(value))
+        except (TypeError, ValueError):
+            tallies[option] = 0
+    projected_own_choice = poll.get("vote_own_choice")
+    own_choice = (
+        resolve_choice(projected_own_choice, options)
+        if projected_own_choice
+        else ""
+    )
     result = {
         "vote_id": vote_id,
         "question": str(poll.get("vote_question") or ""),
         "options": options,
         "tallies": tallies,
-        "voters": voters,
-        "total_votes": len(latest),
+        "own_choice": own_choice,
+        "total_votes": sum(tallies.values()),
+        "closed": bool(poll.get("vote_closed")),
+        "closed_at": str(poll.get("vote_closed_at") or ""),
+        "close_reason": "manual" if poll.get("vote_closed") else "",
         "scope": "bounded_current_view",
     }
     audit("vote_summary", details={"vote_id": vote_id})
@@ -401,7 +525,7 @@ elif command == "rim-speak":
     atomic_json(PLUGIN_SPEECH, {"text": text})
     print(json.dumps({"queued": True, "colonist_id": colonist_id, "text": text}, ensure_ascii=False))
 elif command == "help":
-    print("agentsassemble-room read | participants | speak [text] | speak-to <agent-id> [text] | decline <nothing_useful_to_add|not_addressed|duplicate> | vote-create <question> <json-options> [duration] | vote-cast <vote-id> <choice> | vote-summary <vote-id> | media <id> | roll <NdS+M> | choose <json-options> | rim-observe | rim-inspect <type> | rim-act <action> <json-args> | rim-speak <text>")
+    print("agentsassemble-room read | search <query> [channel|all] [cursor] | search-context <channel> <event-id> | participants | speak [text] | speak-to <agent-id> [text] | decline <nothing_useful_to_add|not_addressed|duplicate> | vote-create <question> <json-options> [duration] | vote-cast <vote-id> <choice> | vote-withdraw <vote-id> | vote-close <vote-id> | vote-summary <vote-id> | media <id> | roll <NdS+M> | choose <json-options> | rim-observe | rim-inspect <type> | rim-act <action> <json-args> | rim-speak <text>")
 else:
     fail("unknown command")
 """

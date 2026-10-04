@@ -1,7 +1,4 @@
-"""Per-channel text streams (CH-3): each custom text channel has its own
-message file, reachable through session-gated say/read routes, isolated from the
-main lobby. Driven end-to-end against a real server.
-"""
+"""Per-channel text streams through current session-gated room routes."""
 import json
 import secrets
 import tempfile
@@ -13,29 +10,27 @@ from urllib.error import HTTPError
 from urllib.request import Request, urlopen
 
 from agentsassemble.gui import _make_handler
-from agentsassemble.admission.invite import (
-    create_room_invite,
-    join_room_with_invite,
-    reset_state,
-    set_runtime_host_token,
-)
+from agentsassemble.application.public_invite_runtime import PublicInviteRuntime
 from agentsassemble.room_store import RoomStore
+from agentsassemble.web.room_client import join_room_session
 
 
 class RoomChannelStreamTests(unittest.TestCase):
     def setUp(self):
-        reset_state()
+        self.public_invite = PublicInviteRuntime(environ={})
         self._servers: list[ThreadingHTTPServer] = []
 
     def tearDown(self):
         for server in self._servers:
             server.shutdown()
             server.server_close()
-        reset_state()
 
     def _start(self, root: Path) -> str:
         RoomStore(root).create_room("room-1", label="Room 1")
-        server = ThreadingHTTPServer(("127.0.0.1", 0), _make_handler(root))
+        server = ThreadingHTTPServer(
+            ("127.0.0.1", 0),
+            _make_handler(root, public_invite_runtime_override=self.public_invite),
+        )
         threading.Thread(target=server.serve_forever, daemon=True).start()
         self._servers.append(server)
         return f"http://127.0.0.1:{server.server_port}"
@@ -62,11 +57,31 @@ class RoomChannelStreamTests(unittest.TestCase):
         return channel_id
 
     def _token(self, base: str, meeting_id: str) -> str:
-        invite = create_room_invite(
-            room_url=base, meeting_id=meeting_id, agent_id="human-1",
-            display_name="Human", participant_type="human", max_uses=5,
+        request = Request(
+            f"{base}/api/room-invite/create",
+            data=json.dumps(
+                {
+                    "meeting_id": meeting_id,
+                    "agent_id": "human-1",
+                    "display_name": "Human",
+                    "participant_type": "human",
+                    "max_uses": 1,
+                    "local_dev_preview": True,
+                }
+            ).encode(),
+            headers={"Content-Type": "application/json"},
+            method="POST",
         )
-        return str(join_room_with_invite(str(invite["invite_token"]))["session_token"])
+        with urlopen(request, timeout=4) as response:
+            invite = json.loads(response.read().decode("utf-8"))
+        return str(
+            join_room_session(
+                base,
+                str(invite["invite_token"]),
+                display_name="Human",
+                participant_type="human",
+            )["session_token"]
+        )
 
     def _say(self, base: str, token: str, channel_id: str, message: str) -> dict:
         request = Request(
@@ -88,7 +103,7 @@ class RoomChannelStreamTests(unittest.TestCase):
 
     def test_text_channel_say_read_and_after_cursor(self):
         with tempfile.TemporaryDirectory() as temp_dir:
-            set_runtime_host_token("host-secret")
+            self.public_invite.set_host_token("host-secret")
             root = Path(temp_dir) / "room"
             base = self._start(root)
             channel_id = self._create_channel(root, "room-1", "구현방", "text")
@@ -109,9 +124,9 @@ class RoomChannelStreamTests(unittest.TestCase):
             after = self._read(base, token, channel_id, after=events[0]["id"])
             self.assertEqual([e["message"] for e in after], ["둘째 메시지"])
 
-    def test_channel_stream_is_isolated_from_main_lobby(self):
+    def test_channel_stream_is_isolated_from_canonical_room_events(self):
         with tempfile.TemporaryDirectory() as temp_dir:
-            set_runtime_host_token("host-secret")
+            self.public_invite.set_host_token("host-secret")
             root = Path(temp_dir) / "room"
             base = self._start(root)
             channel_id = self._create_channel(root, "room-1", "구현방", "text")
@@ -127,7 +142,7 @@ class RoomChannelStreamTests(unittest.TestCase):
 
     def test_say_rejects_voice_and_unknown_channel(self):
         with tempfile.TemporaryDirectory() as temp_dir:
-            set_runtime_host_token("host-secret")
+            self.public_invite.set_host_token("host-secret")
             root = Path(temp_dir) / "room"
             base = self._start(root)
             voice_id = self._create_channel(root, "room-1", "음성", "voice")
@@ -142,11 +157,10 @@ class RoomChannelStreamTests(unittest.TestCase):
             ctx.exception.close()
 
     def test_loopback_local_console_reads_and_says_without_session(self):
-        # The local operator console (loopback, no session) shares the channel
-        # routes — like /api/lobby. It passes meeting_id and is trusted to name
-        # itself; over the public tunnel (non-loopback) a session is still required.
+        # The local operator console (loopback, no session) can use canonical
+        # channel routes. Public-tunnel callers still require a room session.
         with tempfile.TemporaryDirectory() as temp_dir:
-            set_runtime_host_token("host-secret")
+            self.public_invite.set_host_token("host-secret")
             root = Path(temp_dir) / "room"
             base = self._start(root)
             channel_id = self._create_channel(root, "room-1", "구현방", "text")

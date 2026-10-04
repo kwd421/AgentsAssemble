@@ -7,7 +7,7 @@ from typing import Any
 from agentsassemble.providers.adapters.codex import CodexAdapter
 from agentsassemble.models import Role
 from agentsassemble.providers.codex_output import prepare_codex_output_file
-from agentsassemble.providers.codex_resident import codex_exec_prefix
+from agentsassemble.providers.codex_command import codex_exec_prefix
 
 
 class CodexLiveSessionAdapter(CodexAdapter):

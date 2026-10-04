@@ -25,6 +25,44 @@ ROOM_TOOL_SCHEMAS: tuple[dict[str, object], ...] = (
     {
         "type": "function",
         "function": {
+            "name": "search_messages",
+            "description": (
+                "Search complete readable room history. Use the returned cursor for another page."
+            ),
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "query": {"type": "string"},
+                    "channel_id": {
+                        "type": "string",
+                        "description": "A concrete channel id, or all for every readable channel.",
+                    },
+                    "cursor": {"type": "string"},
+                },
+                "required": ["query"],
+                "additionalProperties": False,
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "read_message_context",
+            "description": "Read bounded context around one result from search_messages.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "channel_id": {"type": "string"},
+                    "event_id": {"type": "string"},
+                },
+                "required": ["channel_id", "event_id"],
+                "additionalProperties": False,
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
             "name": "list_participants",
             "description": "List the people and agents currently visible in the shared room.",
             "parameters": {"type": "object", "properties": {}, "additionalProperties": False},
@@ -116,6 +154,32 @@ ROOM_TOOL_SCHEMAS: tuple[dict[str, object], ...] = (
                     },
                 },
                 "required": ["vote_id", "choice"],
+                "additionalProperties": False,
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "withdraw_vote",
+            "description": "Withdraw this agent's current ballot from an existing structured vote.",
+            "parameters": {
+                "type": "object",
+                "properties": {"vote_id": {"type": "string"}},
+                "required": ["vote_id"],
+                "additionalProperties": False,
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "close_vote",
+            "description": "Close a structured vote created by this agent.",
+            "parameters": {
+                "type": "object",
+                "properties": {"vote_id": {"type": "string"}},
+                "required": ["vote_id"],
                 "additionalProperties": False,
             },
         },
@@ -282,6 +346,17 @@ def execute_room_tool(
         raise RuntimeError(f"Provider requested unavailable room tool: {name or '(missing)'}.")
     if name == "read_discussion":
         result: object = portal.read_discussion()
+    elif name == "search_messages":
+        result = portal.search_messages(
+            arguments.get("query"),
+            channel_id=arguments.get("channel_id", "all"),
+            cursor=arguments.get("cursor", ""),
+        )
+    elif name == "read_message_context":
+        result = portal.read_message_context(
+            arguments.get("channel_id"),
+            arguments.get("event_id"),
+        )
     elif name == "list_participants":
         result = portal.list_participants()
     elif name == "publish_message":
@@ -306,6 +381,10 @@ def execute_room_tool(
             arguments.get("vote_id"),
             arguments.get("choice"),
         )
+    elif name == "withdraw_vote":
+        result = portal.withdraw_vote(arguments.get("vote_id"))
+    elif name == "close_vote":
+        result = portal.close_vote(arguments.get("vote_id"))
     elif name == "vote_summary":
         result = portal.vote_summary(arguments.get("vote_id"))
     elif name == "roll_dice":

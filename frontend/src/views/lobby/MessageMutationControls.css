@@ -1,0 +1,130 @@
+.dc-message-mutation {
+  position: relative;
+}
+
+.dc-message-mutation-menu {
+  position: absolute;
+  z-index: 20;
+  top: 32px;
+  right: 0;
+  min-width: 132px;
+  padding: 6px;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 8px;
+  background: #111214;
+  box-shadow: 0 12px 36px rgba(0, 0, 0, 0.42);
+}
+
+.dc-message-mutation-menu button {
+  display: flex;
+  width: 100%;
+  align-items: center;
+  gap: 9px;
+  padding: 8px 10px;
+  border-radius: 5px;
+  color: var(--color-text-secondary);
+  font-size: 13px;
+  text-align: left;
+}
+
+.dc-message-mutation-menu button:hover,
+.dc-message-mutation-menu button:focus-visible {
+  background: var(--color-sidebar-hover);
+  color: var(--color-text-primary);
+  outline: none;
+}
+
+.dc-message-mutation-menu button.danger {
+  color: #f87171;
+}
+
+.dc-message-mutation-dialog {
+  width: min(560px, calc(100vw - 32px));
+  display: grid;
+  gap: 18px;
+  padding: 24px;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 14px;
+  background: #232428;
+  box-shadow: 0 24px 80px rgba(0, 0, 0, 0.5);
+}
+
+.dc-message-mutation-dialog header,
+.dc-message-mutation-dialog footer,
+.dc-message-delete-preview p {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.dc-message-mutation-dialog h2 {
+  color: var(--color-text-primary);
+  font-size: 22px;
+  font-weight: 750;
+}
+
+.dc-message-mutation-dialog header p,
+.dc-message-delete-hint {
+  margin-top: 4px;
+  color: var(--color-text-muted);
+  font-size: 13px;
+}
+
+.dc-message-mutation-dialog textarea {
+  min-height: 132px;
+  resize: vertical;
+  padding: 12px 14px;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 8px;
+  background: #111214;
+  color: var(--color-text-primary);
+  line-height: 1.55;
+  outline: none;
+}
+
+.dc-message-mutation-dialog textarea:focus {
+  border-color: rgba(88, 101, 242, 0.9);
+}
+
+.dc-message-delete-preview {
+  padding: 16px;
+  border-radius: 8px;
+  background: rgba(17, 18, 20, 0.72);
+}
+
+.dc-message-delete-preview strong {
+  color: var(--color-text-primary);
+}
+
+.dc-message-delete-preview time {
+  color: var(--color-text-muted);
+  font-size: 12px;
+}
+
+.dc-message-delete-preview div {
+  margin-top: 9px;
+  max-height: 132px;
+  overflow: auto;
+  color: var(--color-text-secondary);
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+.dc-message-mutation-dialog footer {
+  justify-content: flex-end;
+}
+
+.dc-message-mutation-dialog footer > button {
+  min-width: 112px;
+}
+
+.dc-message-delete-confirm {
+  border-color: #da373c;
+  background: #da373c;
+  color: white;
+}
+
+.dc-message-delete-confirm:hover:not(:disabled) {
+  background: #a1282d;
+}

@@ -1,4 +1,10 @@
-# 개선 계획 (2026-06-11) — 계획만, 미실행
+# 개선 계획 (2026-06-11) — 역사 기록
+
+Status: superseded historical plan; not implementation authority
+
+이 문서는 당시 관찰과 설계 근거를 보존한다. 현재 상태는
+`docs/product/CURRENT_SYSTEM.md`, 남은 우선순위는 `docs/roadmap.md`를 따른다.
+여기에 새 작업을 추가하지 않는다.
 
 근거: 사용자 지적 8건 + 친구 Claude의 접속 피드백 4건(room-20260605T021739 기록) + 코드 정독.
 구조 참고: `docs/codebase-structure.md`

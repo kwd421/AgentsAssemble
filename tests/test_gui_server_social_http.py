@@ -16,8 +16,8 @@ from agentsassemble.features.social.routes import (
     register_room_friend_profile_routes,
 )
 from agentsassemble.gui import _make_handler
+from agentsassemble.application.public_invite_runtime import PublicInviteRuntime
 from agentsassemble.web.router import GuiDeps, RequestContext, Router
-from agentsassemble.admission.invite import reset_state, set_runtime_public_url
 
 
 class _FakeHandler:
@@ -39,13 +39,7 @@ class _FakeHandler:
 class SocialHttpRegistrarTests(unittest.TestCase):
     def setUp(self) -> None:
         self.router = Router()
-        self.direct_dm_calls: list[tuple[RequestContext, dict[str, object]]] = []
-
-        def post_direct_dm(ctx: RequestContext, payload: dict[str, object]) -> dict[str, object]:
-            self.direct_dm_calls.append((ctx, payload))
-            return {"accepted": True}
-
-        register_room_friend_profile_routes(self.router, post_direct_dm=post_direct_dm)
+        register_room_friend_profile_routes(self.router)
 
     def _dispatch(
         self,
@@ -79,7 +73,7 @@ class SocialHttpRegistrarTests(unittest.TestCase):
     def test_all_post_routes_reject_malformed_and_non_object_json(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:
             root = Path(temp_dir)
-            for path in ("/api/room-friends", "/api/room-friends/dm", "/api/user-profile"):
+            for path in ("/api/room-friends", "/api/user-profile"):
                 for body in (b"{bad", b"[]"):
                     with self.subTest(path=path, body=body):
                         response = self._dispatch(root, path, "POST", body=body)
@@ -89,8 +83,6 @@ class SocialHttpRegistrarTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as temp_dir:
             root = Path(temp_dir)
             cases = (
-                ("GET", "/api/room-friends/dm", "friend_id is required"),
-                ("GET", "/api/room-friends/dm?friend_id=unknown", "Saved room friend was not found"),
                 ("DELETE", "/api/room-friends", "friend_id is required"),
                 ("DELETE", "/api/room-friends?friend_id=unknown", "Friend not found"),
             )
@@ -100,10 +92,6 @@ class SocialHttpRegistrarTests(unittest.TestCase):
                     self.assertEqual(response.sent_error, (HTTPStatus.BAD_REQUEST, message))
 
 class SocialHttpHandlerTests(unittest.TestCase):
-    def setUp(self) -> None:
-        reset_state()
-        self.addCleanup(reset_state)
-
     @staticmethod
     def _request(
         url: str,
@@ -124,10 +112,14 @@ class SocialHttpHandlerTests(unittest.TestCase):
                 error.close()
 
     def test_public_host_rejects_friends_and_requires_profile_authentication(self) -> None:
-        set_runtime_public_url("https://public.example.test")
+        public_invite = PublicInviteRuntime()
+        public_invite.set_public_url("https://public.example.test")
         with tempfile.TemporaryDirectory() as temp_dir:
             root = Path(temp_dir)
-            server = ThreadingHTTPServer(("127.0.0.1", 0), _make_handler(root))
+            server = ThreadingHTTPServer(
+                ("127.0.0.1", 0),
+                _make_handler(root, public_invite_runtime_override=public_invite),
+            )
             thread = threading.Thread(target=server.serve_forever, daemon=True)
             thread.start()
             try:
@@ -136,8 +128,6 @@ class SocialHttpHandlerTests(unittest.TestCase):
                     ("GET", "/api/room-friends", None),
                     ("POST", "/api/room-friends", {}),
                     ("DELETE", "/api/room-friends?friend_id=friend:sei", None),
-                    ("GET", "/api/room-friends/dm?friend_id=friend:sei", None),
-                    ("POST", "/api/room-friends/dm", {}),
                 ):
                     with self.subTest(method=method, path=path):
                         status, _response = self._request(
@@ -160,7 +150,7 @@ class SocialHttpHandlerTests(unittest.TestCase):
                 server.shutdown()
                 server.server_close()
 
-    def test_delete_dm_and_profile_remain_unregistered(self) -> None:
+    def test_delete_profile_remains_unregistered(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:
             root = Path(temp_dir)
             server = ThreadingHTTPServer(("127.0.0.1", 0), _make_handler(root))
@@ -168,11 +158,9 @@ class SocialHttpHandlerTests(unittest.TestCase):
             thread.start()
             try:
                 base = f"http://127.0.0.1:{server.server_port}"
-                for path in ("/api/room-friends/dm", "/api/user-profile"):
-                    with self.subTest(path=path):
-                        status, response = self._request(f"{base}{path}", method="DELETE")
-                        self.assertEqual(status, HTTPStatus.NOT_FOUND)
-                        self.assertEqual(response, {"error": "Not found"})
+                status, response = self._request(f"{base}/api/user-profile", method="DELETE")
+                self.assertEqual(status, HTTPStatus.NOT_FOUND)
+                self.assertEqual(response, {"error": "Not found"})
             finally:
                 server.shutdown()
                 server.server_close()

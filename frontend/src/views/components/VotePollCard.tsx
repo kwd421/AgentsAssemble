@@ -19,13 +19,13 @@ function remainingTimeLabel(milliseconds: number): string {
 
 export default function VotePollCard({
   event,
-  voterParticipantId,
   canVote = true,
+  canClose = false,
   revision = "",
 }: {
   event: LobbyEvent;
-  voterParticipantId: string;
   canVote?: boolean;
+  canClose?: boolean;
   revision?: string;
 }) {
   const roomSocket = useRoomSocket();
@@ -58,7 +58,7 @@ export default function VotePollCard({
   const deadlineAt = summary?.vote_deadline_at || event.vote_deadline_at || "";
   const deadlineMs = Date.parse(deadlineAt);
   const hasDeadline = Boolean(deadlineAt) && Number.isFinite(deadlineMs);
-  const ended = hasDeadline && clockMs >= deadlineMs;
+  const ended = Boolean(summary?.closed) || (hasDeadline && clockMs >= deadlineMs);
 
   useEffect(() => {
     setClockMs(Date.now());
@@ -81,9 +81,9 @@ export default function VotePollCard({
       if (!roomSocket?.ready()) throw new Error("방 연결이 준비되지 않았습니다.");
       await roomSocket.say({
         message: "",
-        kind: "vote_cast",
+        kind: option === myChoice ? "vote_withdraw" : "vote_cast",
         voteId,
-        voteChoice: option,
+        ...(option === myChoice ? {} : { voteChoice: option }),
       });
       refresh();
     } catch (errorValue) {
@@ -93,17 +93,34 @@ export default function VotePollCard({
     }
   }
 
+  async function closeVote() {
+    if (!canClose || ended || busyOption) return;
+    setBusyOption("__close__");
+    setError("");
+    try {
+      if (!roomSocket?.ready()) throw new Error("방 연결이 준비되지 않았습니다.");
+      await roomSocket.say({
+        message: "",
+        kind: "vote_close",
+        voteId,
+      });
+      refresh();
+    } catch (errorValue) {
+      setError(errorValue instanceof Error ? errorValue.message : "투표 종료 실패");
+    } finally {
+      setBusyOption("");
+    }
+  }
+
   const options = summary?.options || event.vote_options || [];
   const question = summary?.question || event.vote_question || "";
   const total = summary?.total_votes ?? 0;
-  const myChoice = options.find((option) =>
-    (summary?.voter_ids?.[option] || []).includes(voterParticipantId)
-  );
+  const myChoice = summary?.own_choice || "";
   const deadlineLabel = ended
     ? "마감됨"
     : hasDeadline
       ? `남은 시간 ${remainingTimeLabel(deadlineMs - clockMs)}`
-      : "";
+      : "마감 시간 없음";
 
   return (
     <section className="dc-vote-card" aria-label={`투표: ${question}`}>
@@ -116,6 +133,18 @@ export default function VotePollCard({
           >
             {deadlineLabel}
           </span>
+        )}
+        {canClose && !ended && (
+          <button
+            type="button"
+            className="dc-vote-close"
+            onClick={() => void closeVote()}
+            disabled={Boolean(busyOption)}
+            aria-label="투표 종료"
+            title="투표 종료"
+          >
+            종료
+          </button>
         )}
         <button
           type="button"
@@ -131,7 +160,6 @@ export default function VotePollCard({
         {options.map((option) => {
           const count = summary?.tallies?.[option] ?? 0;
           const percent = total > 0 ? Math.round((count / total) * 100) : 0;
-          const voters = summary?.voters?.[option] || [];
           return (
             <button
               key={option}
@@ -140,7 +168,7 @@ export default function VotePollCard({
               data-mine={option === myChoice}
               disabled={!canVote || ended || Boolean(busyOption)}
               onClick={() => void castVote(option)}
-              title={voters.length ? `투표: ${voters.join(", ")}` : "아직 아무도 투표하지 않음"}
+              title={`${count}표`}
             >
               <span className="dc-vote-option-bar" style={{ width: `${percent}%` }} aria-hidden />
               <span className="dc-vote-option-label preserve-words">
@@ -160,7 +188,7 @@ export default function VotePollCard({
           {ended
             ? "투표가 마감되었습니다"
             : canVote
-              ? "선택지를 누르면 투표 (다시 누르면 변경)"
+              ? "선택지를 누르면 투표 · 내 선택을 다시 누르면 철회"
               : "읽기 전용 세션은 투표할 수 없어요"}
         </span>
       </footer>

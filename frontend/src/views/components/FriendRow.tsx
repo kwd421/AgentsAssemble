@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import type { MouseEvent as ReactMouseEvent } from "react";
-import { MessageCircle, MoreVertical, Trash2, UserPlus } from "lucide-react";
+import { MoreVertical, Trash2, UserPlus } from "lucide-react";
 import type { RoomFriend } from "../../api";
 import { participantTypeMeta } from "../../lib/participantTypes";
 import { presenceStatusLabel } from "../../lib/presenceStatus";
@@ -9,7 +9,6 @@ export default function FriendRow({
   friend,
   actionLabel,
   onAction,
-  onStartDm,
   onDelete,
   selected,
   onSelect,
@@ -17,7 +16,6 @@ export default function FriendRow({
   friend: RoomFriend;
   actionLabel?: string;
   onAction?: (friend: RoomFriend) => void;
-  onStartDm?: (friend: RoomFriend) => void;
   onDelete?: (friend: RoomFriend) => void;
   selected?: boolean;
   onSelect?: (friend: RoomFriend) => void;
@@ -27,7 +25,7 @@ export default function FriendRow({
   const rowRef = useRef<HTMLDivElement>(null);
   const meta = participantTypeMeta(friend.participant_type);
   const Icon = meta.icon;
-  const hasMenuActions = Boolean(onStartDm || onSelect || onDelete);
+  const hasMenuActions = Boolean(onSelect || onDelete);
   const detail = [
     meta.label,
     friend.last_meeting_id ? `최근 방 ${friend.last_meeting_id}` : "",
@@ -135,19 +133,6 @@ export default function FriendRow({
               aria-label={`${friend.display_name} 작업 메뉴`}
               style={menuPosition ? { left: menuPosition.left, top: menuPosition.top } : undefined}
             >
-              {onStartDm && (
-                <button
-                  type="button"
-                  role="menuitem"
-                  onClick={() => {
-                    setMenuOpen(false);
-                    onStartDm(friend);
-                  }}
-                >
-	                  <MessageCircle size={14} />
-	                  DM 열기
-	                </button>
-              )}
               {onSelect && (
                 <button
                   type="button"

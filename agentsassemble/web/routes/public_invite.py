@@ -1,10 +1,20 @@
 """Public invite host-token, URL, and tunnel administration routes."""
 from __future__ import annotations
 
+import os
+import secrets
+import time
 from collections.abc import Callable
 from http import HTTPStatus
 from typing import Protocol
 
+from agentsassemble.application.central_directory_host import (
+    CENTRAL_URL_ENV,
+    HostIdentity,
+)
+from agentsassemble.application.server_identity_challenge import (
+    signed_server_identity_challenge,
+)
 from agentsassemble.web.router import RequestContext, Router
 
 
@@ -27,7 +37,13 @@ def register_public_invite_admin_routes(
     is_local_operator: Callable[[RequestContext], bool],
     local_server_url: Callable[[RequestContext], str],
 ) -> None:
-    """Register local-operator controls for making room invites public."""
+    """Register public identity metadata and local public-invite controls."""
+
+    def host_identity(ctx: RequestContext) -> HostIdentity:
+        return HostIdentity(
+            output_root=ctx.deps.output_root,
+            server_id=ctx.deps.identities.server_id(),
+        )
 
     def status_payload(
         ctx: RequestContext,
@@ -46,6 +62,82 @@ def register_public_invite_admin_routes(
                 or (runtime.has_runtime_host_token() and is_local_operator(ctx))
             ),
         }
+
+    @router.get("/api/server-info")
+    def public_server_info(ctx: RequestContext) -> None:
+        ctx.send_json(
+            host_identity(ctx).server_info(
+                central_status={"enabled": bool(os.environ.get(CENTRAL_URL_ENV))}
+            )
+        )
+
+    @router.post("/api/server-info/challenge")
+    def public_server_info_challenge(ctx: RequestContext) -> None:
+        payload = ctx.read_json_body()
+        if payload is None:
+            return
+        try:
+            proof = signed_server_identity_challenge(
+                host_identity(ctx),
+                payload.get("challenge"),
+                origin=(
+                    ctx.deps.public_invite.public_url()
+                    or ctx.request_server_url()
+                ),
+            )
+        except ValueError as error:
+            ctx.send_error(HTTPStatus.BAD_REQUEST, str(error))
+            return
+        ctx.send_json(proof)
+
+    @router.post("/api/central-directory/registration-proof")
+    def central_directory_registration_proof(ctx: RequestContext) -> None:
+        if not is_local_operator(ctx):
+            ctx.send_error(
+                HTTPStatus.FORBIDDEN,
+                "server registration proof is available only to the local operator",
+                code="local_operator_required",
+            )
+            return
+        payload = ctx.read_json_body()
+        if payload is None:
+            return
+        owner_person_id = str(payload.get("owner_person_id") or "").strip()
+        if (
+            len(owner_person_id) < 8
+            or len(owner_person_id) > 128
+            or not all(
+                character.isalnum() or character in "._:-"
+                for character in owner_person_id
+            )
+        ):
+            ctx.send_error(HTTPStatus.BAD_REQUEST, "owner_person_id is invalid")
+            return
+        identity = host_identity(ctx)
+        issued_at = int(time.time())
+        nonce = secrets.token_urlsafe(18)
+        canonical = "\n".join(
+            [
+                "AA-HOST-REGISTER-1",
+                identity.server_id,
+                owner_person_id,
+                str(issued_at),
+                nonce,
+            ]
+        ).encode()
+        ctx.send_json(
+            {
+                "server_id": identity.server_id,
+                "host_public_key_jwk": identity.public_jwk(),
+                "host_key_fingerprint": identity.fingerprint(),
+                "host_registration_proof": {
+                    "owner_person_id": owner_person_id,
+                    "issued_at": issued_at,
+                    "nonce": nonce,
+                    "signature": identity.sign(canonical),
+                },
+            }
+        )
 
     @router.get("/api/public-invite/status")
     def public_invite_status(ctx: RequestContext) -> None:

@@ -144,32 +144,6 @@ export interface RoomFriendsResponse {
   candidates: RoomFriend[];
 }
 
-export interface RoomFriendDmEvent {
-  id: string;
-  friend_id: string;
-  created_at: string;
-  name: string;
-  side: "mine" | "other";
-  message: string;
-  target_agent_id?: string;
-  delivery_status?: "queued" | "delivered" | "failed" | string;
-  error?: string;
-  source_event_id?: string;
-  reply_to_event_id?: string;
-}
-
-export interface RoomFriendDmResponse {
-  friend: RoomFriend;
-  events: RoomFriendDmEvent[];
-  event?: RoomFriendDmEvent;
-  delivery?: {
-    status?: string;
-    error?: string;
-    source_event_id?: string;
-    target_agent_id?: string;
-  };
-}
-
 export interface RoomMembersResponse {
   meeting_id: string;
   members: RoomMember[];
@@ -506,32 +480,6 @@ export function deleteRoomFriend(friendId: string) {
   return deleteJson<RoomFriendsResponse & { deleted: { friend_id: string } }>(
     `/api/room-friends${queryString({ friend_id: friendId })}`
   );
-}
-
-export function fetchRoomFriendDm(friendId: string) {
-  return fetchJson<RoomFriendDmResponse>(`/api/room-friends/dm${queryString({ friend_id: friendId })}`);
-}
-
-export function postRoomFriendDm({
-  friendId,
-  message,
-  name = "나",
-  side = "mine",
-  resumeIfNeeded = true,
-}: {
-  friendId: string;
-  message: string;
-  name?: string;
-  side?: "mine" | "other";
-  resumeIfNeeded?: boolean;
-}) {
-  return postJson<RoomFriendDmResponse>("/api/room-friends/dm", {
-    friend_id: friendId,
-    message,
-    name,
-    side,
-    resume_if_needed: resumeIfNeeded,
-  });
 }
 
 export function fetchRoomMembers(meetingId: string, sessionToken = "") {

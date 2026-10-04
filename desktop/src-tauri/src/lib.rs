@@ -10,8 +10,8 @@ use std::sync::{Arc, RwLock};
 #[cfg(desktop)]
 use local_runtime::LocalRuntime;
 use server_url::{
-    google_account_handoff_url, is_local_app_url, normalized_navigation_url, normalized_server_url,
-    same_origin,
+    central_directory_origin, central_google_handoff_url, is_local_app_url,
+    normalized_navigation_url, normalized_server_url, same_origin,
 };
 use tauri::Manager;
 #[cfg(desktop)]
@@ -55,6 +55,34 @@ fn caller_selected_server(
     Ok(server.clone())
 }
 
+fn server_is_loopback(server: &Url) -> bool {
+    let Some(host) = server.host_str() else {
+        return false;
+    };
+    host.eq_ignore_ascii_case("localhost")
+        || host
+            .trim_matches(['[', ']'])
+            .parse::<std::net::IpAddr>()
+            .is_ok_and(|address| address.is_loopback())
+}
+
+fn caller_can_open_central_google(
+    window: &WebviewWindow,
+    navigation: &NavigationState,
+) -> Result<(), String> {
+    if caller_is_local_shell(window).is_ok() {
+        return Ok(());
+    }
+    let selected = caller_selected_server(window, navigation)?;
+    if selected.scheme() == "http" && server_is_loopback(&selected) {
+        return Ok(());
+    }
+    Err(
+        "Central Google login is available only from the bundled shell or local engine."
+            .to_owned(),
+    )
+}
+
 #[tauri::command]
 fn client_platform(window: WebviewWindow) -> Result<&'static str, String> {
     caller_is_local_shell(&window)?;
@@ -62,6 +90,26 @@ fn client_platform(window: WebviewWindow) -> Result<&'static str, String> {
     return Ok("mobile");
     #[cfg(not(mobile))]
     Ok("desktop")
+}
+
+#[tauri::command]
+fn central_directory_url(window: WebviewWindow) -> Result<&'static str, String> {
+    caller_is_local_shell(&window)?;
+    normalized_server_url(central_directory_origin())
+        .map_err(|error| format!("central directory configuration is invalid: {error}"))?;
+    Ok(central_directory_origin())
+}
+
+#[tauri::command]
+fn open_central_google_login(
+    window: WebviewWindow,
+    navigation: State<'_, NavigationState>,
+    url: String,
+) -> Result<(), String> {
+    caller_can_open_central_google(&window, &navigation)?;
+    let handoff = central_google_handoff_url(&url)?;
+    tauri_plugin_opener::open_url(handoff.as_str(), None::<&str>)
+        .map_err(|error| format!("cannot open the system browser: {error}"))
 }
 
 #[cfg(desktop)]
@@ -72,15 +120,22 @@ async fn start_local_runtime(
 ) -> Result<String, String> {
     caller_is_local_shell(&window)?;
     let runtime_app = app.clone();
-    let server = tauri::async_runtime::spawn_blocking(move || {
+    let result = tauri::async_runtime::spawn_blocking(move || {
         let runtime = runtime_app.state::<LocalRuntime>();
         let server = runtime.ensure_running(&runtime_app)?;
         let _ = room_directory::refresh_local_rooms(&runtime_app, &server);
         Ok::<Url, String>(server)
     })
     .await
-    .map_err(|error| format!("local runtime startup worker failed: {error}"))??;
-    Ok(server.to_string())
+    .map_err(|error| format!("local runtime startup worker failed: {error}"))
+    .and_then(|server| server);
+    match result {
+        Ok(server) => Ok(server.to_string()),
+        Err(error) => {
+            let _ = window.show();
+            Err(error)
+        }
+    }
 }
 
 #[cfg(desktop)]
@@ -148,7 +203,10 @@ fn open_server(
     #[cfg(desktop)]
     {
         let _ = app;
-        navigate_to_server(&window, &navigation, server.clone(), server)
+        navigate_to_server(&window, &navigation, server.clone(), server)?;
+        window
+            .show()
+            .map_err(|error| format!("cannot show the local app window: {error}"))
     }
     #[cfg(mobile)]
     {
@@ -196,18 +254,6 @@ fn cache_selected_room_directory(
     room_directory::store_selected_server_rooms(&app, &rooms, &server)
 }
 
-#[tauri::command]
-fn open_google_account_login(
-    window: WebviewWindow,
-    navigation: State<'_, NavigationState>,
-    url: String,
-) -> Result<(), String> {
-    let server = caller_selected_server(&window, &navigation)?;
-    let handoff = google_account_handoff_url(&url, &server)?;
-    tauri_plugin_opener::open_url(handoff.as_str(), None::<&str>)
-        .map_err(|error| format!("cannot open the system browser: {error}"))
-}
-
 fn build_main_window(
     app: &mut tauri::App,
     navigation_guard: Arc<RwLock<Option<Url>>>,
@@ -224,13 +270,22 @@ fn build_main_window(
     #[cfg(desktop)]
     let builder = builder
         .inner_size(1440.0, 900.0)
-        .min_inner_size(900.0, 620.0);
+        .min_inner_size(900.0, 620.0)
+        .visible(false);
     builder.build()?;
     Ok(())
 }
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
+    #[cfg(desktop)]
+    if std::env::var_os("AGENTSASSEMBLE_CENTRAL_URL").is_none() {
+        // The URL is public configuration, not a credential. Passing it via
+        // the parent process lets the bundled Python engine enable the same
+        // central identity directory without persisting any central bearer.
+        std::env::set_var("AGENTSASSEMBLE_CENTRAL_URL", central_directory_origin());
+    }
+
     let navigation = NavigationState::default();
     let navigation_guard = navigation.server_origin.clone();
     let builder = tauri::Builder::default()
@@ -246,12 +301,13 @@ pub fn run() {
             app_update::check_desktop_update,
             app_update::install_desktop_update,
             client_platform,
+            central_directory_url,
+            open_central_google_login,
             start_local_runtime,
             open_server,
             open_server_link,
             load_cached_room_directory,
-            cache_selected_room_directory,
-            open_google_account_login
+            cache_selected_room_directory
         ]);
 
     #[cfg(mobile)]
@@ -259,11 +315,12 @@ pub fn run() {
         .plugin(tauri_plugin_barcode_scanner::init())
         .invoke_handler(tauri::generate_handler![
             client_platform,
+            central_directory_url,
+            open_central_google_login,
             open_server,
             open_server_link,
             load_cached_room_directory,
-            cache_selected_room_directory,
-            open_google_account_login
+            cache_selected_room_directory
         ]);
 
     let app = builder

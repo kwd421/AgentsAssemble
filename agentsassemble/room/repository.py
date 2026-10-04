@@ -13,6 +13,7 @@ ParticipantRecord = dict[str, object]
 SessionRecord = dict[str, object]
 EventRecord = dict[str, object]
 CommandRecord = dict[str, object]
+MessagePinRecord = dict[str, object]
 EventListener = Callable[[EventRecord], None]
 
 
@@ -43,6 +44,10 @@ class RoomTransaction(Protocol):
     def command_record(self, principal_id: str, request_id: str) -> CommandRecord: ...
 
     def event_by_id(self, event_id: str) -> EventRecord: ...
+
+    def update_event_fields(self, event_id: str, **updates: object) -> EventRecord: ...
+
+    def vote_events(self, vote_id: str) -> list[EventRecord]: ...
 
     def room_settings(self) -> RoomGlobalSettingsRecord: ...
 
@@ -286,6 +291,23 @@ class RoomRepository(Protocol):
     def vote_events(self, room_id: str, vote_id: str) -> list[EventRecord]: ...
 
     def event_sequence(self, room_id: str, event_id: str) -> int: ...
+
+    def pin_message(
+        self,
+        room_id: str,
+        channel_id: str,
+        event_id: str,
+        *,
+        pinned_by: str,
+    ) -> MessagePinRecord: ...
+
+    def unpin_message(self, room_id: str, channel_id: str, event_id: str) -> bool: ...
+
+    def pinned_messages(
+        self,
+        room_id: str,
+        channel_id: str,
+    ) -> list[MessagePinRecord]: ...
 
     def latest_event_sequence(self, room_id: str) -> int: ...
 

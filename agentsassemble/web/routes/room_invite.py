@@ -6,8 +6,6 @@ from uuid import UUID, uuid4
 
 from agentsassemble.web.router import RequestContext, Router
 from agentsassemble.identity.repository import device_auth_key
-from agentsassemble.admission.projection import LegacyAdmissionParticipant
-from agentsassemble.admission.lan_invite import NATIVE_REMOTE_ROOM_CLIENT_KIND
 from agentsassemble.identity.pairing import normalize_pairing_origin
 from agentsassemble.admission.capacity import RoomSessionCapacityExceeded
 from agentsassemble.admission.coordinator import AdmissionIdempotencyConflict
@@ -383,19 +381,6 @@ def _admit_invite(
         return None
     if consumer_client_type == "browser":
         _apply_admitted_avatar(ctx, payload, result, invite_token=token)
-    if str(result.get("participant_type") or "human") != "human":
-        ctx.deps.admission_projection.participant_joined(
-            LegacyAdmissionParticipant(
-                participant_id=str(result["agent_id"]),
-                display_name=str(result["display_name"]),
-                provider_kind=str(result.get("provider_kind") or "manual"),
-                connection_kind=str(
-                    result.get("connection_kind") or NATIVE_REMOTE_ROOM_CLIENT_KIND
-                ),
-                room_id=str(result["meeting_id"]),
-                owner_display_name=str(result.get("owner_display_name") or ""),
-            )
-        )
     return result
 
 

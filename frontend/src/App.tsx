@@ -35,10 +35,10 @@ import {
   type RoomMember,
   type ProviderUsageId,
   type ProviderUsageSnapshot,
+  type RoomSearchResult,
 } from "./api";
 import { useRoomAdmission } from "./app/useRoomAdmission";
 import { useFriendsDirectory } from "./app/useFriendsDirectory";
-import { useLiveAgentProcessGroups } from "./app/useLiveAgentProcessGroups";
 import { useRoomDirectory } from "./app/useRoomDirectory";
 import { useRoomSideChat } from "./app/useRoomSideChat";
 import { useRoomInviteController } from "./app/useRoomInviteController";
@@ -52,7 +52,11 @@ import LobbyView from "./views/LobbyView";
 import RimWorldPluginView from "./views/plugins/rimworld/RimWorldPluginView";
 import { RoomSocketProvider } from "./RoomSocketContext";
 import ChannelContextMenu from "./views/components/ChannelContextMenu";
-import type { ChannelHeaderActions } from "./views/components/ChannelHeader";
+import type {
+  ChannelHeaderActions,
+  ChannelSearchScope,
+} from "./views/components/ChannelHeader";
+import { useRoomMessageSearch } from "./views/useRoomMessageSearch";
 import AgentCreateModal from "./views/components/AgentCreateModal";
 import GuestIdentityRecoveryPanel from "./views/components/GuestIdentityRecoveryPanel";
 import GuestJoinProfilePanel from "./views/components/GuestJoinProfilePanel";
@@ -116,7 +120,7 @@ const FriendsView = lazy(() => import("./views/FriendsView"));
 const CustomChannelView = lazy(() => import("./views/CustomChannelView"));
 
 type Channel = "friends" | "lobby";
-type MobileRoomInfoInitialMode = "info" | "side-chat" | "thread";
+type MobileRoomInfoInitialMode = "info" | "side-chat";
 
 type ChannelConfig = {
   id: Channel;
@@ -167,14 +171,11 @@ type RoomSettingsState = {
   initialSectionId?: RoomSettingsSectionId;
 } | null;
 
-type RightPanelMode = "room-info" | "side-chat" | "thread";
+type RightPanelMode = "room-info" | "side-chat";
 
 const CHANNELS: ChannelConfig[] = [
   { id: "lobby", label: "general", icon: Hash },
 ];
-const LOBBY_CHANNEL_LABEL =
-  CHANNELS.find((channelConfig) => channelConfig.id === "lobby")?.label || "general";
-
 const CHANNEL_SECTIONS: Array<{ id: string; label: string; channels: Channel[] }> = [
   { id: "conversation", label: "Text Channels", channels: ["lobby"] },
 ];
@@ -205,6 +206,7 @@ function channelNotificationSummary(setting?: ChannelSettings): string {
 
 function channelLastReadSummary(setting?: ChannelSettings): string {
   if (!setting?.lastReadAt) return "아직 이 채널을 읽음으로 표시하지 않았습니다.";
+  if (setting.lastReadAt.startsWith("seq:")) return "이 채널의 읽음 위치가 기기 간 동기화됩니다.";
   try {
     const readAt = new Date(setting.lastReadAt).toLocaleString("ko-KR", {
       dateStyle: "short",
@@ -389,6 +391,11 @@ export default function App() {
   );
   const [channelSearchQuery, setChannelSearchQuery] = useState("");
   const [rightPanelSearchQuery, setRightPanelSearchQuery] = useState("");
+  const [messageSearchScope, setMessageSearchScope] = useState<ChannelSearchScope>("channel");
+  const [pendingMessageSearchTarget, setPendingMessageSearchTarget] = useState<{
+    channelId: string;
+    eventId: string;
+  } | null>(null);
   const [mobileSidebarOpen, setMobileSidebarOpen] = useState(mobileViewportMatches);
   const [mobileRoomInfoOpen, setMobileRoomInfoOpen] = useState(false);
   const [mobileRoomInfoInitialMode, setMobileRoomInfoInitialMode] =
@@ -447,15 +454,11 @@ export default function App() {
     homeFilter,
     friendListFilter,
     selectedFriendId: selectedHomeFriendId,
-    activeDmFriendId: activeHomeDmFriendId,
     addDraftName: friendAddDraftName,
-    refresh: refreshFriendsDirectory,
     changeHomeFilter: changeFriendsHomeFilter,
     showDirectory: showFriendsDirectory,
     selectHomeFriend: selectFriendsHomeFriend,
     selectFriend: selectDirectoryFriend,
-    openFriendDm: openDirectoryFriendDm,
-    showFriendProfile: showDirectoryFriendProfile,
     openAddFriend: openFriendsAddView,
     addCandidate: addFriendsCandidate,
     addManual: addFriendsManual,
@@ -473,26 +476,14 @@ export default function App() {
   const activeRoom = rooms.find((room) => room.id === activeRoomId) ?? rooms[0] ?? EMPTY_ROOM;
   const activeRoomDisconnected = roomIsDisconnected(activeRoom);
   const activeOperationalMeetingId = activeRoomDisconnected ? "" : activeRoom.meetingId;
-  const {
-    processGroups,
-    refresh: refreshLiveAgentProcessGroups,
-  } = useLiveAgentProcessGroups({
-    activeMeetingId: activeOperationalMeetingId,
-    guestLocked,
-    enabled: startupIdentityResolved && !activeRoomDisconnected,
-  });
   const activeSideChatMeetingId = activeOperationalMeetingId;
   const {
     error: sideChatError,
-    selectedThread: sideChatThread,
     draftsByContext: sideChatDraftsByContext,
     sideChatEvents,
-    threadEvents: sideChatThreadEvents,
-    threadSummaries: sideChatThreadSummaries,
     handleRealtimeEvents: handleSideChatRealtimeEvents,
     handlePostedEvents: handleSideChatPosted,
     handleRealtimeError: handleSideChatError,
-    selectThread: selectSideChatThread,
     updateDraft: updateSideChatDraft,
   } = useRoomSideChat({
     meetingId: activeSideChatMeetingId,
@@ -645,14 +636,6 @@ export default function App() {
         Boolean(usageTarget)
       );
     });
-  const activeProcessGroups = useMemo(
-    () =>
-      processGroups.filter(
-        (group) => group.meeting_id && group.meeting_id === activeRoom.meetingId
-      ),
-    [activeRoom.meetingId, processGroups]
-  );
-  const activeProcessGroup = activeProcessGroups[0];
   const guestOwnedAgentIds = useMemo(() => {
     const agentId = guestSession?.agentId || "";
     return agentId ? [agentId, `${agentId}-ai`] : [];
@@ -662,12 +645,11 @@ export default function App() {
       guestLocked
         ? []
         : [
-            ...(activeProcessGroup?.agents || []).map((agent) => agent.agent_id),
             ...activeRoomAgentSessions
               .filter((session) => !session.external_owned)
               .map((session) => session.participant_id),
           ].filter(Boolean),
-    [activeProcessGroup?.agents, activeRoomAgentSessions, guestLocked]
+    [activeRoomAgentSessions, guestLocked]
   );
   const quotaViewer = useMemo<AgentQuotaVisibilityViewer>(
     () => ({
@@ -758,18 +740,6 @@ export default function App() {
     };
   }, [mobileRoomInfoOpen, mobileSidebarOpen]);
 
-  function openSideChatThread(event: LobbyEvent) {
-    selectSideChatThread(event, LOBBY_CHANNEL_LABEL);
-    if (mobileViewportIsActive()) {
-      setMobileSidebarOpen(false);
-      setMobileRoomInfoInitialMode("thread");
-      setMobileRoomInfoOpen(true);
-    } else {
-      setMembersOpen(true);
-      setRightPanelMode("thread");
-    }
-  }
-
   const scopedAgents = agents.filter((agent) => roomHasAgent(activeRoom, agent));
   const scopedViewerParticipantId = guestSession?.agentId || "operator-local";
   const scopedViewerDisplayName =
@@ -793,13 +763,8 @@ export default function App() {
     []
   );
   const refreshSessionAndMembers = useCallback(() => {
-    refreshLiveAgentProcessGroups();
     refreshMembers();
-  }, [refreshLiveAgentProcessGroups, refreshMembers]);
-  const refreshSessionAndMembersWithFriends = useCallback(() => {
-    refreshSessionAndMembers();
-    void refreshFriendsDirectory();
-  }, [refreshFriendsDirectory, refreshSessionAndMembers]);
+  }, [refreshMembers]);
   const scopedMentionables = useMemo(
     () =>
       roomMentionables({
@@ -828,6 +793,29 @@ export default function App() {
   const activeChannelSettings = roomSettings.channelSettingsFor(activeRoom);
   const activeCustomChannels = roomChannels.activeChannels;
   const activeCustomChannel = roomChannels.activeChannelFor(channel);
+  const messageSearchChannelId = messageSearchScope === "all"
+    ? "all"
+    : channel === "lobby" || activeCustomChannel
+      ? channel
+      : "lobby";
+  const roomMessageSearch = useRoomMessageSearch({
+    roomId: activeOperationalMeetingId,
+    channelId: messageSearchChannelId,
+    sessionToken: admittedSessionToken,
+  });
+  const messageSearchChannelLabels = useMemo(
+    () => Object.fromEntries([
+      ["lobby", "general"],
+      ...activeCustomChannels
+        .filter((item) => item.type === "text")
+        .map((item) => [item.id, item.name]),
+    ]),
+    [activeCustomChannels]
+  );
+  useEffect(() => {
+    setMessageSearchScope("channel");
+    setPendingMessageSearchTarget(null);
+  }, [activeRoom.meetingId]);
   const menuRoom = roomMenu ? rooms.find((room) => room.id === roomMenu.roomId) : undefined;
   const menuChannel = channelMenu
     ? CHANNELS.find((item) => item.id === channelMenu.channelId)
@@ -941,12 +929,12 @@ export default function App() {
     changeFriendsHomeFilter(filter);
   }
 
-  function selectHomeFriend(friend: RoomFriend, intent: "profile" | "dm" = "profile") {
+  function selectHomeFriend(friend: RoomFriend) {
     setChannel("friends");
     setAdminOpen(false);
     setChannelMenu(null);
     closeMobileOverlays();
-    selectFriendsHomeFriend(friend, intent);
+    selectFriendsHomeFriend(friend);
   }
 
   function openAddFriendView(draftName = "") {
@@ -1115,6 +1103,24 @@ export default function App() {
     closeMobileOverlays();
   }
 
+  function openCrossChannelSearchResult(result: RoomSearchResult) {
+    const targetChannel = result.channel_id;
+    if (
+      targetChannel !== "lobby"
+      && !activeCustomChannels.some(
+        (item) => item.id === targetChannel && item.type === "text"
+      )
+    ) {
+      roomMessageSearch.setError("검색 결과의 채널을 더 이상 열 수 없습니다.");
+      return;
+    }
+    setPendingMessageSearchTarget({
+      channelId: targetChannel,
+      eventId: result.event_id,
+    });
+    goToChannel(targetChannel);
+  }
+
   async function createChannel(params: { name: string; type: "text" | "voice" }) {
     const channel = await roomChannels.create(params);
     if (channel) goToChannel(channel.id);
@@ -1259,8 +1265,8 @@ export default function App() {
     roomSettings.updateChannelSetting(activeRoom, channelId, updates);
   }
 
-  function markChannelRead(channelId: string) {
-    updateChannelSetting(channelId, { lastReadAt: new Date().toISOString() });
+  function markChannelRead(channelId: string, cursor = "") {
+    updateChannelSetting(channelId, { lastReadAt: cursor || new Date().toISOString() });
     setChannelMenu(null);
   }
 
@@ -1277,7 +1283,8 @@ export default function App() {
     return {
       notificationSummary: channelNotificationSummary(setting),
       lastReadSummary: channelLastReadSummary(setting),
-      onMarkRead: () => markChannelRead(channelId),
+      lastReadCursor: setting?.lastReadAt || "",
+      onMarkRead: (cursor) => markChannelRead(channelId, cursor),
       onOpenSettings: guestLocked ? undefined : () => openRoomSettings(activeRoom.id),
     };
   }
@@ -1365,14 +1372,18 @@ export default function App() {
           remoteClientPacketPreview={inviteRemoteClientPacket.preview}
           remoteClientPacketFriendName={inviteRemoteClientPacket.friendName}
           onClose={closeInviteModal}
-          onGenerateSecureInvite={() =>
+          onGenerateSecureInvite={(options, startTunnelIfNeeded) =>
             void generateInviteLink(
               inviteModalRoom,
-              inviteModalAppearance?.inviteScope || inviteModalRoom.inviteScope || "room"
+              inviteModalAppearance?.inviteScope || inviteModalRoom.inviteScope || "room",
+              options,
+              startTunnelIfNeeded
             )
           }
           onCopy={() => void copyInviteLink(inviteModalRoom)}
-          onGenerateAgentInvite={() => void generateAgentInviteLink(inviteModalRoom)}
+          onGenerateAgentInvite={(startTunnelIfNeeded) =>
+            void generateAgentInviteLink(inviteModalRoom, startTunnelIfNeeded)
+          }
           onCopyAgentInvite={() => void copyAgentInviteLink()}
           onGenerateOperatorPairing={() => void generateOperatorPairingLink(inviteModalRoom)}
           onCopyOperatorPairing={() => void copyOperatorPairingLink()}
@@ -1384,11 +1395,12 @@ export default function App() {
           onStartTunnel={() => void startInviteTunnel()}
           onStopTunnel={() => void stopInviteTunnel()}
           onCopyRemoteClientPacket={() => void copyRemoteClientPacket()}
-          onInviteFriend={(friend) =>
+          onInviteFriend={(friend, startTunnelIfNeeded) =>
             void inviteFriendToRoom({
               friend,
               room: inviteModalRoom,
               appearance: inviteModalAppearance,
+              startTunnelIfNeeded,
             })
           }
         />
@@ -1487,7 +1499,7 @@ export default function App() {
             });
           }
         }}
-        onCreated={() => refreshLiveAgentProcessGroups()}
+        onCreated={() => refreshMembers()}
       />
 
       {guestRecoveryRequest && (
@@ -1534,7 +1546,6 @@ export default function App() {
           profileIdentity={{ deviceToken }}
           friends={homeFriendsPayload.friends}
           selectedFriendId={selectedHomeFriendId}
-          activeDmFriendId={activeHomeDmFriendId}
           onFriendSelect={selectHomeFriend}
           onStartAddFriend={openAddFriendView}
           onStartAddAgent={openAgentCreate}
@@ -1801,15 +1812,10 @@ export default function App() {
               addDraftName={friendAddDraftName}
               onShowDirectory={showFriendsDirectory}
               selectedFriendId={selectedHomeFriendId}
-              activeDmFriendId={activeHomeDmFriendId}
               onSelectFriend={selectDirectoryFriend}
-              onOpenFriendDm={openDirectoryFriendDm}
-              onShowFriendProfile={showDirectoryFriendProfile}
               onAddCandidate={addFriendsCandidate}
               onAddManual={addFriendsManual}
               onDeleteFriend={deleteDirectoryFriend}
-              processGroups={processGroups}
-              onSessionActionComplete={refreshSessionAndMembersWithFriends}
               onStartAddAgent={openAgentCreate}
             />
           ) : adminOpen ? (
@@ -1860,9 +1866,7 @@ export default function App() {
               onOpenMobileSidebar={openMobileSidebar}
               onOpenMobileInfo={openMobileRoomInfo}
               appearance={activeAppearance}
-              onOpenSideThread={openSideChatThread}
               onGuestSessionExpired={expireGuestSession}
-              threadSummaries={sideChatThreadSummaries}
               typingIndicators={typingIndicators}
               canonicalEvents={visibleRoomTimelineEvents}
               canonicalHistoryReady={activeRoomHistory.initialized}
@@ -1871,6 +1875,17 @@ export default function App() {
               loadCanonicalHistory={loadCanonicalRoomHistory}
               providerRequests={canonicalRoom.providerRequests}
               resolveProviderRequest={canonicalRoom.sendProviderRequestResolution}
+              sharedMessageSearch={roomMessageSearch}
+              messageSearchScope={messageSearchScope}
+              onMessageSearchScopeChange={setMessageSearchScope}
+              messageSearchChannelLabels={messageSearchChannelLabels}
+              pendingSearchTargetEventId={
+                pendingMessageSearchTarget?.channelId === "lobby"
+                  ? pendingMessageSearchTarget.eventId
+                  : ""
+              }
+              onSearchTargetHandled={() => setPendingMessageSearchTarget(null)}
+              onOpenCrossChannelSearchResult={openCrossChannelSearchResult}
             />
             )
           ) : activeCustomChannel ? (
@@ -1885,6 +1900,17 @@ export default function App() {
               onToggleMembers={toggleMembers}
               onOpenMobileSidebar={openMobileSidebar}
               onOpenMobileInfo={openMobileRoomInfo}
+              sharedMessageSearch={roomMessageSearch}
+              messageSearchScope={messageSearchScope}
+              onMessageSearchScopeChange={setMessageSearchScope}
+              messageSearchChannelLabels={messageSearchChannelLabels}
+              pendingSearchTargetEventId={
+                pendingMessageSearchTarget?.channelId === activeCustomChannel.id
+                  ? pendingMessageSearchTarget.eventId
+                  : ""
+              }
+              onSearchTargetHandled={() => setPendingMessageSearchTarget(null)}
+              onOpenCrossChannelSearchResult={openCrossChannelSearchResult}
             />
           ) : (
             <DeferredViewFallback />
@@ -1913,22 +1939,7 @@ export default function App() {
               error={sideChatError}
               onPosted={handleSideChatPosted}
               mentionables={scopedMentionables}
-              canPostMessages={!guestLocked}
-              draftsByContext={sideChatDraftsByContext}
-              onDraftChange={updateSideChatDraft}
-              authorName={scopedViewerDisplayName}
-            />
-          }
-          threadContent={
-            <SideChatDock
-              meetingId={activeSideChatMeetingId}
-              events={sideChatThreadEvents}
-              error={sideChatError}
-              onPosted={handleSideChatPosted}
-              mentionables={scopedMentionables}
-              mode="thread"
-              threadContext={sideChatThread}
-              canPostMessages={!guestLocked}
+              canPostMessages={lobbyPostingState.canPost}
               draftsByContext={sideChatDraftsByContext}
               onDraftChange={updateSideChatDraft}
               authorName={scopedViewerDisplayName}
@@ -1948,7 +1959,7 @@ export default function App() {
       {showMembers && membersOpen && (
         <aside
           className="dc-members hidden shrink-0 xl:flex xl:flex-col"
-          aria-label="방 연결 정보, 사이드챗과 스레드"
+          aria-label="방 연결 정보와 사이드챗"
           data-testid="room-right-panel"
           data-panel-mode={rightPanelMode}
         >
@@ -1997,18 +2008,6 @@ export default function App() {
             >
               사이드챗
             </button>
-            <button
-              type="button"
-              role="tab"
-              id="thread-panel-tab"
-              data-active={rightPanelMode === "thread"}
-              aria-selected={rightPanelMode === "thread"}
-              aria-controls="thread-panel"
-              onPointerUp={(event) => activateRightPanelModeFromPointer("thread", event)}
-              onClick={() => activateRightPanelMode("thread")}
-            >
-              스레드
-            </button>
           </div>
           {rightPanelMode === "room-info" ? (
             <section
@@ -2032,7 +2031,6 @@ export default function App() {
                 onCreateCompanionAiPacket={() => void createCompanionAiPacket()}
                 onCopyGuestAiPacket={() => void copyGuestAiPacket()}
                 channelNotifications={activeChannelSettings}
-                processGroups={activeProcessGroups}
                 onSessionActionComplete={refreshSessionAndMembers}
                 quotaViewer={quotaViewer}
                 onAgentUsageRequest={loadProviderUsage}
@@ -2064,35 +2062,13 @@ export default function App() {
                 error={sideChatError}
                 onPosted={handleSideChatPosted}
                 mentionables={scopedMentionables}
-                canPostMessages={!guestLocked}
+                canPostMessages={lobbyPostingState.canPost}
                 draftsByContext={sideChatDraftsByContext}
                 onDraftChange={updateSideChatDraft}
                 authorName={scopedViewerDisplayName}
               />
             </section>
-          ) : (
-            <section
-              id="thread-panel"
-              role="tabpanel"
-              aria-labelledby="thread-panel-tab"
-              className="min-h-0 flex-1"
-              data-testid="thread-panel"
-            >
-              <SideChatDock
-                meetingId={activeSideChatMeetingId}
-                events={sideChatThreadEvents}
-                error={sideChatError}
-                onPosted={handleSideChatPosted}
-                mentionables={scopedMentionables}
-                mode="thread"
-                threadContext={sideChatThread}
-                canPostMessages={!guestLocked}
-                draftsByContext={sideChatDraftsByContext}
-                onDraftChange={updateSideChatDraft}
-                authorName={scopedViewerDisplayName}
-              />
-            </section>
-          )}
+          ) : null}
         </aside>
       )}
     </div>

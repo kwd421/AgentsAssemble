@@ -685,18 +685,4 @@ describe("RoomConnectionPanel", () => {
     expect(screen.getByText(/변경하려면 세션을 중지하세요/)).toBeTruthy();
   });
 
-  it("retains the compatibility options editor for a legacy agent without a canonical session", () => {
-    render(
-      <RoomConnectionPanel
-        room={room}
-        agents={[agent("offline")]}
-        members={[]}
-        agentSessions={[]}
-      />
-    );
-
-    openAgentDetails();
-
-    expect(screen.getByRole("heading", { name: "권한 / 속도" })).toBeTruthy();
-  });
 });

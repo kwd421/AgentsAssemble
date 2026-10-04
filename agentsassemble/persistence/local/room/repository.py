@@ -30,6 +30,13 @@ from agentsassemble.persistence.local.room.database import (
     migration_report,
     open_room_database,
 )
+from agentsassemble.persistence.local.room.event_mutations import (
+    _VOTE_BALLOT_EVENTS_QUERY,
+    read_event_by_id,
+    read_vote_events,
+    update_event_fields as update_room_event_fields,
+)
+from agentsassemble.persistence.local.room.message_pins import SQLiteMessagePinRepositoryMixin
 from agentsassemble.persistence.local.room.write_budget import reserve_room_write_budget
 from agentsassemble.room_attention import AgentAttentionState, AttentionEvaluation
 from agentsassemble.room.global_settings import (
@@ -62,16 +69,6 @@ _STORE_LOCKS: dict[str, threading.RLock] = {}
 _EVENT_LISTENERS: dict[str, list[Callable[[dict[str, object]], None]]] = {}
 _INITIALIZED_DATABASES: dict[str, tuple[tuple[int, int], dict[str, object]]] = {}
 _LOGGER = logging.getLogger(__name__)
-_VOTE_BALLOT_EVENTS_QUERY = """SELECT payload_json FROM room_events
-                               WHERE room_id = ?
-                                 AND visibility = ?
-                                 AND event_type = 'message_final'
-                                 AND json_extract(payload_json, '$.message_kind') = 'vote_cast'
-                                 AND json_extract(payload_json, '$.vote_id') = ?
-                                 AND seq > ?
-                               ORDER BY seq"""
-
-
 def _store_lock(output_root: Path) -> threading.RLock:
     key = str(output_root.expanduser().resolve())
     with _STORE_REGISTRY_LOCK:
@@ -110,11 +107,22 @@ class _SQLiteRoomTransaction:
         )
 
     def event_by_id(self, event_id: str) -> dict[str, object]:
-        return self._store._event_by_id(
+        return read_event_by_id(
             self._connection,
             self._room_id,
             event_id,
         )
+
+    def update_event_fields(self, event_id: str, **updates: object) -> dict[str, object]:
+        return update_room_event_fields(
+            self._connection,
+            self._room_id,
+            event_id,
+            dict(updates),
+        )
+
+    def vote_events(self, vote_id: str) -> list[dict[str, object]]:
+        return read_vote_events(self._connection, self._room_id, vote_id)
 
     def room_settings(self) -> RoomGlobalSettingsRecord:
         return self._store._room_settings(self._connection, self._room_id)
@@ -298,7 +306,7 @@ class _SQLiteRoomTransaction:
         return cancel_attention_job(self._connection, self._room_id, job_id)
 
 
-class RoomStore:
+class RoomStore(SQLiteMessagePinRepositoryMixin):
     """SQLite source of truth for room, participant, session, and event state."""
 
     def __init__(self, output_root: Path) -> None:
@@ -814,7 +822,7 @@ class RoomStore:
     def event_by_id(self, room_id: str, event_id: str, *, include_hidden: bool = False) -> dict[str, object]:
         clean_room_id = _clean_room_id(room_id)
         with self._connection() as connection:
-            return self._event_by_id(
+            return read_event_by_id(
                 connection,
                 clean_room_id,
                 event_id,
@@ -827,26 +835,7 @@ class RoomStore:
         if not clean_vote_id:
             return []
         with self._connection() as connection:
-            poll = self._event_by_id(connection, clean_room_id, clean_vote_id)
-            if (
-                not poll
-                or str(poll.get("type") or "") != "message_final"
-                or str(poll.get("message_kind") or "") != "vote"
-            ):
-                return []
-            rows = connection.execute(
-                _VOTE_BALLOT_EVENTS_QUERY,
-                (
-                    clean_room_id,
-                    VISIBLE,
-                    clean_vote_id,
-                    int(poll.get("seq") or 0),
-                ),
-            ).fetchall()
-        return [
-            poll,
-            *[_row_payload(row, column="payload_json") for row in rows],
-        ]
+            return read_vote_events(connection, clean_room_id, clean_vote_id)
 
     def event_sequence(self, room_id: str, event_id: str) -> int:
         clean_room_id = _clean_room_id(room_id)
@@ -1375,25 +1364,6 @@ class RoomStore:
             self._write_session(connection, updated)
             detached.append(updated)
         return detached
-
-    def _event_by_id(
-        self,
-        connection: sqlite3.Connection,
-        room_id: str,
-        event_id: str,
-        *,
-        include_hidden: bool = False,
-    ) -> dict[str, object]:
-        clean_event_id = clean_room_text(event_id, limit=128)
-        if not clean_event_id:
-            return {}
-        query = "SELECT payload_json FROM room_events WHERE room_id = ? AND event_id = ?"
-        parameters: tuple[object, ...] = (room_id, clean_event_id)
-        if not include_hidden:
-            query += " AND visibility = ?"
-            parameters = (room_id, clean_event_id, VISIBLE)
-        row = connection.execute(query, parameters).fetchone()
-        return _row_payload(row, column="payload_json")
 
     def _append_event(
         self,

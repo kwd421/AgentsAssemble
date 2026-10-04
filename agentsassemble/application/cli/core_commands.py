@@ -24,30 +24,6 @@ from agentsassemble.diagnostics.release_health import (
 from agentsassemble.web.frontend_runtime import frontend_dist_status
 
 
-def run_demo_command(
-    args: argparse.Namespace,
-    *,
-    run_demo_meeting: Callable[..., object],
-) -> int:
-    run_demo_meeting(
-        adapter_name=args.adapter,
-        output_root=Path(args.output_root),
-        reporter=lambda message: print(message, flush=True),
-        codex_timeout_seconds=args.codex_timeout,
-        codex_search_enabled=not args.no_codex_search,
-        research_depth=args.research_depth,
-        research_steering=args.research_steering,
-        council_config_path=args.council_config,
-        agent_config_path=args.agent_config,
-        meeting_mode="free_chat" if args.meeting_mode == "free-chat" else args.meeting_mode,
-        moderator_enabled=None if args.moderator is None else args.moderator == "on",
-        follow_up_of=args.follow_up_of,
-        follow_up_from=args.follow_up_from,
-        follow_up_note=args.follow_up_note,
-    )
-    return 0
-
-
 def gui_reuse_conflicts(args: argparse.Namespace, existing_url: str) -> list[str]:
     """Return explicit gui flags that cannot be applied to a running engine."""
 
@@ -85,18 +61,6 @@ def gui_reuse_conflicts(args: argparse.Namespace, existing_url: str) -> list[str
     if bool(getattr(args, "start_public_tunnel", False)):
         conflicts.append(
             "--start-public-tunnel cannot be applied to an already running engine"
-        )
-    if str(getattr(args, "live_agent_config", "") or "").strip():
-        conflicts.append(
-            "--live-agent-config cannot be applied to an already running engine"
-        )
-    if str(getattr(args, "live_agent_group_id", "") or "").strip():
-        conflicts.append(
-            "--live-agent-group-id cannot be applied to an already running engine"
-        )
-    if bool(getattr(args, "live_agent_auto_restart", False)):
-        conflicts.append(
-            "--live-agent-auto-restart cannot be applied to an already running engine"
         )
     shadow = str(getattr(args, "attention_shadow_mode", "off") or "off")
     if shadow not in {"", "off"}:
@@ -157,12 +121,6 @@ def run_gui_command(
                 host_token=args.host_token,
                 unsafe_expose_control_plane=args.unsafe_expose_control_plane,
                 start_public_tunnel=args.start_public_tunnel,
-                live_agent_config=Path(args.live_agent_config) if args.live_agent_config else None,
-                live_agent_group_id=args.live_agent_group_id,
-                live_agent_auto_restart=args.live_agent_auto_restart,
-                live_agent_max_restarts=args.live_agent_max_restarts,
-                live_agent_restart_backoff_seconds=args.live_agent_restart_backoff_seconds,
-                live_agent_stale_restart_after_seconds=args.live_agent_stale_restart_after_seconds,
             )
     except (ValueError, RoomRepositoryUnavailable, LocalEngineStartupTimeout) as error:
         print(f"error: {error}", file=sys.stderr)
@@ -183,7 +141,6 @@ def frontend_info_payload(
     frontend_url = f"http://127.0.0.1:{frontend_port}"
     react_app_path = "/app/"
     react_app_url = backend_url + react_app_path
-    parity_matrix_doc = "docs/product/legacy-react-parity-matrix.md"
     backend_parts = urllib.parse.urlparse(backend_url)
     backend_host = backend_parts.hostname or "127.0.0.1"
     backend_port = backend_parts.port or 8765
@@ -207,7 +164,6 @@ def frontend_info_payload(
         "frontend_dev_port": frontend_port,
         "frontend_dev_proxy_target": backend_url,
         "backend_url": backend_url,
-        "legacy_console_status": "retired",
         "default_console_kind": default_console_kind,
         "default_console_label": default_console_label,
         "react_app_path": react_app_path,
@@ -223,7 +179,6 @@ def frontend_info_payload(
         "app_assets_dir_present": dist_status.assets_dir_present,
         "app_referenced_assets_present": dist_status.referenced_assets_present,
         "app_build_status": dist_status.build_status,
-        "parity_matrix_doc": parity_matrix_doc,
         "is_default_entry_point": True,
         "launch_commands": [
             f"python3 -m agentsassemble.cli gui --host {backend_host} --port {backend_port} --output-root .agentsassemble",
@@ -232,11 +187,9 @@ def frontend_info_payload(
         ],
         "notes": [
             "assemble gui serves the Discord-style React room client at / once npm --prefix frontend run build exists.",
-            "Until that build exists, / and /app/ return a build-required response instead of serving the retired vanilla console.",
-            "The /legacy/ namespace and legacy static routes are retired; rebuild the React client instead of using a fallback UI.",
+            "Until that build exists, / and /app/ return a build-required response.",
             "The React/Vite frontend reads existing HTTP/SSE state and does not start provider CLIs.",
             "The Vite proxy should target the same backend URL shown here unless AGENTSASSEMBLE_API_TARGET overrides it.",
-            f"Browser parity for the default React surface is operator-verified; see {parity_matrix_doc}.",
         ],
     }
 
@@ -254,7 +207,6 @@ def run_frontend_info_command(args: argparse.Namespace) -> int:
     print(f"- Vite API proxy target: {payload['frontend_dev_proxy_target']}")
     print(f"- Built React static available: {payload['app_static_available']} ({payload['app_dist_path']})")
     print(f"- React build status: {payload['app_build_status']}")
-    print(f"- Parity matrix: {payload['parity_matrix_doc']}")
     print(f"- Default surface kind: {payload['default_console_kind']}")
     print("- Commands:")
     for command in payload["launch_commands"]:

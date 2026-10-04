@@ -174,9 +174,6 @@ class TicketStoreTests(unittest.TestCase):
 
 class FakeDeps:
     def __init__(self):
-        self.lobby_queue = []          # events to hand out once
-        self.lobby_latest = ""
-        self.roster = ([], "sig0")
         self.session_active = True
         self.statuses = []             # (identity, status) from set_status
         self.room_snapshot = {
@@ -194,8 +191,6 @@ class FakeDeps:
 
     def make(self):
         return WsRoomDeps(
-            read_lobby_after=self._read_lobby_after,
-            read_roster=lambda meeting_id: self.roster,
             read_side_chat_after=lambda meeting_id, after_id: ([], after_id),
             set_thinking=lambda identity, on: self.statuses.append((identity, on)),
             is_session_active=lambda session_token: self.session_active,
@@ -204,11 +199,6 @@ class FakeDeps:
             on_subscribe=lambda identity, streams, after_seq: self.subscriptions.append((identity, streams, after_seq)),
             active_plugin_id=lambda _meeting_id: self.activity_plugin,
         )
-
-    def _read_lobby_after(self, meeting_id, after):
-        events = self.lobby_queue
-        self.lobby_queue = []
-        return events, self.lobby_latest
 
     def _execute_command(self, identity, message):
         self.commands.append((identity, message))
@@ -242,6 +232,28 @@ class SubscribeTests(unittest.TestCase):
 
     def tearDown(self):
         reset_plugin_host_for_tests()
+
+    def test_agent_bridge_cannot_subscribe_to_human_side_chat(self):
+        session = _session(
+            FakeDeps(),
+            participant_type="agent",
+            client_type="agent_bridge",
+        )
+
+        messages = text_messages(
+            session.handle_frame(
+                OP_TEXT,
+                json.dumps(
+                    {"op": "subscribe", "streams": ["room_events", "side_chat"]}
+                ).encode(),
+            )
+        )
+
+        rejection = next(message for message in messages if message.get("op") == "error")
+        subscribed = next(message for message in messages if message.get("op") == "subscribed")
+        self.assertEqual(rejection["category"], "stream_forbidden")
+        self.assertEqual(subscribed["streams"], ["room_events"])
+        self.assertNotIn("side_chat", session.subscribed)
 
     def test_plugin_event_is_delivered_once_to_each_subscribed_connection(self):
         left = _session(FakeDeps())
@@ -418,48 +430,10 @@ class SubscribeTests(unittest.TestCase):
         self.assertEqual(msgs[1]["after_seq"], 7)
         self.assertEqual(deps.subscriptions[0][1], {"room_events"})
 
-    def test_subscribe_acks_and_pushes_snapshot(self):
-        deps = FakeDeps()
-        deps.lobby_queue = [{"id": "e1", "message": "hi"}]
-        deps.lobby_latest = "e1"
-        sess = _session(deps)
-        frames = sess.handle_frame(OP_TEXT, json.dumps({"op": "subscribe", "streams": ["lobby"]}).encode())
-        msgs = text_messages(frames)
-        self.assertEqual(msgs[0]["op"], "subscribed")
-        self.assertEqual(msgs[0]["streams"], ["lobby"])
-        self.assertEqual(msgs[1]["op"], "event")
-        self.assertTrue(msgs[1].get("snapshot"))
-        self.assertEqual(msgs[1]["events"][0]["message"], "hi")
-
-    def test_subscribe_pushes_empty_snapshot_boundary(self):
-        deps = FakeDeps()
-        sess = _session(deps)
-        frames = sess.handle_frame(OP_TEXT, json.dumps({"op": "subscribe", "streams": ["lobby"]}).encode())
-        msgs = text_messages(frames)
-        self.assertEqual(msgs[0]["op"], "subscribed")
-        self.assertGreaterEqual(len(msgs), 2)
-        self.assertEqual(msgs[1]["op"], "event")
-        self.assertEqual(msgs[1]["stream"], "lobby")
-        self.assertTrue(msgs[1].get("snapshot"))
-        self.assertEqual(msgs[1]["events"], [])
-
     def test_subscribe_defaults_to_all_streams(self):
         sess = _session(FakeDeps())
         frames = sess.handle_frame(OP_TEXT, json.dumps({"op": "subscribe"}).encode())
-        self.assertEqual(set(text_messages(frames)[0]["streams"]), {"lobby", "roster", "side_chat"})
-
-    def test_roster_only_pushed_on_signature_change(self):
-        deps = FakeDeps()
-        deps.roster = ([{"agent_id": "a"}], "sig1")
-        sess = _session(deps)
-        sess.handle_frame(OP_TEXT, json.dumps({"op": "subscribe", "streams": ["roster"]}).encode())
-        # second poll with same signature → no roster frame
-        self.assertEqual(sess.poll(), [])
-        # signature change → push
-        deps.roster = ([{"agent_id": "a"}, {"agent_id": "b"}], "sig2")
-        msgs = text_messages(sess.poll())
-        self.assertEqual(msgs[0]["stream"], "roster")
-        self.assertEqual(len(msgs[0]["members"]), 2)
+        self.assertEqual(set(text_messages(frames)[0]["streams"]), {"room_events"})
 
 
 class RetiredSayProtocolTests(unittest.TestCase):
@@ -608,9 +582,8 @@ class ControlAndMiscTests(unittest.TestCase):
 
     def test_close_marks_closed_and_polls_quiet(self):
         deps = FakeDeps()
-        deps.lobby_queue = [{"id": "e1"}]
         sess = _session(deps)
-        sess.handle_frame(OP_TEXT, json.dumps({"op": "subscribe", "streams": ["lobby"]}).encode())
+        sess.handle_frame(OP_TEXT, json.dumps({"op": "subscribe", "streams": ["room_events"]}).encode())
         out = sess.handle_frame(OP_CLOSE, b"")
         self.assertTrue(sess.closed)
         self.assertEqual(server_frames(out)[0][0], OP_CLOSE)

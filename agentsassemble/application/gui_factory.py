@@ -11,21 +11,18 @@ from agentsassemble.admission.invite_service import (
     SESSION_TOKEN_TTL_SECONDS,
 )
 from agentsassemble.admission.preflight import RoomAdmissionService
-from agentsassemble.admission.projection import LegacyAdmissionProjection
 from agentsassemble.admission.repository import InviteSessionRepository
 from agentsassemble.admission.session_service import RoomSessionService
 from agentsassemble.application.gui import (
     ApplicationDatabase,
-    FlowSupervisor,
     GuiApplicationServices,
-    ProcessSupervisor,
-    SessionRunMonitor,
 )
 from agentsassemble.application.room_users import (
     configure_room_users_backend,
     release_room_users_backend,
 )
 from agentsassemble.room.attachments import FileAttachmentStore
+from agentsassemble.features.side_chat.service import SideChatStore
 from agentsassemble.identity.pairing import OperatorPairingService
 from agentsassemble.identity.repository import IdentityBackend
 from agentsassemble.persistence.local.admission.repository import (
@@ -89,30 +86,16 @@ def reconcile_canonical_room_directory(
 
 @dataclass(frozen=True)
 class GuiRuntimeConstructors:
-    """Concrete runtime choices supplied by the stable GUI entrypoint.
+    """Concrete runtime choices supplied by the stable GUI entrypoint."""
 
-    The selected legacy process and monitor implementations still live beside
-    ``serve_gui``. Passing their constructors explicitly keeps that compatibility
-    patch surface without leaving ownership and rollback rules in the entrypoint.
-    """
-
-    process_supervisor: Callable[[Path], ProcessSupervisor]
-    session_run_controller: Callable[[Path], object]
-    flow_supervisor: Callable[[Path], FlowSupervisor]
     public_invite_runtime: Callable[[], PublicInviteRuntime]
     public_tunnel_manager: Callable[..., PublicTunnelManager]
-    session_run_monitor: Callable[..., SessionRunMonitor]
-    legacy_admission_projection: Callable[[Path], LegacyAdmissionProjection]
 
 
 def build_gui_application_services(
     output_root: Path,
     *,
     constructors: GuiRuntimeConstructors,
-    process_supervisor: ProcessSupervisor | None = None,
-    session_run_controller: object | None = None,
-    session_run_monitor: SessionRunMonitor | None = None,
-    flow_supervisor: FlowSupervisor | None = None,
     public_tunnel_manager: PublicTunnelManager | None = None,
     room_realtime_controller_override: RoomRealtimeController | None = None,
     room_repository_override: RoomRepository | None = None,
@@ -175,8 +158,6 @@ def build_gui_application_services(
         identity_backend_override is not None and owns_identity_backend_override
     )
 
-    owns_process_supervisor = process_supervisor is None
-    owns_session_run_monitor = session_run_monitor is None
     owns_public_tunnel_manager = public_tunnel_manager is None
     owns_room_realtime_controller = room_realtime_controller_override is None
 
@@ -229,25 +210,6 @@ def build_gui_application_services(
             sessions=room_session_service,
             transaction_boundary=application_database_override,
         )
-        legacy_admission_projection = constructors.legacy_admission_projection(
-            output_root
-        )
-
-        live_agent_process_supervisor = (
-            process_supervisor or constructors.process_supervisor(output_root)
-        )
-        if owns_process_supervisor:
-            remember_cleanup(
-                "process_supervisor.close",
-                live_agent_process_supervisor.close,
-            )
-
-        live_agent_session_run_controller = (
-            session_run_controller or constructors.session_run_controller(output_root)
-        )
-        live_agent_flow_supervisor = (
-            flow_supervisor or constructors.flow_supervisor(output_root)
-        )
         invite_tunnel_manager = (
             public_tunnel_manager
             or constructors.public_tunnel_manager(
@@ -260,22 +222,8 @@ def build_gui_application_services(
                 invite_tunnel_manager.stop,
             )
 
-        live_agent_session_run_monitor = (
-            session_run_monitor
-            or constructors.session_run_monitor(
-                output_root,
-                live_agent_process_supervisor,
-                live_agent_session_run_controller,
-                default_server="",
-            )
-        )
-        if owns_session_run_monitor:
-            remember_cleanup(
-                "session_run_monitor.stop",
-                live_agent_session_run_monitor.stop,
-            )
-
         ws_ticket_store = WsTicketStore()
+        side_chat_store = SideChatStore()
         native_cli_bridge_manager: NativeCliBridgeProcessManager | None = None
         if room_realtime_controller_override is not None:
             room_realtime_controller = room_realtime_controller_override
@@ -292,6 +240,7 @@ def build_gui_application_services(
                     repository=room_repository,
                     attention_shadow_mode=attention_shadow_mode,
                     reconcile_startup_sessions=reconcile_startup_sessions,
+                    delete_side_chat=side_chat_store.clear_room,
                 )
                 native_cli_bridge_manager.set_exit_listener(
                     built_controller.bridge_process_exited
@@ -327,23 +276,17 @@ def build_gui_application_services(
             identity_backend=identity_backend,
             invite_store_path=default_room_invite_store_path(output_root),
             media_store=FileAttachmentStore(output_root),
-            process_supervisor=live_agent_process_supervisor,
-            session_run_controller=live_agent_session_run_controller,
-            session_run_monitor=live_agent_session_run_monitor,
-            flow_supervisor=live_agent_flow_supervisor,
+            side_chat_store=side_chat_store,
             public_tunnel_manager=invite_tunnel_manager,
             ws_ticket_store=ws_ticket_store,
             native_cli_bridge_manager=native_cli_bridge_manager,
             room_realtime_controller=room_realtime_controller,
-            legacy_admission_projection=legacy_admission_projection,
             provider_usage_service=default_provider_usage_registry(),
             application_database=application_database_override,
             identity_registry_cleanup=release_identity_registration,
             owns_room_repository=owns_room_repository,
             owns_invite_repository=owns_invite_repository,
             owns_identity_backend=owns_identity_backend,
-            owns_process_supervisor=owns_process_supervisor,
-            owns_session_run_monitor=owns_session_run_monitor,
             owns_public_tunnel_manager=owns_public_tunnel_manager,
             owns_room_realtime_controller=owns_room_realtime_controller,
             owns_application_database=owns_application_database,

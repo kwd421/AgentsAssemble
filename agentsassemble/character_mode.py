@@ -6,7 +6,7 @@ import re
 from pathlib import Path
 from typing import Any
 
-from agentsassemble.legacy.meeting.core.events import clean_lobby_text
+from agentsassemble.room.text import clean_room_text as clean_lobby_text
 from agentsassemble.persona_cards import load_persona_card
 
 

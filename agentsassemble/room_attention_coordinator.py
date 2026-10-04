@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from collections.abc import Iterable
 
-from agentsassemble.legacy.meeting.core.events import clean_lobby_text
+from agentsassemble.room.text import clean_room_text as clean_lobby_text
 from agentsassemble.room_attention_policy import evaluate_ambient_attention, evaluate_attention
 from agentsassemble.room.repository import RoomRepository, RoomTransaction
 

@@ -14,13 +14,9 @@ from urllib.error import HTTPError
 from urllib.request import Request, urlopen
 
 from agentsassemble.gui import _make_handler
-from agentsassemble.admission.invite import (
-    create_room_invite,
-    join_room_with_invite,
-    reset_state,
-    set_runtime_host_token,
-)
+from agentsassemble.application.public_invite_runtime import PublicInviteRuntime
 from agentsassemble.room_store import RoomStore
+from agentsassemble.web.room_client import join_room_session
 from agentsassemble.room.voice_presence import (
     join_voice,
     leave_all_voice,
@@ -70,7 +66,7 @@ class VoicePresenceRegistryTests(unittest.TestCase):
 
 class VoicePresenceHttpTests(unittest.TestCase):
     def setUp(self):
-        reset_state()
+        self.public_invite = PublicInviteRuntime(environ={})
         reset_voice_presence()
         self._servers: list[ThreadingHTTPServer] = []
 
@@ -78,11 +74,13 @@ class VoicePresenceHttpTests(unittest.TestCase):
         for server in self._servers:
             server.shutdown()
             server.server_close()
-        reset_state()
         reset_voice_presence()
 
     def _start(self, root: Path) -> str:
-        server = ThreadingHTTPServer(("127.0.0.1", 0), _make_handler(root))
+        server = ThreadingHTTPServer(
+            ("127.0.0.1", 0),
+            _make_handler(root, public_invite_runtime_override=self.public_invite),
+        )
         threading.Thread(target=server.serve_forever, daemon=True).start()
         self._servers.append(server)
         return f"http://127.0.0.1:{server.server_port}"
@@ -109,11 +107,31 @@ class VoicePresenceHttpTests(unittest.TestCase):
         return channel_id
 
     def _token(self, base: str, meeting_id: str, agent_id: str) -> str:
-        invite = create_room_invite(
-            room_url=base, meeting_id=meeting_id, agent_id=agent_id,
-            display_name=agent_id, participant_type="human", max_uses=5,
+        request = Request(
+            f"{base}/api/room-invite/create",
+            data=json.dumps(
+                {
+                    "meeting_id": meeting_id,
+                    "agent_id": agent_id,
+                    "display_name": agent_id,
+                    "participant_type": "human",
+                    "max_uses": 1,
+                    "local_dev_preview": True,
+                }
+            ).encode(),
+            headers={"Content-Type": "application/json"},
+            method="POST",
         )
-        return str(join_room_with_invite(str(invite["invite_token"]))["session_token"])
+        with urlopen(request, timeout=4) as response:
+            invite = json.loads(response.read().decode("utf-8"))
+        return str(
+            join_room_session(
+                base,
+                str(invite["invite_token"]),
+                display_name=agent_id,
+                participant_type="human",
+            )["session_token"]
+        )
 
     def _post(self, base: str, path: str, token: str, payload: dict) -> dict:
         request = Request(
@@ -127,7 +145,7 @@ class VoicePresenceHttpTests(unittest.TestCase):
 
     def test_join_leave_presence_round_trip(self):
         with tempfile.TemporaryDirectory() as temp_dir:
-            set_runtime_host_token("host-secret")
+            self.public_invite.set_host_token("host-secret")
             root = Path(temp_dir) / "room"
             RoomStore(root).create_room("room-1", label="Room 1")
             base = self._start(root)
@@ -155,7 +173,7 @@ class VoicePresenceHttpTests(unittest.TestCase):
 
     def test_join_rejects_text_channel(self):
         with tempfile.TemporaryDirectory() as temp_dir:
-            set_runtime_host_token("host-secret")
+            self.public_invite.set_host_token("host-secret")
             root = Path(temp_dir) / "room"
             RoomStore(root).create_room("room-1", label="Room 1")
             base = self._start(root)

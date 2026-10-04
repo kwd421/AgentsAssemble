@@ -27,19 +27,25 @@ import {
 } from "./lib/roomEventProjection";
 import { isUnauthorizedApiError } from "./lib/apiErrors";
 import {
+  applyParticipantEvents,
+  canonicalRoomProjectionScopeKey,
+  EMPTY_CANONICAL_HISTORY,
+  EMPTY_PROVIDER_CATALOG,
+  mergeRoomEvents,
+  normalizeRoomParticipant,
+  participantIsActive,
+  upsertAgentSessions,
+  upsertRoomParticipants,
+} from "./lib/canonicalRoomProjection";
+import type { CanonicalRoomHistoryState } from "./lib/canonicalRoomProjection";
+import {
   applyProviderRequestEvents,
   normalizePendingProviderRequests,
   type PendingProviderRequest,
   type ProviderRequestResolution,
 } from "./lib/providerRequestModel";
 
-export type CanonicalRoomHistoryState = {
-  initialized: boolean;
-  oldestSeq: number;
-  lastSeq: number;
-  hasMoreBefore: boolean;
-  resumeGap: boolean;
-};
+export type { CanonicalRoomHistoryState } from "./lib/canonicalRoomProjection";
 
 type OpenRoomSocket = (
   auth: RoomSocketAuth,
@@ -60,109 +66,6 @@ export type UseCanonicalRoomOptions = CanonicalRoomCallbacks & {
   viewerParticipantId?: string;
   openSocket?: OpenRoomSocket;
 };
-
-const EMPTY_HISTORY: CanonicalRoomHistoryState = {
-  initialized: false,
-  oldestSeq: 0,
-  lastSeq: 0,
-  hasMoreBefore: false,
-  resumeGap: false,
-};
-
-const EMPTY_PROVIDER_CATALOG: ProviderCatalogSnapshot = {
-  status: "loading",
-  catalog_revision: "",
-  providers: [],
-};
-
-function mergeRoomEvents(current: RoomEvent[], incoming: RoomEvent[], replace: boolean) {
-  const byId = new Map((replace ? [] : current).map((event) => [event.id, event]));
-  incoming.forEach((event) => {
-    if (event.id) byId.set(event.id, event);
-  });
-  return [...byId.values()].sort(
-    (left, right) => Number(left.seq || 0) - Number(right.seq || 0)
-  );
-}
-
-function upsertAgentSessions(current: RoomAgentSession[], incoming: RoomAgentSession[]) {
-  const byId = new Map(current.map((session) => [session.session_id, session]));
-  incoming.forEach((session) => byId.set(session.session_id, session));
-  return [...byId.values()];
-}
-
-function normalizeRoomParticipant(participant: RoomMember, roomId: string): RoomMember {
-  return {
-    ...participant,
-    meeting_id: participant.meeting_id || roomId,
-    provider_kind: participant.provider_kind || "",
-    connection_kind: participant.connection_kind || "",
-    source:
-      participant.source ||
-      (participant.role !== "human" ? "agent_session" : "room"),
-    created_at: participant.created_at || "",
-    updated_at: participant.updated_at || "",
-  };
-}
-
-function participantIsActive(participant: RoomMember) {
-  return !["left", "kicked"].includes(String(participant.status || ""));
-}
-
-function upsertRoomParticipants(
-  current: RoomMember[],
-  incoming: RoomMember[],
-  roomId: string
-) {
-  const byId = new Map(current.map((participant) => [participant.participant_id, participant]));
-  incoming.forEach((participant) => {
-    const existing = byId.get(participant.participant_id);
-    byId.set(
-      participant.participant_id,
-      normalizeRoomParticipant({ ...existing, ...participant }, roomId)
-    );
-  });
-  return [...byId.values()];
-}
-
-function applyParticipantEvents(current: RoomMember[], incoming: RoomEvent[]) {
-  const updatesByParticipant = new Map<string, RoomEvent>();
-  const latestMembershipEvent = new Map<string, RoomEvent["type"]>();
-  incoming.forEach((event) => {
-    if (event.type === "participant_updated" && event.participant_id) {
-      updatesByParticipant.set(event.participant_id, event);
-    }
-    if (
-      event.participant_id &&
-      ["participant_joined", "participant_left", "participant_kicked"].includes(event.type)
-    ) {
-      latestMembershipEvent.set(event.participant_id, event.type);
-    }
-  });
-  if (!updatesByParticipant.size && !latestMembershipEvent.size) return current;
-  let changed = false;
-  const next = current.flatMap((participant) => {
-    const membershipEvent = latestMembershipEvent.get(participant.participant_id);
-    if (membershipEvent === "participant_left" || membershipEvent === "participant_kicked") {
-      changed = true;
-      return [];
-    }
-    const update = updatesByParticipant.get(participant.participant_id);
-    if (!update) return [participant];
-    changed = true;
-    return [{
-      ...participant,
-      display_name: String(update.display_name || participant.display_name),
-      role: String(update.role || participant.role) as RoomMember["role"],
-      avatar_image_url:
-        "avatar_image_url" in update
-          ? String(update.avatar_image_url || "") || undefined
-          : participant.avatar_image_url,
-      updated_at: update.created_at || participant.updated_at,
-    }];
-  });
-  return changed ? next : current;
-}
 
 type ApplyRoomEventsOptions = {
   replace?: boolean;
@@ -215,6 +118,9 @@ export function useCanonicalRoom(options: UseCanonicalRoomOptions) {
   );
   const [lastError, setLastError] = useState<Error | null>(null);
   const [membershipRevision, setMembershipRevision] = useState(0);
+  const [acceptedProjectionScope, setAcceptedProjectionScope] = useState("");
+  const acceptedProjectionScopeRef = useRef("");
+  const acceptedSocketRef = useRef<RoomSocketHandle | null>(null);
   const activeCatalogRevision = providerCatalogByRoom[roomId]?.catalog_revision || "";
 
   const applyEvents = useCallback((
@@ -319,26 +225,49 @@ export function useCanonicalRoom(options: UseCanonicalRoomOptions) {
     }
   }, []);
 
-  const authKey = auth
-    ? auth.kind === "host"
-      ? `host:${auth.meetingId}`
-      : `session:${auth.sessionToken}`
-    : "";
+  const projectionScopeKey = canonicalRoomProjectionScopeKey(
+    roomId,
+    auth,
+    viewerParticipantId
+  );
+  const authKey = projectionScopeKey;
+  const projectionIsCurrent =
+    Boolean(projectionScopeKey) && acceptedProjectionScope === projectionScopeKey;
 
   useEffect(() => {
     if (!roomId || !auth) {
       connectionGenerationRef.current += 1;
+      acceptedProjectionScopeRef.current = "";
+      acceptedSocketRef.current = null;
+      setAcceptedProjectionScope("");
       setSocket(null);
       setConnectionState("disconnected");
       return undefined;
     }
+    acceptedProjectionScopeRef.current = "";
+    acceptedSocketRef.current = null;
+    setAcceptedProjectionScope("");
     const connectionGeneration = connectionGenerationRef.current + 1;
     connectionGenerationRef.current = connectionGeneration;
     const connectionIsCurrent = () => connectionGenerationRef.current === connectionGeneration;
+    setLastError(null);
     setConnectionState("connecting");
     const currentSocket = openSocket(auth, ["room_events", "side_chat", "plugin"], {
       onRoomSnapshot: (snapshot) => {
         if (!connectionIsCurrent()) return false;
+        const snapshotRoomId = String(snapshot.room?.room_id || "").trim();
+        if (snapshotRoomId !== roomId) {
+          const error = new RoomSocketSayError(
+            "The server returned a snapshot for a different room; reconnecting.",
+            "room_scope_mismatch"
+          );
+          setLastError(error);
+          callbacksRef.current.onError?.(error);
+          currentSocket.resync?.();
+          return false;
+        }
+        const projectionAlreadyAccepted =
+          acceptedProjectionScopeRef.current === projectionScopeKey;
         const snapshotSettings = normalizeRoomGlobalSettings(
           snapshot.room_settings,
           roomId
@@ -389,7 +318,10 @@ export function useCanonicalRoom(options: UseCanonicalRoomOptions) {
         }));
         setHistoryByRoom((previous) => {
           const current = previous[roomId];
-          const resumed = snapshot.snapshot_mode === "resume" && current;
+          const resumed =
+            projectionAlreadyAccepted &&
+            snapshot.snapshot_mode === "resume" &&
+            current;
           return {
             ...previous,
             [roomId]: {
@@ -402,14 +334,19 @@ export function useCanonicalRoom(options: UseCanonicalRoomOptions) {
           };
         });
         applyEvents(roomId, snapshot.events || [], {
-          replace: snapshot.snapshot_mode !== "resume",
+          replace: !projectionAlreadyAccepted || snapshot.snapshot_mode !== "resume",
           projectParticipantState: false,
-          projectSessionState: snapshot.snapshot_mode === "resume",
+          projectSessionState:
+            projectionAlreadyAccepted && snapshot.snapshot_mode === "resume",
         });
         setProviderRequestsByRoom((previous) => ({
           ...previous,
           [roomId]: normalizePendingProviderRequests(snapshot.provider_requests || []),
         }));
+        if (!projectionAlreadyAccepted) {
+          setProgressByRoom((previous) => ({ ...previous, [roomId]: null }));
+          setPluginEnvelopesByRoom((previous) => ({ ...previous, [roomId]: [] }));
+        }
         setMembershipRevision((previous) => previous + 1);
         setLastError((previous) =>
           previous instanceof RoomSocketSayError &&
@@ -417,13 +354,26 @@ export function useCanonicalRoom(options: UseCanonicalRoomOptions) {
             ? previous
             : null
         );
+        acceptedProjectionScopeRef.current = projectionScopeKey;
+        acceptedSocketRef.current = currentSocket;
+        setAcceptedProjectionScope(projectionScopeKey);
         return true;
       },
       onRoomEvents: (events) => {
-        if (connectionIsCurrent()) applyEvents(roomId, events);
+        if (
+          connectionIsCurrent() &&
+          acceptedProjectionScopeRef.current === projectionScopeKey &&
+          acceptedSocketRef.current === currentSocket
+        ) {
+          applyEvents(roomId, events);
+        }
       },
       onPlugin: (envelopes, snapshot) => {
-        if (!connectionIsCurrent()) return;
+        if (
+          !connectionIsCurrent() ||
+          acceptedProjectionScopeRef.current !== projectionScopeKey ||
+          acceptedSocketRef.current !== currentSocket
+        ) return;
         setPluginEnvelopesByRoom((previous) => ({
           ...previous,
           [roomId]: snapshot
@@ -440,12 +390,22 @@ export function useCanonicalRoom(options: UseCanonicalRoomOptions) {
         }
       },
       onProviderCatalog: (catalog) => {
-        if (!connectionIsCurrent()) return;
+        if (
+          !connectionIsCurrent() ||
+          acceptedProjectionScopeRef.current !== projectionScopeKey ||
+          acceptedSocketRef.current !== currentSocket
+        ) return;
         setProviderCatalogByRoom((previous) => ({ ...previous, [roomId]: catalog }));
         setProvidersByRoom((previous) => ({ ...previous, [roomId]: catalog.providers || [] }));
       },
       onSideChat: (events) => {
-        if (connectionIsCurrent()) callbacksRef.current.onSideChat?.(events);
+        if (
+          connectionIsCurrent() &&
+          acceptedProjectionScopeRef.current === projectionScopeKey &&
+          acceptedSocketRef.current === currentSocket
+        ) {
+          callbacksRef.current.onSideChat?.(events);
+        }
       },
       onRoomDeleted: (deletedRoomId, roomName) => {
         if (connectionIsCurrent()) {
@@ -483,22 +443,41 @@ export function useCanonicalRoom(options: UseCanonicalRoomOptions) {
     });
     setSocket(currentSocket);
     return () => {
-      if (connectionIsCurrent()) connectionGenerationRef.current += 1;
+      if (connectionIsCurrent()) {
+        connectionGenerationRef.current += 1;
+        acceptedProjectionScopeRef.current = "";
+        acceptedSocketRef.current = null;
+        setAcceptedProjectionScope("");
+      }
       currentSocket.close();
       setSocket((current) => (current === currentSocket ? null : current));
       setConnectionState("disconnected");
     };
-  }, [applyEvents, authKey, openSocket, roomId]);
+  }, [applyEvents, authKey, openSocket, projectionScopeKey, roomId]);
+
+  const requireCurrentProjectionSocket = useCallback(() => {
+    if (
+      !projectionIsCurrent ||
+      !socket ||
+      acceptedProjectionScopeRef.current !== projectionScopeKey ||
+      acceptedSocketRef.current !== socket
+    ) {
+      throw new Error("방 연결이 준비되지 않았습니다.");
+    }
+    return socket;
+  }, [projectionIsCurrent, projectionScopeKey, socket]);
 
   const loadHistory = useCallback(
     async (beforeSeq: number) => {
-      if (!socket || !roomId) throw new Error("방 연결이 준비되지 않았습니다.");
+      if (!roomId) throw new Error("방 연결이 준비되지 않았습니다.");
+      const operationSocket = requireCurrentProjectionSocket();
       let cursor = beforeSeq;
       let hasMoreBefore = true;
       let oldestSeq = beforeSeq;
       const events: RoomEvent[] = [];
       for (let pageIndex = 0; pageIndex < 5 && hasMoreBefore; pageIndex += 1) {
-        const page = await socket.historyBefore(cursor, 200);
+        const page = await operationSocket.historyBefore(cursor, 200);
+        requireCurrentProjectionSocket();
         events.push(...(page.events || []));
         oldestSeq = Number(page.oldest_seq || cursor || 0);
         hasMoreBefore = Boolean(page.has_more_before);
@@ -508,6 +487,7 @@ export function useCanonicalRoom(options: UseCanonicalRoomOptions) {
           break;
         }
       }
+      requireCurrentProjectionSocket();
       applyEvents(roomId, events, {
         projectProgress: false,
         projectSessionState: false,
@@ -529,25 +509,27 @@ export function useCanonicalRoom(options: UseCanonicalRoomOptions) {
         hasMoreBefore,
       };
     },
-    [applyEvents, roomId, socket]
+    [applyEvents, requireCurrentProjectionSocket, roomId]
   );
 
   const sendAgentControl = useCallback(
     async (session: RoomAgentSession, action: "start" | "pause" | "stop" | "resume" | "interrupt") => {
-      if (!socket) throw new Error("방 연결이 준비되지 않았습니다.");
-      await socket.command(`agent.${action}`, { agent_id: session.participant_id });
+      const operationSocket = requireCurrentProjectionSocket();
+      await operationSocket.command(`agent.${action}`, { agent_id: session.participant_id });
+      requireCurrentProjectionSocket();
     },
-    [socket]
+    [requireCurrentProjectionSocket]
   );
 
   const sendAgentConfigure = useCallback(
     async (session: RoomAgentSession, settings: Record<string, string>) => {
-      if (!socket) throw new Error("방 연결이 준비되지 않았습니다.");
-      const ack = await socket.command("agent.configure", {
+      const operationSocket = requireCurrentProjectionSocket();
+      const ack = await operationSocket.command("agent.configure", {
         agent_id: session.participant_id,
         catalog_revision: activeCatalogRevision,
         ...settings,
       });
+      requireCurrentProjectionSocket();
       const result = ack.result || {};
       const updatedParticipant = result.participant as RoomMember | undefined;
       const updatedSession = result.agent_session as RoomAgentSession | undefined;
@@ -569,13 +551,14 @@ export function useCanonicalRoom(options: UseCanonicalRoomOptions) {
         }));
       }
     },
-    [activeCatalogRevision, roomId, socket]
+    [activeCatalogRevision, requireCurrentProjectionSocket, roomId]
   );
 
   const sendParticipantKick = useCallback(
     async (participantId: string) => {
-      if (!socket) throw new Error("방 연결이 준비되지 않았습니다.");
-      const ack = await socket.command("participant.kick", { participant_id: participantId });
+      const operationSocket = requireCurrentProjectionSocket();
+      const ack = await operationSocket.command("participant.kick", { participant_id: participantId });
+      requireCurrentProjectionSocket();
       const participant = ack.result?.participant as RoomMember | undefined;
       if (
         participant?.participant_id !== participantId ||
@@ -594,24 +577,26 @@ export function useCanonicalRoom(options: UseCanonicalRoomOptions) {
       }));
       setMembershipRevision((previous) => previous + 1);
     },
-    [roomId, socket]
+    [requireCurrentProjectionSocket, roomId]
   );
 
   const sendParticipantMute = useCallback(
     async (participantId: string, muted: boolean) => {
-      if (!socket) throw new Error("방 연결이 준비되지 않았습니다.");
-      await socket.command("participant.mute", { participant_id: participantId, muted });
+      const operationSocket = requireCurrentProjectionSocket();
+      await operationSocket.command("participant.mute", { participant_id: participantId, muted });
+      requireCurrentProjectionSocket();
     },
-    [socket]
+    [requireCurrentProjectionSocket]
   );
 
   const sendParticipantRole = useCallback(
     async (participantId: string, role: RoomMember["role"]) => {
-      if (!socket) throw new Error("방 연결이 준비되지 않았습니다.");
-      const ack = await socket.command("participant.role.update", {
+      const operationSocket = requireCurrentProjectionSocket();
+      const ack = await operationSocket.command("participant.role.update", {
         participant_id: participantId,
         role,
       });
+      requireCurrentProjectionSocket();
       const participant = ack.result?.participant as RoomMember | undefined;
       const event = ack.result?.event as RoomEvent | undefined;
       if (
@@ -627,7 +612,7 @@ export function useCanonicalRoom(options: UseCanonicalRoomOptions) {
         );
         setLastError(error);
         callbacksRef.current.onError?.(error);
-        socket.resync?.();
+        operationSocket.resync?.();
         throw error;
       }
       setParticipantsByRoom((previous) => ({
@@ -636,12 +621,12 @@ export function useCanonicalRoom(options: UseCanonicalRoomOptions) {
       }));
       setMembershipRevision((previous) => previous + 1);
     },
-    [roomId, socket]
+    [requireCurrentProjectionSocket, roomId]
   );
 
   const sendRoomSettingsUpdate = useCallback(
     async (updates: RoomGlobalSettingsUpdate): Promise<RoomGlobalSettings> => {
-      if (!socket) throw new Error("방 연결이 준비되지 않았습니다.");
+      const operationSocket = requireCurrentProjectionSocket();
       const currentSettings = roomSettingsRef.current[roomId];
       if (!currentSettings?.revision) {
         throw new RoomSocketSayError(
@@ -651,7 +636,7 @@ export function useCanonicalRoom(options: UseCanonicalRoomOptions) {
       }
       let ack;
       try {
-        ack = await socket.command(
+        ack = await operationSocket.command(
           "room.settings.update",
           {
             ...roomGlobalSettingsUpdateToApi(updates),
@@ -659,6 +644,7 @@ export function useCanonicalRoom(options: UseCanonicalRoomOptions) {
           }
         );
       } catch (errorValue) {
+        requireCurrentProjectionSocket();
         const error = errorValue instanceof Error
           ? errorValue
           : new Error("Room settings save failed.");
@@ -668,10 +654,11 @@ export function useCanonicalRoom(options: UseCanonicalRoomOptions) {
         ) {
           setLastError(error);
           callbacksRef.current.onError?.(error);
-          socket.resync?.();
+          operationSocket.resync?.();
         }
         throw error;
       }
+      requireCurrentProjectionSocket();
       const result = ack.result || {};
       const event = result.event as RoomEvent | undefined;
       if (!event?.id || event.type !== "room_settings_updated") {
@@ -681,7 +668,7 @@ export function useCanonicalRoom(options: UseCanonicalRoomOptions) {
         );
         setLastError(error);
         callbacksRef.current.onError?.(error);
-        socket.resync?.();
+        operationSocket.resync?.();
         throw error;
       }
       const settings = normalizeRoomGlobalSettings(result.room_settings, roomId);
@@ -700,37 +687,40 @@ export function useCanonicalRoom(options: UseCanonicalRoomOptions) {
         );
         setLastError(error);
         callbacksRef.current.onError?.(error);
-        socket.resync?.();
+        operationSocket.resync?.();
         throw error;
       }
       applyEvents(roomId, [event]);
       return roomSettingsRef.current[roomId] || settings;
     },
-    [applyEvents, roomId, socket]
+    [applyEvents, requireCurrentProjectionSocket, roomId]
   );
 
   const sendProviderRequestResolution = useCallback(
     async (providerRequestId: string, resolution: ProviderRequestResolution) => {
-      if (!socket) throw new Error("방 연결이 준비되지 않았습니다.");
-      const ack = await socket.command("provider.request.resolve", {
+      const operationSocket = requireCurrentProjectionSocket();
+      const ack = await operationSocket.command("provider.request.resolve", {
         provider_request_id: providerRequestId,
         ...resolution,
       });
+      requireCurrentProjectionSocket();
       const event = ack.result?.event as RoomEvent | undefined;
       if (event?.type === "provider_request_resolution_requested") {
         applyEvents(roomId, [event]);
       }
     },
-    [applyEvents, roomId, socket]
+    [applyEvents, requireCurrentProjectionSocket, roomId]
   );
 
-  const events = eventsByRoom[roomId] || [];
+  const events = projectionIsCurrent ? eventsByRoom[roomId] || [] : [];
+  const participants = projectionIsCurrent ? participantsByRoom[roomId] || [] : [];
+  const agentSessions = projectionIsCurrent ? sessionsByRoom[roomId] || [] : [];
   const participantProfiles = useMemo(() => {
     const profiles: Record<
       string,
       { displayName?: string; avatarImageUrl?: string; providerKind?: string; role?: string }
     > = {};
-    (sessionsByRoom[roomId] || []).forEach((session) => {
+    agentSessions.forEach((session) => {
       if (!session.participant_id) return;
       profiles[session.participant_id] = {
         displayName: session.display_name,
@@ -738,7 +728,7 @@ export function useCanonicalRoom(options: UseCanonicalRoomOptions) {
         providerKind: session.provider_kind,
       };
     });
-    (participantsByRoom[roomId] || []).forEach((participant) => {
+    participants.forEach((participant) => {
       if (!participant.participant_id) return;
       const previous = profiles[participant.participant_id] || {};
       profiles[participant.participant_id] = {
@@ -752,17 +742,19 @@ export function useCanonicalRoom(options: UseCanonicalRoomOptions) {
       };
     });
     return profiles;
-  }, [participantsByRoom, roomId, sessionsByRoom]);
+  }, [agentSessions, participants]);
   const timelineEvents: LobbyEvent[] = useMemo(
     () => projectRoomEventsToTimeline(events, { viewerParticipantId, participantProfiles }),
     [events, participantProfiles, viewerParticipantId]
   );
 
   return {
-    socket,
-    connectionState,
-    lastError,
+    socket: projectionIsCurrent ? socket : null,
+    connectionState:
+      !roomId || !auth ? "disconnected" as const : connectionState,
+    lastError: roomId && auth ? lastError : null,
     syncIssue:
+      Boolean(roomId && auth) &&
       lastError instanceof RoomSocketSayError &&
       [
         "event_sequence_gap", "event_sequence_invalid",
@@ -775,19 +767,23 @@ export function useCanonicalRoom(options: UseCanonicalRoomOptions) {
             message: lastError.message,
           }
         : null,
-    membershipRevision,
+    membershipRevision: projectionIsCurrent ? membershipRevision : 0,
     events,
     timelineEvents,
-    participants: participantsByRoom[roomId] || [],
-    roomSettings: roomSettingsByRoom[roomId] || null,
-    agentSessions: sessionsByRoom[roomId] || [],
-    capabilities: capabilitiesByRoom[roomId] || {},
-    availableProviders: providersByRoom[roomId] || [],
-    providerCatalog: providerCatalogByRoom[roomId] || EMPTY_PROVIDER_CATALOG,
-    providerRequests: providerRequestsByRoom[roomId] || [],
-    agentSessionProgress: progressByRoom[roomId] || null,
-    pluginEnvelopes: pluginEnvelopesByRoom[roomId] || [],
-    history: historyByRoom[roomId] || EMPTY_HISTORY,
+    participants,
+    roomSettings: projectionIsCurrent ? roomSettingsByRoom[roomId] || null : null,
+    agentSessions,
+    capabilities: projectionIsCurrent ? capabilitiesByRoom[roomId] || {} : {},
+    availableProviders: projectionIsCurrent ? providersByRoom[roomId] || [] : [],
+    providerCatalog: projectionIsCurrent
+      ? providerCatalogByRoom[roomId] || EMPTY_PROVIDER_CATALOG
+      : EMPTY_PROVIDER_CATALOG,
+    providerRequests: projectionIsCurrent ? providerRequestsByRoom[roomId] || [] : [],
+    agentSessionProgress: projectionIsCurrent ? progressByRoom[roomId] || null : null,
+    pluginEnvelopes: projectionIsCurrent ? pluginEnvelopesByRoom[roomId] || [] : [],
+    history: projectionIsCurrent
+      ? historyByRoom[roomId] || EMPTY_CANONICAL_HISTORY
+      : EMPTY_CANONICAL_HISTORY,
     loadHistory,
     sendAgentControl,
     sendAgentConfigure,

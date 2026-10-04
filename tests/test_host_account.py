@@ -70,7 +70,7 @@ class HostAccountTests(unittest.TestCase):
 
     def _join(self, device_token=""):
         invite = room_invite.create_room_invite(
-            room_url="http://192.168.1.10:8765",
+            room_url="http://127.0.0.1:8765",
             meeting_id="ops-room",
             agent_id="guest",
             display_name="Guest",
@@ -125,6 +125,7 @@ class HostAccountTests(unittest.TestCase):
     def test_loopback_operator_does_not_depend_on_the_public_host_token(self):
         handler = FakeHandler(headers={"Host": "127.0.0.1:8765"})
         handler.server = SimpleNamespace(server_address=("127.0.0.1", 8765))
+        handler.client_address = ("127.0.0.1", 54321)
         self.deps.public_invite.set_host_token("different-host-secret")
 
         self.assertTrue(_context(handler, self.deps).require_moderator())

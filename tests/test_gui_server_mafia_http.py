@@ -221,7 +221,7 @@ class MafiaHttpHandlerTests(unittest.TestCase):
         self.assertEqual(payload, {"error": "Untrusted request host or origin"})
         game_payload.assert_not_called()
 
-    def test_malformed_post_uses_handler_operation_recording(self) -> None:
+    def test_malformed_post_returns_bad_request(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:
             root = Path(temp_dir)
             handler_class = _make_handler(root)
@@ -235,22 +235,13 @@ class MafiaHttpHandlerTests(unittest.TestCase):
                     headers={"Content-Type": "application/json"},
                     method="POST",
                 )
-                with patch("agentsassemble.gui.record_live_agent_operation") as record_operation:
-                    status, payload = self._request(request)
+                status, payload = self._request(request)
             finally:
                 server.shutdown()
                 server.server_close()
 
         self.assertEqual(status, HTTPStatus.BAD_REQUEST)
         self.assertEqual(payload, {"error": "Invalid JSON"})
-        record_operation.assert_called_once_with(
-            root,
-            operation="mafia.start",
-            status="failed",
-            target_id="",
-            error="Invalid JSON",
-            details={},
-        )
 
 
 if __name__ == "__main__":

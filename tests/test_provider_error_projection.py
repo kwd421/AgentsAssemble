@@ -68,7 +68,9 @@ class ProviderErrorProjectionTests(unittest.TestCase):
                         "op": "command",
                         "request_id": "provider-ready",
                         "action": "bridge.ready",
-                        "payload": _external_ready_payload(),
+                        "payload": _external_ready_payload(
+                            bridge_launch_id="handle-codex"
+                        ),
                     },
                 )
                 controller.handle_command(

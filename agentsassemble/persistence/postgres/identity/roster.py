@@ -1,6 +1,8 @@
 """PostgreSQL operations for identity-owned memberships and room registry."""
 from __future__ import annotations
 
+from uuid import uuid4
+
 from psycopg import Connection
 
 from agentsassemble.room.text import clean_room_text
@@ -231,6 +233,7 @@ def upsert_room(
     clean_room_uid = clean_room_text(room_uid, limit=64)
     clean_label = clean_room_text(label, limit=128)
     clean_origin = clean_room_text(origin, limit=64)
+    stable_room_uid = clean_room_uid or str(uuid4())
     connection.execute(
         "SELECT pg_advisory_xact_lock(hashtext(%s))",
         (f"identity-room:{clean_room_id}",),

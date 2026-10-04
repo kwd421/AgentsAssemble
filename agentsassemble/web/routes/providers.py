@@ -139,7 +139,7 @@ def register_provider_routes(
             }
         )
 
-    @router.post("/api/live-agent-create/login")
+    @router.post("/api/providers/login")
     def provider_login(ctx: RequestContext) -> None:
         if not is_local_operator(ctx):
             ctx.send_error(

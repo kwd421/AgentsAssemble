@@ -1,7 +1,8 @@
 # AgentsAssemble Native Clients
 
-The Tauri 2 desktop application opens immediately and starts its bundled local
-room runtime in the background. There is no connection-mode chooser. Local use
+The Tauri 2 desktop application starts its bundled local room runtime before
+showing the main window, then opens directly on the login or room UI. There is
+no separate local-engine loading screen or connection-mode chooser. Local use
 and hosting are the same room state: the room remains local until its operator
 explicitly starts public access from the room UI, and returns to local-only when
 public access is stopped.
@@ -14,10 +15,9 @@ make desktop-dev
 ```
 
 `desktop-dev` builds the React application, packages the Python room runtime,
-and opens the room cache plus startup progress screen. Cached local and remote
-room summaries appear before the local runtime is ready; unavailable remote
-rooms remain visible as disconnected instead of being deleted by the local
-server directory refresh. The local runtime stores its rooms and
+and opens the main window after the runtime is ready. Unavailable remote rooms
+remain visible as disconnected instead of being deleted by the local server
+directory refresh. The local runtime stores its rooms and
 identity data below the operating system's application-data directory. A
 runtime started by the desktop application is its child and stops when the
 application exits. An already-running valid AgentsAssemble service on

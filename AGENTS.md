@@ -27,6 +27,31 @@ Documentation precedence:
 4. Reports and research as evidence, not authority.
 5. Legacy documents only for the legacy path being changed.
 
+Active document roles:
+
+- `docs/product/CURRENT_SYSTEM.md` owns current product and architecture.
+- `docs/roadmap.md` is the sole active product roadmap.
+- `docs/product/FRONTEND_FEATURE_MATRIX.md` owns current frontend inventory and
+  verification evidence.
+- `docs/product/CODEBASE_MAP.json` is the generated agent-oriented structural
+  index; `CODEBASE_MAP.html` is its human interactive view, and
+  `PACKAGE_MAP.md` is the generated package inventory. Use them for broad
+  orientation, ownership, dependency, and hotspot discovery, then verify the
+  target behavior in the owning implementation and tests.
+- `docs/plans/` contains narrow execution plans; `docs/reports/` and audit
+  folders contain evidence, not implementation authority.
+- Documents marked legacy, historical, or superseded are context only.
+
+Do not create another roadmap, master plan, or dated improvement roadmap. Add
+future product direction to `docs/roadmap.md`; put current facts in the owning
+current document and bounded execution steps in a narrow plan.
+
+The codebase maps are deterministic generated artifacts and use no model or API
+tokens. Before finishing mapped source or package-structure changes, run
+`make codebase-map-check`; when it reports drift, run `make codebase-map`,
+review the generated diff, and rerun the check. Do not hand-edit generated map
+outputs.
+
 If a current document disagrees with code or another current document, verify
 the behavior and reconcile the conflict instead of silently choosing the most
 convenient source.
@@ -151,6 +176,26 @@ Treat these cross-layer boundaries as one contract, not as independent copies:
 - Provider transcript parsers are provider protocol adapters. Keep their schema
   handling in the provider-specific transcript module and preserve current-turn
   binding, partial-record handling, and no-history-replay behavior.
+
+### Harness And Room-Tool Boundaries
+
+- `builtin`, `codex`, `claude`, `opencode`, and `pi` share the server-owned Agent
+  Session lifecycle, not an identical native capability set. Read
+  `agentsassemble/providers/harness_registry.py` and the closest adapter before
+  changing discovery, controls, activity, approvals, resume, or compaction.
+- Canonical room semantics belong to room commands and RoomPortal. Internal
+  assignment delivery, an external connector's blocking `room_wait_next`, and a
+  provider-native wake mechanism may differ without becoming separate room
+  contracts.
+- Keep room participation tools separate from coordinator-only assignment and
+  tabletop/orchestration tools. Do not expose private controls merely to make
+  internal and external tool lists identical.
+- Keep provider-native filesystem, command, web, approval, and choice tools
+  behind the provider adapter and session permission policy. They are not
+  canonical room tools and must not gain room authority implicitly.
+- Missing capabilities fail closed and remain visible in registry/UI metadata.
+  Do not emulate structured provider events through PTY scraping, prompt wording,
+  silent model substitution, or implicit final publication.
 
 Verify changes through the full boundary they affect. A room-event field needs
 backend projection and frontend projection evidence; a provider publication
@@ -398,11 +443,14 @@ When reporting work, separate:
 - What remains unverified or blocked.
 - What commit, if any, records the work.
 
-## Starting A New Project Or Session
+## Starting A New Task Or Handoff
 
-When starting a new project or handing work to a new agent/session, provide a short startup brief rather than relying on repository files alone.
+When starting a new task or handing work to another agent/session, provide a
+short startup brief rather than relying on repository files alone.
 
-Use the roadmap as product direction and priority guidance, not as permission to implement everything listed there.
+Use `docs/roadmap.md` as product direction and priority guidance, not as
+permission to implement everything listed there. Do not create a task-specific
+roadmap to restate it.
 
 The brief should include:
 

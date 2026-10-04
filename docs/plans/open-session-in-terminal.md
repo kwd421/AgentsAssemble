@@ -1,5 +1,8 @@
 # Open this agent's session in a terminal (future)
 
+Status: merged into the unified Agent Session workspace direction in
+`docs/roadmap.md`; not scheduled and not implementation authority
+
 Host idea, 2026-08-01. Not scheduled — recorded so the shape is not lost.
 
 ## What
@@ -28,9 +31,9 @@ and every subscription CLI can resume by id:
 | cursor | `--resume` |
 | opencode | session id in its own store |
 
-`docs/…/자연스러운 에이전트 대화` argues the room is a venue, not a jailer. This
-is the same idea in the other direction: the human steps into the agent's own
-session rather than watching it through the room.
+An earlier conversation-design note described the room as a venue rather than a
+jailer. This is the same idea in the other direction: the human steps into the
+agent's own session rather than watching it through the room.
 
 ## Notes for whoever builds it
 

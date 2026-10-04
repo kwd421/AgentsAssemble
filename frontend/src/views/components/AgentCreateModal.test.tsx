@@ -11,7 +11,7 @@ const apiMocks = vi.hoisted(() => ({
   fetchProviderCredentialStatus: vi.fn(),
   refreshProviderCatalog: vi.fn(),
   setProviderCredential: vi.fn(),
-  startFrontendLiveAgentLogin: vi.fn(),
+  startProviderLogin: vi.fn(),
 }));
 
 vi.mock("../../api", async (importOriginal) => ({
@@ -21,7 +21,7 @@ vi.mock("../../api", async (importOriginal) => ({
   fetchProviderCredentialStatus: apiMocks.fetchProviderCredentialStatus,
   refreshProviderCatalog: apiMocks.refreshProviderCatalog,
   setProviderCredential: apiMocks.setProviderCredential,
-  startFrontendLiveAgentLogin: apiMocks.startFrontendLiveAgentLogin,
+  startProviderLogin: apiMocks.startProviderLogin,
 }));
 
 afterEach(cleanup);
@@ -49,8 +49,8 @@ beforeEach(() => {
     configured: true,
     source: "keyring",
   });
-  apiMocks.startFrontendLiveAgentLogin.mockReset();
-  apiMocks.startFrontendLiveAgentLogin.mockResolvedValue({
+  apiMocks.startProviderLogin.mockReset();
+  apiMocks.startProviderLogin.mockResolvedValue({
     status: "authenticated",
     provider_id: "cursor",
     message: "Cursor 로그인이 완료됐습니다.",
@@ -350,7 +350,7 @@ describe("AgentCreateModal", () => {
     await userEvent.click(screen.getByRole("listitem", { name: "Cursor" }));
     await userEvent.click(screen.getByRole("button", { name: "Cursor 로그인" }));
 
-    expect(apiMocks.startFrontendLiveAgentLogin).toHaveBeenCalledWith("cursor");
+    expect(apiMocks.startProviderLogin).toHaveBeenCalledWith("cursor");
     expect(screen.getByText("Cursor 로그인이 완료됐습니다.")).toBeTruthy();
     expect(
       screen.queryByRole("button", { name: "로그인 완료 후 다시 확인" })

@@ -130,16 +130,39 @@ class VoteSummaryTests(unittest.TestCase):
             vote_choice="피자",
         )
 
-        summary = vote_summary([poll, *casts, recast], vote_id)
+        summary = vote_summary(
+            [poll, *casts, recast],
+            vote_id,
+            viewer_participant_id="u-cheolsu",
+        )
 
         self.assertEqual(summary["question"], "야식?")
         self.assertEqual(summary["tallies"], {"치킨": 0, "피자": 3})
         self.assertEqual(summary["total_votes"], 3)
-        self.assertEqual(
-            summary["voter_ids"]["피자"],
-            ["u-cheolsu", "u-younghee", "agent-bot"],
+        self.assertEqual(summary["own_choice"], "피자")
+        self.assertNotIn("voters", summary)
+        self.assertNotIn("voter_ids", summary)
+
+    def test_latest_withdrawal_removes_only_that_participants_ballot(self) -> None:
+        poll, casts, vote_id = self._poll_and_casts()
+        withdrawal = _canonical_event(
+            event_id="withdraw-1",
+            seq=5,
+            kind="vote_withdraw",
+            participant_id="u-cheolsu",
+            display_name="철수",
+            vote_id=vote_id,
         )
-        self.assertIn("철수", summary["voters"]["피자"])
+
+        summary = vote_summary(
+            [poll, *casts, withdrawal],
+            vote_id,
+            viewer_participant_id="u-cheolsu",
+        )
+
+        self.assertEqual(summary["tallies"], {"치킨": 0, "피자": 2})
+        self.assertEqual(summary["total_votes"], 2)
+        self.assertEqual(summary["own_choice"], "")
 
     def test_same_display_names_remain_distinct_voters(self) -> None:
         poll, _casts, vote_id = self._poll_and_casts()
@@ -165,11 +188,10 @@ class VoteSummaryTests(unittest.TestCase):
         summary = vote_summary([poll, first, second], vote_id)
 
         self.assertEqual(summary["total_votes"], 2)
-        self.assertEqual(summary["voters"], {"치킨": ["민지"], "피자": ["민지"]})
-        self.assertEqual(
-            summary["voter_ids"],
-            {"치킨": ["guest-a"], "피자": ["guest-b"]},
-        )
+        self.assertEqual(summary["tallies"], {"치킨": 1, "피자": 1})
+        self.assertNotIn("민지", repr(summary))
+        self.assertNotIn("guest-a", repr(summary))
+        self.assertNotIn("guest-b", repr(summary))
 
     def test_ballot_without_stable_participant_id_is_not_counted(self) -> None:
         poll, _casts, vote_id = self._poll_and_casts()
@@ -258,14 +280,16 @@ class RetainedVoteCompatibilityTests(unittest.TestCase):
             },
         ]
 
-        summary = legacy_vote_summary(events, "legacy-vote")
+        summary = legacy_vote_summary(
+            events,
+            "legacy-vote",
+            viewer_participant_id="legacy-name:민지",
+        )
 
         self.assertEqual(summary["tallies"], {"치킨": 0, "피자": 1})
-        self.assertEqual(summary["voters"]["피자"], ["민지"])
-        self.assertEqual(
-            summary["voter_ids"]["피자"],
-            ["legacy-name:민지"],
-        )
+        self.assertEqual(summary["own_choice"], "피자")
+        self.assertNotIn("voters", summary)
+        self.assertNotIn("voter_ids", summary)
 
 
 if __name__ == "__main__":

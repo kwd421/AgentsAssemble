@@ -6,18 +6,21 @@ from http import HTTPStatus
 
 from agentsassemble.application.gui import GuiApplicationServices
 from agentsassemble.features.mafia.routes import register_mafia_routes
+from agentsassemble.features.message_pins.routes import register_message_pin_routes
+from agentsassemble.features.message_search.routes import register_message_search_routes
 from agentsassemble.features.side_chat.routes import register_side_chat_routes
 from agentsassemble.features.social.routes import register_room_friend_profile_routes
 from agentsassemble.identity.google import GoogleAccountLoginService
 from agentsassemble.web.router import RequestContext, Router
 from agentsassemble.web.routes.attachments import register_attachment_routes
+from agentsassemble.web.routes.central_login_callback import register_central_login_callback_routes
 from agentsassemble.web.routes.accounts import register_account_routes
 from agentsassemble.web.routes.identity_recovery import register_identity_recovery_routes
 from agentsassemble.web.routes.observability import register_observability_routes
 from agentsassemble.web.routes.personas import register_persona_routes
 from agentsassemble.web.routes.providers import register_provider_routes
 from agentsassemble.web.routes.public_invite import register_public_invite_admin_routes
-from agentsassemble.web.routes.retired import register_retired_legacy_routes
+from agentsassemble.web.routes.room_composition import register_room_routes
 from agentsassemble.web.routes.room_creation import register_room_creation_routes
 from agentsassemble.web.routes.room_settings import register_room_settings_routes
 from agentsassemble.web.routes.runtime import register_runtime_routes
@@ -33,9 +36,6 @@ _HANDLER_AUTHORIZED_MUTATIONS = frozenset(
     {
         "/api/account/google",
         "/api/account/google/challenge",
-        "/api/account/google/handoff/complete",
-        "/api/account/google/handoff/configure",
-        "/api/account/google/handoff/start",
         "/api/agent-sessions",
         "/api/agent-sessions/resume",
         "/api/attachments",
@@ -58,6 +58,7 @@ _HANDLER_AUTHORIZED_MUTATIONS = frozenset(
         "/api/public-invite/tunnel/start",
         "/api/public-invite/tunnel/stop",
         "/api/room/channel-say",
+        "/api/room-pins",
         "/api/room/voice/join",
         "/api/room/voice/leave",
         "/api/room-channels",
@@ -78,6 +79,7 @@ _HANDLER_AUTHORIZED_MUTATIONS = frozenset(
         "/api/rooms/archive",
         "/api/rooms/close",
         "/api/runtime/rolling-restart",
+        "/api/side-chat",
         "/api/user-profile",
         "/api/ws-ticket",
     }
@@ -110,9 +112,7 @@ def register_current_gui_routes(
     services: GuiApplicationServices,
     provider_login_service: object,
     google_account_service: GoogleAccountLoginService,
-    post_direct_dm: Callable[[RequestContext, dict[str, object]], dict[str, object]],
     read_operation_payload: Callable[..., dict[str, object] | None],
-    record_operation: Callable[..., object],
 ) -> None:
     register_ws_ticket_route(
         route_table,
@@ -120,21 +120,24 @@ def register_current_gui_routes(
         is_local_operator=lambda ctx: ctx.is_local_operator(),
     )
     register_attachment_routes(route_table)
+    register_central_login_callback_routes(route_table)
     register_account_routes(route_table, google=google_account_service)
     register_identity_recovery_routes(route_table)
     register_persona_routes(
         route_table,
         is_local_operator=lambda ctx: ctx.is_local_operator(),
     )
-    register_retired_legacy_routes(route_table)
     register_room_creation_routes(route_table)
+    register_room_routes(route_table)
+    register_message_pin_routes(route_table)
+    register_message_search_routes(route_table)
     register_room_settings_routes(route_table)
     register_runtime_routes(
         route_table,
         room_repository=services.room_repository,
     )
     register_side_chat_routes(route_table)
-    register_room_friend_profile_routes(route_table, post_direct_dm=post_direct_dm)
+    register_room_friend_profile_routes(route_table)
 
     def provider_credentials_allowed(ctx: RequestContext) -> bool:
         if ctx.is_local_operator():
@@ -162,11 +165,7 @@ def register_current_gui_routes(
         is_local_operator=lambda ctx: ctx.is_local_operator(),
         local_server_url=lambda ctx: ctx.local_server_url(),
     )
-    register_observability_routes(
-        route_table,
-        processes=services.process_supervisor,
-        admission_projection=services.legacy_admission_projection,
-    )
+    register_observability_routes(route_table)
     register_mafia_routes(route_table, read_operation_payload=read_operation_payload)
 
 

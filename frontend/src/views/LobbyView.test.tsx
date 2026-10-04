@@ -92,6 +92,109 @@ function voteResult(id: string, voter: string, choice: string): LobbyEvent {
 }
 
 describe("LobbyView active provider turn", () => {
+  it("finds a loaded channel message and opens that result", async () => {
+    const scrollIntoView = vi.fn();
+    Element.prototype.scrollIntoView = scrollIntoView;
+    renderLobby(
+      [
+        {
+          id: "message-search-target",
+          kind: "message",
+          name: "Agent B",
+          message: "배포 전에 카나리아 검증을 진행합니다",
+          side: "other",
+          created_at: "2026-07-26T01:00:00Z",
+          actor_id: "agent-b",
+          flow_meeting_id: "room-a",
+          flow_action: "message_final",
+        },
+      ],
+      []
+    );
+
+    fireEvent.change(screen.getByRole("searchbox", { name: "general 검색" }), {
+      target: { value: "카나리아" },
+    });
+    fireEvent.click(
+      await screen.findByRole("button", {
+        name: /Agent B.*배포 전에 카나리아 검증을 진행합니다/,
+      })
+    );
+
+    expect(scrollIntoView).toHaveBeenCalledWith({ block: "center" });
+  });
+
+  it("opens current-channel search with Ctrl+F and selects a result from the keyboard", async () => {
+    const scrollIntoView = vi.fn();
+    Element.prototype.scrollIntoView = scrollIntoView;
+    renderLobby(
+      [
+        {
+          id: "keyboard-search-target",
+          kind: "message",
+          name: "Agent B",
+          message: "릴리스 전 회귀 검증",
+          side: "other",
+          created_at: "2026-07-26T01:00:00Z",
+          actor_id: "agent-b",
+          flow_meeting_id: "room-a",
+          flow_action: "message_final",
+        },
+      ],
+      []
+    );
+
+    fireEvent.keyDown(window, { key: "f", ctrlKey: true });
+    const popupSearch = await screen.findByRole("searchbox", { name: "general 검색어" });
+    fireEvent.change(popupSearch, { target: { value: "회귀" } });
+    fireEvent.keyDown(popupSearch, { key: "ArrowDown" });
+    fireEvent.keyDown(popupSearch, { key: "Enter" });
+
+    expect(scrollIntoView).toHaveBeenCalledWith({ block: "center" });
+  });
+
+  it("jumps to the first unread message and marks through the current latest without moving", () => {
+    const scrollIntoView = vi.fn();
+    Element.prototype.scrollIntoView = scrollIntoView;
+    const onMarkRead = vi.fn();
+    render(
+      <LobbyView
+        activeRoom={room}
+        agents={[]}
+        canonicalEvents={[
+          {
+            id: "read-message",
+            seq: 10,
+            kind: "message",
+            name: "Agent A",
+            message: "이미 읽은 메시지",
+            side: "other",
+            created_at: "2026-07-26T01:00:00Z",
+          },
+          {
+            id: "unread-message",
+            seq: 11,
+            kind: "message",
+            name: "Agent B",
+            message: "새 메시지",
+            side: "other",
+            created_at: "2026-07-26T01:01:00Z",
+          },
+        ]}
+        canonicalHasMoreHistory={false}
+        headerActions={{ lastReadCursor: "seq:10", onMarkRead }}
+      />
+    );
+
+    const unread = screen.getByRole("region", { name: "안 읽은 메시지" });
+    fireEvent.click(unread.querySelector("button")!);
+    expect(scrollIntoView).toHaveBeenCalledWith({ block: "center" });
+
+    fireEvent.click(screen.getByRole("button", { name: "현재까지 읽음으로 표시" }));
+    expect(onMarkRead).toHaveBeenCalledWith("seq:11");
+    expect(scrollIntoView).toHaveBeenCalledTimes(1);
+  });
+
   it("keeps input status above expandable live thought activity", async () => {
     renderLobby([thought("Bash로 테스트를 실행 중")], [indicator]);
 
@@ -309,7 +412,7 @@ describe("LobbyView active provider turn", () => {
 });
 
 describe("LobbyView vote results", () => {
-  it("shows canonical ballots as centered system separators without message controls", async () => {
+  it("does not reveal individual ballot activity from retained timeline state", () => {
     const { container } = renderLobby(
       [
         voteResult("ballot-a", "민지", "남쪽"),
@@ -318,15 +421,11 @@ describe("LobbyView vote results", () => {
       []
     );
 
-    expect(await screen.findByText("🗳️ 민지의 선택: 「남쪽」")).toBeTruthy();
-    expect(screen.getByText("🗳️ 준호의 선택: 「북쪽」")).toBeTruthy();
-
     const firstRow = container.querySelector('[data-room-event-id="ballot-a"]');
     const secondRow = container.querySelector('[data-room-event-id="ballot-b"]');
-    expect(firstRow?.classList.contains("dc-system-divider")).toBe(true);
-    expect(secondRow?.classList.contains("dc-system-divider")).toBe(true);
-    expect(firstRow?.querySelector(".dc-message-avatar")).toBeNull();
-    expect(firstRow?.querySelector(".dc-message-actions")).toBeNull();
+    expect(firstRow).toBeNull();
+    expect(secondRow).toBeNull();
+    expect(screen.queryByText(/민지|준호/)).toBeNull();
   });
 });
 
@@ -486,6 +585,51 @@ describe("LobbyView history loading", () => {
 
     await new Promise((resolve) => window.setTimeout(resolve, 100));
     expect(loadCanonicalHistory).toHaveBeenCalledTimes(1);
+  });
+
+  it("keeps an older-history failure visible and lets the reader retry it", async () => {
+    const loadCanonicalHistory = vi.fn()
+      .mockRejectedValueOnce(new Error("history unavailable"))
+      .mockResolvedValueOnce({
+        loadedCount: 10,
+        oldestSeq: 1,
+        hasMoreBefore: false,
+      });
+    const messages: LobbyEvent[] = Array.from({ length: 30 }, (_, index) => ({
+      id: `retry-message-${index}`,
+      kind: "message",
+      name: "Agent A",
+      message: `retry message ${index}`,
+      side: "other",
+      created_at: `2026-07-26T01:00:${String(index).padStart(2, "0")}Z`,
+      actor_id: "agent-a",
+      flow_meeting_id: "room-a",
+      flow_action: "message_final",
+    }));
+    const { container } = render(
+      <LobbyView
+        activeRoom={room}
+        agents={[]}
+        canonicalEvents={messages}
+        canonicalOldestSeq={31}
+        canonicalHasMoreHistory
+        loadCanonicalHistory={loadCanonicalHistory}
+      />
+    );
+    const feed = container.querySelector<HTMLDivElement>(".chat-scroll");
+    expect(feed).toBeTruthy();
+    Object.defineProperties(feed!, {
+      clientHeight: { configurable: true, value: 600 },
+      scrollHeight: { configurable: true, value: 2_000 },
+      scrollTop: { configurable: true, writable: true, value: 0 },
+    });
+
+    await new Promise((resolve) => window.setTimeout(resolve, 75));
+    fireEvent.scroll(feed!);
+
+    expect(await screen.findByRole("alert")).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: "다시 시도" }));
+    await waitFor(() => expect(loadCanonicalHistory).toHaveBeenCalledTimes(2));
   });
 
   it("starts the new room backfill while the previous room request is still pending", async () => {

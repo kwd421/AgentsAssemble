@@ -1,0 +1,27 @@
+.dc-channel-message-author-line {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.dc-channel-message-pin {
+  display: inline-grid;
+  place-items: center;
+  width: 24px;
+  height: 24px;
+  border-radius: 5px;
+  color: var(--color-text-muted);
+  opacity: 0;
+}
+
+.dc-channel-message:hover .dc-channel-message-pin,
+.dc-channel-message:focus-within .dc-channel-message-pin,
+.dc-channel-message-pin[data-pinned="true"] {
+  opacity: 1;
+}
+
+.dc-channel-message-pin:hover,
+.dc-channel-message-pin[data-pinned="true"] {
+  color: var(--color-accent);
+  background: rgba(255, 255, 255, 0.08);
+}

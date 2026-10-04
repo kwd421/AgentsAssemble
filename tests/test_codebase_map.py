@@ -392,6 +392,27 @@ class CodebaseMapOutputTests(unittest.TestCase):
             self.assertFalse(changed[HTML_RELATIVE_PATH])
             self.assertEqual(stale_generated_outputs(root, outputs), [])
 
+    def test_matching_fingerprint_reuses_timestamp_when_embedded_facts_drift(self) -> None:
+        existing = {
+            "generated_at": "2026-07-01T00:00:00Z",
+            "fingerprint": "same-fingerprint",
+            "stats": {"backend_modules": 2},
+        }
+        drifted_html = {
+            "generated_at": "2026-07-01T00:00:00Z",
+            "fingerprint": "same-fingerprint",
+            "stats": {"backend_modules": 2, "html_only": True},
+        }
+        fresh = {
+            **existing,
+            "generated_at": "2026-07-27T00:00:00Z",
+        }
+
+        prepared = prepare_generated_map(fresh, [existing, drifted_html])
+
+        self.assertEqual(prepared["generated_at"], "2026-07-01T00:00:00Z")
+        self.assertEqual(prepared["stats"], existing["stats"])
+
     def test_conflicting_valid_timestamps_use_the_fresh_timestamp(self) -> None:
         existing = {
             "generated_at": "2026-07-01T00:00:00Z",

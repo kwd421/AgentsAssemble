@@ -31,6 +31,14 @@ def ensure_account_schema(connection: sqlite3.Connection) -> None:
                account_id TEXT NOT NULL UNIQUE
                    REFERENCES accounts(account_id) ON DELETE CASCADE,
                linked_at TEXT NOT NULL
+           );
+           UPDATE accounts
+           SET display_name = '', email = '', avatar_image_url = ''
+           WHERE account_id IN (
+               SELECT account_id FROM external_account_identities
+               WHERE provider = 'google'
+           ) AND (
+               display_name != '' OR email != '' OR avatar_image_url != ''
            );"""
     )
 

@@ -1,7 +1,11 @@
 # Spec: Rooms as DB-backed server objects (owner-scoped)
 
-Status: ready to implement. Author hand-off for Codex. Self-contained — read the
-referenced files before editing; do not assume anything not stated here.
+Status: implemented historical specification; do not execute as a current plan
+
+Server-owned rooms and directory hydration are part of the current product.
+Verify their current contract in `docs/product/CURRENT_SYSTEM.md`, the owning
+repository/directory code, and its tests. The tasks below preserve the original
+design history only.
 
 ## Why (problem this solves)
 

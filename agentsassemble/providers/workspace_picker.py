@@ -61,7 +61,15 @@ def _macos_command() -> list[str]:
     return [
         executable,
         "-e",
-        'POSIX path of (choose folder with prompt "AgentsAssemble 작업 폴더 선택")',
+        'tell application "Finder"',
+        "-e",
+        "activate",
+        "-e",
+        'set selectedFolder to choose folder with prompt "AgentsAssemble 작업 폴더 선택"',
+        "-e",
+        "return POSIX path of selectedFolder",
+        "-e",
+        "end tell",
     ]
 
 

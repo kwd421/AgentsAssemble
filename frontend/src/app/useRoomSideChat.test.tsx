@@ -1,6 +1,6 @@
 import { act, renderHook, waitFor } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import type { LobbyEvent, SideChatEvent } from "../api";
+import type { SideChatEvent } from "../api";
 import { useRoomSideChat } from "./useRoomSideChat";
 
 const apiMocks = vi.hoisted(() => ({
@@ -22,17 +22,6 @@ function makeEvent(id: string, overrides: Partial<SideChatEvent> = {}): SideChat
     created_at: `2026-07-12T00:00:0${id.length}Z`,
     channel: "side_chat",
     ...overrides,
-  };
-}
-
-function makeLobbyEvent(id: string): LobbyEvent {
-  return {
-    id,
-    kind: "message",
-    name: "Room user",
-    message: `Room message ${id}`,
-    side: "mine",
-    created_at: "2026-07-12T00:00:00Z",
   };
 }
 
@@ -76,21 +65,14 @@ describe("useRoomSideChat", () => {
     expect(result.current.events).toEqual([]);
   });
 
-  it("keeps general side chat separate while projecting the selected lobby thread", async () => {
-    const roomMessage = makeEvent("room-message");
-    const threadReply = makeEvent("thread-reply", { thread_source_event_id: "source-1" });
-    apiMocks.fetchSideChat.mockResolvedValueOnce({ events: [roomMessage, threadReply] });
+  it("exposes every retained side-chat event in the independent feed", async () => {
+    const first = makeEvent("first");
+    const second = makeEvent("second");
+    apiMocks.fetchSideChat.mockResolvedValueOnce({ events: [first, second] });
     const { result } = renderHook(() => useRoomSideChat({ meetingId: "room-1" }));
     await waitFor(() => expect(result.current.events).toHaveLength(2));
 
-    act(() => result.current.selectThread(makeLobbyEvent("source-1"), "general"));
-
-    expect(result.current.selectedThread).toMatchObject({
-      sourceEventId: "source-1",
-      channelLabel: "general",
-    });
-    expect(result.current.sideChatEvents.map((event) => event.id)).toEqual(["room-message"]);
-    expect(result.current.threadEvents.map((event) => event.id)).toEqual(["thread-reply"]);
+    expect(result.current.sideChatEvents.map((event) => event.id)).toEqual(["first", "second"]);
   });
 
   it("ignores a stale response after switching rooms", async () => {
@@ -119,7 +101,7 @@ describe("useRoomSideChat", () => {
     expect(hook.result.current.events.map((event) => event.id)).toEqual(["current"]);
   });
 
-  it("resets events, errors, and the selected thread when the room changes", async () => {
+  it("resets events and errors when the room changes", async () => {
     apiMocks.fetchSideChat
       .mockResolvedValueOnce({ events: [makeEvent("room-1-event")] })
       .mockResolvedValueOnce({ events: [] });
@@ -129,14 +111,10 @@ describe("useRoomSideChat", () => {
     );
     await waitFor(() => expect(hook.result.current.events).toHaveLength(1));
 
-    act(() => hook.result.current.selectThread(makeLobbyEvent("source-1"), "general"));
-    expect(hook.result.current.selectedThread).toMatchObject({ sourceEventId: "source-1" });
-
     hook.rerender({ meetingId: "room-2" });
 
     expect(hook.result.current.events).toEqual([]);
     expect(hook.result.current.error).toBeNull();
-    expect(hook.result.current.selectedThread).toBeNull();
     await waitFor(() => expect(apiMocks.fetchSideChat).toHaveBeenLastCalledWith("room-2"));
   });
 

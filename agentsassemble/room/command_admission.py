@@ -26,7 +26,9 @@ _BRIDGE_ONLY_ACTIONS = frozenset(
         "provider.request.closed",
     }
 )
-_BROWSER_ONLY_ACTIONS = frozenset({"room.history", "room.vote.summary"})
+_BROWSER_ONLY_ACTIONS = frozenset(
+    {"room.history", "room.vote.summary", "message.edit", "message.delete"}
+)
 _CAPABILITY_BY_ACTION = {
     "bridge.start_failed": "bridge.publish",
     "room.result.publish": "bridge.publish",
@@ -45,6 +47,8 @@ _CAPABILITY_BY_ACTION = {
     "room.delete": "room.delete",
     "room.settings.update": "room.manage",
     "message.send": "message.send",
+    "message.edit": "message.modify",
+    "message.delete": "message.modify",
     "agent.create": "agent.control",
     "agent.readd": "agent.control",
     "agent.configure": "agent.control",

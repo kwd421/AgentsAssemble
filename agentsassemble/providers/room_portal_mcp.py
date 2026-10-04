@@ -28,6 +28,20 @@ def serve_room_portal_mcp(root: str | Path) -> None:
         return portal.read_discussion()
 
     @server.tool()
+    def search_messages(
+        query: str,
+        channel_id: str = "all",
+        cursor: str = "",
+    ) -> dict[str, object]:
+        """Search complete readable room history; pass the returned cursor for the next page."""
+        return portal.search_messages(query, channel_id=channel_id, cursor=cursor)
+
+    @server.tool()
+    def read_message_context(channel_id: str, event_id: str) -> dict[str, object]:
+        """Read bounded context around one result from search_messages."""
+        return portal.read_message_context(channel_id, event_id)
+
+    @server.tool()
     def list_participants() -> list[dict[str, str]]:
         """List the people and agents currently visible in the shared room."""
         return portal.list_participants()
@@ -60,6 +74,16 @@ def serve_room_portal_mcp(root: str | Path) -> None:
     def cast_vote(vote_id: str, choice: str) -> dict[str, object]:
         """Cast or replace this agent's ballot in an existing vote."""
         return portal.cast_vote(vote_id, choice)
+
+    @server.tool()
+    def withdraw_vote(vote_id: str) -> dict[str, object]:
+        """Withdraw this agent's current ballot from an existing vote."""
+        return portal.withdraw_vote(vote_id)
+
+    @server.tool()
+    def close_vote(vote_id: str) -> dict[str, object]:
+        """Close a vote created by this Agent Session."""
+        return portal.close_vote(vote_id)
 
     @server.tool()
     def vote_summary(vote_id: str) -> dict[str, object]:

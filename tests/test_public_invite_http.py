@@ -13,7 +13,6 @@ from uuid import uuid4
 from agentsassemble.gui import _make_handler
 from agentsassemble.application.public_invite_runtime import PublicInviteRuntime
 from agentsassemble.application.public_tunnel import PublicTunnelManager
-from agentsassemble.admission.invite import get_public_url, reset_state, set_runtime_host_token, set_runtime_public_url
 from agentsassemble.room_store import RoomStore
 from agentsassemble.web.room_client import WsRoomClient, connect_room_ws_with_ticket
 
@@ -31,15 +30,20 @@ def _json_request(url: str, payload: dict[str, object], headers: dict[str, str] 
 
 class PublicInviteHttpTests(unittest.TestCase):
     def setUp(self):
-        reset_state()
+        self.public_invite = PublicInviteRuntime()
 
     def tearDown(self):
-        reset_state()
+        self.public_invite.clear_public_url()
 
     def _start_server(self, root: Path, *, dist: Path | None = None, tunnel: PublicTunnelManager | None = None):
         server = ThreadingHTTPServer(
             ("127.0.0.1", 0),
-            _make_handler(root, frontend_dist_root=dist, public_tunnel_manager=tunnel),
+            _make_handler(
+                root,
+                frontend_dist_root=dist,
+                public_tunnel_manager=tunnel,
+                public_invite_runtime_override=self.public_invite,
+            ),
         )
         thread = threading.Thread(target=server.serve_forever, daemon=True)
         thread.start()
@@ -81,7 +85,7 @@ class PublicInviteHttpTests(unittest.TestCase):
     def test_external_invite_requires_public_url_and_never_returns_local_join_url(self):
         with tempfile.TemporaryDirectory() as temp_dir:
             root = Path(temp_dir) / "room"
-            set_runtime_host_token("host-secret")
+            self.public_invite.set_host_token("host-secret")
             server = self._start_server(root)
             try:
                 base = f"http://127.0.0.1:{server.server_port}"
@@ -107,8 +111,8 @@ class PublicInviteHttpTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as temp_dir:
             root = Path(temp_dir) / "room"
             RoomStore(root).create_room("friend-room", label="Friend room")
-            set_runtime_host_token("host-secret")
-            set_runtime_public_url("https://shared-room.example.com")
+            self.public_invite.set_host_token("host-secret")
+            self.public_invite.set_public_url("https://shared-room.example.com")
             server = self._start_server(root)
             try:
                 base = f"http://127.0.0.1:{server.server_port}"
@@ -133,8 +137,8 @@ class PublicInviteHttpTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as temp_dir:
             root = Path(temp_dir) / "room"
             RoomStore(root).create_room("friend-room", label="Friend room")
-            set_runtime_host_token("host-secret")
-            set_runtime_public_url("https://shared-room.example.com")
+            self.public_invite.set_host_token("host-secret")
+            self.public_invite.set_public_url("https://shared-room.example.com")
             server = self._start_server(root)
             try:
                 base = f"http://127.0.0.1:{server.server_port}"
@@ -178,8 +182,8 @@ class PublicInviteHttpTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as temp_dir:
             root = Path(temp_dir) / "room"
             RoomStore(root).create_room("friend-room", label="Friend room")
-            set_runtime_host_token("host-secret")
-            set_runtime_public_url("https://shared-room.example.com")
+            self.public_invite.set_host_token("host-secret")
+            self.public_invite.set_public_url("https://shared-room.example.com")
             server = self._start_server(root)
             try:
                 base = f"http://127.0.0.1:{server.server_port}"
@@ -434,7 +438,7 @@ class PublicInviteHttpTests(unittest.TestCase):
     def test_public_url_endpoint_rejects_loopback_urls(self):
         with tempfile.TemporaryDirectory() as temp_dir:
             root = Path(temp_dir) / "room"
-            set_runtime_host_token("host-secret")
+            self.public_invite.set_host_token("host-secret")
             server = self._start_server(root)
             try:
                 base = f"http://127.0.0.1:{server.server_port}"
@@ -553,19 +557,10 @@ class PublicInviteHttpTests(unittest.TestCase):
                         html = response.read().decode("utf-8")
                     self.assertIn("react app", html)
 
-                    with self.assertRaises(HTTPError) as blocked_operator_route:
-                        urlopen(Request(f"{base}/api/lobby", headers=public_headers), timeout=4)
-                    self.addCleanup(blocked_operator_route.exception.close)
-                    self.assertEqual(blocked_operator_route.exception.code, 403)
-
-                    for blocked_path in (
-                        "/api/side-chat",
-                        "/api/room-friends/dm?friend_id=friend%3Aagent",
-                    ):
-                        with self.assertRaises(HTTPError) as blocked_private_get:
-                            urlopen(Request(f"{base}{blocked_path}", headers=public_headers), timeout=4)
-                        self.addCleanup(blocked_private_get.exception.close)
-                        self.assertEqual(blocked_private_get.exception.code, 403)
+                    with self.assertRaises(HTTPError) as blocked_private_get:
+                        urlopen(Request(f"{base}/api/side-chat", headers=public_headers), timeout=4)
+                    self.addCleanup(blocked_private_get.exception.close)
+                    self.assertEqual(blocked_private_get.exception.code, 403)
 
                     with urlopen(
                         _json_request(
@@ -596,30 +591,17 @@ class PublicInviteHttpTests(unittest.TestCase):
                     self.addCleanup(unauthenticated_ticket.exception.close)
                     self.assertEqual(unauthenticated_ticket.exception.code, 401)
 
-                    with self.assertRaises(HTTPError) as blocked_lobby_post:
+                    with self.assertRaises(HTTPError) as blocked_private_post:
                         urlopen(
                             _json_request(
-                                f"{base}/api/lobby",
-                                {"message": "host path from guest"},
+                                f"{base}/api/side-chat",
+                                {"message": "private path from public guest"},
                                 public_headers,
                             ),
                             timeout=4,
                         )
-                    self.addCleanup(blocked_lobby_post.exception.close)
-                    self.assertEqual(blocked_lobby_post.exception.code, 403)
-
-                    for blocked_path in ("/api/side-chat", "/api/room-friends/dm"):
-                        with self.assertRaises(HTTPError) as blocked_private_post:
-                            urlopen(
-                                _json_request(
-                                    f"{base}{blocked_path}",
-                                    {"message": "private path from public guest"},
-                                    public_headers,
-                                ),
-                                timeout=4,
-                            )
-                        self.addCleanup(blocked_private_post.exception.close)
-                        self.assertEqual(blocked_private_post.exception.code, 403)
+                    self.addCleanup(blocked_private_post.exception.close)
+                    self.assertEqual(blocked_private_post.exception.code, 403)
 
                     ticket, _headers = self._ws_ticket(
                         base,
@@ -742,8 +724,8 @@ class PublicInviteHttpTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as temp_dir:
             root = Path(temp_dir) / "room"
             RoomStore(root).create_room("friend-room", label="Friend room")
-            set_runtime_host_token("host-secret")
-            set_runtime_public_url("https://shared-room.example.com")
+            self.public_invite.set_host_token("host-secret")
+            self.public_invite.set_public_url("https://shared-room.example.com")
             server = self._start_server(root)
             try:
                 base = f"http://127.0.0.1:{server.server_port}"
@@ -834,7 +816,7 @@ class PublicInviteHttpTests(unittest.TestCase):
             self.assertNotIn(session_payload["session_token"], store_text)
             self.assertNotIn(invite["invite_token"], store_text)
 
-            reset_state()
+            self.public_invite = PublicInviteRuntime()
             restarted = self._start_server(root)
             try:
                 restarted_base = f"http://127.0.0.1:{restarted.server_port}"
@@ -867,8 +849,8 @@ class PublicInviteHttpTests(unittest.TestCase):
             store = RoomStore(root)
             store.create_room("guest-room", label="Guest room")
             store.create_room("private-room", label="Private room")
-            set_runtime_host_token("host-secret")
-            set_runtime_public_url("https://shared-room.example.com")
+            self.public_invite.set_host_token("host-secret")
+            self.public_invite.set_public_url("https://shared-room.example.com")
             server = self._start_server(root)
             try:
                 base = f"http://127.0.0.1:{server.server_port}"
@@ -997,9 +979,9 @@ class PublicInviteHttpTests(unittest.TestCase):
             self.assertEqual(global_write.exception.code, 403)
             self.assertEqual(cross_room_codes, [403, 403, 403])
 
-            reset_state()
-            set_runtime_host_token("host-secret")
-            set_runtime_public_url("https://shared-room.example.com")
+            self.public_invite = PublicInviteRuntime()
+            self.public_invite.set_host_token("host-secret")
+            self.public_invite.set_public_url("https://shared-room.example.com")
             restarted = self._start_server(root)
             try:
                 restarted_base = (
@@ -1168,7 +1150,11 @@ class PublicInviteHttpTests(unittest.TestCase):
         with patch.dict(os.environ, {"AGENTSASSEMBLE_HOST_TOKEN": "env-secret"}, clear=True):
             with tempfile.TemporaryDirectory() as temp_dir:
                 root = Path(temp_dir)
-                server = ThreadingHTTPServer(("127.0.0.1", 0), _make_handler(root))
+                runtime = PublicInviteRuntime()
+                server = ThreadingHTTPServer(
+                    ("127.0.0.1", 0),
+                    _make_handler(root, public_invite_runtime_override=runtime),
+                )
                 thread = threading.Thread(target=server.serve_forever, daemon=True)
                 thread.start()
                 try:
@@ -1199,8 +1185,11 @@ class PublicInviteHttpTests(unittest.TestCase):
             os.environ.pop("AGENTSASSEMBLE_PUBLIC_URL", None)
             with tempfile.TemporaryDirectory() as temp_dir:
                 root = Path(temp_dir)
-                set_runtime_host_token("lost-runtime-token")
-                server = ThreadingHTTPServer(("127.0.0.1", 0), _make_handler(root))
+                self.public_invite.set_host_token("lost-runtime-token")
+                server = ThreadingHTTPServer(
+                    ("127.0.0.1", 0),
+                    _make_handler(root, public_invite_runtime_override=self.public_invite),
+                )
                 thread = threading.Thread(target=server.serve_forever, daemon=True)
                 thread.start()
                 try:

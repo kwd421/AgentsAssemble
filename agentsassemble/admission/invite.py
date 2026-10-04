@@ -339,6 +339,8 @@ def join_room_with_invite(
         client_type=invite_client_type,
         provider_kind=invite_provider_kind,
         owner_id=created_by_user_id,
+        principal_user_id=str((stable_user or {}).get("user_id") or ""),
+        principal_is_operator=bool(stable_user and stable_user.get("is_operator")),
     )
 
     return {
@@ -492,6 +494,8 @@ def _issue_session_token(
     client_type: str = "browser",
     provider_kind: str = "manual",
     owner_id: str = "",
+    principal_user_id: str = "",
+    principal_is_operator: bool = False,
 ) -> str:
     """Generate and store a session token."""
     token, _session = _session_issuer().issue({
@@ -503,6 +507,8 @@ def _issue_session_token(
         "client_type": _normalize_invite_client_type(client_type),
         "provider_kind": clean_lobby_text(provider_kind, limit=64) or "manual",
         "owner_id": clean_lobby_text(owner_id, limit=128),
+        "principal_user_id": clean_lobby_text(principal_user_id, limit=128),
+        "principal_is_operator": bool(principal_is_operator),
         "connection_kind": (
             "native_cli_bridge"
             if _normalize_invite_client_type(client_type) == "agent_bridge"

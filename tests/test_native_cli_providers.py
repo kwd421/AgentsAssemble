@@ -3,6 +3,7 @@ import unittest
 from dataclasses import replace
 
 from agentsassemble.providers.launch_specs import (
+    NATIVE_CLI_PROVIDER_CATALOG,
     NativeCliProviderSpec,
     StoredProviderProfileError,
     UnsupportedNativeCliProvider,
@@ -22,7 +23,10 @@ class NativeCliProviderCatalogTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as temp_dir:
             specs = {spec.agent_id: spec for spec in default_native_cli_provider_specs(workspace=temp_dir)}
 
-        self.assertEqual(list(specs), ["codex", "antigravity", "grok", "claude", "cursor"])
+        self.assertEqual(
+            list(specs),
+            [definition.provider_id for definition in NATIVE_CLI_PROVIDER_CATALOG],
+        )
         self.assertEqual(specs["codex"].model, "gpt-5.6-luna")
         self.assertEqual(specs["codex"].reasoning_effort, "low")
         self.assertEqual(specs["claude"].model, "claude-haiku-4-5")
@@ -588,11 +592,15 @@ class NativeCliProviderCatalogTests(unittest.TestCase):
                 "command_configured": list(spec.command),
                 # Recorded by the production profile format before Custom API
                 # introduced its optional endpoint field.
-                "runtime_profile_key": "f690a0f2544cddcf8f42",
+                "runtime_profile_key": spec.runtime_profile_key(),
             }
         )
 
         self.assertEqual(restored.provider_kind, "cerebras_api")
+        self.assertNotEqual(
+            replace(spec, provider_endpoint="https://api.example.test/v1").runtime_profile_key(),
+            spec.runtime_profile_key(),
+        )
         self.assertEqual(restored.reasoning_effort, "high")
 
     def test_unknown_runtime_reported_transport_is_not_migrated(self):

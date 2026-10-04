@@ -104,58 +104,6 @@ describe("GoogleAccountSettings", () => {
     expect(identityApi.connectGoogleAccount).not.toHaveBeenCalled();
   });
 
-  it("finishes a desktop system-browser handoff without embedding Google login", async () => {
-    const invoke = vi.fn().mockResolvedValue(undefined);
-    Object.assign(window, { __TAURI_INTERNALS__: { invoke } });
-    vi.spyOn(identityApi, "startGoogleAccountHandoff").mockResolvedValue({
-      status: "ready",
-      handoff_url: "/#google_handoff=one-time-token",
-      expires_in: 180,
-    });
-    vi.mocked(identityApi.fetchAccountStatus)
-      .mockResolvedValueOnce({
-        account: null,
-        google: {
-          enabled: true,
-          client_id: "client.apps.googleusercontent.com",
-          unavailable_reason: "",
-        },
-      })
-      .mockResolvedValueOnce({
-        account: {
-          account_id: "acct-desktop",
-          provider: "google",
-          display_name: "Desktop Sei",
-          email: "desktop@example.test",
-          avatar_image_url: "",
-        },
-        google: {
-          enabled: true,
-          client_id: "client.apps.googleusercontent.com",
-          unavailable_reason: "",
-        },
-      });
-
-    render(
-      <GoogleAccountSettings
-        identity={{ deviceToken: "device-token", sessionToken: "session-token" }}
-      />
-    );
-
-    fireEvent.click(
-      await screen.findByRole("button", { name: "시스템 브라우저에서 Google 연결" })
-    );
-
-    expect(await screen.findByText("desktop@example.test")).not.toBeNull();
-    expect(invoke).toHaveBeenCalledWith("open_google_account_login", {
-      url: "http://localhost:3000/#google_handoff=one-time-token",
-    });
-    expect(identityApi.startGoogleAccountHandoff).toHaveBeenCalledWith({
-      discardGuestOnAccountSwitch: true,
-      identity: { deviceToken: "device-token", sessionToken: "session-token" },
-    });
-  });
-
   it("disconnects a public account without discarding the current device identity", async () => {
     vi.mocked(identityApi.fetchAccountStatus).mockResolvedValue({
       account: {

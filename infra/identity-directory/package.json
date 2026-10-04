@@ -1,0 +1,13 @@
+{
+  "name": "agentsassemble-identity-directory",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "scripts": {
+    "test": "node --test test/*.test.mjs",
+    "check": "node --check src/*.js"
+  },
+  "dependencies": {
+    "fast-png": "8.0.0"
+  }
+}

@@ -104,7 +104,6 @@ describe("AgentIdentitySettings", () => {
           agent={AGENT}
           avatarInputRef={avatarInputRef}
           roomSessionToken="paired-operator-session"
-          processGroups={[]}
           onAgentConfigure={onAgentConfigure}
         />
       </>

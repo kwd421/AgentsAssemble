@@ -6,12 +6,11 @@ import {
   disconnectGoogleAccount,
   fetchAccountStatus,
   startGoogleAccountLogin,
-  startGoogleAccountHandoff,
   type AccountStatusResponse,
   type GoogleAccountChallengeResponse,
 } from "../../api/identity";
 import type { UserProfileIdentity } from "../../api/room";
-import { isDesktopWebview, openDesktopGoogleLogin } from "../../lib/desktopBridge";
+import { isDesktopWebview } from "../../lib/desktopBridge";
 import { clearRememberedGuestProfile } from "../../lib/deviceIdentity";
 import { googleIdentityApi, loadGoogleIdentityScript } from "../../lib/googleIdentity";
 import { persistRoomGuestSession } from "../../lib/roomGuestSession";
@@ -39,10 +38,8 @@ export default function GoogleAccountSettings({
   const [status, setStatus] = useState<AccountStatusResponse | null>(null);
   const [error, setError] = useState("");
   const [connecting, setConnecting] = useState(false);
-  const [desktopWaiting, setDesktopWaiting] = useState(false);
   const [challenge, setChallenge] = useState<GoogleAccountChallengeResponse | null>(null);
   const [disconnecting, setDisconnecting] = useState(false);
-  const desktopLoginExpiresAt = useRef(0);
   const buttonRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -145,58 +142,6 @@ export default function GoogleAccountSettings({
     };
   }, [challenge, identity.deviceToken, identity.sessionToken, status?.account]);
 
-  useEffect(() => {
-    if (!desktopWaiting || status?.account) return;
-    let active = true;
-    const refresh = async () => {
-      const next = await fetchAccountStatus(identity);
-      if (!active) return;
-      setStatus(next);
-      if (next.account) {
-        setDesktopWaiting(false);
-        setConnecting(false);
-        onAccountConnected?.();
-      }
-    };
-    void refresh().catch(() => undefined);
-    const timer = window.setInterval(() => void refresh().catch(() => undefined), 1_500);
-    const expiryTimer = window.setTimeout(() => {
-      if (!active) return;
-      setDesktopWaiting(false);
-      setConnecting(false);
-      setError("Google 로그인 시간이 만료됐습니다. 다시 시도해 주세요.");
-    }, Math.max(0, desktopLoginExpiresAt.current - Date.now()));
-    return () => {
-      active = false;
-      window.clearInterval(timer);
-      window.clearTimeout(expiryTimer);
-    };
-  }, [desktopWaiting, identity.deviceToken, identity.sessionToken, onAccountConnected, status?.account]);
-
-  const beginDesktopLogin = async () => {
-    if (!confirmPossibleGuestDiscard()) return;
-    setConnecting(true);
-    setError("");
-    let stage = "서버에서 Google 로그인 링크를 만드는 중";
-    try {
-      const started = await startGoogleAccountHandoff({
-        discardGuestOnAccountSwitch: true,
-        identity,
-      });
-      const url = new URL(started.handoff_url, window.location.origin).toString();
-      desktopLoginExpiresAt.current =
-        Date.now() + Math.max(1, started.expires_in) * 1_000;
-      stage = "시스템 브라우저를 여는 중";
-      await openDesktopGoogleLogin(url);
-      setDesktopWaiting(true);
-    } catch (reason) {
-      setConnecting(false);
-      setDesktopWaiting(false);
-      const detail = reason instanceof Error ? reason.message : String(reason || "").trim();
-      setError(`${stage}: ${detail || "요청이 이유 없이 거부됐습니다."}`);
-    }
-  };
-
   const disconnect = async () => {
     setDisconnecting(true);
     setError("");
@@ -204,7 +149,6 @@ export default function GoogleAccountSettings({
       await disconnectGoogleAccount(identity);
       setStatus((current) => (current ? { ...current, account: null } : current));
       setChallenge(null);
-      setDesktopWaiting(false);
       setConnecting(false);
     } catch (reason) {
       setError(reason instanceof Error ? reason.message : "공개 계정에서 로그아웃하지 못했습니다.");
@@ -263,19 +207,9 @@ export default function GoogleAccountSettings({
       )}
 
       {status?.google.enabled && !status.account && isDesktopWebview() && (
-        <div className="grid gap-2">
-          <button
-            type="button"
-            className="rounded-md bg-[#5865f2] px-3 py-2 text-[12px] font-black text-white disabled:opacity-60"
-            disabled={connecting}
-            onClick={() => void beginDesktopLogin()}
-          >
-            {desktopWaiting ? "Google 로그인 완료 대기 중…" : "시스템 브라우저에서 Google 연결"}
-          </button>
-          <p className="text-[11px] font-bold leading-4 text-text-muted">
-            앱 안에 계정 화면을 끼워 넣지 않고 기본 브라우저에서 안전하게 연결합니다.
-          </p>
-        </div>
+        <p className="text-[11px] font-bold leading-4 text-text-muted">
+          데스크톱 Google 로그인은 앱 시작 화면의 중앙 계정에서 관리합니다.
+        </p>
       )}
 
       {status?.google.enabled && !status.account && !isDesktopWebview() && (

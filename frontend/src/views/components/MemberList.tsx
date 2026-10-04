@@ -3,7 +3,6 @@ import type { MouseEvent as ReactMouseEvent } from "react";
 import { Bot, Search, UserMinus, Volume2, VolumeX } from "lucide-react";
 import type {
   LiveAgent,
-  LiveAgentProcessGroup,
   RoomAgentSession,
   RoomMember,
 } from "../../api";
@@ -43,7 +42,6 @@ export default function MemberList({
   roleOverrides,
   onRoleChange,
   canEditRoles = true,
-  processGroups = [],
   onSessionActionComplete,
   quotaViewer,
   onAgentUsageRequest,
@@ -69,7 +67,6 @@ export default function MemberList({
   roleOverrides?: Record<string, string>;
   onRoleChange?: (memberId: string, role: RoleId) => void | Promise<void>;
   canEditRoles?: boolean;
-  processGroups?: LiveAgentProcessGroup[];
   onSessionActionComplete?: () => void;
   quotaViewer?: AgentQuotaVisibilityViewer;
   onAgentUsageRequest?: (session: RoomAgentSession) => void | Promise<void>;
@@ -314,7 +311,6 @@ export default function MemberList({
           entry={detailEntry}
           roomSessionToken={roomSessionToken}
           onClose={() => setDetailEntryId("")}
-          processGroups={processGroups}
           onSessionActionComplete={onSessionActionComplete}
           onAgentProfileSettingsChange={setAgentProfileSettings}
           onParticipantKick={canModerate ? onParticipantKick : undefined}

@@ -2,7 +2,6 @@ import { Bot, Copy, Plus } from "lucide-react";
 import {
   type ChannelNotificationSetting,
   type LiveAgent,
-  type LiveAgentProcessGroup,
   type RoomMember,
   type RoomAgentSession,
 } from "../../api";
@@ -32,7 +31,6 @@ type RoomConnectionPanelProps = {
   onCreateCompanionAiPacket?: () => void;
   onCopyGuestAiPacket?: () => void;
   channelNotifications?: Record<string, { notifications: ChannelNotificationSetting; lastReadAt?: string }>;
-  processGroups?: LiveAgentProcessGroup[];
   onSessionActionComplete?: () => void;
   quotaViewer?: AgentQuotaVisibilityViewer;
   onAgentUsageRequest?: (session: RoomAgentSession) => void | Promise<void>;
@@ -76,7 +74,6 @@ export default function RoomConnectionPanel({
   onCreateCompanionAiPacket,
   onCopyGuestAiPacket,
   channelNotifications,
-  processGroups = [],
   onSessionActionComplete,
   quotaViewer,
   onAgentUsageRequest,
@@ -160,7 +157,6 @@ export default function RoomConnectionPanel({
         canModerate={Boolean(capabilities["participant.kick"] || capabilities["participant.mute"])}
         onParticipantKick={capabilities["participant.kick"] ? onParticipantKick : undefined}
         onParticipantMute={capabilities["participant.mute"] ? onParticipantMute : undefined}
-        processGroups={processGroups}
         onSessionActionComplete={onSessionActionComplete}
         quotaViewer={quotaViewer}
         onAgentUsageRequest={onAgentUsageRequest}

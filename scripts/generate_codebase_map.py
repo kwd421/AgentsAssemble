@@ -4067,21 +4067,37 @@ def _is_valid_generation_timestamp(value: object) -> bool:
     return True
 
 
+def _generation_fingerprint(data: dict[str, object]) -> str:
+    fingerprint = data.get("fingerprint")
+    return fingerprint if isinstance(fingerprint, str) and fingerprint else ""
+
+
+def _generation_facts(data: dict[str, object]) -> dict[str, object]:
+    return {
+        key: value
+        for key, value in data.items()
+        if key not in {"generated_at", "fingerprint"}
+    }
+
+
 def preserve_generation_timestamp(
     fresh: dict[str, object],
     existing_maps: list[dict[str, object]],
 ) -> dict[str, object]:
     """Keep one valid timestamp shared by all current generated outputs."""
-    fresh_facts = {key: value for key, value in fresh.items() if key != "generated_at"}
+    fresh_fingerprint = _generation_fingerprint(fresh)
+    fresh_facts = _generation_facts(fresh)
     recorded_timestamps: set[str] = set()
     for existing in existing_maps:
         recorded_at = existing.get("generated_at")
         if not _is_valid_generation_timestamp(recorded_at):
             continue
-        existing_facts = {
-            key: value for key, value in existing.items() if key != "generated_at"
-        }
-        if fresh_facts == existing_facts:
+        same_fingerprint = (
+            bool(fresh_fingerprint)
+            and _generation_fingerprint(existing) == fresh_fingerprint
+        )
+        same_facts = _generation_facts(existing) == fresh_facts
+        if same_fingerprint or same_facts:
             recorded_timestamps.add(recorded_at)
     if len(recorded_timestamps) == 1:
         return {**fresh, "generated_at": next(iter(recorded_timestamps))}
