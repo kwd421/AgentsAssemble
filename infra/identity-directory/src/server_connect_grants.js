@@ -36,10 +36,6 @@ export async function createServerConnectGrant(session, env, serverId, text, now
   ) {
     throw new HttpError(409, "server_endpoint_unavailable");
   }
-  await env.DB
-    .prepare("DELETE FROM server_connect_grants WHERE expires_at <= ?")
-    .bind(now)
-    .run();
   const secret = `${GRANT_PREFIX}${randomBase64Url(32)}`;
   const inserted = await env.DB
     .prepare(

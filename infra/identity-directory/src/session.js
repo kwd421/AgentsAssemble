@@ -1,3 +1,4 @@
+import { limitSession } from "./abuse.js";
 import {
   deviceRequestCanonical,
   sha256Base64Url,
@@ -65,6 +66,7 @@ export async function authenticated(request, env, body, now) {
     canonical
   );
   if (!valid) throw new HttpError(401, "invalid_signed_request");
+  await limitSession(request, env, session);
   try {
     await env.DB
       .prepare(

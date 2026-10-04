@@ -1,3 +1,5 @@
+import { cleanup } from "./cleanup.js";
+import { limitRequestIp } from "./abuse.js";
 import { startWebGoogleHandoff, completeWebGoogleHandoff } from "./google_web.js";
 import { serveWebEntry } from "./web_entry.js";
 import { allowedBrowserOrigin } from "./origin.js";
@@ -46,6 +48,7 @@ async function route(request, env) {
       protocol_version: 3,
     });
   }
+  await limitRequestIp(request, env);
   const text =
     request.method === "GET" || request.method === "HEAD"
       ? ""
@@ -241,33 +244,6 @@ export async function handleRequest(request, env) {
       headers,
     });
   }
-}
-
-async function cleanup(env) {
-  const now = nowSeconds();
-  await env.DB.batch([
-    env.DB
-      .prepare("DELETE FROM request_nonces WHERE expires_at < ?")
-      .bind(now),
-    env.DB
-      .prepare("DELETE FROM host_request_nonces WHERE expires_at < ?")
-      .bind(now),
-    env.DB
-      .prepare("DELETE FROM rate_limits WHERE window_start < ?")
-      .bind(now - 86400),
-    env.DB
-      .prepare("DELETE FROM google_handoffs WHERE expires_at < ?")
-      .bind(now),
-    env.DB
-      .prepare("DELETE FROM server_connect_grants WHERE expires_at < ?")
-      .bind(now),
-    env.DB
-      .prepare(
-        `DELETE FROM sessions WHERE expires_at < ? OR
-         (revoked_at IS NOT NULL AND revoked_at < ?)`
-      )
-      .bind(now, now - 86400),
-  ]);
 }
 
 export default {

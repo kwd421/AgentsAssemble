@@ -24,9 +24,56 @@ CENTRAL_ALLOWED_ORIGINS = "tauri://localhost,http://tauri.localhost,https://taur
 #   GOOGLE_WEB_CLIENT_SECRET
 
 [triggers]
-crons = ["17 3 * * *"]
+crons = ["17 3 * * *", "* * * * *"]
 
 # Supply the shared Rust frontend build with `wrangler deploy --assets <dist>`.
 [assets]
 binding = "ASSETS"
 run_worker_first = true
+
+# Distinct account-local namespaces: never reuse these for another purpose.
+
+[[ratelimits]]
+name = "ABUSE_AUTH_IP"
+namespace_id = "260501"
+simple = { limit = 10, period = 60 }
+
+[[ratelimits]]
+name = "ABUSE_GENERAL_IP"
+namespace_id = "260502"
+simple = { limit = 120, period = 60 }
+
+[[ratelimits]]
+name = "ABUSE_GENERAL_ACTOR"
+namespace_id = "260503"
+simple = { limit = 60, period = 60 }
+
+[[ratelimits]]
+name = "ABUSE_OWNER_GRANT_IP"
+namespace_id = "260504"
+simple = { limit = 60, period = 60 }
+
+[[ratelimits]]
+name = "ABUSE_OWNER_GRANT_ACTOR"
+namespace_id = "260505"
+simple = { limit = 12, period = 60 }
+
+[[ratelimits]]
+name = "ABUSE_OWNER_REDEEM_IP"
+namespace_id = "260506"
+simple = { limit = 120, period = 60 }
+
+[[ratelimits]]
+name = "ABUSE_OWNER_REDEEM_ACTOR"
+namespace_id = "260507"
+simple = { limit = 60, period = 60 }
+
+[[ratelimits]]
+name = "ABUSE_ENDPOINT_IP"
+namespace_id = "260508"
+simple = { limit = 120, period = 60 }
+
+[[ratelimits]]
+name = "ABUSE_ENDPOINT_ACTOR"
+namespace_id = "260509"
+simple = { limit = 6, period = 60 }
