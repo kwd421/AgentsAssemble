@@ -50,7 +50,12 @@ for (const mode of ["ip", "person"]) {
     if (mode === "person") {
       const created = await create("capacity-initial-device");
       assert.equal(created.status, 201, await created.clone().text());
-      code = (await created.json()).recovery_code;
+      const identity = await created.json();
+      code = identity.recovery_code;
+      // Persisted verified-person fixture; full Google verification is exercised
+      // by local_admission_isolation.mjs with a signed token.
+      await db.prepare("UPDATE persons SET identity_kind = 'google' WHERE person_id = ?")
+        .bind(identity.person.person_id).run();
     }
     const debt = async () => (await db.prepare("SELECT creation_writes FROM creation_budgets WHERE purpose = ?")
       .bind(mode === "ip" ? "ANONYMOUS" : "AUTH").first()).creation_writes;

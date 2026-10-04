@@ -258,8 +258,8 @@ day**, partitioned into non-borrowing purpose pools:
 
 | Purpose | Daily deletion-write budget | Charged work |
 | --- | ---: | --- |
-| AUTH | 700 | Verified recovery/Google completion counters (3 each) and sessions (7) |
-| ANONYMOUS | 700 | Guest creation including sessions, Google starts, invalid recovery/credentials; counters/handoffs (3), sessions (7) |
+| AUTH | 700 | Google-verified person recovery/completion counters (3 each) and sessions (7) |
+| ANONYMOUS | 700 | Guest creation/recovery including sessions, Google starts, invalid credentials; counters/handoffs (3), sessions (7) |
 | GENERAL | 700 | Other signed device/host nonces, including ownership claims (3) |
 | ENDPOINT | 4,800 | Accepted endpoint nonces (3) and daily server/host counters (3 each) |
 | OWNER_GRANT | 800 | Verified owner request nonce (3) and grant row (5) |
@@ -291,12 +291,15 @@ the network allowance. Anonymous and verified precision/source counters have
 separate namespaces, so a guest flood cannot consume the verified recovery
 source allowance even behind the same IP.
 
-Guest creation, its issued session, Google start/handoff creation and invalid
-recovery/Google credentials spend only ANONYMOUS. A valid recovery owner is
-resolved before any expiring write; verified recovery and Google completion /
-session issuance spend AUTH. A person cap is not Sybil resistance: a newly minted
-guest can later prove its recovery code, and many verified identities/networks
-can still exhaust AUTH. Both 700-unit pools remain finite aggregate backstops.
+Guest creation, guest recovery and their issued sessions, Google start/handoff
+creation and invalid recovery/Google credentials spend only ANONYMOUS. A valid
+recovery owner is resolved before any expiring write. Only the server-owned
+`persons.identity_kind = 'google'`, established after Google token verification
+(signature, issuer, audience, expiry and nonce), qualifies recovery for AUTH.
+A self-minted guest code proves possession, not a verified identity; client input
+cannot select this kind. Google completion and its session issuance also use
+AUTH. No new pool, migration or increased budget is needed: both existing
+700-unit pools remain finite aggregate backstops.
 The shared per-minute AUTH edge gate still throttles anonymous and verified
 traffic from the same network; these reservations isolate durable daily spending.
 
@@ -343,7 +346,7 @@ reviewed Rust host change. This release does not change the host cadence.
 `temporary_capacity_exhausted`, with “Daily temporary storage capacity reached.
 Retry after 00:00 UTC.” There is no borrowing, refund, or unlimited-entry guarantee.
 
-- ANONYMOUS exhaustion blocks guest creation and new Google starts. AUTH
+- ANONYMOUS exhaustion blocks guest creation/recovery and new Google starts. AUTH
   exhaustion blocks verified recovery/Google session issuance. The screens
   display the capacity message. A spent daily source blocks only that pool
   for its network/person; unrelated sources may proceed while shared capacity
@@ -368,7 +371,12 @@ persist neither the row nor their counter increment.
 공격자에게 고갈될 수 있다. 그 경우 해당 몫을 쓰는 새 로그인·게스트 생성은
 UTC 자정까지 실패한다. IPv6 정규화와 익명/검증 예산 분리는 공격 비용을
 높이고 피해 범위를 제한하지만 사람 확인이나 Sybil 공격 방지를 보장하지 않는다.
-무료로 만든 게스트도 복구 코드를 증명하면 검증된 recovery 몫을 쓸 수 있다.
+스스로 만든 게스트는 유효한 복구 코드를 제시해도 검증된 사용자가 아니다.
+게스트 생성·복구·세션 발급은 ANONYMOUS 몫을 공유하며, 공격으로 이 몫이
+소진되면 정상 게스트의 복구도 그날 UTC 자정까지 실패할 수 있다.
+Google의 새 로그인 시작도 같은 제약을 받는다. 이미 시작한 handoff의
+Google 검증·로그인 완료와 검증된 person의 복구·세션 발급은 AUTH에 격리된다.
+Google 계정 자체의 대량 확보까지 방지하는 사람 확인 수단은 아니다.
 
 ANONYMOUS/AUTH 고갈은 이미 방에 연결된 세션과 소유자 입장 예약 몫
 (OWNER_GRANT/OWNER_REDEEM)에 영향을 주지 않는다. 소유자의 새 입장에는
@@ -499,14 +507,31 @@ node test/local_auth_capacity.mjs "$(npm root -g)/wrangler/package.json"
 node test/local_admission_isolation.mjs "$(npm root -g)/wrangler/package.json"
 ```
 
-Current revision: **76/76 Node tests**, syntax check and `npm run dry-run:ci`
+Current revision: **77/77 Node tests**, syntax check and `npm run dry-run:ci`
 pass. CI generates a temporary config beside `wrangler.toml` that omits only
 `[assets]`, preserves relative Worker/D1 paths, bundles with `--dry-run`, and then
 removes the config. This proves Worker/config validity, not the separately built
 Rust frontend assets; production must still supply the matching `--assets` path.
 No Rust checkout is read or changed by this CI check.
 
-All seven new admission regressions failed on 851a6b50 and pass after the fix:
+The guest-recovery Sybil regression creates 24 guests through HTTP and spends
+their returned recovery codes from distinct /64s until guest recovery receives
+`429 temporary_capacity_exhausted`. AUTH debt stays unchanged; an unrelated
+Google-verified person's recovery and already-started Google login complete,
+and both new sessions authenticate signed bootstrap requests. Restoring the
+c62bdd27 unconditional recovery promotion fails this regression. The existing
+76 tests remain, with verified-owner fixtures now established by Google token
+verification instead of guest creation.
+
+Local workerd/D1 (Wrangler 4.98.0) repeats the attack: 24 guests, 16 successful
+recoveries, 8 capacity denials, and verified login/recovery both HTTP 200.
+Google token exchange uses a locally signed fixture, not a live Google account;
+signature/issuer/audience/expiry/nonce verification executes in the Worker.
+There is no public Google recovery-code issuance endpoint: the test seeds only
+a recovery credential for the person created by that verified login. This
+validates existing recovery handling without introducing an issuance feature.
+
+The prior seven admission regressions failed on 851a6b50 and pass after the fix:
 IPv6 /64 rotation at coarse/D1 boundaries; guest and both Google-start floods
 preserving verified recovery/session issuance; exact host/server daily admission;
 and invalid/stale/replayed endpoint transaction rollback. Five normal hosts still

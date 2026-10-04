@@ -1,3 +1,4 @@
+import { verifiedRecoveryIdentity, googleToken, startNativeHandoff } from "./google_helpers.mjs";
 import assert from "node:assert/strict";
 import test from "node:test";
 import { createRecoveryCode, randomBase64Url } from "../src/crypto.js";
@@ -52,7 +53,7 @@ test("IPv6 /64 rotation cannot exhaust daily login capacity through invalid reco
 for (const attack of ["guest", "google/native/start", "google/web/start"]) {
   test(`${attack} exhaustion preserves verified recovery and its session`, async () => {
     const env = environment({ GOOGLE_CLIENT_ID: "test-web", GOOGLE_WEB_CLIENT_SECRET: "test-secret" });
-    const owner = await createGuestIdentity(env);
+    const owner = await verifiedRecoveryIdentity(env);
     const key = await deviceKey(), initial = spent(env, "AUTH");
     let successes = 0, denied = false;
     for (let i = 0; i < 300; i++) {
@@ -166,4 +167,63 @@ test("invalid endpoints and stale renewals preserve nonce and budget atomically"
   const results = await Promise.all([f.call(server, 12), f.call(server, 12)]);
   assert.deepEqual(results.map(r => r.status).sort(), [200, 409]);
   assert.equal(env.DB.database.prepare("SELECT COUNT(*) AS n FROM host_request_nonces").get().n, count + 1);
+});
+
+// Contract: self-minted recovery codes cannot consume verified authentication.
+// Regression: promotion solely on code validity spends AUTH across guest Sybils.
+// Oracle: HTTP recovery/login and usable signed sessions after real guest debt;
+// restoring unconditional AUTH promotion makes the debt/isolation assertions fail.
+test("guest Sybil recovery exhausts only untrusted capacity and preserves verified login/recovery", async () => {
+  const env = environment(), owner = await verifiedRecoveryIdentity(env);
+  const key = await deviceKey();
+  const handoff = await startNativeHandoff(env, key, "verified-next-login");
+  const token = await googleToken(owner.signer, env, new URL(handoff.authorization_url).searchParams.get("nonce"));
+  const initial = spent(env, "AUTH"), attackers = [];
+  for (let i = 0; i < 24; i++) {
+    const response = await request(env, "/v1/auth/guest", { method: "POST",
+      headers: { "cf-connecting-ip": `2001:db8:${i + 100}::1` },
+      body: JSON.stringify({ device_id: `sybil-device-${i}`, display_name: "Guest",
+        identity_kind: "google", device_public_key_jwk: key.publicJwk }),
+    });
+    assert.equal(response.status, 201);
+    attackers.push(await response.json());
+  }
+  let successes = 0, denied = 0;
+  for (const [i, attacker] of attackers.entries()) {
+    const response = await request(env, "/v1/auth/recover", { method: "POST",
+      headers: { "cf-connecting-ip": `2001:db8:${i + 200}::1` },
+      body: JSON.stringify({ recovery_code: attacker.recovery_code,
+        device_id: `sybil-recovered-${i}`, device_public_key_jwk: key.publicJwk }),
+    });
+    if (response.status === 200) successes++;
+    else {
+      assert.equal(response.status, 429);
+      assert.equal((await response.json()).error.code, "temporary_capacity_exhausted");
+      denied++;
+    }
+  }
+  assert.ok(successes > 0 && denied > 0, `recoveries: ${successes} successful, ${denied} denied`);
+  assert.equal(spent(env, "AUTH"), initial);
+  const recovered = await request(env, "/v1/auth/recover", { method: "POST",
+    headers: { "cf-connecting-ip": "203.0.113.200" },
+    body: JSON.stringify({ recovery_code: owner.created.recovery_code,
+      device_id: "verified-recovered", device_public_key_jwk: key.publicJwk }),
+  });
+  assert.equal(recovered.status, 200, await recovered.clone().text());
+  const result = await recovered.json();
+  assert.equal(result.person.person_id, owner.created.person.person_id);
+  assert.equal((await signedDeviceRequest(env, result.session, key.pair, "/v1/bootstrap")).status, 200);
+  const original = globalThis.fetch;
+  try {
+    globalThis.fetch = async () => Response.json({ id_token: token });
+    const login = await request(env, "/v1/auth/google/native/exchange", { method: "POST",
+      headers: { "cf-connecting-ip": "203.0.113.201" },
+      body: JSON.stringify({ handoff_id: handoff.handoff_id, authorization_code: "4/post-attack-login",
+        code_verifier: handoff.verifier }),
+    });
+    assert.equal(login.status, 200, await login.clone().text());
+    const loggedIn = await login.json();
+    assert.equal(loggedIn.person.person_id, owner.created.person.person_id);
+    assert.equal((await signedDeviceRequest(env, loggedIn.session, key.pair, "/v1/bootstrap")).status, 200);
+  } finally { globalThis.fetch = original; }
 });

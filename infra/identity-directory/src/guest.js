@@ -129,13 +129,15 @@ export async function recoverGuest(request, env, text, now) {
   // Identify a valid recovery owner before ANY expiring write. A spent person
   // must not create fresh IP/code counters by rotating networks or credentials.
   const credential = code ? await env.DB.prepare(
-    `SELECT recovery_credentials.person_id, persons.display_name
+    `SELECT recovery_credentials.person_id, persons.display_name, persons.identity_kind
      FROM recovery_credentials JOIN persons USING(person_id)
      WHERE verifier = ? AND recovery_credentials.revoked_at IS NULL
        AND persons.status = 'active'`
   ).bind(verifier).first() : null;
   env = { ...env, authSource: { ...env.authSource, personId: credential?.person_id,
-    purpose: credential ? "AUTH" : "ANONYMOUS" } };
+    // Only the server-owned kind established by Google verification qualifies.
+    // Possession of a self-minted guest recovery code proves no such identity.
+    purpose: credential?.identity_kind === "google" ? "AUTH" : "ANONYMOUS" } };
   await consumeRateLimit(env.DB, await ipBucket(request, env, "guest-recover"),
     10, 900, now, env.authSource);
   if (code) await consumeRateLimit(env.DB, `recovery-code:${verifier}`,

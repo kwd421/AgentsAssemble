@@ -1,3 +1,4 @@
+import { verifiedRecoveryIdentity } from "./google_helpers.mjs";
 import assert from "node:assert/strict";
 import test from "node:test";
 import { createRecoveryCode } from "../src/crypto.js";
@@ -36,7 +37,7 @@ test("one unauthenticated IP cannot spend ANONYMOUS over a full day, even with r
 
 test("one person rotating recovery credentials and IPs cannot spend AUTH over a full day", async t => {
   const env = environment(), advance = utcDayClock(t, env);
-  const { key, created } = await createGuestIdentity(env);
+  const { key, created } = await verifiedRecoveryIdentity(env);
   const initial = debt(env);
   let code = created.recovery_code, successes = 0, blocked = 0;
   for (let minute = 0; minute < 1440; minute++) {

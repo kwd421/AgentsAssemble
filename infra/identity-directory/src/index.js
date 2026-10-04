@@ -51,7 +51,7 @@ async function route(request, env) {
   }
   await limitRequestIp(request, env);
   if (requestPurpose(request) === "AUTH") {
-    // Only a verified recovery/Google completion may promote spending to AUTH.
+    // Only Google-verified person recovery/completion may spend AUTH.
     env = { ...env, authSource: { ip: await ipBucket(request, env, "auth-ip"), purpose: "ANONYMOUS" } };
   }
   const text =

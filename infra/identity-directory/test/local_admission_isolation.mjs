@@ -6,7 +6,9 @@ import { readFileSync, readdirSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import path from "node:path";
 import { bytesToBase64Url, createRecoveryCode, deviceRequestCanonical,
-  hostRegistrationCanonical, hostRequestCanonical, randomBase64Url, utf8 } from "../src/crypto.js";
+  hostRegistrationCanonical, hostRequestCanonical, randomBase64Url, utf8, sha256Base64Url, hmacBase64Url, normalizeRecoveryCode } from "../src/crypto.js";
+
+import { googleSigner, googleToken } from "./google_helpers.mjs";
 
 const root = fileURLToPath(new URL("../", import.meta.url));
 const require = createRequire(path.resolve(process.argv[2] || "node_modules/wrangler/package.json"));
@@ -20,10 +22,21 @@ export default { fetch(request, env, ctx) { return worker.fetch(request, {
   ...env, ABUSE_AUTH_IP: allow, ABUSE_GENERAL_IP: allow, ABUSE_GENERAL_ACTOR: allow,
   ABUSE_ENDPOINT_IP: allow, ABUSE_ENDPOINT_ACTOR: allow,
 }, ctx); }};` }, bundle: true, write: false, format: "esm", platform: "browser" });
+const bindings = {
+  RECOVERY_PEPPER: "local-admission-pepper-at-least-32-characters",
+  IDENTITY_PEPPER: "local-identity-pepper-at-least-32-characters",
+  GOOGLE_DESKTOP_CLIENT_ID: "local-google.apps.googleusercontent.com",
+  GOOGLE_DESKTOP_CLIENT_SECRET: "local-only-secret",
+};
+const signer = await googleSigner(bindings);
+let googleCredential;
 const mf = new Miniflare({ modules: true, script: bundle.outputFiles[0].text,
-  compatibilityDate: "2026-04-01", d1Databases: ["DB"], bindings: {
-    RECOVERY_PEPPER: "local-admission-pepper-at-least-32-characters",
-  } });
+  compatibilityDate: "2026-04-01", d1Databases: ["DB"], bindings,
+  outboundService: async request => {
+    assert.equal(request.url, "https://oauth2.googleapis.com/token");
+    return Response.json({ id_token: googleCredential });
+  },
+});
 try {
   const db = await mf.getD1Database("DB");
   for (const name of readdirSync(path.join(root, "migrations")).filter(n => n.endsWith(".sql")).sort()) {
@@ -39,16 +52,41 @@ try {
   const guest = (deviceId, ip) => call("/v1/auth/guest", "POST", {
     device_id: deviceId, display_name: "Local test", device_public_key_jwk: publicKey,
   }, { "cf-connecting-ip": ip });
-  const initial = await guest("local-owner-device", "203.0.113.10");
-  assert.equal(initial.status, 201);
+  const startLogin = async deviceId => {
+    const verifier = randomBase64Url(32);
+    const response = await call("/v1/auth/google/native/start", "POST", {
+      device_id: deviceId, device_public_key_jwk: publicKey,
+      code_challenge: await sha256Base64Url(verifier), state: randomBase64Url(32),
+      redirect_uri: "http://127.0.0.1:43123/api/central-login/callback",
+    });
+    assert.equal(response.status, 201, await response.clone().text());
+    return { ...await response.json(), verifier };
+  };
+  const completeLogin = async handoff => {
+    googleCredential = await googleToken(signer, bindings,
+      new URL(handoff.authorization_url).searchParams.get("nonce"));
+    return call("/v1/auth/google/native/exchange", "POST", {
+      handoff_id: handoff.handoff_id, code_verifier: handoff.verifier,
+      authorization_code: "4/local-google-fixture",
+    }, { "cf-connecting-ip": "203.0.113.201" });
+  };
+  const initial = await completeLogin(await startLogin("local-owner-device"));
+  assert.equal(initial.status, 200, await initial.clone().text());
   const owner = await initial.json();
-  const deviceCall = async (pathname, method = "GET", value) => {
+  // Google recovery issuance is not a public feature; seed its credential only.
+  owner.recovery_code = createRecoveryCode();
+  await db.prepare(`INSERT INTO recovery_credentials
+    (credential_id, person_id, verifier, created_at) VALUES (?, ?, ?, ?)`)
+    .bind("local-verified-recovery", owner.person.person_id,
+      await hmacBase64Url(bindings.RECOVERY_PEPPER, normalizeRecoveryCode(owner.recovery_code)), now()).run();
+  const nextLogin = await startLogin("local-next-google-device");
+  const deviceCall = async (pathname, method = "GET", value, session = owner.session) => {
     const timestamp = now(), nonce = randomBase64Url(18);
     const canonical = await deviceRequestCanonical({ method, pathname, timestamp, nonce,
-      bodyText: value === undefined ? "" : JSON.stringify(value), token: owner.session.token,
-      deviceId: owner.session.device_id });
-    return call(pathname, method, value, { authorization: `Bearer ${owner.session.token}`,
-      "x-aa-device-id": owner.session.device_id, "x-aa-timestamp": String(timestamp), "x-aa-nonce": nonce,
+      bodyText: value === undefined ? "" : JSON.stringify(value), token: session.token,
+      deviceId: session.device_id });
+    return call(pathname, method, value, { authorization: `Bearer ${session.token}`,
+      "x-aa-device-id": session.device_id, "x-aa-timestamp": String(timestamp), "x-aa-nonce": nonce,
       "x-aa-signature": bytesToBase64Url(await crypto.subtle.sign({ name: "ECDSA", hash: "SHA-256" }, device.privateKey, utf8(canonical))) });
   };
   const register = async (id, pair) => {
@@ -82,18 +120,38 @@ try {
   }
   const prefixDebt = await debt("ANONYMOUS") + await debt("AUTH") - beforeAnonymous;
   assert.ok(prefixDebt <= 200, `IPv6 prefix spent ${prefixDebt}`);
-  let guests = 0;
-  for (let i = 0; i < 300; i++) {
+  const initialAuth = await debt("AUTH"), attackers = [];
+  for (let i = 0; i < 24; i++) {
     const response = await guest(`local-flood-device-${i}`, `2001:db8:${(i + 100).toString(16)}::1`);
-    if (response.status === 429) break;
-    assert.equal(response.status, 201, await response.clone().text()); guests++;
+    assert.equal(response.status, 201, await response.clone().text());
+    attackers.push(await response.json());
   }
-  assert.ok(guests > 0 && guests < 300);
-  assert.equal(await debt("AUTH"), 0);
+  let recoveries = 0, denied = 0;
+  for (const [i, attacker] of attackers.entries()) {
+    const response = await call("/v1/auth/recover", "POST", {
+      recovery_code: attacker.recovery_code, device_id: `local-recovered-sybil-${i}`,
+      device_public_key_jwk: publicKey,
+    }, { "cf-connecting-ip": `2001:db8:${(i + 200).toString(16)}::1` });
+    if (response.status === 200) recoveries++;
+    else {
+      assert.equal(response.status, 429, await response.clone().text());
+      assert.equal((await response.json()).error.code, "temporary_capacity_exhausted");
+      denied++;
+    }
+  }
+  assert.ok(recoveries > 0 && denied > 0);
+  assert.equal(await debt("AUTH"), initialAuth);
+  const login = await completeLogin(nextLogin);
+  assert.equal(login.status, 200, await login.clone().text());
+  const loggedIn = await login.json();
+  assert.equal(loggedIn.person.person_id, owner.person.person_id);
+  assert.equal((await deviceCall("/v1/bootstrap", "GET", undefined, loggedIn.session)).status, 200);
   const recovered = await call("/v1/auth/recover", "POST", { recovery_code: owner.recovery_code,
     device_id: "local-recovered-device", device_public_key_jwk: publicKey }, { "cf-connecting-ip": "203.0.113.200" });
   assert.equal(recovered.status, 200, await recovered.clone().text());
-  assert.equal((await recovered.json()).person.person_id, owner.person.person_id);
+  const recovery = await recovered.json();
+  assert.equal(recovery.person.person_id, owner.person.person_id);
+  assert.equal((await deviceCall("/v1/bootstrap", "GET", undefined, recovery.session)).status, 200);
   assert.equal((await deviceCall("/v1/bootstrap")).status, 200);
 
   const snapshot = async () => JSON.stringify(await Promise.all([
@@ -126,7 +184,8 @@ try {
   assert.equal((await endpoint(alias, body(1))).status, 429);
   assert.equal(await debt("ENDPOINT"), endpointDebt);
   assert.equal((await endpoint(honest, body(1))).status, 200);
-  console.log(JSON.stringify({ ipv6_prefix_debt: prefixDebt, anonymous_guests: guests,
+  console.log(JSON.stringify({ ipv6_prefix_debt: prefixDebt, anonymous_guests: attackers.length, guest_recoveries: recoveries, guest_denials: denied,
+    verified_login: login.status,
     verified_recovery: recovered.status, invalid_endpoint_requests: 100,
     host_admissions: successes, host_endpoint_debt: endpointDebt,
     honest_host: "online", rejected_nonce_and_mutation: "rolled back" }));
