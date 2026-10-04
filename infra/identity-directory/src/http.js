@@ -47,7 +47,14 @@ export function json(payload, status = 200, extraHeaders = {}) {
   });
 }
 
+export function temporaryCapacityError(error) {
+  if (String(error?.message || error).includes("temporary_capacity_exhausted")) {
+    return new HttpError(429, "temporary_capacity_exhausted", "Daily temporary storage capacity reached. Retry after 00:00 UTC.");
+  }
+}
+
 export function errorResponse(error) {
+  error = temporaryCapacityError(error) || error;
   if (error instanceof HttpError) {
     return json({ error: { code: error.code, message: error.message } }, error.status);
   }

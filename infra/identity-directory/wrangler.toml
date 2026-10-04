@@ -31,7 +31,8 @@ crons = ["17 3 * * *"]
 binding = "ASSETS"
 run_worker_first = true
 
-# Stage 2: deploy only after stage-1 d54aebc7 and record its Worker version ID.
+# Corrected stage 2: apply 0010; retain d54aebc7 as the limiter-free rollback.
+# Follow README deployment runbook; never increase cron frequency.
 # Proposed account-local IDs; account-wide collision check remains unverified.
 # Never reuse these for another purpose.
 

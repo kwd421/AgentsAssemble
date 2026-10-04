@@ -4,7 +4,7 @@ import {
   sha256Base64Url,
   verifyDeviceSignature,
 } from "./crypto.js";
-import { HttpError, json } from "./http.js";
+import { HttpError, json, temporaryCapacityError } from "./http.js";
 
 const CLOCK_SKEW_SECONDS = 300;
 const NONCE_TTL_SECONDS = 600;
@@ -74,8 +74,8 @@ export async function authenticated(request, env, body, now) {
       )
       .bind(session.session_id, nonce, now + NONCE_TTL_SECONDS)
       .run();
-  } catch {
-    throw new HttpError(
+  } catch (error) {
+    throw temporaryCapacityError(error) || new HttpError(
       409,
       "replayed_request",
       "This signed request was already used."

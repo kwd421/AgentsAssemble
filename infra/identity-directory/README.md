@@ -198,54 +198,124 @@ changes are part of this feature.
 
 ## Two-stage cleanup and abuse rollout
 
-### Stage 1: bounded daily cleanup (rollback baseline)
+### Stage 1 remains the rollback baseline
 
-Deploy stage-1 commit `d54aebc7` before enabling rate-limit bindings. Keep the existing single
-cron `17 3 * * *` (03:17 UTC). Migration `0009_bounded_cleanup.sql` adds only
-session expiry/revocation indexes; retain it on code rollback. No rate-limit
-bindings or purpose limiter code are present in this stage. Existing D1 precision
-limits remain. Grant requests no longer delete the global expired-grant backlog.
+`d54aebc7` is the original stage 1: additive migration 0009, daily bounded
+cleanup, no purpose limiter code/bindings. `8e2bfb37` is stage 2. The follow-up
+**daily maintenance budget fix** is appended on top of `8e2bfb37`; it already
+contains all nine purpose limiter bindings and their enforcement. It is a
+corrected stage-2 release, **not a new stage-1 rollback baseline**. Cleanup
+budgeting is stage-1 scope, but its position in history cannot remove the
+inherited limiter. No history is rewritten and no deployed state is inferred
+from a local branch. Record actual Cloudflare Worker version IDs separately.
 
-`cleanup.js` processes six queues: device nonces, host nonces, precision counters,
-Google handoffs, grants and sessions. Each round selects at most 15,000 candidates
-per queue, with at most eight rounds: **120,000 candidates/day/table**, at most
-720,000 logical deletes per invocation. Stop early when a round deletes nothing.
-Session candidates with nonce/grant children are skipped to prevent unbounded
-foreign-key cascades; authentication already rejects expired/revoked credentials.
-Migration 0009 and existing expiry/window indexes support candidate selection.
+### Shared UTC-day cleanup and creation budgets
 
-The invocation uses at most 48 D1 statements (eight batches of six), below the
-[Free plan limit of 50 queries/invocation](https://developers.cloudflare.com/d1/platform/limits/).
-Only result metadata crosses back to JavaScript; there is no per-row JS loop or
-unbounded drain/retry loop. This is a finite work budget, not a measurement of
-production CPU time. D1 errors propagate; a failed batch rolls back, earlier
-batches remain committed, and the next daily run retries the remaining backlog.
+The [D1 Free allowance](https://developers.cloudflare.com/d1/platform/pricing/)
+is 100,000 rows written/day across the account; index maintenance also counts.
+Cleanup reserves at most **10,000 writes/day (10%)**, leaving at least 90,000
+of that allowance for other work. This is not a guarantee of remaining account
+quota: other databases, normal requests, cascades and migrations also consume it.
 
-120,000 exceeds the Free D1 ceiling of 100,000 new logical rows/day across the
-whole database and one host's 288 endpoint-renewal nonces/day. This is scheduling
-capacity, not guaranteed free throughput: inserts, deletes, updates and index
-maintenance share the write quota. Even ignoring indexes, sustainable creation
-plus deletion is at most 50,000 temporary rows/day; actual headroom is lower.
-Quota exhaustion, SQL timeouts or CPU limits can stop cleanup early. Observe
-production CPU, D1 usage and expiry backlog before increasing traffic. Local
-SQLite/workerd verification does not establish the production CPU ceiling.
+Migration `0010_daily_maintenance_budget.sql` adds a fixed singleton ledger and
+six atomic insert-admission triggers. Cleanup claims the UTC day with one
+conditional UPDATE. Concurrent calls, repeated cron delivery, isolate restarts
+and retries cannot reserve it twice. Failure burns the unused daily allowance;
+there is no same-day retry/reclaim. Missing `meta.rows_written` stops the run.
+The SQL day guard prevents a delayed invocation from starting deletes on a later
+UTC day. Keep the single `17 3 * * *` cron; do not increase its frequency.
 
-### Deployment and rollback order
+Each chunk selects at most 100 rows. All queues share the same remaining budget,
+charged at `max(meta.rows_written, deleted rows × schema write cost)`. The schema
+floor is necessary because local workerd reports logical deletes without index
+maintenance. Before each DELETE its LIMIT is reduced to fit the remaining
+worst-case cost, so the final chunk cannot overshoot. Session deletion excludes
+all nonce/grant parents before LIMIT; foreign-key cascades cannot bypass this
+bound. Nonempty queues rotate; empty queues stop consuming query slots.
 
-1. Record the deployed Worker version and migration state. Apply additive 0009,
-   deploy `d54aebc7` with the daily cron only, and verify owner flows and cleanup.
-   Record its Worker version ID as the rollback baseline.
-2. Only after that baseline is deployed and verified, deploy stage 2 with purpose
-   limiter code and bindings. A more frequent cron is optional, not required for
-   the stated daily capacity.
-3. Roll back stage 2 only to the recorded stage-1 (`d54aebc7`) Worker version. Never roll back
-   to `25fad46a`, `4420d55d`, or any version before stage 1. Cron triggers are
-   [managed separately from Worker versions](https://developers.cloudflare.com/workers/configuration/cron-triggers/);
-   code rollback does not restore their previous schedule. Keep migration 0009.
+| Queue | Table + maximum index writes per deleted row |
+| --- | ---: |
+| Device nonces | 3 |
+| Host nonces | 3 |
+| Precision rate counters | 3 |
+| Google handoffs | 3 |
+| Connect grants | 5 |
+| Sessions (including revoked partial index) | 7 |
 
-The historical `25fad46a` owner protocol remains the compatibility reference,
-not an operational rollback target. No production deployment or remote migration
-is performed by local verification.
+There are at most 49 D1 statements (one claim + 48 chunks), within the
+[50-query Free invocation limit](https://developers.cloudflare.com/d1/platform/limits/).
+With eligible backlog and the current schema, at least 9,994 of 10,000 writes
+can be used before the remaining budget cannot fit a row. Even the cheapest
+3-write rows require only 34 full/partial chunks; six queue exhaustion checks
+still fit the statement cap. SQL/time/quota failures can reduce that throughput.
+Changing indexes, triggers or cascades requires rechecking these costs and the
+all-queue regression. Do not refund the ledger or manually invoke old cleanup.
+
+Per-IP/per-actor limiters alone cannot match that capacity: one location can
+admit 12 grant requests/minute = 17,280/day (before the separate 16-active-grant
+constraint), or 6 endpoint calls/minute = 8,640 host nonces/day = **25,920 cleanup
+writes**. Accounts, IPs and locations multiply these rates. Lowering only an
+individual account limit would not bound total generation.
+
+The new database-wide admission ceiling therefore reserves **8,000 eventual
+cleanup writes/UTC day**, summing all six queues with the above weights. Every
+INSERT attempt, including an UPSERT, charges its queue weight atomically; failed
+statements roll back the reservation. This deliberately overcounts counter
+UPSERTs and sessions that never acquire a revoked-index entry. The singleton
+adds one normal-traffic write per admitted attempt, at most floor(8,000/3) =
+2,666/day; its size never grows. All callers and locations share the same cap.
+Successful expiry debt is at most 8,000/day versus >=9,994/day cleanup capacity,
+leaving >=1,994/day for older backlog in steady state. Uneven expiry dates,
+long-lived sessions, unavailable D1 and failed runs can still cause temporary
+backlog; this is a service-rate calculation, not a maximum retention promise.
+
+Concrete upper bounds (each assumes no other spending): 2,666 host nonces/day,
+1,600 grant rows/day, or **1,000 grant issuances/day including their device
+nonces** (5 + 3 writes). One host renewing every five minutes creates 288 nonces
+= 864 cleanup writes/day; nine hosts use 7,776, ten exceed the creation budget.
+Authentication, redemption, retries and directory reads also spend this shared
+allowance, so practical supported host count is lower. Existing 16 active grants
+per session and all purpose burst limits remain additional restrictions.
+Capacity exhaustion returns HTTP 429 `temporary_capacity_exhausted` and resumes
+after 00:00 UTC; it does not insert the rejected nonce/grant/counter. Purpose
+isolation applies to the coarse limiter, not this explicit shared storage cap.
+
+### 배포 런북
+
+This is an operator runbook only; this change performs no production deployment
+or remote migration. Keep deployment outside the 03:17 UTC cleanup window and
+wait for in-flight scheduled work to finish before changing code or migrations.
+Never run migrations indiscriminately from HEAD while preparing old stage 1.
+
+1. Record the deployed version, schema, cron schedule and D1 usage. If stage 1
+   has never been established, deploy **`d54aebc7` with migrations through 0009
+   only**, verify owner flows, and record its Worker version as stage 1. Its
+   rollback target is **`25fad46a`**, with 0009 retained. Do not leave this old
+   high-budget cleanup running as the long-term solution.
+2. Once stage 1 is verified, check account-wide uniqueness of namespace IDs
+   260501–260509. Apply **0010**, then deploy the **daily maintenance budget fix
+   commit on top of `8e2bfb37`**, retaining the one daily cron. Skip deploying the
+   unfixed `8e2bfb37`. If stage 2 is already deployed, apply 0010 and update directly
+   to this fix, using the previously recorded stage-1 version. Verify login,
+   owner grant/redeem, endpoint renewal, budget denials and daily cleanup before
+   treating the rollout as accepted. No migration down-step is needed.
+3. **Rollback corrected stage 2 → recorded `d54aebc7` is mandatory**; never jump
+   directly to `25fad46a`. First pause scheduled cleanup and wait for any active
+   run to finish, because the old code has no 10,000-write protection. Retain 0009
+   and 0010: the additive schema is readable by old code and the creation cap
+   continues to protect storage, though old versions can report its denial as
+   409 replay/500 instead of the new 429. This is a temporary recovery state;
+   verify owner flows below capacity and restore a budget-fixed version promptly.
+4. If stage 1 itself must be rolled back, **`d54aebc7` → `25fad46a` is allowed**.
+   Keep cleanup paused and retain both additive migrations if already applied.
+   Resume only the original daily cron after restoring the budget-fixed release;
+   never clear the ledger to force a retry. Pausing reduces frequency: **increasing
+   cron frequency anywhere in this rollback chain is forbidden**.
+
+Cron triggers are [managed separately from Worker versions](https://developers.cloudflare.com/workers/configuration/cron-triggers/);
+code rollback does not undo their configuration. Neither `8e2bfb37` nor this
+combined follow-up is a substitute for the limiter-free stage-1 baseline. An
+operator who has no verified stage-1 version must establish it before proceeding.
 
 ### Verification
 
@@ -253,19 +323,27 @@ is performed by local verification.
 npm test
 npm run check
 wrangler deploy --dry-run --assets "$RUST_CHECKOUT/frontend/dist"
+node test/local_cleanup.mjs "$(npm root -g)/wrangler/package.json"
+node test/local_abuse.mjs "$(npm root -g)/wrangler/package.json"
 ```
 
-The daily regression seeds 120,001 expired host nonces and checks that one
-scheduled invocation removes 120,000 and retains one. It also observes deletion
-of expired grants, survival of 600 live child nonces and a usable live session.
-Against `4420d55d` it failed with only 479 total deletes; bounded daily cleanup
-must pass without changing the owner protocol or Rust repository.
+Budget regression against the original cleanup failed after 120,999 logical
+changes. The workerd/D1 all-queue regression also fails its 10,000-write bound
+with the original cleanup. With the fix, 2,533 logical deletes + one claim report
+**2,534 local rows_written; 10,000 including schema index costs**. Two concurrent calls admit only one cleanup; three same-day
+retries each write zero; a retained previous-day claim allows new progress.
+The local runtime undercounts index writes, so 2,534 is not a production billing
+estimate. Live nonce children and their expired parent survive; all six expired
+queues make progress. The creation-cap regression observes HTTP 429 and no
+persisted nonce; temporarily raising the SQL ceiling to 800,000 makes it fail
+with HTTP 200. The mutation is restored, not committed.
 
-Stage-1 local verification: 46 tests pass; syntax check and Wrangler 4.98.0
-deployment dry-run pass without any rate-limit binding. The isolated workerd/D1
-owner smoke passes entry/retry, endpoint generation and logout checks. A backlog
-of 120,001 expired precision counters loses 120,000 in one scheduled invocation,
-retaining one (local metadata: 120,000 rows_written, 480,088 rows_read).
+63 Node tests, syntax check and Wrangler 4.98.0 dry-run pass. Local owner
+entry/retry, endpoint generation/renewal and logout smoke pass. The separate
+abuse integration still records zero writes for 220 coarse-limit denials.
+Local workerd tests do not establish production CPU, quota availability or
+account-wide rate-limit namespace uniqueness. Rust source/build outputs are
+read-only inputs to dry-run, and no Rust repository is modified.
 
 ### Stage 2: purpose abuse limits (C2)
 
@@ -313,7 +391,8 @@ call AUTH/GENERAL bindings, nor one another's bindings. There is currently no
 member admission API: signed bookmark activity and unimplemented member API
 paths use GENERAL. A future member admission route must stay outside all three
 owner purposes and preserve these isolation tests. General activity can exhaust
-its own bootstrap/bookmark allowance; it cannot exhaust an owner API allowance.
+its own coarse bootstrap/bookmark allowance without spending an owner coarse
+allowance. Admitted activity still shares the explicit global creation budget.
 Attackers directly targeting an owner API can still exhaust its IP allowance,
 including for legitimate clients behind the same NAT.
 
@@ -325,8 +404,8 @@ the Worker invocation itself from counting. The free-plan operating budget here
 is 100,000 Worker requests/day, 100,000 D1 rows written/day and 10 ms CPU/request;
 this change does not claim to prove the production CPU ceiling. The unchanged
 0.1.x host retry loop can settle at about 32 seconds during failure; ENDPOINT's
-6/minute host/server budget admits that steady retry cadence, while bounding
-bursts. No Rust client or retry policy was changed.
+6/minute host/server budget admits that steady retry cadence while bounding
+bursts, until the global daily creation allowance is exhausted. No Rust client or retry policy was changed.
 
 #### Grant retry decision
 
@@ -348,10 +427,9 @@ remain unchanged. Expired rows are excluded from capacity without hot-path
 cleanup.
 
 
-Stage 2 retains the single daily cron and the stage-1 cleanup capacity. It adds
-only the purpose limiter integration/bindings and their tests. Do not deploy it
-until the stage-1 Worker version has been recorded and verified. Rollback target
-is that version of `d54aebc7`, never an earlier commit.
+Original stage 2 (`8e2bfb37`) retained the stage-1 cleanup implementation. The
+budget follow-up above supersedes that cleanup capacity, preserving all purpose
+limiters. Follow the deployment runbook and rollback through `d54aebc7`.
 
 Run the local abuse integration check as well:
 
@@ -359,11 +437,8 @@ Run the local abuse integration check as well:
 node test/local_abuse.mjs "$(npm root -g)/wrangler/package.json"
 ```
 
-Stage-2 local verification: 62 tests, syntax check and deployment dry-run pass.
-The workerd/D1 owner smoke passes; 220 requests blocked across member-path,
-signed grant and login abuse write zero rows after allowances are exhausted.
+Current local abuse integration: 220 coarse-limit denials write zero rows.
 Owner issuance, redemption and endpoint renewal still work after GENERAL
-saturation. Cleanup removes all 200 expired grants in the abuse fixture
-(200 rows_written, 825 rows_read), and the separate daily backlog probe again
-removes 120,000 of 120,001 expired counters. These are local measurements;
-production CPU time and account-wide namespace uniqueness remain unverified.
+coarse-limiter saturation. Cleanup removes all 200 expired grants in that
+fixture (201 local rows_written including the day claim, 814 rows_read).
+See the all-queue, index-inclusive budget verification above for daily capacity.

@@ -42,6 +42,7 @@ class D1Prepared {
     return {
       meta: {
         changes: Number(info.changes || 0),
+        rows_written: Number(info.changes || 0),
         last_row_id: Number(info.lastInsertRowid || 0),
       },
     };

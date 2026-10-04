@@ -91,6 +91,7 @@ test("a non-owner cannot spend the owner's authenticated grant budget", async ()
 
 test("IP gates run before body parsing and device/host signature validation", async () => {
   const env = environment();
+  const before = writes(env);
   for (const [binding, pathname, method] of [
     ["ABUSE_GENERAL_IP", "/v1/bootstrap", "GET"],
     ["ABUSE_OWNER_GRANT_IP", "/v1/servers/server-0001/connect-grants", "POST"],
@@ -103,7 +104,7 @@ test("IP gates run before body parsing and device/host signature validation", as
       headers: { authorization: "Bearer invalid", "x-aa-signature": "invalid", "x-aa-host-signature": "invalid" },
     });
     assert.equal(rejected.status, 429);
-    assert.equal(writes(env), 0);
+    assert.equal(writes(env), before);
   }
 });
 

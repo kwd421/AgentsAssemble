@@ -9,6 +9,7 @@ import {
 } from "./crypto.js";
 import {
   HttpError,
+  temporaryCapacityError,
   cleanIdentifier,
   cleanText,
   json,
@@ -196,8 +197,8 @@ export async function hostAuthentication(request, env, serverId, body, now) {
       )
       .bind(serverId, nonce, now + NONCE_TTL_SECONDS)
       .run();
-  } catch {
-    throw new HttpError(409, "replayed_request");
+  } catch (error) {
+    throw temporaryCapacityError(error) || new HttpError(409, "replayed_request");
   }
 }
 
