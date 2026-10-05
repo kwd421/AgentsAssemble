@@ -138,13 +138,14 @@ export async function deviceRequestCanonical({ method, pathname, timestamp, nonc
 }
 
 
-export function hostRegistrationCanonical({ serverId, ownerPersonId, issuedAt, nonce, claimOwnership = false }) {
+export function hostRegistrationCanonical({ serverId, ownerPersonId, issuedAt, nonce, claimOwnership = false, registrationEpoch = null }) {
   return [
-    claimOwnership ? "AA-HOST-CLAIM-1" : "AA-HOST-REGISTER-1",
+    `${claimOwnership ? "AA-HOST-CLAIM" : "AA-HOST-REGISTER"}-${registrationEpoch === null ? 1 : 2}`,
     serverId,
     ownerPersonId,
     String(issuedAt),
     nonce,
+    ...(registrationEpoch === null ? [] : [registrationEpoch]),
   ].join("\n");
 }
 

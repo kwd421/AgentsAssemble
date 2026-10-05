@@ -95,7 +95,7 @@ export async function bootstrap(session, env, now) {
     .prepare(
       `SELECT person_servers.server_id, person_servers.relation,
               person_servers.alias, servers.label, servers.host_os, servers.icon,
-              servers.host_public_key_jwk, servers.host_key_fingerprint,
+              servers.host_public_key_jwk, servers.host_key_fingerprint, servers.registration_epoch,
               server_endpoints.origin, server_endpoints.state,
               server_endpoints.generation, server_endpoints.lease_expires_at,
               server_endpoints.updated_at
@@ -109,6 +109,7 @@ export async function bootstrap(session, env, now) {
     .all();
   const servers = (result.results || []).map((row) => ({
     server_id: row.server_id,
+    registration_epoch: row.registration_epoch,
     relation: row.relation,
     alias: row.alias || (row.relation === "owner" ? row.label : "") || row.server_id,
     host_os: row.relation === "owner" ? row.host_os : null,

@@ -1,5 +1,5 @@
 import { randomBase64Url, sha256Base64Url } from "./crypto.js";
-import { HttpError, json, parseJson } from "./http.js";
+import { HttpError, json, parseJson, cleanIdentifier } from "./http.js";
 import { hostAuthentication } from "./servers.js";
 
 const GRANT_PREFIX = "aacg1.";
@@ -8,12 +8,13 @@ const MAX_ACTIVE_GRANTS_PER_SESSION = 16;
 
 export async function createServerConnectGrant(session, env, serverId, text, now) {
   const body = parseJson(text);
-  if (Object.keys(body).length !== 0) {
+  const registrationEpoch = body.registration_epoch === undefined ? null : cleanIdentifier(body.registration_epoch, "registration_epoch");
+  if (Object.keys(body).some(key => key !== "registration_epoch")) {
     throw new HttpError(400, "invalid_connect_grant_request");
   }
   const endpoint = await env.DB
     .prepare(
-      `SELECT servers.owner_person_id, servers.revoked_at,
+      `SELECT servers.owner_person_id, servers.revoked_at, servers.registration_epoch,
               server_endpoints.origin, server_endpoints.state,
               server_endpoints.generation, server_endpoints.lease_expires_at
        FROM servers
@@ -22,6 +23,7 @@ export async function createServerConnectGrant(session, env, serverId, text, now
     )
     .bind(serverId)
     .first();
+  if (registrationEpoch !== null && endpoint?.registration_epoch !== registrationEpoch) throw new HttpError(409, "incarnation_conflict");
   if (
     !endpoint ||
     endpoint.revoked_at ||
@@ -55,6 +57,7 @@ export async function createServerConnectGrant(session, env, serverId, text, now
          AND sessions.device_id = ? AND sessions.revoked_at IS NULL
          AND sessions.expires_at > ? AND devices.revoked_at IS NULL
          AND persons.status = 'active' AND servers.owner_person_id = sessions.person_id
+         AND (? IS NULL OR servers.registration_epoch = ?)
          AND servers.revoked_at IS NULL AND server_endpoints.state = 'online'
          AND server_endpoints.origin != '' AND server_endpoints.lease_expires_at > ?
          AND (
@@ -73,12 +76,18 @@ export async function createServerConnectGrant(session, env, serverId, text, now
       session.person_id,
       session.device_id,
       now,
+      registrationEpoch,
+      registrationEpoch,
       now,
       now,
       MAX_ACTIVE_GRANTS_PER_SESSION
     )
     .first();
   if (!inserted) {
+    if (registrationEpoch !== null) {
+      const current = await env.DB.prepare("SELECT registration_epoch FROM servers WHERE server_id = ?").bind(serverId).first();
+      if (current?.registration_epoch !== registrationEpoch) throw new HttpError(409, "incarnation_conflict");
+    }
     const capacity = await env.DB.prepare(
       `SELECT COUNT(*) AS count FROM server_connect_grants
        WHERE session_id = ? AND expires_at > ?`
@@ -103,13 +112,12 @@ export async function createServerConnectGrant(session, env, serverId, text, now
 }
 
 export async function redeemServerConnectGrant(request, env, serverId, text, now) {
-  await hostAuthentication(request, env, serverId, text, now);
-  const body = parseJson(text);
+  const { registrationEpoch, body } = await hostAuthentication(request, env, serverId, text, now);
   const grantToken = String(body.grant_token || "");
   const origin = String(body.origin || "");
   const generation = Number(body.generation);
   if (
-    Object.keys(body).sort().join(",") !== "generation,grant_token,origin" ||
+    Object.keys(body).filter(key => key !== "registration_epoch").sort().join(",") !== "generation,grant_token,origin" ||
     grantToken.length !== GRANT_PREFIX.length + 43 ||
     !grantToken.startsWith(GRANT_PREFIX) ||
     !/^[A-Za-z0-9_-]+$/.test(grantToken.slice(GRANT_PREFIX.length)) ||
@@ -132,13 +140,20 @@ export async function redeemServerConnectGrant(request, env, serverId, text, now
       WHERE source.server_id = ? AND source.secret_hash = ? AND source.expires_at > ?
         AND sessions.revoked_at IS NULL AND sessions.expires_at > ?
         AND devices.revoked_at IS NULL AND persons.status = 'active'
+        AND (? IS NULL OR servers.registration_epoch = ?)
         AND servers.revoked_at IS NULL AND servers.owner_person_id = source.person_id
         AND server_endpoints.state = 'online' AND server_endpoints.lease_expires_at > ?
         AND source.endpoint_origin = ? AND server_endpoints.origin = source.endpoint_origin
         AND source.endpoint_generation = ? AND server_endpoints.generation = source.endpoint_generation
     ) RETURNING server_id, person_id, device_id, expires_at`)
-    .bind(now, serverId, await sha256Base64Url(grantToken), now, now, now, origin, generation).first();
-  if (!grant) throw new HttpError(401, "connect_grant_invalid");
+    .bind(now, serverId, await sha256Base64Url(grantToken), now, now, registrationEpoch, registrationEpoch, now, origin, generation).first();
+  if (!grant) {
+    if (registrationEpoch !== null) {
+      const current = await env.DB.prepare("SELECT registration_epoch FROM servers WHERE server_id = ?").bind(serverId).first();
+      if (current?.registration_epoch !== registrationEpoch) throw new HttpError(409, "incarnation_conflict");
+    }
+    throw new HttpError(401, "connect_grant_invalid");
+  }
   return json({
     status: "authorized",
     server_id: serverId,

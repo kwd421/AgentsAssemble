@@ -396,7 +396,7 @@ remains physical when no retained relationship exists; an FK RESTRICT failure
 returns 409 `deletion_restricted` and rolls back the whole DELETE/cascade.
 Successful deletion accepts `changes >= 1`, including FK cascade and trigger writes.
 
-C3c will introduce a fresh random registration epoch for each new registration.
+C3c-1a introduces a fresh random registration epoch for each new registration.
 Central relationships bind to `server_incarnation = (server_id, host-key fingerprint,
 non-reusable registration epoch)`: a deleted `server_id` may register again, but
 its new incarnation must inherit no previous relationship, grant, or enrollment.
@@ -411,13 +411,99 @@ count only live rows; C3a does not retain revoked rows (M3).
 Local verification: `npm test`, `node test/local_migrations.mjs /path/to/wrangler/package.json`,
 and `node test/local_member_floor.mjs /path/to/wrangler/package.json` exercise
 signed deletion/re-registration, future RESTRICT fixtures, atomic rollback and
-real local D1 deletion metadata. No member table, route, UI, or epoch is added here.
+real local D1 deletion metadata. C3a added no member table, route, UI, or epoch.
+
+### Server incarnation epoch: C3c-1a expand
+
+Migration **0011_server_registration_epoch.sql** adds `servers.registration_epoch`
+and backfills existing rows once with `lower(hex(randomblob(16)))` (128 random bits).
+The Worker supplies a 128-bit Web Crypto random value, encoded as unpadded base64url,
+on a new-row INSERT. Treat the returned value as opaque: backfilled hex and new
+base64url epochs are both valid. Idempotent registration, metadata updates and
+ownership claims preserve the stored epoch. A losing concurrent INSERT discards
+its candidate and returns the stored winner's epoch; it never rotates the row.
+Registration/claim responses and each bootstrap server projection expose
+`registration_epoch`.
+
+During the migration/deployment gap or rollback, the compatibility BEFORE INSERT
+trigger replaces an epoch-less legacy INSERT with one random-epoch INSERT and
+uses `RAISE(IGNORE)` to skip the original. It performs no follow-up UPDATE and
+does not increase D1 `rows_written` (verified on local D1). Legacy C3a registration
+does not consume the direct INSERT change count or RETURNING result; the following
+owner-relationship statement still executes in the same batch. New Worker INSERTs
+already supply epoch and bypass this trigger. Preserve this compatibility path
+until a later contract release retires old writers; do not repurpose it for
+INSERT consumers that require RETURNING.
+
+For subsequent server mutations, send the observed epoch as the top-level JSON
+string field `registration_epoch`, including the JSON body of server DELETE.
+This applies to registration metadata/ownership claim, endpoint publish, renew,
+offline, connect-grant creation/redemption, name and icon changes, and deletion.
+Initial registration omits the field because only Central allocates the epoch.
+An explicit null/empty value is invalid, not a legacy request. A stale epoch
+returns **409 `incarnation_conflict`**; refresh bootstrap and discard the stale
+operation rather than retargeting it to the replacement incarnation.
+
+Canonical transcripts use LF separators, no trailing LF, and UTF-8:
+
+```text
+Host endpoint/renew/offline/redeem (unchanged AA-HOST-1):
+AA-HOST-1\nMETHOD\npathname\ntimestamp\nnonce\nbase64url(SHA256(raw_body))
+
+Device-signed owner requests (unchanged AA-DEVICE-1):
+AA-DEVICE-1\nMETHOD\npathname\ntimestamp\nnonce\nbase64url(SHA256(raw_body))\nbase64url(SHA256(token))\ndevice_id
+
+Registration proof when registration_epoch is supplied:
+AA-HOST-REGISTER-2\nserver_id\nowner_person_id\nissued_at\nnonce\nregistration_epoch
+
+Ownership-claim proof when registration_epoch is supplied:
+AA-HOST-CLAIM-2\nserver_id\nowner_person_id\nissued_at\nnonce\nregistration_epoch
+```
+
+For host/device requests, `raw_body` includes `registration_epoch`: its existing
+body digest signs the epoch without another header or signature operation.
+The registration proof is nested in that device-signed body and independently
+binds the top-level epoch in its v2 host transcript. Without the field, registration
+proofs retain the v1 prefix and omit the final epoch line. HTTP methods are uppercase;
+hashes and signatures remain unpadded base64url with the existing key algorithms.
+
+The authority SQL writes include the supplied epoch, including related claim/icon
+writes and host nonce admission. A pre-read is not the fence: a replacement between
+verification and mutation cannot pass the SQL predicate. Existing dependent rows
+(endpoints, grants, host nonces, directory relationships and icons) are still
+deleted through their server FK cascades. Rate-limit buckets remain keyed by
+server ID/fingerprint and survive server deletion; epoch does not reset a budget.
+No additional request, polling, dependency, signature verification or steady-state
+D1 write is introduced. Production CPU time is not established by local tests.
+
+**Expand only:** omitted epochs retain the old request behavior, including its
+old-incarnation replay exposure. This is not the member-data rollout barrier.
+Next deploy epoch-aware hosts/clients, then perform a separately reviewed contract
+change requiring epoch at every applicable authority boundary. Member binding,
+enrollment, synchronization/cursors and retained relationship schemas remain out
+of scope; their contracts must bind the full incarnation before rollout.
+
+Local verification adds `test/server_epoch.test.mjs`,
+`test/epoch_migration.test.mjs`, and
+`node test/local_epoch.mjs /path/to/wrangler/package.json` (isolated Miniflare D1).
+The regression oracles cover delayed DELETE, exact endpoint replay, all mutation
+fences, legacy workflows, preserved epochs, concurrent registration and backfill.
 
 ### 배포 런북
 
-- Deploy code first, then migrations. C3a has no migration: deploy code only and record its Worker version ID.
-- C3a rollback target is `e93c5c82`; record its corresponding Worker version ID. This supersedes the historical `25fad46a` rollback steps below (M4).
-- Before C3b member data is introduced, establish its schema-compatible rollback floor; C3c adds the random registration epoch contract above.
+- **C3c-1a: migration 0011 first, then this Worker code.** The new code directly
+  selects/writes the new column and is not safe on a pre-0011 database. The schema
+  addition and legacy INSERT trigger preserve old Worker registration during the
+  gap without an extra write. Confirm 0001–0010 are already applied.
+- Record the full deployed Worker version corresponding to **`8c190b48`** (C3a,
+  Git `79a181cd`) as the rollback target. Roll back code only; retain 0011 and its
+  assigned epochs. A code rollback restores legacy behavior and removes the new
+  enforcement, so do not roll out member data or contract while rolled back.
+- After deploying, verify legacy registration/bootstrap and epoch-aware mutation
+  responses, and record the new Worker version. Host rollout and contract follow
+  in separate reviewed releases (expand → deploy → contract).
+- No deployment or remote migration is performed by this implementation. The
+  historical cleanup commands below are not the C3c-1a deployment procedure.
 
 #### Historical cleanup rollout (0009/0010; not the C3a deployment procedure)
 

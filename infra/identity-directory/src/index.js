@@ -172,7 +172,8 @@ async function route(request, env) {
     return deleteServer(
       session,
       env,
-      cleanIdentifier(serverMatch[1], "server_id")
+      cleanIdentifier(serverMatch[1], "server_id"),
+      text
     );
   }
   if (request.method === "POST" && url.pathname === "/v1/bookmarks") {
