@@ -35,7 +35,7 @@ export async function deleteAccount(session, env, text) {
     }
     throw error;
   }
-  // D1 counts cascade and server-tombstone writes as well as the parent row.
+  // D1 counts FK cascade and trigger writes as well as the parent row.
   if (Number(result.meta?.changes || 0) < 1) {
     throw new HttpError(404, "account_not_found");
   }

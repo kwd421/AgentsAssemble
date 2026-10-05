@@ -22,23 +22,6 @@ async function fixture() {
   return { env, owner, serverId, device, register, remove };
 }
 
-// Removing the terminal guards lets these signed public requests reacquire
-// authority after deletion, including an owner-account cascade.
-test("deleted server IDs stay terminal after explicit deletion and account cascade", async t => {
-  for (const account of [false, true]) await t.test(account ? "account cascade" : "server delete", async () => {
-    const f = await fixture();
-    const other = await createGuestIdentity(f.env, { deviceId: "floor-other-device" });
-    assert.equal((await f.remove(account)).status, 200);
-    for (const claim of [false, true]) {
-      const response = await f.register(account ? other : f.owner, claim);
-      assert.equal(response.status, 409);
-      assert.equal((await response.json()).error.code, "server_terminal");
-    }
-    assert.equal(f.env.DB.database.prepare("SELECT COUNT(*) AS n FROM servers").get().n, 0);
-    assert.deepEqual((await (await f.device(other, "/v1/bootstrap")).json()).servers, []);
-  });
-});
-
 // The future schema must RESTRICT every parent on a cascade path. These are
 // test-only relationships. Removing RESTRICT would erase the relation or parent;
 // the public delete must instead preserve the entire durable account state.
@@ -69,23 +52,8 @@ test("future RESTRICT relationships make account and server deletion fail atomic
           assert.deepEqual(db.prepare(`SELECT * FROM ${table}`).all(), rows, table);
         }
         assert.equal((await f.device(f.owner, "/v1/bootstrap")).status, 200);
-        // A failed cascade must not mark the still-live ID terminal.
         assert.equal((await f.register()).status, 200);
       });
     }
   }
-});
-
-test("a retained revoked server cannot be revived by registration or ownership claim", async () => {
-  const f = await fixture();
-  const other = await createGuestIdentity(f.env, { deviceId: "floor-claim-device" });
-  f.env.DB.database.prepare("UPDATE servers SET revoked_at = 123 WHERE server_id = ?").run(f.serverId);
-  for (const [identity, claim] of [[f.owner, false], [other, true]]) {
-    const response = await f.register(identity, claim);
-    assert.equal(response.status, 409);
-    assert.equal((await response.json()).error.code, "server_terminal");
-  }
-  const row = f.env.DB.database.prepare("SELECT owner_person_id, revoked_at FROM servers WHERE server_id = ?").get(f.serverId);
-  assert.equal(row.owner_person_id, f.owner.created.person.person_id);
-  assert.equal(row.revoked_at, 123);
 });

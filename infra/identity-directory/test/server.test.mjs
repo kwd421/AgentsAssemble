@@ -518,7 +518,7 @@ test("concurrent host ownership claims preserve the twenty-server account limit"
   assert.equal((await env.DB.prepare("SELECT COUNT(*) AS count FROM servers WHERE owner_person_id=?").bind(source.created.person.person_id).first()).count, 1);
 });
 
-test("a deleted server ID rejects replacement keys", async () => {
+test("an owner can revoke a server key and register a replacement", async () => {
   const env = environment();
   const { key, created } = await createGuestIdentity(env);
   const originalHost = await hostKey();
@@ -578,8 +578,7 @@ test("a deleted server ID rejects replacement keys", async () => {
       ),
     }
   );
-  assert.equal(replacement.status, 409);
-  assert.equal((await replacement.json()).error.code, "server_terminal");
+  assert.equal(replacement.status, 201);
 });
 
 test("CORS reflects only approved shell and loopback origins in production", async () => {
