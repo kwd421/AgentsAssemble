@@ -216,7 +216,7 @@ async function verifyHostRequest(request, env, serverId, body, now) {
 }
 
 export async function hostAuthentication(request, env, serverId, body, now) {
-  const { nonce, registrationEpoch, body: payload } = await verifyHostRequest(request, env, serverId, body, now);
+  const { nonce, fingerprint, registrationEpoch, body: payload } = await verifyHostRequest(request, env, serverId, body, now);
   try {
     const result = await env.DB
       .prepare(
@@ -229,7 +229,7 @@ export async function hostAuthentication(request, env, serverId, body, now) {
     if (error instanceof HttpError) throw error;
     throw temporaryCapacityError(error) || new HttpError(409, "replayed_request");
   }
-  return { registrationEpoch, body: payload };
+  return { fingerprint, registrationEpoch, body: payload };
 }
 
 export async function updateEndpoint(

@@ -30,6 +30,8 @@ import {
   updateEndpoint,
 } from "./servers.js";
 import {
+  createMemberGrant,
+  redeemMemberGrant,
   createServerConnectGrant,
   redeemServerConnectGrant,
 } from "./server_connect_grants.js";
@@ -124,6 +126,10 @@ async function route(request, env) {
     );
   }
 
+  const memberRedeem = url.pathname.match(/^\/v1\/servers\/([^/]+)\/member-grants\/redeem$/);
+  if (memberRedeem && request.method === "POST") {
+    return redeemMemberGrant(request, env, cleanIdentifier(memberRedeem[1], "server_id"), text, now);
+  }
   const session = await authenticated(request, env, text, now);
   if (request.method === "GET" && url.pathname === "/v1/bootstrap") {
     return bootstrap(session, env, now);
@@ -143,6 +149,10 @@ async function route(request, env) {
   }
   if (request.method === "POST" && url.pathname === "/v1/servers") {
     return registerServer(session, env, text, now);
+  }
+  const memberIssue = url.pathname.match(/^\/v1\/servers\/([^/]+)\/member-grants$/);
+  if (memberIssue && request.method === "POST") {
+    return createMemberGrant(session, env, cleanIdentifier(memberIssue[1], "server_id"), text, now);
   }
   const connectGrantMatch = url.pathname.match(
     /^\/v1\/servers\/([^/]+)\/connect-grants$/

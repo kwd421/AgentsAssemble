@@ -839,3 +839,70 @@ and exhaustion of all three non-owner creation pools. The initial owner smoke
 covers endpoint renewal before ENDPOINT exhaustion. Cleanup removes all 200
 expired grants plus eligible authentication counters in that fixture.
 See the all-queue, index-inclusive budget verification above for daily capacity.
+
+## W1 member admission grants
+
+`POST /v1/servers/{server_id}/member-grants` requires the existing central
+session bearer and device signature. JSON body (both fields required):
+`{"registration_epoch":"...","challenge_hash":"..."}`. The challenge hash is
+the host challenge's SHA-256 encoded as unpadded base64url (43 characters).
+Success is HTTP 201 with
+`{"grant_token":"aamg1.…","server_id":"...","registration_epoch":"...","expires_at":123}`;
+timestamps are Unix seconds. Lifetime is at most 300 seconds, clipped to the
+central session deadline. Active means unused and unexpired: the atomic caps
+are 16 per person and 4 per session+server. A used or expired grant frees a slot.
+The server registration must be live with the supplied epoch; member admission
+does not depend on a directory endpoint lease (the host issues the challenge).
+
+`POST /v1/servers/{server_id}/member-grants/redeem` requires the registered
+Ed25519 host key. JSON body (all fields required):
+`{"registration_epoch":"...","challenge_hash":"...","grant_token":"aamg1.…"}`.
+Success is HTTP 200 with
+`{"person_id":"...","issuer":"https://central.example","display_name":"..."}`.
+The name is an issue-time snapshot capped at 80 Unicode characters. `issuer`
+is the origin of the central redeem URL; hosts must pin their configured central
+origin, use it consistently, and compare the returned issuer to it before binding.
+This response proves identity only; the host still owns invite and room admission.
+
+Signing uses UTF-8, newline-separated fields with no trailing newline. Hashes and
+signatures are unpadded base64url; hash the exact transmitted JSON bytes, not a
+re-serialized object. The epoch, challenge hash and token are therefore body-bound.
+
+```text
+Device (ECDSA P-256 / SHA-256):
+AA-DEVICE-1\nPOST\n/v1/servers/{server_id}/member-grants\n{timestamp}\n{nonce}\n{SHA256(body)}\n{SHA256(session_token)}\n{device_id}
+Host (Ed25519):
+AA-HOST-1\nPOST\n/v1/servers/{server_id}/member-grants/redeem\n{timestamp}\n{nonce}\n{SHA256(body)}
+```
+
+Device headers: `Authorization: Bearer {session_token}`, `x-aa-device-id`,
+`x-aa-timestamp`, `x-aa-nonce`, `x-aa-signature`. Host headers:
+`x-aa-host-timestamp`, `x-aa-host-nonce`, `x-aa-host-signature`. Timestamps are
+Unix seconds (300-second clock tolerance); nonces are 16–128 base64url characters
+and must be fresh on each request. Both member routes use GENERAL limiters and
+creation debt. Existing owner grants keep their prefix, routes and reusable
+semantics, with explicit owner-kind predicates. The shared cleanup queue and
+five-write grant cost remain unchanged; no indexes or free-tier limits increase.
+
+Invalid issuance fields or a missing/invalid epoch yield 400; invalid redemption
+fields, reused/expired grants or revoked identity yield 401; a missing/revoked
+host registration may yield 404; an epoch conflict or
+unavailable issuance yields 409 (`incarnation_conflict` / `member_grant_unavailable`).
+Limits yield 429 (`rate_limited` / `temporary_capacity_exhausted`). A lost redeem
+response requires a fresh host challenge and grant via explicit user retry.
+No member list, membership projection, host binding transaction, or frontend flow
+is implemented by W1.
+
+Deployment runbook: apply expand-only migration `0012_member_grants.sql` after
+0011, then deploy this Worker, then enable the host/frontend member flow.
+Code rollback target is `a79140a9`; retain 0012 and its kind-aware trigger, and
+disable member entry on clients. Old inserts still default to owner; do not down-migrate.
+
+Verification: `npm test` passes 127 tests including existing owner cases;
+`node test/local_member_grants.mjs /path/to/wrangler/package.json` exercises signed
+HTTP on workerd/D1 (parallel caps, route binding, single-use, snapshot and logout).
+`node test/local_migrations.mjs /path/to/wrangler/package.json` verifies the 4.98
+SQL splitter. Pre-implementation member requests failed at HTTP 404. Controlled
+removal of single-use, live-session, host-key, challenge, kind and cap predicates,
+and changes to budget dispatch/default kind each made the behavioral tests fail;
+all mutations were restored. No remote migration or deployment was performed.
