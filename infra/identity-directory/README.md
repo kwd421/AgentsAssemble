@@ -840,19 +840,21 @@ covers endpoint renewal before ENDPOINT exhaustion. Cleanup removes all 200
 expired grants plus eligible authentication counters in that fixture.
 See the all-queue, index-inclusive budget verification above for daily capacity.
 
-## W1 member admission grants
+## W1/W2 member admission grants
 
 `POST /v1/servers/{server_id}/member-grants` requires the existing central
 session bearer and device signature. JSON body (both fields required):
 `{"registration_epoch":"...","challenge_hash":"..."}`. The challenge hash is
 the host challenge's SHA-256 encoded as unpadded base64url (43 characters).
 Success is HTTP 201 with
-`{"grant_token":"aamg1.…","server_id":"...","registration_epoch":"...","expires_at":123}`;
+`{"grant_token":"aamg1.…","server_id":"...","registration_epoch":"...","endpoint_origin":"https://host.example","endpoint_generation":1,"expires_at":123}`;
 timestamps are Unix seconds. Lifetime is at most 300 seconds, clipped to the
-central session deadline. Active means unused and unexpired: the atomic caps
+central session deadline and endpoint lease. Active means unused and unexpired: the atomic caps
 are 16 per person and 4 per session+server. A used or expired grant frees a slot.
-The server registration must be live with the supplied epoch; member admission
-does not depend on a directory endpoint lease (the host issues the challenge).
+The server registration must be live with the supplied epoch. Issuance atomically
+selects and stores its online, unexpired endpoint. Missing, offline or expired
+endpoints yield 409 `server_endpoint_unavailable`. Redemption rechecks the live
+endpoint and requires its origin and generation to match the stored grant.
 
 `POST /v1/servers/{server_id}/member-grants/redeem` requires the registered
 Ed25519 host key. JSON body (all fields required):
@@ -887,7 +889,7 @@ five-write grant cost remain unchanged; no indexes or free-tier limits increase.
 Invalid issuance fields or a missing/invalid epoch yield 400; invalid redemption
 fields, reused/expired grants or revoked identity yield 401; a missing/revoked
 host registration may yield 404; an epoch conflict or
-unavailable issuance yields 409 (`incarnation_conflict` / `member_grant_unavailable`).
+unavailable issuance yields 409 (`incarnation_conflict` / `member_grant_unavailable` / `server_endpoint_unavailable`).
 Limits yield 429 (`rate_limited` / `temporary_capacity_exhausted`). A lost redeem
 response requires a fresh host challenge and grant via explicit user retry.
 No member list, membership projection, host binding transaction, or frontend flow
@@ -898,7 +900,7 @@ Deployment runbook: apply expand-only migration `0012_member_grants.sql` after
 Code rollback target is `a79140a9`; retain 0012 and its kind-aware trigger, and
 disable member entry on clients. Old inserts still default to owner; do not down-migrate.
 
-Verification: `npm test` passes 127 tests including existing owner cases;
+Verification: `npm test` covers member and existing owner cases;
 `node test/local_member_grants.mjs /path/to/wrangler/package.json` exercises signed
 HTTP on workerd/D1 (parallel caps, route binding, single-use, snapshot and logout).
 `node test/local_migrations.mjs /path/to/wrangler/package.json` verifies the 4.98

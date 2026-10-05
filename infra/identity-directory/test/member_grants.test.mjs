@@ -4,6 +4,15 @@ import { sha256Base64Url } from "../src/crypto.js";
 import { createGuestIdentity, environment, hostKey, hostRegistrationProof,
   signedDeviceRequest, signedHostRequest } from "./helpers.mjs";
 
+async function publishEndpoint(env, id, host, epoch, overrides = {}) {
+  const now = Math.floor(Date.now() / 1000);
+  const response = await signedHostRequest(env, id, host.pair, "PUT", {
+    origin: "https://member.trycloudflare.com", generation: 1, issued_at: now,
+    lease_expires_at: now + 600, registration_epoch: epoch, ...overrides,
+  });
+  assert.equal(response.status, 200);
+}
+
 async function fixture() {
   const env = environment();
   const owner = await createGuestIdentity(env);
@@ -16,6 +25,7 @@ async function fixture() {
     host_registration_proof: await hostRegistrationProof(host.pair, id, owner.created.person.person_id) });
   assert.equal(registered.status, 201);
   const epoch = (await registered.json()).registration_epoch;
+  await publishEndpoint(env, id, host, epoch);
   const challenge = await sha256Base64Url("host-held-challenge");
   const body = { registration_epoch: epoch, challenge_hash: challenge };
   const issue = (overrides = {}, identity = member) => device(identity, `/v1/servers/${id}/member-grants`, { ...body, ...overrides });
@@ -88,11 +98,6 @@ test("member grant binds mandatory epoch, challenge, server and registered host 
 });
 
 async function ownerGrant(f) {
-  const now = Math.floor(Date.now() / 1000);
-  assert.equal((await signedHostRequest(f.env, f.id, f.host.pair, "PUT", {
-    origin: "https://member.trycloudflare.com", generation: 1, issued_at: now, lease_expires_at: now + 600,
-    registration_epoch: f.epoch,
-  })).status, 200);
   const r = await f.device(f.owner, `/v1/servers/${f.id}/connect-grants`, { registration_epoch: f.epoch });
   assert.equal(r.status, 201);
   return r.json();
@@ -130,6 +135,7 @@ test("member account cap spans sessions and servers without consuming owner capa
     const r = await f.device(f.owner, "/v1/servers", { server_id: server, host_public_key_jwk: f.host.publicJwk,
       host_registration_proof: await hostRegistrationProof(f.host.pair, server, f.owner.created.person.person_id) });
     const epoch = (await r.json()).registration_epoch;
+    await publishEndpoint(f.env, server, f.host, epoch);
     // Issue as owner here so member and owner capacity isolation is observable.
     for (let j = 0; j < 4; j++) assert.equal((await f.device(f.owner, `/v1/servers/${server}/member-grants`,
       { ...f.body, registration_epoch: epoch })).status, 201);
@@ -185,5 +191,77 @@ test("revocation or host replacement after authentication cannot race the consum
     };
     assert.equal((await f.redeem(g.grant_token)).status, 401);
     assert.equal(f.env.DB.database.prepare("SELECT used_at FROM server_connect_grants WHERE kind = 'member'").get().used_at, null);
+  });
+});
+
+// M1 protects the canonical hand-off target and its lifetime at signed HTTP
+// issue/redeem boundaries. The unfixed empty target, unclipped expiry and absent
+// redeem endpoint fence each violate these observable contracts.
+test("member hand-off returns the persisted endpoint and clips expiry to its lease", async () => {
+  const f = await fixture(), lease = Math.floor(Date.now() / 1000) + 90;
+  await publishEndpoint(f.env, f.id, f.host, f.epoch, {
+    origin: "https://replacement.trycloudflare.com", generation: 2, lease_expires_at: lease,
+  });
+  const g = await f.grant();
+  assert.equal(g.endpoint_origin, "https://replacement.trycloudflare.com");
+  assert.equal(g.endpoint_generation, 2);
+  assert.equal(g.expires_at, lease);
+  const stored = f.env.DB.database.prepare(
+    "SELECT endpoint_origin, endpoint_generation, expires_at FROM server_connect_grants WHERE kind = 'member'").get();
+  assert.deepEqual({ ...stored }, { endpoint_origin: g.endpoint_origin,
+    endpoint_generation: g.endpoint_generation, expires_at: lease });
+  assert.equal((await f.redeem(g.grant_token)).status, 200);
+});
+
+test("member issue rejects unavailable endpoints with the owner error", async t => {
+  for (const sql of ["DELETE FROM server_endpoints", "UPDATE server_endpoints SET state = 'offline'",
+    "UPDATE server_endpoints SET lease_expires_at = 1"]) await t.test(sql, async () => {
+    const f = await fixture();
+    f.env.DB.database.exec(sql);
+    const response = await f.issue();
+    assert.equal(response.status, 409);
+    assert.equal((await response.json()).error.code, "server_endpoint_unavailable");
+    assert.equal(f.env.DB.database.prepare("SELECT COUNT(*) AS n FROM server_connect_grants").get().n, 0);
+  });
+});
+
+test("member redeem rejects changed or unavailable endpoints without consuming the grant", async t => {
+  for (const sql of ["UPDATE server_endpoints SET origin = 'https://other.trycloudflare.com'",
+    "UPDATE server_endpoints SET generation = generation + 1", "DELETE FROM server_endpoints",
+    "UPDATE server_endpoints SET state = 'offline'", "UPDATE server_endpoints SET lease_expires_at = 1"])
+    await t.test(sql, async () => {
+      const f = await fixture(), g = await f.grant();
+      f.env.DB.database.exec(sql);
+      assert.equal((await f.redeem(g.grant_token)).status, 401);
+      assert.equal(f.env.DB.database.prepare("SELECT used_at FROM server_connect_grants WHERE kind = 'member'").get().used_at, null);
+    });
+});
+
+// Interleave a durable endpoint change after preflight but before INSERT: a
+// cached target must neither be issued nor used to bypass the live lease check.
+test("member issue selects the endpoint atomically after preflight", async t => {
+  for (const unavailable of [false, true]) await t.test(String(unavailable), async () => {
+    const f = await fixture(), prepare = f.env.DB.prepare.bind(f.env.DB);
+    const lease = Math.floor(Date.now() / 1000) + 60;
+    f.env.DB.prepare = query => {
+      if (query.startsWith("INSERT INTO server_connect_grants")) {
+        f.env.DB.database.prepare(`UPDATE server_endpoints SET
+          origin = 'https://raced.trycloudflare.com', generation = 2, lease_expires_at = ?`).run(unavailable ? 1 : lease);
+      }
+      return prepare(query);
+    };
+    const response = await f.issue();
+    if (unavailable) {
+      assert.equal(response.status, 409);
+      assert.equal((await response.json()).error.code, "server_endpoint_unavailable");
+      assert.equal(f.env.DB.database.prepare("SELECT COUNT(*) AS n FROM server_connect_grants").get().n, 0);
+    } else {
+      assert.equal(response.status, 201);
+      const g = await response.json();
+      assert.equal(g.expires_at, lease);
+      assert.equal(g.endpoint_origin, "https://raced.trycloudflare.com");
+      assert.equal(g.endpoint_generation, 2);
+      assert.equal((await f.redeem(g.grant_token)).status, 200);
+    }
   });
 });

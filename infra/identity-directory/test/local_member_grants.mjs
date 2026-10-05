@@ -55,9 +55,22 @@ try {
   const body = { registration_epoch: (await registered.json()).registration_epoch,
     challenge_hash: await sha256Base64Url("local-host-challenge") };
   const issuePath = `/v1/servers/${serverId}/member-grants`, redeemPath = `${issuePath}/redeem`;
+  const unavailable = await signed(issuePath, body);
+  assert.equal(unavailable.status, 409);
+  assert.equal((await unavailable.json()).error.code, "server_endpoint_unavailable");
+  const lease = Math.floor(Date.now() / 1000) + 90;
+  await db.prepare(`INSERT INTO server_endpoints
+    (server_id, origin, generation, state, lease_expires_at, updated_at)
+    VALUES (?, 'https://member.trycloudflare.com', 1, 'online', ?, ?)`)
+    .bind(serverId, lease, issuedAt).run();
   const issued = await Promise.all(Array.from({ length: 6 }, () => signed(issuePath, body)));
   assert.deepEqual(issued.map(r => r.status).sort(), [201, 201, 201, 201, 409, 409]);
   const grants = await Promise.all(issued.filter(r => r.status === 201).map(r => r.json()));
+  for (const grant of grants) {
+    assert.equal(grant.endpoint_origin, "https://member.trycloudflare.com");
+    assert.equal(grant.endpoint_generation, 1);
+    assert.equal(grant.expires_at, lease);
+  }
   const redeemBody = { ...body, grant_token: grants[0].grant_token };
   const wrongRoute = await signed(redeemPath, redeemBody, true, `/v1/servers/${serverId}/connect-grants/redeem`);
   assert.equal(wrongRoute.status, 401);
@@ -65,7 +78,12 @@ try {
   assert.deepEqual(redeemed.map(r => r.status).sort(), [200, 401]);
   assert.deepEqual(await redeemed.find(r => r.status === 200).json(), {
     person_id: person.person_id, issuer: "https://central.example", display_name: "Local member" });
+  await db.prepare("UPDATE server_endpoints SET generation = 2 WHERE server_id = ?").bind(serverId).run();
+  assert.equal((await signed(redeemPath, { ...body, grant_token: grants[2].grant_token }, true)).status, 401);
+  await db.prepare("UPDATE server_endpoints SET generation = 1, origin = 'https://other.trycloudflare.com' WHERE server_id = ?").bind(serverId).run();
+  assert.equal((await signed(redeemPath, { ...body, grant_token: grants[3].grant_token }, true)).status, 401);
+  await db.prepare("UPDATE server_endpoints SET origin = 'https://member.trycloudflare.com' WHERE server_id = ?").bind(serverId).run();
   assert.equal((await signed("/v1/logout", {})).status, 200);
   assert.equal((await signed(redeemPath, { ...body, grant_token: grants[1].grant_token }, true)).status, 401);
-  console.log("PASS local D1: split migrations, concurrent caps, route signature, one-use redemption, snapshot, logout");
+  console.log("PASS local D1: split migrations, concurrent caps, route signature, one-use redemption, snapshot, logout, endpoint binding and lease clipping");
 } finally { await mf.dispose(); }
