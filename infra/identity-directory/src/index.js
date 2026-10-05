@@ -31,6 +31,7 @@ import {
 } from "./servers.js";
 import {
   createMemberGrant,
+  previewMemberServer,
   redeemMemberGrant,
   createServerConnectGrant,
   redeemServerConnectGrant,
@@ -149,6 +150,10 @@ async function route(request, env) {
   }
   if (request.method === "POST" && url.pathname === "/v1/servers") {
     return registerServer(session, env, text, now);
+  }
+  const memberPreview = url.pathname.match(/^\/v1\/servers\/([^/]+)\/member-preview$/);
+  if (memberPreview && request.method === "POST") {
+    return previewMemberServer(env, cleanIdentifier(memberPreview[1], "server_id"), text, now);
   }
   const memberIssue = url.pathname.match(/^\/v1\/servers\/([^/]+)\/member-grants$/);
   if (memberIssue && request.method === "POST") {

@@ -1,11 +1,11 @@
 import { HttpError } from "./http.js";
 
-// Only the account page and immutable build assets are public web routes. API
+// Only account/consent pages and immutable build assets are public web routes. API
 // misses must never turn into successful SPA documents.
 export async function serveWebEntry(request, env) {
   const url = new URL(request.url);
   if (!["GET", "HEAD"].includes(request.method) ||
-      !(["/", "/app", "/app/"].includes(url.pathname) || url.pathname.startsWith("/assets/"))) return null;
+      !(["/", "/app", "/app/", "/member-join"].includes(url.pathname) || url.pathname.startsWith("/assets/"))) return null;
   if (!env.ASSETS) throw new HttpError(503, "web_entry_unavailable");
   if (["/app", "/app/"].includes(url.pathname)) return new Response(null, { status: 302, headers: { location: "/", "cache-control": "no-store" } });
   if (!url.pathname.startsWith("/assets/")) url.pathname = "/index.html";

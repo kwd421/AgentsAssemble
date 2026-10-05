@@ -15,7 +15,7 @@ const BOUND_ENDPOINT_SQL = `server_endpoints.origin = source.endpoint_origin
 async function serverEndpoint(env, serverId) {
   return await env.DB
     .prepare(
-      `SELECT servers.owner_person_id, servers.revoked_at, servers.registration_epoch,
+      `SELECT servers.owner_person_id, servers.revoked_at, servers.registration_epoch, servers.label,
               server_endpoints.origin, server_endpoints.state,
               server_endpoints.generation, server_endpoints.lease_expires_at
        FROM servers
@@ -181,6 +181,22 @@ const MEMBER_GRANT_PREFIX = "aamg1.";
 const MAX_ACTIVE_MEMBER_GRANTS_PER_PERSON = 16;
 const MAX_ACTIVE_MEMBER_GRANTS_PER_SESSION_SERVER = 4;
 
+async function memberEndpoint(env, serverId, epoch, now) {
+  const endpoint = await serverEndpoint(env, serverId);
+  if (endpoint?.revoked_at || endpoint?.registration_epoch !== epoch) throw new HttpError(409, "incarnation_conflict");
+  requireLiveEndpoint(endpoint, now);
+  return endpoint;
+}
+
+export async function previewMemberServer(env, serverId, text, now) {
+  const body = parseJson(text);
+  const epoch = cleanIdentifier(body.registration_epoch, "registration_epoch");
+  if (Object.keys(body).join(",") !== "registration_epoch") throw new HttpError(400, "invalid_member_preview_request");
+  const endpoint = await memberEndpoint(env, serverId, epoch, now);
+  return json({ server_id: serverId, label: endpoint.label,
+    endpoint_origin: endpoint.origin, endpoint_generation: Number(endpoint.generation) });
+}
+
 export async function createMemberGrant(session, env, serverId, text, now) {
   const body = parseJson(text);
   const epoch = cleanIdentifier(body.registration_epoch, "registration_epoch");
@@ -188,9 +204,7 @@ export async function createMemberGrant(session, env, serverId, text, now) {
       typeof body.challenge_hash !== "string" || !/^[A-Za-z0-9_-]{43}$/.test(body.challenge_hash)) {
     throw new HttpError(400, "invalid_member_grant_request");
   }
-  const server = await serverEndpoint(env, serverId);
-  if (server?.revoked_at || server?.registration_epoch !== epoch) throw new HttpError(409, "incarnation_conflict");
-  requireLiveEndpoint(server, now);
+  await memberEndpoint(env, serverId, epoch, now);
   const secret = `${MEMBER_GRANT_PREFIX}${randomBase64Url(32)}`;
   // The INSERT owns both active caps; concurrent issuers cannot reserve the same slot.
   const grant = await env.DB.prepare(`INSERT INTO server_connect_grants

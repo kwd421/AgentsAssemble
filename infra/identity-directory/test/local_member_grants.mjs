@@ -63,6 +63,14 @@ try {
     (server_id, origin, generation, state, lease_expires_at, updated_at)
     VALUES (?, 'https://member.trycloudflare.com', 1, 'online', ?, ?)`)
     .bind(serverId, lease, issuedAt).run();
+  const previewPath = `/v1/servers/${serverId}/member-preview`;
+  const preview = await signed(previewPath, { registration_epoch: body.registration_epoch });
+  assert.equal(preview.status, 200);
+  assert.deepEqual(await preview.json(), { server_id: serverId, label: "",
+    endpoint_origin: "https://member.trycloudflare.com", endpoint_generation: 1 });
+  assert.equal((await db.prepare("SELECT COUNT(*) AS n FROM server_connect_grants").first()).n, 0);
+  assert.equal((await signed(previewPath, { registration_epoch: "stale-epoch" })).status, 409);
+  assert.equal((await call(previewPath, JSON.stringify({ registration_epoch: body.registration_epoch }))).status, 401);
   const issued = await Promise.all(Array.from({ length: 6 }, () => signed(issuePath, body)));
   assert.deepEqual(issued.map(r => r.status).sort(), [201, 201, 201, 201, 409, 409]);
   const grants = await Promise.all(issued.filter(r => r.status === 201).map(r => r.json()));
@@ -85,5 +93,5 @@ try {
   await db.prepare("UPDATE server_endpoints SET origin = 'https://member.trycloudflare.com' WHERE server_id = ?").bind(serverId).run();
   assert.equal((await signed("/v1/logout", {})).status, 200);
   assert.equal((await signed(redeemPath, { ...body, grant_token: grants[1].grant_token }, true)).status, 401);
-  console.log("PASS local D1: split migrations, concurrent caps, route signature, one-use redemption, snapshot, logout, endpoint binding and lease clipping");
+  console.log("PASS local D1: split migrations, concurrent caps, route signature, one-use redemption, snapshot, logout, endpoint binding, lease clipping and consent preview");
 } finally { await mf.dispose(); }

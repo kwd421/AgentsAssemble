@@ -842,6 +842,22 @@ See the all-queue, index-inclusive budget verification above for daily capacity.
 
 ## W1/W2 member admission grants
 
+`POST /v1/servers/{server_id}/member-preview` supplies the canonical target for
+pre-consent display. It requires the same Bearer session and AA-DEVICE-1 signature
+as member-grant issuance and uses GENERAL IP/account/session/device limits.
+Request: `{"registration_epoch":"..."}` (required; no other fields).
+HTTP 200: `{"server_id":"...","label":"...","endpoint_origin":"https://host.example","endpoint_generation":1}`.
+A missing/revoked server or epoch mismatch returns 409 `incarnation_conflict`;
+a missing/offline/expired endpoint returns 409 `server_endpoint_unavailable`.
+Missing session or device proof returns 401; malformed input returns 400 and
+request limits return 429. No grant, relationship or server state is changed;
+standard signature replay protection still records its request nonce.
+The preview is a snapshot, not admission authority; issuance/redeem recheck it.
+
+`GET /member-join` (also `HEAD`) serves the shared SPA index on the central origin,
+using the same self-only script/connect policy, `frame-ancestors 'none'`, and
+`Cache-Control: no-store` as `/`. The frontend owns the consent UI.
+
 `POST /v1/servers/{server_id}/member-grants` requires the existing central
 session bearer and device signature. JSON body (both fields required):
 `{"registration_epoch":"...","challenge_hash":"..."}`. The challenge hash is

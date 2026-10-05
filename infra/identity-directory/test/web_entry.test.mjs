@@ -24,3 +24,21 @@ test("central web entry serves the shared bundle and keeps API misses out of the
   assert.match(missing.headers.get("content-type"), /application\/json/);
   assert.equal((await request(env, "/", { headers: { origin: "https://hostile.trycloudflare.com" } })).status, 403);
 });
+
+// A member consent deep link must load the same index under the existing
+// security policy, rather than falling through to authenticated API routing.
+test("member consent entry serves index with the account entry security headers", async () => {
+  const env = environment({ ASSETS: { fetch: async request => new Response(
+    new URL(request.url).pathname === "/index.html" ? '<main id="root">consent bundle</main>' : "wrong asset",
+    { headers: { "content-type": "text/html", "cache-control": "public, max-age=3600" } }) } });
+  const home = await request(env, "/");
+  const member = await request(env, "/member-join");
+  assert.equal(member.status, 200);
+  assert.equal(await member.text(), await home.text());
+  for (const header of ["content-type", "content-security-policy", "cache-control", "x-content-type-options",
+    "referrer-policy", "cross-origin-opener-policy"]) assert.equal(member.headers.get(header), home.headers.get(header));
+  assert.equal(member.headers.get("cache-control"), "no-store");
+  assert.match(member.headers.get("content-security-policy"), /frame-ancestors 'none'/);
+  assert.match(member.headers.get("content-security-policy"), /script-src 'self';/);
+  assert.match(member.headers.get("content-security-policy"), /connect-src 'self';/);
+});

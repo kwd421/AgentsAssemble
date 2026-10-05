@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import { sha256Base64Url } from "../src/crypto.js";
 import { createGuestIdentity, environment, hostKey, hostRegistrationProof,
-  signedDeviceRequest, signedHostRequest } from "./helpers.mjs";
+  request, signedDeviceRequest, signedHostRequest } from "./helpers.mjs";
 
 async function publishEndpoint(env, id, host, epoch, overrides = {}) {
   const now = Math.floor(Date.now() / 1000);
@@ -264,4 +264,52 @@ test("member issue selects the endpoint atomically after preflight", async t => 
       assert.equal((await f.redeem(g.grant_token)).status, 200);
     }
   });
+});
+
+// Consent reads canonical server identity without issuing authority or adding a
+// directory relationship; signed HTTP and durable state are the oracles.
+test("member preview returns canonical consent target without admission side effects", async () => {
+  const f = await fixture();
+  f.env.DB.database.prepare("UPDATE servers SET label = ? WHERE server_id = ?").run("Consent host", f.id);
+  const tables = ["servers", "server_endpoints", "person_servers", "server_connect_grants"];
+  const state = () => tables.map(table => f.env.DB.database.prepare(`SELECT * FROM ${table}`).all());
+  const before = state();
+  const response = await f.device(f.member, `/v1/servers/${f.id}/member-preview`, { registration_epoch: f.epoch });
+  assert.equal(response.status, 200);
+  assert.deepEqual(await response.json(), { server_id: f.id, label: "Consent host",
+    endpoint_origin: "https://member.trycloudflare.com", endpoint_generation: 1 });
+  assert.deepEqual(state(), before);
+});
+
+test("member preview rejects stale incarnation and unavailable endpoints", async t => {
+  for (const [sql, code] of [
+    ["UPDATE servers SET registration_epoch = 'changed'", "incarnation_conflict"],
+    ["UPDATE servers SET revoked_at = 1", "incarnation_conflict"],
+    ["DELETE FROM server_endpoints", "server_endpoint_unavailable"],
+    ["UPDATE server_endpoints SET state = 'offline'", "server_endpoint_unavailable"],
+    ["UPDATE server_endpoints SET lease_expires_at = 1", "server_endpoint_unavailable"],
+  ]) await t.test(sql, async () => {
+    const f = await fixture();
+    f.env.DB.database.exec(sql);
+    const response = await f.device(f.member, `/v1/servers/${f.id}/member-preview`, { registration_epoch: f.epoch });
+    assert.equal(response.status, 409);
+    assert.equal((await response.json()).error.code, code);
+  });
+});
+
+test("member preview requires bearer and device proof and uses GENERAL limits", async () => {
+  const f = await fixture(), path = `/v1/servers/${f.id}/member-preview`;
+  const body = { registration_epoch: f.epoch };
+  assert.equal((await f.device(f.member, path, body)).status, 200);
+  for (const headers of [{}, { authorization: `Bearer ${f.member.created.session.token}` }]) {
+    assert.equal((await request(f.env, path, { method: "POST", body: JSON.stringify(body), headers })).status, 401);
+  }
+  for (const binding of ["ABUSE_GENERAL_ACTOR", "ABUSE_GENERAL_IP"]) {
+    const original = f.env[binding];
+    f.env[binding] = { async limit() { return { success: false }; } };
+    assert.equal((await f.device(f.member, path, body)).status, 429);
+    f.env[binding] = original;
+  }
+  assert.equal((await f.device(f.member, path, {})).status, 400);
+  assert.equal((await f.device(f.member, path, { ...body, origin: "https://untrusted.example" })).status, 400);
 });
