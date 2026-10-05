@@ -57,6 +57,9 @@ export function temporaryCapacityError(error) {
 
 export function errorResponse(error) {
   error = temporaryCapacityError(error) || error;
+  if (String(error?.message || error).includes("server_terminal")) {
+    error = new HttpError(409, "server_terminal");
+  }
   if (error instanceof HttpError) {
     return json({ error: { code: error.code, message: error.message } }, error.status);
   }

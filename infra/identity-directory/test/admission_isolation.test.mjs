@@ -102,7 +102,7 @@ async function hostFixture(env) {
 
 // Contract: one server OR signing key has an exact daily cap, before shared
 // endpoint debt; the unrelated host remains usable. Removing either cap fails.
-test("one host cannot exhaust ENDPOINT, including across registrations and key replacement", async t => {
+test("one host cannot exhaust ENDPOINT, including across registrations and deletion", async t => {
   const env = environment({ SESSION_TTL_SECONDS: "172800" }), advance = utcDayClock(t, env), f = await hostFixture(env);
   const attacker = await f.register("attacker-server"), other = await f.register("honest-server");
   let admitted = 0;
@@ -120,10 +120,10 @@ test("one host cannot exhaust ENDPOINT, including across registrations and key r
   assert.equal((await f.call(other, 1)).status, 200);
   assert.equal((await signedDeviceRequest(env, f.owner.created.session, f.owner.key.pair,
     `/v1/servers/${attacker.id}`, "DELETE")).status, 200);
-  const replacement = await f.register(attacker.id);
-  assert.equal((await f.call(replacement, 1)).status, 429);
+  assert.equal((await f.call(attacker, 1)).status, 404);
+  assert.equal((await f.call(alias, 1)).status, 429);
   advance(86400);
-  assert.equal((await f.call(replacement, 1)).status, 200);
+  assert.equal((await f.call(alias, 1)).status, 200);
 });
 
 // Contract: invalid requests and losing concurrent generations commit neither

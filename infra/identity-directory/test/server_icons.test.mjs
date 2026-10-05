@@ -146,7 +146,6 @@ test("icon write and blob are atomic, revoked registrations reject edits, and de
   assert.equal((await edit(owner, "", icon)).status, 409);
   assert.equal((await call(owner, icon)).status, 404);
   assert.equal((await env.DB.prepare("SELECT icon FROM servers WHERE server_id = ?").bind(id).first()).icon, icon);
-  await env.DB.prepare("UPDATE servers SET revoked_at = NULL WHERE server_id = ?").bind(id).run();
   assert.equal((await call(owner, `/v1/servers/${id}`, "DELETE")).status, 200);
   assert.equal((await env.DB.prepare("SELECT COUNT(*) AS n FROM server_icons").first()).n, 0);
   assert.equal((await call(owner, icon)).status, 404);

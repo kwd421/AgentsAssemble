@@ -23,7 +23,7 @@ and invite credentials remain on each AgentsAssemble engine.
   scopes supply identity and display defaults; no email or contacts scope is used.
 - Signed sessions can revoke every other session or delete their central identity.
   Account deletion cascades through devices, sessions, recovery state, and owned
-  server registrations.
+  server registrations, unless a retained relationship restricts deletion (C3a below).
 - Server endpoints are accepted only when signed by the server's Ed25519 host key.
   Endpoint generations are monotonic, leases expire automatically, and deleting a
   server registration immediately invalidates its old host key. Each central identity
@@ -37,7 +37,7 @@ and invite credentials remain on each AgentsAssemble engine.
 ## Setup
 
 For an existing deployment, follow the deployment runbook below. Deploy the corrected tip directly;
-record the production Worker version corresponding to `25fad46a` for rollback.
+record the rollback version under the C3a floor rules in that runbook.
 
 ```bash
 cd infra/identity-directory
@@ -191,7 +191,8 @@ room credentials or put credentials in URLs.
 
 Migration `0008_server_icons.sql` preserves existing registrations with `icon: ""`.
 Reference and bounded current PNG change atomically; replacement does not accumulate
-old images. Account/server deletion cascades the blob. D1's delete change count
+old images. Successful account/server deletion cascades the blob; a C3a RESTRICT
+failure rolls back the whole deletion, including the blob. D1's delete change count
 includes child rows, so registration deletion accepts a positive count rather than
 misreporting a successful cascade as 404. Only the current canonical owner may edit,
 even during a host ownership claim. No frontend source, room icon or host authority
@@ -202,7 +203,8 @@ changes are part of this feature.
 Do not deploy `d54aebc7` or `8e2bfb37`: their scheduled cleanup is unsafe.
 Deploy the owner-budget-corrected successor of `e8c62941` directly. No history
 is rewritten. Git hashes are not Cloudflare Worker version IDs; record the
-actual `25fad46a` production version separately for direct rollback.
+actual `25fad46a` production version separately for pre-member rollback only;
+the C3a floor rules below supersede that target after the C3b barrier.
 
 ### Shared UTC-day cleanup and creation budgets
 
@@ -387,7 +389,36 @@ ANONYMOUS/AUTH 고갈은 이미 방에 연결된 세션과 소유자 입장 예�
 커스텀 도메인의 WAF 정책, 실제 사용량에 맞는 유료 플랜이다. 이번 변경에서는
 이 대책을 활성화하거나 운영 배포하지 않는다.
 
+### Member binding compatibility floor (C3a)
+
+Migration `0011_member_compatibility_floor.sql` adds only `server_tombstones`
+(server ID primary key, no owner/key/PII) and three triggers. Successful explicit
+server deletion and owner-account cascade record a terminal ID atomically.
+Registration, including ownership claim, cannot reuse a deleted ID or clear a
+retained server's `revoked_at`; the API returns 409 `server_terminal`.
+
+Account/server deletion remains physical when no retained relationship exists.
+A foreign-key restriction returns 409 `deletion_restricted`, with the whole
+DELETE/cascade rolled back. C3b/C3c MUST use `ON DELETE RESTRICT` for retained
+member relationships referencing persons, servers, or any cascade child (including
+person_servers, sessions and grants); CASCADE/SET NULL is not compatible with this
+floor. No member table, route, UI, or deletion-result recovery is introduced here.
+
+There is no extra request or D1 round trip. Each successfully deleted server adds
+one minimal tombstone row write; no budget, limiter, cleanup or CPU limit is raised.
+Tombstones are not expiry-cleaned. IDs deleted before 0011 cannot be reconstructed;
+member provenance and its bounded retention budget remain C3b/C3c work.
+
+Local verification: `npm test`, `node test/local_migrations.mjs /path/to/wrangler/package.json`,
+and `node test/local_member_floor.mjs /path/to/wrangler/package.json` exercise
+signed deletion/registration, future RESTRICT fixtures, rollback and an existing
+database upgrade. The local D1 test fails if the terminal INSERT guard is removed.
+
 ### 배포 런북
+
+- C3a: apply expand-only 0011 after 0010, then deploy this reviewed floor before creating any member data; record its Worker version ID.
+- C3b: proceed only after every traffic/deployment path is floor-or-newer and pre-floor Workers can no longer write D1; retain 0011 on rollback.
+- After that barrier, rollback only to the recorded C3a floor (never `25fad46a` or another pre-floor version); this overrides the older rollback steps below.
 
 This is an operator runbook only; this change performs no production deployment
 or remote migration. Run the commands from the exact reviewed, owner-budget-fixed
@@ -472,7 +503,7 @@ commands do not build or modify the Rust checkout.
    endpoint renewal), and verify the next scheduled run stays within **10,000
    indexed writes**. Local logical-delete metadata alone is not billing evidence.
    Do not increase cron frequency or manually clear the daily claim.
-7. If rollback is needed, disable cron again, wait **15 minutes plus completion
+7. Before the C3b barrier only, if rollback is needed, disable cron again, wait **15 minutes plus completion
    of any active invocation**, then roll back **directly to recorded `25fad46a`**:
 
    ```sh
@@ -702,8 +733,9 @@ cleanup.
 
 
 The corrected release preserves all purpose limiters and bounded cleanup.
-Follow the deployment runbook for direct deployment and direct `25fad46a` rollback
-with cleanup disabled; never deploy the historical unsafe cleanup versions.
+Follow the deployment runbook and its C3a floor rollback restriction; before the
+C3b barrier only, `25fad46a` rollback requires cleanup disabled. Never deploy the
+historical unsafe cleanup versions.
 
 Run the local abuse integration check as well:
 

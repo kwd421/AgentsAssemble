@@ -144,10 +144,18 @@ export async function registerServer(session, env, text, now) {
 }
 
 export async function deleteServer(session, env, serverId) {
-  const result = await env.DB
-    .prepare("DELETE FROM servers WHERE server_id = ? AND owner_person_id = ?")
-    .bind(serverId, session.person_id)
-    .run();
+  let result;
+  try {
+    result = await env.DB
+      .prepare("DELETE FROM servers WHERE server_id = ? AND owner_person_id = ?")
+      .bind(serverId, session.person_id)
+      .run();
+  } catch (error) {
+    if (String(error?.message || error).includes("FOREIGN KEY constraint failed")) {
+      throw new HttpError(409, "deletion_restricted");
+    }
+    throw error;
+  }
   // D1 includes cascaded registration/icon rows in its change count.
   if (Number(result.meta?.changes || 0) < 1) {
     throw new HttpError(404, "server_not_found");

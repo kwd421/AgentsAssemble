@@ -23,11 +23,20 @@ export async function deleteAccount(session, env, text) {
       "Account deletion confirmation did not match the signed-in identity."
     );
   }
-  const result = await env.DB
-    .prepare("DELETE FROM persons WHERE person_id = ?")
-    .bind(session.person_id)
-    .run();
-  if (Number(result.meta?.changes || 0) !== 1) {
+  let result;
+  try {
+    result = await env.DB
+      .prepare("DELETE FROM persons WHERE person_id = ?")
+      .bind(session.person_id)
+      .run();
+  } catch (error) {
+    if (String(error?.message || error).includes("FOREIGN KEY constraint failed")) {
+      throw new HttpError(409, "deletion_restricted");
+    }
+    throw error;
+  }
+  // D1 counts cascade and server-tombstone writes as well as the parent row.
+  if (Number(result.meta?.changes || 0) < 1) {
     throw new HttpError(404, "account_not_found");
   }
   return json({ status: "account_deleted" });

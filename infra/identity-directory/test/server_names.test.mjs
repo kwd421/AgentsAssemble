@@ -43,7 +43,6 @@ test("owner names survive registration and claims; stale and foreign edits canno
   await env.DB.prepare("UPDATE servers SET revoked_at = 1 WHERE server_id = ?").bind(id).run();
   assert.equal((await call(owner, path, "POST", { name: "revoked", expected_name: "이 기기" })).status, 409);
   assert.equal((await env.DB.prepare("SELECT alias FROM person_servers WHERE server_id = ? AND relation = 'owner'").bind(id).first()).alias, "이 기기");
-  await env.DB.prepare("UPDATE servers SET revoked_at = NULL WHERE server_id = ?").bind(id).run();
   await call(owner, "/v1/logout", "POST");
   assert.equal((await call(owner, path, "POST", { name: "logged out", expected_name: "이 기기" })).status, 401);
 });
