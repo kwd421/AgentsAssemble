@@ -42,6 +42,12 @@ export function cleanText(value, max = 80) {
     .slice(0, max);
 }
 
+// Server display names share this write/read normalization, including old rows.
+export function cleanServerName(value, max = 400) {
+  return String(value || "").normalize("NFC").replace(/[\p{Cc}\p{Cf}]/gu, "")
+    .replace(/\s+/gu, " ").trim().slice(0, max).replace(/[\uD800-\uDBFF]$/u, "");
+}
+
 export function json(payload, status = 200, extraHeaders = {}) {
   return new Response(JSON.stringify(payload), {
     status,

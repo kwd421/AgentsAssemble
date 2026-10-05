@@ -1,5 +1,5 @@
 import { randomBase64Url, sha256Base64Url } from "./crypto.js";
-import { HttpError, json, parseJson, cleanIdentifier } from "./http.js";
+import { HttpError, json, parseJson, cleanIdentifier, cleanServerName } from "./http.js";
 import { hostAuthentication } from "./servers.js";
 
 const GRANT_PREFIX = "aacg1.";
@@ -13,7 +13,7 @@ const BOUND_ENDPOINT_SQL = `server_endpoints.origin = source.endpoint_origin
   AND server_endpoints.generation = source.endpoint_generation`;
 
 async function serverEndpoint(env, serverId) {
-  return await env.DB
+  const endpoint = await env.DB
     .prepare(
       `SELECT servers.owner_person_id, servers.revoked_at, servers.registration_epoch,
               COALESCE(NULLIF(owner_names.alias, ''), servers.label) AS label,
@@ -27,6 +27,8 @@ async function serverEndpoint(env, serverId) {
     )
     .bind(serverId)
     .first();
+  if (endpoint) endpoint.label = cleanServerName(endpoint.label);
+  return endpoint;
 }
 
 function requireLiveEndpoint(endpoint, now) {

@@ -12,7 +12,7 @@ import {
   HttpError,
   temporaryCapacityError,
   cleanIdentifier,
-  cleanText,
+  cleanServerName,
   json,
   parseJson,
 } from "./http.js";
@@ -87,11 +87,12 @@ export async function registerServer(session, env, text, now) {
     throw new HttpError(400, "invalid_host_os");
   }
   const nameRevision = body.name_revision === undefined ? 0 : body.name_revision;
+  const normalizedLabel = cleanServerName(body.label, Infinity);
   if (!Number.isSafeInteger(nameRevision) || nameRevision < 0 ||
-      (nameRevision > 0 && (typeof body.label !== "string" || !body.label.trim() || body.label.length > 400 || /\p{Cc}/u.test(body.label)))) {
+      (nameRevision > 0 && (typeof body.label !== "string" || !normalizedLabel || normalizedLabel.length > 400 || /[\p{Cc}\p{Cf}]/u.test(body.label)))) {
     throw new HttpError(400, "invalid_server_name");
   }
-  const label = nameRevision > 0 ? body.label.trim() : cleanText(body.label, 80);
+  const label = nameRevision > 0 ? normalizedLabel : cleanServerName(body.label, 80);
   if (existing && claimOwnership) {
     return claimServerOwnership(env.DB, { serverId, personId: session.person_id,
       fingerprint, label, hostOs, nameRevision, previousOwner: existing.owner_person_id, nonce, now,
@@ -366,7 +367,7 @@ export async function bookmark(session, env, text, now) {
     )
     .bind(
       session.person_id,
-      cleanText(body.alias, 80),
+      cleanServerName(body.alias, 80),
       now,
       now,
       serverId,

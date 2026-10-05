@@ -948,3 +948,11 @@ bounded retry policy, and retains the durable profile as retry source after rest
 Default labels may use up to 400 UTF-16 units to preserve the full profile/model;
 manual aliases retain the existing 80-unit limit. No credentials or model serial
 numbers are included. No deployment or production migration is authorized here.
+
+Daybreak review corrections: 0013 must preserve revisioned labels across legacy
+label-only updates during code rollback (including defaults longer than 80 units).
+Default reset/state guards require a nonempty epoch; legacy name-only edits remain
+isolated. Server names use NFC and collapsed whitespace with Cc/Cf rejected on
+write and stripped on historical reads, before the existing length limits. Host
+dirtiness follows epoch/derived name, while permanent 4xx is parked until epoch
+or profile revision changes; transient failures retain the existing retry policy.

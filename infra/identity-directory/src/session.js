@@ -4,7 +4,7 @@ import {
   sha256Base64Url,
   verifyDeviceSignature,
 } from "./crypto.js";
-import { HttpError, json, temporaryCapacityError } from "./http.js";
+import { HttpError, json, temporaryCapacityError, cleanServerName } from "./http.js";
 
 const CLOCK_SKEW_SECONDS = 300;
 const NONCE_TTL_SECONDS = 600;
@@ -111,8 +111,8 @@ export async function bootstrap(session, env, now) {
     server_id: row.server_id,
     registration_epoch: row.registration_epoch,
     relation: row.relation,
-    alias: row.alias || (row.relation === "owner" ? row.label : "") || row.server_id,
-    ...(row.relation === "owner" ? { default_name: row.label, name_is_default: !row.alias } : {}),
+    alias: cleanServerName(row.alias || (row.relation === "owner" ? row.label : "")) || row.server_id,
+    ...(row.relation === "owner" ? { default_name: cleanServerName(row.label), name_is_default: !row.alias } : {}),
     host_os: row.relation === "owner" ? row.host_os : null,
     icon: row.icon,
     host_public_key_jwk: JSON.parse(row.host_public_key_jwk),
