@@ -438,7 +438,8 @@ INSERT consumers that require RETURNING.
 For subsequent server mutations, send the observed epoch as the top-level JSON
 string field `registration_epoch`, including the JSON body of server DELETE.
 This applies to registration metadata/ownership claim, endpoint publish, renew,
-offline, connect-grant creation/redemption, name and icon changes, and deletion.
+offline, connect-grant creation/redemption, name and icon changes, bookmark
+creation/deletion, and server deletion.
 Initial registration omits the field because only Central allocates the epoch.
 An explicit null/empty value is invalid, not a legacy request. A stale epoch
 returns **409 `incarnation_conflict`**; refresh bootstrap and discard the stale

@@ -344,31 +344,32 @@ export async function updateEndpoint(
 
 export async function bookmark(session, env, text, now) {
   const body = parseJson(text);
+  const registrationEpoch = body.registration_epoch === undefined ? null : cleanIdentifier(body.registration_epoch, "registration_epoch");
   const serverId = cleanIdentifier(body.server_id, "server_id");
-  const server = await env.DB
-    .prepare(
-      "SELECT server_id FROM servers WHERE server_id = ? AND revoked_at IS NULL"
-    )
-    .bind(serverId)
-    .first();
-  if (!server) throw new HttpError(404, "server_not_found");
-  await env.DB
+  const result = await env.DB
     .prepare(
       `INSERT INTO person_servers
        (person_id, server_id, relation, alias, first_seen_at,
         last_connected_at)
-       VALUES (?, ?, 'bookmark', ?, ?, ?)
+       SELECT ?, server_id, 'bookmark', ?, ?, ? FROM servers
+       WHERE server_id = ? AND revoked_at IS NULL
+         AND (? IS NULL OR registration_epoch = ?)
        ON CONFLICT(person_id, server_id) DO UPDATE SET
          alias = excluded.alias,
          last_connected_at = excluded.last_connected_at`
     )
     .bind(
       session.person_id,
-      serverId,
       cleanText(body.alias, 80),
       now,
-      now
+      now,
+      serverId,
+      registrationEpoch,
+      registrationEpoch
     )
     .run();
+  if (!Number(result.meta?.changes || 0)) {
+    throw new HttpError(registrationEpoch === null ? 404 : 409, registrationEpoch === null ? "server_not_found" : "incarnation_conflict");
+  }
   return json({ server_id: serverId, relation: "bookmark" }, 201);
 }

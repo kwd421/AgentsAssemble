@@ -13,6 +13,7 @@ import {
   json,
   ipBucket,
   nowSeconds,
+  parseJson,
 } from "./http.js";
 import {
   exchangeNativeGoogleHandoff,
@@ -187,13 +188,21 @@ async function route(request, env) {
       url.pathname.slice("/v1/bookmarks/".length),
       "server_id"
     );
-    await env.DB
+    const body = parseJson(text);
+    const registrationEpoch = body.registration_epoch === undefined ? null : cleanIdentifier(body.registration_epoch, "registration_epoch");
+    const result = await env.DB
       .prepare(
         `DELETE FROM person_servers
-         WHERE person_id = ? AND server_id = ? AND relation = 'bookmark'`
+         WHERE person_id = ? AND server_id = ? AND relation = 'bookmark'
+           AND (? IS NULL OR EXISTS (SELECT 1 FROM servers
+             WHERE servers.server_id = person_servers.server_id AND registration_epoch = ?))`
       )
-      .bind(session.person_id, serverId)
+      .bind(session.person_id, serverId, registrationEpoch, registrationEpoch)
       .run();
+    if (!Number(result.meta?.changes || 0) && registrationEpoch !== null) {
+      const current = await env.DB.prepare("SELECT registration_epoch FROM servers WHERE server_id = ?").bind(serverId).first();
+      if (current?.registration_epoch !== registrationEpoch) throw new HttpError(409, "incarnation_conflict");
+    }
     return json({ status: "removed", server_id: serverId });
   }
   throw new HttpError(404, "not_found");

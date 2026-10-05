@@ -119,6 +119,13 @@ test("legacy and epoch-aware owner workflows preserve the registration epoch", a
       generation: 2, issued_at: f.endpoint.issued_at, ...field,
     })).status, 200);
     const other = await createGuestIdentity(f.env, { deviceId: "epoch-next-owner" });
+    const bookmarkCall = (path, method, body) => signedDeviceRequest(f.env, other.created.session, other.key.pair, path, method, body);
+    assert.equal((await bookmarkCall("/v1/bookmarks", "POST", { server_id: f.id, ...field })).status, 201);
+    assert.equal((await (await bookmarkCall("/v1/bootstrap")).json()).servers[0].relation, "bookmark");
+    for (let retry = 0; retry < 2; retry++) {
+      assert.equal((await bookmarkCall(`/v1/bookmarks/${f.id}`, "DELETE", aware ? field : undefined)).status, 200);
+      assert.equal((await (await bookmarkCall("/v1/bootstrap")).json()).servers.length, 0);
+    }
     const claimed = await signedDeviceRequest(f.env, other.created.session, other.key.pair, "/v1/servers", "POST",
       await registrationBody(f, other, aware ? f.epoch : undefined, true));
     assert.equal(claimed.status, 200);
@@ -142,7 +149,13 @@ test("stale epoch fences every server authority route without changing current s
   const before = f.env.DB.database.prepare("SELECT * FROM servers").all();
   const endpoints = f.env.DB.database.prepare("SELECT * FROM server_endpoints").all();
   const registrationBodyValue = await registrationBody(f, f.owner, f.epoch);
+  const visitor = await createGuestIdentity(f.env, { deviceId: "stale-bookmark-device" });
+  const bookmarkCall = (path, method, body) => signedDeviceRequest(f.env, visitor.created.session, visitor.key.pair, path, method, body);
+  assert.equal((await bookmarkCall("/v1/bookmarks", "POST", { server_id: f.id, alias: "Current bookmark" })).status, 201);
+  const relationships = f.env.DB.database.prepare("SELECT * FROM person_servers").all();
   const requests = [
+    () => bookmarkCall("/v1/bookmarks", "POST", { server_id: f.id, alias: "Stale bookmark", ...field }),
+    () => bookmarkCall(`/v1/bookmarks/${f.id}`, "DELETE", field),
     () => f.device("/v1/servers", "POST", registrationBodyValue),
     () => f.device(`/v1/servers/${f.id}/name`, "POST", { name: "Stale", expected_name: "Epoch server", ...field }),
     () => f.device(`/v1/servers/${f.id}/icon`, "POST", { icon: "", expected_icon: "", ...field }),
@@ -163,6 +176,7 @@ test("stale epoch fences every server authority route without changing current s
     await registrationBody(f, other, f.epoch, true));
   assert.equal(claim.status, 409);
   assert.equal((await claim.json()).error.code, "incarnation_conflict");
+  assert.deepEqual(f.env.DB.database.prepare("SELECT * FROM person_servers").all(), relationships);
   assert.deepEqual(f.env.DB.database.prepare("SELECT * FROM servers").all(), before);
   assert.deepEqual(f.env.DB.database.prepare("SELECT * FROM server_endpoints").all(), endpoints);
   assert.equal(f.env.DB.database.prepare("SELECT last_used_at FROM server_connect_grants").get().last_used_at, null);
@@ -187,18 +201,20 @@ test("stripping epoch invalidates host signature and registration proof", async 
 // Removing only a SQL fence (keeping the early check) must allow a visible write
 // and fail this test. The snapshot oracle also covers nonce/budget rollback.
 test("SQL epoch predicates fence a replacement after verification", async t => {
-  for (const route of ["register", "claim", "name", "icon", "grant", "redeem", "publish", "renew", "offline", "delete"]) {
+  for (const route of ["register", "claim", "name", "icon", "grant", "redeem", "publish", "renew", "offline", "delete", "bookmark", "unbookmark"]) {
     await t.test(route, async () => {
       const f = await fixture();
       const field = { registration_epoch: f.epoch };
       assert.equal((await signedHostRequest(f.env, f.id, f.host.pair, "PUT", f.endpoint)).status, 200);
       const grant = await (await f.device(`/v1/servers/${f.id}/connect-grants`, "POST", {})).json();
       const other = await createGuestIdentity(f.env, { deviceId: "racing-claim-owner" });
+      const bookmarkCall = (path, method, body) => signedDeviceRequest(f.env, other.created.session, other.key.pair, path, method, body);
+      if (route === "unbookmark") assert.equal((await bookmarkCall("/v1/bookmarks", "POST", { server_id: f.id })).status, 201);
       const body = await registrationBody(f, route === "claim" ? other : f.owner, f.epoch, route === "claim");
       const sqlBoundary = { register: "UPDATE servers SET label", claim: "UPDATE servers SET owner_person_id",
         name: "UPDATE person_servers SET alias", icon: "UPDATE servers SET icon", grant: "INSERT INTO server_connect_grants",
         redeem: "UPDATE server_connect_grants SET last_used_at", publish: "INSERT INTO server_endpoints",
-        renew: "UPDATE server_endpoints SET lease_expires_at", offline: "INSERT INTO server_endpoints", delete: "DELETE FROM servers" }[route];
+        renew: "UPDATE server_endpoints SET lease_expires_at", offline: "INSERT INTO server_endpoints", delete: "DELETE FROM servers", bookmark: "INSERT INTO person_servers", unbookmark: "DELETE FROM person_servers" }[route];
       const db = f.env.DB.database, prepare = f.env.DB.prepare.bind(f.env.DB);
       const tables = ["servers", "person_servers", "server_endpoints", "server_icons", "server_connect_grants"];
       let before;
@@ -210,6 +226,8 @@ test("SQL epoch predicates fence a replacement after verification", async t => {
         return prepare(sql);
       };
       const calls = {
+        bookmark: () => bookmarkCall("/v1/bookmarks", "POST", { server_id: f.id, ...field }),
+        unbookmark: () => bookmarkCall(`/v1/bookmarks/${f.id}`, "DELETE", field),
         register: () => f.device("/v1/servers", "POST", body),
         claim: () => signedDeviceRequest(f.env, other.created.session, other.key.pair, "/v1/servers", "POST", body),
         name: () => f.device(`/v1/servers/${f.id}/name`, "POST", { name: "Racing rename", expected_name: "Epoch server", ...field }),
