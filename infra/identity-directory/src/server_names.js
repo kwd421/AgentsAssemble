@@ -1,28 +1,53 @@
 import { HttpError, json, parseJson, cleanIdentifier } from "./http.js";
+import { hostAuthentication } from "./servers.js";
 
 export async function renameServer(session, env, serverId, text) {
   const body = parseJson(text);
   const registrationEpoch = body.registration_epoch === undefined ? null : cleanIdentifier(body.registration_epoch, "registration_epoch");
-  if (typeof body.name !== "string" || !body.name.trim() ||
-      body.name.trim().length > 80 || /\p{Cc}/u.test(body.name) ||
-      typeof body.expected_name !== "string" || body.expected_name.length > 128) {
+  const reset = body.reset_default === true;
+  const expectedDefault = body.expected_name_is_default === undefined ? null : body.expected_name_is_default ? 1 : 0;
+  if ((body.expected_name_is_default !== undefined && typeof body.expected_name_is_default !== "boolean") ||
+      (body.reset_default !== undefined && typeof body.reset_default !== "boolean") ||
+      (!reset && (typeof body.name !== "string" || !body.name.trim() ||
+      body.name.trim().length > 80 || /\p{Cc}/u.test(body.name))) ||
+      typeof body.expected_name !== "string" || body.expected_name.length > 400) {
     throw new HttpError(400, "invalid_server_name");
   }
-  const name = body.name.trim();
+  const name = reset ? "" : body.name.trim();
   // Ownership and the editor's observed value are checked in the write itself.
   const result = await env.DB.prepare(`UPDATE person_servers SET alias = ?
     WHERE person_id = ? AND server_id = ? AND relation = 'owner'
     AND EXISTS (SELECT 1 FROM servers WHERE servers.server_id = person_servers.server_id
       AND (? IS NULL OR servers.registration_epoch = ?)
       AND servers.owner_person_id = person_servers.person_id AND servers.revoked_at IS NULL
-      AND COALESCE(NULLIF(person_servers.alias, ''), NULLIF(servers.label, ''), servers.server_id) IN (?, ?))`)
-    .bind(name, session.person_id, serverId, registrationEpoch, registrationEpoch, body.expected_name, name).run();
+      AND ((COALESCE(NULLIF(person_servers.alias, ''), NULLIF(servers.label, ''), servers.server_id) = ?
+        AND (? IS NULL OR (person_servers.alias = '') = ?))
+        OR (? = 1 AND person_servers.alias = '') OR (? = 0 AND person_servers.alias = ?)))`)
+    .bind(name, session.person_id, serverId, registrationEpoch, registrationEpoch, body.expected_name, expectedDefault, expectedDefault, reset ? 1 : 0, reset ? 1 : 0, name).run();
   if (Number(result.meta?.changes || 0) !== 1) {
     if (registrationEpoch !== null) {
       const current = await env.DB.prepare("SELECT registration_epoch FROM servers WHERE server_id = ?").bind(serverId).first();
       if (current?.registration_epoch !== registrationEpoch) throw new HttpError(409, "incarnation_conflict");
     }
-    throw new HttpError(409, "server_name_conflict", "서버 목록이 바뀌었거나 이름 변경 권한이 없습니다. 목록을 새로고침해 주세요.");
+    throw new HttpError(409, "server_name_conflict", "서버 목록이 바뀌었거나 이름 변경 권한이 없어요. 목록을 새로고침해 주세요.");
   }
+  return json({ server_id: serverId, name });
+}
+
+// Host-owned default only: a profile update cannot overwrite an explicit alias.
+export async function updateDefaultServerName(request, env, serverId, text, now) {
+  const { fingerprint, registrationEpoch, body } = await hostAuthentication(request, env, serverId, text, now);
+  if (!registrationEpoch || typeof body.name !== "string" || !body.name.trim() ||
+      body.name.length > 400 || /\p{Cc}/u.test(body.name) ||
+      !Number.isSafeInteger(body.name_revision) || body.name_revision < 1) {
+    throw new HttpError(400, "invalid_server_name");
+  }
+  const name = body.name.trim();
+  const result = await env.DB.prepare(`UPDATE servers SET label = ?, name_revision = ?
+    WHERE server_id = ? AND host_key_fingerprint = ? AND registration_epoch = ? AND revoked_at IS NULL
+      AND (name_revision < ? OR (name_revision = ? AND label = ?))`)
+    .bind(name, body.name_revision, serverId, fingerprint, registrationEpoch,
+      body.name_revision, body.name_revision, name).run();
+  if (Number(result.meta?.changes || 0) !== 1) throw new HttpError(409, "server_name_conflict");
   return json({ server_id: serverId, name });
 }

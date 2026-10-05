@@ -4,7 +4,7 @@ import { HttpError, json } from "./http.js";
 // native host signature and the exact existing host key. Preserve both accounts,
 // the endpoint and local room authority while moving this directory registration.
 export async function claimServerOwnership(db, { serverId, personId, fingerprint,
-  label, hostOs, previousOwner, nonce, now, maxServers, registrationEpoch }) {
+  label, hostOs, nameRevision, previousOwner, nonce, now, maxServers, registrationEpoch }) {
   if (previousOwner !== personId) {
     const count = await db.prepare("SELECT COUNT(*) AS count FROM servers WHERE owner_person_id = ?").bind(personId).first();
     if (Number(count?.count || 0) >= maxServers) throw new HttpError(409, "server_limit_reached");
@@ -12,10 +12,10 @@ export async function claimServerOwnership(db, { serverId, personId, fingerprint
   let claimed = true;
   try {
     await db.batch([
-      db.prepare(`UPDATE servers SET owner_person_id = ?, label = ?, host_os = COALESCE(?, host_os), revoked_at = NULL
+      db.prepare(`UPDATE servers SET owner_person_id = ?, label = CASE WHEN name_revision = 0 OR ? > name_revision THEN ? ELSE label END, name_revision = MAX(name_revision, ?), host_os = COALESCE(?, host_os), revoked_at = NULL
         WHERE server_id = ? AND owner_person_id = ? AND host_key_fingerprint = ? AND (? IS NULL OR registration_epoch = ?)
         AND (owner_person_id = ? OR (SELECT COUNT(*) FROM servers WHERE owner_person_id = ?) < ?)`)
-        .bind(personId, label, hostOs, serverId, previousOwner, fingerprint, registrationEpoch, registrationEpoch, personId, personId, maxServers),
+        .bind(personId, nameRevision, label, nameRevision, hostOs, serverId, previousOwner, fingerprint, registrationEpoch, registrationEpoch, personId, personId, maxServers),
       db.prepare(`INSERT INTO host_request_nonces (server_id, nonce, expires_at)
         VALUES (?, CASE WHEN changes() = 1 THEN ? ELSE NULL END, ?)`)
         .bind(serverId, `claim:${nonce}`, now + 600),

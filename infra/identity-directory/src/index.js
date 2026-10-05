@@ -19,7 +19,7 @@ import {
   exchangeNativeGoogleHandoff,
   startNativeGoogleHandoff,
 } from "./google_handoff.js";
-import { renameServer } from "./server_names.js";
+import { renameServer, updateDefaultServerName } from "./server_names.js";
 import { getServerIcon, setServerIcon } from "./server_icons.js";
 import { ICON_REQUEST_BYTES } from "./server_icon_image.js";
 import { authenticated, bootstrap } from "./session.js";
@@ -130,6 +130,10 @@ async function route(request, env) {
   const memberRedeem = url.pathname.match(/^\/v1\/servers\/([^/]+)\/member-grants\/redeem$/);
   if (memberRedeem && request.method === "POST") {
     return redeemMemberGrant(request, env, cleanIdentifier(memberRedeem[1], "server_id"), text, now);
+  }
+  const defaultNameMatch = url.pathname.match(/^\/v1\/servers\/([^/]+)\/name$/);
+  if (defaultNameMatch && request.method === "PUT") {
+    return updateDefaultServerName(request, env, cleanIdentifier(defaultNameMatch[1], "server_id"), text, now);
   }
   const session = await authenticated(request, env, text, now);
   if (request.method === "GET" && url.pathname === "/v1/bootstrap") {

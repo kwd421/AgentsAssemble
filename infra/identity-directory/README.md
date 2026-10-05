@@ -924,3 +924,27 @@ SQL splitter. Pre-implementation member requests failed at HTTP 404. Controlled
 removal of single-use, live-session, host-key, challenge, kind and cap predicates,
 and changes to budget dispatch/default kind each made the behavioral tests fail;
 all mutations were restored. No remote migration or deployment was performed.
+
+## Profile-derived server names (2026-10-06)
+
+The Rust host owns `{local operator profile name}의 {hardware model}` (unknown model:
+`컴퓨터`). `servers.label` remains the automatic default; a nonempty owner
+`person_servers.alias` remains an explicit fixed name, even if equal to a past
+automatic name. Empty aliases migrate on the next host registration/name sync.
+Ambiguous nonempty historical aliases are preserved, never guessed from text.
+The existing POST `/v1/servers/:id/name` supports `reset_default: true` with the
+same owner, epoch and observed-name guards, clearing only that owner's alias.
+Bootstrap supplies owner-only `default_name` and `name_is_default`; member preview
+uses the current owner's alias or host default, never the invite fragment.
+
+Additive migration 0013 stores the latest host profile `name_revision`. New host
+registration carries the optional revision; older registrations remain accepted
+and cannot replace a revisioned default. Signed host PUT on the existing `/name`
+resource updates only the default with a nondecreasing profile revision and exact
+registration epoch. AA-HOST-1, nonce replay and GENERAL abuse limits apply; no new
+authentication mechanism. Same revision must have the same name; stale writes fail.
+The host serializes delivery, uses its existing directory change notification and
+bounded retry policy, and retains the durable profile as retry source after restart.
+Default labels may use up to 400 UTF-16 units to preserve the full profile/model;
+manual aliases retain the existing 80-unit limit. No credentials or model serial
+numbers are included. No deployment or production migration is authorized here.

@@ -86,19 +86,24 @@ export async function registerServer(session, env, text, now) {
   if (body.host_os !== undefined && !["macos", "windows", "linux", "other"].includes(hostOs)) {
     throw new HttpError(400, "invalid_host_os");
   }
-  const label = cleanText(body.label, 80);
+  const nameRevision = body.name_revision === undefined ? 0 : body.name_revision;
+  if (!Number.isSafeInteger(nameRevision) || nameRevision < 0 ||
+      (nameRevision > 0 && (typeof body.label !== "string" || !body.label.trim() || body.label.length > 400 || /\p{Cc}/u.test(body.label)))) {
+    throw new HttpError(400, "invalid_server_name");
+  }
+  const label = nameRevision > 0 ? body.label.trim() : cleanText(body.label, 80);
   if (existing && claimOwnership) {
     return claimServerOwnership(env.DB, { serverId, personId: session.person_id,
-      fingerprint, label, hostOs, previousOwner: existing.owner_person_id, nonce, now,
+      fingerprint, label, hostOs, nameRevision, previousOwner: existing.owner_person_id, nonce, now,
       maxServers: MAX_SERVERS_PER_PERSON, registrationEpoch });
   }
   let storedEpoch = existing?.registration_epoch;
   if (existing) {
     const result = await env.DB
       .prepare(
-        "UPDATE servers SET label = ?, host_os = COALESCE(?, host_os), revoked_at = NULL WHERE server_id = ? AND owner_person_id = ? AND host_key_fingerprint = ? AND (? IS NULL OR registration_epoch = ?) RETURNING registration_epoch"
+        "UPDATE servers SET label = CASE WHEN name_revision = 0 OR ? > name_revision THEN ? ELSE label END, name_revision = MAX(name_revision, ?), host_os = COALESCE(?, host_os), revoked_at = NULL WHERE server_id = ? AND owner_person_id = ? AND host_key_fingerprint = ? AND (? IS NULL OR registration_epoch = ?) RETURNING registration_epoch"
       )
-      .bind(label, hostOs, serverId, session.person_id, fingerprint, registrationEpoch, registrationEpoch)
+      .bind(nameRevision, label, nameRevision, hostOs, serverId, session.person_id, fingerprint, registrationEpoch, registrationEpoch)
       .first();
     if (!result) throw new HttpError(409, registrationEpoch === null ? "server_identity_conflict" : "incarnation_conflict");
     storedEpoch = result.registration_epoch;
@@ -110,8 +115,8 @@ export async function registerServer(session, env, text, now) {
           .prepare(
             `INSERT INTO servers
              (server_id, owner_person_id, host_public_key_jwk,
-              host_key_fingerprint, label, host_os, created_at, revoked_at, registration_epoch)
-             VALUES (?, ?, ?, ?, ?, ?, ?, NULL, ?)`
+              host_key_fingerprint, label, host_os, created_at, revoked_at, registration_epoch, name_revision)
+             VALUES (?, ?, ?, ?, ?, ?, ?, NULL, ?, ?)`
           )
           .bind(
             serverId,
@@ -121,7 +126,8 @@ export async function registerServer(session, env, text, now) {
             label,
             hostOs,
             now,
-            storedEpoch
+            storedEpoch,
+            nameRevision
           ),
         env.DB
           .prepare(

@@ -15,10 +15,13 @@ const BOUND_ENDPOINT_SQL = `server_endpoints.origin = source.endpoint_origin
 async function serverEndpoint(env, serverId) {
   return await env.DB
     .prepare(
-      `SELECT servers.owner_person_id, servers.revoked_at, servers.registration_epoch, servers.label,
+      `SELECT servers.owner_person_id, servers.revoked_at, servers.registration_epoch,
+              COALESCE(NULLIF(owner_names.alias, ''), servers.label) AS label,
               server_endpoints.origin, server_endpoints.state,
               server_endpoints.generation, server_endpoints.lease_expires_at
        FROM servers
+       LEFT JOIN person_servers AS owner_names ON owner_names.server_id = servers.server_id
+         AND owner_names.person_id = servers.owner_person_id AND owner_names.relation = 'owner'
        LEFT JOIN server_endpoints USING(server_id)
        WHERE servers.server_id = ?`
     )
