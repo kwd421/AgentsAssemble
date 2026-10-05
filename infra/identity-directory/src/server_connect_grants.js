@@ -1,5 +1,5 @@
 import { randomBase64Url, sha256Base64Url } from "./crypto.js";
-import { HttpError, json, parseJson, cleanIdentifier, cleanServerName } from "./http.js";
+import { HttpError, json, parseJson, cleanIdentifier, serverDisplayName } from "./http.js";
 import { hostAuthentication } from "./servers.js";
 
 const GRANT_PREFIX = "aacg1.";
@@ -16,7 +16,7 @@ async function serverEndpoint(env, serverId) {
   const endpoint = await env.DB
     .prepare(
       `SELECT servers.owner_person_id, servers.revoked_at, servers.registration_epoch,
-              COALESCE(NULLIF(owner_names.alias, ''), servers.label) AS label,
+              owner_names.alias, servers.label,
               server_endpoints.origin, server_endpoints.state,
               server_endpoints.generation, server_endpoints.lease_expires_at
        FROM servers
@@ -27,7 +27,7 @@ async function serverEndpoint(env, serverId) {
     )
     .bind(serverId)
     .first();
-  if (endpoint) endpoint.label = cleanServerName(endpoint.label);
+  if (endpoint) endpoint.label = serverDisplayName(endpoint.alias, endpoint.label, serverId);
   return endpoint;
 }
 

@@ -1,4 +1,4 @@
-import { HttpError, json, parseJson, cleanIdentifier, cleanServerName } from "./http.js";
+import { HttpError, json, parseJson, cleanIdentifier, cleanServerName, serverDisplayName } from "./http.js";
 import { hostAuthentication } from "./servers.js";
 
 export async function renameServer(session, env, serverId, text) {
@@ -16,21 +16,23 @@ export async function renameServer(session, env, serverId, text) {
     throw new HttpError(400, "invalid_server_name");
   }
   // Read sanitation must not break the observed-name CAS for historical rows.
-  const observed = await env.DB.prepare(`SELECT COALESCE(NULLIF(person_servers.alias, ''), NULLIF(servers.label, ''), servers.server_id) AS name
+  const observed = await env.DB.prepare(`SELECT person_servers.alias, servers.label
     FROM person_servers JOIN servers USING(server_id)
     WHERE person_servers.person_id = ? AND server_id = ? AND relation = 'owner'`)
     .bind(session.person_id, serverId).first();
-  const expectedName = observed && cleanServerName(observed.name) === body.expected_name ? observed.name : body.expected_name;
-  // Ownership and the editor's observed value are checked in the write itself.
+  const matchesDisplay = observed && serverDisplayName(observed.alias, observed.label, serverId) === body.expected_name &&
+    (expectedDefault === null || Number(!cleanServerName(observed.alias, 80)) === expectedDefault);
+  // Resolve the displayed value above, but atomically guard the original stored
+  // alias and label so a concurrent change cannot pass using a sanitized snapshot.
   const result = await env.DB.prepare(`UPDATE person_servers SET alias = ?
     WHERE person_id = ? AND server_id = ? AND relation = 'owner'
     AND EXISTS (SELECT 1 FROM servers WHERE servers.server_id = person_servers.server_id
       AND (? IS NULL OR servers.registration_epoch = ?)
       AND servers.owner_person_id = person_servers.person_id AND servers.revoked_at IS NULL
-      AND ((COALESCE(NULLIF(person_servers.alias, ''), NULLIF(servers.label, ''), servers.server_id) = ?
-        AND (? IS NULL OR (person_servers.alias = '') = ?))
+      AND ((? = 1 AND person_servers.alias = ? AND servers.label = ?)
         OR (? = 1 AND person_servers.alias = '') OR (? = 0 AND person_servers.alias = ?)))`)
-    .bind(name, session.person_id, serverId, registrationEpoch, registrationEpoch, expectedName, expectedDefault, expectedDefault, reset ? 1 : 0, reset ? 1 : 0, name).run();
+    .bind(name, session.person_id, serverId, registrationEpoch, registrationEpoch, matchesDisplay ? 1 : 0,
+      observed?.alias ?? "", observed?.label ?? "", reset ? 1 : 0, reset ? 1 : 0, name).run();
   if (Number(result.meta?.changes || 0) !== 1) {
     if (registrationEpoch !== null) {
       const current = await env.DB.prepare("SELECT registration_epoch FROM servers WHERE server_id = ?").bind(serverId).first();

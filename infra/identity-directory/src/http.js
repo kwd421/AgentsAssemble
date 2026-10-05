@@ -48,6 +48,10 @@ export function cleanServerName(value, max = 400) {
     .replace(/\s+/gu, " ").trim().slice(0, max).replace(/[\uD800-\uDBFF]$/u, "");
 }
 
+export function serverDisplayName(alias, label, serverId) {
+  return cleanServerName(alias, 80) || cleanServerName(label, 400) || serverId;
+}
+
 export function json(payload, status = 200, extraHeaders = {}) {
   return new Response(JSON.stringify(payload), {
     status,

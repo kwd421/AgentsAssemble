@@ -216,3 +216,46 @@ test("server names normalize before limits and sanitize historical preview and e
     expected_name: "old Café", expected_name_is_default: false })).status, 200);
   assert.equal((await preview()).label, "historical Café");
 });
+
+// Historical aliases must remain readable and recoverable through signed HTTP.
+// Selecting the raw alias before sanitation breaks these display/edit assertions.
+for (const [scenario, alias, label, expected, isDefault] of [
+  ["format-only alias", "\u202e", `  ${"e\u0301".repeat(410)}\u2066  `, "é".repeat(400), true],
+  ["format-only alias and label", "\u202e", "\u2066", "historical-empty-host", true],
+  ["oversized historical alias", "a".repeat(90), "Default host", "a".repeat(80), false],
+]) {
+  test(`${scenario} uses the displayed fallback for preview, rename and reset`, async () => {
+    const env = environment(), owner = await createGuestIdentity(env), host = await hostKey();
+    const id = "historical-empty-host", path = `/v1/servers/${id}/name`;
+    const device = (path, body, method = "POST") => signedDeviceRequest(env,
+      owner.created.session, owner.key.pair, path, method, body);
+    const registered = await payload(await device("/v1/servers", {
+      server_id: id, label: "Original host", host_public_key_jwk: host.publicJwk,
+      host_registration_proof: await hostRegistrationProof(host.pair, id, owner.created.person.person_id),
+    }));
+    const epoch = registered.registration_epoch, now = Math.floor(Date.now() / 1000);
+    await signedHostRequest(env, id, host.pair, "PUT", { registration_epoch: epoch,
+      generation: 1, issued_at: now, lease_expires_at: now + 600, origin: "https://names.trycloudflare.com" });
+    await env.DB.prepare("UPDATE servers SET label = ? WHERE server_id = ?").bind(label, id).run();
+    const restoreAlias = () => env.DB.prepare("UPDATE person_servers SET alias = ? WHERE server_id = ?").bind(alias, id).run();
+    const current = async () => (await payload(await device("/v1/bootstrap", undefined, "GET"))).servers[0];
+    const preview = async () => payload(await device(`/v1/servers/${id}/member-preview`, { registration_epoch: epoch }));
+    await restoreAlias();
+    assert.equal((await current()).alias, expected);
+    assert.equal((await current()).name_is_default, isDefault);
+    assert.equal((await preview()).label, expected);
+    const guard = { registration_epoch: epoch, expected_name: expected, expected_name_is_default: isDefault };
+    assert.equal((await device(path, { ...guard, name: "Recovered host", expected_name: "stale display" })).status, 409);
+    assert.equal((await device(path, { ...guard, name: "Recovered host", expected_name_is_default: !isDefault })).status, 409);
+    assert.equal((await current()).alias, expected);
+    assert.equal((await device(path, { ...guard, name: "Recovered host" })).status, 200);
+    assert.equal((await current()).alias, "Recovered host");
+    assert.equal((await preview()).label, "Recovered host");
+    await restoreAlias();
+    assert.equal((await device(path, { ...guard, reset_default: true })).status, 200);
+    assert.equal((await current()).alias, isDefault ? expected : label);
+    assert.equal((await current()).name_is_default, true);
+    assert.equal((await preview()).label, isDefault ? expected : label);
+    assert.equal((await env.DB.prepare("SELECT alias FROM person_servers WHERE server_id = ? AND relation = 'owner'").bind(id).first()).alias, "");
+  });
+}
