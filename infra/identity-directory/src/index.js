@@ -1,3 +1,4 @@
+import { reportMemberResults, setMemberHidden } from "./member_servers.js";
 import { cleanup } from "./cleanup.js";
 import { limitRequestIp, requestPurpose } from "./abuse.js";
 import { startWebGoogleHandoff, completeWebGoogleHandoff } from "./google_web.js";
@@ -62,7 +63,7 @@ async function route(request, env) {
     request.method === "GET" || request.method === "HEAD"
       ? ""
       : await bodyText(request, request.method === "POST" && /^\/v1\/servers\/[^/]+\/icon$/.test(url.pathname)
-        ? ICON_REQUEST_BYTES : 32_768);
+        ? ICON_REQUEST_BYTES : /^\/v1\/servers\/[^/]+\/member-results$/.test(url.pathname) ? 8192 : 32_768);
   if (request.method === "POST" && url.pathname === "/v1/auth/guest") {
     return createGuest(request, env, text, now);
   }
@@ -127,6 +128,14 @@ async function route(request, env) {
     );
   }
 
+  const memberResults = url.pathname.match(/^\/v1\/servers\/([^/]+)\/member-results$/);
+  if (memberResults && request.method === "POST") {
+    return reportMemberResults(request, env, cleanIdentifier(memberResults[1], "server_id"), text, now);
+  }
+  const memberConnectRedeem = url.pathname.match(/^\/v1\/servers\/([^/]+)\/member-connect-grants\/redeem$/);
+  if (memberConnectRedeem && request.method === "POST") {
+    return redeemMemberGrant(request, env, cleanIdentifier(memberConnectRedeem[1], "server_id"), text, now, "connect");
+  }
   const memberRedeem = url.pathname.match(/^\/v1\/servers\/([^/]+)\/member-grants\/redeem$/);
   if (memberRedeem && request.method === "POST") {
     return redeemMemberGrant(request, env, cleanIdentifier(memberRedeem[1], "server_id"), text, now);
@@ -154,6 +163,14 @@ async function route(request, env) {
   }
   if (request.method === "POST" && url.pathname === "/v1/servers") {
     return registerServer(session, env, text, now);
+  }
+  const visibility = url.pathname.match(/^\/v1\/member-servers\/([^/]+)\/(hide|unhide)$/);
+  if (visibility && request.method === "POST") {
+    return setMemberHidden(session, env, cleanIdentifier(visibility[1], "server_id"), text, now, visibility[2] === "hide");
+  }
+  const memberConnect = url.pathname.match(/^\/v1\/servers\/([^/]+)\/member-connect-grants$/);
+  if (memberConnect && request.method === "POST") {
+    return createMemberGrant(session, env, cleanIdentifier(memberConnect[1], "server_id"), text, now, "connect");
   }
   const memberPreview = url.pathname.match(/^\/v1\/servers\/([^/]+)\/member-preview$/);
   if (memberPreview && request.method === "POST") {

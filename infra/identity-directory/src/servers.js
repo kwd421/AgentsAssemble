@@ -181,7 +181,7 @@ export async function deleteServer(session, env, serverId, text) {
   return json({ status: "server_deleted", server_id: serverId });
 }
 
-async function verifyHostRequest(request, env, serverId, body, now) {
+export async function verifyHostRequest(request, env, serverId, body, now) {
   const payload = parseJson(body);
   const registrationEpoch = payload.registration_epoch === undefined ? null : cleanIdentifier(payload.registration_epoch, "registration_epoch");
   const server = await env.DB

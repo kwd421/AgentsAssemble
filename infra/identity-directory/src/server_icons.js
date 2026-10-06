@@ -47,10 +47,14 @@ export async function setServerIcon(session, env, serverId, text) {
 
 export async function getServerIcon(session, env, serverId, pathname) {
   const row = await env.DB.prepare(`SELECT server_icons.png FROM server_icons
-    JOIN servers USING(server_id) JOIN person_servers USING(server_id)
+    JOIN servers USING(server_id)
     WHERE server_icons.server_id = ? AND server_icons.icon = ? AND servers.icon = server_icons.icon
-      AND servers.revoked_at IS NULL AND person_servers.person_id = ?`)
-    .bind(serverId, pathname, session.person_id).first();
+      AND servers.revoked_at IS NULL AND (
+        EXISTS (SELECT 1 FROM person_servers WHERE person_servers.server_id = servers.server_id AND person_id = ?)
+        OR EXISTS (SELECT 1 FROM member_servers WHERE member_servers.server_id = servers.server_id
+          AND member_servers.registration_epoch = servers.registration_epoch AND person_id = ?
+          AND host_state = 'active' AND user_hidden = 0))`)
+    .bind(serverId, pathname, session.person_id, session.person_id).first();
   if (!row) throw new HttpError(404, "server_icon_not_found");
   return new Response(new Uint8Array(row.png), { headers: {
     "content-type": "image/png", "cache-control": "no-store",

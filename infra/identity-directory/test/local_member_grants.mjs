@@ -66,7 +66,7 @@ try {
   const previewPath = `/v1/servers/${serverId}/member-preview`;
   const preview = await signed(previewPath, { registration_epoch: body.registration_epoch });
   assert.equal(preview.status, 200);
-  assert.deepEqual(await preview.json(), { server_id: serverId, label: "",
+  assert.deepEqual(await preview.json(), { server_id: serverId, label: serverId,
     endpoint_origin: "https://member.trycloudflare.com", endpoint_generation: 1 });
   assert.equal((await db.prepare("SELECT COUNT(*) AS n FROM server_connect_grants").first()).n, 0);
   assert.equal((await signed(previewPath, { registration_epoch: "stale-epoch" })).status, 409);
@@ -84,14 +84,65 @@ try {
   assert.equal(wrongRoute.status, 401);
   const redeemed = await Promise.all([signed(redeemPath, redeemBody, true), signed(redeemPath, redeemBody, true)]);
   assert.deepEqual(redeemed.map(r => r.status).sort(), [200, 401]);
-  assert.deepEqual(await redeemed.find(r => r.status === 200).json(), {
+  const { projection_id, ...identity } = await redeemed.find(r => r.status === 200).json();
+  assert.deepEqual(identity, {
     person_id: person.person_id, issuer: "https://central.example", display_name: "Local member" });
   await db.prepare("UPDATE server_endpoints SET generation = 2 WHERE server_id = ?").bind(serverId).run();
   assert.equal((await signed(redeemPath, { ...body, grant_token: grants[2].grant_token }, true)).status, 401);
   await db.prepare("UPDATE server_endpoints SET generation = 1, origin = 'https://other.trycloudflare.com' WHERE server_id = ?").bind(serverId).run();
   assert.equal((await signed(redeemPath, { ...body, grant_token: grants[3].grant_token }, true)).status, 401);
   await db.prepare("UPDATE server_endpoints SET origin = 'https://member.trycloudflare.com' WHERE server_id = ?").bind(serverId).run();
+  assert.equal((await db.prepare('SELECT creation_writes FROM member_sync_budget').first()).creation_writes, 6);
+  const reportPath = `/v1/servers/${serverId}/member-results`;
+  const reportBody = { registration_epoch: body.registration_epoch,
+    results: [{ projection_id, state: 'active', revision: 1 },
+      ...Array.from({ length: 15 }, () => ({ projection_id: randomBase64Url(16), state: 'removed', revision: 1 }))] };
+  const started = performance.now();
+  const report = await signed(reportPath, reportBody, true);
+  const reportWallMs = performance.now() - started;
+  assert.equal(report.status, 200, await report.clone().text());
+  const acknowledgements = (await report.json()).results;
+  assert.deepEqual(acknowledgements[0], { projection_id, revision: 1, status: 'applied' });
+  assert.ok(acknowledgements.slice(1).every(r => r.status === 'stale'));
+  assert.equal((await db.prepare('SELECT creation_writes FROM member_sync_budget').first()).creation_writes, 105);
+  const connectPath = `/v1/servers/${serverId}/member-connect-grants`;
+  const connectBody = { ...body, purpose: 'connect' };
+  const connectResponse = await signed(connectPath, connectBody);
+  assert.equal(connectResponse.status, 201, await connectResponse.clone().text());
+  const connect = await connectResponse.json();
+  assert.equal((await signed(redeemPath, { ...body, grant_token: connect.grant_token }, true)).status, 401);
+  const connectResults = await Promise.all([1, 2].map(() => signed(`${connectPath}/redeem`,
+    { ...connectBody, grant_token: connect.grant_token }, true)));
+  assert.deepEqual(connectResults.map(r => r.status).sort(), [200, 401]);
+  const hidePath = `/v1/member-servers/${serverId}/hide`;
+  assert.equal((await signed(hidePath, { registration_epoch: body.registration_epoch })).status, 200);
+  assert.equal((await signed(connectPath, connectBody)).status, 409);
+  assert.equal((await signed(`/v1/member-servers/${serverId}/unhide`, { registration_epoch: body.registration_epoch })).status, 200);
+  // A rejected report cannot leave a nonce, counter update or projection write.
+  await db.prepare('UPDATE member_sync_budget SET creation_writes = 1800').run();
+  const snapshot = async () => Promise.all(['member_servers', 'member_sync_budget', 'member_sync_nonces',
+    'server_connect_grants', 'host_request_nonces', 'creation_budgets'].map(async table =>
+    (await db.prepare(`SELECT * FROM ${table} ORDER BY rowid`).all()).results));
+  const beforeReport = await snapshot();
+  assert.equal((await signed(reportPath, reportBody, true)).status, 429);
+  assert.deepEqual(await snapshot(), beforeReport);
+  // Fresh consent replaces expired anchors in the same consuming transaction.
+  await db.prepare("UPDATE member_servers SET host_state = 'pending', host_revision = 0, state_changed_at = 1, created_at = 1").run();
+  const retryGrant = await (await signed(issuePath, body)).json();
+  const retryBody = { ...body, grant_token: retryGrant.grant_token };
+  const beforeAnchor = await snapshot();
+  assert.equal((await signed(redeemPath, retryBody, true)).status, 429);
+  assert.deepEqual(await snapshot(), beforeAnchor);
+  await db.prepare('UPDATE member_sync_budget SET creation_writes = 1794').run();
+  const freshResponse = await signed(redeemPath, retryBody, true);
+  assert.equal(freshResponse.status, 200, await freshResponse.clone().text());
+  const fresh = (await freshResponse.json()).projection_id;
+  assert.notEqual(fresh, projection_id);
+  assert.equal((await db.prepare('SELECT creation_writes FROM member_sync_budget').first()).creation_writes, 1800);
+  console.log(JSON.stringify({ report_items: 16, report_charge: 99, report_wall_ms: reportWallMs,
+    note: 'Wall time includes client crypto and D1; not production Worker CPU evidence.' }));
+  const logoutGrant = await (await signed(issuePath, body)).json();
   assert.equal((await signed("/v1/logout", {})).status, 200);
-  assert.equal((await signed(redeemPath, { ...body, grant_token: grants[1].grant_token }, true)).status, 401);
-  console.log("PASS local D1: split migrations, concurrent caps, route signature, one-use redemption, snapshot, logout, endpoint binding, lease clipping and consent preview");
+  assert.equal((await signed(redeemPath, { ...body, grant_token: logoutGrant.grant_token }, true)).status, 401);
+  console.log("PASS local D1: split migrations, concurrent caps, route signature, one-use redemption, snapshot, logout, endpoint binding, lease clipping, consent preview, projection reports, hide/connect, atomic budget rollback and projection replacement");
 } finally { await mf.dispose(); }

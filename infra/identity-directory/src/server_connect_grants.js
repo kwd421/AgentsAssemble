@@ -1,6 +1,7 @@
+import { MEMBER_RETENTION_SECONDS } from "./member_servers.js";
 import { randomBase64Url, sha256Base64Url } from "./crypto.js";
 import { HttpError, json, parseJson, cleanIdentifier, serverDisplayName } from "./http.js";
-import { hostAuthentication } from "./servers.js";
+import { hostAuthentication, verifyHostRequest } from "./servers.js";
 
 const GRANT_PREFIX = "aacg1.";
 const GRANT_TTL_SECONDS = 300;
@@ -183,6 +184,8 @@ export async function redeemServerConnectGrant(request, env, serverId, text, now
 }
 
 const MEMBER_GRANT_PREFIX = "aamg1.";
+// Older Workers cannot mistake a connect token for admission after code rollback.
+const MEMBER_CONNECT_GRANT_PREFIX = "aamc1.";
 const MAX_ACTIVE_MEMBER_GRANTS_PER_PERSON = 16;
 const MAX_ACTIVE_MEMBER_GRANTS_PER_SESSION_SERVER = 4;
 
@@ -202,24 +205,26 @@ export async function previewMemberServer(env, serverId, text, now) {
     endpoint_origin: endpoint.origin, endpoint_generation: Number(endpoint.generation) });
 }
 
-export async function createMemberGrant(session, env, serverId, text, now) {
+export async function createMemberGrant(session, env, serverId, text, now, purpose = "admission") {
   const body = parseJson(text);
   const epoch = cleanIdentifier(body.registration_epoch, "registration_epoch");
-  if (Object.keys(body).sort().join(",") !== "challenge_hash,registration_epoch" ||
+  if (Object.keys(body).filter(key => key !== "purpose").sort().join(",") !== "challenge_hash,registration_epoch" ||
+      (body.purpose === undefined ? "admission" : body.purpose) !== purpose ||
       typeof body.challenge_hash !== "string" || !/^[A-Za-z0-9_-]{43}$/.test(body.challenge_hash)) {
     throw new HttpError(400, "invalid_member_grant_request");
   }
   await memberEndpoint(env, serverId, epoch, now);
-  const secret = `${MEMBER_GRANT_PREFIX}${randomBase64Url(32)}`;
+  const prefix = purpose === "connect" ? MEMBER_CONNECT_GRANT_PREFIX : MEMBER_GRANT_PREFIX;
+  const secret = `${prefix}${randomBase64Url(32)}`;
   // The INSERT owns both active caps; concurrent issuers cannot reserve the same slot.
   const grant = await env.DB.prepare(`INSERT INTO server_connect_grants
     (grant_id, secret_hash, session_id, person_id, device_id, server_id,
      endpoint_origin, endpoint_generation, created_at, expires_at, kind,
-     registration_epoch, challenge_hash, display_name_snapshot)
+     registration_epoch, challenge_hash, display_name_snapshot, member_purpose)
     SELECT ?, ?, sessions.session_id, sessions.person_id, sessions.device_id,
            servers.server_id, server_endpoints.origin, server_endpoints.generation,
            ?, MIN(?, sessions.expires_at, server_endpoints.lease_expires_at), 'member',
-           servers.registration_epoch, ?, substr(persons.display_name, 1, 80)
+           servers.registration_epoch, ?, substr(persons.display_name, 1, 80), ?
     FROM sessions
     JOIN devices ON devices.device_id = sessions.device_id AND devices.person_id = sessions.person_id
     JOIN persons ON persons.person_id = sessions.person_id
@@ -230,6 +235,11 @@ export async function createMemberGrant(session, env, serverId, text, now) {
       AND devices.revoked_at IS NULL AND persons.status = 'active'
       AND servers.revoked_at IS NULL AND servers.registration_epoch = ?
       AND ${LIVE_ENDPOINT_SQL}
+      AND NOT EXISTS (SELECT 1 FROM member_servers WHERE person_id = sessions.person_id
+        AND server_id = servers.server_id AND registration_epoch = servers.registration_epoch AND user_hidden = 1)
+      AND (? = 'admission' OR EXISTS (SELECT 1 FROM member_servers WHERE person_id = sessions.person_id
+        AND server_id = servers.server_id AND registration_epoch = servers.registration_epoch
+        AND host_state = 'active' AND user_hidden = 0))
       AND (SELECT COUNT(*) FROM server_connect_grants
            WHERE kind = 'member' AND person_id = sessions.person_id
              AND used_at IS NULL AND expires_at > ?) < ?
@@ -238,8 +248,8 @@ export async function createMemberGrant(session, env, serverId, text, now) {
              AND used_at IS NULL AND expires_at > ?) < ?
     RETURNING endpoint_origin, endpoint_generation, expires_at`)
     .bind(`scg_${randomBase64Url(18)}`, await sha256Base64Url(secret), now, now + GRANT_TTL_SECONDS,
-      body.challenge_hash, serverId, session.session_id, session.person_id, session.device_id,
-      now, epoch, now, now, MAX_ACTIVE_MEMBER_GRANTS_PER_PERSON,
+      body.challenge_hash, purpose, serverId, session.session_id, session.person_id, session.device_id,
+      now, epoch, now, purpose, now, MAX_ACTIVE_MEMBER_GRANTS_PER_PERSON,
       now, MAX_ACTIVE_MEMBER_GRANTS_PER_SESSION_SERVER).first();
   if (!grant) {
     requireLiveEndpoint(await serverEndpoint(env, serverId), now);
@@ -250,20 +260,23 @@ export async function createMemberGrant(session, env, serverId, text, now) {
     expires_at: Number(grant.expires_at) }, 201);
 }
 
-export async function redeemMemberGrant(request, env, serverId, text, now) {
+export async function redeemMemberGrant(request, env, serverId, text, now, purpose = "admission") {
   // Unlike legacy owner requests, member admission never permits an absent epoch.
   cleanIdentifier(parseJson(text).registration_epoch, "registration_epoch");
-  const { fingerprint, registrationEpoch, body } = await hostAuthentication(request, env, serverId, text, now);
+  const { nonce, fingerprint, registrationEpoch, body } = await verifyHostRequest(request, env, serverId, text, now);
   const token = String(body.grant_token || "");
-  if (Object.keys(body).sort().join(",") !== "challenge_hash,grant_token,registration_epoch" ||
-      token.length !== MEMBER_GRANT_PREFIX.length + 43 || !token.startsWith(MEMBER_GRANT_PREFIX) ||
-      !/^[A-Za-z0-9_-]+$/.test(token.slice(MEMBER_GRANT_PREFIX.length)) ||
+  const prefix = purpose === "connect" ? MEMBER_CONNECT_GRANT_PREFIX : MEMBER_GRANT_PREFIX;
+  if (Object.keys(body).filter(key => key !== "purpose").sort().join(",") !== "challenge_hash,grant_token,registration_epoch" ||
+      (body.purpose === undefined ? "admission" : body.purpose) !== purpose ||
+      token.length !== prefix.length + 43 || !token.startsWith(prefix) ||
+      !/^[A-Za-z0-9_-]+$/.test(token.slice(prefix.length)) ||
       typeof body.challenge_hash !== "string" || !/^[A-Za-z0-9_-]{43}$/.test(body.challenge_hash)) {
     throw new HttpError(401, "member_grant_invalid");
   }
   // All authority is re-proved in the consuming write, including the key verified
   // above. A concurrent logout, key change or reincarnation cannot use a cached read.
-  const grant = await env.DB.prepare(`UPDATE server_connect_grants SET used_at = ?
+  const secretHash = await sha256Base64Url(token);
+  const consume = env.DB.prepare(`UPDATE server_connect_grants SET used_at = ?
     WHERE kind = 'member' AND used_at IS NULL AND grant_id IN (
       SELECT source.grant_id FROM server_connect_grants source
       JOIN sessions ON sessions.session_id = source.session_id
@@ -272,7 +285,7 @@ export async function redeemMemberGrant(request, env, serverId, text, now) {
       JOIN persons ON persons.person_id = source.person_id
       JOIN servers ON servers.server_id = source.server_id
       JOIN server_endpoints ON server_endpoints.server_id = source.server_id
-      WHERE source.kind = 'member' AND source.used_at IS NULL
+      WHERE source.kind = 'member' AND source.member_purpose = ? AND source.used_at IS NULL
         AND source.server_id = ? AND source.secret_hash = ? AND source.expires_at > ?
         AND source.registration_epoch = ? AND source.challenge_hash = ?
         AND sessions.revoked_at IS NULL AND sessions.expires_at > ?
@@ -280,10 +293,42 @@ export async function redeemMemberGrant(request, env, serverId, text, now) {
         AND servers.revoked_at IS NULL AND servers.registration_epoch = source.registration_epoch
         AND servers.host_key_fingerprint = ?
         AND ${LIVE_ENDPOINT_SQL} AND ${BOUND_ENDPOINT_SQL}
+        AND NOT EXISTS (SELECT 1 FROM member_servers WHERE person_id = source.person_id
+          AND server_id = source.server_id AND registration_epoch = source.registration_epoch AND user_hidden = 1)
+        AND (? = 'admission' OR EXISTS (SELECT 1 FROM member_servers WHERE person_id = source.person_id
+          AND server_id = source.server_id AND registration_epoch = source.registration_epoch
+          AND host_state = 'active' AND user_hidden = 0))
     ) RETURNING person_id, display_name_snapshot`)
-    .bind(now, serverId, await sha256Base64Url(token), now, registrationEpoch,
-      body.challenge_hash, now, fingerprint, now).first();
+    .bind(now, purpose, serverId, secretHash, now, registrationEpoch,
+      body.challenge_hash, now, fingerprint, now, purpose);
+  let results;
+  try {
+    results = await env.DB.batch([
+      env.DB.prepare(`INSERT INTO host_request_nonces (server_id, nonce, expires_at, purpose)
+        VALUES (?, ?, ?, 'GENERAL')`).bind(serverId, nonce, now + 600),
+      consume,
+      // changes() is the immediately preceding consuming UPDATE. A concurrent
+      // second redeem cannot create an anchor or return authority.
+      env.DB.prepare(`INSERT INTO member_servers
+        (person_id, server_id, registration_epoch, projection_id, created_at, updated_at, state_changed_at)
+        SELECT person_id, server_id, registration_epoch, ?, ?, ?, ? FROM server_connect_grants AS source
+        WHERE secret_hash = ? AND changes() = 1
+        ON CONFLICT(person_id, server_id, registration_epoch) DO UPDATE SET
+          projection_id = excluded.projection_id, host_state = 'pending', host_revision = 0,
+          created_at = excluded.created_at, updated_at = excluded.updated_at,
+          state_changed_at = excluded.state_changed_at
+        WHERE member_servers.host_state IN ('pending', 'removed') AND member_servers.state_changed_at <= ?`)
+        .bind(randomBase64Url(16), now, now, now, secretHash, now - MEMBER_RETENTION_SECONDS),
+      env.DB.prepare(`SELECT projection_id FROM member_servers JOIN server_connect_grants AS source
+        USING (person_id, server_id, registration_epoch) WHERE source.secret_hash = ?`).bind(secretHash),
+    ]);
+  } catch (error) {
+    if (String(error.message).includes('member_server_capacity')) throw new HttpError(409, 'member_server_capacity');
+    if (String(error.message).includes('UNIQUE constraint failed: host_request_nonces')) throw new HttpError(409, 'replayed_request');
+    throw error;
+  }
+  const grant = results[1].results[0];
   if (!grant) throw new HttpError(401, "member_grant_invalid");
   return json({ person_id: grant.person_id, issuer: new URL(request.url).origin,
-    display_name: grant.display_name_snapshot || "" });
+    display_name: grant.display_name_snapshot || "", projection_id: results[3].results[0].projection_id });
 }

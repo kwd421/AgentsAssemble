@@ -131,5 +131,25 @@ export async function bootstrap(session, env, now) {
           }
         : null,
   }));
+  const members = await env.DB.prepare(`SELECT servers.server_id, servers.registration_epoch,
+      servers.label, servers.icon, servers.host_key_fingerprint,
+      server_endpoints.origin, server_endpoints.generation, server_endpoints.state, server_endpoints.lease_expires_at
+    FROM member_servers JOIN servers ON servers.server_id = member_servers.server_id
+      AND servers.registration_epoch = member_servers.registration_epoch
+    LEFT JOIN server_endpoints ON server_endpoints.server_id = servers.server_id
+    WHERE member_servers.person_id = ? AND host_state = 'active' AND user_hidden = 0
+      AND servers.revoked_at IS NULL ORDER BY member_servers.created_at, servers.server_id`)
+    .bind(session.person_id).all();
+  for (const row of members.results) {
+    const index = servers.findIndex(server => server.server_id === row.server_id);
+    if (index >= 0 && servers[index].relation === 'owner') continue;
+    const member = { server_id: row.server_id, registration_epoch: row.registration_epoch,
+      relation: 'member', alias: serverDisplayName('', row.label, row.server_id), icon: row.icon,
+      host_key_fingerprint: row.host_key_fingerprint,
+      endpoint: row.generation == null ? null : { origin: row.origin, generation: Number(row.generation),
+        status: row.state === 'online' && Number(row.lease_expires_at) > now ? 'likely_online' : 'offline' } };
+    if (index >= 0) servers[index] = member;
+    else servers.push(member);
+  }
   return json({ person, servers, server_time: now });
 }

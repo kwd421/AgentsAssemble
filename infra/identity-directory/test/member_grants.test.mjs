@@ -47,7 +47,8 @@ test("member admission returns bounded issue-time identity once, without directo
     .run(f.member.created.person.person_id);
   const results = await Promise.all([f.redeem(g.grant_token), f.redeem(g.grant_token)]);
   assert.deepEqual(results.map(r => r.status).sort(), [200, 401]);
-  assert.deepEqual(await results.find(r => r.status === 200).json(), {
+  const { projection_id, ...identity } = await results.find(r => r.status === 200).json();
+  assert.deepEqual(identity, {
     person_id: f.member.created.person.person_id, issuer: "https://central.example", display_name: "M".repeat(80),
   });
   const boot = await f.device(f.member, "/v1/bootstrap", undefined, "GET");

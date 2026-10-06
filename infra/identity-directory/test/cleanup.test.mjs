@@ -19,6 +19,10 @@ test("scheduled cleanup bounds all tables and does not cascade live nonce/grant 
     host_registration_proof: await hostRegistrationProof(host.pair, serverId, created.person.person_id),
   })).status, 201);
   for (let i = 0; i < 1000; i++) {
+    db.prepare('INSERT INTO member_sync_nonces VALUES (?, ?, ?, 1)').run(serverId, `sync-${i}`, now - 1);
+    if (i < 400) db.prepare(`INSERT INTO member_servers
+      (person_id, server_id, registration_epoch, projection_id, created_at, updated_at, state_changed_at)
+      VALUES (?, ?, 'retired-epoch', ?, 1, 1, 1)`).run(created.person.person_id, `retired-${i}`, `projection-${i}`);
     db.prepare("INSERT INTO request_nonces (session_id, nonce, expires_at) VALUES (?, ?, ?)").run(sessionId, `old-${i}`, now - 1);
     db.prepare("INSERT INTO host_request_nonces (server_id, nonce, expires_at) VALUES (?, ?, ?)").run(serverId, `old-${i}`, now - 1);
     db.prepare("INSERT INTO rate_limits VALUES (?, ?, 1)").run(`old-${i}`, now - 90000);
@@ -42,10 +46,10 @@ test("scheduled cleanup bounds all tables and does not cascade live nonce/grant 
   ) INSERT INTO host_request_nonces (server_id, nonce, expires_at) SELECT ?, 'backlog-' || n, ? FROM backlog`)
     .run(serverId, now - 1);
   for (const { sql } of triggers) db.exec(sql);
-  const tables = ["request_nonces", "host_request_nonces", "rate_limits", "google_handoffs", "server_connect_grants", "sessions"];
+  const tables = ["request_nonces", "host_request_nonces", "rate_limits", "google_handoffs", "server_connect_grants", "sessions", "member_sync_nonces", "member_servers"];
   const counts = () => tables.map(table => db.prepare(`SELECT COUNT(*) AS n FROM ${table}`).get().n);
   const initial = counts();
-  const costs = tables.map(table => 1 + db.prepare(`PRAGMA index_list(${table})`).all().length);
+  const costs = tables.map(table => table === 'member_servers' ? 6 : 1 + db.prepare(`PRAGMA index_list(${table})`).all().length);
   const before = db.prepare("SELECT total_changes() AS n").get().n;
   const pending = [];
   worker.scheduled({ cron: "17 3 * * *" }, env, { waitUntil(p) { pending.push(p); } });

@@ -1,5 +1,5 @@
 // Isolated workerd/D1, no remote bindings or persistent data.
-// Contract: all six queues share <=10000 indexed writes/UTC day, even on retry.
+// Contract: all eight queues share <=10000 indexed writes/UTC day, even on retry.
 // Mutation: use the old cleanup implementation or remove its daily claim.
 import assert from "node:assert/strict";
 import { createRequire } from "node:module";
@@ -14,8 +14,8 @@ const { unstable_splitSqlQuery: splitSql } = require("wrangler");
 const bundle = await build({ stdin: { resolveDir: root, contents: `
 import worker from './src/index.js';
 export default { async fetch(request, env) {
-  let rows_written = 0;
-  const record = r => { rows_written += r.meta.rows_written; return r; };
+  let rows_written = 0, statements = 0;
+  const record = r => { rows_written += r.meta.rows_written; statements++; return r; };
   const measured = { DB: { async batch(statements) {
     return (await env.DB.batch(statements.map(s => s.raw))).map(record);
   }, prepare(sql) {
@@ -27,7 +27,7 @@ export default { async fetch(request, env) {
   const pending = [];
   worker.scheduled({}, measured, { waitUntil(p) { pending.push(p); } });
   await Promise.all(pending);
-  return Response.json({ rows_written });
+  return Response.json({ rows_written, statements });
 }};` }, bundle: true, write: false, format: "esm", platform: "browser" });
 const mf = new Miniflare({ modules: true, script: bundle.outputFiles[0].text,
   compatibilityDate: "2026-04-01", d1Databases: ["DB"] });
@@ -54,6 +54,10 @@ try {
     "INSERT INTO sessions (session_id, person_id, device_id, token_hash, created_at, expires_at, last_seen_at, revoked_at) SELECT 'e-' || x, 'p', 'd', 'e-' || x, 0, 1, 0, 1 FROM n",
   ];
   for (const insert of inserts) await db.prepare(prefix + insert).run();
+  await db.prepare(prefix + "INSERT INTO member_sync_nonces SELECT 's', 'sync-' || x, 1, 1 FROM n").run();
+  await db.prepare(`WITH RECURSIVE n(x) AS (SELECT 1 UNION ALL SELECT x+1 FROM n WHERE x<400)
+    INSERT INTO member_servers (person_id, server_id, registration_epoch, projection_id, created_at, updated_at, state_changed_at)
+    SELECT 'p', 'retired-' || x, 'retired-epoch', 'projection-' || x, 1, 1, 1 FROM n`).run();
   // Expired parent with live children must survive: no cascading deletion.
   await db.prepare("INSERT INTO request_nonces (session_id, nonce, expires_at) VALUES ('e-1', 'keep', 4000000000)").run();
   for (const { sql } of triggers) await db.prepare(sql).run();
@@ -66,7 +70,7 @@ try {
     await assert.rejects(db.prepare("WITH n(x) AS (SELECT 2002) " + insert).run(), /temporary_capacity_exhausted/);
   }
   assert.equal((await db.prepare("SELECT SUM(creation_writes) AS n FROM creation_budgets").first()).n, 8000);
-  const tables = ["request_nonces", "host_request_nonces", "rate_limits", "google_handoffs", "server_connect_grants", "sessions"];
+  const tables = ["request_nonces", "host_request_nonces", "rate_limits", "google_handoffs", "server_connect_grants", "sessions", "member_sync_nonces", "member_servers"];
   const snapshot = () => Promise.all(tables.map(async table => (await db.prepare(`SELECT COUNT(*) AS n FROM ${table}`).first()).n));
   const before = await snapshot();
   const concurrent = await Promise.all([1, 2].map(async () => {
@@ -78,11 +82,12 @@ try {
   const measured = concurrent.find(r => r.rows_written > 0), after = await snapshot();
   let indexedWrites = 1;
   for (let i = 0; i < tables.length; i++) {
-    const cost = 1 + (await db.prepare(`PRAGMA index_list(${tables[i]})`).all()).results.length;
+    const cost = tables[i] === 'member_servers' ? 6 : 1 + (await db.prepare(`PRAGMA index_list(${tables[i]})`).all()).results.length;
     assert.ok(after[i] < before[i], `${tables[i]} must make progress`);
     indexedWrites += (before[i] - after[i]) * cost;
   }
   assert.ok(measured.rows_written > 0 && measured.rows_written <= 10000);
+  assert.ok(measured.statements <= 49, `${measured.statements} D1 statements`);
   assert.ok(indexedWrites > 9000 && indexedWrites <= 10000, `${indexedWrites} indexed writes`);
   assert.ok(await db.prepare("SELECT session_id FROM sessions WHERE session_id = 'e-1'").first());
   assert.ok(await db.prepare("SELECT nonce FROM request_nonces WHERE nonce = 'keep'").first());

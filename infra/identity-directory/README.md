@@ -876,7 +876,7 @@ endpoint and requires its origin and generation to match the stored grant.
 Ed25519 host key. JSON body (all fields required):
 `{"registration_epoch":"...","challenge_hash":"...","grant_token":"aamg1.…"}`.
 Success is HTTP 200 with
-`{"person_id":"...","issuer":"https://central.example","display_name":"..."}`.
+`{"person_id":"...","issuer":"https://central.example","display_name":"...","projection_id":"..."}`.
 The name is an issue-time snapshot capped at 80 Unicode characters. `issuer`
 is the origin of the central redeem URL; hosts must pin their configured central
 origin, use it consistently, and compare the returned issuer to it before binding.
@@ -908,11 +908,12 @@ host registration may yield 404; an epoch conflict or
 unavailable issuance yields 409 (`incarnation_conflict` / `member_grant_unavailable` / `server_endpoint_unavailable`).
 Limits yield 429 (`rate_limited` / `temporary_capacity_exhausted`). A lost redeem
 response requires a fresh host challenge and grant via explicit user retry.
-No member list, membership projection, host binding transaction, or frontend flow
-is implemented by W1.
+Rail (c), below, adds the consent projection and member list. Host binding,
+room selection and frontend consent remain separately owned.
 
 Deployment runbook: apply expand-only migration `0012_member_grants.sql` after
 0011, then deploy this Worker, then enable the host/frontend member flow.
+For the current rail release, also follow the 0014 deployment order below.
 Code rollback target is `a79140a9`; retain 0012 and its kind-aware trigger, and
 disable member entry on clients. Old inserts still default to owner; do not down-migrate.
 
@@ -956,3 +957,216 @@ isolated. Server names use NFC and collapsed whitespace with Cc/Cf rejected on
 write and stripped on historical reads, before the existing length limits. Host
 dirtiness follows epoch/derived name, while permanent 4xx is parked until epoch
 or profile revision changes; transient failures retain the existing retry policy.
+
+## Rail (c): member projection contract and runbook
+
+Worker contract: approved design v4.1, migration `0014_member_servers.sql`
+(after 0013). Room membership and connect selection remain authoritative on the
+host. Central stores only consent, host state/revision and user visibility.
+All new routes use GENERAL IP/actor abuse limiters; the existing owner pools,
+owner endpoints, grant TTLs and platform free-plan figures are unchanged.
+
+### Exact request and response formats
+
+All paths below are literal paths with `{server_id}` replaced by the registered
+ID; do not include a query string in the signature. Unknown body fields fail.
+IDs/epochs are case-sensitive. Timestamps are Unix seconds. Responses use
+`Cache-Control: no-store` and the existing JSON error envelope
+`{"error":{"code":"...","message":"..."}}`.
+
+| Method/path | Authentication | JSON request | Success |
+| --- | --- | --- | --- |
+| `POST /v1/servers/{server_id}/member-grants` | Bearer + device | `{"registration_epoch":"...","challenge_hash":"...","purpose":"admission"}` | 201 grant response below |
+| `POST /v1/servers/{server_id}/member-grants/redeem` | host | `{"registration_epoch":"...","challenge_hash":"...","grant_token":"aamg1.…","purpose":"admission"}` | 200 identity response below |
+| `POST /v1/servers/{server_id}/member-connect-grants` | Bearer + device | `{"registration_epoch":"...","challenge_hash":"...","purpose":"connect"}` | 201 grant response below |
+| `POST /v1/servers/{server_id}/member-connect-grants/redeem` | host | `{"registration_epoch":"...","challenge_hash":"...","grant_token":"aamc1.…","purpose":"connect"}` | 200 identity response below |
+| `POST /v1/member-servers/{server_id}/hide` | Bearer + device | `{"registration_epoch":"..."}` | 200 `{"server_id":"...","registration_epoch":"...","user_hidden":true}` |
+| `POST /v1/member-servers/{server_id}/unhide` | Bearer + device | `{"registration_epoch":"..."}` | 200 same fields, `user_hidden:false` |
+| `POST /v1/servers/{server_id}/member-results` | host | `{"registration_epoch":"...","results":[{"projection_id":"...","state":"active","revision":1}]}` | 200 ACK response below |
+| `GET /v1/bootstrap` | Bearer + device | no body | Existing envelope, with member entries below |
+
+For legacy admission callers only, omitted `purpose` means `admission`. Connect
+requires the explicit `connect` value and its separate route, stored purpose and
+`aamc1.` token prefix. The prefix also makes old admission Workers reject connect
+tokens during code rollback. Never send an invite, room ID or person ID to the
+connect issue endpoint. Challenge hash is the host challenge SHA-256, unpadded
+base64url (43 characters). The host must bind that challenge to connect purpose,
+browser credential and immutable registration epoch.
+
+Grant response (same fields for admission/connect; token prefix differs):
+
+```json
+{"grant_token":"aamc1.…","server_id":"...","registration_epoch":"...","endpoint_origin":"https://host.example","endpoint_generation":1,"expires_at":123}
+```
+
+Identity response:
+
+```json
+{"person_id":"...","issuer":"https://central.example","display_name":"...","projection_id":"22-character-base64url"}
+```
+
+`projection_id` is random 128-bit opaque consent authority, scoped to the person,
+server and epoch. It is not a person identifier. Store it only in that host
+binding's outbox; reports never accept raw `person_id`. Redemption is single-use,
+with the same 300-second maximum, central session/device/person checks, host-key,
+epoch, challenge and endpoint origin/generation/live-lease fences as W1/W2.
+Connect additionally requires an active, non-hidden projection at both issue
+and redeem. Owner grants remain reusable and independent.
+
+Successful admission redemption atomically creates a pending revision-0 anchor
+and consumes its grant. Existing unexpired anchors keep state/revision/ID and do
+not incur another creation charge. Expired pending/removed anchors are replaced
+on fresh explicit consent (new ID, pending@0, new creation time), including when
+cron has not yet reached them. The 512-row per-person cap includes every epoch,
+state and hidden row. At cap, a new tuple returns 409 `member_server_capacity`
+without consuming the grant. Existing tuples remain usable. Missing/hidden or
+inactive connect authority returns 409 `member_grant_unavailable` at issue and
+401 `member_grant_invalid` at redeem.
+
+Hide affects only the current person's exact epoch, and atomically invalidates
+both admission/connect grants with `used_at IS NULL AND expires_at > now` for
+that tuple (at most 16). It does not leave rooms or end live host sessions.
+Reports cannot unhide. Explicit consent on a hidden server must first call
+unhide and then issue a **fresh** grant; old invalidated grants never recover.
+Missing/current-epoch mismatch at hide/unhide returns 409
+`member_server_unavailable`. There is no `forget` endpoint.
+
+Report bodies are limited to **16 unique projection IDs and 8 KiB UTF-8**.
+Empty batches, duplicate IDs, extra fields and invalid revisions return 400
+`invalid_member_results`; oversized bodies return 413 `request_too_large`.
+`state` is exactly `active` or `removed`; `revision` is an integer in
+1..9007199254740991. The registered host signs the exact epoch. A stale epoch
+returns 409 `incarnation_conflict`; wrong signatures return 401. Reusing a
+report nonce returns 409 `replayed_request`.
+
+ACK response, in submitted order:
+
+```json
+{"results":[{"projection_id":"...","revision":1,"status":"applied"}]}
+```
+
+The ID and revision are always the **submitted** values. A higher revision
+applies; equal revision/same state ACKs `applied`; equal revision/different state
+ACKs `conflict`; lower revision ACKs `stale` without mutation. Unknown, expired,
+wrong-server and wrong-epoch projection IDs get the same `stale` ACK. No stored
+revision/state, person ID or membership count is returned. An item conflict is
+reported in the 200 response; other valid items still apply atomically with the
+shared nonce and budget. Removed tombstones last 30 days from the state change;
+repeated removed reports do not extend that deadline. Never-active pending rows
+expire 30 days from creation; reports cannot revive them. Fresh consent is
+required after expiry. Active rows remain until removal or epoch retirement.
+
+Member bootstrap entry allowlist (no OS/default-name/public-key/room/count fields):
+
+```json
+{"server_id":"...","registration_epoch":"...","relation":"member","alias":"Clean host label","icon":"/v1/servers/.../icon/....png","host_key_fingerprint":"...","endpoint":{"origin":"https://host.example","generation":1,"status":"likely_online"}}
+```
+
+`alias` is the cleaned canonical server label (fallback: server ID). `icon` may
+be empty; otherwise fetch that path with device authentication. Members can read
+visible live member icons but cannot edit them. `endpoint` is null when absent;
+its status is `likely_online` only for an online unexpired lease, otherwise
+`offline`. No member `lease_expires_at` is exposed. One server appears once with
+precedence owner > visible member > bookmark; hiding a member relationship does
+not delete an independently saved bookmark. Dead/revoked server incarnations
+are immediately excluded, before cleanup drains their projections.
+
+### Signature bytes
+
+Same existing headers/algorithms as W1/W2. Device headers:
+`Authorization: Bearer {session_token}`, `x-aa-device-id`, `x-aa-timestamp`,
+`x-aa-nonce`, `x-aa-signature` (ECDSA P-256/SHA-256, raw 64-byte signature).
+Host headers: `x-aa-host-timestamp`, `x-aa-host-nonce`, `x-aa-host-signature`
+(Ed25519). All hashes/signatures use unpadded base64url. Sign UTF-8 fields
+separated by one LF, with **no trailing LF**:
+
+```text
+AA-DEVICE-1\n{METHOD}\n{actual_path}\n{timestamp}\n{nonce}\n{SHA256(exact_body_bytes)}\n{SHA256(session_token)}\n{device_id}
+AA-HOST-1\n{METHOD}\n{actual_path}\n{timestamp}\n{nonce}\n{SHA256(exact_body_bytes)}
+```
+
+Use the actual route from the table, including `hide` versus `unhide` and
+`member-connect-grants` versus `member-grants`; bootstrap signs `GET` with an
+empty body. Use a fresh 16–128-character base64url nonce per request and a Unix
+second timestamp within 300 seconds. Re-serializing JSON after signing breaks
+authentication. Body hashing covers every purpose/epoch/projection/revision.
+
+### Budget, cleanup and staged rollout
+
+`member_sync_budget` is a separate non-borrowing **1,800-unit/day UTC** counter;
+existing CHECK constraints and the 8,000-unit pool allocation are untouched.
+New/replacement anchors cost **6**; reports cost **3 + 6 × submitted items**,
+including unknown/stale/conflicting IDs (maximum **99**). Nonce insertion, budget
+charge, projection CAS and ACK snapshot share one D1 batch. Anchor charge shares
+the grant/nonce/anchor batch. Over budget returns 429
+`temporary_capacity_exhausted` with no durable write in that batch; retry after
+00:00 UTC. Admission issue/device nonce costs remain in GENERAL, as before.
+Existing-anchor redemption needs no member-sync debt, even when that pool is full.
+
+Two queues are added to the existing daily cleanup: `member_sync_nonces` at
+weight 3, `member_servers` at weight 6. No server FK cascade is added. Each page
+is at most 100 rows. Eight queues need at most eight terminal/partial pages;
+full pages cost at least 300 units. Thus `ceil(9999 / 300) + 8 = 42` deletes fit
+inside the existing 48-delete bound, with one daily claim (at most 49 statements).
+Each delete is clipped to remaining budget divided by its weight. Admitted debt
+is **8,000 + 1,800 = 9,800 ≤ 10,000/day**. The frozen projection indexes are PK
+(person,server,epoch), UNIQUE(projection_id), (server,epoch), (host_state,
+state_changed_at); weight 6 conservatively covers row/index rewrites. Nonce PK
+(server,nonce) and expires_at index cost 3. This is sized for the current small
+user base; revisit before growth. The existing free-plan figures stay 100,000
+Worker requests/day, 100,000 D1 rows written/day and 10 ms CPU/request.
+
+Deployment order (operator runbook only; this change is locally verified, not deployed):
+
+1. Apply prior migrations through 0013, then additive 0014. Keep all existing
+   tables/CHECKs and the new tables on rollback. Use Wrangler 4.98's SQL splitter;
+   trigger bodies must not contain a `CASE … END;` terminator.
+2. Deploy the matching Worker with the existing bounded daily cron. Verify
+   owner admission and a signed member anchor/report/bootstrap/hide/connect flow.
+3. Enable the host outbox and connect challenge states, then the frontend member
+   rail/consent. Before step 3, old clients can continue admission; their pending
+   anchors remain invisible until a compatible host reports results.
+4. For code rollback, disable new rail/connect entry and park host reports first.
+   Keep schema and preferably the updated cleanup owner. A pre-0014 Worker ignores
+   user-hidden projections; it must not serve member admission while visibility
+   expectations remain active. Never restore the historical unsafe cleanup.
+
+Required host integration contracts (not implemented or tested in this Worker):
+
+- One outbox per binding/immutable epoch, recomputing membership in the canonical
+  host transaction. Persist retry state; 60 s exponential backoff to 6 h, ±20%
+  jitter, at most 48 reports/host/day; park permanent errors/retired epochs.
+- When redeem changes `projection_id`, atomically replace it, park the old ID,
+  clear ACK and resend the unchanged current revision. Accept ACK only for the
+  currently stored `(projection_id, revision)`; a late old ACK cannot clear dirty.
+- Reuse the bounded (1,024) host challenge as `connect_redeemed` →
+  `completed{room_id,session}`. Recheck Joined membership, active room, stored
+  scope and session caps at mint. Same challenge + same room concurrent retries
+  return the same session; another room fails; restart requires a new challenge.
+  Return at most 50 rooms. Connect creates no admission/participant/invite state.
+- The two v4.1 “Tests must pin” cases are **host acceptance gates**: exact-room
+  concurrent selection retry and late ACK rejection after projection replacement.
+  Worker single-use redemption and old-ID isolation tests are not substitutes.
+
+Local verification commands (no remote bindings):
+
+```sh
+npm test
+node test/local_migrations.mjs /path/to/wrangler/package.json
+node test/local_member_grants.mjs /path/to/wrangler/package.json
+node test/local_cleanup.mjs /path/to/wrangler/package.json
+```
+
+The member integration check uses real local workerd/D1, checks 16-item/99-unit
+reports, concurrent redemption, hide/connect, rejected-batch snapshots and fresh
+projection replacement. Cleanup checks all eight queues, index-inclusive debt,
+statement count and same-day/concurrent retries. Local wall time is not evidence
+of production Worker CPU ≤10 ms; that production CPU acceptance remains unverified.
+
+Test sensitivity: the pre-feature Worker fails the consent projection test.
+Twelve isolated controlled mutations (anchor/report budget, revision fence,
+unknown-item charge, hidden bootstrap, expiry-limited invalidation, stored
+purpose, projection replacement/expiry, person cap, icon visibility and member
+cleanup) each fail a behavioral assertion; no mutation is retained. The local
+eight-queue backlog run spends exactly 10,000 schema-weighted units in 26 SQL
+statements; concurrent/same-day retries spend zero additional cleanup writes.
