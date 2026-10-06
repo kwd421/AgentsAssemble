@@ -16,10 +16,11 @@ export const JSON_HEADERS = {
 };
 
 export class HttpError extends Error {
-  constructor(status, code, message = code) {
+  constructor(status, code, message = code, details = {}) {
     super(message);
     this.status = status;
     this.code = code;
+    this.details = details;
   }
 }
 
@@ -68,7 +69,7 @@ export function temporaryCapacityError(error) {
 export function errorResponse(error) {
   error = temporaryCapacityError(error) || error;
   if (error instanceof HttpError) {
-    return json({ error: { code: error.code, message: error.message } }, error.status);
+    return json({ error: { code: error.code, message: error.message, ...error.details } }, error.status);
   }
   console.error(
     "identity-directory request failed",

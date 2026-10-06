@@ -47,7 +47,7 @@ test("future RESTRICT relationships make account and server deletion fail atomic
           .map(table => [table, db.prepare(`SELECT * FROM ${table}`).all()]));
         const response = await f.remove(account);
         assert.equal(response.status, 409);
-        assert.equal((await response.json()).error.code, "deletion_restricted");
+        assert.equal((await response.json()).error.code, account ? "deletion_restricted" : "server_move_unsupported");
         for (const [table, rows] of Object.entries(before)) {
           assert.deepEqual(db.prepare(`SELECT * FROM ${table}`).all(), rows, table);
         }

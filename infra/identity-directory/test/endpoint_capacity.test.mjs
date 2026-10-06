@@ -9,16 +9,16 @@ import { createGuestIdentity, environment, hostKey, hostRegistrationProof,
 test("five hosts renew all day with 150 spare endpoint calls and 100 owner entries", async t => {
   const env = environment({ SESSION_TTL_SECONDS: "172800" });
   const advance = utcDayClock(t, env);
-  const { key, created } = await createGuestIdentity(env);
-  const device = (path, method = "GET", body) => signedDeviceRequest(env, created.session, key.pair, path, method, body);
   const hosts = [];
   for (let i = 0; i < 5; i++) {
+    const { key, created } = await createGuestIdentity(env, { deviceId: `daily-owner-${i}` });
+    const device = (path, method = "GET", body) => signedDeviceRequest(env, created.session, key.pair, path, method, body);
     const host = await hostKey(), id = `daily-host-${i}`, origin = `https://daily-${i}.trycloudflare.com`;
     assert.equal((await device("/v1/servers", "POST", {
       server_id: id, host_public_key_jwk: host.publicJwk,
       host_registration_proof: await hostRegistrationProof(host.pair, id, created.person.person_id),
     })).status, 201);
-    hosts.push({ host, id, origin });
+    hosts.push({ host, id, origin, device });
   }
   const endpoint = ({ host, id, origin }, renew) => {
     const now = Math.floor(Date.now() / 1000);
@@ -34,7 +34,7 @@ test("five hosts renew all day with 150 spare endpoint calls and 100 owner entri
       assert.equal(response.status, 200, `slot ${slot}: ${await response.text()}`);
     }
     if (entries < 100) {
-      const { id, host, origin } = hosts[entries % 5];
+      const { id, host, origin, device } = hosts[entries % 5];
       const issued = await device(`/v1/servers/${id}/connect-grants`, "POST", {});
       assert.equal(issued.status, 201, await issued.clone().text());
       const grant = await issued.json();
@@ -50,11 +50,14 @@ test("five hosts renew all day with 150 spare endpoint calls and 100 owner entri
   const denied = await endpoint(hosts[0], true);
   assert.equal(denied.status, 429);
   assert.equal((await denied.json()).error.code, "temporary_capacity_exhausted");
-  const extra = await device(`/v1/servers/${hosts[0].id}/connect-grants`, "POST", {});
+  const extra = await hosts[0].device(`/v1/servers/${hosts[0].id}/connect-grants`, "POST", {});
   assert.equal(extra.status, 429);
-  const bootstrap = await device("/v1/bootstrap");
-  assert.equal(bootstrap.status, 200);
-  const directory = await bootstrap.json();
-  assert.equal(directory.servers.length, 5);
-  assert.ok(directory.servers.every(s => s.endpoint.status === "likely_online"));
+  for (const { device, id } of hosts) {
+    const bootstrap = await device("/v1/bootstrap");
+    assert.equal(bootstrap.status, 200);
+    const directory = await bootstrap.json();
+    assert.equal(directory.servers.length, 1);
+    assert.equal(directory.servers[0].server_id, id);
+    assert.equal(directory.servers[0].endpoint.status, "likely_online");
+  }
 });

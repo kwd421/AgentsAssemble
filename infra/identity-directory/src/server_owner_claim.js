@@ -1,21 +1,20 @@
+import { NO_OTHER_LIVE_OWNER, requireHostIncarnation, serverExistsError } from "./server_ownership.js";
 import { HttpError, json } from "./http.js";
 
 // Registration has already verified the account signature, a purpose-bound
 // native host signature and the exact existing host key. Preserve both accounts,
 // the endpoint and local room authority while moving this directory registration.
 export async function claimServerOwnership(db, { serverId, personId, fingerprint,
-  label, hostOs, nameRevision, previousOwner, nonce, now, maxServers, registrationEpoch }) {
-  if (previousOwner !== personId) {
-    const count = await db.prepare("SELECT COUNT(*) AS count FROM servers WHERE owner_person_id = ?").bind(personId).first();
-    if (Number(count?.count || 0) >= maxServers) throw new HttpError(409, "server_limit_reached");
-  }
+  label, hostOs, nameRevision, previousOwner, nonce, now, registrationEpoch }) {
   let claimed = true;
   try {
     await db.batch([
-      db.prepare(`UPDATE servers SET owner_person_id = ?, label = CASE WHEN name_revision = 0 OR ? > name_revision THEN ? ELSE label END, name_revision = MAX(name_revision, ?), host_os = COALESCE(?, host_os), revoked_at = NULL
+      db.prepare(`UPDATE servers SET owner_person_id = ?, label = CASE WHEN name_revision = 0 OR ? > name_revision THEN ? ELSE label END, name_revision = MAX(name_revision, ?), host_os = COALESCE(?, host_os)
         WHERE server_id = ? AND owner_person_id = ? AND host_key_fingerprint = ? AND (? IS NULL OR registration_epoch = ?)
-        AND (owner_person_id = ? OR (SELECT COUNT(*) FROM servers WHERE owner_person_id = ?) < ?)`)
-        .bind(personId, nameRevision, label, nameRevision, hostOs, serverId, previousOwner, fingerprint, registrationEpoch, registrationEpoch, personId, personId, maxServers),
+        AND revoked_at IS NULL AND ${NO_OTHER_LIVE_OWNER}
+        AND NOT EXISTS (SELECT 1 FROM server_owner_resolutions WHERE owner_person_id = servers.owner_person_id)
+        AND (SELECT COUNT(*) FROM servers AS prior WHERE prior.owner_person_id = servers.owner_person_id AND prior.revoked_at IS NULL) = 1`)
+        .bind(personId, nameRevision, label, nameRevision, hostOs, serverId, previousOwner, fingerprint, registrationEpoch, registrationEpoch, personId, serverId),
       db.prepare(`INSERT INTO host_request_nonces (server_id, nonce, expires_at)
         VALUES (?, CASE WHEN changes() = 1 THEN ? ELSE NULL END, ?)`)
         .bind(serverId, `claim:${nonce}`, now + 600),
@@ -35,11 +34,12 @@ export async function claimServerOwnership(db, { serverId, personId, fingerprint
     if (!String(error?.message).includes("NOT NULL constraint failed: host_request_nonces.nonce")) throw error;
     claimed = false;
   }
-  const current = await db.prepare("SELECT owner_person_id, registration_epoch FROM servers WHERE server_id = ?").bind(serverId).first();
-  if (registrationEpoch !== null && current?.registration_epoch !== registrationEpoch) throw new HttpError(409, "incarnation_conflict");
+  const current = await db.prepare("SELECT owner_person_id, registration_epoch, revoked_at FROM servers WHERE server_id = ?").bind(serverId).first();
+  requireHostIncarnation(current, serverId, registrationEpoch);
   if (!claimed || current?.owner_person_id !== personId) {
-    const count = await db.prepare("SELECT COUNT(*) AS count FROM servers WHERE owner_person_id = ?").bind(personId).first();
-    throw new HttpError(409, Number(count?.count || 0) >= maxServers ? "server_limit_reached" : "server_identity_conflict");
+    const owned = await db.prepare("SELECT 1 FROM servers WHERE owner_person_id = ? AND server_id <> ? AND revoked_at IS NULL").bind(personId, serverId).first();
+    if (owned) throw await serverExistsError(db, personId, now);
+    throw new HttpError(409, "server_identity_conflict");
   }
   return json({ server_id: serverId, host_key_fingerprint: fingerprint, registration_epoch: current.registration_epoch });
 }

@@ -100,7 +100,7 @@ test('report transaction rechecks host incarnation and key after signature verif
       const f = await memberFixture(), id = await f.anchor(), before = snapshot(f.db);
       const batch = f.env.DB.batch.bind(f.env.DB);
       f.env.DB.batch = statements => { f.db.exec(sql); return batch(statements); };
-      assert.equal((await f.report([item(id)])).status, 409);
+      assert.equal((await f.report([item(id)])).status, sql === "UPDATE servers SET revoked_at = 1" ? 410 : 409);
       assert.deepEqual(snapshot(f.db), before);
     });
   }
@@ -146,7 +146,9 @@ test('connect retains all W1/W2 authority fences at redemption', async t => {
         f.db.prepare('UPDATE servers SET host_public_key_jwk = ?').run(JSON.stringify(replacement.publicJwk));
       }
       f.db.exec(sql);
-      assert.ok([401, 409].includes((await f.redeem(g.grant_token, 'connect')).status));
+      const denied = await f.redeem(g.grant_token, 'connect');
+      if (sql === 'UPDATE servers SET revoked_at = 1') assert.equal(denied.status, 410);
+      else assert.ok([401, 409].includes(denied.status));
       assert.equal(f.db.prepare("SELECT used_at FROM server_connect_grants WHERE member_purpose = 'connect'").get().used_at, null);
     });
   }

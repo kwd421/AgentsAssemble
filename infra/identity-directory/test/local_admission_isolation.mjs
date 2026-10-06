@@ -89,15 +89,15 @@ try {
       "x-aa-device-id": session.device_id, "x-aa-timestamp": String(timestamp), "x-aa-nonce": nonce,
       "x-aa-signature": bytesToBase64Url(await crypto.subtle.sign({ name: "ECDSA", hash: "SHA-256" }, device.privateKey, utf8(canonical))) });
   };
-  const register = async (id, pair) => {
+  const register = async (id, pair, identity = owner) => {
     pair ||= await crypto.subtle.generateKey("Ed25519", true, ["sign", "verify"]);
     const nonce = randomBase64Url(18), issuedAt = now();
     const response = await deviceCall("/v1/servers", "POST", { server_id: id,
       host_public_key_jwk: await crypto.subtle.exportKey("jwk", pair.publicKey),
-      host_registration_proof: { owner_person_id: owner.person.person_id, issued_at: issuedAt, nonce,
+      host_registration_proof: { owner_person_id: identity.person.person_id, issued_at: issuedAt, nonce,
         signature: bytesToBase64Url(await crypto.subtle.sign("Ed25519", pair.privateKey,
-          utf8(hostRegistrationCanonical({ serverId: id, ownerPersonId: owner.person.person_id, issuedAt, nonce })))) },
-    });
+          utf8(hostRegistrationCanonical({ serverId: id, ownerPersonId: identity.person.person_id, issuedAt, nonce })))) },
+    }, identity.session);
     assert.equal(response.status, 201, await response.clone().text());
     return { id, pair };
   };
@@ -111,7 +111,9 @@ try {
     origin: "https://local-admission.trycloudflare.com" });
   const debt = async purpose => (await db.prepare("SELECT creation_writes FROM creation_budgets WHERE purpose = ?")
     .bind(purpose).first())?.creation_writes || 0;
-  const attacker = await register("local-attacker-server"), honest = await register("local-honest-server");
+  const honestOwner = await (await guest("local-honest-owner", "203.0.113.202")).json();
+  const aliasOwner = await (await guest("local-alias-owner", "203.0.113.203")).json();
+  const attacker = await register("local-attacker-server"), honest = await register("local-honest-server", undefined, honestOwner);
   const beforeAnonymous = await debt("ANONYMOUS") + await debt("AUTH");
   for (let i = 0; i < 250; i++) {
     const response = await call("/v1/auth/recover", "POST", { recovery_code: createRecoveryCode() },
@@ -180,7 +182,7 @@ try {
   }
   assert.ok(successes >= 288 && successes < 1600);
   const endpointDebt = await debt("ENDPOINT");
-  const alias = await register("local-attacker-alias", attacker.pair);
+  const alias = await register("local-attacker-alias", attacker.pair, aliasOwner);
   assert.equal((await endpoint(alias, body(1))).status, 429);
   assert.equal(await debt("ENDPOINT"), endpointDebt);
   assert.equal((await endpoint(honest, body(1))).status, 200);

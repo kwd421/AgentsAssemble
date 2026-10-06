@@ -40,7 +40,7 @@ for (const account of [false, true]) test(`local D1 floor: ${account ? "account 
       account ? { confirmation: `delete:${owner.created.person.person_id}` } : undefined);
     const denied = await remove();
     assert.equal(denied.status, 409);
-    assert.equal((await denied.json()).error.code, "deletion_restricted");
+    assert.equal((await denied.json()).error.code, account ? "deletion_restricted" : "server_move_unsupported");
     assert.equal((await db.prepare("SELECT result FROM future_relation").first()).result, "redeemed");
     const bootstrap = await call(owner, "/v1/bootstrap");
     assert.equal(bootstrap.status, 200);
@@ -48,9 +48,9 @@ for (const account of [false, true]) test(`local D1 floor: ${account ? "account 
     assert.equal((await register(owner)).status, 200);
 
     await db.prepare("DELETE FROM future_relation").run();
-    assert.equal((await remove()).status, 200);
-    assert.equal((await db.prepare("SELECT COUNT(*) AS n FROM servers").first()).n, 0);
-    assert.equal((await register(account ? other : owner)).status, 201);
+    assert.equal((await remove()).status, account ? 200 : 409);
+    assert.equal((await db.prepare("SELECT COUNT(*) AS n FROM servers").first()).n, account ? 0 : 1);
+    assert.equal((await register(account ? other : owner)).status, account ? 201 : 200);
     assert.equal((await call(owner, "/v1/bootstrap")).status, account ? 401 : 200);
   } finally {
     await mf.dispose();

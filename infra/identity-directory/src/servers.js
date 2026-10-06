@@ -17,11 +17,11 @@ import {
   parseJson,
 } from "./http.js";
 import { normalizeServerOrigin } from "./origin.js";
+import { NO_OTHER_LIVE_OWNER, requireHostIncarnation, recheckHostIncarnation, serverExistsError } from "./server_ownership.js";
 import { claimServerOwnership } from "./server_owner_claim.js";
 
 const CLOCK_SKEW_SECONDS = 300;
 const NONCE_TTL_SECONDS = 600;
-const MAX_SERVERS_PER_PERSON = 20;
 
 export async function registerServer(session, env, text, now) {
   const body = parseJson(text);
@@ -64,13 +64,10 @@ export async function registerServer(session, env, text, now) {
   const fingerprint = await sha256Base64Url(canonicalJson(hostJwk));
   let existing = await env.DB
     .prepare(
-      "SELECT owner_person_id, host_key_fingerprint, registration_epoch FROM servers WHERE server_id = ?"
+      "SELECT owner_person_id, host_key_fingerprint, registration_epoch, revoked_at FROM servers WHERE server_id = ?"
     )
     .bind(serverId)
     .first();
-  if (registrationEpoch !== null && existing?.registration_epoch !== registrationEpoch) {
-    throw new HttpError(409, "incarnation_conflict");
-  }
   if (
     existing &&
     ((!claimOwnership && existing.owner_person_id !== session.person_id) ||
@@ -82,6 +79,7 @@ export async function registerServer(session, env, text, now) {
       "This server identity is already registered."
     );
   }
+  if (existing || registrationEpoch !== null) requireHostIncarnation(existing, serverId, registrationEpoch);
   const hostOs = body.host_os === undefined ? null : body.host_os;
   if (body.host_os !== undefined && !["macos", "windows", "linux", "other"].includes(hostOs)) {
     throw new HttpError(400, "invalid_host_os");
@@ -96,28 +94,31 @@ export async function registerServer(session, env, text, now) {
   if (existing && claimOwnership) {
     return claimServerOwnership(env.DB, { serverId, personId: session.person_id,
       fingerprint, label, hostOs, nameRevision, previousOwner: existing.owner_person_id, nonce, now,
-      maxServers: MAX_SERVERS_PER_PERSON, registrationEpoch });
+      registrationEpoch });
   }
   let storedEpoch = existing?.registration_epoch;
   if (existing) {
     const result = await env.DB
       .prepare(
-        "UPDATE servers SET label = CASE WHEN name_revision = 0 OR ? > name_revision THEN ? ELSE label END, name_revision = MAX(name_revision, ?), host_os = COALESCE(?, host_os), revoked_at = NULL WHERE server_id = ? AND owner_person_id = ? AND host_key_fingerprint = ? AND (? IS NULL OR registration_epoch = ?) RETURNING registration_epoch"
+        "UPDATE servers SET label = CASE WHEN name_revision = 0 OR ? > name_revision THEN ? ELSE label END, name_revision = MAX(name_revision, ?), host_os = COALESCE(?, host_os) WHERE server_id = ? AND owner_person_id = ? AND host_key_fingerprint = ? AND revoked_at IS NULL AND (? IS NULL OR registration_epoch = ?) RETURNING registration_epoch"
       )
       .bind(nameRevision, label, nameRevision, hostOs, serverId, session.person_id, fingerprint, registrationEpoch, registrationEpoch)
       .first();
-    if (!result) throw new HttpError(409, registrationEpoch === null ? "server_identity_conflict" : "incarnation_conflict");
+    if (!result) {
+      await recheckHostIncarnation(env.DB, serverId, registrationEpoch);
+      throw new HttpError(409, registrationEpoch === null ? "server_identity_conflict" : "incarnation_conflict");
+    }
     storedEpoch = result.registration_epoch;
   } else {
     storedEpoch = randomBase64Url(16);
     try {
-      await env.DB.batch([
+      const results = await env.DB.batch([
         env.DB
           .prepare(
             `INSERT INTO servers
              (server_id, owner_person_id, host_public_key_jwk,
               host_key_fingerprint, label, host_os, created_at, revoked_at, registration_epoch, name_revision)
-             VALUES (?, ?, ?, ?, ?, ?, ?, NULL, ?, ?)`
+             SELECT ?, ?, ?, ?, ?, ?, ?, NULL, ?, ? WHERE ${NO_OTHER_LIVE_OWNER}`
           )
           .bind(
             serverId,
@@ -128,28 +129,32 @@ export async function registerServer(session, env, text, now) {
             hostOs,
             now,
             storedEpoch,
-            nameRevision
+            nameRevision,
+            session.person_id,
+            serverId
           ),
         env.DB
           .prepare(
             `INSERT INTO person_servers
              (person_id, server_id, relation, alias, first_seen_at,
               last_connected_at)
-             VALUES (?, ?, 'owner', ?, ?, NULL)`
+             SELECT ?, ?, 'owner', ?, ?, NULL WHERE changes() = 1`
           )
           .bind(session.person_id, serverId, "", now),
       ]);
+      if (!results[0].meta.changes) throw await serverExistsError(env.DB, session.person_id, now);
     } catch (error) {
       const message = String(error instanceof Error ? error.message : error);
       if (!message.includes("UNIQUE constraint failed: servers.server_id") && !message.includes("server_limit_reached")) throw error;
       // The limit trigger can precede the PK conflict when the winner took the
       // final account slot. Return its epoch without another registration write.
-      existing = await env.DB.prepare("SELECT owner_person_id, host_key_fingerprint, registration_epoch FROM servers WHERE server_id = ?")
+      existing = await env.DB.prepare("SELECT owner_person_id, host_key_fingerprint, registration_epoch, revoked_at FROM servers WHERE server_id = ?")
         .bind(serverId).first();
       if (!existing && message.includes("server_limit_reached")) throw new HttpError(409, "server_limit_reached");
       if (!existing || existing.owner_person_id !== session.person_id || existing.host_key_fingerprint !== fingerprint) {
         throw new HttpError(409, "server_identity_conflict");
       }
+      requireHostIncarnation(existing, serverId, registrationEpoch);
       storedEpoch = existing.registration_epoch;
     }
   }
@@ -162,23 +167,11 @@ export async function registerServer(session, env, text, now) {
 export async function deleteServer(session, env, serverId, text) {
   const body = parseJson(text);
   const registrationEpoch = body.registration_epoch === undefined ? null : cleanIdentifier(body.registration_epoch, "registration_epoch");
-  let result;
-  try {
-    result = await env.DB
-      .prepare("DELETE FROM servers WHERE server_id = ? AND owner_person_id = ? AND (? IS NULL OR registration_epoch = ?)")
-      .bind(serverId, session.person_id, registrationEpoch, registrationEpoch)
-      .run();
-  } catch (error) {
-    if (String(error?.message || error).includes("FOREIGN KEY constraint failed")) {
-      throw new HttpError(409, "deletion_restricted");
-    }
-    throw error;
-  }
-  // D1 includes cascaded registration/icon rows in its change count.
-  if (Number(result.meta?.changes || 0) < 1) {
-    throw new HttpError(registrationEpoch === null ? 404 : 409, registrationEpoch === null ? "server_not_found" : "incarnation_conflict");
-  }
-  return json({ status: "server_deleted", server_id: serverId });
+  const server = await env.DB.prepare("SELECT registration_epoch, revoked_at FROM servers WHERE server_id = ? AND owner_person_id = ?")
+    .bind(serverId, session.person_id).first();
+  if (registrationEpoch !== null && server?.registration_epoch !== registrationEpoch) throw new HttpError(409, "incarnation_conflict");
+  if (!server) throw new HttpError(404, "server_not_found");
+  throw new HttpError(409, "server_move_unsupported", "서버 옮기기는 아직 지원하지 않아요");
 }
 
 export async function verifyHostRequest(request, env, serverId, body, now) {
@@ -186,12 +179,10 @@ export async function verifyHostRequest(request, env, serverId, body, now) {
   const registrationEpoch = payload.registration_epoch === undefined ? null : cleanIdentifier(payload.registration_epoch, "registration_epoch");
   const server = await env.DB
     .prepare(
-      "SELECT host_public_key_jwk, host_key_fingerprint, registration_epoch FROM servers WHERE server_id = ? AND revoked_at IS NULL"
+      "SELECT host_public_key_jwk, host_key_fingerprint, registration_epoch, revoked_at FROM servers WHERE server_id = ?"
     )
     .bind(serverId)
     .first();
-  if (registrationEpoch !== null && server?.registration_epoch !== registrationEpoch) throw new HttpError(409, "incarnation_conflict");
-  if (!server) throw new HttpError(404, "server_not_found");
   const timestamp = Number(request.headers.get("x-aa-host-timestamp"));
   const nonce = request.headers.get("x-aa-host-nonce") || "";
   const signature = request.headers.get("x-aa-host-signature") || "";
@@ -205,6 +196,7 @@ export async function verifyHostRequest(request, env, serverId, body, now) {
   ) {
     throw new HttpError(401, "invalid_host_signature");
   }
+  if (!server) requireHostIncarnation(server, serverId, registrationEpoch);
   const canonical = await hostRequestCanonical({
     method: request.method,
     pathname: new URL(request.url).pathname,
@@ -218,6 +210,7 @@ export async function verifyHostRequest(request, env, serverId, body, now) {
     canonical
   );
   if (!valid) throw new HttpError(401, "invalid_host_signature");
+  requireHostIncarnation(server, serverId, registrationEpoch);
   await limitHost(request, env, serverId, server.host_key_fingerprint);
   return { nonce, fingerprint: server.host_key_fingerprint, registrationEpoch, body: payload };
 }
@@ -227,11 +220,14 @@ export async function hostAuthentication(request, env, serverId, body, now) {
   try {
     const result = await env.DB
       .prepare(
-        "INSERT INTO host_request_nonces (server_id, nonce, expires_at, purpose) SELECT server_id, ?, ?, ? FROM servers WHERE server_id = ? AND (? IS NULL OR registration_epoch = ?)"
+        "INSERT INTO host_request_nonces (server_id, nonce, expires_at, purpose) SELECT server_id, ?, ?, ? FROM servers WHERE server_id = ? AND revoked_at IS NULL AND (? IS NULL OR registration_epoch = ?)"
       )
       .bind(nonce, now + NONCE_TTL_SECONDS, requestPurpose(request), serverId, registrationEpoch, registrationEpoch)
       .run();
-    if (!Number(result.meta?.changes || 0)) throw new HttpError(409, "incarnation_conflict");
+    if (!Number(result.meta?.changes || 0)) {
+      await recheckHostIncarnation(env.DB, serverId, registrationEpoch);
+      throw new HttpError(409, "incarnation_conflict");
+    }
   } catch (error) {
     if (error instanceof HttpError) throw error;
     throw temporaryCapacityError(error) || new HttpError(409, "replayed_request");
@@ -329,10 +325,7 @@ export async function updateEndpoint(
   } catch (error) {
     const message = String(error?.message || error);
     if (message.includes("NOT NULL constraint failed: host_request_nonces.nonce")) {
-      if (registrationEpoch !== null) {
-        const current = await env.DB.prepare("SELECT registration_epoch FROM servers WHERE server_id = ?").bind(serverId).first();
-        if (current?.registration_epoch !== registrationEpoch) throw new HttpError(409, "incarnation_conflict");
-      }
+      await recheckHostIncarnation(env.DB, serverId, registrationEpoch);
       throw new HttpError(409, "stale_endpoint_generation");
     }
     if (message.includes("UNIQUE constraint failed: host_request_nonces")) {

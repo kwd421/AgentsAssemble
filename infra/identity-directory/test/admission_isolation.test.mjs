@@ -84,11 +84,11 @@ for (const attack of ["guest", "google/native/start", "google/web/start"]) {
 
 async function hostFixture(env) {
   const owner = await createGuestIdentity(env);
-  const register = async (id, host) => {
+  const register = async (id, host, identity = owner) => {
     host ||= await hostKey();
-    const response = await signedDeviceRequest(env, owner.created.session, owner.key.pair, "/v1/servers", "POST", {
+    const response = await signedDeviceRequest(env, identity.created.session, identity.key.pair, "/v1/servers", "POST", {
       server_id: id, host_public_key_jwk: host.publicJwk,
-      host_registration_proof: await hostRegistrationProof(host.pair, id, owner.created.person.person_id),
+      host_registration_proof: await hostRegistrationProof(host.pair, id, identity.created.person.person_id),
     });
     assert.equal(response.status, 201, await response.clone().text());
     return { id, host };
@@ -102,9 +102,11 @@ async function hostFixture(env) {
 
 // Contract: one server OR signing key has an exact daily cap, before shared
 // endpoint debt; the unrelated host remains usable. Removing either cap fails.
-test("one host cannot exhaust ENDPOINT, including across registrations and deletion", async t => {
+test("one host cannot exhaust ENDPOINT, including across accounts and blocked deletion", async t => {
   const env = environment({ SESSION_TTL_SECONDS: "172800" }), advance = utcDayClock(t, env), f = await hostFixture(env);
-  const attacker = await f.register("attacker-server"), other = await f.register("honest-server");
+  const honestOwner = await createGuestIdentity(env, { deviceId: "honest-host-owner" });
+  const aliasOwner = await createGuestIdentity(env, { deviceId: "alias-host-owner" });
+  const attacker = await f.register("attacker-server"), other = await f.register("honest-server", undefined, honestOwner);
   let admitted = 0;
   for (let i = 1; i <= 1601; i++) {
     advance(i * 20);
@@ -114,13 +116,13 @@ test("one host cannot exhaust ENDPOINT, including across registrations and delet
   }
   assert.ok(admitted >= 288 && admitted < 1600);
   const before = spent(env, "ENDPOINT");
-  const alias = await f.register("attacker-alias", attacker.host);
+  const alias = await f.register("attacker-alias", attacker.host, aliasOwner);
   assert.equal((await f.call(alias, 1)).status, 429);
   assert.equal(spent(env, "ENDPOINT"), before);
   assert.equal((await f.call(other, 1)).status, 200);
   assert.equal((await signedDeviceRequest(env, f.owner.created.session, f.owner.key.pair,
-    `/v1/servers/${attacker.id}`, "DELETE")).status, 200);
-  assert.equal((await f.call(attacker, 1)).status, 404);
+    `/v1/servers/${attacker.id}`, "DELETE")).status, 409);
+  assert.equal((await f.call(attacker, 1)).status, 429);
   assert.equal((await f.call(alias, 1)).status, 429);
   advance(86400);
   assert.equal((await f.call(alias, 1)).status, 200);

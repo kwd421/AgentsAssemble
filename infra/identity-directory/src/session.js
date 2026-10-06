@@ -1,3 +1,4 @@
+import { ownedServers } from "./server_ownership.js";
 import { limitSession, requestPurpose } from "./abuse.js";
 import {
   deviceRequestCanonical,
@@ -91,6 +92,8 @@ export async function bootstrap(session, env, now) {
     )
     .bind(session.person_id)
     .first();
+  const owned = await ownedServers(env.DB, session.person_id, now);
+  const resolution = await env.DB.prepare("SELECT keeper_server_id, keeper_epoch AS keeper_registration_epoch, revision FROM server_owner_resolutions WHERE owner_person_id = ?").bind(session.person_id).first();
   const result = await env.DB
     .prepare(
       `SELECT person_servers.server_id, person_servers.relation,
@@ -107,7 +110,8 @@ export async function bootstrap(session, env, now) {
     )
     .bind(session.person_id)
     .all();
-  const servers = (result.results || []).map((row) => ({
+  const servers = (result.results || []).filter(row => row.relation !== "owner" ||
+    (owned.length === 1 && row.server_id === owned[0].server_id)).map((row) => ({
     server_id: row.server_id,
     registration_epoch: row.registration_epoch,
     relation: row.relation,
@@ -151,5 +155,6 @@ export async function bootstrap(session, env, now) {
     if (index >= 0) servers[index] = member;
     else servers.push(member);
   }
-  return json({ person, servers, server_time: now });
+  return json({ person, servers, server_time: now,
+    owner_server_conflict: owned.length > 1 ? { servers: owned, resolution } : null });
 }

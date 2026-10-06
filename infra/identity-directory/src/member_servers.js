@@ -1,3 +1,4 @@
+import { recheckHostIncarnation } from "./server_ownership.js";
 import { verifyHostRequest } from "./servers.js";
 import { HttpError, json, parseJson, cleanIdentifier } from "./http.js";
 
@@ -63,7 +64,10 @@ export async function reportMemberResults(request, env, serverId, text, now) {
     if (String(error.message).includes('UNIQUE constraint failed: member_sync_nonces')) throw new HttpError(409, 'replayed_request');
     throw error;
   }
-  if (!batch[0].results.length) throw new HttpError(409, 'incarnation_conflict');
+  if (!batch[0].results.length) {
+    await recheckHostIncarnation(env.DB, serverId, epoch);
+    throw new HttpError(409, 'incarnation_conflict');
+  }
   return json({ results: body.results.map((item, i) => ({ projection_id: item.projection_id,
     revision: item.revision, status: batch[2 + 2 * i].results[0]?.status || 'stale' })) });
 }

@@ -1,5 +1,9 @@
 # AgentsAssemble identity directory
 
+Current server ownership: [one live server per account (v5.1)](#one-live-server-per-account-v51).
+Its migration/cutover and rollback rules supersede older server-deletion and
+multi-server guidance in the historical sections below.
+
 This Worker is the Phase 1 central control plane. It stores only central identities,
 device credentials, known server identities, and short-lived server endpoint leases.
 Room lists, messages, attachments, provider sessions, host tokens, room bearer tokens,
@@ -25,9 +29,10 @@ and invite credentials remain on each AgentsAssemble engine.
   Account deletion cascades through devices, sessions, recovery state, and owned
   server registrations, unless a retained relationship restricts deletion (C3a below).
 - Server endpoints are accepted only when signed by the server's Ed25519 host key.
-  Endpoint generations are monotonic, leases expire automatically, and deleting a
-  server registration immediately invalidates its old host key. Each central identity
-  can own at most 20 registered servers.
+  Endpoint generations are monotonic and leases expire automatically. New
+  registrations/claims admit at most one live owned server per account. Legacy
+  duplicates require explicit owner resolution; retired rows cannot publish or
+  authorize new central admissions. See the one-server contract below.
 - A central login never grants room membership. Clients still authenticate directly
   to the selected engine and its room ACLs.
 - Public Quick Tunnel origins are valid server endpoints, but are not trusted central
@@ -76,7 +81,9 @@ account using a distinct `AA-HOST-CLAIM-1` proof and signed device request.
 Claims require the exact previously registered host key and a single-use nonce;
 ordinary registration still rejects a different owner or substituted key. One D1
 transaction changes the owner relation, keeps the old account's bookmark and
-preserves the endpoint. The existing 20-server bound also guards concurrent claims.
+preserves the endpoint. The shared conditional writer rejects a claim when the
+destination account already owns another live server. A duplicate source account
+must finish resolution before transferring ownership.
 No local rooms/messages, room permissions or Google identities are merged.
 
 `CENTRAL_ALLOWED_ORIGINS` is the exact comma-separated allowlist for trusted bundled
@@ -229,7 +236,8 @@ floor is necessary because local workerd reports logical deletes without index
 maintenance. Before each DELETE its LIMIT is reduced to fit the remaining
 worst-case cost, so the final chunk cannot overshoot. Session deletion excludes
 all nonce/grant parents before LIMIT; foreign-key cascades cannot bypass this
-bound. Nonempty queues rotate; empty queues stop consuming query slots.
+bound. Ordinary nonempty queues rotate; terminal dependency queues drain in
+order. Empty queues stop consuming query slots.
 
 | Queue | Table + maximum index writes per deleted row |
 | --- | ---: |
@@ -242,10 +250,10 @@ bound. Nonempty queues rotate; empty queues stop consuming query slots.
 
 There are at most 49 D1 statements (one claim + 48 chunks), within the
 [50-query Free invocation limit](https://developers.cloudflare.com/d1/platform/limits/).
-With eligible backlog and the current schema, at least 9,993 deletion writes
-can be used after the one-write day claim before the remaining budget cannot fit a row. Even the cheapest
-3-write rows require only 34 full/partial chunks; six queue exhaustion checks
-still fit the statement cap. SQL/time/quota failures can reduce that throughput.
+The original six-queue schema could use at least 9,993 deletion writes with
+eligible backlog. Migration 0015 adds cheaper two-write terminal queues;
+the 48-delete cap can now end an invocation before the write budget is exhausted.
+SQL/time/quota failures can also reduce throughput.
 Changing indexes, triggers or cascades requires rechecking these costs and the
 all-queue regression. Do not refund the ledger or manually invoke old cleanup.
 
@@ -391,27 +399,30 @@ ANONYMOUS/AUTH 고갈은 이미 방에 연결된 세션과 소유자 입장 예�
 
 ### Member binding compatibility floor (C3a)
 
-C3a has no migration or terminal server-ID blocking. Account/server deletion
-remains physical when no retained relationship exists; an FK RESTRICT failure
+Historical C3a had no migration or terminal server-ID blocking. The current
+one-server contract below supersedes standalone server deletion and permits
+only whole-account deletion to remain physical. An FK RESTRICT failure
 returns 409 `deletion_restricted` and rolls back the whole DELETE/cascade.
 Successful deletion accepts `changes >= 1`, including FK cascade and trigger writes.
 
 C3c-1a introduces a fresh random registration epoch for each new registration.
 Central relationships bind to `server_incarnation = (server_id, host-key fingerprint,
-non-reusable registration epoch)`: a deleted `server_id` may register again, but
-its new incarnation must inherit no previous relationship, grant, or enrollment.
+non-reusable registration epoch)`. Historically a deleted `server_id` could
+register again; the current slice blocks standalone delete/replacement and
+re-promotion. Historical epoch fencing remains covered with storage fixtures.
 
 C3b/C3c retained member relationships referencing persons, servers, or cascade
 children such as `person_servers` must use `ON DELETE RESTRICT`.
 Member-owned records must not hold FKs to cleanup-owned `sessions` or
 `server_connect_grants`; copy required provenance as values instead (M2).
-If a future design retains revoked server rows, all server-limit checks must
-count only live rows; C3a does not retain revoked rows (M3).
+The one-server writer counts live rows only; the separate retained-row cap is 8.
+The historical 20-row insertion trigger remains as a legacy outer bound, not
+the active one-server invariant.
 
 Local verification: `npm test`, `node test/local_migrations.mjs /path/to/wrangler/package.json`,
 and `node test/local_member_floor.mjs /path/to/wrangler/package.json` exercise
-signed deletion/re-registration, future RESTRICT fixtures, atomic rollback and
-real local D1 deletion metadata. C3a added no member table, route, UI, or epoch.
+blocked standalone deletion, account deletion, historical epoch fixtures, future
+RESTRICT fixtures, atomic rollback and real local D1 deletion metadata.
 
 ### Server incarnation epoch: C3c-1a expand
 
@@ -441,8 +452,10 @@ This applies to registration metadata/ownership claim, endpoint publish, renew,
 offline, connect-grant creation/redemption, name and icon changes, bookmark
 creation/deletion, and server deletion.
 Initial registration omits the field because only Central allocates the epoch.
-An explicit null/empty value is invalid, not a legacy request. A stale epoch
-returns **409 `incarnation_conflict`**; refresh bootstrap and discard the stale
+An explicit null/empty value is invalid, not a legacy request. An epoch that
+differs from a stored registration returns **409 `incarnation_conflict`**;
+host-signed requests to a retired/missing registration have the terminal 410
+responses specified below. Refresh bootstrap and discard the stale
 operation rather than retargeting it to the replacement incarnation.
 
 Canonical transcripts use LF separators, no trailing LF, and UTF-8:
@@ -1170,3 +1183,200 @@ purpose, projection replacement/expiry, person cap, icon visibility and member
 cleanup) each fail a behavioral assertion; no mutation is retained. The local
 eight-queue backlog run spends exactly 10,000 schema-weighted units in 26 SQL
 statements; concurrent/same-day retries spend zero additional cleanup writes.
+
+## One live server per account (v5.1)
+
+Current contract, migration **0015_one_owned_server.sql**. This section overrides
+earlier multi-server, standalone deletion and rollback guidance. Replacement,
+re-promotion, Rust demotion/ingress handling and companion handoff are outside
+this Worker slice. Retirement blocks future central authority; it does not stop
+an already-running host or invalidate its already-admitted local sessions.
+
+### Registration, deletion and bootstrap
+
+`POST /v1/servers` keeps the existing device signature plus host registration/
+claim proof. New registration INSERT and ownership claim UPDATE both contain the
+same `NOT EXISTS` live-owner predicate in the authority statement. There is no
+read/count-then-write admission window. The same live registration can still
+update metadata or retry without rotating its epoch. Terminal rows are never
+revived. Claims out of an unresolved duplicate account are rejected.
+
+A different live server already owned by the destination account yields 409:
+
+```json
+{"error":{"code":"server_exists","message":"This account already owns a live server.","server":{"server_id":"server-a","registration_epoch":"epoch-a","name":"My server","online":true,"last_seen_at":1791240000},"duplicate_servers":[]}}
+```
+
+`duplicate_servers` contains the same display objects if there are multiple live
+owned registrations. `name` uses the owner alias/default-name rules; `online`
+means an unexpired online endpoint lease; `last_seen_at` is the last endpoint
+publication/renewal/offline timestamp, or null if never published. These fields
+do not prove that an offline computer has stopped running. If a concurrent
+ownership change removes the conflicting server before the error read, return
+409 `server_identity_conflict` and refresh bootstrap.
+
+`DELETE /v1/servers/{server_id}` still authenticates the owner and checks a
+supplied epoch, but does not delete any registration:
+
+```json
+{"error":{"code":"server_move_unsupported","message":"서버 옮기기는 아직 지원하지 않아요"}}
+```
+
+This is 409 for existing owned registrations, including duplicates/retired rows;
+duplicate retirement uses the resolution endpoint below. Missing/foreign rows
+retain 404 `server_not_found` (or 409 `incarnation_conflict` for a supplied stale
+epoch). `DELETE /v1/account` and its confirmation/RESTRICT behavior are unchanged.
+
+`GET /v1/bootstrap` retains `person`, `servers[]`, `server_time`, and adds
+`owner_server_conflict`. With zero/one live owned registration it is null.
+With duplicates there are **zero owner entries** in `servers[]` and this field is:
+
+```json
+{"servers":[{"server_id":"server-a","registration_epoch":"epoch-a","name":"My server","online":false,"last_seen_at":null},{"server_id":"server-b","registration_epoch":"epoch-b","name":"Other computer","online":true,"last_seen_at":1791240000}],"resolution":null}
+```
+
+The object above is the value of `owner_server_conflict`, not a replacement for
+the top-level rail. Member/bookmark projections retain their existing semantics.
+After resolution the sole live owner returns to the rail. Retired owner/member/
+bookmark entries are excluded immediately, before physical cleanup.
+
+### Device-signed duplicate resolution
+
+`POST /v1/servers/resolve-duplicates` uses the normal bearer + P-256 device
+signature. It retires **one loser per request**, never chooses by last-seen time.
+The signed body must name exact keeper and loser incarnations:
+
+```json
+{"keeper_server_id":"server-a","keeper_registration_epoch":"epoch-a","server_id":"server-b","registration_epoch":"epoch-b","expected_revision":null}
+```
+
+Use explicit `expected_revision: null` only to start. The batch creates one
+account-scoped keeper record, compares its exact ID/epoch/revision and both live
+owned registrations, then sets only the loser `revoked_at`. Its transaction guard
+uses the existing host nonce table (`resolve:` prefix, GENERAL debt). A failed
+retirement rolls back keeper selection, retirement and that nonce/debt together.
+The normal device-authentication nonce is still consumed, as on other failures.
+
+200 response while more than one live registration remains:
+
+```json
+{"status":"server_retired","server_id":"server-b","registration_epoch":"epoch-b","resolution":{"keeper_server_id":"server-a","keeper_registration_epoch":"epoch-a","revision":"opaque-resolution-revision"}}
+```
+
+Send this `resolution.revision` as `expected_revision` for each remaining loser.
+Bootstrap also exposes the record in `owner_server_conflict.resolution` for
+recovery after a lost response. The revision is an opaque token stable for that
+resolution. A conflicting keeper, stale revision/epoch, already-retired loser or
+wrong owner returns 409 `duplicate_resolution_conflict` without authority changes.
+The final retirement returns `resolution: null`; the record is cleared only when
+exactly one live owned registration remains. At **8 retained retired rows**,
+the next retirement returns 409 `server_retirement_capacity` with message
+`잠시 후 다시 시도해 주세요`; both live state and any existing keeper record remain.
+
+### Terminal host responses
+
+Schema-valid host-signed endpoint publish/renew/offline, host name, owner/member
+grant redemption and member-results requests use the same terminal checks.
+Registration/claim proofs also cannot revive a terminal row. A retained row
+requires a valid signature for its stored key before returning:
+
+```json
+{"error":{"code":"server_retired","message":"This registration has been retired.","server_id":"server-b","registration_epoch":"epoch-b"}}
+```
+
+After cleanup, a well-formed host-signed request carrying its stored epoch gets:
+
+```json
+{"error":{"code":"registration_absent","message":"Registration is no longer stored.","server_id":"server-b","registration_epoch":"epoch-b"}}
+```
+
+Both are **410** and echo the exact incarnation. For `registration_absent` the
+stored key is also gone: this is an authoritative absence signal, not successful
+host authentication or any grant of authority. A request without a stored epoch
+retains 404; a different epoch on a still-stored row retains 409
+`incarnation_conflict`. Invalid signatures on stored rows return 401. SQL mutation
+predicates recheck live state, and a retirement racing authentication also returns
+the terminal signal after a failed mutation. Hosts must persist the epoch to
+distinguish offline-past-retention from initial registration.
+
+### Retention, cost and operator runbook
+
+0015 only adds `server_owner_resolutions` and a partial retired-time index. It
+does not pick keepers, sweep rows, change existing columns/triggers or install a
+global unique-owner index while legacy duplicates exist. No trigger body with
+a `CASE … END;` splitter terminator is introduced.
+
+Retired registrations and their retained dependents become eligible at
+`revoked_at <= now - 30 days`. Existing daily cleanup drains pages of at most
+100 in this order; later stages require earlier dependents to be absent:
+
+| Stage | Maximum indexed writes/deleted row |
+| --- | ---: |
+| `server_connect_grants` | 5 |
+| `server_endpoints` | 2 |
+| `server_icons` | 2 |
+| `person_servers` | 3 |
+| `member_servers` | 6 (existing conservative reserve) |
+| `servers` | 4 (row, PK, owner, retired-time index) |
+
+Host nonces drain through their existing expiry queue (3). Parent removal also
+requires no host nonce or keeper record, so it cannot cascade a retained child.
+Future RESTRICT references still fail closed. All 14 queues share one durable
+10,000-write/day reservation, at most 48 deletes plus one claim, with each page
+shrunk to the remaining budget. A failed invocation burns its remaining daily
+reservation; do not reset the ledger to retry. The next UTC day resumes from
+durable rows. Ordinary grant/member expiry does not skip terminal retention or
+the dependency order. Account deletion remains a separate intentional cascade.
+
+Existing expiry admission debt remains 9,800/day (8,000 + 1,800). No pool limit is
+raised. Terminal backlog shares the same 10,000 cap; the 200-unit arithmetic
+headroom is not a throughput promise, and draining may take additional days.
+Each resolution additionally spends one ordinary device nonce, one guarded host
+nonce (3 expiry units each in GENERAL), at most one two-entry keeper INSERT and
+DELETE, and the retired-row/index update. There is no new heartbeat or polling
+write. Bootstrap adds two read queries; successful resolution uses seven D1
+statements including authentication. These fit the
+[50-query Free invocation limit](https://developers.cloudflare.com/d1/platform/limits/).
+The account-wide [D1 Free budget](https://developers.cloudflare.com/d1/platform/pricing/)
+is 5 million rows read and 100,000 rows written/day, including index maintenance;
+10,000 is this cleanup owner's ceiling, not the whole application's usage cap.
+Large relation/grant backlogs still consume reads; inspect `rows_read` and
+`rows_written` before an authorized rollout. No production quota or CPU claim is
+made from local workerd metadata.
+
+Operator sequence (documentation only; no deployment or remote execution in
+this change):
+
+1. Confirm migrations through 0014 and account quota headroom. Apply additive
+   0015 before the matching Worker. Keep schema on any subsequent rollback.
+2. Cut over to a single matching Worker version; **no gradual/mixed-version
+   rollout**. Old writers can violate the new invariant or revive terminal rows.
+   Do not roll back to a pre-0015 writer after enabling this contract. Roll
+   forward, or first stop registration/claim/retirement traffic for a separately
+   reviewed compatibility rollback. Old rollback targets above are historical.
+3. Keep the existing daily cron and budget ledger. There is no deploy-time
+   duplicate cleanup. Owners choose exact keepers through signed requests;
+   cap failures wait for normal retention cleanup rather than bypassing it.
+4. Integrate both 410 variants into the host's existing idempotent demotion
+   owner for managed and manual ingress. This Worker change does not implement
+   or verify that Rust/UI transition; clients must not retry registration to
+   resurrect a retired server. Already-admitted local sessions are unchanged.
+
+Local verification: **200 Node tests passed**. The nine existing local scripts
+(including the standalone owner smoke) and `test/local_one_server.mjs` passed
+against isolated D1/workerd or the Wrangler SQL splitter. The latter starts an
+isolated loopback Worker and also runs `local_owner_connections.mjs` against it.
+The retained dependency fixture checks the 30-day boundary, 100-row pages,
+dependency order, non-cascading parent guard and post-cleanup 410. The all-queue
+workerd run spends **10,000 schema-weighted writes in 32 statements**, with no
+additional writes on same-day retries. The unfixed Worker fails the new
+regressions; ten isolated controlled mutations of ownership, keeper comparison,
+cap, terminal/absence responses, bootstrap, retention, page size, daily budget
+and parent guard each fail their behavioral oracles. Removing the owner guard
+also fails the live workerd race. No test mutation is retained.
+
+```bash
+npm test
+node test/local_one_server.mjs /path/to/wrangler/package.json
+node test/local_cleanup.mjs /path/to/wrangler/package.json
+```

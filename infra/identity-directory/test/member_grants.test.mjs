@@ -70,7 +70,9 @@ test("member redeem rechecks live authority and stored identity", async t => {
   })) await t.test(name, async () => {
     const f = await fixture(), g = await f.grant();
     f.env.DB.database.prepare(sql).run(...(sql.includes("?") ? [f.member.created.person.person_id] : []));
-    assert.ok([401, 404, 409].includes((await f.redeem(g.grant_token)).status));
+    const denied = await f.redeem(g.grant_token);
+    if (name === "server_revoked") assert.equal(denied.status, 410);
+    else assert.ok([401, 404, 409].includes(denied.status));
     assert.equal(f.env.DB.database.prepare("SELECT used_at FROM server_connect_grants WHERE kind = 'member'").get().used_at, null);
   });
   await t.test("logout", async () => {
@@ -90,9 +92,10 @@ test("member grant binds mandatory epoch, challenge, server and registered host 
   assert.equal((await f.redeem(g.grant_token, { registration_epoch: undefined })).status, 400);
   assert.equal((await f.redeem(g.grant_token, { challenge_hash: await sha256Base64Url("wrong") })).status, 401);
   assert.equal((await f.redeem(g.grant_token, {}, await hostKey())).status, 401);
-  const other = await f.device(f.owner, "/v1/servers", { server_id: "other-server",
+  const otherOwner = await createGuestIdentity(f.env, { deviceId: "other-server-owner" });
+  const other = await f.device(otherOwner, "/v1/servers", { server_id: "other-server",
     host_public_key_jwk: f.host.publicJwk, host_registration_proof: await hostRegistrationProof(f.host.pair,
-      "other-server", f.owner.created.person.person_id) });
+      "other-server", otherOwner.created.person.person_id) });
   const epoch = (await other.json()).registration_epoch;
   assert.equal((await f.redeem(g.grant_token, { registration_epoch: epoch }, f.host, "other-server")).status, 401);
   assert.equal((await f.redeem(g.grant_token)).status, 200);
@@ -133,11 +136,12 @@ test("member account cap spans sessions and servers without consuming owner capa
   const f = await fixture();
   for (let i = 0; i < 4; i++) {
     const server = `cap-server-${i}`;
-    const r = await f.device(f.owner, "/v1/servers", { server_id: server, host_public_key_jwk: f.host.publicJwk,
-      host_registration_proof: await hostRegistrationProof(f.host.pair, server, f.owner.created.person.person_id) });
+    const otherOwner = await createGuestIdentity(f.env, { deviceId: `cap-server-owner-${i}` });
+    const r = await f.device(otherOwner, "/v1/servers", { server_id: server, host_public_key_jwk: f.host.publicJwk,
+      host_registration_proof: await hostRegistrationProof(f.host.pair, server, otherOwner.created.person.person_id) });
     const epoch = (await r.json()).registration_epoch;
     await publishEndpoint(f.env, server, f.host, epoch);
-    // Issue as owner here so member and owner capacity isolation is observable.
+    // The caller owns its original host and is a member of these other hosts.
     for (let j = 0; j < 4; j++) assert.equal((await f.device(f.owner, `/v1/servers/${server}/member-grants`,
       { ...f.body, registration_epoch: epoch })).status, 201);
   }
@@ -190,7 +194,7 @@ test("revocation or host replacement after authentication cannot race the consum
       if (query.startsWith("UPDATE server_connect_grants SET used_at")) f.env.DB.database.exec(sql);
       return prepare(query);
     };
-    assert.equal((await f.redeem(g.grant_token)).status, 401);
+    assert.equal((await f.redeem(g.grant_token)).status, sql.includes("registration_epoch") ? 409 : 401);
     assert.equal(f.env.DB.database.prepare("SELECT used_at FROM server_connect_grants WHERE kind = 'member'").get().used_at, null);
   });
 });

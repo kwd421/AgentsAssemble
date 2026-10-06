@@ -35,7 +35,8 @@ test("delayed old-incarnation DELETE preserves a replacement with a different ke
   const signature = bytesToBase64Url(await crypto.subtle.sign({ name: "ECDSA", hash: "SHA-256" },
     f.owner.key.pair.privateKey, utf8(await deviceRequestCanonical({ method: "DELETE", pathname,
       timestamp, nonce, bodyText, token: session.token, deviceId: session.device_id }))));
-  assert.equal((await f.device(`/v1/servers/${f.id}`, "DELETE")).status, 200);
+  // Historical pre-cutover deletion at the storage boundary.
+  f.env.DB.database.prepare("DELETE FROM servers WHERE server_id = ?").run(f.id);
   assert.equal((await f.register(await hostKey())).status, 201);
   const response = await request(f.env, pathname, { method: "DELETE", body: bodyText, headers: {
     authorization: `Bearer ${session.token}`, "x-aa-device-id": session.device_id,
@@ -53,7 +54,8 @@ test("exact old endpoint replay cannot publish into same-key re-registration", a
   const body = { ...f.endpoint, registration_epoch: f.epoch || "old-incarnation-unfixed" };
   const options = { nonce: "endpoint-replay-nonce", timestamp: f.endpoint.issued_at };
   assert.equal((await signedHostRequest(f.env, f.id, f.host.pair, "PUT", body, options)).status, 200);
-  assert.equal((await f.device(`/v1/servers/${f.id}`, "DELETE")).status, 200);
+  // Historical pre-cutover deletion at the storage boundary.
+  f.env.DB.database.prepare("DELETE FROM servers WHERE server_id = ?").run(f.id);
   assert.equal((await f.register()).status, 201);
   const replay = await signedHostRequest(f.env, f.id, f.host.pair, "PUT", body, options);
   assert.equal(replay.status, 409);
@@ -63,7 +65,8 @@ test("exact old endpoint replay cannot publish into same-key re-registration", a
 
 test("concurrent first registrations return the stored winner epoch", async () => {
   const f = await fixture();
-  assert.equal((await f.device(`/v1/servers/${f.id}`, "DELETE")).status, 200);
+  // Historical pre-cutover deletion at the storage boundary.
+  f.env.DB.database.prepare("DELETE FROM servers WHERE server_id = ?").run(f.id);
   const batch = f.env.DB.batch.bind(f.env.DB);
   let arrivals = 0, release;
   const ready = new Promise(resolve => { release = resolve; });
@@ -134,14 +137,15 @@ test("legacy and epoch-aware owner workflows preserve the registration epoch", a
     assert.equal(boot.servers[0].registration_epoch, f.epoch);
     assert.equal(boot.servers[0].endpoint.status, "offline");
     assert.equal((await signedDeviceRequest(f.env, other.created.session, other.key.pair,
-      `/v1/servers/${f.id}`, "DELETE", aware ? field : undefined)).status, 200);
-    assert.equal((await (await signedDeviceRequest(f.env, other.created.session, other.key.pair, "/v1/bootstrap")).json()).servers.length, 0);
+      `/v1/servers/${f.id}`, "DELETE", aware ? field : undefined)).status, 409);
+    assert.equal((await (await signedDeviceRequest(f.env, other.created.session, other.key.pair, "/v1/bootstrap")).json()).servers.length, 1);
   });
 });
 
 test("stale epoch fences every server authority route without changing current state", async () => {
   const f = await fixture();
-  assert.equal((await f.device(`/v1/servers/${f.id}`, "DELETE")).status, 200);
+  // Historical pre-cutover deletion at the storage boundary.
+  f.env.DB.database.prepare("DELETE FROM servers WHERE server_id = ?").run(f.id);
   const replacement = await (await f.register()).json();
   assert.equal((await signedHostRequest(f.env, f.id, f.host.pair, "PUT", f.endpoint)).status, 200);
   const field = { registration_epoch: f.epoch };
@@ -201,7 +205,7 @@ test("stripping epoch invalidates host signature and registration proof", async 
 // Removing only a SQL fence (keeping the early check) must allow a visible write
 // and fail this test. The snapshot oracle also covers nonce/budget rollback.
 test("SQL epoch predicates fence a replacement after verification", async t => {
-  for (const route of ["register", "claim", "name", "icon", "grant", "redeem", "publish", "renew", "offline", "delete", "bookmark", "unbookmark"]) {
+  for (const route of ["register", "claim", "name", "icon", "grant", "redeem", "publish", "renew", "offline", "bookmark", "unbookmark"]) {
     await t.test(route, async () => {
       const f = await fixture();
       const field = { registration_epoch: f.epoch };
@@ -214,7 +218,7 @@ test("SQL epoch predicates fence a replacement after verification", async t => {
       const sqlBoundary = { register: "UPDATE servers SET label", claim: "UPDATE servers SET owner_person_id",
         name: "UPDATE person_servers SET alias", icon: "UPDATE servers SET icon", grant: "INSERT INTO server_connect_grants",
         redeem: "UPDATE server_connect_grants SET last_used_at", publish: "INSERT INTO server_endpoints",
-        renew: "UPDATE server_endpoints SET lease_expires_at", offline: "INSERT INTO server_endpoints", delete: "DELETE FROM servers", bookmark: "INSERT INTO person_servers", unbookmark: "DELETE FROM person_servers" }[route];
+        renew: "UPDATE server_endpoints SET lease_expires_at", offline: "INSERT INTO server_endpoints", bookmark: "INSERT INTO person_servers", unbookmark: "DELETE FROM person_servers" }[route];
       const db = f.env.DB.database, prepare = f.env.DB.prepare.bind(f.env.DB);
       const tables = ["servers", "person_servers", "server_endpoints", "server_icons", "server_connect_grants"];
       let before;
@@ -239,7 +243,6 @@ test("SQL epoch predicates fence a replacement after verification", async t => {
         renew: () => signedHostRequest(f.env, f.id, f.host.pair, "POST", { ...f.endpoint, lease_expires_at: f.endpoint.lease_expires_at + 1, ...field },
           { pathname: `/v1/servers/${f.id}/endpoint/renew` }),
         offline: () => signedHostRequest(f.env, f.id, f.host.pair, "DELETE", { generation: 2, issued_at: f.endpoint.issued_at, ...field }),
-        delete: () => f.device(`/v1/servers/${f.id}`, "DELETE", field),
       };
       const response = await calls[route]();
       assert.equal(response.status, 409);

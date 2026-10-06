@@ -1,3 +1,4 @@
+import { resolveDuplicateServer } from "./server_ownership.js";
 import { reportMemberResults, setMemberHidden } from "./member_servers.js";
 import { cleanup } from "./cleanup.js";
 import { limitRequestIp, requestPurpose } from "./abuse.js";
@@ -163,6 +164,9 @@ async function route(request, env) {
   }
   if (request.method === "POST" && url.pathname === "/v1/servers") {
     return registerServer(session, env, text, now);
+  }
+  if (request.method === "POST" && url.pathname === "/v1/servers/resolve-duplicates") {
+    return resolveDuplicateServer(session, env, text, now);
   }
   const visibility = url.pathname.match(/^\/v1\/member-servers\/([^/]+)\/(hide|unhide)$/);
   if (visibility && request.method === "POST") {

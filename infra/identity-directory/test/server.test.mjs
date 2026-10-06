@@ -427,12 +427,12 @@ test("logout immediately invalidates an issued owner connect grant", async () =>
   assert.equal((await rejected.json()).error.code, "connect_grant_invalid");
 });
 
-test("one central identity cannot register more than twenty servers", async () => {
+test("one central identity cannot register a second live server", async () => {
   const env = environment();
   const { key, created } = await createGuestIdentity(env);
   const host = await hostKey();
 
-  for (let index = 0; index < 20; index += 1) {
+  for (let index = 0; index < 1; index += 1) {
     const serverId = `bounded-server-${String(index).padStart(4, "0")}`;
     const response = await signedDeviceRequest(
       env,
@@ -474,14 +474,14 @@ test("one central identity cannot register more than twenty servers", async () =
   );
 
   assert.equal(rejected.status, 409);
-  assert.equal((await rejected.json()).error.code, "server_limit_reached");
+  assert.equal((await rejected.json()).error.code, "server_exists");
   assert.equal(
     env.DB.database.prepare("SELECT COUNT(*) AS count FROM servers").get().count,
-    20
+    1
   );
 });
 
-test("concurrent host ownership claims preserve the twenty-server account limit", async () => {
+test("concurrent host ownership claims admit only one live owned server", async () => {
   const env = environment();
   const target = await createGuestIdentity(env, { deviceId: "claim-target-device" });
   const source = await createGuestIdentity(env, { deviceId: "claim-source-device" });
@@ -493,13 +493,12 @@ test("concurrent host ownership claims preserve the twenty-server account limit"
       host_registration_proof: await hostRegistrationProof(host.pair, serverId, identity.created.person.person_id, claim),
     });
   }
-  for (let index = 0; index < 19; index += 1) {
-    assert.equal((await register(target, `claim-existing-${index}`)).status, 201);
-  }
+  const source2 = await createGuestIdentity(env, { deviceId: "claim-source-device-two" });
   const incoming = ["claim-incoming-one", "claim-incoming-two"];
-  for (const serverId of incoming) assert.equal((await register(source, serverId)).status, 201);
+  assert.equal((await register(source, incoming[0])).status, 201);
+  assert.equal((await register(source2, incoming[1])).status, 201);
   // Both requests reach the public transactional storage boundary after their
-  // precheck sees nineteen servers. Only the atomic SQL guard may admit one.
+  // precheck sees no owned server. Only the atomic SQL guard may admit one.
   const batch = env.DB.batch.bind(env.DB);
   let release;
   let arrivals = 0;
@@ -512,13 +511,13 @@ test("concurrent host ownership claims preserve the twenty-server account limit"
   const responses = await Promise.all(incoming.map(serverId => register(target, serverId, true)));
   assert.deepEqual(responses.map(response => response.status).sort(), [200, 409]);
   const failure = responses.find(response => response.status === 409);
-  assert.equal((await failure.json()).error.code, "server_limit_reached");
-  assert.equal((await env.DB.prepare("SELECT COUNT(*) AS count FROM servers WHERE owner_person_id=?").bind(target.created.person.person_id).first()).count, 20);
-  assert.equal((await env.DB.prepare("SELECT COUNT(*) AS count FROM person_servers WHERE person_id=? AND relation='owner'").bind(target.created.person.person_id).first()).count, 20);
-  assert.equal((await env.DB.prepare("SELECT COUNT(*) AS count FROM servers WHERE owner_person_id=?").bind(source.created.person.person_id).first()).count, 1);
+  assert.equal((await failure.json()).error.code, "server_exists");
+  assert.equal((await env.DB.prepare("SELECT COUNT(*) AS count FROM servers WHERE owner_person_id=?").bind(target.created.person.person_id).first()).count, 1);
+  assert.equal((await env.DB.prepare("SELECT COUNT(*) AS count FROM person_servers WHERE person_id=? AND relation='owner'").bind(target.created.person.person_id).first()).count, 1);
+  assert.equal((await env.DB.prepare("SELECT COUNT(*) AS count FROM servers WHERE owner_person_id IN (?, ?)").bind(source.created.person.person_id, source2.created.person.person_id).first()).count, 1);
 });
 
-test("an owner can revoke a server key and register a replacement", async () => {
+test("standalone deletion cannot replace the registered host key", async () => {
   const env = environment();
   const { key, created } = await createGuestIdentity(env);
   const originalHost = await hostKey();
@@ -549,7 +548,8 @@ test("an owner can revoke a server key and register a replacement", async () => 
     `/v1/servers/${serverId}`,
     "DELETE"
   );
-  assert.equal(revoked.status, 200);
+  assert.equal(revoked.status, 409);
+  assert.equal((await revoked.json()).error.code, "server_move_unsupported");
 
   const staleHost = await signedHostRequest(
     env,
@@ -558,7 +558,7 @@ test("an owner can revoke a server key and register a replacement", async () => 
     "DELETE",
     { generation: 1, issued_at: Math.floor(Date.now() / 1000) }
   );
-  assert.equal(staleHost.status, 404);
+  assert.equal(staleHost.status, 200);
 
   const replacementHost = await hostKey();
   const replacement = await signedDeviceRequest(
@@ -578,7 +578,8 @@ test("an owner can revoke a server key and register a replacement", async () => 
       ),
     }
   );
-  assert.equal(replacement.status, 201);
+  assert.equal(replacement.status, 409);
+  assert.equal((await replacement.json()).error.code, "server_identity_conflict");
 });
 
 test("CORS reflects only approved shell and loopback origins in production", async () => {

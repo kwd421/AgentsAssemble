@@ -169,7 +169,7 @@ test("host profile names follow revisions, preserve fixed names and reset throug
   assert.equal((await signedHostRequest(env, id, wrongHost.pair, "PUT", {
     name: "foreign key", name_revision: 4, registration_epoch: epoch }, { pathname: path })).status, 401);
   await env.DB.prepare("UPDATE servers SET revoked_at = 1 WHERE server_id = ?").bind(id).run();
-  assert.equal((await update("revoked", 4)).status, 409);
+  assert.equal((await update("revoked", 4)).status, 410);
   assert.equal((await env.DB.prepare("SELECT label FROM servers WHERE server_id = ?").bind(id).first()).label, longName);
 });
 

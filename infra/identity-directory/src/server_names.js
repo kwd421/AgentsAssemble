@@ -1,3 +1,4 @@
+import { recheckHostIncarnation } from "./server_ownership.js";
 import { HttpError, json, parseJson, cleanIdentifier, cleanServerName, serverDisplayName } from "./http.js";
 import { hostAuthentication } from "./servers.js";
 
@@ -57,6 +58,9 @@ export async function updateDefaultServerName(request, env, serverId, text, now)
       AND (name_revision < ? OR (name_revision = ? AND label = ?))`)
     .bind(name, body.name_revision, serverId, fingerprint, registrationEpoch,
       body.name_revision, body.name_revision, name).run();
-  if (Number(result.meta?.changes || 0) !== 1) throw new HttpError(409, "server_name_conflict");
+  if (Number(result.meta?.changes || 0) !== 1) {
+    await recheckHostIncarnation(env.DB, serverId, registrationEpoch);
+    throw new HttpError(409, "server_name_conflict");
+  }
   return json({ server_id: serverId, name });
 }

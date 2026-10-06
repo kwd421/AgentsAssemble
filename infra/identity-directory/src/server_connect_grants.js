@@ -1,3 +1,4 @@
+import { recheckHostIncarnation } from "./server_ownership.js";
 import { MEMBER_RETENTION_SECONDS } from "./member_servers.js";
 import { randomBase64Url, sha256Base64Url } from "./crypto.js";
 import { HttpError, json, parseJson, cleanIdentifier, serverDisplayName } from "./http.js";
@@ -166,10 +167,7 @@ export async function redeemServerConnectGrant(request, env, serverId, text, now
     ) RETURNING server_id, person_id, device_id, expires_at`)
     .bind(now, serverId, await sha256Base64Url(grantToken), now, now, registrationEpoch, registrationEpoch, now, origin, generation).first();
   if (!grant) {
-    if (registrationEpoch !== null) {
-      const current = await env.DB.prepare("SELECT registration_epoch FROM servers WHERE server_id = ?").bind(serverId).first();
-      if (current?.registration_epoch !== registrationEpoch) throw new HttpError(409, "incarnation_conflict");
-    }
+    await recheckHostIncarnation(env.DB, serverId, registrationEpoch);
     throw new HttpError(401, "connect_grant_invalid");
   }
   return json({
@@ -328,7 +326,10 @@ export async function redeemMemberGrant(request, env, serverId, text, now, purpo
     throw error;
   }
   const grant = results[1].results[0];
-  if (!grant) throw new HttpError(401, "member_grant_invalid");
+  if (!grant) {
+    await recheckHostIncarnation(env.DB, serverId, registrationEpoch);
+    throw new HttpError(401, "member_grant_invalid");
+  }
   return json({ person_id: grant.person_id, issuer: new URL(request.url).origin,
     display_name: grant.display_name_snapshot || "", projection_id: results[3].results[0].projection_id });
 }

@@ -68,7 +68,9 @@ test("local D1: epoch fencing, legacy compatibility and concurrent registration 
     assert.equal((await signedHostRequest(env, id, host.pair, "POST", { ...field,
       grant_token: grant.grant_token, origin: grant.origin, generation: grant.generation },
     { pathname: `/v1/servers/${id}/connect-grants/redeem` })).status, 200);
-    assert.equal((await call(`/v1/servers/${id}`, "DELETE", field)).status, 200);
+    assert.equal((await call(`/v1/servers/${id}`, "DELETE", field)).status, 409);
+    // Seed the historical delete/re-register boundary; the live API now blocks it.
+    await db.prepare("DELETE FROM servers WHERE server_id = ?").bind(id).run();
     const replacement = await register(id);
     assert.equal(replacement.status, 201);
     assert.notEqual((await replacement.json()).registration_epoch, epoch);
@@ -82,7 +84,8 @@ test("local D1: epoch fencing, legacy compatibility and concurrent registration 
     const { registration_epoch, ...legacyEndpoint } = endpoint;
     assert.equal((await signedHostRequest(env, id, host.pair, "PUT", legacyEndpoint)).status, 200);
     assert.equal((await register(id)).status, 200);
-    for (let i = 0; i < 18; i++) assert.equal((await register(`local-capacity-${i}`)).status, 201);
+    assert.equal((await register("second-server-blocked")).status, 409);
+    await db.prepare("DELETE FROM servers WHERE server_id = ?").bind(id).run();
     const batch = db.batch.bind(db);
     let arrivals = 0, release;
     const ready = new Promise(resolve => { release = resolve; });
@@ -97,7 +100,7 @@ test("local D1: epoch fencing, legacy compatibility and concurrent registration 
     assert.equal(registrations[0].registration_epoch, registrations[1].registration_epoch);
     assert.equal((await db.prepare("SELECT registration_epoch FROM servers WHERE server_id = 'last-slot-server'").first()).registration_epoch,
       registrations[0].registration_epoch);
-    assert.equal((await db.prepare("SELECT COUNT(*) AS n FROM servers").first()).n, 20);
+    assert.equal((await db.prepare("SELECT COUNT(*) AS n FROM servers").first()).n, 1);
   } finally {
     await mf.dispose();
   }
