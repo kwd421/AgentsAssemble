@@ -151,7 +151,7 @@ async function route(request, env) {
     (imageMatch && /^[A-Za-z0-9._:-]{8,128}$/.test(imageMatch[1])));
   const session = await authenticated(request, env, text, now, { persistNonce: !repeatableRead });
   if (request.method === "GET" && url.pathname === "/v1/bootstrap") {
-    return bootstrap(session, env, now);
+    return bootstrap(session, env, now, request.headers.get("x-aa-admission-protocol") === "secure_admission_v1");
   }
   if (request.method === "POST" && url.pathname === "/v1/logout") {
     await env.DB
@@ -268,7 +268,7 @@ function corsHeaders(request, env) {
     "access-control-allow-headers":
       "authorization,content-type,x-aa-device-id,x-aa-timestamp," +
       "x-aa-nonce,x-aa-signature,x-aa-host-timestamp,x-aa-host-nonce," +
-      "x-aa-host-signature",
+      "x-aa-host-signature,x-aa-admission-protocol",
     "access-control-max-age": "600",
     vary: "Origin",
   };

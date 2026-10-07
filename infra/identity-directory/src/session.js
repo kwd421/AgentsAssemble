@@ -1,3 +1,4 @@
+import { endpointRepresentation, SECURE_PROTOCOL } from "./event_endpoint.js";
 import { ownedServers } from "./server_ownership.js";
 import { limitSession, requestPurpose } from "./abuse.js";
 import {
@@ -87,7 +88,7 @@ export async function authenticated(request, env, body, now, { persistNonce = tr
   return session;
 }
 
-export async function bootstrap(session, env, now) {
+export async function bootstrap(session, env, now, secure = false) {
   const person = await env.DB
     .prepare(
       "SELECT person_id, identity_kind, display_name, avatar_url FROM persons WHERE person_id = ?"
@@ -103,7 +104,7 @@ export async function bootstrap(session, env, now) {
               servers.host_public_key_jwk, servers.host_key_fingerprint, servers.registration_epoch,
               server_endpoints.origin, server_endpoints.state,
               server_endpoints.generation, server_endpoints.lease_expires_at,
-              server_endpoints.updated_at
+              server_endpoints.updated_at, server_endpoints.mode, server_endpoints.registration_epoch AS endpoint_epoch
        FROM person_servers
        JOIN servers USING(server_id)
        LEFT JOIN server_endpoints USING(server_id)
@@ -123,23 +124,12 @@ export async function bootstrap(session, env, now) {
     icon: row.icon,
     host_public_key_jwk: JSON.parse(row.host_public_key_jwk),
     host_key_fingerprint: row.host_key_fingerprint,
-    endpoint:
-      row.generation !== null && row.generation !== undefined
-        ? {
-            origin: row.origin,
-            generation: Number(row.generation || 0),
-            lease_expires_at: Number(row.lease_expires_at || 0),
-            status:
-              row.state === "online" &&
-              Number(row.lease_expires_at || 0) > now
-                ? "likely_online"
-                : "offline",
-          }
-        : null,
+    endpoint: endpointRepresentation(row, now, secure),
   }));
   const members = await env.DB.prepare(`SELECT servers.server_id, servers.registration_epoch,
-      servers.label, servers.icon, servers.host_key_fingerprint,
-      server_endpoints.origin, server_endpoints.generation, server_endpoints.state, server_endpoints.lease_expires_at
+      servers.label, servers.icon, servers.host_key_fingerprint, servers.host_public_key_jwk,
+      server_endpoints.origin, server_endpoints.generation, server_endpoints.state, server_endpoints.lease_expires_at,
+      server_endpoints.mode, server_endpoints.registration_epoch AS endpoint_epoch
     FROM member_servers JOIN servers ON servers.server_id = member_servers.server_id
       AND servers.registration_epoch = member_servers.registration_epoch
     LEFT JOIN server_endpoints ON server_endpoints.server_id = servers.server_id
@@ -152,11 +142,11 @@ export async function bootstrap(session, env, now) {
     const member = { server_id: row.server_id, registration_epoch: row.registration_epoch,
       relation: 'member', alias: serverDisplayName('', row.label, row.server_id), icon: row.icon,
       host_key_fingerprint: row.host_key_fingerprint,
-      endpoint: row.generation == null ? null : { origin: row.origin, generation: Number(row.generation),
-        status: row.state === 'online' && Number(row.lease_expires_at) > now ? 'likely_online' : 'offline' } };
+      ...(secure ? { host_public_key_jwk: JSON.parse(row.host_public_key_jwk) } : {}),
+      endpoint: endpointRepresentation(row, now, secure, secure) };
     if (index >= 0) servers[index] = member;
     else servers.push(member);
   }
-  return json({ person, servers, server_time: now,
+  return json({ person, servers, server_time: now, ...(secure ? { protocol: SECURE_PROTOCOL } : {}),
     owner_server_conflict: owned.length > 1 ? { servers: owned, resolution } : null });
 }

@@ -1,3 +1,4 @@
+import { eventEndpointMutation, SECURE_PROTOCOL, EVENT_MODE } from "./event_endpoint.js";
 import { limitHost, requestPurpose } from "./abuse.js";
 import {
   canonicalJson,
@@ -259,7 +260,11 @@ export async function updateEndpoint(
   let origin = "";
   let leaseExpiresAt = now;
   let state = "offline";
-  if (!offline) {
+  const event = body.protocol !== undefined
+    ? eventEndpointMutation(env, serverId, fingerprint, registrationEpoch, body, now, offline, renew) : null;
+  if (event) {
+    origin = event.origin; state = event.state; leaseExpiresAt = 0;
+  } else if (!offline) {
     try {
       origin = normalizeServerOrigin(body.origin, env);
     } catch (error) {
@@ -283,10 +288,10 @@ export async function updateEndpoint(
     }
     state = "online";
   }
-  const mutation = env.DB
+  const mutation = event?.mutation || env.DB
     .prepare(
       renew ? `UPDATE server_endpoints SET lease_expires_at = ?, updated_at = ?
-       WHERE server_id = ? AND origin = ? AND generation = ? AND state = 'online'
+       WHERE server_id = ? AND origin = ? AND generation = ? AND state = 'online' AND mode = 'legacy_lease'
          AND lease_expires_at > ? AND lease_expires_at <= ?
          AND EXISTS (SELECT 1 FROM servers WHERE server_id = ? AND host_key_fingerprint = ? AND revoked_at IS NULL AND (? IS NULL OR registration_epoch = ?))` : `INSERT INTO server_endpoints
        (server_id, origin, state, generation, lease_expires_at, updated_at)
@@ -298,7 +303,7 @@ export async function updateEndpoint(
          generation = excluded.generation,
          lease_expires_at = excluded.lease_expires_at,
          updated_at = excluded.updated_at
-       WHERE excluded.generation > server_endpoints.generation`
+       WHERE server_endpoints.mode = 'legacy_lease' AND excluded.generation > server_endpoints.generation`
     )
     .bind(...(renew ? [leaseExpiresAt, now, serverId, origin, generation, now, leaseExpiresAt, serverId, fingerprint, registrationEpoch, registrationEpoch]
       : [serverId, origin, state, generation, leaseExpiresAt, now, serverId, fingerprint, registrationEpoch, registrationEpoch]));
@@ -340,6 +345,7 @@ export async function updateEndpoint(
     origin,
     generation,
     lease_expires_at: leaseExpiresAt,
+    ...(event ? { protocol: SECURE_PROTOCOL, mode: EVENT_MODE, registration_epoch: registrationEpoch } : {}),
   });
 }
 

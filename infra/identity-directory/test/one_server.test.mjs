@@ -213,7 +213,7 @@ test('retired dependencies survive 30 days then drain in ordered 100-row pages w
   const trigger = db.prepare("SELECT sql FROM sqlite_master WHERE name = 'budget_server_connect_grants'").get().sql;
   db.exec('DROP TRIGGER budget_server_connect_grants');
   for (const id of [retired, recent]) {
-    db.prepare("INSERT INTO server_endpoints VALUES (?, 'https://retired.trycloudflare.com', 'online', 1, ?, ?)").run(id, now + 600, now);
+    db.prepare("INSERT INTO server_endpoints (server_id, origin, state, generation, lease_expires_at, updated_at) VALUES (?, 'https://retired.trycloudflare.com', 'online', 1, ?, ?)").run(id, now + 600, now);
     db.prepare("INSERT INTO server_icons VALUES (?, 'retained-icon', x'01')").run(id);
     for (let i = 0; i < 105; i++) {
       const person = `${id}-person-${i}`;
