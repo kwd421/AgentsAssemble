@@ -17,10 +17,11 @@ export async function authenticated(request, env, body, now, { persistNonce = tr
     : "";
   if (!token) throw new HttpError(401, "authentication_required");
   const tokenHash = await sha256Base64Url(token);
+  // Require the 0016 counter column so an unmigrated binding cannot skip actor caps.
   const session = await env.DB
     .prepare(
       `SELECT sessions.session_id, sessions.person_id, sessions.device_id,
-              sessions.expires_at, devices.public_key_jwk,
+              sessions.expires_at, sessions.general_units, devices.public_key_jwk,
               devices.revoked_at AS device_revoked_at, persons.status
        FROM sessions
        JOIN devices USING(device_id)

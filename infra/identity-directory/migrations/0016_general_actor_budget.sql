@@ -32,6 +32,35 @@ BEGIN
     WHERE person_id = (SELECT person_id FROM sessions WHERE session_id = NEW.session_id);
 END;
 
+-- Member grant creation spends five more GENERAL units in the same INSERT as
+-- its global reservation. Bind every identity anchor to the stored session;
+-- ABORT leaves only the separately committed three-unit request proof charged.
+CREATE TRIGGER budget_general_member_grants AFTER INSERT ON server_connect_grants
+WHEN NEW.kind = 'member'
+BEGIN
+    SELECT RAISE(ABORT, 'actor_quota_exhausted') WHERE NOT EXISTS (
+        SELECT 1 FROM sessions JOIN persons USING(person_id)
+        JOIN devices ON devices.device_id = sessions.device_id AND devices.person_id = sessions.person_id
+        JOIN servers ON servers.server_id = NEW.server_id
+        WHERE sessions.session_id = NEW.session_id AND sessions.person_id = NEW.person_id
+            AND sessions.device_id = NEW.device_id);
+    SELECT RAISE(ABORT, 'actor_quota_exhausted') WHERE EXISTS (
+        SELECT 1 FROM sessions WHERE session_id = NEW.session_id
+            AND general_day = CAST(strftime('%s', 'now') AS INTEGER) / 86400 AND general_units + 5 > 45)
+        OR EXISTS (SELECT 1 FROM persons WHERE person_id = (SELECT person_id FROM sessions WHERE session_id = NEW.session_id)
+            AND general_day = CAST(strftime('%s', 'now') AS INTEGER) / 86400 AND general_units + 5 > 90);
+    UPDATE sessions SET
+        general_units = CASE WHEN general_day = CAST(strftime('%s', 'now') AS INTEGER) / 86400
+            THEN general_units ELSE 0 END + 5,
+        general_day = CAST(strftime('%s', 'now') AS INTEGER) / 86400
+    WHERE session_id = NEW.session_id;
+    UPDATE persons SET
+        general_units = CASE WHEN general_day = CAST(strftime('%s', 'now') AS INTEGER) / 86400
+            THEN general_units ELSE 0 END + 5,
+        general_day = CAST(strftime('%s', 'now') AS INTEGER) / 86400
+    WHERE person_id = (SELECT person_id FROM sessions WHERE session_id = NEW.session_id);
+END;
+
 -- Charge the current owning account, never an ID supplied by the caller. The
 -- server counter survives ownership transfer. Internal signed duplicate retirement
 -- also inserts a host nonce after setting revoked_at, so require its anchor, not

@@ -177,9 +177,10 @@ export async function deleteServer(session, env, serverId, text) {
 export async function verifyHostRequest(request, env, serverId, body, now) {
   const payload = parseJson(body);
   const registrationEpoch = payload.registration_epoch === undefined ? null : cleanIdentifier(payload.registration_epoch, "registration_epoch");
+  // Require the 0016 counter column before accepting host authority.
   const server = await env.DB
     .prepare(
-      "SELECT host_public_key_jwk, host_key_fingerprint, registration_epoch, revoked_at FROM servers WHERE server_id = ?"
+      "SELECT host_public_key_jwk, host_key_fingerprint, registration_epoch, revoked_at, general_units FROM servers WHERE server_id = ?"
     )
     .bind(serverId)
     .first();

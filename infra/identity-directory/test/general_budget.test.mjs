@@ -1,5 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
+import { DatabaseSync } from "node:sqlite";
+import { readFileSync, readdirSync } from "node:fs";
 import { encode } from "fast-png";
 import { bytesToBase64Url, deviceRequestCanonical, randomBase64Url, utf8 } from "../src/crypto.js";
 import { createGuestIdentity, deviceKey, environment, hostKey, hostRegistrationProof,
@@ -75,14 +77,95 @@ test("exact reads repeat at full GENERAL capacity without writes and recheck cur
   assert.equal((await call(env, stranger, icon)).status, 404);
   await denied(await call(env, owner, "/v1/bookmarks", "POST", { server_id: id }), "temporary_capacity_exhausted");
   for (const [path, method] of [["/v1/unknown", "GET"], ["/v1/bootstrap/", "GET"],
-    [`${icon}/`, "GET"], ["/v1/bootstrap", "HEAD"], [`/v1/servers/${id}/member-preview`, "POST"]]) {
-    await denied(await call(env, owner, path, method, method === "POST" ? {} : undefined), "temporary_capacity_exhausted");
+    [`${icon}/`, "GET"], ["/v1/bootstrap?x=1", "GET"], [`${icon}?x=1`, "GET"],
+    ["/v1/bootstrap", "HEAD"], [`/v1/servers/${id}/member-preview`, "POST"]]) {
+    await denied(await request(env, path, await proof(owner, path.split("?")[0], method,
+      method === "POST" ? "{}" : "")), "temporary_capacity_exhausted");
   }
   assert.equal(snapshot(env), before);
   assert.equal(env.DB.database.prepare("SELECT total_changes() AS n").get().n, changes);
   const replay = await proof(owner, icon);
   env.DB.database.prepare("DELETE FROM person_servers WHERE person_id = ? AND server_id = ?").run(owner.created.person.person_id, id);
   assert.equal((await request(env, icon, replay)).status, 404);
+});
+
+// Removing the member actor trigger admits grants over either cap and leaves
+// the issuing account/session undercharged; the HTTP and durable debt expose it.
+test("member grants charge eight actor units and roll back the grant reservation on quota failure", async t => {
+  for (const cap of ["session", "account"]) await t.test(cap, async () => {
+    const { env, owner, host, id } = await fixture(), db = env.DB.database;
+    const member = await createGuestIdentity(env, { deviceId: "general-member-device" });
+    const now = Math.floor(Date.now() / 1000);
+    assert.equal((await signedHostRequest(env, id, host.pair, "PUT", {
+      origin: "https://member.trycloudflare.com", generation: 1, issued_at: now, lease_expires_at: now + 600,
+    })).status, 200);
+    const epoch = db.prepare("SELECT registration_epoch FROM servers WHERE server_id = ?").get(id).registration_epoch;
+    const issue = () => call(env, member, `/v1/servers/${id}/member-grants`, "POST", {
+      registration_epoch: epoch, challenge_hash: "a".repeat(43),
+    });
+    const memberId = member.created.person.person_id;
+    const units = () => [db.prepare("SELECT general_units FROM persons WHERE person_id = ?").get(memberId).general_units,
+      db.prepare("SELECT general_units FROM sessions WHERE person_id = ?").get(memberId).general_units];
+    const before = debt(env);
+    assert.equal((await issue()).status, 201);
+    assert.deepEqual(units(), [8, 8]);
+    assert.equal(debt(env), before + 8);
+    db.prepare(`UPDATE ${cap === "session" ? "sessions" : "persons"} SET general_units = ? WHERE person_id = ?`)
+      .run(cap === "session" ? 40 : 85, memberId);
+    const charged = units(), global = debt(env);
+    await denied(await issue(), "actor_quota_exhausted");
+    assert.deepEqual(units(), charged.map(n => n + 3)); // request proof remains committed
+    assert.equal(debt(env), global + 3); // no five-unit global grant debt
+    assert.equal(db.prepare("SELECT COUNT(*) AS n FROM server_connect_grants WHERE person_id = ?").get(memberId).n, 1);
+    assert.equal(db.prepare("SELECT general_units FROM persons WHERE person_id = ?").get(owner.created.person.person_id).general_units, 3);
+  });
+});
+
+test("member grant accounting rejects missing and mismatched stored anchors atomically", async t => {
+  for (const corruption of ["missing session", "wrong person", "wrong device", "missing person",
+    "missing device", "wrong device owner", "missing server"]) await t.test(corruption, async () => {
+    const { env, owner, id } = await fixture(), db = env.DB.database;
+    const stored = db.prepare("SELECT session_id, person_id, device_id FROM sessions").get();
+    db.exec("PRAGMA foreign_keys = OFF");
+    if (corruption === "missing person") db.prepare("DELETE FROM persons WHERE person_id = ?").run(stored.person_id);
+    if (corruption === "missing device") db.prepare("DELETE FROM devices WHERE device_id = ?").run(stored.device_id);
+    if (corruption === "wrong device owner") db.prepare("UPDATE devices SET person_id = 'other-account'").run();
+    const before = snapshot(env);
+    assert.throws(() => db.prepare(`INSERT INTO server_connect_grants
+      (grant_id, secret_hash, session_id, person_id, device_id, server_id, endpoint_origin,
+       endpoint_generation, created_at, expires_at, kind)
+      VALUES ('bad-grant', 'bad-secret', ?, ?, ?, ?, 'https://host', 1, 0, 9999999999, 'member')`)
+      .run(corruption === "missing session" ? "missing" : stored.session_id,
+        corruption === "wrong person" ? "other-account" : owner.created.person.person_id,
+        corruption === "wrong device" ? "other-device" : stored.device_id,
+        corruption === "missing server" ? "missing" : id), /actor_quota_exhausted/);
+    assert.equal(snapshot(env), before);
+    assert.equal(db.prepare("SELECT COUNT(*) AS n FROM server_connect_grants").get().n, 0);
+  });
+});
+
+// An unmigrated binding must reject device reads/writes and host writes before
+// any nonce or product mutation. Removing the authority column reference admits them.
+test("new Worker fails visibly against the 0015 authority schema", async () => {
+  const env = environment(), db = new DatabaseSync(":memory:");
+  env.DB.database.close();
+  env.DB.database = db;
+  const folder = new URL("../migrations/", import.meta.url);
+  for (const name of readdirSync(folder).filter(n => n.endsWith(".sql") && n < "0016").sort()) {
+    db.exec(readFileSync(new URL(name, folder), "utf8"));
+  }
+  const owner = await createGuestIdentity(env), host = await hostKey(), id = "unmigrated-host";
+  db.prepare(`INSERT INTO servers (server_id, owner_person_id, host_public_key_jwk, host_key_fingerprint, created_at)
+    VALUES (?, ?, ?, 'key', 0)`).run(id, owner.created.person.person_id, JSON.stringify(host.publicJwk));
+  const before = snapshot(env);
+  for (const response of [await call(env, owner, "/v1/bootstrap"),
+    await call(env, owner, "/v1/bookmarks", "POST", { server_id: id }),
+    await signedHostRequest(env, id, host.pair, "PUT", { name: "Changed", name_revision: 1 },
+      { pathname: `/v1/servers/${id}/name` })]) {
+    assert.equal(response.status, 500);
+    assert.equal((await response.json()).error.code, "internal_error");
+  }
+  assert.equal(snapshot(env), before);
 });
 
 test("read replay preserves signature, clock, live session/person/device and non-D1 gates", async t => {

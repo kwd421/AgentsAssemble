@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import { sha256Base64Url } from "../src/crypto.js";
 import { createGuestIdentity, environment, hostKey, hostRegistrationProof,
-  request, signedDeviceRequest, signedHostRequest } from "./helpers.mjs";
+  request, signedDeviceRequest, signedHostRequest, utcDayClock } from "./helpers.mjs";
 
 async function publishEndpoint(env, id, host, epoch, overrides = {}) {
   const now = Math.floor(Date.now() / 1000);
@@ -13,8 +13,8 @@ async function publishEndpoint(env, id, host, epoch, overrides = {}) {
   assert.equal(response.status, 200);
 }
 
-async function fixture() {
-  const env = environment();
+async function fixture(overrides = {}) {
+  const env = environment(overrides);
   const owner = await createGuestIdentity(env);
   const member = await createGuestIdentity(env, { deviceId: "member-device-0001" });
   const host = await hostKey(), id = "member-server";
@@ -121,39 +121,54 @@ test("owner and member tokens cannot cross routes or stored kind boundaries", as
   assert.equal((await f.redeem(member.grant_token)).status, 401);
 });
 
-test("concurrent member issuance enforces session/server cap and releases consumed slots", async () => {
-  const f = await fixture();
-  const attempts = await Promise.all(Array.from({ length: 6 }, () => f.issue()));
-  assert.deepEqual(attempts.map(r => r.status).sort(), [201, 201, 201, 201, 409, 409]);
+test("concurrent member issuance enforces session/server cap and releases consumed slots", async t => {
+  const f = await fixture({ SESSION_TTL_SECONDS: "172800" }), advance = utcDayClock(t, f.env);
+  const attempts = await Promise.all(Array.from({ length: 5 }, () => f.issue()));
+  assert.deepEqual(attempts.map(r => r.status).sort(), [201, 201, 201, 201, 409]);
   const token = (await attempts.find(r => r.status === 201).json()).grant_token;
   assert.equal((await f.redeem(token)).status, 200);
   assert.equal((await f.issue()).status, 201);
-  f.env.DB.database.exec("UPDATE server_connect_grants SET expires_at = 1 WHERE kind = 'member'");
+  // Expired active slots and the daily budget both become available next day.
+  advance(86400);
+  await publishEndpoint(f.env, f.id, f.host, f.epoch, { generation: 2 });
   assert.equal((await f.issue()).status, 201);
 });
 
-test("member account cap spans sessions and servers without consuming owner capacity", async () => {
+test("member daily account cap spans sessions and servers without consuming owner capacity", async () => {
   const f = await fixture();
-  // Sixteen active grants span two sessions under the fifteen-GENERAL/session cap.
-  const now = Math.floor(Date.now() / 1000), primary = f.owner.created.session, token = "second-session-token";
-  f.env.DB.database.prepare(`INSERT INTO sessions
-    (session_id, person_id, device_id, token_hash, created_at, expires_at, last_seen_at)
-    VALUES ('second-session', ?, ?, ?, ?, ?, ?)`)
-    .run(f.owner.created.person.person_id, primary.device_id, await sha256Base64Url(token), now, now + 3600, now);
-  const second = { ...f.owner, created: { ...f.owner.created, session: { ...primary, token } } };
-  for (let i = 0; i < 4; i++) {
-    const server = `cap-server-${i}`;
-    const otherOwner = await createGuestIdentity(f.env, { deviceId: `cap-server-owner-${i}` });
-    const r = await f.device(otherOwner, "/v1/servers", { server_id: server, host_public_key_jwk: f.host.publicJwk,
-      host_registration_proof: await hostRegistrationProof(f.host.pair, server, otherOwner.created.person.person_id) });
-    const epoch = (await r.json()).registration_epoch;
-    await publishEndpoint(f.env, server, f.host, epoch);
-    // The caller owns its original host and is a member of these other hosts.
-    for (let j = 0; j < 4; j++) assert.equal((await f.device(i < 2 ? f.owner : second, `/v1/servers/${server}/member-grants`,
-      { ...f.body, registration_epoch: epoch })).status, 201);
+  const now = Math.floor(Date.now() / 1000), primary = f.member.created.session, sessions = [f.member];
+  for (let i = 1; i <= 2; i++) {
+    const token = `additional-member-token-${i}`;
+    f.env.DB.database.prepare(`INSERT INTO sessions
+      (session_id, person_id, device_id, token_hash, created_at, expires_at, last_seen_at)
+      VALUES (?, ?, ?, ?, ?, ?, ?)`)
+      .run(`additional-member-session-${i}`, f.member.created.person.person_id, primary.device_id,
+        await sha256Base64Url(token), now, now + 3600, now);
+    sessions.push({ ...f.member, created: { ...f.member.created, session: { ...primary, token } } });
   }
-  assert.equal((await f.issue({}, f.owner)).status, 409);
-  assert.equal((await f.device(second, `/v1/servers/${f.id}/member-grants`, f.body)).status, 409);
+  const other = await createGuestIdentity(f.env, { deviceId: "cap-server-owner" }), server = "cap-server-other";
+  const r = await f.device(other, "/v1/servers", { server_id: server, host_public_key_jwk: f.host.publicJwk,
+    host_registration_proof: await hostRegistrationProof(f.host.pair, server, other.created.person.person_id) });
+  assert.equal(r.status, 201);
+  const epoch = (await r.json()).registration_epoch;
+  await publishEndpoint(f.env, server, f.host, epoch);
+  // Eleven eight-unit grants require three sessions (five, five, one).
+  for (let i = 0; i < 11; i++) {
+    const id = i % 2 ? server : f.id, body = { ...f.body, registration_epoch: i % 2 ? epoch : f.epoch };
+    const issued = await f.device(sessions[Math.floor(i / 5)], `/v1/servers/${id}/member-grants`, body);
+    assert.equal(issued.status, 201, await issued.clone().text());
+    const token = (await issued.json()).grant_token;
+    assert.equal((await signedHostRequest(f.env, id, f.host.pair, "POST", { ...body, grant_token: token },
+      { pathname: `/v1/servers/${id}/member-grants/redeem` })).status, 200);
+  }
+  const db = f.env.DB.database;
+  assert.equal(db.prepare("SELECT general_units FROM persons WHERE person_id = ?").get(f.member.created.person.person_id).general_units, 88);
+  const before = db.prepare("SELECT creation_writes FROM creation_budgets WHERE purpose = 'GENERAL'").get().creation_writes;
+  const rejected = await f.issue({}, sessions[2]);
+  assert.equal(rejected.status, 429);
+  assert.equal((await rejected.json()).error.code, "actor_quota_exhausted");
+  assert.equal(db.prepare("SELECT COUNT(*) AS n FROM server_connect_grants WHERE kind = 'member'").get().n, 11);
+  assert.equal(db.prepare("SELECT creation_writes FROM creation_budgets WHERE purpose = 'GENERAL'").get().creation_writes, before);
   const g = await ownerGrant(f);
   assert.ok(g.grant_token);
 });

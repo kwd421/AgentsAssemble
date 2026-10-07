@@ -173,6 +173,15 @@ test('hide/unhide is device-signed, preserves host state, and invalidates only b
   const admission = await f.grant(), connect = await f.grant('connect');
   const staleEpoch = await f.grant();
   f.db.prepare("UPDATE server_connect_grants SET registration_epoch = 'retired-epoch' WHERE secret_hash = ?").run(await sha256Base64Url(staleEpoch.grant_token));
+  // Five grants spend 40 units on this session; visibility uses another device
+  // of the same account, retaining the account-wide charge and live grants.
+  const key = await deviceKey();
+  const recovered = await request(f.env, '/v1/auth/recover', { method: 'POST', body: JSON.stringify({
+    recovery_code: f.member.created.recovery_code, device_id: 'visibility-member-device', device_public_key_jwk: key.publicJwk,
+  }) });
+  assert.equal(recovered.status, 200);
+  f.member.key = key;
+  f.member.created.session = (await recovered.json()).session;
   const owner = await f.device(`/v1/servers/${f.id}/connect-grants`, { registration_epoch: f.epoch }, f.owner);
   assert.equal(owner.status, 201);
   assert.equal((await request(f.env, `/v1/member-servers/${f.id}/hide`, { method: 'POST', body: JSON.stringify({ registration_epoch: f.epoch }) })).status, 401);

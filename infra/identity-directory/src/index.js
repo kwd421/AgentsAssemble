@@ -147,7 +147,7 @@ async function route(request, env) {
   }
   const imageMatch = url.pathname.match(/^\/v1\/servers\/([^/]+)\/icon\/[A-Za-z0-9_-]{43}\.png$/);
   // Only these side-effect-free reads may repeat a proof inside the clock window.
-  const repeatableRead = request.method === "GET" && (url.pathname === "/v1/bootstrap" ||
+  const repeatableRead = request.method === "GET" && url.search === "" && (url.pathname === "/v1/bootstrap" ||
     (imageMatch && /^[A-Za-z0-9._:-]{8,128}$/.test(imageMatch[1])));
   const session = await authenticated(request, env, text, now, { persistNonce: !repeatableRead });
   if (request.method === "GET" && url.pathname === "/v1/bootstrap") {

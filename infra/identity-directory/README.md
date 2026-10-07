@@ -281,7 +281,8 @@ day**, partitioned into non-borrowing purpose pools:
 
 Only GET `/v1/bootstrap` and GET `/v1/servers/{server_id}/icon/{sha256}.png`
 (the exact authorized icon route, with a valid server ID and 43-character
-base64url digest) omit nonce persistence and creation-budget charges. Every call,
+base64url digest), both with an empty query string, omit nonce persistence and
+creation-budget charges. Every call,
 including an identical replay within the existing ±300-second timestamp window,
 still verifies the signature, token/device binding, live session/person/device,
 current icon authorization, and non-D1 IP/actor rate limiters. Responses stay
@@ -292,9 +293,16 @@ All mutations keep their current signing and replay rules. Stored old read nonce
 expire through normal cleanup.
 
 Migration `0016_general_actor_budget.sql` adds non-indexed UTC-day/unit columns to
-existing `persons`, `sessions` and `servers` anchor rows, plus GENERAL nonce INSERT
-triggers. Accepted GENERAL device/host nonces cost three units and are capped at
-**90/account/day, 45/session/day and 45/host/day** (30, 15 and 15 requests).
+existing `persons`, `sessions` and `servers` anchor rows, plus GENERAL nonce and
+member-grant INSERT triggers. GENERAL usage is capped at **90/account/day, 45/session/day and
+45/host/day**. Accepted device/host nonces cost three units; each member grant
+additionally charges five units to its stored session and account atomically
+with its global reservation. Grant creation thus costs eight actor units: at most
+11 grants/account/day across at least three sessions, or five/session/day (ten
+across two sessions), assuming no other GENERAL spending or failed requests.
+A consent preview adds three units, allowing eight preview-plus-grant workflows
+per account/day and four per session/day. These limits support a member reconnecting
+a few times a day; ongoing connected sessions do not issue renewal grants.
 Account charging comes only from the stored verified session or current host
 ownership; new sessions/devices cannot reset it. Host charging stays on the server
 row across ownership transfer. Claims and duplicate resolution also charge their
@@ -324,6 +332,8 @@ These are local measurements, not production CPU/read-quota or load evidence.
 
 Deployment order: record the current Worker version and remote migration state,
 apply **0016 first**, then deploy this Worker and the matching Rust frontend assets.
+The new session and host authority reads require a 0016 column; an unmigrated
+binding returns HTTP 500 and logs the missing column before authenticated reads or writes.
 Retain the migration on code rollback; before first release the owner's Rule.md
 item-10 roll-forward exception applies, while expand-first order and deployment
 records remain required. This implementation performs no remote migration,
