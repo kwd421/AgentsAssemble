@@ -41,3 +41,58 @@ test('event endpoints retain high-watermark, exact ACK and deny mixed-version do
   assert.equal((await f.publish({ generation: 5 })).status, 409);
   assert.equal((await f.publish({ generation: 1, registration_epoch: 'new-epoch' })).status, 200);
 });
+
+async function admissionKey() {
+  const pair = await crypto.subtle.generateKey({ name: 'ECDH', namedCurve: 'P-256' }, false, ['deriveBits']);
+  return Buffer.from(await crypto.subtle.exportKey('raw', pair.publicKey)).toString('base64url');
+}
+async function grantFixture(purpose) {
+  const f = await secureFixture();
+  assert.equal((await f.publish()).status, 200);
+  const binding = { protocol: 'secure_admission_v1', registration_epoch: f.epoch, origin: f.event.origin,
+    generation: 1, purpose, client_public_key: await admissionKey(), channel_id: Buffer.alloc(32, 8).toString('base64url') };
+  const path = `/v1/servers/${f.id}/${purpose === 'owner' ? 'connect-grants' : 'member-grants'}`;
+  if (purpose !== 'owner') binding.challenge_hash = Buffer.alloc(32, 9).toString('base64url');
+  const issue = (patch = {}) => f.device(path, { ...binding, ...patch });
+  const redeem = (token, patch = {}) => signedHostRequest(f.env, f.id, f.host.pair, 'POST',
+    { ...binding, grant_token: token, ...patch }, { pathname: `${path}/redeem` });
+  return { ...f, binding, issue, redeem };
+}
+
+// Contract: central approval is usable only for the device-approved key/channel
+// and current server authority. Mutating bindingSql makes wrong-channel redeem pass.
+for (const purpose of ['owner', 'admission']) {
+  test(`secure ${purpose} grant binds key/channel/endpoint and preserves session expiry`, async () => {
+    const f = await grantFixture(purpose), now = Math.floor(Date.now() / 1000);
+    f.env.DB.database.prepare('UPDATE sessions SET expires_at = ?').run(now + 90);
+    assert.equal((await f.issue({ generation: 2 })).status, 409);
+    const issued = await f.issue(); assert.equal(issued.status, 201);
+    const grant = await issued.json();
+    assert.equal(grant.expires_at, now + 90);
+    assert.equal((await f.redeem(grant.grant_token, { client_public_key: await admissionKey() })).status, 401);
+    assert.equal((await f.redeem(grant.grant_token, { channel_id: Buffer.alloc(32, 7).toString('base64url') })).status, 401);
+    assert.equal((await f.redeem(grant.grant_token, { generation: 2 })).status, 401);
+    const admitted = await f.redeem(grant.grant_token); assert.equal(admitted.status, 200);
+    const body = await admitted.json();
+    assert.equal(body.person_id, f.owner.created.person.person_id);
+    assert.equal(body.client_public_key, f.binding.client_public_key);
+    assert.equal(body.channel_id, f.binding.channel_id);
+    if (purpose !== 'owner') assert.equal((await f.redeem(grant.grant_token)).status, 401);
+  });
+  for (const mutation of ['logout', 'endpoint', 'host-key-race']) test(`secure ${purpose} rechecks ${mutation} at consuming write`, async () => {
+    const f = await grantFixture(purpose), response = await f.issue(); assert.equal(response.status, 201);
+    const { grant_token: token } = await response.json();
+    if (mutation === 'logout') assert.equal((await f.device('/v1/logout')).status, 200);
+    if (mutation === 'endpoint') assert.equal((await f.publish({ generation: 2 })).status, 200);
+    if (mutation === 'host-key-race') {
+      const prepare = f.env.DB.prepare.bind(f.env.DB);
+      f.env.DB.prepare = sql => {
+        if (sql.startsWith('UPDATE server_connect_grants SET')) f.env.DB.database.exec("UPDATE servers SET host_key_fingerprint = 'changed-key'");
+        return prepare(sql);
+      };
+    }
+    assert.equal((await f.redeem(token)).status, 401);
+    const row = f.env.DB.database.prepare('SELECT last_used_at, used_at FROM server_connect_grants').get();
+    assert.equal(row.last_used_at, null); assert.equal(row.used_at, null);
+  });
+}
