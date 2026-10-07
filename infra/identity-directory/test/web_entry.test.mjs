@@ -40,5 +40,14 @@ test("member consent entry serves index with the account entry security headers"
   assert.equal(member.headers.get("cache-control"), "no-store");
   assert.match(member.headers.get("content-security-policy"), /frame-ancestors 'none'/);
   assert.match(member.headers.get("content-security-policy"), /script-src 'self';/);
-  assert.match(member.headers.get("content-security-policy"), /connect-src 'self';/);
+  assert.match(member.headers.get("content-security-policy"), /connect-src 'self' https: wss:;/);
+});
+
+test("trusted invitation query is not forwarded to ASSETS", async () => {
+  let seen;
+  const env = environment({ ASSETS: { fetch: async req => { seen = req.url; return new Response("shared app"); } } });
+  const result = await request(env, "/member-join?protocol=secure_admission_v1&server_id=host&registration_epoch=epoch&token=private-invitation");
+  assert.equal(result.status, 200);
+  assert.equal(new URL(seen).search, "");
+  assert.equal(new URL(seen).pathname, "/index.html");
 });
