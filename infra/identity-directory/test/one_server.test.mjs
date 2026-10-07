@@ -62,6 +62,36 @@ async function duplicates(count = 3) {
   return { ...f, ids, epoch, resolve };
 }
 
+test('ownership conflict and registration projections preserve event and legacy endpoint status', async t => {
+  // A false disconnected label can steer irreversible keeper selection. These
+  // public responses must agree with the persisted endpoint mode and epoch.
+  for (const [label, mode, state, currentEpoch, leaseOffset, online] of [
+    ['published event', 'event_secure_v1', 'online', true, 0, true],
+    ['offline event', 'event_secure_v1', 'offline', true, 0, false],
+    ['stale event epoch', 'event_secure_v1', 'online', false, 0, false],
+    ['live legacy lease', 'legacy_lease', 'online', true, 600, true],
+    ['expired legacy lease', 'legacy_lease', 'online', true, -600, false],
+  ]) await t.test(label, async () => {
+    const f = await duplicates(2), id = f.ids[0], now = Math.floor(Date.now() / 1000);
+    f.env.DB.database.prepare(`INSERT INTO server_endpoints
+      (server_id, origin, state, generation, lease_expires_at, updated_at, mode, registration_epoch)
+      VALUES (?, 'https://owner.example', ?, 1, ?, ?, ?, ?)`)
+      .run(id, state, mode === 'legacy_lease' ? now + leaseOffset : 0, now, mode,
+        currentEpoch ? f.epoch(id) : 'stale-registration-epoch');
+    const bootstrap = await f.device('/v1/bootstrap');
+    assert.equal(bootstrap.status, 200);
+    const conflict = (await bootstrap.json()).owner_server_conflict;
+    assert.equal(conflict.servers.find(server => server.server_id === id).online, online);
+    const rejected = await f.register('another-owner-server');
+    assert.equal(rejected.status, 409);
+    const { error } = await rejected.json();
+    assert.equal(error.code, 'server_exists');
+    assert.equal(error.server.server_id, id);
+    assert.equal(error.server.online, online);
+    assert.equal(error.duplicate_servers.find(server => server.server_id === id).online, online);
+  });
+});
+
 // Keeper authority must survive conflicting devices. Changing/removing its
 // compare predicate retires the chosen keeper and fails the durable oracle.
 test('duplicate resolution pins a keeper, rejects conflicting selection, and clears only at one live server', async () => {

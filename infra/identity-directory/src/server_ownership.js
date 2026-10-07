@@ -28,14 +28,17 @@ export async function recheckHostIncarnation(db, serverId, epoch) {
 
 export async function ownedServers(db, personId, now) {
   const { results } = await db.prepare(`SELECT s.server_id, s.registration_epoch, s.label,
-      p.alias, e.state, e.lease_expires_at, e.updated_at
+      p.alias, e.state, e.lease_expires_at, e.updated_at, e.mode,
+      e.registration_epoch AS endpoint_epoch
     FROM servers s LEFT JOIN person_servers p ON p.server_id = s.server_id AND p.person_id = s.owner_person_id
     LEFT JOIN server_endpoints e ON e.server_id = s.server_id
     WHERE s.owner_person_id = ? AND s.revoked_at IS NULL ORDER BY s.created_at, s.server_id`)
     .bind(personId).all();
   return results.map(row => ({ server_id: row.server_id, registration_epoch: row.registration_epoch,
     name: serverDisplayName(row.alias, row.label, row.server_id),
-    online: row.state === 'online' && Number(row.lease_expires_at) > now,
+    online: row.state === 'online' && (row.mode === 'event_secure_v1'
+      ? row.endpoint_epoch === row.registration_epoch
+      : row.mode === 'legacy_lease' && Number(row.lease_expires_at) > now),
     last_seen_at: row.updated_at ?? null }));
 }
 
