@@ -13,7 +13,8 @@ and invite credentials remain on each AgentsAssemble engine.
 
 - Central `person_id` values are random and are not local room participant IDs.
 - Browser sessions require both an opaque bearer token and a signature from a
-  non-exportable P-256 device key. Replayed signed requests are rejected.
+  non-exportable P-256 device key. Mutation proofs reject replay; the two exact
+  read routes below may repeat a proof within the existing ±300-second clock window.
 - Guest recovery codes contain 160 random bits, are displayed only to the client,
   and are stored in D1 only as an HMAC verifier. A successful recovery rotates the
   code and revokes prior sessions for that device.
@@ -276,6 +277,72 @@ day**, partitioned into non-borrowing purpose pools:
 | OWNER_REDEEM | 300 | Signed grant-redemption host nonce (3) |
 | Total | **8,000** | Below >=9,993/day cleanup capacity |
 
+### Exact read proofs and durable GENERAL actor caps (0016)
+
+Only GET `/v1/bootstrap` and GET `/v1/servers/{server_id}/icon/{sha256}.png`
+(the exact authorized icon route, with a valid server ID and 43-character
+base64url digest) omit nonce persistence and creation-budget charges. Every call,
+including an identical replay within the existing ±300-second timestamp window,
+still verifies the signature, token/device binding, live session/person/device,
+current icon authorization, and non-D1 IP/actor rate limiters. Responses stay
+`no-store`; revoked/expired authority and foreign or removed icons still fail.
+No blanket GET/HEAD exemption exists: unknown paths, trailing slashes, HEAD and
+observational POSTs retain their existing nonce protection and budget behavior.
+All mutations keep their current signing and replay rules. Stored old read nonces
+expire through normal cleanup.
+
+Migration `0016_general_actor_budget.sql` adds non-indexed UTC-day/unit columns to
+existing `persons`, `sessions` and `servers` anchor rows, plus GENERAL nonce INSERT
+triggers. Accepted GENERAL device/host nonces cost three units and are capped at
+**90/account/day, 45/session/day and 45/host/day** (30, 15 and 15 requests).
+Account charging comes only from the stored verified session or current host
+ownership; new sessions/devices cannot reset it. Host charging stays on the server
+row across ownership transfer. Claims and duplicate resolution also charge their
+GENERAL host nonce, in addition to the initiating device nonce. Later product
+validation failures retain an already committed device/host proof charge, as before.
+Missing anchors fail closed. Duplicate nonce and failed actor/global reservations
+persist neither the nonce nor counter changes; host authority batches roll back
+with their nonce. The current writer remains responsible for live authority checks.
+
+Counter rollover is lazy in SQL using the same UTC clock as the global pool. New
+columns start at zero, without refunding or rewriting the existing global ledger.
+Session/account deletion removes embedded counters with the anchors; no quota rows,
+indexes, reset cron or cleanup queue are added. Older default-purpose nonce INSERTs
+remain bounded on the retained schema, including after a code rollback. Older code
+may report actor rejection as replay/409; deploy this code for the distinct HTTP 429
+`actor_quota_exhausted` response. Shared exhaustion keeps `temporary_capacity_exhausted`.
+Both reset at UTC midnight. Logout/account safety remains in GENERAL, without an
+unapproved reserve; a capped actor can therefore be denied those mutations too.
+
+The global GENERAL pool stays **700**; all purpose pools, expiry weights, cleanup
+**10,000 indexed writes/day**, 100-row pages and 48-delete-query invocation bound
+are unchanged. Local Miniflare D1 measured accepted nonce foreground writes rising
+from **4 to 6** (two unindexed anchor updates), while nonce cleanup debt remains
+three. Exact reads performed zero writes in the Worker regression. The existing
+all-queue cleanup regression still exercises backlog and bounded reclamation.
+These are local measurements, not production CPU/read-quota or load evidence.
+
+Deployment order: record the current Worker version and remote migration state,
+apply **0016 first**, then deploy this Worker and the matching Rust frontend assets.
+Retain the migration on code rollback; before first release the owner's Rule.md
+item-10 roll-forward exception applies, while expand-first order and deployment
+records remain required. This implementation performs no remote migration,
+deployment, cleanup-config change or push.
+
+Verification: `npm test`, plus isolated D1 integration with
+`node test/local_general_budget.mjs /path/to/wrangler/package.json` (existing
+Wrangler/Miniflare installation). The tests cover full-pool reads, authority/read
+replay, mutation substitution/replay, concurrent account/session/host ceilings,
+old INSERTs, ownership-transfer rollback, rollover, anchor deletion, independent
+account admission, indexed foreground costs and the existing cleanup backlog.
+Pre-fix regressions observed 429 for a full-pool exact read, 409 for read replay,
+and acceptance beyond actor ceilings. A controlled removal of mutation nonce
+insertion made the replay regression fail (200 instead of 409); it was restored.
+Local exit evidence: Worker suite 207/207, local D1 integration 1/1, architecture
+and syntax checks passed. Generated maps were checked in a clean scoped worktree
+because the working tree's two pre-existing untracked cleanup configs are outside
+this change and are otherwise included in the generator's aggregate counts.
+
 Only the server-derived exact method/path selects nonce purpose, after signature
 verification and the existing purpose gates; grant requests also verify ownership
 before nonce insertion. Headers/body fields cannot choose a pool. Nonce uniqueness
@@ -367,9 +434,9 @@ Retry after 00:00 UTC.” There is no borrowing, refund, or unlimited-entry guar
 - ENDPOINT hosts currently log only `HTTP 429` and retry with backoff. After the
   last 600-second lease expires, they appear offline until a successful retry
   after UTC midnight. Reserved owner grants still need a live endpoint.
-- GENERAL exhaustion during remembered-session startup may fall back silently
-  or display cached data with a generic central-connectivity warning rather
-  than the capacity message.
+- GENERAL exhaustion denies mutations; exact bootstrap/icon GETs remain usable
+  while live authority and edge limits permit them. Actor exhaustion has a distinct
+  `actor_quota_exhausted` code; the Rust central response owner maps it to Korean.
 
 Isolation protects grant/redeem for an already valid session and live endpoint;
 platform account-wide quotas can still stop all purposes. Rejected inserts

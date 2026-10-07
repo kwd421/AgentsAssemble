@@ -28,7 +28,7 @@ function failNextSessionInsert(env) {
     BEGIN SELECT session_write_fault(); END`);
 }
 
-test("guest identity uses a device-bound session and rejects replay/tampering", async () => {
+test("guest identity uses a device-bound session, permits exact read replay and rejects tampering", async () => {
   const env = environment();
   const { key, created } = await createGuestIdentity(env);
   assert.match(created.person.person_id, /^per_/);
@@ -57,8 +57,8 @@ test("guest identity uses a device-bound session and rejects replay/tampering", 
     undefined,
     { nonce }
   );
-  assert.equal(replay.status, 409);
-  assert.equal((await replay.json()).error.code, "replayed_request");
+  assert.equal(replay.status, 200);
+  assert.equal((await replay.json()).person.person_id, created.person.person_id);
 
   const registrationHost = await hostKey();
   const body = {

@@ -61,6 +61,9 @@ export function json(payload, status = 200, extraHeaders = {}) {
 }
 
 export function temporaryCapacityError(error) {
+  if (String(error?.message || error).includes("actor_quota_exhausted")) {
+    return new HttpError(429, "actor_quota_exhausted", "Daily account, session or host mutation allowance reached. Retry after 00:00 UTC.");
+  }
   if (String(error?.message || error).includes("temporary_capacity_exhausted")) {
     return new HttpError(429, "temporary_capacity_exhausted", "Daily temporary storage capacity reached. Retry after 00:00 UTC.");
   }

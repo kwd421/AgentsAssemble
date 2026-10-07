@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import worker from "../src/index.js";
-import { createGuestIdentity, environment, hostKey, hostRegistrationProof, signedDeviceRequest } from "./helpers.mjs";
+import { createGuestIdentity, environment, hostKey, hostRegistrationProof, signedDeviceRequest, utcDayClock } from "./helpers.mjs";
 
 // Contract: daily cleanup shares <=10,000 indexed writes across all queues,
 // and leaves live credentials usable. Reducing capacity/removing bounds must
@@ -73,23 +73,30 @@ test("scheduled cleanup bounds all tables and does not cascade live nonce/grant 
 
 // Contract: purpose expiry debt stays serviceable. Observe HTTP denial and durable
 // nonce state; raising the GENERAL cap to 800000 makes this regression fail.
-test("daily creation cap rejects signed traffic and resets on a new UTC day", async () => {
-  const env = environment();
+test("daily creation cap rejects signed mutations and resets on a new UTC day", async t => {
+  const env = environment({ SESSION_TTL_SECONDS: "172800" }), advance = utcDayClock(t, env);
   const { key, created } = await createGuestIdentity(env);
   const db = env.DB.database;
-  for (let i = 0; ; i++) {
-    const { creation_writes: used } = db.prepare("SELECT creation_writes FROM creation_budgets WHERE purpose = 'GENERAL'").get();
-    if (used > 697) break;
-    db.prepare("INSERT INTO request_nonces (session_id, nonce, expires_at) SELECT session_id, ?, 0 FROM sessions LIMIT 1").run(`capacity-${i}`);
+  // Distribute accepted debt across actors: each session may spend only 45 units.
+  for (let i = 0; i < 233; i++) {
+    const actor = `capacity-${Math.floor(i / 15)}`;
+    if (i % 15 === 0) {
+      db.prepare("INSERT INTO persons (person_id, identity_kind, created_at, updated_at) VALUES (?, 'guest', 0, 0)").run(actor);
+      db.prepare("INSERT INTO devices (device_id, person_id, public_key_jwk, created_at, last_seen_at) VALUES (?, ?, '{}', 0, 0)").run(actor, actor);
+      db.prepare("INSERT INTO sessions (session_id, person_id, device_id, token_hash, created_at, expires_at, last_seen_at) VALUES (?, ?, ?, ?, 0, 9999999999, 0)").run(actor, actor, actor, actor);
+    }
+    db.prepare("INSERT INTO request_nonces (session_id, nonce, expires_at) VALUES (?, ?, 0)").run(actor, `capacity-${i}`);
   }
   const before = db.prepare("SELECT COUNT(*) AS n FROM request_nonces").get().n;
-  const used = db.prepare("SELECT creation_writes FROM creation_budgets WHERE purpose = 'GENERAL'").get().creation_writes;
-  const response = await signedDeviceRequest(env, created.session, key.pair, "/v1/bootstrap");
+  const call = () => signedDeviceRequest(env, created.session, key.pair, "/v1/logout-others", "POST");
+  const response = await call();
   assert.equal(response.status, 429);
   assert.equal((await response.json()).error.code, "temporary_capacity_exhausted");
   assert.equal(db.prepare("SELECT COUNT(*) AS n FROM request_nonces").get().n, before);
-  assert.equal(db.prepare("SELECT creation_writes FROM creation_budgets WHERE purpose = 'GENERAL'").get().creation_writes, used);
-  db.prepare("UPDATE creation_budgets SET creation_day = creation_day - 1 WHERE purpose = 'GENERAL'").run();
+  assert.equal(db.prepare("SELECT creation_writes FROM creation_budgets WHERE purpose = 'GENERAL'").get().creation_writes, 699);
   assert.equal((await signedDeviceRequest(env, created.session, key.pair, "/v1/bootstrap")).status, 200);
+  advance(86400);
+  assert.equal((await call()).status, 200);
   assert.equal(db.prepare("SELECT COUNT(*) AS n FROM request_nonces").get().n, before + 1);
+  assert.equal(db.prepare("SELECT creation_writes FROM creation_budgets WHERE purpose = 'GENERAL'").get().creation_writes, 3);
 });

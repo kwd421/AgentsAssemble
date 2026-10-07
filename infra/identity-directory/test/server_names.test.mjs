@@ -2,10 +2,10 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import { readFileSync } from "node:fs";
 import { createGuestIdentity, environment, hostKey, hostRegistrationProof,
-  payload, signedDeviceRequest, signedHostRequest } from "./helpers.mjs";
+  payload, signedDeviceRequest, signedHostRequest, utcDayClock } from "./helpers.mjs";
 
-test("owner names survive registration and claims; stale and foreign edits cannot mutate them", async () => {
-  const env = environment();
+test("owner names survive registration and claims; stale and foreign edits cannot mutate them", async t => {
+  const env = environment({ SESSION_TTL_SECONDS: "172800" }), advance = utcDayClock(t, env);
   const owner = await createGuestIdentity(env);
   const stranger = await createGuestIdentity(env, { deviceId: "other-device-0002" });
   const host = await hostKey();
@@ -34,6 +34,8 @@ test("owner names survive registration and claims; stale and foreign edits canno
   for (const invalid of ["", "  ", "x\nname", "x\u0085name", "x\u202Ename", "x\u2066name", "x".repeat(81), {}, null]) {
     assert.equal((await call(owner, path, "POST", { name: invalid, expected_name: "내 메인 서버" })).status, 400);
   }
+  // Continue the long validation/edit workflow on the next UTC allowance.
+  advance(86400);
   await register("Changed OS name");
   await register("Changed again", true);
   assert.equal(await name(), "내 메인 서버");

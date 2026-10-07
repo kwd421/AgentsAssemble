@@ -43,13 +43,17 @@ test("future RESTRICT relationships make account and server deletion fail atomic
           db.prepare("INSERT INTO future_relation VALUES (?, 'redeemed')")
             .run(parent === "persons" ? f.owner.created.person.person_id : f.serverId);
         }
+        // Authentication commits a nonce/quota before a later product rejection.
+        // The RESTRICT oracle concerns all persisted identity/relationship fields.
+        const rows = table => db.prepare(`SELECT * FROM ${table}`).all()
+          .map(({ general_day, general_units, ...row }) => row);
         const before = Object.fromEntries(["persons", "servers", "person_servers", "devices", "sessions", "recovery_credentials", "future_relation"]
-          .map(table => [table, db.prepare(`SELECT * FROM ${table}`).all()]));
+          .map(table => [table, rows(table)]));
         const response = await f.remove(account);
         assert.equal(response.status, 409);
         assert.equal((await response.json()).error.code, account ? "deletion_restricted" : "server_move_unsupported");
-        for (const [table, rows] of Object.entries(before)) {
-          assert.deepEqual(db.prepare(`SELECT * FROM ${table}`).all(), rows, table);
+        for (const [table, original] of Object.entries(before)) {
+          assert.deepEqual(rows(table), original, table);
         }
         assert.equal((await f.device(f.owner, "/v1/bootstrap")).status, 200);
         assert.equal((await f.register()).status, 200);

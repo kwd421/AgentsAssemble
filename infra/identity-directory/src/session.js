@@ -10,7 +10,7 @@ import { HttpError, json, temporaryCapacityError, cleanServerName, serverDisplay
 const CLOCK_SKEW_SECONDS = 300;
 const NONCE_TTL_SECONDS = 600;
 
-export async function authenticated(request, env, body, now) {
+export async function authenticated(request, env, body, now, { persistNonce = true } = {}) {
   const authorization = request.headers.get("authorization") || "";
   const token = authorization.startsWith("Bearer ")
     ? authorization.slice(7).trim()
@@ -68,6 +68,7 @@ export async function authenticated(request, env, body, now) {
   );
   if (!valid) throw new HttpError(401, "invalid_signed_request");
   await limitSession(request, env, session);
+  if (!persistNonce) return session;
   try {
     await env.DB
       .prepare(

@@ -181,7 +181,13 @@ test("non-owner creation exhaustion preserves owner issue and redemption reserve
     }
     assert.fail("creation admission must be bounded");
   };
-  await exhaust(() => f.device("/v1/bootstrap"), 200);
+  // Seed shared GENERAL exhaustion; a single actor can no longer fill that pool.
+  f.env.DB.database.prepare("UPDATE creation_budgets SET creation_day = ?, creation_writes = 699 WHERE purpose = 'GENERAL'")
+    .run(Math.floor(Date.now() / 86400000));
+  const blocked = await f.general();
+  assert.equal(blocked.status, 429);
+  assert.equal((await blocked.json()).error.code, "temporary_capacity_exhausted");
+  assert.equal((await f.device("/v1/bootstrap")).status, 200);
   // Authentication counters include failed login attempts. Seed through their
   // actual INSERT trigger rather than invoking expensive password derivation.
   const db = f.env.DB.database;

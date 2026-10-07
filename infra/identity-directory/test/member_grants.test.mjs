@@ -134,6 +134,13 @@ test("concurrent member issuance enforces session/server cap and releases consum
 
 test("member account cap spans sessions and servers without consuming owner capacity", async () => {
   const f = await fixture();
+  // Sixteen active grants span two sessions under the fifteen-GENERAL/session cap.
+  const now = Math.floor(Date.now() / 1000), primary = f.owner.created.session, token = "second-session-token";
+  f.env.DB.database.prepare(`INSERT INTO sessions
+    (session_id, person_id, device_id, token_hash, created_at, expires_at, last_seen_at)
+    VALUES ('second-session', ?, ?, ?, ?, ?, ?)`)
+    .run(f.owner.created.person.person_id, primary.device_id, await sha256Base64Url(token), now, now + 3600, now);
+  const second = { ...f.owner, created: { ...f.owner.created, session: { ...primary, token } } };
   for (let i = 0; i < 4; i++) {
     const server = `cap-server-${i}`;
     const otherOwner = await createGuestIdentity(f.env, { deviceId: `cap-server-owner-${i}` });
@@ -142,18 +149,11 @@ test("member account cap spans sessions and servers without consuming owner capa
     const epoch = (await r.json()).registration_epoch;
     await publishEndpoint(f.env, server, f.host, epoch);
     // The caller owns its original host and is a member of these other hosts.
-    for (let j = 0; j < 4; j++) assert.equal((await f.device(f.owner, `/v1/servers/${server}/member-grants`,
+    for (let j = 0; j < 4; j++) assert.equal((await f.device(i < 2 ? f.owner : second, `/v1/servers/${server}/member-grants`,
       { ...f.body, registration_epoch: epoch })).status, 201);
   }
   assert.equal((await f.issue({}, f.owner)).status, 409);
-  const now = Math.floor(Date.now() / 1000), session = f.owner.created.session;
-  const token = "second-session-token";
-  f.env.DB.database.prepare(`INSERT INTO sessions
-    (session_id, person_id, device_id, token_hash, created_at, expires_at, last_seen_at)
-    VALUES ('second-session', ?, ?, ?, ?, ?, ?)`)
-    .run(f.owner.created.person.person_id, session.device_id, await sha256Base64Url(token), now, now + 3600, now);
-  assert.equal((await signedDeviceRequest(f.env, { ...session, token }, f.owner.key.pair,
-    `/v1/servers/${f.id}/member-grants`, "POST", f.body)).status, 409);
+  assert.equal((await f.device(second, `/v1/servers/${f.id}/member-grants`, f.body)).status, 409);
   const g = await ownerGrant(f);
   assert.ok(g.grant_token);
 });
