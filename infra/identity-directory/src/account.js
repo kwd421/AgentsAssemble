@@ -117,7 +117,12 @@ export async function deletionStatus(request, env, requestId, text, now) {
   const row = await env.DB.prepare(`SELECT person_id FROM account_deletions
     WHERE person_id = ? AND request_id = ? AND receipt_hash = ? AND receipt_expires_at > ?`)
     .bind(cleanIdentifier(body.person_id, "person_id"), requestId, await sha256Base64Url(body.receipt), now).first();
-  if (!row) throw new HttpError(401, "invalid_deletion_receipt");
+  if (!row) {
+    const root = await env.DB.prepare('SELECT person_id FROM persons WHERE person_id=? AND deleted_at IS NOT NULL AND deletion_request_id=?')
+      .bind(body.person_id,requestId).first();
+    if (!root) return json({status:'unknown'},404);
+    throw new HttpError(401, "invalid_deletion_receipt");
+  }
   return json({ status: "account_deleted" });
 }
 

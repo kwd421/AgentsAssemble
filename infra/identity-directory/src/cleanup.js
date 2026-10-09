@@ -1,3 +1,4 @@
+import { ACCOUNT_QUEUES, purgeAccountRoots } from "./account_cleanup.js";
 import { RETIRED_RETENTION_SECONDS } from "./server_ownership.js";
 import { MEMBER_RETENTION_SECONDS } from "./member_servers.js";
 import { nowSeconds } from "./http.js";
@@ -35,9 +36,11 @@ for (let i = 0; i < retiredTables.length; i++) {
   if (table === "servers") absent.push(
     "NOT EXISTS (SELECT 1 FROM host_request_nonces WHERE host_request_nonces.server_id = retired.server_id)",
     "NOT EXISTS (SELECT 1 FROM server_owner_resolutions WHERE keeper_server_id = retired.server_id)");
-  QUEUES.push([table, `server_id IN (SELECT retired.server_id FROM servers retired
-    WHERE retired.revoked_at <= ? ${absent.map(clause => `AND ${clause}`).join(' ')})`, cost, true]);
+  QUEUES.push([table, `server_id IN (SELECT retired.server_id FROM server_authorities retired
+    WHERE COALESCE(retired.revoked_at,retired.owner_deleted_at) <= ? ${absent.map(clause => `AND ${clause}`).join(' ')})`, cost, true]);
 }
+
+QUEUES.push(...ACCOUNT_QUEUES);
 
 function written(result) {
   const value = result.meta?.rows_written;
@@ -55,15 +58,15 @@ export async function cleanup(env) {
   if (claim.meta.changes === 0) return;
   let spent = Math.max(1, written(claim));
   const queues = [...QUEUES];
-  // 1 claim + at most 48 deletes stays below 50 D1 queries/invocation.
-  for (let query = 0; query < 48 && queues.length; query++) {
+  // Reserve three of the existing 49 statements for atomic ledger/parent closure.
+  for (let query = 0; query < 45 && queues.length; query++) {
     const queue = queues.shift();
     const [table, condition, cost, retired] = queue;
     const count = Math.min(CHUNK_ROWS, Math.floor((DAILY_WRITES - spent) / cost));
     if (!count) break;
     const cutoff = retired ? now - RETIRED_RETENTION_SECONDS : table === "member_servers" ? now - MEMBER_RETENTION_SECONDS
       : table === "rate_limits" ? now - 86400 : now;
-    const values = table === "sessions" ? [now, now - 86400] : [cutoff];
+    const values = table === "sessions" && !retired ? [now, now - 86400] : [cutoff];
     const result = await env.DB.prepare(`DELETE FROM ${table} WHERE rowid IN (
       SELECT rowid FROM ${table} WHERE (${condition})
       AND CAST(strftime('%s', 'now') AS INTEGER) / 86400 = ? ORDER BY rowid LIMIT ?
@@ -77,4 +80,5 @@ export async function cleanup(env) {
       else queues.push(queue);
     }
   }
+  await purgeAccountRoots(env,day,now-RETIRED_RETENTION_SECONDS,DAILY_WRITES-spent);
 }

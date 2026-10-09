@@ -61,7 +61,7 @@ class D1Database {
       const results = statements.map((statement) => {
         const results = statement.database.prepare(statement.sql).all(...statement.values);
         const { changes } = statement.database.prepare("SELECT changes() AS changes").get();
-        return { results, meta: { changes } };
+        return { results, meta: { changes, rows_written: changes } };
       });
       this.database.exec("COMMIT");
       return results;
