@@ -137,7 +137,11 @@ export async function deletionServers(session, env, text, now) {
     FROM member_servers AS members LEFT JOIN server_authorities AS servers
       ON servers.server_id = members.server_id AND servers.registration_epoch = members.registration_epoch
     LEFT JOIN server_endpoints AS endpoints ON endpoints.server_id = servers.server_id
-    WHERE members.person_id = ? ORDER BY members.created_at, members.server_id, members.registration_epoch
+    WHERE members.person_id = ? AND NOT EXISTS (
+      SELECT 1 FROM servers AS owned WHERE owned.server_id = members.server_id
+        AND owned.registration_epoch = members.registration_epoch
+        AND owned.owner_person_id = members.person_id)
+    ORDER BY members.created_at, members.server_id, members.registration_epoch
     LIMIT 513`).bind(session.person_id).all();
   if (results.length > 512) throw new HttpError(409, "account_deletion_list_incomplete");
   const servers = results.map(row => ({server_id: row.server_id, registration_epoch: row.registration_epoch,

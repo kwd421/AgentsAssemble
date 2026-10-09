@@ -12,13 +12,13 @@ and invite credentials remain on each AgentsAssemble engine.
 ## Account deletion — binding owner redesign (2026-10-09)
 
 Runtime contract: Rust `docs/specs/identity-accounts-friends-slice.md` → Account
-deletion. The prior custody design approval is superseded. New design/code review,
-implementation and acceptance remain pending; this is not shipped behavior.
-Four authorized Daybreak design rounds ended REVISE, latest C0/H0/M1/L0.
-Manager extended the design limit by three rounds (5–7) on 2026-10-10.
-Implementation may proceed after a completed verdict with no Critical/High and all
-Medium/Low corrected in the Rust contract; explicit design APPROVE is preferred.
-Code review still MUST reach APPROVE within three rounds before push/deployment.
+deletion. The prior custody design approval is superseded. The manager design
+execution gate is satisfied after the round5 C0/H0/M1/L0 contract correction.
+Implementation and isolated Guest packaged/web acceptance are recorded at the top
+of Rust `docs/VERIFICATION.md`. Code review round1 returned REVISE C0/H1/M1/L1;
+corrections and re-review are in progress. Code APPROVE is mandatory within three
+completed rounds before push/deployment. Production Guest acceptance and deployment
+remain pending; real Google E2E requires the owner's spare account and is not claimed.
 
 - Deleting device enumerates its account's member server list, including hidden
   entries, and uses EXISTING secure member admission for reachable member hosts.
@@ -145,8 +145,38 @@ verdicts belong at the top of Rust docs/VERIFICATION.md.
 
 ## Setup
 
-For an existing deployment, follow the deployment runbook below. Deploy the corrected tip directly;
-record the rollback version under the C3a floor rules in that runbook.
+For an existing deployment through0018, follow [account deletion rollout](#account-deletion-rollout-existing-production)
+first. Its atomic Guest prerequisite supersedes every older migrations-first or
+direct-tip instruction below whenever applying0019 or later. The setup commands
+below apply only to a new empty database; they are not an existing-production runbook.
+
+### Account deletion rollout (existing production)
+
+1. After code APPROVE and pushes, deploy reviewed schema-independent Worker
+   `6f829f0a` while the database still ends at0018. Keep the old pre-deletion UI
+   assets at Rust `d12077f2`; do not expose the deletion UI during this floor stage.
+   Prepare a detached Worker worktree at that exact commit, using existing dependencies.
+   Run `wrangler deploy /absolute/floor-worktree/infra/identity-directory/src/index.js
+   -c wrangler.cleanup-on.toml` from the current service directory, using the
+   unchanged owner configuration. Do not modify its main, assets or bindings.
+2. Record the floor's full deployed version ID and confirm it is the100% running
+   version through deployment/version inspection. Until recorded, do not apply0019.
+   Never roll back below this atomic Guest floor after terminal guards are applied.
+3. Apply migrations0019–0024 with `wrangler d1 migrations apply
+   agentsassemble-identity --remote --config wrangler.cleanup-on.toml`, allowing
+   one retry on failure. Inspect the remaining migration list; do not deploy the
+   final Worker unless all are applied. Do not drop or weaken guards.
+4. Move the specified isolated assets-wt to the frozen final Rust HEAD and build
+   its frontend with the production central origin. Deploy frozen final Worker
+   using `wrangler deploy -c wrangler.cleanup-on.toml`. Record final Worker version
+   and assets HEAD; smoke `/`200, `/v1/bootstrap`401, `/member-join`200.
+5. Verify final production flow only with a newly created disposable Guest and
+   recovery-code step-up. Owner Google and existing production accounts are never
+   targets; real Google E2E remains pending owner spare-account action.
+
+Current preflight:100% production version51bfe4a9-23c8-4634-bb7e-577a0de85291;
+0019–0024 unapplied. Floor and final deployment are pending. Current Wrangler4.149
+migration-list succeeds;4.98 query failure did not change credentials or authority.
 
 ```bash
 cd infra/identity-directory

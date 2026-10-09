@@ -149,3 +149,53 @@ test('installation stop reads authenticated exact current owner and terminal sup
   const terminal=await read();assert.equal(terminal.status,410);
   assert.equal((await terminal.json()).error.owner_person_id,f.owner.created.person.person_id);
 });
+
+// Ordinary admission can retain an own member projection. Exclude only that exact
+// registration; foreign visible/hidden and different-incarnation tuples survive.
+test('deletion inventory excludes exact own registration with member projection', async () => {
+  const f = await memberFixture();
+  const ownGrant = await f.issue('admission', {}, f.owner);
+  assert.equal(ownGrant.status, 201);
+  const ownRedeem = await f.redeem((await ownGrant.json()).grant_token);
+  assert.equal(ownRedeem.status, 200);
+  assert.equal((await f.report([item((await ownRedeem.json()).projection_id)])).status, 200);
+  assert.equal((await f.bootstrap(f.owner))[0].relation, 'owner');
+  const expected = [];
+  for (const hidden of [false, true]) {
+    const id = `delete-inventory-foreign-${hidden}`;
+    const owner = await createGuestIdentity(f.env, { deviceId: `delete-inventory-device-${hidden}` });
+    const host = await hostKey();
+    const registration = await f.device('/v1/servers', { server_id: id,
+      host_public_key_jwk: host.publicJwk,
+      host_registration_proof: await hostRegistrationProof(host.pair, id, owner.created.person.person_id) }, owner);
+    assert.equal(registration.status, 201);
+    const epoch = (await registration.json()).registration_epoch;
+    const now = Math.floor(Date.now() / 1000);
+    assert.equal((await signedHostRequest(f.env, id, host.pair, 'PUT', {
+      registration_epoch: epoch, origin: `https://foreign-${hidden}.trycloudflare.com`, generation: 1,
+      issued_at: now, lease_expires_at: now + 900 })).status, 200);
+    const body = { registration_epoch: epoch, challenge_hash: f.challenge_hash, purpose: 'admission' };
+    const issued = await f.device(`/v1/servers/${id}/member-grants`, body, f.owner);
+    assert.equal(issued.status, 201);
+    const redeemed = await signedHostRequest(f.env, id, host.pair, 'POST', {
+      ...body, grant_token: (await issued.json()).grant_token }, { pathname: `/v1/servers/${id}/member-grants/redeem` });
+    assert.equal(redeemed.status, 200);
+    const projection = (await redeemed.json()).projection_id;
+    assert.equal((await signedHostRequest(f.env, id, host.pair, 'POST', {
+      registration_epoch: epoch, results: [item(projection)] }, { pathname: `/v1/servers/${id}/member-results` })).status, 200);
+    if (hidden) assert.equal((await f.device(`/v1/member-servers/${id}/hide`, { registration_epoch: epoch }, f.owner)).status, 200);
+    expected.push({ server_id: id, registration_epoch: epoch, user_hidden: hidden });
+  }
+  const inventory = async () => {
+    const reply = await f.device('/v1/account/deletion-servers', {}, f.owner);
+    assert.equal(reply.status, 200);
+    return (await reply.json()).servers;
+  };
+  const rows = await inventory();
+  assert.deepEqual(rows.map(({ server_id, registration_epoch, user_hidden }) => ({ server_id, registration_epoch, user_hidden })), expected);
+  assert.equal(rows.some(row => row.server_id === f.id), false);
+  f.db.prepare("UPDATE servers SET registration_epoch='replacement-epoch' WHERE server_id=?").run(f.id);
+  const stale = (await inventory()).find(row => row.server_id === f.id);
+  assert.equal(stale.registration_epoch, f.epoch);
+  assert.equal(stale.endpoint, null);
+});
