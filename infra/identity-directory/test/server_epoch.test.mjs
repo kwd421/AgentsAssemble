@@ -36,6 +36,9 @@ test("delayed old-incarnation DELETE preserves a replacement with a different ke
     f.owner.key.pair.privateKey, utf8(await deviceRequestCanonical({ method: "DELETE", pathname,
       timestamp, nonce, bodyText, token: session.token, deviceId: session.device_id }))));
   // Historical pre-cutover deletion at the storage boundary.
+  for (const table of ["server_connect_grants", "server_endpoints", "person_servers", "host_request_nonces"]) {
+    f.env.DB.database.prepare(`DELETE FROM ${table} WHERE server_id = ?`).run(f.id);
+  }
   f.env.DB.database.prepare("DELETE FROM servers WHERE server_id = ?").run(f.id);
   assert.equal((await f.register(await hostKey())).status, 201);
   const response = await request(f.env, pathname, { method: "DELETE", body: bodyText, headers: {
@@ -55,6 +58,9 @@ test("exact old endpoint replay cannot publish into same-key re-registration", a
   const options = { nonce: "endpoint-replay-nonce", timestamp: f.endpoint.issued_at };
   assert.equal((await signedHostRequest(f.env, f.id, f.host.pair, "PUT", body, options)).status, 200);
   // Historical pre-cutover deletion at the storage boundary.
+  for (const table of ["server_connect_grants", "server_endpoints", "person_servers", "host_request_nonces"]) {
+    f.env.DB.database.prepare(`DELETE FROM ${table} WHERE server_id = ?`).run(f.id);
+  }
   f.env.DB.database.prepare("DELETE FROM servers WHERE server_id = ?").run(f.id);
   assert.equal((await f.register()).status, 201);
   const replay = await signedHostRequest(f.env, f.id, f.host.pair, "PUT", body, options);
@@ -66,6 +72,9 @@ test("exact old endpoint replay cannot publish into same-key re-registration", a
 test("concurrent first registrations return the stored winner epoch", async () => {
   const f = await fixture();
   // Historical pre-cutover deletion at the storage boundary.
+  for (const table of ["server_connect_grants", "server_endpoints", "person_servers", "host_request_nonces"]) {
+    f.env.DB.database.prepare(`DELETE FROM ${table} WHERE server_id = ?`).run(f.id);
+  }
   f.env.DB.database.prepare("DELETE FROM servers WHERE server_id = ?").run(f.id);
   const batch = f.env.DB.batch.bind(f.env.DB);
   let arrivals = 0, release;
@@ -145,6 +154,9 @@ test("legacy and epoch-aware owner workflows preserve the registration epoch", a
 test("stale epoch fences every server authority route without changing current state", async () => {
   const f = await fixture();
   // Historical pre-cutover deletion at the storage boundary.
+  for (const table of ["server_connect_grants", "server_endpoints", "person_servers", "host_request_nonces"]) {
+    f.env.DB.database.prepare(`DELETE FROM ${table} WHERE server_id = ?`).run(f.id);
+  }
   f.env.DB.database.prepare("DELETE FROM servers WHERE server_id = ?").run(f.id);
   const replacement = await (await f.register()).json();
   assert.equal((await signedHostRequest(f.env, f.id, f.host.pair, "PUT", f.endpoint)).status, 200);

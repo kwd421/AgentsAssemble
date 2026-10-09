@@ -18,7 +18,7 @@ export async function renameServer(session, env, serverId, text) {
   }
   // Read sanitation must not break the observed-name CAS for historical rows.
   const observed = await env.DB.prepare(`SELECT person_servers.alias, servers.label
-    FROM person_servers JOIN servers USING(server_id)
+    FROM person_servers JOIN live_servers AS servers USING(server_id)
     WHERE person_servers.person_id = ? AND server_id = ? AND relation = 'owner'`)
     .bind(session.person_id, serverId).first();
   const matchesDisplay = observed && serverDisplayName(observed.alias, observed.label, serverId) === body.expected_name &&
@@ -27,7 +27,7 @@ export async function renameServer(session, env, serverId, text) {
   // alias and label so a concurrent change cannot pass using a sanitized snapshot.
   const result = await env.DB.prepare(`UPDATE person_servers SET alias = ?
     WHERE person_id = ? AND server_id = ? AND relation = 'owner'
-    AND EXISTS (SELECT 1 FROM servers WHERE servers.server_id = person_servers.server_id
+    AND EXISTS (SELECT 1 FROM live_servers AS servers WHERE servers.server_id = person_servers.server_id
       AND (? IS NULL OR servers.registration_epoch = ?)
       AND servers.owner_person_id = person_servers.person_id AND servers.revoked_at IS NULL
       AND ((? = 1 AND person_servers.alias = ? AND servers.label = ?)
@@ -36,7 +36,7 @@ export async function renameServer(session, env, serverId, text) {
       observed?.alias ?? "", observed?.label ?? "", reset ? 1 : 0, reset ? 1 : 0, name).run();
   if (Number(result.meta?.changes || 0) !== 1) {
     if (registrationEpoch !== null) {
-      const current = await env.DB.prepare("SELECT registration_epoch FROM servers WHERE server_id = ?").bind(serverId).first();
+      const current = await env.DB.prepare("SELECT registration_epoch FROM live_servers AS servers WHERE server_id = ?").bind(serverId).first();
       if (current?.registration_epoch !== registrationEpoch) throw new HttpError(409, "incarnation_conflict");
     }
     throw new HttpError(409, "server_name_conflict", "서버 목록이 바뀌었거나 이름 변경 권한이 없어요. 목록을 새로고침해 주세요.");

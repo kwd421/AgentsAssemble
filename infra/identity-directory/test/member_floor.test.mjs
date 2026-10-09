@@ -1,3 +1,4 @@
+import { proveGuestDeletion } from "./deletion_helpers.mjs";
 import assert from "node:assert/strict";
 import test from "node:test";
 import { createGuestIdentity, environment, hostKey, hostRegistrationProof,
@@ -17,15 +18,15 @@ async function fixture() {
       identity.created.person.person_id, claim),
   });
   assert.equal((await register()).status, 201);
-  const remove = account => device(owner, account ? "/v1/account" : `/v1/servers/${serverId}`,
-    "DELETE", account ? { confirmation: `delete:${owner.created.person.person_id}` } : undefined);
+  const remove = async account => device(owner, account ? "/v1/account" : `/v1/servers/${serverId}`,
+    "DELETE", account ? await proveGuestDeletion(env, owner) : undefined);
   return { env, owner, serverId, device, register, remove };
 }
 
 // The future schema must RESTRICT every parent on a cascade path. These are
 // test-only relationships. Removing RESTRICT would erase the relation or parent;
 // the public delete must instead preserve the entire durable account state.
-test("future RESTRICT relationships make account and server deletion fail atomically", async t => {
+test("account disable preserves future RESTRICT relationships; standalone server deletion stays denied", async t => {
   for (const parent of ["persons", "servers", "person_servers"]) {
     for (const account of parent === "persons" ? [true] : [false, true]) {
       await t.test(`${parent}: ${account ? "account cascade" : "server delete"}`, async () => {
@@ -50,13 +51,19 @@ test("future RESTRICT relationships make account and server deletion fail atomic
         const before = Object.fromEntries(["persons", "servers", "person_servers", "devices", "sessions", "recovery_credentials", "future_relation"]
           .map(table => [table, rows(table)]));
         const response = await f.remove(account);
-        assert.equal(response.status, 409);
-        assert.equal((await response.json()).error.code, account ? "deletion_restricted" : "server_move_unsupported");
+        assert.equal(response.status, account ? 200 : 409);
+        if (account) assert.equal((await response.json()).status, "account_deleted");
+        else assert.equal((await response.json()).error.code, "server_move_unsupported");
         for (const [table, original] of Object.entries(before)) {
-          assert.deepEqual(rows(table), original, table);
+          if (account && table === "persons") {
+            assert.equal(rows(table)[0].status, "disabled"); assert.equal(rows(table)[0].display_name, "");
+          } else if (account && table === "sessions") {
+            const unchanged = row => Object.fromEntries(Object.entries(row).filter(([key]) => !key.startsWith("deletion_")));
+            assert.deepEqual(rows(table).map(unchanged), original.map(unchanged), table);
+          } else assert.deepEqual(rows(table), original, table);
         }
-        assert.equal((await f.device(f.owner, "/v1/bootstrap")).status, 200);
-        assert.equal((await f.register()).status, 200);
+        assert.equal((await f.device(f.owner, "/v1/bootstrap")).status, account ? 401 : 200);
+        assert.equal((await f.register()).status, account ? 401 : 200);
       });
     }
   }

@@ -1,3 +1,4 @@
+import { proveGuestDeletion } from "./deletion_helpers.mjs";
 import assert from "node:assert/strict";
 import test from "node:test";
 
@@ -264,7 +265,7 @@ test("logging out other devices preserves only the requesting session", async ()
   assert.equal(currentSession.status, 200);
 });
 
-test("deleting an account requires explicit confirmation and removes central data", async () => {
+test("deleting an account requires fresh proof and disables central authority without child cascades", async () => {
   const env = environment();
   const { key, created } = await createGuestIdentity(env);
   const host = await hostKey();
@@ -304,30 +305,30 @@ test("deleting an account requires explicit confirmation and removes central dat
     key.pair,
     "/v1/account",
     "DELETE",
-    { confirmation: `delete:${created.person.person_id}` }
+    await proveGuestDeletion(env, { key, created })
   );
   assert.equal(deleted.status, 200);
   assert.equal(
     env.DB.database.prepare("SELECT COUNT(*) AS count FROM persons").get().count,
-    0
+    1
   );
   assert.equal(
     env.DB.database.prepare("SELECT COUNT(*) AS count FROM sessions").get().count,
-    0
+    1
   );
   assert.equal(
     env.DB.database.prepare("SELECT COUNT(*) AS count FROM devices").get().count,
-    0
+    1
   );
   assert.equal(
     env.DB.database
       .prepare("SELECT COUNT(*) AS count FROM recovery_credentials")
       .get().count,
-    0
+    1
   );
   assert.equal(
     env.DB.database.prepare("SELECT COUNT(*) AS count FROM servers").get().count,
-    0
+    1
   );
 
   const expired = await signedDeviceRequest(

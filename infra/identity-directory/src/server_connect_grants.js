@@ -17,12 +17,13 @@ const BOUND_ENDPOINT_SQL = `server_endpoints.origin = source.endpoint_origin
 async function serverEndpoint(env, serverId) {
   const endpoint = await env.DB
     .prepare(
-      `SELECT servers.owner_person_id, servers.revoked_at, servers.registration_epoch,
+      `SELECT servers.owner_person_id, servers.server_id, servers.revoked_at, servers.registration_epoch,
+              servers.owner_deleted_at, servers.owner_status,
               owner_names.alias, servers.label, servers.host_public_key_jwk, servers.host_key_fingerprint,
               server_endpoints.mode, server_endpoints.registration_epoch AS endpoint_epoch,
               server_endpoints.origin, server_endpoints.state,
               server_endpoints.generation, server_endpoints.lease_expires_at
-       FROM servers
+       FROM server_authorities AS servers
        LEFT JOIN person_servers AS owner_names ON owner_names.server_id = servers.server_id
          AND owner_names.person_id = servers.owner_person_id AND owner_names.relation = 'owner'
        LEFT JOIN server_endpoints USING(server_id)
@@ -62,7 +63,7 @@ export async function createServerConnectGrant(session, env, serverId, text, now
        JOIN devices ON devices.device_id = sessions.device_id
                    AND devices.person_id = sessions.person_id
        JOIN persons ON persons.person_id = sessions.person_id
-       JOIN servers ON servers.server_id = ?
+       JOIN live_servers AS servers ON servers.server_id = ?
        JOIN server_endpoints ON server_endpoints.server_id = servers.server_id
        WHERE sessions.session_id = ? AND sessions.person_id = ?
          AND sessions.device_id = ? AND sessions.revoked_at IS NULL
@@ -147,7 +148,7 @@ export async function redeemServerConnectGrant(request, env, serverId, text, now
         AND sessions.person_id = source.person_id AND sessions.device_id = source.device_id
       JOIN devices ON devices.device_id = source.device_id AND devices.person_id = source.person_id
       JOIN persons ON persons.person_id = source.person_id
-      JOIN servers ON servers.server_id = source.server_id
+      JOIN live_servers AS servers ON servers.server_id = source.server_id
       JOIN server_endpoints ON server_endpoints.server_id = source.server_id
       WHERE source.kind = 'owner' AND source.server_id = ? AND source.secret_hash = ? AND source.expires_at > ?
         AND sessions.revoked_at IS NULL AND sessions.expires_at > ?
@@ -223,7 +224,7 @@ export async function createMemberGrant(session, env, serverId, text, now, purpo
     FROM sessions
     JOIN devices ON devices.device_id = sessions.device_id AND devices.person_id = sessions.person_id
     JOIN persons ON persons.person_id = sessions.person_id
-    JOIN servers ON servers.server_id = ?
+    JOIN live_servers AS servers ON servers.server_id = ?
     JOIN server_endpoints ON server_endpoints.server_id = servers.server_id
     WHERE sessions.session_id = ? AND sessions.person_id = ? AND sessions.device_id = ?
       AND sessions.revoked_at IS NULL AND sessions.expires_at > ?
@@ -278,7 +279,7 @@ export async function redeemMemberGrant(request, env, serverId, text, now, purpo
         AND sessions.person_id = source.person_id AND sessions.device_id = source.device_id
       JOIN devices ON devices.device_id = source.device_id AND devices.person_id = source.person_id
       JOIN persons ON persons.person_id = source.person_id
-      JOIN servers ON servers.server_id = source.server_id
+      JOIN live_servers AS servers ON servers.server_id = source.server_id
       JOIN server_endpoints ON server_endpoints.server_id = source.server_id
       WHERE source.kind = 'member' AND source.member_purpose = ? AND source.used_at IS NULL
         AND source.server_id = ? AND source.secret_hash = ? AND source.expires_at > ?

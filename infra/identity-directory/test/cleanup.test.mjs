@@ -1,3 +1,4 @@
+import { seedHistorical } from "./helpers.mjs";
 import assert from "node:assert/strict";
 import test from "node:test";
 import worker from "../src/index.js";
@@ -9,7 +10,8 @@ import { createGuestIdentity, environment, hostKey, hostRegistrationProof, signe
 test("scheduled cleanup bounds all tables and does not cascade live nonce/grant children", async () => {
   const env = environment();
   const { key, created } = await createGuestIdentity(env);
-  const db = env.DB.database, now = Math.floor(Date.now() / 1000);
+  let db = env.DB.database;
+  const now = Math.floor(Date.now() / 1000);
   const triggers = db.prepare("SELECT sql, name FROM sqlite_master WHERE type = 'trigger' AND name LIKE 'budget_%'").all();
   for (const { name } of triggers) db.exec(`DROP TRIGGER ${name}`);
   const { session_id: sessionId } = db.prepare("SELECT session_id FROM sessions").get();
@@ -18,34 +20,37 @@ test("scheduled cleanup bounds all tables and does not cascade live nonce/grant 
     server_id: serverId, host_public_key_jwk: host.publicJwk,
     host_registration_proof: await hostRegistrationProof(host.pair, serverId, created.person.person_id),
   })).status, 201);
-  for (let i = 0; i < 1000; i++) {
-    db.prepare('INSERT INTO member_sync_nonces VALUES (?, ?, ?, 1)').run(serverId, `sync-${i}`, now - 1);
-    if (i < 400) db.prepare(`INSERT INTO member_servers
-      (person_id, server_id, registration_epoch, projection_id, created_at, updated_at, state_changed_at)
-      VALUES (?, ?, 'retired-epoch', ?, 1, 1, 1)`).run(created.person.person_id, `retired-${i}`, `projection-${i}`);
-    db.prepare("INSERT INTO request_nonces (session_id, nonce, expires_at) VALUES (?, ?, ?)").run(sessionId, `old-${i}`, now - 1);
-    db.prepare("INSERT INTO host_request_nonces (server_id, nonce, expires_at) VALUES (?, ?, ?)").run(serverId, `old-${i}`, now - 1);
-    db.prepare("INSERT INTO rate_limits VALUES (?, ?, 1)").run(`old-${i}`, now - 90000);
-    db.prepare(`INSERT INTO google_handoffs (handoff_id, device_id, device_public_key_jwk,
-      browser_token_hash, poll_token_hash, google_nonce, status, created_at, expires_at)
-      VALUES (?, ?, '{}', '', '', '', 'pending', ?, ?)`).run(`old-${i}`, created.session.device_id, now - 20, now - 1);
-    db.prepare(`INSERT INTO server_connect_grants (grant_id, secret_hash, session_id, person_id,
-      device_id, server_id, endpoint_origin, endpoint_generation, created_at, expires_at)
-      VALUES (?, ?, ?, ?, ?, ?, '', 1, ?, ?)`).run(`old-${i}`, `hash-${i}`, sessionId,
-        created.person.person_id, created.session.device_id, serverId, now - 20, now - 1);
-    db.prepare(`INSERT INTO sessions (session_id, person_id, device_id, token_hash, created_at, expires_at, last_seen_at)
-      VALUES (?, ?, ?, ?, ?, ?, ?)`).run(`old-${i}`, created.person.person_id, created.session.device_id, `session-${i}`, now - 20, now - 1, now - 20);
-  }
-  // An expired parent can still have recent nonce children. A bounded parent
-  // DELETE must not trigger an unbounded ON DELETE CASCADE on those children.
-  for (let i = 0; i < 600; i++) db.prepare("INSERT INTO request_nonces (session_id, nonce, expires_at) VALUES ('old-0', ?, ?)").run(`live-${i}`, now + 600);
-  // Exceed daily capacity to observe both throughput and bounded termination.
-  db.prepare("DELETE FROM host_request_nonces").run();
-  db.prepare(`WITH RECURSIVE backlog(n) AS (
-    SELECT 1 UNION ALL SELECT n + 1 FROM backlog WHERE n < 120001
-  ) INSERT INTO host_request_nonces (server_id, nonce, expires_at) SELECT ?, 'backlog-' || n, ? FROM backlog`)
-    .run(serverId, now - 1);
-  for (const { sql } of triggers) db.exec(sql);
+  db = seedHistorical(env, db => {
+      for (const { name } of triggers) db.exec(`DROP TRIGGER ${name}`);
+    for (let i = 0; i < 1000; i++) {
+      db.prepare('INSERT INTO member_sync_nonces VALUES (?, ?, ?, 1)').run(serverId, `sync-${i}`, now - 1);
+      if (i < 400) db.prepare(`INSERT INTO member_servers
+        (person_id, server_id, registration_epoch, projection_id, created_at, updated_at, state_changed_at)
+        VALUES (?, ?, 'retired-epoch', ?, 1, 1, 1)`).run(created.person.person_id, `retired-${i}`, `projection-${i}`);
+      db.prepare("INSERT INTO request_nonces (session_id, nonce, expires_at) VALUES (?, ?, ?)").run(sessionId, `old-${i}`, now - 1);
+      db.prepare("INSERT INTO host_request_nonces (server_id, nonce, expires_at) VALUES (?, ?, ?)").run(serverId, `old-${i}`, now - 1);
+      db.prepare("INSERT INTO rate_limits VALUES (?, ?, 1)").run(`old-${i}`, now - 90000);
+      db.prepare(`INSERT INTO google_handoffs (handoff_id, device_id, device_public_key_jwk,
+        browser_token_hash, poll_token_hash, google_nonce, status, created_at, expires_at)
+        VALUES (?, ?, '{}', '', '', '', 'pending', ?, ?)`).run(`old-${i}`, created.session.device_id, now - 20, now - 1);
+      db.prepare(`INSERT INTO server_connect_grants (grant_id, secret_hash, session_id, person_id,
+        device_id, server_id, endpoint_origin, endpoint_generation, created_at, expires_at)
+        VALUES (?, ?, ?, ?, ?, ?, '', 1, ?, ?)`).run(`old-${i}`, `hash-${i}`, sessionId,
+          created.person.person_id, created.session.device_id, serverId, now - 20, now - 1);
+      db.prepare(`INSERT INTO sessions (session_id, person_id, device_id, token_hash, created_at, expires_at, last_seen_at)
+        VALUES (?, ?, ?, ?, ?, ?, ?)`).run(`old-${i}`, created.person.person_id, created.session.device_id, `session-${i}`, now - 20, now - 1, now - 20);
+    }
+    // An expired parent can still have recent nonce children. A bounded parent
+    // DELETE must not trigger an unbounded ON DELETE CASCADE on those children.
+    for (let i = 0; i < 600; i++) db.prepare("INSERT INTO request_nonces (session_id, nonce, expires_at) VALUES ('old-0', ?, ?)").run(`live-${i}`, now + 600);
+    // Exceed daily capacity to observe both throughput and bounded termination.
+    db.prepare("DELETE FROM host_request_nonces").run();
+    db.prepare(`WITH RECURSIVE backlog(n) AS (
+      SELECT 1 UNION ALL SELECT n + 1 FROM backlog WHERE n < 120001
+    ) INSERT INTO host_request_nonces (server_id, nonce, expires_at) SELECT ?, 'backlog-' || n, ? FROM backlog`)
+      .run(serverId, now - 1);
+    for (const { sql } of triggers) db.exec(sql);
+  });
   const tables = ["request_nonces", "host_request_nonces", "rate_limits", "google_handoffs", "server_connect_grants", "sessions", "member_sync_nonces", "member_servers"];
   const counts = () => tables.map(table => db.prepare(`SELECT COUNT(*) AS n FROM ${table}`).get().n);
   const initial = counts();

@@ -1,3 +1,4 @@
+import { seedHistorical } from "./helpers.mjs";
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import { encode } from 'fast-png';
@@ -60,7 +61,7 @@ test('result revisions, unknown capability and cross-server reports never reveal
   const tombstone = f.db.prepare('SELECT * FROM member_servers').get();
   assert.equal((await send(item(id, 9, 'removed'))).status, 'applied');
   assert.equal(f.db.prepare('SELECT state_changed_at FROM member_servers').get().state_changed_at, tombstone.state_changed_at);
-  f.db.prepare("UPDATE member_servers SET server_id = 'different-server'").run();
+  f.db = seedHistorical(f.env, db => db.prepare("UPDATE member_servers SET server_id = 'different-server'").run());
   assert.equal((await send(item(id, 10))).status, 'stale');
   assert.equal(f.db.prepare('SELECT host_revision FROM member_servers').get().host_revision, 9);
 });
@@ -148,7 +149,7 @@ test('connect retains all W1/W2 authority fences at redemption', async t => {
       f.db.exec(sql);
       const denied = await f.redeem(g.grant_token, 'connect');
       if (sql === 'UPDATE servers SET revoked_at = 1') assert.equal(denied.status, 410);
-      else assert.ok([401, 409].includes(denied.status));
+      else assert.ok([401, 403, 409].includes(denied.status));
       assert.equal(f.db.prepare("SELECT used_at FROM server_connect_grants WHERE member_purpose = 'connect'").get().used_at, null);
     });
   }
@@ -264,14 +265,16 @@ test('30-day pending/removed expiry replaces the projection and isolates late ol
 
 test('per-person 512 cap covers hidden, pending and removed rows without consuming failed consent', async () => {
   const f = await memberFixture(), pid = f.member.created.person.person_id;
-  const trigger = f.db.prepare("SELECT sql FROM sqlite_master WHERE name = 'budget_member_servers'").get().sql;
-  f.db.exec('DROP TRIGGER budget_member_servers');
-  const now = Math.floor(Date.now() / 1000);
-  for (let i = 0; i < 512; i++) f.db.prepare(`INSERT INTO member_servers
-    (person_id,server_id,registration_epoch,projection_id,host_state,user_hidden,created_at,updated_at,state_changed_at)
-    VALUES (?, ?, 'retired-epoch', ?, ?, ?, ?, ?, ?)`)
-    .run(pid, `old-server-${i}`, randomBase64Url(16), ['pending','active','removed'][i % 3], i % 2, now, now, now);
-  f.db.exec(trigger);
+  f.db = seedHistorical(f.env, db => {
+    const trigger = db.prepare("SELECT sql FROM sqlite_master WHERE name = 'budget_member_servers'").get().sql;
+    db.exec('DROP TRIGGER budget_member_servers');
+    const now = Math.floor(Date.now() / 1000);
+    for (let i = 0; i < 512; i++) db.prepare(`INSERT INTO member_servers
+      (person_id,server_id,registration_epoch,projection_id,host_state,user_hidden,created_at,updated_at,state_changed_at)
+      VALUES (?, ?, 'retired-epoch', ?, ?, ?, ?, ?, ?)`)
+      .run(pid, `old-server-${i}`, randomBase64Url(16), ['pending','active','removed'][i % 3], i % 2, now, now, now);
+    db.exec(trigger);
+  });
   const g = await f.grant(), before = snapshot(f.db);
   const r = await f.redeem(g.grant_token);
   assert.equal(r.status, 409); assert.equal((await r.json()).error.code, 'member_server_capacity');
@@ -321,28 +324,30 @@ test('member bootstrap icon can be fetched without granting edit permission', as
 test('cleanup retires expired pending/tombstones/dead epochs and keeps active hidden consent', async () => {
   const f = await memberFixture(), id = await f.anchor(), now = Math.floor(Date.now() / 1000);
   const cutoff = now - 30 * 86400;
-  f.db.prepare('UPDATE member_servers SET created_at = ?, state_changed_at = ?').run(cutoff, cutoff);
-  const pid = f.member.created.person.person_id;
-  for (const [suffix, state, time] of [['pending-live', 'pending', cutoff + 60], ['removed-live', 'removed', cutoff + 60],
-    ['removed-expired', 'removed', cutoff], ['active-hidden', 'active', 1]]) {
-    f.db.prepare(`INSERT INTO member_servers (person_id, server_id, registration_epoch, projection_id,
-      host_state, user_hidden, created_at, updated_at, state_changed_at)
-      VALUES (?, ?, ?, ?, ?, 1, ?, ?, ?)`)
-      .run(pid, suffix, f.epoch, suffix, state, time, time, time);
-    // Seed live independent server incarnations under the normal owner cap.
-    f.db.prepare(`INSERT INTO servers (server_id, owner_person_id, host_public_key_jwk, host_key_fingerprint, created_at, registration_epoch)
-      SELECT ?, owner_person_id, host_public_key_jwk, host_key_fingerprint, ?, registration_epoch FROM servers WHERE server_id = ?`)
-      .run(suffix, now, f.id);
-  }
-  f.db.prepare(`INSERT INTO member_servers (person_id, server_id, registration_epoch, projection_id, created_at, updated_at, state_changed_at)
-    VALUES (?, ?, 'retired-epoch', 'retired-projection', ?, ?, ?)`).run(pid, f.id, now, now, now);
-  f.db.prepare('INSERT INTO member_sync_nonces VALUES (?, ?, ?, 1)').run(f.id, 'expired-nonce', now - 1);
-  f.db.prepare('INSERT INTO member_sync_nonces VALUES (?, ?, ?, 1)').run(f.id, 'live-nonce', now + 600);
+  f.db = seedHistorical(f.env, db => {
+    db.prepare('UPDATE member_servers SET created_at = ?, state_changed_at = ?').run(cutoff, cutoff);
+    const pid = f.member.created.person.person_id;
+    for (const [suffix, state, time] of [['pending-live', 'pending', cutoff + 60], ['removed-live', 'removed', cutoff + 60],
+      ['removed-expired', 'removed', cutoff], ['active-hidden', 'active', 1]]) {
+      db.prepare(`INSERT INTO member_servers (person_id, server_id, registration_epoch, projection_id,
+        host_state, user_hidden, created_at, updated_at, state_changed_at)
+        VALUES (?, ?, ?, ?, ?, 1, ?, ?, ?)`)
+        .run(pid, suffix, f.epoch, suffix, state, time, time, time);
+      // Seed live independent server incarnations under the normal owner cap.
+      db.prepare(`INSERT INTO servers (server_id, owner_person_id, host_public_key_jwk, host_key_fingerprint, created_at, registration_epoch)
+        SELECT ?, owner_person_id, host_public_key_jwk, host_key_fingerprint, ?, registration_epoch FROM servers WHERE server_id = ?`)
+        .run(suffix, now, f.id);
+    }
+    db.prepare(`INSERT INTO member_servers (person_id, server_id, registration_epoch, projection_id, created_at, updated_at, state_changed_at)
+      VALUES (?, ?, 'retired-epoch', 'retired-projection', ?, ?, ?)`).run(pid, f.id, now, now, now);
+    db.prepare('INSERT INTO member_sync_nonces VALUES (?, ?, ?, 1)').run(f.id, 'expired-nonce', now - 1);
+    db.prepare('INSERT INTO member_sync_nonces VALUES (?, ?, ?, 1)').run(f.id, 'live-nonce', now + 600);
+  });
   await cleanup(f.env);
   assert.deepEqual(f.db.prepare('SELECT projection_id FROM member_servers ORDER BY projection_id').all().map(r => r.projection_id),
     ['active-hidden', 'pending-live', 'removed-live']);
   assert.deepEqual(f.db.prepare('SELECT nonce FROM member_sync_nonces').all().map(r => r.nonce), ['live-nonce']);
-  f.db.exec("DELETE FROM servers WHERE server_id = 'active-hidden'");
+  f.db.exec("UPDATE servers SET registration_epoch='gone-epoch' WHERE server_id='active-hidden'");
   assert.ok(f.db.prepare("SELECT projection_id FROM member_servers WHERE projection_id = 'active-hidden'").get());
   f.db.exec('UPDATE maintenance_budget SET cleanup_day = cleanup_day - 1');
   await cleanup(f.env);

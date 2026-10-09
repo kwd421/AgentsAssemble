@@ -35,6 +35,9 @@ export const bindingEcho = binding => binding ? { protocol: binding.protocol, cl
   channel_id: binding.channel_id, purpose: binding.purpose } : {};
 
 export function requireEndpoint(endpoint, now, secure = false) {
+  if (endpoint?.owner_deleted_at != null) throw new HttpError(410, "account_deleted", "The owner deleted this account.",
+    { server_id: endpoint.server_id, registration_epoch: endpoint.registration_epoch });
+  if (endpoint?.owner_status && endpoint.owner_status !== "active") throw new HttpError(403, "owner_inactive");
   if (endpoint?.state !== 'online' || !endpoint.origin || (secure
     ? endpoint.mode !== EVENT_MODE || endpoint.endpoint_epoch !== endpoint.registration_epoch
     : endpoint.mode !== 'legacy_lease' || Number(endpoint.lease_expires_at || 0) <= now)) {

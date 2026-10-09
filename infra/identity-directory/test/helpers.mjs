@@ -18,9 +18,7 @@ const migrations = fs
   .readdirSync(path.join(directory, "../migrations"))
   .filter((name) => name.endsWith(".sql"))
   .sort()
-  .map((name) =>
-    fs.readFileSync(path.join(directory, "../migrations", name), "utf8")
-  );
+  .map((name) => ({ name, sql: fs.readFileSync(path.join(directory, "../migrations", name), "utf8") }));
 
 class D1Prepared {
   constructor(database, sql, values = []) {
@@ -50,9 +48,9 @@ class D1Prepared {
 }
 
 class D1Database {
-  constructor() {
+  constructor(before = "") {
     this.database = new DatabaseSync(":memory:");
-    for (const migration of migrations) this.database.exec(migration);
+    for (const { name, sql } of migrations) if (!before || name < before) this.database.exec(sql);
   }
   prepare(sql) {
     return new D1Prepared(this.database, sql);
@@ -72,6 +70,29 @@ class D1Database {
       throw error;
     }
   }
+}
+
+// Model a retained pre-cutover backlog by upgrading a separate old database.
+// Product guards are never disabled on the current schema. Copy the established
+// fixture's old columns with its exact quota counters, seed the historical state,
+// then apply every new guard before running HTTP/cleanup under test.
+export function seedHistorical(env, seed) {
+  const source = env.DB.database, target = new D1Database("0019"), db = target.database;
+  const triggers = db.prepare("SELECT name,sql FROM sqlite_master WHERE type='trigger'").all();
+  db.exec("PRAGMA foreign_keys=OFF");
+  for (const { name } of triggers) db.exec(`DROP TRIGGER ${name}`);
+  for (const { name } of db.prepare("SELECT name FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%'").all()) {
+    db.prepare(`DELETE FROM ${name}`).run();
+    const columns = db.prepare(`PRAGMA table_info(${name})`).all().map(r => r.name);
+    const insert = db.prepare(`INSERT INTO ${name}(${columns.join(',')}) VALUES(${columns.map(() => '?').join(',')})`);
+    for (const row of source.prepare(`SELECT ${columns.join(',')} FROM ${name}`).all()) insert.run(...columns.map(c => row[c]));
+  }
+  for (const { sql } of triggers) db.exec(sql);
+  seed(db);
+  db.exec("PRAGMA foreign_keys=ON");
+  for (const { name, sql } of migrations) if (name >= "0019") db.exec(sql);
+  env.DB = target;
+  return db;
 }
 
 export function environment(overrides = {}) {

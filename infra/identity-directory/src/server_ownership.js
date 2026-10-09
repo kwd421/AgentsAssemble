@@ -13,6 +13,11 @@ export function requireHostIncarnation(server, serverId, epoch) {
   }
   if (epoch !== null && server?.registration_epoch !== epoch) throw new HttpError(409, 'incarnation_conflict');
   if (!server) throw new HttpError(404, 'server_not_found');
+  if (server.owner_deleted_at !== null && server.owner_deleted_at !== undefined) {
+    throw new HttpError(410, 'account_deleted', 'The registration owner deleted this account.',
+      { server_id: serverId, registration_epoch: server.registration_epoch });
+  }
+  if (server.owner_status && server.owner_status !== 'active') throw new HttpError(403, 'owner_inactive');
   if (server.revoked_at !== null && server.revoked_at !== undefined) {
     throw new HttpError(410, 'server_retired', 'This registration has been retired.',
       { server_id: serverId, registration_epoch: server.registration_epoch });
@@ -22,7 +27,7 @@ export function requireHostIncarnation(server, serverId, epoch) {
 // Mutations recheck retirement after a zero-row CAS: a host verified just before
 // duplicate resolution must receive the same terminal signal as a later caller.
 export async function recheckHostIncarnation(db, serverId, epoch) {
-  const current = await db.prepare("SELECT registration_epoch, revoked_at FROM servers WHERE server_id = ?").bind(serverId).first();
+  const current = await db.prepare("SELECT registration_epoch, revoked_at, owner_deleted_at, owner_status FROM server_authorities WHERE server_id = ?").bind(serverId).first();
   if (current || epoch !== null) requireHostIncarnation(current, serverId, epoch);
 }
 
@@ -30,7 +35,7 @@ export async function ownedServers(db, personId, now) {
   const { results } = await db.prepare(`SELECT s.server_id, s.registration_epoch, s.label,
       p.alias, e.state, e.lease_expires_at, e.updated_at, e.mode,
       e.registration_epoch AS endpoint_epoch
-    FROM servers s LEFT JOIN person_servers p ON p.server_id = s.server_id AND p.person_id = s.owner_person_id
+    FROM live_servers s LEFT JOIN person_servers p ON p.server_id = s.server_id AND p.person_id = s.owner_person_id
     LEFT JOIN server_endpoints e ON e.server_id = s.server_id
     WHERE s.owner_person_id = ? AND s.revoked_at IS NULL ORDER BY s.created_at, s.server_id`)
     .bind(personId).all();

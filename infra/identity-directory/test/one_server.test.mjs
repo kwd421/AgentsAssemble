@@ -1,3 +1,4 @@
+import { proveGuestDeletion } from "./deletion_helpers.mjs";
 import { cleanup } from '../src/cleanup.js';
 import assert from 'node:assert/strict';
 import test from 'node:test';
@@ -38,8 +39,9 @@ test('standalone deletion preserves the designated server and account deletion r
   assert.equal(deleted.status, 409);
   assert.equal((await deleted.json()).error.code, 'server_move_unsupported');
   assert.equal((await (await f.device('/v1/bootstrap')).json()).servers[0].server_id, id);
-  assert.equal((await f.device('/v1/account', 'DELETE', { confirmation: `delete:${f.owner.created.person.person_id}` })).status, 200);
-  assert.equal(f.env.DB.database.prepare('SELECT count(*) n FROM servers').get().n, 0);
+  assert.equal((await f.device('/v1/account', 'DELETE', await proveGuestDeletion(f.env, f.owner))).status, 200);
+  assert.equal(f.env.DB.database.prepare('SELECT count(*) n FROM servers').get().n, 1);
+  assert.equal(f.env.DB.database.prepare('SELECT count(*) n FROM live_servers').get().n, 0);
 });
 
 async function duplicates(count = 3) {
@@ -237,9 +239,7 @@ test('retirement racing a verified host mutation never revives metadata, publish
 test('retired dependencies survive 30 days then drain in ordered 100-row pages within the daily write budget', async t => {
   const f = await duplicates(3), [live, retired, recent] = f.ids, db = f.env.DB.database;
   const advance = utcDayClock(t, f.env), now = Math.floor(Date.now() / 1000), epoch = f.epoch(retired);
-  db.prepare('UPDATE servers SET revoked_at = ? WHERE server_id = ?').run(now, retired);
-  db.prepare('UPDATE servers SET revoked_at = ? WHERE server_id = ?').run(now + 86400, recent);
-  const sessionId = db.prepare('SELECT session_id FROM sessions').get().session_id;
+    const sessionId = db.prepare('SELECT session_id FROM sessions').get().session_id;
   const triggers = db.prepare("SELECT name, sql FROM sqlite_master WHERE name IN ('budget_server_connect_grants', 'budget_member_servers')").all();
   // Historical retirement backlog predates today's admission pools.
   for (const { name } of triggers) db.exec(`DROP TRIGGER ${name}`);
@@ -260,6 +260,8 @@ test('retired dependencies survive 30 days then drain in ordered 100-row pages w
     }
   }
   for (const { sql } of triggers) db.exec(sql);
+  db.prepare('UPDATE servers SET revoked_at = ? WHERE server_id = ?').run(now, retired);
+  db.prepare('UPDATE servers SET revoked_at = ? WHERE server_id = ?').run(now + 86400, recent);
   const tables = ['server_connect_grants', 'server_endpoints', 'server_icons', 'person_servers', 'member_servers', 'servers'];
   const counts = id => tables.map(table => db.prepare(`SELECT count(*) n FROM ${table} WHERE server_id = ?`).get(id).n);
   const initial = counts(retired), recentInitial = counts(recent);

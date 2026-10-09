@@ -29,6 +29,13 @@ async function consume(env, binding, key) {
   if (!result.success) throw new HttpError(429, "rate_limited", "Too many attempts. Try again later.");
 }
 
+// Separate keys in the existing maintained limiter infrastructure; ordinary
+// IP/actor traffic cannot spend these allowances. No D1 fallback or new binding.
+export async function limitTerminationAttempt(request, env, session, purpose = "proof") {
+  await consume(env, "ABUSE_GENERAL_IP", `termination:${purpose}:ip:${networkSource(request)}`);
+  if (session) await consume(env, "ABUSE_GENERAL_ACTOR", `termination:${purpose}:session:${session.session_id}`);
+}
+
 export async function limitRequestIp(request, env) {
   // Cloudflare supplies this header. Never trust X-Forwarded-For; local clients
   // without the edge header intentionally share one conservative bucket.

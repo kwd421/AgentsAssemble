@@ -11,7 +11,7 @@ import { HttpError, json, temporaryCapacityError, cleanServerName, serverDisplay
 const CLOCK_SKEW_SECONDS = 300;
 const NONCE_TTL_SECONDS = 600;
 
-export async function authenticated(request, env, body, now, { persistNonce = true } = {}) {
+export async function authenticated(request, env, body, now, { persistNonce = true, termination = false } = {}) {
   const authorization = request.headers.get("authorization") || "";
   const token = authorization.startsWith("Bearer ")
     ? authorization.slice(7).trim()
@@ -69,7 +69,7 @@ export async function authenticated(request, env, body, now, { persistNonce = tr
     canonical
   );
   if (!valid) throw new HttpError(401, "invalid_signed_request");
-  await limitSession(request, env, session);
+  if (!termination) await limitSession(request, env, session);
   if (!persistNonce) return session;
   try {
     await env.DB
@@ -91,10 +91,11 @@ export async function authenticated(request, env, body, now, { persistNonce = tr
 export async function bootstrap(session, env, now, secure = false) {
   const person = await env.DB
     .prepare(
-      "SELECT person_id, identity_kind, display_name, avatar_url FROM persons WHERE person_id = ?"
+      "SELECT person_id, identity_kind, display_name, avatar_url FROM persons WHERE person_id = ? AND status = 'active' AND deleted_at IS NULL"
     )
     .bind(session.person_id)
     .first();
+  if (!person) throw new HttpError(401, "invalid_session");
   const owned = await ownedServers(env.DB, session.person_id, now);
   const resolution = await env.DB.prepare("SELECT keeper_server_id, keeper_epoch AS keeper_registration_epoch, revision FROM server_owner_resolutions WHERE owner_person_id = ?").bind(session.person_id).first();
   const result = await env.DB
@@ -106,7 +107,7 @@ export async function bootstrap(session, env, now, secure = false) {
               server_endpoints.generation, server_endpoints.lease_expires_at,
               server_endpoints.updated_at, server_endpoints.mode, server_endpoints.registration_epoch AS endpoint_epoch
        FROM person_servers
-       JOIN servers USING(server_id)
+       JOIN live_servers AS servers USING(server_id)
        LEFT JOIN server_endpoints USING(server_id)
        WHERE person_servers.person_id = ? AND servers.revoked_at IS NULL
        ORDER BY person_servers.first_seen_at ASC`
@@ -130,7 +131,7 @@ export async function bootstrap(session, env, now, secure = false) {
       servers.label, servers.icon, servers.host_key_fingerprint, servers.host_public_key_jwk,
       server_endpoints.origin, server_endpoints.generation, server_endpoints.state, server_endpoints.lease_expires_at,
       server_endpoints.mode, server_endpoints.registration_epoch AS endpoint_epoch
-    FROM member_servers JOIN servers ON servers.server_id = member_servers.server_id
+    FROM member_servers JOIN live_servers AS servers ON servers.server_id = member_servers.server_id
       AND servers.registration_epoch = member_servers.registration_epoch
     LEFT JOIN server_endpoints ON server_endpoints.server_id = servers.server_id
     WHERE member_servers.person_id = ? AND host_state = 'active' AND user_hidden = 0

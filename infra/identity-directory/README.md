@@ -50,7 +50,16 @@ First floor commit combines person/device/recovery/session and source reservatio
 in one D1 batch and removes active-parent cleanup after failed issuance. Its
 controlled failure test is also run against local Miniflare/D1 with a parent guard:
 `node test/local_guest_provisioning.mjs /path/to/wrangler/package.json`.
-Remaining deletion features are not implemented at this floor checkpoint.
+Following additive guards and guest termination checkpoint implement literal old
+parent DELETE rejection, inactive child/restore guards, the shared live-server
+predicate, request-bound guest proof and O(1) disable/receipt. Proof uses additive
+session columns, ledger uses additive person columns exposed through views, and a
+fixed CHECK assertion rolls back all zero-authority writes. No additional expiring
+row/index/purpose pool or reduction of the existing heavy-day gate is needed.
+Receipt status requires former person_id, request_id and receipt; the person hint
+is a lookup key, never authority. Controlled local D1 measured final rows_written
+[1,1,1]. Google step-up, custody/floor/host ACK, bounded terminal cleanup and shared
+UI are still being implemented; no deployment or completed-product claim here.
 
 ## Security model
 
@@ -69,9 +78,11 @@ Remaining deletion features are not implemented at this floor checkpoint.
   authorization code with PKCE. The browser URL alone cannot claim the resulting
   central session, and users do not copy a confirmation code. The `openid profile`
   scopes supply identity and display defaults; no email or contacts scope is used.
-- Signed sessions can revoke every other session or delete their central identity.
-  Account deletion cascades through devices, sessions, recovery state, and owned
-  server registrations, unless a retained relationship restricts deletion (C3a below).
+- Signed sessions can revoke every other session. Central identity deletion requires
+  fresh request/session/device-bound proof and explicit confirmation. One constant
+  transaction disables the person and stores a receipt while preserving children;
+  the current owner state retires registration authority immediately. Only bounded
+  cleanup may purge children/ledger/parent after the retention and host ACK barriers.
 - Server endpoints are accepted only when signed by the server's Ed25519 host key.
   Endpoint generations are monotonic and leases expire automatically. New
   registrations/claims admit at most one live owned server per account. Legacy
@@ -240,10 +251,9 @@ room credentials or put credentials in URLs.
 
 Migration `0008_server_icons.sql` preserves existing registrations with `icon: ""`.
 Reference and bounded current PNG change atomically; replacement does not accumulate
-old images. Successful account/server deletion cascades the blob; a C3a RESTRICT
-failure rolls back the whole deletion, including the blob. D1's delete change count
-includes child rows, so registration deletion accepts a positive count rather than
-misreporting a successful cascade as 404. Only the current canonical owner may edit,
+old images. Account deletion ends access but preserves the blob until bounded
+terminal cleanup. Standalone server deletion remains denied. Raw parent cascades
+are guarded at D1; child absence is required before physical cleanup-owned purge. Only the current canonical owner may edit,
 even during a host ownership claim. No frontend source, room icon or host authority
 changes are part of this feature.
 
@@ -452,7 +462,7 @@ with their nonce. The current writer remains responsible for live authority chec
 
 Counter rollover is lazy in SQL using the same UTC clock as the global pool. New
 columns start at zero, without refunding or rewriting the existing global ledger.
-Session/account deletion removes embedded counters with the anchors; no quota rows,
+Bounded session/account purge removes embedded counters with the anchors; no quota rows,
 indexes, reset cron or cleanup queue are added. Older default-purpose nonce INSERTs
 remain bounded on the retained schema, including after a code rollback. Older code
 may report actor rejection as replay/409; deploy this code for the distinct HTTP 429
@@ -590,10 +600,10 @@ ANONYMOUS/AUTH 고갈은 이미 방에 연결된 세션과 소유자 입장 예�
 ### Member binding compatibility floor (C3a)
 
 Historical C3a had no migration or terminal server-ID blocking. The current
-one-server contract below supersedes standalone server deletion and permits
-only whole-account deletion to remain physical. An FK RESTRICT failure
-returns 409 `deletion_restricted` and rolls back the whole DELETE/cascade.
-Successful deletion accepts `changes >= 1`, including FK cascade and trigger writes.
+one-server contract below supersedes standalone server deletion. The account
+deletion task supersedes physical whole-account deletion too: disable is O(1),
+future RESTRICT children remain, and the database blocks raw parent DELETE.
+Fresh proof is mandatory; historical confirmation-only requests fail closed.
 
 C3c-1a introduces a fresh random registration epoch for each new registration.
 Central relationships bind to `server_incarnation = (server_id, host-key fingerprint,
@@ -1430,7 +1440,8 @@ supplied epoch, but does not delete any registration:
 This is 409 for existing owned registrations, including duplicates/retired rows;
 duplicate retirement uses the resolution endpoint below. Missing/foreign rows
 retain 404 `server_not_found` (or 409 `incarnation_conflict` for a supplied stale
-epoch). `DELETE /v1/account` and its confirmation/RESTRICT behavior are unchanged.
+epoch). `DELETE /v1/account` now requires fresh proof and disables identity
+authority without cascades, as specified by the account-deletion contract above.
 
 `GET /v1/bootstrap` retains `person`, `servers[]`, `server_time`, and adds
 `owner_server_conflict`. With zero/one live owned registration it is null.
@@ -1531,7 +1542,8 @@ Future RESTRICT references still fail closed. All 14 queues share one durable
 shrunk to the remaining budget. A failed invocation burns its remaining daily
 reservation; do not reset the ledger to retry. The next UTC day resumes from
 durable rows. Ordinary grant/member expiry does not skip terminal retention or
-the dependency order. Account deletion remains a separate intentional cascade.
+the dependency order. Account deletion uses its effective-owner terminal state
+and exact custody/ACK barriers; it never uses a parent cascade.
 
 0015 originally admitted 9,800/day; 0018 supersedes its allocation. Terminal
 backlog still shares the same 10,000 cap. The current smaller arithmetic

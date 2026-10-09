@@ -65,7 +65,7 @@ export async function registerServer(session, env, text, now) {
   const fingerprint = await sha256Base64Url(canonicalJson(hostJwk));
   let existing = await env.DB
     .prepare(
-      "SELECT owner_person_id, host_key_fingerprint, registration_epoch, revoked_at FROM servers WHERE server_id = ?"
+      "SELECT owner_person_id, host_key_fingerprint, registration_epoch, revoked_at, owner_deleted_at, owner_status FROM server_authorities WHERE server_id = ?"
     )
     .bind(serverId)
     .first();
@@ -149,7 +149,7 @@ export async function registerServer(session, env, text, now) {
       if (!message.includes("UNIQUE constraint failed: servers.server_id") && !message.includes("server_limit_reached")) throw error;
       // The limit trigger can precede the PK conflict when the winner took the
       // final account slot. Return its epoch without another registration write.
-      existing = await env.DB.prepare("SELECT owner_person_id, host_key_fingerprint, registration_epoch, revoked_at FROM servers WHERE server_id = ?")
+      existing = await env.DB.prepare("SELECT owner_person_id, host_key_fingerprint, registration_epoch, revoked_at, owner_deleted_at, owner_status FROM server_authorities WHERE server_id = ?")
         .bind(serverId).first();
       if (!existing && message.includes("server_limit_reached")) throw new HttpError(409, "server_limit_reached");
       if (!existing || existing.owner_person_id !== session.person_id || existing.host_key_fingerprint !== fingerprint) {
@@ -181,7 +181,7 @@ export async function verifyHostRequest(request, env, serverId, body, now) {
   // Require the 0016 counter column before accepting host authority.
   const server = await env.DB
     .prepare(
-      "SELECT host_public_key_jwk, host_key_fingerprint, registration_epoch, revoked_at, general_units FROM servers WHERE server_id = ?"
+      "SELECT host_public_key_jwk, host_key_fingerprint, registration_epoch, revoked_at, general_units, owner_deleted_at, owner_status FROM server_authorities WHERE server_id = ?"
     )
     .bind(serverId)
     .first();
@@ -222,7 +222,7 @@ export async function hostAuthentication(request, env, serverId, body, now) {
   try {
     const result = await env.DB
       .prepare(
-        "INSERT INTO host_request_nonces (server_id, nonce, expires_at, purpose) SELECT server_id, ?, ?, ? FROM servers WHERE server_id = ? AND revoked_at IS NULL AND (? IS NULL OR registration_epoch = ?)"
+        "INSERT INTO host_request_nonces (server_id, nonce, expires_at, purpose) SELECT server_id, ?, ?, ? FROM live_servers AS servers WHERE server_id = ? AND revoked_at IS NULL AND (? IS NULL OR registration_epoch = ?)"
       )
       .bind(nonce, now + NONCE_TTL_SECONDS, requestPurpose(request), serverId, registrationEpoch, registrationEpoch)
       .run();
@@ -293,9 +293,9 @@ export async function updateEndpoint(
       renew ? `UPDATE server_endpoints SET lease_expires_at = ?, updated_at = ?
        WHERE server_id = ? AND origin = ? AND generation = ? AND state = 'online' AND mode = 'legacy_lease'
          AND lease_expires_at > ? AND lease_expires_at <= ?
-         AND EXISTS (SELECT 1 FROM servers WHERE server_id = ? AND host_key_fingerprint = ? AND revoked_at IS NULL AND (? IS NULL OR registration_epoch = ?))` : `INSERT INTO server_endpoints
+         AND EXISTS (SELECT 1 FROM live_servers WHERE server_id = ? AND host_key_fingerprint = ? AND revoked_at IS NULL AND (? IS NULL OR registration_epoch = ?))` : `INSERT INTO server_endpoints
        (server_id, origin, state, generation, lease_expires_at, updated_at)
-       SELECT ?, ?, ?, ?, ?, ? FROM servers
+       SELECT ?, ?, ?, ?, ?, ? FROM live_servers AS servers
        WHERE server_id = ? AND host_key_fingerprint = ? AND revoked_at IS NULL AND (? IS NULL OR registration_epoch = ?)
        ON CONFLICT(server_id) DO UPDATE SET
          origin = excluded.origin,
@@ -358,7 +358,7 @@ export async function bookmark(session, env, text, now) {
       `INSERT INTO person_servers
        (person_id, server_id, relation, alias, first_seen_at,
         last_connected_at)
-       SELECT ?, server_id, 'bookmark', ?, ?, ? FROM servers
+       SELECT ?, server_id, 'bookmark', ?, ?, ? FROM live_servers AS servers
        WHERE server_id = ? AND revoked_at IS NULL
          AND (? IS NULL OR registration_epoch = ?)
        ON CONFLICT(person_id, server_id) DO UPDATE SET

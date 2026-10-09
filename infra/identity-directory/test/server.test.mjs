@@ -343,7 +343,7 @@ test("mutable authority changes before the redemption write cannot authorize a c
           if (cause === "logout") env.DB.database.prepare("UPDATE sessions SET revoked_at = ? WHERE device_id = ?").run(now, created.session.device_id);
           if (cause === "transfer") env.DB.database.prepare("UPDATE servers SET owner_person_id = ? WHERE server_id = ?").run(other.person.person_id, serverId);
           if (cause === "offline") env.DB.database.prepare("UPDATE server_endpoints SET state = 'offline' WHERE server_id = ?").run(serverId);
-          if (cause === "deleted_person") env.DB.database.prepare("DELETE FROM persons WHERE person_id = ?").run(created.person.person_id);
+          if (cause === "deleted_person") env.DB.database.prepare("UPDATE persons SET status='disabled', deleted_at=?, display_name='', avatar_url=NULL WHERE person_id=?").run(now, created.person.person_id);
           if (cause === "revoked_device") env.DB.database.prepare("UPDATE devices SET revoked_at = ? WHERE device_id = ?").run(now, created.session.device_id);
         }
         return prepare(sql);
@@ -352,8 +352,8 @@ test("mutable authority changes before the redemption write cannot authorize a c
         grant_token: grant.grant_token, origin: grant.origin, generation: grant.generation,
       }, { pathname: `/v1/servers/${serverId}/connect-grants/redeem` });
       assert.equal(interrupted, true);
-      assert.equal(response.status, 401);
-      assert.equal((await payload(response)).error.code, "connect_grant_invalid");
+      assert.equal(response.status, cause === "deleted_person" ? 410 : 401);
+      assert.equal((await payload(response)).error.code, cause === "deleted_person" ? "account_deleted" : "connect_grant_invalid");
       assert.equal(env.DB.database.prepare("SELECT last_used_at FROM server_connect_grants").get()?.last_used_at ?? null, null);
     });
   }

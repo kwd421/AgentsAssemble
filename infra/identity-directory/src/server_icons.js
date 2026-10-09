@@ -10,7 +10,7 @@ export async function setServerIcon(session, env, serverId, text) {
     throw new HttpError(400, "invalid_server_icon");
   }
   // Avoid image decoding for accounts that cannot edit; the atomic write checks again.
-  const owner = await env.DB.prepare(`SELECT servers.server_id, servers.registration_epoch FROM servers JOIN person_servers USING(server_id)
+  const owner = await env.DB.prepare(`SELECT servers.server_id, servers.registration_epoch FROM live_servers AS servers JOIN person_servers USING(server_id)
     WHERE servers.server_id = ? AND servers.owner_person_id = ? AND person_servers.person_id = ?
       AND relation = 'owner' AND revoked_at IS NULL`).bind(serverId, session.person_id, session.person_id).first();
   if (registrationEpoch !== null && owner?.registration_epoch !== registrationEpoch) throw new HttpError(409, "incarnation_conflict");
@@ -24,20 +24,20 @@ export async function setServerIcon(session, env, serverId, text) {
       AND person_servers.person_id = servers.owner_person_id AND relation = 'owner')`)
     .bind(icon, serverId, session.person_id, registrationEpoch, registrationEpoch, body.expected_icon, icon);
   const image = png ? env.DB.prepare(`INSERT INTO server_icons (server_id, icon, png)
-    SELECT server_id, icon, ? FROM servers WHERE server_id = ? AND owner_person_id = ?
+    SELECT server_id, icon, ? FROM live_servers AS servers WHERE server_id = ? AND owner_person_id = ?
       AND (? IS NULL OR registration_epoch = ?) AND revoked_at IS NULL AND icon = ?
       AND EXISTS (SELECT 1 FROM person_servers WHERE person_servers.server_id = servers.server_id
         AND person_servers.person_id = servers.owner_person_id AND relation = 'owner')
     ON CONFLICT(server_id) DO UPDATE SET icon = excluded.icon, png = excluded.png`)
     .bind(png, serverId, session.person_id, registrationEpoch, registrationEpoch, icon) : env.DB.prepare(`DELETE FROM server_icons
-      WHERE server_id = ? AND EXISTS (SELECT 1 FROM servers JOIN person_servers USING(server_id)
+      WHERE server_id = ? AND EXISTS (SELECT 1 FROM live_servers AS servers JOIN person_servers USING(server_id)
         WHERE servers.server_id = server_icons.server_id AND servers.owner_person_id = ?
           AND person_servers.person_id = ? AND (? IS NULL OR servers.registration_epoch = ?) AND relation = 'owner' AND revoked_at IS NULL AND servers.icon = '')`)
     .bind(serverId, session.person_id, session.person_id, registrationEpoch, registrationEpoch);
   const [result] = await env.DB.batch([write, image]);
   if (Number(result.meta?.changes || 0) !== 1) {
     if (registrationEpoch !== null) {
-      const current = await env.DB.prepare("SELECT registration_epoch FROM servers WHERE server_id = ?").bind(serverId).first();
+      const current = await env.DB.prepare("SELECT registration_epoch FROM live_servers AS servers WHERE server_id = ?").bind(serverId).first();
       if (current?.registration_epoch !== registrationEpoch) throw new HttpError(409, "incarnation_conflict");
     }
     throw new HttpError(409, "server_icon_conflict", "서버 목록이 바뀌었거나 아이콘 변경 권한이 없습니다. 목록을 새로고침해 주세요.");
@@ -47,7 +47,7 @@ export async function setServerIcon(session, env, serverId, text) {
 
 export async function getServerIcon(session, env, serverId, pathname) {
   const row = await env.DB.prepare(`SELECT server_icons.png FROM server_icons
-    JOIN servers USING(server_id)
+    JOIN live_servers AS servers USING(server_id)
     WHERE server_icons.server_id = ? AND server_icons.icon = ? AND servers.icon = server_icons.icon
       AND servers.revoked_at IS NULL AND (
         EXISTS (SELECT 1 FROM person_servers WHERE person_servers.server_id = servers.server_id AND person_id = ?)

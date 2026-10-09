@@ -11,7 +11,7 @@ export async function setMemberHidden(session, env, serverId, text, now, hidden)
   const [changed] = await env.DB.batch([
     env.DB.prepare(`UPDATE member_servers SET user_hidden = ?, updated_at = ?
       WHERE person_id = ? AND server_id = ? AND registration_epoch = ?
-        AND EXISTS (SELECT 1 FROM servers WHERE servers.server_id = member_servers.server_id
+        AND EXISTS (SELECT 1 FROM live_servers AS servers WHERE servers.server_id = member_servers.server_id
           AND servers.registration_epoch = member_servers.registration_epoch AND revoked_at IS NULL)
       RETURNING projection_id`).bind(hidden ? 1 : 0, now, session.person_id, serverId, epoch),
     env.DB.prepare(`UPDATE server_connect_grants SET used_at = ?
@@ -37,7 +37,7 @@ export async function reportMemberResults(request, env, serverId, text, now) {
   const { nonce, fingerprint } = await verifyHostRequest(request, env, serverId, text, now);
   const statements = [env.DB.prepare(`INSERT INTO member_sync_nonces
     (server_id, nonce, expires_at, submitted_items)
-    SELECT server_id, ?, ?, ? FROM servers WHERE server_id = ? AND registration_epoch = ?
+    SELECT server_id, ?, ?, ? FROM live_servers AS servers WHERE server_id = ? AND registration_epoch = ?
       AND host_key_fingerprint = ? AND revoked_at IS NULL RETURNING nonce`)
     .bind(nonce, now + 600, body.results.length, serverId, epoch, fingerprint)];
   // One batch owns nonce/debt/CAS and the acknowledgement snapshot. Reports
@@ -46,16 +46,21 @@ export async function reportMemberResults(request, env, serverId, text, now) {
     statements.push(env.DB.prepare(`UPDATE member_servers SET host_state = ?, host_revision = ?,
         updated_at = ?, state_changed_at = CASE WHEN host_state != ? THEN ? ELSE state_changed_at END
       WHERE projection_id = ? AND server_id = ? AND registration_epoch = ? AND host_revision < ?
+        AND EXISTS (SELECT 1 FROM persons WHERE persons.person_id = member_servers.person_id
+          AND persons.status = 'active' AND persons.deleted_at IS NULL)
         AND (host_state = 'active' OR state_changed_at > ?)
-        AND EXISTS (SELECT 1 FROM servers WHERE server_id = ? AND registration_epoch = ?
+        AND EXISTS (SELECT 1 FROM live_servers AS servers WHERE server_id = ? AND registration_epoch = ?
           AND host_key_fingerprint = ? AND revoked_at IS NULL)`)
       .bind(item.state, item.revision, now, item.state, now, item.projection_id, serverId, epoch,
         item.revision, now - MEMBER_RETENTION_SECONDS, serverId, epoch, fingerprint));
     statements.push(env.DB.prepare(`SELECT CASE
+        WHEN EXISTS (SELECT 1 FROM persons WHERE persons.person_id = member_servers.person_id
+          AND persons.deleted_at IS NOT NULL) THEN 'terminal'
         WHEN host_revision = ? AND host_state = ? THEN 'applied'
         WHEN host_revision = ? THEN 'conflict' ELSE 'stale' END AS status
       FROM member_servers WHERE projection_id = ? AND server_id = ? AND registration_epoch = ?
-        AND (host_state = 'active' OR state_changed_at > ?)`)
+        AND (host_state = 'active' OR state_changed_at > ? OR EXISTS (SELECT 1 FROM persons
+          WHERE persons.person_id = member_servers.person_id AND persons.deleted_at IS NOT NULL))`)
       .bind(item.revision, item.state, item.revision, item.projection_id, serverId, epoch, now - MEMBER_RETENTION_SECONDS));
   }
   let batch;

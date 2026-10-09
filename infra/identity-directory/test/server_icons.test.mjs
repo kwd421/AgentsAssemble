@@ -1,3 +1,4 @@
+import { proveGuestDeletion } from "./deletion_helpers.mjs";
 import assert from "node:assert/strict";
 import test from "node:test";
 import { readFileSync, readdirSync } from "node:fs";
@@ -135,7 +136,7 @@ test("uncompressed canvas Exif is accepted with bounded count, placement, size a
   }
 });
 
-test("icon write and blob are atomic, revoked registrations reject edits, and account deletion cascades", async () => {
+test("icon write and blob are atomic, revoked registrations reject edits, and account deletion preserves the blob pending bounded cleanup", async () => {
   const { env, owner, call, list, edit, id } = await fixture();
   env.DB.database.exec("CREATE TRIGGER fail_icon BEFORE INSERT ON server_icons BEGIN SELECT RAISE(ABORT, 'controlled icon storage failure'); END;");
   assert.equal((await edit(owner, image(png()), "")).status, 500);
@@ -146,8 +147,8 @@ test("icon write and blob are atomic, revoked registrations reject edits, and ac
   assert.equal((await edit(owner, "", icon)).status, 409);
   assert.equal((await call(owner, icon)).status, 404);
   assert.equal((await env.DB.prepare("SELECT icon FROM servers WHERE server_id = ?").bind(id).first()).icon, icon);
-  assert.equal((await call(owner, "/v1/account", "DELETE", { confirmation: `delete:${owner.created.person.person_id}` })).status, 200);
-  assert.equal((await env.DB.prepare("SELECT COUNT(*) AS n FROM server_icons").first()).n, 0);
+  assert.equal((await call(owner, "/v1/account", "DELETE", await proveGuestDeletion(env, owner))).status, 200);
+  assert.equal((await env.DB.prepare("SELECT COUNT(*) AS n FROM server_icons").first()).n, 1);
   assert.equal((await call(owner, icon)).status, 401);
 });
 

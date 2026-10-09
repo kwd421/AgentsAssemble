@@ -1,11 +1,11 @@
 import { resolveDuplicateServer } from "./server_ownership.js";
 import { reportMemberResults, setMemberHidden } from "./member_servers.js";
 import { cleanup } from "./cleanup.js";
-import { limitRequestIp, requestPurpose } from "./abuse.js";
+import { limitRequestIp, limitTerminationAttempt, requestPurpose } from "./abuse.js";
 import { startWebGoogleHandoff, completeWebGoogleHandoff } from "./google_web.js";
 import { serveWebEntry } from "./web_entry.js";
 import { allowedBrowserOrigin } from "./origin.js";
-import { deleteAccount, logoutOtherSessions } from "./account.js";
+import { deleteAccount, deletionProof, deletionStatus, logoutOtherSessions } from "./account.js";
 import { createGuest, recoverGuest } from "./guest.js";
 import {
   HttpError,
@@ -55,7 +55,10 @@ async function route(request, env) {
       protocol_version: 3,
     });
   }
-  await limitRequestIp(request, env);
+  const termination = request.method === "DELETE" && url.pathname === "/v1/account" ||
+    request.method === "POST" && url.pathname === "/v1/account/deletion-proof";
+  const receipt = request.method === "POST" && url.pathname.match(/^\/v1\/account-deletions\/([A-Za-z0-9._:-]{32,128})\/status$/);
+  if (!termination && !receipt) await limitRequestIp(request, env);
   if (requestPurpose(request) === "AUTH") {
     // Only Google-verified person recovery/completion may spend AUTH.
     env = { ...env, authSource: { ip: await ipBucket(request, env, "auth-ip"), purpose: "ANONYMOUS" } };
@@ -65,6 +68,7 @@ async function route(request, env) {
       ? ""
       : await bodyText(request, request.method === "POST" && /^\/v1\/servers\/[^/]+\/icon$/.test(url.pathname)
         ? ICON_REQUEST_BYTES : /^\/v1\/servers\/[^/]+\/member-results$/.test(url.pathname) ? 8192 : 32_768);
+  if (receipt) return deletionStatus(request, env, receipt[1], text, now);
   if (request.method === "POST" && url.pathname === "/v1/auth/guest") {
     return createGuest(request, env, text, now);
   }
@@ -149,7 +153,12 @@ async function route(request, env) {
   // Only these side-effect-free reads may repeat a proof inside the clock window.
   const repeatableRead = request.method === "GET" && url.search === "" && (url.pathname === "/v1/bootstrap" ||
     (imageMatch && /^[A-Za-z0-9._:-]{8,128}$/.test(imageMatch[1])));
-  const session = await authenticated(request, env, text, now, { persistNonce: !repeatableRead });
+  let session;
+  try { session = await authenticated(request, env, text, now, { persistNonce: !repeatableRead && !termination, termination }); }
+  catch (error) {
+    if (termination) await limitTerminationAttempt(request, env, null, "failed-signature");
+    throw error;
+  }
   if (request.method === "GET" && url.pathname === "/v1/bootstrap") {
     return bootstrap(session, env, now, request.headers.get("x-aa-admission-protocol") === "secure_admission_v1");
   }
@@ -164,8 +173,9 @@ async function route(request, env) {
     return logoutOtherSessions(session, env, now);
   }
   if (request.method === "DELETE" && url.pathname === "/v1/account") {
-    return deleteAccount(session, env, text);
+    return deleteAccount(request, session, env, text, now);
   }
+  if (request.method === "POST" && url.pathname === "/v1/account/deletion-proof") return deletionProof(request, session, env, text, now);
   if (request.method === "POST" && url.pathname === "/v1/servers") {
     return registerServer(session, env, text, now);
   }

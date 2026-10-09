@@ -1,3 +1,4 @@
+import { seedHistorical } from "./helpers.mjs";
 import assert from "node:assert/strict";
 import test from "node:test";
 import { DatabaseSync } from "node:sqlite";
@@ -124,12 +125,15 @@ test("member grants charge eight actor units and roll back the grant reservation
 test("member grant accounting rejects missing and mismatched stored anchors atomically", async t => {
   for (const corruption of ["missing session", "wrong person", "wrong device", "missing person",
     "missing device", "wrong device owner", "missing server"]) await t.test(corruption, async () => {
-    const { env, owner, id } = await fixture(), db = env.DB.database;
+    const { env, owner, id } = await fixture();
+    let db = env.DB.database;
     const stored = db.prepare("SELECT session_id, person_id, device_id FROM sessions").get();
+    db = seedHistorical(env, db => {
     db.exec("PRAGMA foreign_keys = OFF");
     if (corruption === "missing person") db.prepare("DELETE FROM persons WHERE person_id = ?").run(stored.person_id);
     if (corruption === "missing device") db.prepare("DELETE FROM devices WHERE device_id = ?").run(stored.device_id);
     if (corruption === "wrong device owner") db.prepare("UPDATE devices SET person_id = 'other-account'").run();
+    });
     const before = snapshot(env);
     assert.throws(() => db.prepare(`INSERT INTO server_connect_grants
       (grant_id, secret_hash, session_id, person_id, device_id, server_id, endpoint_origin,
@@ -138,7 +142,7 @@ test("member grant accounting rejects missing and mismatched stored anchors atom
       .run(corruption === "missing session" ? "missing" : stored.session_id,
         corruption === "wrong person" ? "other-account" : owner.created.person.person_id,
         corruption === "wrong device" ? "other-device" : stored.device_id,
-        corruption === "missing server" ? "missing" : id), /actor_quota_exhausted/);
+        corruption === "missing server" ? "missing" : id), /actor_quota_exhausted|account_terminal/);
     assert.equal(snapshot(env), before);
     assert.equal(db.prepare("SELECT COUNT(*) AS n FROM server_connect_grants").get().n, 0);
   });
@@ -305,12 +309,14 @@ test("retained schema protects old default-purpose writers, rolls days and remov
   assert.throws(() => db.prepare("INSERT INTO host_request_nonces (server_id, nonce, expires_at) VALUES ('missing', 'missing', 0)").run(), /actor_quota_exhausted/);
   assert.equal(snapshot(env), intact);
   db.exec("PRAGMA foreign_keys = ON");
+  assert.throws(() => db.prepare("DELETE FROM sessions WHERE session_id = ?").run(sessionId), /session_children_pending/);
+  db.prepare("DELETE FROM request_nonces WHERE session_id = ?").run(sessionId);
   db.prepare("DELETE FROM sessions WHERE session_id = ?").run(sessionId);
   assert.equal(db.prepare("SELECT COUNT(*) AS n FROM request_nonces").get().n, 0);
   assert.equal(db.prepare("SELECT general_units FROM persons WHERE person_id = ?").get(owner.created.person.person_id).general_units, 3);
-  // Parent deletion removes embedded counters; no orphan quota table/cleanup queue.
-  db.prepare("DELETE FROM persons WHERE person_id = ?").run(owner.created.person.person_id);
-  assert.equal(db.prepare("SELECT COUNT(*) AS n FROM servers WHERE server_id = ?").get(id).n, 0);
+  // Old parent DELETE is now blocked even after that exact session drains.
+  assert.throws(() => db.prepare("DELETE FROM persons WHERE person_id = ?").run(owner.created.person.person_id), /account_purge_not_ready/);
+  assert.equal(db.prepare("SELECT COUNT(*) AS n FROM servers WHERE server_id = ?").get(id).n, 1);
   assert.equal(db.prepare("SELECT COUNT(*) AS n FROM host_request_nonces").get().n, 0);
 });
 
