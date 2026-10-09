@@ -105,7 +105,7 @@ export async function bootstrap(session, env, now, secure = false) {
               servers.host_public_key_jwk, servers.host_key_fingerprint, servers.registration_epoch,
               server_endpoints.origin, server_endpoints.state,
               server_endpoints.generation, server_endpoints.lease_expires_at,
-              server_endpoints.updated_at, server_endpoints.mode, server_endpoints.registration_epoch AS endpoint_epoch
+              server_endpoints.updated_at, server_endpoints.mode, server_endpoints.account_deletion_protocol, server_endpoints.registration_epoch AS endpoint_epoch
        FROM person_servers
        JOIN live_servers AS servers USING(server_id)
        LEFT JOIN server_endpoints USING(server_id)
@@ -130,7 +130,7 @@ export async function bootstrap(session, env, now, secure = false) {
   const members = await env.DB.prepare(`SELECT servers.server_id, servers.registration_epoch,
       servers.label, servers.icon, servers.host_key_fingerprint, servers.host_public_key_jwk,
       server_endpoints.origin, server_endpoints.generation, server_endpoints.state, server_endpoints.lease_expires_at,
-      server_endpoints.mode, server_endpoints.registration_epoch AS endpoint_epoch
+      server_endpoints.mode, server_endpoints.account_deletion_protocol, server_endpoints.registration_epoch AS endpoint_epoch
     FROM member_servers JOIN live_servers AS servers ON servers.server_id = member_servers.server_id
       AND servers.registration_epoch = member_servers.registration_epoch
     LEFT JOIN server_endpoints ON server_endpoints.server_id = servers.server_id

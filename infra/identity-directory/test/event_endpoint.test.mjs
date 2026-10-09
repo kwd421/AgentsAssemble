@@ -96,3 +96,33 @@ for (const purpose of ['owner', 'admission']) {
     assert.equal(row.last_used_at, null); assert.equal(row.used_at, null);
   });
 }
+
+// Release floor must follow signed current endpoint tuple, never registration,
+// UI state, stale generation or retained metadata from a replaced epoch.
+test('deletion capability is signed, generation-bound and cleared by omission or epoch replacement', async () => {
+  const f = await secureFixture();
+  const capability = async () => {
+    const response = await signedDeviceRequest(f.env, f.owner.created.session, f.owner.key.pair,
+      '/v1/bootstrap', 'GET', undefined, { headers: { 'x-aa-admission-protocol': 'secure_admission_v1' } });
+    assert.equal(response.status, 200);
+    return (await response.json()).servers[0].endpoint?.account_deletion_protocol ?? null;
+  };
+  assert.equal(await capability(), null);
+  assert.equal((await f.publish({ account_deletion_protocol: 'v1' })).status, 200);
+  assert.equal(await capability(), 'v1');
+  assert.equal((await f.publish()).status, 409); // same generation cannot change full signed body
+  assert.equal(await capability(), 'v1');
+  assert.equal((await f.publish({ generation: 2, account_deletion_protocol: 'v2' })).status, 400);
+  const forged = await signedHostRequest(f.env, f.id, f.host.pair, 'PUT', { ...f.event, generation: 2 },
+    { replacementBody: { ...f.event, generation: 2, account_deletion_protocol: 'v1' } });
+  assert.equal(forged.status, 401); assert.equal(await capability(), 'v1');
+  assert.equal((await f.publish({ generation: 2, origin: '' }, 'DELETE')).status, 200);
+  assert.equal(await capability(), null);
+  assert.equal((await f.publish({ generation: 3, account_deletion_protocol: 'v1' })).status, 200);
+  assert.equal(await capability(), 'v1');
+  f.env.DB.database.exec("UPDATE servers SET registration_epoch='new-epoch'");
+  assert.equal(f.env.DB.database.prepare('SELECT account_deletion_protocol FROM server_endpoints').get().account_deletion_protocol, null);
+  assert.equal(await capability(), null);
+  assert.equal((await f.publish({ registration_epoch: 'new-epoch', generation: 1 })).status, 200);
+  assert.equal(await capability(), null);
+});

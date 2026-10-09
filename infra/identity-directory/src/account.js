@@ -133,7 +133,7 @@ export async function deletionServers(session, env, text, now) {
       members.user_hidden, members.host_state, servers.label, servers.host_key_fingerprint,
       servers.host_public_key_jwk, servers.revoked_at, servers.owner_deleted_at, servers.owner_status,
       endpoints.origin, endpoints.generation, endpoints.state, endpoints.mode,
-      endpoints.registration_epoch AS endpoint_epoch, endpoints.lease_expires_at
+      endpoints.registration_epoch AS endpoint_epoch, endpoints.lease_expires_at, endpoints.account_deletion_protocol
     FROM member_servers AS members LEFT JOIN server_authorities AS servers
       ON servers.server_id = members.server_id AND servers.registration_epoch = members.registration_epoch
     LEFT JOIN server_endpoints AS endpoints ON endpoints.server_id = servers.server_id

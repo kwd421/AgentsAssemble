@@ -43,6 +43,19 @@ try {
   const row=await DB.prepare("SELECT used_at,account_deletion_consumed_at FROM server_connect_grants WHERE grant_purpose='account_deletion'").first();
   assert.equal(row.used_at,row.account_deletion_consumed_at);
   assert.equal((await DB.prepare('SELECT deletion_proof_used_at FROM sessions WHERE person_id=?').bind(f.member.created.person.person_id).first()).deletion_proof_used_at,null);
+  // Capability is accepted only by the new endpoint owner. The old Worker
+  // rejects the signed full-body extension instead of acknowledging a floor.
+  const event={protocol:'secure_admission_v1',mode:'event_secure_v1',registration_epoch:f.epoch,
+    origin:f.binding.origin,generation:f.binding.generation+1,issued_at:Math.floor(Date.now()/1000),account_deletion_protocol:'v1'};
+  assert.equal((await old.signedHostRequest(f.env,f.id,f.host.pair,'PUT',event)).status,400);
+  const current=await import('./helpers.mjs');
+  assert.equal((await current.signedHostRequest(f.env,f.id,f.host.pair,'PUT',event)).status,200);
+  const boot=await current.signedDeviceRequest(f.env,id,f.member.key.pair,'/v1/bootstrap','GET',undefined,
+    {headers:{'x-aa-admission-protocol':'secure_admission_v1'}});
+  assert.equal((await boot.json()).servers[0].endpoint.account_deletion_protocol,'v1');
+  const {account_deletion_protocol:ignored,...omitted}=event;
+  assert.equal((await current.signedHostRequest(f.env,f.id,f.host.pair,'DELETE',{...omitted,generation:event.generation+1,origin:''})).status,200);
+  assert.equal((await DB.prepare('SELECT account_deletion_protocol FROM server_endpoints').first()).account_deletion_protocol,null);
   console.log(JSON.stringify({old_worker:'29b423b1',old_schema_ordinary_bootstrap:200,legacy_hide:500,visibility_unchanged:true,
-    old_deletion_token:401,active_count_preserved:true,new_deletion_redeem:200,replay:401,paired_consumption:true,proof_unconsumed:true}));
+    old_deletion_token:401,active_count_preserved:true,new_deletion_redeem:200,replay:401,paired_consumption:true,proof_unconsumed:true,old_capability_rejected:400,new_signed_capability:200,omission_clears:true}));
 }finally{await mf.dispose();rmSync(legacy,{recursive:true,force:true});}
