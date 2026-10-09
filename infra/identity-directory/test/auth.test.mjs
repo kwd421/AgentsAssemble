@@ -111,19 +111,22 @@ test("guest identity uses a device-bound session, permits exact read replay and 
   assert.equal(tampered.status, 401);
 });
 
-test("guest creation removes an undeliverable identity when session issuance fails", async () => {
+test("guest creation rolls back under the parent deletion guard and permits same-device retry", async () => {
   const env = environment();
   const key = await deviceKey();
+  env.DB.database.exec(`CREATE TEMP TRIGGER active_parent_delete_guard BEFORE DELETE ON persons
+    WHEN OLD.status = 'active' BEGIN SELECT RAISE(ABORT, 'active_parent_delete_forbidden'); END`);
   failNextSessionInsert(env);
 
-  const response = await request(env, "/v1/auth/guest", {
+  const options = {
     method: "POST",
     body: JSON.stringify({
       device_id: "device-incomplete-guest-0001",
       device_public_key_jwk: key.publicJwk,
       display_name: "Incomplete guest",
     }),
-  });
+  };
+  const response = await request(env, "/v1/auth/guest", options);
 
   assert.equal(response.status, 500);
   assert.equal(
@@ -140,6 +143,11 @@ test("guest creation removes an undeliverable identity when session issuance fai
       .get().count,
     0
   );
+  assert.equal(env.DB.database.prepare("SELECT COUNT(*) AS count FROM sessions").get().count, 0);
+  const retried = await request(env, "/v1/auth/guest", options);
+  assert.equal(retried.status, 201);
+  const created = await payload(retried);
+  assert.equal((await signedDeviceRequest(env, created.session, key.pair, "/v1/bootstrap")).status, 200);
 });
 
 test("guest recovery rotates the secret and links the same person to a new device", async () => {

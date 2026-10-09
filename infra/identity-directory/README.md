@@ -9,6 +9,49 @@ device credentials, known server identities, and short-lived server endpoint lea
 Room lists, messages, attachments, provider sessions, host tokens, room bearer tokens,
 and invite credentials remain on each AgentsAssemble engine.
 
+## Account deletion task — approved design, implementation in progress
+
+The runtime contract is Rust `docs/specs/identity-accounts-friends-slice.md` →
+Account deletion (2026-10-09), Daybreak Blue xhigh final additional design round 4
+APPROVE C0/H0/M0/L0. This is a design checkpoint, not deployed/runtime evidence.
+Required behavior and affected routes are recorded here before implementation:
+
+- Shared trusted app/central UI shows fixed honest retirement/data-retention and
+  irreversible-deletion explanation. No mandatory impact read/revision/route;
+  any single optional bounded summary cannot gate proof or deletion.
+- Existing `DELETE /v1/account` becomes request-bound fresh-proof-only. Guest proof
+  checks the existing recovery verifier without rotation; stolen whole device/code
+  resistance is not claimed. Google proof checks same subject and fresh auth_time
+  within 300s; missing/stale fails closed. No session-only substitute.
+- Disable one person, clear mutable PII, consume session proof, store one receipt
+  hash in an O(1) D1 batch with write-time authority checks and constraint rollback.
+  Owned servers are effectively terminal by owner state; no child cascade here.
+- Add signed `POST /v1/account/deletion-proof`, opaque receipt-only
+  `POST /v1/account-deletions/{request_id}/status` (24h), and exact host-signed
+  `POST /v1/servers/{id}/account-deletions/sync`. Proof/final disable has its own
+  non-borrowable termination lane. Receipt issues no credential/authority.
+- Existing redeem is custody linearization after host provisional reservation.
+  Owner additive custody_generation never changes endpoint generation; member
+  uses projection_id. Old response shapes stay behind signed protocol capability.
+  Exact host ACK/release cannot clear a newer generation or resurrect deleted state.
+- All pre-cutover persons keep legacy_unknown permanently in this release. Floor
+  inventory/closure and legacy owner mappings are cleanup provenance only. Hosts
+  install tombstones, terminate all derived authority/idle transports and page actual
+  dependent rows before ACK. Offline/unsupported remains pending, never timed success.
+- Atomic guest provisioning floor precedes blocking additive BEFORE DELETE guards.
+  Existing bounded cleanup owns retention/child removal/purge_ready, then ledger and
+  parent purge atomically. Preserve 10,000 indexed writes/day, <=100-row pages and
+  <=49 statements including delivery; no raised gate, new poll or general job system.
+- Identity checks create no person/session; explicit new registration has new person,
+  device and epoch and inherits no former authority. Host data/other participants,
+  independent pairing and user-owned provider processes remain with their owners.
+
+First floor commit combines person/device/recovery/session and source reservations
+in one D1 batch and removes active-parent cleanup after failed issuance. Its
+controlled failure test is also run against local Miniflare/D1 with a parent guard:
+`node test/local_guest_provisioning.mjs /path/to/wrangler/package.json`.
+Remaining deletion features are not implemented at this floor checkpoint.
+
 ## Security model
 
 - Central `person_id` values are random and are not local room participant IDs.

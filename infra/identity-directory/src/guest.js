@@ -1,3 +1,4 @@
+import { authWrite } from "./auth_capacity.js";
 import {
   canonicalJson,
   createRecoveryCode,
@@ -15,6 +16,7 @@ import {
   envSecret,
   ipBucket,
   issueSession,
+  prepareSession,
   json,
   parseJson,
 } from "./http.js";
@@ -53,7 +55,10 @@ export async function createGuest(request, env, text, now) {
     envSecret(env, "RECOVERY_PEPPER"),
     normalizeRecoveryCode(recoveryCode)
   );
-  await env.DB.batch([
+  const prepared = await prepareSession(env.DB, { personId, deviceId, now, env });
+  // The secret is returned only after all identity/session/source writes commit.
+  // Rollback needs no active-parent DELETE, including with the deletion guard installed.
+  await authWrite(env.DB, { ...env.authSource, personId }, [
     env.DB
       .prepare(
         `INSERT INTO persons
@@ -83,30 +88,8 @@ export async function createGuest(request, env, text, now) {
          VALUES (?, ?, ?, ?, NULL, NULL)`
       )
       .bind(credentialId, personId, verifier, now),
-  ]);
-
-  let session;
-  try {
-    session = await issueSession(env.DB, {
-      personId,
-      deviceId,
-      now,
-      env,
-    });
-  } catch (error) {
-    // The recovery code has not been returned yet. Remove the newly-created
-    // identity so a transient session-write failure cannot strand an account
-    // whose only recovery secret was never delivered.
-    try {
-      await env.DB
-        .prepare("DELETE FROM persons WHERE person_id = ?")
-        .bind(personId)
-        .run();
-    } catch {
-      console.error("failed to clean up incomplete guest identity");
-    }
-    throw error;
-  }
+    prepared.statement,
+  ], 7);
 
   return json(
     {
@@ -115,7 +98,7 @@ export async function createGuest(request, env, text, now) {
         display_name: displayName,
         identity_kind: "guest",
       },
-      session,
+      session: prepared.session,
       recovery_code: recoveryCode,
     },
     201

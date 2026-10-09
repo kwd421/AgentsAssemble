@@ -171,7 +171,7 @@ export async function consumeRateLimit(
   }
 }
 
-export async function issueSession(
+export async function prepareSession(
   db,
   { personId, deviceId, now, env }
 ) {
@@ -183,7 +183,7 @@ export async function issueSession(
     Math.min(90 * 86400, Number(env.SESSION_TTL_SECONDS || 30 * 86400))
   );
   const expiresAt = now + ttl;
-  await authWrite(db, { ...env.authSource, personId }, db
+  const statement = db
     .prepare(
       `INSERT INTO sessions
        (session_id, person_id, device_id, token_hash, created_at, expires_at,
@@ -199,8 +199,14 @@ export async function issueSession(
       expiresAt,
       now,
       env.authSource?.purpose === "AUTH" ? "AUTH" : "ANONYMOUS"
-    ), 7);
-  return { token, expires_at: expiresAt, device_id: deviceId };
+    );
+  return { statement, session: { token, expires_at: expiresAt, device_id: deviceId } };
+}
+
+export async function issueSession(db, options) {
+  const { statement, session } = await prepareSession(db, options);
+  await authWrite(db, { ...options.env.authSource, personId: options.personId }, statement, 7);
+  return session;
 }
 
 export async function deviceOwner(db, deviceId) {

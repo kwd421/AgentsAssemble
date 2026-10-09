@@ -26,6 +26,7 @@ export async function authWrite(db, source, statement, cost, rate = {}) {
   // must not charge yesterday's source allowance against today's shared pool.
   const dayGuard = db.prepare(`UPDATE rate_limits SET count = count
     WHERE bucket = ? AND window_start = ?`).bind(ip, reservation.day);
-  const results = await db.batch([...reservations, statement, dayGuard]);
+  const writes = Array.isArray(statement) ? statement : [statement];
+  const results = await db.batch([...reservations, ...writes, dayGuard]);
   return results.at(-2);
 }
