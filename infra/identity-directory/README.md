@@ -15,15 +15,16 @@ Runtime contract: Rust `docs/specs/identity-accounts-friends-slice.md` → Accou
 deletion. The prior custody design approval is superseded. The manager design
 execution gate is satisfied after the round5 C0/H0/M1/L0 contract correction.
 Implementation, isolated Guest packaged/web acceptance and current release evidence
-are recorded at the top of Rust `docs/VERIFICATION.md`. Completed code round2
-APPROVE C0/H0/M0/L0 covers Rustce3e4b95 and Worker0e099ce3. Both were pushed;
-the atomic Guest floor,0019–0024 and final Worker/UI were deployed in the order below.
-A newly created production Guest completed recovery-code step-up, disable and unsigned
-receipt lookup. Subsequent actual root reload exposed a shared signed-out settings
-entry gap; one-line Rusta910af3c correction and packaged/full-test evidence await
-final code round3 before its push/redeployment. Worker runtime source stays0e099ce3.
-Code APPROVE remains mandatory within three completed rounds for each changed final
-code. Real Google E2E requires the owner's spare account and is not claimed.
+are recorded at the top of Rust `docs/VERIFICATION.md`. Completed final code round3
+APPROVE C0/H0/M0/L0 covers Rust80fd0891 and Worker4f8aeee8, including the shared
+signed-out receipt entry correctiona910af3c. Both branches were pushed. Atomic Guest
+floor,0019–0024 and final Worker/UI were deployed in the order below. A newly created
+production Guest completed recovery-code step-up, disable and unsigned receipt lookup.
+After the corrected UI deployment, ordinary root and root reload both reach the stored
+receipt through explicit settings/deletion actions and return200 without authentication
+or repeated deletion. Worker runtime source stays0e099ce3. Code APPROVE was reached
+within three completed rounds. Real Google E2E requires the owner's spare account and
+is not claimed.
 
 - Deleting device enumerates its account's member server list, including hidden
   entries, and uses EXISTING secure member admission for reachable member hosts.
@@ -183,11 +184,18 @@ Historical preflight before this rollout:100% version51bfe4a9-23c8-4634-bb7e-577
 0019–0024 unapplied. Completed rollout: exact6f829f0a floor
 1cbcb536-dc76-42b3-9dd4-562374e228e5 confirmed100% before0019; first migration
 apply failed7403, the single identical retry applied0019–0024 and final list is empty.
-Final Worker0e099ce3 plus exact Rust2ec5f078 assets:
+First final Worker0e099ce3 plus exact Rust2ec5f078 assets:
 612a01ec-ec2a-45ef-9527-92452a132223 at100%. Browser smoke200/401/200 and new
-Guest201/proof200/disable200/unsigned receipt200 pass. Last shared receipt-entry UI
-correction remains unshipped pending code round3; detailed evidence/limits are in Rust
-verification. Wrangler4.149 used unchanged authentication and protected configs.
+Guest201/proof200/disable200/unsigned receipt200 passed. After final code round3
+APPROVE and both pushes, corrected shared UI assets were built at exact Rustcbf26edf
+and deployed with Worker4f8aeee8 (runtime unchanged0e099ce3), without repeating
+migrations. Current version7e4085a2-f016-4fdd-8d66-515ab47a4e16 is confirmed100%.
+Browser smoke200/401/200 and exact built product JS SHA256 match; explicit unsigned
+receipt lookup returns200 from ordinary root and after reload, with no automatic auth
+or repeated DELETE. Isolated run browser/profile was closed/removed. Detailed evidence
+and real-Google/retention limits are in Rust verification. Wrangler4.149 used unchanged
+authentication and protected configs. Later documentation-only commits do not alter
+these deployed runtime or frontend sources.
 
 ```bash
 cd infra/identity-directory
