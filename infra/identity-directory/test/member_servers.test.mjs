@@ -98,9 +98,9 @@ test('report transaction rechecks host incarnation and key after signature verif
   for (const sql of ["UPDATE servers SET registration_epoch = 'changed-epoch'",
     "UPDATE servers SET host_key_fingerprint = 'changed-key'", 'UPDATE servers SET revoked_at = 1']) {
     await t.test(sql, async () => {
-      const f = await memberFixture(), id = await f.anchor(); let before;
+      const f = await memberFixture(), id = await f.anchor(), before = snapshot(f.db);
       const batch = f.env.DB.batch.bind(f.env.DB);
-      f.env.DB.batch = statements => { f.db.exec(sql); before = snapshot(f.db); return batch(statements); };
+      f.env.DB.batch = statements => { f.db.exec(sql); return batch(statements); };
       assert.equal((await f.report([item(id)])).status, sql === "UPDATE servers SET revoked_at = 1" ? 410 : 409);
       assert.deepEqual(snapshot(f.db), before);
     });

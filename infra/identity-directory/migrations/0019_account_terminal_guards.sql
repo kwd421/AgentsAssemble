@@ -2,7 +2,6 @@
 -- migration. Rollback retains these guards; old raw account DELETE must fail.
 ALTER TABLE persons ADD COLUMN deleted_at INTEGER;
 ALTER TABLE persons ADD COLUMN purge_ready INTEGER NOT NULL DEFAULT 0 CHECK(purge_ready IN (0,1));
-ALTER TABLE persons ADD COLUMN legacy_unknown INTEGER NOT NULL DEFAULT 1 CHECK(legacy_unknown IN (0,1));
 
 CREATE VIEW live_servers AS SELECT servers.* FROM servers JOIN persons
     ON persons.person_id = servers.owner_person_id

@@ -42,7 +42,7 @@ try {
   assert.equal((await signedDeviceRequest(env, other.created.session, other.key.pair, "/v1/bootstrap")).status, 200);
   const status = await request(env, `/v1/account-deletions/${request_id}/status`, { method: "POST",
     body: JSON.stringify({ receipt, person_id: owner.created.person.person_id }) });
-  assert.equal(status.status, 200); assert.equal((await status.json()).cleanup, "cleanup_pending");
+  assert.equal(status.status, 200); assert.deepEqual(await status.json(), {status: "account_deleted"});
   assert.equal((await DB.prepare("SELECT COUNT(*) AS n FROM persons").first()).n, 2);
   assert.equal((await DB.prepare("SELECT COUNT(*) AS n FROM sessions").first()).n, 2);
   // Provider signatures are controlled fixtures, while storage and HTTP are real

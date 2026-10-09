@@ -18,7 +18,6 @@ export async function logoutOtherSessions(session, env, now) {
 }
 
 export async function deletionProof(request, session, env, text, now) {
-  await requireDeletionFloor(env);
   await limitTerminationAttempt(request, env, session);
   const body = parseJson(text);
   const requestId = cleanIdentifier(body.request_id, "request_id", 32, 128);
@@ -43,7 +42,6 @@ export async function deletionProof(request, session, env, text, now) {
 }
 
 export async function deleteAccount(request, session, env, text, now) {
-  await requireDeletionFloor(env);
   let body;
   try { body = parseJson(text); }
   catch (error) { await limitTerminationAttempt(request, env, session, "failed-final"); throw error; }
@@ -110,24 +108,17 @@ export async function deleteAccount(request, session, env, text, now) {
     }
     throw error;
   }
-  return json({ status: "account_deleted", cleanup: "cleanup_pending", request_id: requestId,
+  return json({ status: "account_deleted", request_id: requestId,
     receipt_expires_at: now + 86400 });
-}
-
-async function requireDeletionFloor(env) {
-  if(!await env.DB.prepare('SELECT id FROM account_deletion_floor WHERE id=1 AND closed=1').first())
-    throw new HttpError(503,'account_deletion_floor_pending','서버 연결 정보를 정리하고 있어요. 나중에 다시 확인해 주세요.');
 }
 
 export async function deletionStatus(request, env, requestId, text, now) {
   await limitTerminationAttempt(request, env, null, "receipt");
   const body = parseJson(text);
   if (typeof body.receipt !== "string" || !/^[A-Za-z0-9_-]{43}$/.test(body.receipt)) throw new HttpError(401, "invalid_deletion_receipt");
-  const row = await env.DB.prepare(`SELECT legacy_unknown FROM account_deletions
+  const row = await env.DB.prepare(`SELECT person_id FROM account_deletions
     WHERE person_id = ? AND request_id = ? AND receipt_hash = ? AND receipt_expires_at > ?`)
     .bind(cleanIdentifier(body.person_id, "person_id"), requestId, await sha256Base64Url(body.receipt), now).first();
   if (!row) throw new HttpError(401, "invalid_deletion_receipt");
-  // Custody completeness is added with the host ledger; no timeout/absence can
-  // advertise completion before that authority is deployed.
-  return json({ status: "account_deleted", cleanup: "cleanup_pending", legacy_unknown: Boolean(row.legacy_unknown) });
+  return json({ status: "account_deleted" });
 }

@@ -24,7 +24,7 @@ CREATE VIEW account_deletion_proofs AS SELECT session_id, person_id, device_id,
     FROM sessions WHERE deletion_request_id IS NOT NULL;
 CREATE VIEW account_deletions AS SELECT person_id, deletion_request_id AS request_id,
     deletion_receipt_hash AS receipt_hash, deletion_receipt_expires_at AS receipt_expires_at,
-    deleted_at, legacy_unknown FROM persons WHERE deleted_at IS NOT NULL AND deletion_receipt_hash IS NOT NULL;
+    deleted_at FROM persons WHERE deleted_at IS NOT NULL AND deletion_receipt_hash IS NOT NULL;
 
 -- One durable fixed row; no expiring queue or general orchestration. The final
 -- transaction MUST touch it, including when all conditional writes affect zero.

@@ -1,7 +1,6 @@
 import { RETIRED_RETENTION_SECONDS } from "./server_ownership.js";
 import { MEMBER_RETENTION_SECONDS } from "./member_servers.js";
 import { nowSeconds } from "./http.js";
-import { cleanupFloor } from "./cleanup_floor.js";
 
 const DAILY_WRITES = 10_000;
 const CHUNK_ROWS = 100;
@@ -12,8 +11,7 @@ const QUEUES = [
   ["member_servers", `((host_state IN ('pending', 'removed') AND state_changed_at <= ?)
     OR NOT EXISTS (SELECT 1 FROM servers WHERE servers.server_id = member_servers.server_id
       AND servers.registration_epoch = member_servers.registration_epoch))
-    AND NOT EXISTS (SELECT 1 FROM servers WHERE servers.server_id = member_servers.server_id AND servers.revoked_at IS NOT NULL)
-    AND (custody_host_fingerprint IS NULL OR acknowledged_projection_id=projection_id)`, 6],
+    AND NOT EXISTS (SELECT 1 FROM servers WHERE servers.server_id = member_servers.server_id AND servers.revoked_at IS NOT NULL)`, 6],
   ["request_nonces", "expires_at < ?", 3],
   ["host_request_nonces", "expires_at < ?", 3],
   ["rate_limits", "window_start < ?", 3],
@@ -38,9 +36,7 @@ for (let i = 0; i < retiredTables.length; i++) {
     "NOT EXISTS (SELECT 1 FROM host_request_nonces WHERE host_request_nonces.server_id = retired.server_id)",
     "NOT EXISTS (SELECT 1 FROM server_owner_resolutions WHERE keeper_server_id = retired.server_id)");
   QUEUES.push([table, `server_id IN (SELECT retired.server_id FROM servers retired
-    WHERE retired.revoked_at <= ? AND EXISTS(SELECT 1 FROM account_deletion_floor WHERE id=1 AND closed=1)
-    ${table==='member_servers' ? 'AND (custody_host_fingerprint IS NULL OR acknowledged_projection_id=projection_id)' : ''}
-    ${absent.map(clause => `AND ${clause}`).join(' ')})`, cost, true]);
+    WHERE retired.revoked_at <= ? ${absent.map(clause => `AND ${clause}`).join(' ')})`, cost, true]);
 }
 
 function written(result) {
@@ -58,11 +54,9 @@ export async function cleanup(env) {
     .bind(day, day, day).run();
   if (claim.meta.changes === 0) return;
   let spent = Math.max(1, written(claim));
-  const floor = await cleanupFloor(env,day,DAILY_WRITES-spent);
-  spent+=floor.spent;
   const queues = [...QUEUES];
   // 1 claim + at most 48 deletes stays below 50 D1 queries/invocation.
-  for (let query = floor.queries; query < 48 && queues.length; query++) {
+  for (let query = 0; query < 48 && queues.length; query++) {
     const queue = queues.shift();
     const [table, condition, cost, retired] = queue;
     const count = Math.min(CHUNK_ROWS, Math.floor((DAILY_WRITES - spent) / cost));

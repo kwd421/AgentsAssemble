@@ -66,7 +66,7 @@ test("guest deletion requires the existing secret, disables every device and pre
   const status = await request(env, `/v1/account-deletions/${proof.request_id}/status`, {
     method: "POST", body: JSON.stringify({ receipt: proof.receipt, person_id: owner.created.person.person_id }) });
   assert.equal(status.status, 200); assert.equal(status.headers.get("cache-control"), "no-store");
-  assert.equal((await status.json()).cleanup, "cleanup_pending");
+  assert.deepEqual(await status.json(), {status: "account_deleted"});
   assert.equal((await request(env, `/v1/account-deletions/${proof.request_id}/status`, {
     method: "POST", body: JSON.stringify({ receipt: randomBase64Url(32), person_id: owner.created.person.person_id }) })).status, 401);
   assert.equal((await finish(env, owner, proof)).status, 401);
