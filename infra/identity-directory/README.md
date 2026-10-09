@@ -15,8 +15,10 @@ Runtime contract: Rust `docs/specs/identity-accounts-friends-slice.md` → Accou
 deletion. The prior custody design approval is superseded. New design/code review,
 implementation and acceptance remain pending; this is not shipped behavior.
 Four authorized Daybreak design rounds ended REVISE, latest C0/H0/M1/L0.
-Last documented mixed-version grant-consumption correction is not approved;
-implementation/push/deployment remain gated on owner review-limit extension and APPROVE.
+Manager extended the design limit by three rounds (5–7) on 2026-10-10.
+Implementation may proceed after a completed verdict with no Critical/High and all
+Medium/Low corrected in the Rust contract; explicit design APPROVE is preferred.
+Code review still MUST reach APPROVE within three rounds before push/deployment.
 
 - Deleting device enumerates its account's member server list, including hidden
   entries, and uses EXISTING secure member admission for reachable member hosts.
