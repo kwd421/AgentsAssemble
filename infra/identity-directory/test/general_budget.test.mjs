@@ -237,11 +237,11 @@ test("concurrent sessions and hosts share an account cap while each session and 
   await denied(await bookmark(third), "actor_quota_exhausted");
   await denied(await name(30), "actor_quota_exhausted");
   assert.equal(snapshot(env), before);
-  assert.equal(debt(env), 240);
+  assert.equal(debt(env), 243); // 240 actor units plus three independent inventory purge entries
   assert.equal(env.DB.database.prepare("SELECT general_units FROM persons WHERE person_id = ?").get(owner.created.person.person_id).general_units, 240);
   const fresh = await session(env, owner, "general-rotated-device");
   await denied(await bookmark(fresh), "actor_quota_exhausted");
-  assert.equal(debt(env), 240);
+  assert.equal(debt(env), 243);
   // An exhausted account cannot deny another account's normal admission path.
   const other = await createGuestIdentity(env, { deviceId: "general-independent-device" });
   const otherHost = await hostKey(), otherId = "general-other-host";

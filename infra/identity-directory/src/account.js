@@ -18,6 +18,7 @@ export async function logoutOtherSessions(session, env, now) {
 }
 
 export async function deletionProof(request, session, env, text, now) {
+  await requireDeletionFloor(env);
   await limitTerminationAttempt(request, env, session);
   const body = parseJson(text);
   const requestId = cleanIdentifier(body.request_id, "request_id", 32, 128);
@@ -42,6 +43,7 @@ export async function deletionProof(request, session, env, text, now) {
 }
 
 export async function deleteAccount(request, session, env, text, now) {
+  await requireDeletionFloor(env);
   let body;
   try { body = parseJson(text); }
   catch (error) { await limitTerminationAttempt(request, env, session, "failed-final"); throw error; }
@@ -110,6 +112,11 @@ export async function deleteAccount(request, session, env, text, now) {
   }
   return json({ status: "account_deleted", cleanup: "cleanup_pending", request_id: requestId,
     receipt_expires_at: now + 86400 });
+}
+
+async function requireDeletionFloor(env) {
+  if(!await env.DB.prepare('SELECT id FROM account_deletion_floor WHERE id=1 AND closed=1').first())
+    throw new HttpError(503,'account_deletion_floor_pending','서버 연결 정보를 정리하고 있어요. 나중에 다시 확인해 주세요.');
 }
 
 export async function deletionStatus(request, env, requestId, text, now) {

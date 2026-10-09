@@ -4,7 +4,8 @@ import { recheckHostIncarnation } from "./server_ownership.js";
 import { MEMBER_RETENTION_SECONDS } from "./member_servers.js";
 import { randomBase64Url, sha256Base64Url } from "./crypto.js";
 import { HttpError, json, parseJson, cleanIdentifier, serverDisplayName } from "./http.js";
-import { hostAuthentication, verifyHostRequest } from "./servers.js";
+import { verifyHostRequest } from "./servers.js";
+import { requestPurpose } from "./abuse.js";
 
 const GRANT_PREFIX = "aacg1.";
 const GRANT_TTL_SECONDS = 300;
@@ -125,8 +126,11 @@ export async function createServerConnectGrant(session, env, serverId, text, now
 }
 
 export async function redeemServerConnectGrant(request, env, serverId, text, now) {
-  const { fingerprint, registrationEpoch, body } = await hostAuthentication(request, env, serverId, text, now);
-  const binding = admissionBinding(body, "owner", ["registration_epoch", "grant_token", "origin", "generation"]);
+  const { nonce, fingerprint, registrationEpoch, body } = await verifyHostRequest(request, env, serverId, text, now);
+  const supported = body.account_deletion_protocol === "v1";
+  if (body.account_deletion_protocol !== undefined && !supported) throw new HttpError(400, "invalid_deletion_protocol");
+  if (supported && registrationEpoch === null) throw new HttpError(400,"registration_epoch_required");
+  const binding = admissionBinding(body, "owner", ["registration_epoch", "grant_token", "origin", "generation", "account_deletion_protocol"]);
   const grantToken = String(body.grant_token || "");
   const origin = String(body.origin || "");
   const generation = Number(body.generation);
@@ -141,7 +145,14 @@ export async function redeemServerConnectGrant(request, env, serverId, text, now
   }
   // The authority check and redemption write are one SQL operation. A logout,
   // owner transfer or endpoint replacement racing admission cannot pass a cached read.
-  const grant = await env.DB.prepare(`UPDATE server_connect_grants SET last_used_at = ?
+  const secretHash = await sha256Base64Url(grantToken);
+  const consume = env.DB.prepare(`UPDATE server_connect_grants SET last_used_at = ?,
+    redeemed_host_fingerprint = ?, redeemed_registration_epoch = (SELECT registration_epoch FROM servers WHERE server_id = ?),
+    custody_generation = COALESCE(custody_generation, 1 + COALESCE((
+      SELECT MAX(custody_generation) FROM account_deletion_incarnations AS inventory
+      WHERE inventory.server_id = server_connect_grants.server_id
+        AND inventory.owner_person_id = server_connect_grants.person_id
+        AND inventory.registration_epoch = (SELECT registration_epoch FROM servers WHERE server_id = ?)), 0))
     WHERE kind = 'owner' AND grant_id IN (
       SELECT source.grant_id FROM server_connect_grants source
       JOIN sessions ON sessions.session_id = source.session_id
@@ -156,10 +167,38 @@ export async function redeemServerConnectGrant(request, env, serverId, text, now
         AND (? IS NULL OR servers.registration_epoch = ?)
         AND servers.revoked_at IS NULL AND servers.owner_person_id = source.person_id
         AND servers.host_key_fingerprint = ?
+        AND (source.redeemed_host_fingerprint IS NULL OR source.redeemed_host_fingerprint = servers.host_key_fingerprint)
+        AND (source.redeemed_registration_epoch IS NULL OR source.redeemed_registration_epoch = servers.registration_epoch)
+        AND NOT EXISTS (SELECT 1 FROM account_deletion_incarnations AS inventory
+          WHERE inventory.server_id = source.server_id AND inventory.owner_person_id = source.person_id
+            AND inventory.registration_epoch = servers.registration_epoch AND inventory.host_key_fingerprint = servers.host_key_fingerprint
+            AND source.custody_generation IS NOT NULL AND inventory.acknowledged_generation >= source.custody_generation)
         AND ${liveSql(binding)} AND ${BOUND_ENDPOINT_SQL} AND ${bindingSql}
         AND source.endpoint_origin = ? AND source.endpoint_generation = ?
-    ) RETURNING server_id, person_id, device_id, expires_at`)
-    .bind(now, serverId, await sha256Base64Url(grantToken), now, now, registrationEpoch, registrationEpoch, fingerprint, ...liveValues(binding, now), ...grantBindingValues(binding), origin, generation).first();
+    ) RETURNING server_id, person_id, device_id, expires_at, custody_generation`)
+    .bind(now, fingerprint, serverId, serverId, serverId, secretHash, now, now, registrationEpoch, registrationEpoch, fingerprint, ...liveValues(binding, now), ...grantBindingValues(binding), origin, generation);
+  let results;
+  try {
+    results = await env.DB.batch([
+      env.DB.prepare(`INSERT INTO host_request_nonces(server_id,nonce,expires_at,purpose) VALUES(?,?,?,?)`)
+        .bind(serverId,nonce,now+600,requestPurpose(request)), consume,
+      env.DB.prepare(`UPDATE account_deletion_incarnations SET custody_generation=MAX(custody_generation,
+          (SELECT custody_generation FROM server_connect_grants WHERE secret_hash=?)), custody_live=1,
+          last_seen_at=?
+        WHERE changes()=1 AND (server_id,registration_epoch,host_key_fingerprint,owner_person_id) IN
+          (SELECT server_id,redeemed_registration_epoch,redeemed_host_fingerprint,person_id FROM server_connect_grants WHERE secret_hash=?)`)
+        .bind(secretHash,now,secretHash),
+      env.DB.prepare(`UPDATE account_custody_assertion SET valid=CASE WHEN changes()=1 THEN 1 ELSE 0 END WHERE id=1`),
+    ]);
+  } catch(error) {
+    if (String(error.message).includes('CHECK constraint failed: valid')) {
+      await recheckHostIncarnation(env.DB,serverId,registrationEpoch);
+      throw new HttpError(401,'connect_grant_invalid');
+    }
+    if (String(error.message).includes('UNIQUE constraint failed: host_request_nonces')) throw new HttpError(409,'replayed_request');
+    throw error;
+  }
+  const grant=results[1].results[0];
   if (!grant) {
     await recheckHostIncarnation(env.DB, serverId, registrationEpoch);
     throw new HttpError(401, "connect_grant_invalid");
@@ -172,6 +211,7 @@ export async function redeemServerConnectGrant(request, env, serverId, text, now
     origin,
     generation,
     expires_at: Number(grant.expires_at),
+    ...(supported ? { custody_generation:Number(grant.custody_generation) } : {}),
     ...(binding ? { registration_epoch: registrationEpoch, ...bindingEcho(binding) } : {}),
   });
 }
@@ -260,7 +300,8 @@ export async function redeemMemberGrant(request, env, serverId, text, now, purpo
   // Unlike legacy owner requests, member admission never permits an absent epoch.
   cleanIdentifier(parseJson(text).registration_epoch, "registration_epoch");
   const { nonce, fingerprint, registrationEpoch, body } = await verifyHostRequest(request, env, serverId, text, now);
-  const binding = admissionBinding(body, purpose, ["purpose", "registration_epoch", "challenge_hash", "grant_token"]);
+  if (body.account_deletion_protocol !== undefined && body.account_deletion_protocol !== "v1") throw new HttpError(400, "invalid_deletion_protocol");
+  const binding = admissionBinding(body, purpose, ["purpose", "registration_epoch", "challenge_hash", "grant_token", "account_deletion_protocol"]);
   const token = String(body.grant_token || "");
   const prefix = purpose === "connect" ? MEMBER_CONNECT_GRANT_PREFIX : MEMBER_GRANT_PREFIX;
   if ((body.purpose === undefined ? "admission" : body.purpose) !== purpose ||
@@ -303,22 +344,35 @@ export async function redeemMemberGrant(request, env, serverId, text, now, purpo
       env.DB.prepare(`INSERT INTO host_request_nonces (server_id, nonce, expires_at, purpose)
         VALUES (?, ?, ?, 'GENERAL')`).bind(serverId, nonce, now + 600),
       consume,
+      env.DB.prepare(`UPDATE account_custody_assertion SET valid=CASE WHEN changes()=1 THEN 1 ELSE 0 END WHERE id=1`),
       // changes() is the immediately preceding consuming UPDATE. A concurrent
       // second redeem cannot create an anchor or return authority.
       env.DB.prepare(`INSERT INTO member_servers
-        (person_id, server_id, registration_epoch, projection_id, created_at, updated_at, state_changed_at)
-        SELECT person_id, server_id, registration_epoch, ?, ?, ?, ? FROM server_connect_grants AS source
-        WHERE secret_hash = ? AND changes() = 1
+        (person_id, server_id, registration_epoch, projection_id, created_at, updated_at, state_changed_at,custody_host_fingerprint)
+        SELECT person_id, server_id, registration_epoch, ?, ?, ?, ?, ? FROM server_connect_grants AS source
+        WHERE secret_hash = ?
         ON CONFLICT(person_id, server_id, registration_epoch) DO UPDATE SET
           projection_id = excluded.projection_id, host_state = 'pending', host_revision = 0,
           created_at = excluded.created_at, updated_at = excluded.updated_at,
-          state_changed_at = excluded.state_changed_at
+          state_changed_at = excluded.state_changed_at, custody_host_fingerprint=excluded.custody_host_fingerprint,
+          acknowledged_projection_id=NULL,acknowledged_at=NULL
         WHERE member_servers.host_state IN ('pending', 'removed') AND member_servers.state_changed_at <= ?`)
-        .bind(randomBase64Url(16), now, now, now, secretHash, now - MEMBER_RETENTION_SECONDS),
+        .bind(randomBase64Url(16), now, now, now, fingerprint, secretHash, now - MEMBER_RETENTION_SECONDS),
+      env.DB.prepare(`UPDATE member_servers SET custody_host_fingerprint=?
+        WHERE (person_id,server_id,registration_epoch) IN
+          (SELECT person_id,server_id,registration_epoch FROM server_connect_grants WHERE secret_hash=?)
+        AND (custody_host_fingerprint IS NULL OR custody_host_fingerprint=?)
+        AND acknowledged_projection_id IS NOT projection_id`).bind(fingerprint,secretHash,fingerprint),
+      env.DB.prepare(`UPDATE account_custody_assertion SET valid=CASE WHEN changes()=1 THEN 1 ELSE 0 END WHERE id=1`),
       env.DB.prepare(`SELECT projection_id FROM member_servers JOIN server_connect_grants AS source
         USING (person_id, server_id, registration_epoch) WHERE source.secret_hash = ?`).bind(secretHash),
     ]);
   } catch (error) {
+    if (String(error.message).includes('CHECK constraint failed: valid')) {
+      await recheckHostIncarnation(env.DB,serverId,registrationEpoch);
+      throw new HttpError(401,'member_grant_invalid');
+    }
+    if (String(error.message).includes('account_custody_pending')) throw new HttpError(409,'account_custody_pending');
     if (String(error.message).includes('member_server_capacity')) throw new HttpError(409, 'member_server_capacity');
     if (String(error.message).includes('UNIQUE constraint failed: host_request_nonces')) throw new HttpError(409, 'replayed_request');
     throw error;
@@ -329,5 +383,5 @@ export async function redeemMemberGrant(request, env, serverId, text, now, purpo
     throw new HttpError(401, "member_grant_invalid");
   }
   return json({ person_id: grant.person_id, issuer: new URL(request.url).origin,
-    display_name: grant.display_name_snapshot || "", ...bindingEcho(binding), projection_id: results[3].results[0].projection_id });
+    display_name: grant.display_name_snapshot || "", ...bindingEcho(binding), projection_id: results[6].results[0].projection_id });
 }

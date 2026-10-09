@@ -63,7 +63,15 @@ verification, requesting auth_time and rejecting missing/stale/noninteger time,
 wrong subject/device/PKCE and old issuance. Pending OAuth transport has a separate
 session slot so an unproved start cannot erase an already issued deletion proof.
 Synthetic signed-token tests pass; actual Google client freshness remains unverified.
-Custody/floor/host ACK, bounded terminal cleanup and shared
+Custody now linearizes in the existing owner/member redeem transaction. Owner
+generation is distinct from endpoint generation and exact replay is stable; old
+wire responses keep their shape. Independent incarnation inventory preserves old/new
+owner/key/epoch and ingress, with existing cleanup paging the migration snapshot
+before deletion proof is exposed. Unacknowledged member replacement archives its
+exact former projection while preserving 30-day fresh consent. Inventory reserves
+three purge entries and archive replacement four in the existing GENERAL ceiling;
+no purpose limits or heavy-day acceptance were changed. Host ACK/sync, terminal
+cleanup and shared
 UI are still being implemented; no deployment or completed-product claim here.
 
 ## Security model
