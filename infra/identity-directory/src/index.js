@@ -31,6 +31,7 @@ import {
   bookmark,
   deleteServer,
   registerServer,
+  readHostOwner,
   updateEndpoint,
 } from "./servers.js";
 import {
@@ -147,6 +148,8 @@ async function route(request, env) {
     );
   }
 
+  const hostOwner=url.pathname.match(/^\/v1\/servers\/([^/]+)\/owner$/);
+  if (hostOwner && request.method==="POST") return readHostOwner(request,env,cleanIdentifier(hostOwner[1],"server_id"),text,now);
   const memberResults = url.pathname.match(/^\/v1\/servers\/([^/]+)\/member-results$/);
   if (memberResults && request.method === "POST") {
     return reportMemberResults(request, env, cleanIdentifier(memberResults[1], "server_id"), text, now);

@@ -62,7 +62,9 @@ test("guest deletion requires the existing secret, disables every device and pre
     origin: "https://deleted-owner.trycloudflare.com", generation: 1,
     issued_at: Math.floor(Date.now()/1000), lease_expires_at: Math.floor(Date.now()/1000)+300,
   });
-  assert.equal(hostReply.status, 410); assert.equal((await payload(hostReply)).error.code, "account_deleted");
+  assert.equal(hostReply.status, 410); const terminal=await payload(hostReply);
+  assert.equal(terminal.error.code,"account_deleted");
+  assert.equal(terminal.error.owner_person_id,owner.created.person.person_id);
   const status = await request(env, `/v1/account-deletions/${proof.request_id}/status`, {
     method: "POST", body: JSON.stringify({ receipt: proof.receipt, person_id: owner.created.person.person_id }) });
   assert.equal(status.status, 200); assert.equal(status.headers.get("cache-control"), "no-store");
@@ -134,4 +136,16 @@ test("a signed session cannot borrow a device now bound to another active person
   assert.equal((await signedDeviceRequest(env, owner.created.session, owner.key.pair, "/v1/account/deletion-proof", "POST",
     { request_id: randomBase64Url(32), recovery_code: owner.created.recovery_code })).status, 401);
   assert.equal(env.DB.database.prepare("SELECT COUNT(*) AS n FROM account_deletion_proofs").get().n, 0);
+});
+
+test('installation stop reads authenticated exact current owner and terminal supplies the same custody',async()=>{
+  const f=await memberFixture(),path=`/v1/servers/${f.id}/owner`;
+  const read=()=>signedHostRequest(f.env,f.id,f.host.pair,'POST',{registration_epoch:f.epoch},{pathname:path});
+  const reply=await read();assert.equal(reply.status,200,await reply.clone().text());
+  assert.deepEqual(await reply.json(),{server_id:f.id,registration_epoch:f.epoch,owner_person_id:f.owner.created.person.person_id});
+  assert.equal((await request(f.env,path,{method:'POST',body:JSON.stringify({registration_epoch:f.epoch})})).status,401);
+  assert.equal((await signedHostRequest(f.env,f.id,f.host.pair,'POST',{registration_epoch:f.epoch,owner_person_id:'selected'},{pathname:path})).status,400);
+  assert.equal((await finish(f.env,f.owner,await proveGuestDeletion(f.env,f.owner))).status,200);
+  const terminal=await read();assert.equal(terminal.status,410);
+  assert.equal((await terminal.json()).error.owner_person_id,f.owner.created.person.person_id);
 });

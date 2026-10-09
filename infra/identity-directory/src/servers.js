@@ -181,7 +181,7 @@ export async function verifyHostRequest(request, env, serverId, body, now) {
   // Require the 0016 counter column before accepting host authority.
   const server = await env.DB
     .prepare(
-      "SELECT host_public_key_jwk, host_key_fingerprint, registration_epoch, revoked_at, general_units, owner_deleted_at, owner_status FROM server_authorities WHERE server_id = ?"
+      "SELECT owner_person_id, host_public_key_jwk, host_key_fingerprint, registration_epoch, revoked_at, general_units, owner_deleted_at, owner_status FROM server_authorities WHERE server_id = ?"
     )
     .bind(serverId)
     .first();
@@ -235,6 +235,18 @@ export async function hostAuthentication(request, env, serverId, body, now) {
     throw temporaryCapacityError(error) || new HttpError(409, "replayed_request");
   }
   return { fingerprint, registrationEpoch, body: payload };
+}
+
+// Installation stop reads exact central owner custody; no client-selected target.
+export async function readHostOwner(request, env, serverId, text, now) {
+  const payload=parseJson(text);
+  if (Object.keys(payload).some(key=>key!=="registration_epoch")) throw new HttpError(400,"invalid_host_owner_request");
+  const epoch=cleanIdentifier(payload.registration_epoch,"registration_epoch");
+  const {fingerprint}=await hostAuthentication(request,env,serverId,text,now);
+  const row=await env.DB.prepare("SELECT owner_person_id FROM live_servers WHERE server_id=? AND registration_epoch=? AND host_key_fingerprint=? AND revoked_at IS NULL")
+    .bind(serverId,epoch,fingerprint).first();
+  if (!row) {await recheckHostIncarnation(env.DB,serverId,epoch);throw new HttpError(409,"incarnation_conflict");}
+  return json({server_id:serverId,registration_epoch:epoch,owner_person_id:row.owner_person_id});
 }
 
 export async function updateEndpoint(

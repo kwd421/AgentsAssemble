@@ -1650,3 +1650,13 @@ npm test
 node test/local_one_server.mjs /path/to/wrangler/package.json
 node test/local_cleanup.mjs /path/to/wrangler/package.json
 ```
+
+### Installation account-deletion stop custody
+
+Host-signed `POST /v1/servers/{id}/owner` accepts only the current registration
+epoch and uses the existing key/signature/nonce/host budget owner. It returns the
+exact current `(server_id, registration_epoch, owner_person_id)` for the private
+local administrator stop; clients cannot select an owner, and no deletion proof,
+receipt, host cleanup inventory or acknowledgment is stored here. Authenticated
+`account_deleted` terminal host responses carry the same owner person so Rust can
+fence that actual person's roots independently of the shared local operator.

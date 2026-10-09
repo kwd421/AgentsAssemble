@@ -15,7 +15,7 @@ export function requireHostIncarnation(server, serverId, epoch) {
   if (!server) throw new HttpError(404, 'server_not_found');
   if (server.owner_deleted_at !== null && server.owner_deleted_at !== undefined) {
     throw new HttpError(410, 'account_deleted', 'The registration owner deleted this account.',
-      { server_id: serverId, registration_epoch: server.registration_epoch });
+      { server_id: serverId, registration_epoch: server.registration_epoch, owner_person_id: server.owner_person_id });
   }
   if (server.owner_status && server.owner_status !== 'active') throw new HttpError(403, 'owner_inactive');
   if (server.revoked_at !== null && server.revoked_at !== undefined) {
@@ -27,7 +27,7 @@ export function requireHostIncarnation(server, serverId, epoch) {
 // Mutations recheck retirement after a zero-row CAS: a host verified just before
 // duplicate resolution must receive the same terminal signal as a later caller.
 export async function recheckHostIncarnation(db, serverId, epoch) {
-  const current = await db.prepare("SELECT registration_epoch, revoked_at, owner_deleted_at, owner_status FROM server_authorities WHERE server_id = ?").bind(serverId).first();
+  const current = await db.prepare("SELECT owner_person_id, registration_epoch, revoked_at, owner_deleted_at, owner_status FROM server_authorities WHERE server_id = ?").bind(serverId).first();
   if (current || epoch !== null) requireHostIncarnation(current, serverId, epoch);
 }
 
