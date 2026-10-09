@@ -58,7 +58,12 @@ fixed CHECK assertion rolls back all zero-authority writes. No additional expiri
 row/index/purpose pool or reduction of the existing heavy-day gate is needed.
 Receipt status requires former person_id, request_id and receipt; the person hint
 is a lookup key, never authority. Controlled local D1 measured final rows_written
-[1,1,1]. Google step-up, custody/floor/host ACK, bounded terminal cleanup and shared
+[1,1,1]. Google step-up now reuses native/web OAuth exchange and signed-token
+verification, requesting auth_time and rejecting missing/stale/noninteger time,
+wrong subject/device/PKCE and old issuance. Pending OAuth transport has a separate
+session slot so an unproved start cannot erase an already issued deletion proof.
+Synthetic signed-token tests pass; actual Google client freshness remains unverified.
+Custody/floor/host ACK, bounded terminal cleanup and shared
 UI are still being implemented; no deployment or completed-product claim here.
 
 ## Security model

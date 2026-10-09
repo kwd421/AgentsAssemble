@@ -25,7 +25,7 @@ import {
 const HANDOFF_TTL_SECONDS = 600;
 const NATIVE_CALLBACK_PATH = "/api/central-login/callback";
 
-function nativeRedirectUri(value) {
+export function nativeRedirectUri(value) {
   let parsed;
   try {
     parsed = new URL(String(value || ""));
@@ -46,7 +46,7 @@ function nativeRedirectUri(value) {
   }
   return parsed.toString();
 }
-function pkceChallenge(value) {
+export function pkceChallenge(value) {
   const clean = String(value || "").trim();
   if (clean.length !== 43 || !/^[A-Za-z0-9_-]+$/.test(clean)) {
     throw new HttpError(400, "invalid_code_challenge");
@@ -54,7 +54,7 @@ function pkceChallenge(value) {
   return clean;
 }
 
-function pkceVerifier(value) {
+export function pkceVerifier(value) {
   const clean = String(value || "").trim();
   if (
     clean.length < 43 ||
@@ -278,7 +278,7 @@ export async function issueHandoffSession(env, row, now) {
   }
 }
 
-function googleAuthorizationCode(value) {
+export function googleAuthorizationCode(value) {
   const clean = String(value || "").trim();
   if (
     clean.length < 16 ||
@@ -290,13 +290,14 @@ function googleAuthorizationCode(value) {
   return clean;
 }
 
-async function exchangeGoogleAuthorizationCode(env, row, code, verifier, client = {
+export async function exchangeGoogleAuthorizationCode(env, row, code, verifier, client = {
   id: env.GOOGLE_DESKTOP_CLIENT_ID, secret: env.GOOGLE_DESKTOP_CLIENT_SECRET,
 }) {
   let response;
   try {
     response = await fetch("https://oauth2.googleapis.com/token", {
       method: "POST",
+      redirect: "error",
       headers: {
         accept: "application/json",
         "content-type": "application/x-www-form-urlencoded",

@@ -25,8 +25,8 @@ export async function authenticated(request, env, body, now, { persistNonce = tr
               sessions.expires_at, sessions.general_units, devices.public_key_jwk,
               devices.revoked_at AS device_revoked_at, persons.status
        FROM sessions
-       JOIN devices USING(device_id)
-       JOIN persons USING(person_id)
+       JOIN devices ON devices.device_id = sessions.device_id AND devices.person_id = sessions.person_id
+       JOIN persons ON persons.person_id = sessions.person_id
        WHERE sessions.token_hash = ? AND sessions.revoked_at IS NULL`
     )
     .bind(tokenHash)

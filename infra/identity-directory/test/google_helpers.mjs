@@ -29,7 +29,8 @@ export async function googleToken(
   nonce,
   subject = "raw-google-subject-must-not-be-stored",
   clientId = env.GOOGLE_DESKTOP_CLIENT_ID,
-  profileName = "Sensitive Google Name"
+  profileName = "Sensitive Google Name",
+  claimOverrides = {}
 ) {
   const now = Math.floor(Date.now() / 1000);
   const header = bytesToBase64Url(
@@ -53,6 +54,7 @@ export async function googleToken(
         picture: "https://lh3.googleusercontent.com/fixture-avatar",
         iat: now,
         exp: now + 600,
+        ...claimOverrides,
       })
     )
   );

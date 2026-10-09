@@ -125,3 +125,13 @@ test("exhausted failure-attempt lane never blocks the already valid final proof"
   assert.equal(env.DB.database.prepare("SELECT used_at FROM account_deletion_proofs").get().used_at, null);
   assert.equal((await finish(env, owner, proof)).status, 200);
 });
+
+test("a signed session cannot borrow a device now bound to another active person", async () => {
+  const env = environment(), owner = await createGuestIdentity(env), other = await createGuestIdentity(env, { deviceId: "device-owner-mismatch" });
+  env.DB.database.prepare("UPDATE devices SET person_id=? WHERE device_id=?")
+    .run(other.created.person.person_id, owner.created.session.device_id);
+  assert.equal((await signedDeviceRequest(env, owner.created.session, owner.key.pair, "/v1/bootstrap")).status, 401);
+  assert.equal((await signedDeviceRequest(env, owner.created.session, owner.key.pair, "/v1/account/deletion-proof", "POST",
+    { request_id: randomBase64Url(32), recovery_code: owner.created.recovery_code })).status, 401);
+  assert.equal(env.DB.database.prepare("SELECT COUNT(*) AS n FROM account_deletion_proofs").get().n, 0);
+});

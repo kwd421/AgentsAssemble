@@ -1,6 +1,7 @@
 import { HttpError, json, parseJson, cleanIdentifier, envSecret } from "./http.js";
 import { randomBase64Url, sha256Base64Url, hmacBase64Url, normalizeRecoveryCode } from "./crypto.js";
 import { limitTerminationAttempt } from "./abuse.js";
+import { googleDeletionProof } from "./account_google.js";
 
 export async function logoutOtherSessions(session, env, now) {
   const result = await env.DB
@@ -20,6 +21,8 @@ export async function deletionProof(request, session, env, text, now) {
   await limitTerminationAttempt(request, env, session);
   const body = parseJson(text);
   const requestId = cleanIdentifier(body.request_id, "request_id", 32, 128);
+  if (body.kind === "google") return googleDeletionProof(request, session, env, body, requestId, now);
+  if (body.kind !== undefined && body.kind !== "guest") throw new HttpError(400, "invalid_deletion_proof_kind");
   const verifier = await hmacBase64Url(envSecret(env, "RECOVERY_PEPPER"), normalizeRecoveryCode(body.recovery_code));
   const proof = randomBase64Url(32);
   const inserted = await env.DB.prepare(`UPDATE sessions SET deletion_request_id = ?, deletion_proof_hash = ?,
