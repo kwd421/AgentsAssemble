@@ -9,70 +9,104 @@ device credentials, known server identities, and short-lived server endpoint lea
 Room lists, messages, attachments, provider sessions, host tokens, room bearer tokens,
 and invite credentials remain on each AgentsAssemble engine.
 
-## Account deletion task — approved design, implementation in progress
+## Account deletion — binding owner redesign (2026-10-09)
 
-The runtime contract is Rust `docs/specs/identity-accounts-friends-slice.md` →
-Account deletion (2026-10-09), Daybreak Blue xhigh final additional design round 4
-APPROVE C0/H0/M0/L0. This is a design checkpoint, not deployed/runtime evidence.
-Required behavior and affected routes are recorded here before implementation:
+Runtime contract: Rust `docs/specs/identity-accounts-friends-slice.md` → Account
+deletion. The prior custody design approval is superseded. New design/code review,
+implementation and acceptance remain pending; this is not shipped behavior.
+Four authorized Daybreak design rounds ended REVISE, latest C0/H0/M1/L0.
+Last documented mixed-version grant-consumption correction is not approved;
+implementation/push/deployment remain gated on owner review-limit extension and APPROVE.
 
-- Shared trusted app/central UI shows fixed honest retirement/data-retention and
-  irreversible-deletion explanation. No mandatory impact read/revision/route;
-  any single optional bounded summary cannot gate proof or deletion.
-- Existing `DELETE /v1/account` becomes request-bound fresh-proof-only. Guest proof
-  checks the existing recovery verifier without rotation; stolen whole device/code
-  resistance is not claimed. Google proof checks same subject and fresh auth_time
-  within 300s; missing/stale fails closed. No session-only substitute.
-- Disable one person, clear mutable PII, consume session proof, store one receipt
-  hash in an O(1) D1 batch with write-time authority checks and constraint rollback.
-  Owned servers are effectively terminal by owner state; no child cascade here.
-- Add signed `POST /v1/account/deletion-proof`, opaque receipt-only
-  `POST /v1/account-deletions/{request_id}/status` (24h), and exact host-signed
-  `POST /v1/servers/{id}/account-deletions/sync`. Proof/final disable has its own
-  non-borrowable termination lane. Receipt issues no credential/authority.
-- Existing redeem is custody linearization after host provisional reservation.
-  Owner additive custody_generation never changes endpoint generation; member
-  uses projection_id. Old response shapes stay behind signed protocol capability.
-  Exact host ACK/release cannot clear a newer generation or resurrect deleted state.
-- All pre-cutover persons keep legacy_unknown permanently in this release. Floor
-  inventory/closure and legacy owner mappings are cleanup provenance only. Hosts
-  install tombstones, terminate all derived authority/idle transports and page actual
-  dependent rows before ACK. Offline/unsupported remains pending, never timed success.
-- Atomic guest provisioning floor precedes blocking additive BEFORE DELETE guards.
-  Existing bounded cleanup owns retention/child removal/purge_ready, then ledger and
-  parent purge atomically. Preserve 10,000 indexed writes/day, <=100-row pages and
-  <=49 statements including delivery; no raised gate, new poll or general job system.
-- Identity checks create no person/session; explicit new registration has new person,
-  device and epoch and inherits no former authority. Host data/other participants,
-  independent pairing and user-owned provider processes remain with their owners.
+- Deleting device enumerates its account's member server list, including hidden
+  entries, and uses EXISTING secure member admission for reachable member hosts.
+  One <=512-row/512KiB snapshot includes hidden rows; no paging/generation. Own
+  server ingress/session/companion termination is separate from member binding
+  anonymization; independent native operator/profile/history remains.
+  Removal-only secure account_deletion purpose ignores hidden membership while
+  keeping active identity/incarnation/device/channel checks; it issues no room
+  credential and changes no visibility. Issue/redeem atomically join the same fresh
+  unused deletion proof's person/session/device/request/hash and current proof source;
+  final account DELETE alone consumes it. Session-only host anonymization is forbidden.
+  Expand existing grant storage with nullable authoritative grant_purpose and proof
+  binding columns, preserving its old CHECK without table rebuild. New deletion exact
+  routes/token prefix aadg1. cannot be consumed by old Workers; NULL continues legacy
+  purpose, inactive legacy default never grants deletion authority. Existing limits,
+  GENERAL debt/cleanup/guards are unchanged; no fallback to ordinary purpose.
+  Prefix alone cannot stop old tokenless bulk used_at updates: additive nullable
+  account_deletion_consumed_at plus insert/update constraints require both consumed
+  fields NULL or both equal. Exact new deletion-purpose redeem alone sets both;
+  old hidden=true fails atomically instead of consuming grant/partially hiding member.
+  New ordinary updates exclude deletion purpose. Verify old/new mixed execution,
+  unchanged active count and exactly-once redeem. Central DELETE consumes proof only.
+  An admitted host derives the caller's person
+  from verified authority and extends
+  existing leave/kick removal to all that person's rooms/devices/sessions and
+  companion AIs. Messages remain as “탈퇴한 사용자”; profile/name/photo snapshots
+  are anonymized. Existing binding/removal domain persists local fence/phase/cursor;
+  its existing lifecycle owner finishes committed bounded work on request/startup
+  wakes even after disconnect or central disable. Confirm only after completion.
+  Required phases cover profile/avatar, participants, room events/search, member and
+  human-session replay JSON, command-result event snapshots and publication/effects.
+  Each room appends one durable participant_anonymized sequence through existing
+  publisher; shared historical actor override updates already-loaded chat/search/pins
+  without restoring participation or client ACK. Metadata descriptor/patch payload is
+  <=128KiB/100 rows; avatar deletes separately one <=10MiB row/transaction, yielding.
+  Per-server progress and skipped/unconfirmed failures are shown.
+- NO central deleted-person delivery, host tombstone/ACK custody, retained routing
+  inventory, legacy unknown completeness flag or cleanup_pending waiting on hosts.
+  Host removal/anonymization is local; central never claims remote completion.
+- After host attempts, signed `DELETE /v1/account` consumes exact fresh proof,
+  disables one person, clears mutable PII and binds a single opaque receipt hash
+  in an O(1) D1 batch. Write-time checks and a fixed CHECK assertion roll back
+  zero-authority writes. Existing sessions/recovery/new grants/redeems become invalid;
+  own registrations are effectively terminal through the active owner predicate.
+- Keep signed `POST /v1/account/deletion-proof` and receipt-only
+  `POST /v1/account-deletions/{request_id}/status`: 24h, account/request binding,
+  no-store, no device credential, no polling and no auto-registration. Device-local
+  host progress is separate from this central status. Lost response is unknown
+  until explicit lookup; expired/missing receipt cannot prove successful deletion.
+- Google requires verified same subject with fresh integer auth_time/iat within
+  300s; absent/stale fails closed. Guest requires existing recovery code without
+  rotation/session-only issuance; whole device/code compromise is outside its
+  narrowed threat model. Proof/final lane is non-borrowable by ordinary traffic.
+- Keep atomic guest provisioning, BEFORE DELETE guards against old cascading
+  person/session/device/server deletes, inactive-writer/restore guards and exact
+  active-person CAS on late member results (deleted member gets terminal response).
+- Identity verification returns active/deleted/absent before account/session
+  creation. Explicit separate registration creates a new random person/device,
+  no old relations/server epoch. Google external-identity transfer uses terminal CAS. New exact native/web
+  verify-start/verify-complete/register routes and native_verify/web_verify kinds
+  are refused by old Workers before creation. New legacy exchange active login only.
+  Existing handoff retains
+  verified_deleted/verified_absent phase bound to PKCE/device/expiry; separate user
+  register consumes it and creates person/identity/device/session in one CAS batch.
+  Exact consumed retry reports registered/login-required without creating again;
+  lost session response is recovered by fresh check/login, no second secret.
+- Deleting on own server computer immediately stops ingress and local companions.
+  Separately offer “이 컴퓨터의 방 데이터도 지울까요?”, default keep. Otherwise the
+  own server stops ingress on next existing central contact (exact account_deleted
+  410), no new polling. Distinct account-deleted demotion permits only explicit
+  new-account registration after old-child cleanup; permanent retirement remains.
+  Existing endpoint publication signed full body alone carries optional
+  account_deletion_protocol:v1 stored on its exact key/epoch endpoint; omission
+  clears it, registration/client booleans are not authority. This packaged floor
+  precedes UI exposure,
+  never a host ACK wait after disable.
+  Keep unrelated users/server AIs/providers and optional-wipe authority local.
+- Central bounded cleanup removes terminal children in dependency order after
+  retention, then cleanup-only purge_ready/ledger/parent atomically. Host responses
+  never gate this cleanup. Preserve 10,000 indexed writes/day, <=100 rows/page,
+  <=49 statements/invocation and existing day/crash reservation. No gate increases.
+- 0019–0021 retain applicable terminal/proof/Google safeguards. Remote migration
+  inspection found 0019 onward unapplied. Remove unshipped custody-only 0022/0023
+  and source with an explicit honest history; deployed schema is expand-only.
+  Atomic provisioning floor must protect old issuance before blocking guards.
 
-First floor commit combines person/device/recovery/session and source reservations
-in one D1 batch and removes active-parent cleanup after failed issuance. Its
-controlled failure test is also run against local Miniflare/D1 with a parent guard:
-`node test/local_guest_provisioning.mjs /path/to/wrangler/package.json`.
-Following additive guards and guest termination checkpoint implement literal old
-parent DELETE rejection, inactive child/restore guards, the shared live-server
-predicate, request-bound guest proof and O(1) disable/receipt. Proof uses additive
-session columns, ledger uses additive person columns exposed through views, and a
-fixed CHECK assertion rolls back all zero-authority writes. No additional expiring
-row/index/purpose pool or reduction of the existing heavy-day gate is needed.
-Receipt status requires former person_id, request_id and receipt; the person hint
-is a lookup key, never authority. Controlled local D1 measured final rows_written
-[1,1,1]. Google step-up now reuses native/web OAuth exchange and signed-token
-verification, requesting auth_time and rejecting missing/stale/noninteger time,
-wrong subject/device/PKCE and old issuance. Pending OAuth transport has a separate
-session slot so an unproved start cannot erase an already issued deletion proof.
-Synthetic signed-token tests pass; actual Google client freshness remains unverified.
-Custody now linearizes in the existing owner/member redeem transaction. Owner
-generation is distinct from endpoint generation and exact replay is stable; old
-wire responses keep their shape. Independent incarnation inventory preserves old/new
-owner/key/epoch and ingress, with existing cleanup paging the migration snapshot
-before deletion proof is exposed. Unacknowledged member replacement archives its
-exact former projection while preserving 30-day fresh consent. Inventory reserves
-three purge entries and archive replacement four in the existing GENERAL ceiling;
-no purpose limits or heavy-day acceptance were changed. Host ACK/sync, terminal
-cleanup and shared
-UI are still being implemented; no deployment or completed-product claim here.
+Historical stopped-run tests established signed synthetic Google proofs and
+local D1 final disable rows_written [1,1,1]. They do not prove this redesign,
+real Google freshness, host/UI flows or deployment. New evidence and review
+verdicts belong at the top of Rust docs/VERIFICATION.md.
 
 ## Security model
 
@@ -95,7 +129,7 @@ UI are still being implemented; no deployment or completed-product claim here.
   fresh request/session/device-bound proof and explicit confirmation. One constant
   transaction disables the person and stores a receipt while preserving children;
   the current owner state retires registration authority immediately. Only bounded
-  cleanup may purge children/ledger/parent after the retention and host ACK barriers.
+  cleanup may purge children/ledger/parent after retention and child-absence checks.
 - Server endpoints are accepted only when signed by the server's Ed25519 host key.
   Endpoint generations are monotonic and leases expire automatically. New
   registrations/claims admit at most one live owned server per account. Legacy
@@ -1289,13 +1323,17 @@ ACK response, in submitted order:
 The ID and revision are always the **submitted** values. A higher revision
 applies; equal revision/same state ACKs `applied`; equal revision/different state
 ACKs `conflict`; lower revision ACKs `stale` without mutation. Unknown, expired,
-wrong-server and wrong-epoch projection IDs get the same `stale` ACK. No stored
+wrong-server and wrong-epoch projection IDs get the same `stale` ACK. Deleted
+members get stable `terminal` without mutation.
+No stored
 revision/state, person ID or membership count is returned. An item conflict is
 reported in the 200 response; other valid items still apply atomically with the
 shared nonce and budget. Removed tombstones last 30 days from the state change;
 repeated removed reports do not extend that deadline. Never-active pending rows
-expire 30 days from creation; reports cannot revive them. Fresh consent is
-required after expiry. Active rows remain until removal or epoch retirement.
+expire logically 30 days from creation; reports cannot revive them. Fresh consent
+is required after expiry. Active rows remain until removal or incarnation termination.
+Account deletion cleanup is independent of hosts and never marks an unconfirmed
+host removal successful.
 
 Member bootstrap entry allowlist (no OS/default-name/public-key/room/count fields):
 
@@ -1556,7 +1594,7 @@ shrunk to the remaining budget. A failed invocation burns its remaining daily
 reservation; do not reset the ledger to retry. The next UTC day resumes from
 durable rows. Ordinary grant/member expiry does not skip terminal retention or
 the dependency order. Account deletion uses its effective-owner terminal state
-and exact custody/ACK barriers; it never uses a parent cascade.
+and bounded dependency cleanup; it never uses a parent cascade.
 
 0015 originally admitted 9,800/day; 0018 supersedes its allocation. Terminal
 backlog still shares the same 10,000 cap. The current smaller arithmetic
