@@ -5,7 +5,7 @@ import { limitRequestIp, limitTerminationAttempt, requestPurpose } from "./abuse
 import { startWebGoogleHandoff, completeWebGoogleHandoff } from "./google_web.js";
 import { serveWebEntry } from "./web_entry.js";
 import { allowedBrowserOrigin } from "./origin.js";
-import { deleteAccount, deletionProof, deletionStatus, logoutOtherSessions } from "./account.js";
+import { deleteAccount, deletionProof, deletionStatus, deletionServers, logoutOtherSessions } from "./account.js";
 import { createGuest, recoverGuest } from "./guest.js";
 import {
   HttpError,
@@ -137,6 +137,10 @@ async function route(request, env) {
   if (memberResults && request.method === "POST") {
     return reportMemberResults(request, env, cleanIdentifier(memberResults[1], "server_id"), text, now);
   }
+  const deletionRedeem = url.pathname.match(/^\/v1\/servers\/([^/]+)\/account-deletion-grants\/redeem$/);
+  if (deletionRedeem && request.method === "POST") {
+    return redeemMemberGrant(request, env, cleanIdentifier(deletionRedeem[1], "server_id"), text, now, "account_deletion");
+  }
   const memberConnectRedeem = url.pathname.match(/^\/v1\/servers\/([^/]+)\/member-connect-grants\/redeem$/);
   if (memberConnectRedeem && request.method === "POST") {
     return redeemMemberGrant(request, env, cleanIdentifier(memberConnectRedeem[1], "server_id"), text, now, "connect");
@@ -176,6 +180,8 @@ async function route(request, env) {
     return deleteAccount(request, session, env, text, now);
   }
   if (request.method === "POST" && url.pathname === "/v1/account/deletion-proof") return deletionProof(request, session, env, text, now);
+  if (request.method === "POST" && url.pathname === "/v1/account/deletion-servers")
+    return deletionServers(session, env, text, now);
   if (request.method === "POST" && url.pathname === "/v1/servers") {
     return registerServer(session, env, text, now);
   }
@@ -185,6 +191,10 @@ async function route(request, env) {
   const visibility = url.pathname.match(/^\/v1\/member-servers\/([^/]+)\/(hide|unhide)$/);
   if (visibility && request.method === "POST") {
     return setMemberHidden(session, env, cleanIdentifier(visibility[1], "server_id"), text, now, visibility[2] === "hide");
+  }
+  const deletionGrant = url.pathname.match(/^\/v1\/servers\/([^/]+)\/account-deletion-grants$/);
+  if (deletionGrant && request.method === "POST") {
+    return createMemberGrant(session, env, cleanIdentifier(deletionGrant[1], "server_id"), text, now, "account_deletion");
   }
   const memberConnect = url.pathname.match(/^\/v1\/servers\/([^/]+)\/member-connect-grants$/);
   if (memberConnect && request.method === "POST") {

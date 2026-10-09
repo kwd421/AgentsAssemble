@@ -16,7 +16,8 @@ export async function setMemberHidden(session, env, serverId, text, now, hidden)
       RETURNING projection_id`).bind(hidden ? 1 : 0, now, session.person_id, serverId, epoch),
     env.DB.prepare(`UPDATE server_connect_grants SET used_at = ?
       WHERE ? = 1 AND changes() = 1 AND kind = 'member' AND person_id = ?
-        AND server_id = ? AND registration_epoch = ? AND used_at IS NULL AND expires_at > ?`)
+        AND server_id = ? AND registration_epoch = ? AND used_at IS NULL AND expires_at > ?
+        AND (grant_purpose IS NULL OR grant_purpose IN ('admission','connect'))`)
       .bind(now, hidden ? 1 : 0, session.person_id, serverId, epoch, now),
   ]);
   if (!changed.results.length) throw new HttpError(409, 'member_server_unavailable');

@@ -1,3 +1,4 @@
+import { CURRENT_PROOF_SOURCE_SQL } from "./account_proof.js";
 import { SECURE_PROTOCOL, EVENT_MODE } from "./event_endpoint.js";
 import { admissionBinding, grantBindingValues, targetValues, targetSql, bindingSql, expirySql, liveValues, liveSql, bindingEcho, requireEndpoint } from "./secure_admission.js";
 import { recheckHostIncarnation } from "./server_ownership.js";
@@ -204,23 +205,30 @@ export async function previewMemberServer(env, serverId, text, now) {
 export async function createMemberGrant(session, env, serverId, text, now, purpose = "admission") {
   const body = parseJson(text);
   const epoch = cleanIdentifier(body.registration_epoch, "registration_epoch");
-  const binding = admissionBinding(body, purpose, ["purpose", "challenge_hash", "registration_epoch"]);
+  const deletion = purpose === "account_deletion";
+  const binding = admissionBinding(body, purpose, ["purpose", "challenge_hash", "registration_epoch",
+    ...(deletion ? ["request_id", "proof"] : [])]);
+  const requestId = deletion ? cleanIdentifier(body.request_id, "request_id", 32, 128) : null;
+  if (deletion && (!binding || typeof body.proof !== "string" || !/^[A-Za-z0-9_-]{43}$/.test(body.proof)))
+    throw new HttpError(401, "account_deletion_reauth_required");
+  const proofHash = deletion ? await sha256Base64Url(body.proof) : null;
   if ((body.purpose === undefined ? "admission" : body.purpose) !== purpose ||
       typeof body.challenge_hash !== "string" || !/^[A-Za-z0-9_-]{43}$/.test(body.challenge_hash)) {
     throw new HttpError(400, "invalid_member_grant_request");
   }
   await memberEndpoint(env, serverId, epoch, now, Boolean(binding));
-  const prefix = purpose === "connect" ? MEMBER_CONNECT_GRANT_PREFIX : MEMBER_GRANT_PREFIX;
+  const prefix = purpose === "account_deletion" ? "aadg1." : purpose === "connect" ? MEMBER_CONNECT_GRANT_PREFIX : MEMBER_GRANT_PREFIX;
   const secret = `${prefix}${randomBase64Url(32)}`;
   // The INSERT owns both active caps; concurrent issuers cannot reserve the same slot.
   const grant = await env.DB.prepare(`INSERT INTO server_connect_grants
     (grant_id, secret_hash, session_id, person_id, device_id, server_id,
      endpoint_origin, endpoint_generation, created_at, expires_at, kind,
-     registration_epoch, challenge_hash, display_name_snapshot, member_purpose, admission_protocol, client_public_key, channel_id)
+     registration_epoch, challenge_hash, display_name_snapshot, member_purpose, admission_protocol, client_public_key, channel_id,
+     grant_purpose, deletion_request_id, deletion_proof_hash)
     SELECT ?, ?, sessions.session_id, sessions.person_id, sessions.device_id,
            servers.server_id, server_endpoints.origin, server_endpoints.generation,
-           ?, ${expirySql(binding)}, 'member',
-           servers.registration_epoch, ?, substr(persons.display_name, 1, 80), ?, ?, ?, ?
+           ?, ${deletion ? "MIN(?, sessions.expires_at, sessions.deletion_proof_expires_at)" : expirySql(binding)}, 'member',
+           servers.registration_epoch, ?, substr(persons.display_name, 1, 80), ?, ?, ?, ?, ?, ?, ?
     FROM sessions
     JOIN devices ON devices.device_id = sessions.device_id AND devices.person_id = sessions.person_id
     JOIN persons ON persons.person_id = sessions.person_id
@@ -231,11 +239,16 @@ export async function createMemberGrant(session, env, serverId, text, now, purpo
       AND devices.revoked_at IS NULL AND persons.status = 'active'
       AND servers.revoked_at IS NULL AND servers.registration_epoch = ?
       AND ${liveSql(binding)} ${targetSql(binding)}
-      AND NOT EXISTS (SELECT 1 FROM member_servers WHERE person_id = sessions.person_id
+      ${deletion ? `AND sessions.deletion_request_id = ? AND sessions.deletion_proof_hash = ?
+        AND sessions.deletion_proof_used_at IS NULL AND sessions.deletion_proof_expires_at > ?
+        AND ${CURRENT_PROOF_SOURCE_SQL}
+        AND EXISTS (SELECT 1 FROM member_servers WHERE person_id = sessions.person_id
+          AND server_id = servers.server_id AND registration_epoch = servers.registration_epoch
+          AND host_state = 'active')` : `AND NOT EXISTS (SELECT 1 FROM member_servers WHERE person_id = sessions.person_id
         AND server_id = servers.server_id AND registration_epoch = servers.registration_epoch AND user_hidden = 1)
       AND (? = 'admission' OR EXISTS (SELECT 1 FROM member_servers WHERE person_id = sessions.person_id
         AND server_id = servers.server_id AND registration_epoch = servers.registration_epoch
-        AND host_state = 'active' AND user_hidden = 0))
+        AND host_state = 'active' AND user_hidden = 0))`}
       AND (SELECT COUNT(*) FROM server_connect_grants
            WHERE kind = 'member' AND person_id = sessions.person_id
              AND used_at IS NULL AND expires_at > ?) < ?
@@ -244,8 +257,8 @@ export async function createMemberGrant(session, env, serverId, text, now, purpo
              AND used_at IS NULL AND expires_at > ?) < ?
     RETURNING endpoint_origin, endpoint_generation, expires_at`)
     .bind(`scg_${randomBase64Url(18)}`, await sha256Base64Url(secret), now, now + GRANT_TTL_SECONDS,
-      body.challenge_hash, purpose, ...grantBindingValues(binding), serverId, session.session_id, session.person_id, session.device_id,
-      now, epoch, ...liveValues(binding, now), ...targetValues(binding), purpose, now, MAX_ACTIVE_MEMBER_GRANTS_PER_PERSON,
+      body.challenge_hash, deletion ? "admission" : purpose, ...grantBindingValues(binding), deletion ? purpose : null, requestId, proofHash, serverId, session.session_id, session.person_id, session.device_id,
+      now, epoch, ...liveValues(binding, now), ...targetValues(binding), ...(deletion ? [requestId, proofHash, now] : [purpose]), now, MAX_ACTIVE_MEMBER_GRANTS_PER_PERSON,
       now, MAX_ACTIVE_MEMBER_GRANTS_PER_SESSION_SERVER).first();
   if (!grant) {
     requireEndpoint(await serverEndpoint(env, serverId), now, Boolean(binding));
@@ -253,16 +266,20 @@ export async function createMemberGrant(session, env, serverId, text, now, purpo
   }
   return json({ grant_token: secret, server_id: serverId, registration_epoch: epoch,
     endpoint_origin: grant.endpoint_origin, endpoint_generation: Number(grant.endpoint_generation),
-    expires_at: Number(grant.expires_at), ...bindingEcho(binding) }, 201);
+    expires_at: Number(grant.expires_at), ...bindingEcho(binding), ...(deletion ? { request_id: requestId } : {}) }, 201);
 }
 
 export async function redeemMemberGrant(request, env, serverId, text, now, purpose = "admission") {
   // Unlike legacy owner requests, member admission never permits an absent epoch.
   cleanIdentifier(parseJson(text).registration_epoch, "registration_epoch");
   const { nonce, fingerprint, registrationEpoch, body } = await verifyHostRequest(request, env, serverId, text, now);
-  const binding = admissionBinding(body, purpose, ["purpose", "registration_epoch", "challenge_hash", "grant_token"]);
+  const deletion = purpose === "account_deletion";
+  const binding = admissionBinding(body, purpose, ["purpose", "registration_epoch", "challenge_hash", "grant_token",
+    ...(deletion ? ["request_id"] : [])]);
+  const requestId = deletion ? cleanIdentifier(body.request_id, "request_id", 32, 128) : null;
+  if (deletion && !binding) throw new HttpError(401, "member_grant_invalid");
   const token = String(body.grant_token || "");
-  const prefix = purpose === "connect" ? MEMBER_CONNECT_GRANT_PREFIX : MEMBER_GRANT_PREFIX;
+  const prefix = purpose === "account_deletion" ? "aadg1." : purpose === "connect" ? MEMBER_CONNECT_GRANT_PREFIX : MEMBER_GRANT_PREFIX;
   if ((body.purpose === undefined ? "admission" : body.purpose) !== purpose ||
       token.length !== prefix.length + 43 || !token.startsWith(prefix) ||
       !/^[A-Za-z0-9_-]+$/.test(token.slice(prefix.length)) ||
@@ -272,7 +289,7 @@ export async function redeemMemberGrant(request, env, serverId, text, now, purpo
   // All authority is re-proved in the consuming write, including the key verified
   // above. A concurrent logout, key change or reincarnation cannot use a cached read.
   const secretHash = await sha256Base64Url(token);
-  const consume = env.DB.prepare(`UPDATE server_connect_grants SET used_at = ?
+  const consume = env.DB.prepare(`UPDATE server_connect_grants SET used_at = ?${deletion ? ", account_deletion_consumed_at = ?" : ""}
     WHERE kind = 'member' AND used_at IS NULL AND grant_id IN (
       SELECT source.grant_id FROM server_connect_grants source
       JOIN sessions ON sessions.session_id = source.session_id
@@ -281,7 +298,7 @@ export async function redeemMemberGrant(request, env, serverId, text, now, purpo
       JOIN persons ON persons.person_id = source.person_id
       JOIN live_servers AS servers ON servers.server_id = source.server_id
       JOIN server_endpoints ON server_endpoints.server_id = source.server_id
-      WHERE source.kind = 'member' AND source.member_purpose = ? AND source.used_at IS NULL
+      WHERE source.kind = 'member' AND COALESCE(source.grant_purpose, source.member_purpose) = ? AND source.used_at IS NULL
         AND source.server_id = ? AND source.secret_hash = ? AND source.expires_at > ?
         AND source.registration_epoch = ? AND source.challenge_hash = ?
         AND sessions.revoked_at IS NULL AND sessions.expires_at > ?
@@ -289,20 +306,30 @@ export async function redeemMemberGrant(request, env, serverId, text, now, purpo
         AND servers.revoked_at IS NULL AND servers.registration_epoch = source.registration_epoch
         AND servers.host_key_fingerprint = ?
         AND ${liveSql(binding)} AND ${BOUND_ENDPOINT_SQL} AND ${bindingSql} ${targetSql(binding)}
-        AND NOT EXISTS (SELECT 1 FROM member_servers WHERE person_id = source.person_id
+        ${deletion ? `AND source.deletion_request_id = ?
+          AND sessions.deletion_request_id = source.deletion_request_id
+          AND sessions.deletion_proof_hash = source.deletion_proof_hash
+          AND sessions.deletion_proof_used_at IS NULL AND sessions.deletion_proof_expires_at > ?
+          AND ${CURRENT_PROOF_SOURCE_SQL}
+          AND EXISTS (SELECT 1 FROM member_servers WHERE person_id = source.person_id
+            AND server_id = source.server_id AND registration_epoch = source.registration_epoch
+            AND host_state = 'active')` : `AND NOT EXISTS (SELECT 1 FROM member_servers WHERE person_id = source.person_id
           AND server_id = source.server_id AND registration_epoch = source.registration_epoch AND user_hidden = 1)
         AND (? = 'admission' OR EXISTS (SELECT 1 FROM member_servers WHERE person_id = source.person_id
           AND server_id = source.server_id AND registration_epoch = source.registration_epoch
-          AND host_state = 'active' AND user_hidden = 0))
-    ) RETURNING person_id, display_name_snapshot`)
-    .bind(now, purpose, serverId, secretHash, now, registrationEpoch,
-      body.challenge_hash, now, fingerprint, ...liveValues(binding, now), ...grantBindingValues(binding), ...targetValues(binding), purpose);
+          AND host_state = 'active' AND user_hidden = 0))`}
+    ) RETURNING person_id, display_name_snapshot, expires_at, deletion_request_id`)
+    .bind(now, ...(deletion ? [now] : []), purpose, serverId, secretHash, now, registrationEpoch,
+      body.challenge_hash, now, fingerprint, ...liveValues(binding, now), ...grantBindingValues(binding),
+      ...targetValues(binding), ...(deletion ? [requestId, now] : [purpose]));
   let results;
   try {
     results = await env.DB.batch([
       env.DB.prepare(`INSERT INTO host_request_nonces (server_id, nonce, expires_at, purpose)
         VALUES (?, ?, ?, 'GENERAL')`).bind(serverId, nonce, now + 600),
       consume,
+      ...(deletion ? [env.DB.prepare(`UPDATE account_deletion_assertion SET
+        ok = CASE WHEN changes() = 1 THEN 1 ELSE 0 END WHERE id = 1`)] : [
       // changes() is the immediately preceding consuming UPDATE. A concurrent
       // second redeem cannot create an anchor or return authority.
       env.DB.prepare(`INSERT INTO member_servers
@@ -316,9 +343,13 @@ export async function redeemMemberGrant(request, env, serverId, text, now, purpo
         WHERE member_servers.host_state IN ('pending', 'removed') AND member_servers.state_changed_at <= ?`)
         .bind(randomBase64Url(16), now, now, now, secretHash, now - MEMBER_RETENTION_SECONDS),
       env.DB.prepare(`SELECT projection_id FROM member_servers JOIN server_connect_grants AS source
-        USING (person_id, server_id, registration_epoch) WHERE source.secret_hash = ?`).bind(secretHash),
+        USING (person_id, server_id, registration_epoch) WHERE source.secret_hash = ?`).bind(secretHash)]),
     ]);
   } catch (error) {
+    if (String(error.message).includes('CHECK constraint failed: account_deletion_authority')) {
+      await recheckHostIncarnation(env.DB, serverId, registrationEpoch);
+      throw new HttpError(401, 'member_grant_invalid');
+    }
     if (String(error.message).includes('member_server_capacity')) throw new HttpError(409, 'member_server_capacity');
     if (String(error.message).includes('UNIQUE constraint failed: host_request_nonces')) throw new HttpError(409, 'replayed_request');
     throw error;
@@ -329,5 +360,7 @@ export async function redeemMemberGrant(request, env, serverId, text, now, purpo
     throw new HttpError(401, "member_grant_invalid");
   }
   return json({ person_id: grant.person_id, issuer: new URL(request.url).origin,
-    display_name: grant.display_name_snapshot || "", ...bindingEcho(binding), projection_id: results[3].results[0].projection_id });
+    display_name: grant.display_name_snapshot || "", ...bindingEcho(binding),
+    ...(deletion ? {request_id: grant.deletion_request_id, expires_at: Number(grant.expires_at)}
+      : {projection_id: results[3].results[0].projection_id}) });
 }

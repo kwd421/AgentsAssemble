@@ -1,6 +1,8 @@
+import { endpointRepresentation } from "./event_endpoint.js";
 import { HttpError, json, parseJson, cleanIdentifier, envSecret } from "./http.js";
 import { randomBase64Url, sha256Base64Url, hmacBase64Url, normalizeRecoveryCode } from "./crypto.js";
 import { limitTerminationAttempt } from "./abuse.js";
+import { CURRENT_PROOF_SOURCE_SQL } from "./account_proof.js";
 import { googleDeletionProof } from "./account_google.js";
 
 export async function logoutOtherSessions(session, env, now) {
@@ -78,11 +80,7 @@ export async function deleteAccount(request, session, env, text, now) {
           AND EXISTS (SELECT 1 FROM devices JOIN persons USING(person_id)
             WHERE devices.device_id = sessions.device_id AND devices.person_id = sessions.person_id
             AND devices.revoked_at IS NULL AND persons.status = 'active' AND persons.deleted_at IS NULL)
-          AND ((deletion_recovery_verifier IS NOT NULL AND EXISTS (SELECT 1 FROM recovery_credentials
-            WHERE person_id = sessions.person_id AND verifier = deletion_recovery_verifier AND revoked_at IS NULL))
-            OR (deletion_google_subject_hmac IS NOT NULL AND EXISTS (SELECT 1 FROM external_identities
-              WHERE person_id = sessions.person_id AND issuer = 'https://accounts.google.com'
-              AND subject_hmac = deletion_google_subject_hmac)))`)
+          AND ${CURRENT_PROOF_SOURCE_SQL}`)
         .bind(now, session.session_id, session.person_id, session.device_id, requestId,
           proofHash, now, now),
       env.DB.prepare(`UPDATE persons SET status = 'disabled', deleted_at = ?, display_name = '', avatar_url = NULL, updated_at = ?,
@@ -121,4 +119,29 @@ export async function deletionStatus(request, env, requestId, text, now) {
     .bind(cleanIdentifier(body.person_id, "person_id"), requestId, await sha256Base64Url(body.receipt), now).first();
   if (!row) throw new HttpError(401, "invalid_deletion_receipt");
   return json({ status: "account_deleted" });
+}
+
+// One membership-owner snapshot, including hidden rows; no duplicated inventory.
+export async function deletionServers(session, env, text, now) {
+  if (Object.keys(parseJson(text)).length) throw new HttpError(400, "invalid_deletion_list_request");
+  const { results } = await env.DB.prepare(`SELECT members.server_id, members.registration_epoch,
+      members.user_hidden, members.host_state, servers.label, servers.host_key_fingerprint,
+      servers.host_public_key_jwk, servers.revoked_at, servers.owner_deleted_at, servers.owner_status,
+      endpoints.origin, endpoints.generation, endpoints.state, endpoints.mode,
+      endpoints.registration_epoch AS endpoint_epoch, endpoints.lease_expires_at
+    FROM member_servers AS members LEFT JOIN server_authorities AS servers
+      ON servers.server_id = members.server_id AND servers.registration_epoch = members.registration_epoch
+    LEFT JOIN server_endpoints AS endpoints ON endpoints.server_id = servers.server_id
+    WHERE members.person_id = ? ORDER BY members.created_at, members.server_id, members.registration_epoch
+    LIMIT 513`).bind(session.person_id).all();
+  if (results.length > 512) throw new HttpError(409, "account_deletion_list_incomplete");
+  const servers = results.map(row => ({server_id: row.server_id, registration_epoch: row.registration_epoch,
+    name: row.label || row.server_id, user_hidden: Boolean(row.user_hidden), host_state: row.host_state,
+    host_key_fingerprint: row.host_key_fingerprint || "",
+    host_public_key_jwk: row.host_public_key_jwk ? JSON.parse(row.host_public_key_jwk) : null,
+    endpoint: row.owner_status === 'active' && row.owner_deleted_at == null && row.revoked_at == null
+      ? endpointRepresentation(row, now, true, false) : null}));
+  if (new TextEncoder().encode(JSON.stringify({servers})).byteLength > 512 * 1024)
+    throw new HttpError(409, "account_deletion_list_incomplete");
+  return json({servers});
 }
