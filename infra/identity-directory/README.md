@@ -142,18 +142,16 @@ owner renewal calls. Logout, account removal and ownership transfer affect the n
 admission, not an already connected host workspace. New page/reconnection requires
 fresh central admission. There is no `owner-connections` API or persistent owner-connection table.
 
-The host renews a still-online endpoint using signed
-`POST /v1/servers/:id/endpoint/renew` with the existing
-`{origin,generation,issued_at,lease_expires_at}` body. Exact origin/generation is
-preserved; renewal cannot shrink or revive an expired/offline endpoint. PUT
-publication and DELETE retirement advance generation. This is server discovery,
-not connected-user authorization: 288 requests per online server per 24 hours at
-5-minute intervals. Owner keep-alive uses 0 requests and 0 D1 writes. Admission
-uses 2 requests (grant issue and redemption), with signed list/login operations
-counted separately. Admission changes 4 logical rows before indexes/expiry cleanup;
-D1 usage counts actual rows written, including indexed updates.
+Migration 0017 supports `event_secure_v1` endpoints and `secure_admission_v1`
+key/channel-bound admissions. Rust d12077f2 publishes only on startup, origin
+change and shutdown; no endpoint heartbeat, central owner renewal or polling is
+needed for a connected workspace. Legacy lease routes remain available, but
+the 0018 budget below is sized for event-only hosts and does not support their
+former five-minute heartbeat cadence. Admission uses two central requests for
+owners; members also need a signed consent preview. ECDH, host challenge,
+confirmation and room traffic stay between the client and host.
 
-Local verification applies all ten migrations to isolated workerd D1 and runs
+Local entry verification applies migrations to isolated workerd D1 and runs
 `node test/local_owner_connections.mjs http://127.0.0.1:8799`. The runner rejects
 non-loopback URLs and uses synthetic credentials. It exercises entry redemption,
 exact retry, stable endpoint generation and logout preventing the next admission.
@@ -264,18 +262,120 @@ constraint), or 6 endpoint calls/minute = 8,640 host nonces/day = **25,920 clean
 writes**. Accounts, IPs and locations multiply these rates. Lowering only an
 individual account limit would not bound total generation.
 
-The database-wide admission ceiling remains **8,000 eventual cleanup writes/UTC
-day**, partitioned into non-borrowing purpose pools:
+### Event-only budget rebalance (0018, current)
 
-| Purpose | Daily deletion-write budget | Charged work |
-| --- | ---: | --- |
-| AUTH | 700 | Google-verified person recovery/completion counters (3 each) and sessions (7) |
-| ANONYMOUS | 700 | Guest creation/recovery including sessions, Google starts, invalid credentials; counters/handoffs (3), sessions (7) |
-| GENERAL | 700 | Other signed device/host nonces, including ownership claims (3) |
-| ENDPOINT | 4,800 | Accepted endpoint nonces (3) and daily server/host counters (3 each) |
-| OWNER_GRANT | 800 | Verified owner request nonce (3) and grant row (5) |
-| OWNER_REDEEM | 300 | Signed grant-redemption host nonce (3) |
-| Total | **8,000** | Below >=9,993/day cleanup capacity |
+Owner principle: central is used only for entry and explicit state changes;
+no heartbeat or polling is added. This is a local proposal, not a deployed
+migration. Worker baseline is 79e5c93b; workload paths were inspected at Rust
+d12077f2 (`central/event_publisher.rs`, `central/member_sync.rs`, persistence
+`member_projection.rs`, frontend `secureOwnerEntry.ts`/`secureMemberEntry.ts`).
+
+All numbers below are **eventual indexed deletion units per UTC day**, not
+foreground D1 writes or Worker requests. Pools cannot borrow from each other.
+
+| Purpose | Before (0017) | After (0018) | Heavy group/day |
+| --- | ---: | ---: | ---: |
+| AUTH | 700 | 200 | 16 |
+| ANONYMOUS | 700 | 800 | 66 |
+| GENERAL | 700 | 5,370 | 447 |
+| ENDPOINT | 4,800 | 440 | 36 |
+| OWNER_GRANT | 800 | 1,920 | 160 |
+| OWNER_REDEEM | 300 | 720 | 60 |
+| member_sync | 1,800 | 540 | 45 |
+| Total | **9,800** | **9,990** | **830** |
+
+Heavy group means one 24/7 host and its owner plus three distinct member accounts.
+We conservatively interpret ten app opens on two devices as **ten per device**:
+20 fresh owner admissions/day. Reusing a live central session does not issue
+another session. Bootstrap and exact icon GETs have zero expiry debt (0016).
+No retries or invalid signed attempts are included in the capacity calculation.
+
+* ENDPOINT: three process starts each publish an initial empty-ingress offline
+  event and then the online origin (6); two restart shutdowns (2), one additional
+  origin change (1) and final shutdown (1) = **ten signed events × 3**, plus one
+  server counter and one signing-key counter × 3 = **36**. Rust's publisher starts
+  with `observed = None`, and an already registered managed host initially exposes
+  `(0, "")`; that startup DELETE is separate from the prior process's shutdown.
+  A day without the final shutdown or extra origin change costs less. Persistent
+  online time costs zero. Retries/coalescing can change the observed event count;
+  this reserves all ten events rather than assuming startup coalescing.
+* Owner entry: signed grant nonce 3 + grant 5 = **8 OWNER_GRANT**, signed host
+  redemption nonce **3 OWNER_REDEEM**. Twenty entries cost **160 + 60**.
+* Secure member entry (0017): preview nonce 3, issue nonce 3 + member grant 5,
+  redemption host nonce 3 = **14 GENERAL**. Ten entries for each of three members
+  cost **420**. Client/account/session charges are 11/entry; the host's current
+  owning account and server are charged the other 3. Binding columns add no index
+  or expiry row. Grant consumption updates do not add cleanup debt.
+* GENERAL additionally reserves three registrations + three host default-name
+  publications (startup and two restarts) = 18, then one host rename, one icon
+  upload and one signed logout = 9. Total **447**. Local registration is a
+  conservative allowance; remote app opens do not register another owned host.
+* Occasional auth is made explicit as a conservative daily allowance: one owner
+  Google login after logout plus one guest recovery per member. Google start
+  creates an IP source, precision counter and handoff = **9 ANONYMOUS**. Verified
+  completion creates IP/person sources, a completion counter and session =
+  **16 AUTH**. Each guest recovery on its own source creates IP/person sources,
+  IP/code precision counters and session = **19 ANONYMOUS** (57 for three).
+  Shared counters can lower this cost. Initial enrollment is before the measured
+  day; bulk onboarding, extra logins, devices and hostile traffic share the pools.
+* member_sync: allow three new/replacement consent anchors × 6 and three single-item
+  result reports × (3 + 6) = **45**. Established reconnects reuse their active
+  anchor; Rust's `anchor(..., false)` does not increment an unchanged projection
+  or resend an ACKed revision. Reports are caused by membership/state changes,
+  not each reconnect. Extra joins/leaves, replacements and retries consume more.
+
+The old pools alone fit only **one** such group (GENERAL: floor(700/447)); the
+old session cap allows only four 11-unit member entries, and the old host cap
+allows at most fifteen member redemptions before other host work. Thus **zero
+complete heavy groups** satisfy the old actor limits. After 0018 each pool fits
+**12** groups: AUTH 12, ANONYMOUS 12, GENERAL 12, ENDPOINT 12, OWNER_GRANT 12,
+OWNER_REDEEM 12, member_sync 12. This is the maximum for this explicit workload:
+12 × 830 = **9,960**, whereas 13 × 830 = **10,790 > 10,000**. If ten opens means
+ten total rather than per device, usage is lower; this capacity remains conservative.
+
+GENERAL ceilings become **240/account, 150/session, 120/host units/day**, replacing
+90/45/45. A member uses 110/session/day; the owning account uses 117 including
+host redemptions and metadata, and the host uses 102. Session/device rotation
+cannot reset account spending; ownership transfer cannot reset host spending.
+ENDPOINT's server-ID and signing-key daily caps shrink **320 → 16 calls** each,
+leaving six event retries beyond the ten-event allowance. Existing AUTH and
+ANONYMOUS source caps (200/network, 100/person), edge rates and active-grant caps
+are retained. Accounts sharing a source can hit its independent cap sooner.
+
+0018 updates pool limits, adds `member_sync_budget.admission_limit` (540),
+replaces existing admission triggers with the new ceilings, and adds two aggregate
+spent-debt guards for the migration day. The legacy
+`daily_limit = 1800` CHECK and column remain; all shared member triggers enforce
+`MIN(daily_limit, admission_limit)`, including old INSERT writers. No rows, columns,
+indexes, replay protection, protocol, cleanup queue or daily spent units are
+deleted/reset. A pool already above its smaller limit rejects new debt until the
+next lazy UTC rollover; applying the migration grants no same-day refund.
+Smaller creation pools are installed first; increases follow the new member
+and aggregate guards so intermediate allocations also stay within 10,000. Retained
+old debt plus new room in an enlarged pool can otherwise exceed the bound on the
+migration day. Both ledgers reject an increment if today's combined debt would
+exceed 9,990, atomically rolling back its nonce/product write. This can temporarily
+deny a pool below its individual ceiling; UTC rollover restores the usual capacity.
+The signed HTTP regression seeds a valid old 9,800-unit day, admits another 189,
+then observes rejection and an unchanged durable snapshot; removing the aggregate
+guards instead admits that rejected host rename. The member writer is also checked.
+
+Cleanup stays **10,000/day**, one `17 3 * * *` cron, 100 rows/page, at most 48
+DELETEs plus one daily claim. 9,990 admitted units plus the claim fit the ceiling;
+the remaining nine units are only arithmetic headroom. The 14-queue statement
+cap, terminal backlog, long-lived rows and failed/burned cleanup runs mean this
+is **admission capacity, not guaranteed sustained cleanup throughput**. Account
+wide D1 write/read/CPU quotas can also bind; indexed foreground mutations and
+retirement are separate costs. No cleanup frequency or per-run bound is changed.
+
+Rollout (not performed): record the current Worker version and remote migration
+state; apply additive 0018 before the matching release. Retain schema on code
+rollback. Rust Rule.md item 10 allows roll-forward before first public release;
+legacy lease protocols remain, but their heartbeat capacity is intentionally
+reduced. Use event-only hosts. The 12-group signed Worker/D1 regression covers
+owner grants/redemption, member preview/admission/reconnect, result activation,
+metadata, logout, directory visibility and all purpose debt. Without 0018 it
+fails with `actor_quota_exhausted` before completing the first heavy group.
 
 ### Exact read proofs and durable GENERAL actor caps (0016)
 
@@ -294,15 +394,10 @@ expire through normal cleanup.
 
 Migration `0016_general_actor_budget.sql` adds non-indexed UTC-day/unit columns to
 existing `persons`, `sessions` and `servers` anchor rows, plus GENERAL nonce and
-member-grant INSERT triggers. GENERAL usage is capped at **90/account/day, 45/session/day and
-45/host/day**. Accepted device/host nonces cost three units; each member grant
+member-grant INSERT triggers. Their original 90/account, 45/session and
+45/host ceilings are superseded by 0018 above. Accepted device/host nonces cost three units; each member grant
 additionally charges five units to its stored session and account atomically
-with its global reservation. Grant creation thus costs eight actor units: at most
-11 grants/account/day across at least three sessions, or five/session/day (ten
-across two sessions), assuming no other GENERAL spending or failed requests.
-A consent preview adds three units, allowing eight preview-plus-grant workflows
-per account/day and four per session/day. These limits support a member reconnecting
-a few times a day; ongoing connected sessions do not issue renewal grants.
+with its global reservation. A consent preview adds three units to the eight-unit issue cost.
 Account charging comes only from the stored verified session or current host
 ownership; new sessions/devices cannot reset it. Host charging stays on the server
 row across ownership transfer. Claims and duplicate resolution also charge their
@@ -322,7 +417,7 @@ may report actor rejection as replay/409; deploy this code for the distinct HTTP
 Both reset at UTC midnight. Logout/account safety remains in GENERAL, without an
 unapproved reserve; a capped actor can therefore be denied those mutations too.
 
-The global GENERAL pool stays **700**; all purpose pools, expiry weights, cleanup
+0016 originally retained the 700-unit GENERAL pool; 0018 replaces its allocation. Expiry weights and cleanup
 **10,000 indexed writes/day**, 100-row pages and 48-delete-query invocation bound
 are unchanged. Local Miniflare D1 measured accepted nonce foreground writes rising
 from **4 to 6** (two unindexed anchor updates), while nonce cleanup debt remains
@@ -364,8 +459,8 @@ nonces committed before a later validation/grant failure are still charged.
 ENDPOINT validates the body first, then batches both daily source reservations,
 the guarded endpoint mutation and nonce insertion. A zero-row mutation aborts
 via the nonce NOT NULL constraint, and replay/cap failures roll everything back.
-The six global ledger rows never expire or grow. Total successful expiry debt
-stays <=8,000/day, leaving >=1,993/day for backlog when cleanup succeeds.
+The six global ledger rows never expire or grow. Current combined admitted
+debt and its limited cleanup headroom are specified by 0018 above.
 Long-lived rows and failed runs still delay reclamation.
 
 AUTH and ANONYMOUS each reserve cleanup units against separate durable
@@ -385,8 +480,7 @@ recovery owner is resolved before any expiring write. Only the server-owned
 (signature, issuer, audience, expiry and nonce), qualifies recovery for AUTH.
 A self-minted guest code proves possession, not a verified identity; client input
 cannot select this kind. Google completion and its session issuance also use
-AUTH. No new pool, migration or increased budget is needed: both existing
-700-unit pools remain finite aggregate backstops.
+AUTH. Both pools remain finite aggregate backstops with the 0018 allocation.
 The shared per-minute AUTH edge gate still throttles anonymous and verified
 traffic from the same network; these reservations isolate durable daily spending.
 
@@ -399,35 +493,10 @@ racing first uses may conservatively reserve extra source units, but never extra
 shared debt. A midnight race fails closed and the next request can retry in the
 new UTC day. No permanent IP ledger is introduced.
 
-ENDPOINT additionally admits at most **320 accepted calls per server ID AND per
-host signing-key fingerprint per UTC day**, before spending shared nonce capacity.
-The exact D1 counters are independent of edge location. Re-registering a deleted
-server or reusing a key for another server cannot reset them. Their UTC-day rows
-survive registration deletion, then expire through the existing cleanup queue.
-Malformed JSON, invalid generation/origin/lease, stale generations, mismatched or
-expired renewals, replay and capacity denial commit neither nonce nor endpoint
-mutation nor daily reservation. The transaction rechecks the registered host key
-and guards against a batch crossing UTC midnight.
-
-With no retries or failed attempts, the owner pools support **100 grant issuances
-and 100 redemptions/day**, hence **100 complete owner entries** across the entire
-directory. ENDPOINT's 4,800 units cover nonces plus six counter units per distinct
-server/key pair per day:
-
-| Continuously online hosts | Five-minute calls/day | Cleanup units/day including counters | Shared pool spare calls/day |
-| ---: | ---: | ---: | ---: |
-| 3 | 864 | 2,610 | 730 |
-| 4 | 1,152 | 3,480 | 440 |
-| 5 | 1,440 | 4,350 | 150 |
-
-The pool margin is also constrained by each server/key's 320-call ceiling:
-288 scheduled calls leave **32 accepted extra calls per host**. Five hosts can
-share the 150-call pool margin (30 each). Initial publication, shutdown and
-accepted retries use this margin; invalid or stale requests do not. Existing
-600-second host leases and the 16-active-grant/session constraint still apply.
-**Follow-up:** increasing heartbeat and lease intervals together could reduce
-daily endpoint debt and allow a different balance; that needs a separately
-reviewed Rust host change. This release does not change the host cadence.
+ENDPOINT's durable counters survive registration deletion and key reuse. Invalid,
+stale or replayed events and capacity denials commit neither the nonce, endpoint
+mutation nor daily reservation. The 0018 server/key ceiling applies equally to
+event and retained legacy lease routes; epoch changes cannot reset it.
 
 **Exhaustion experience:** each pool and durable source cap returns HTTP 429,
 `temporary_capacity_exhausted`, with “Daily temporary storage capacity reached.
@@ -440,10 +509,11 @@ Retry after 00:00 UTC.” There is no borrowing, refund, or unlimited-entry guar
   remains. These daily allowances reset at UTC midnight.
 - OWNER_GRANT/OWNER_REDEEM callers receive the JSON error. This checkout has no
   integrated connect-grant frontend consumer. Retries and failed signed requests
-  reduce practical capacity below 100 entries.
-- ENDPOINT hosts currently log only `HTTP 429` and retry with backoff. After the
-  last 600-second lease expires, they appear offline until a successful retry
-  after UTC midnight. Reserved owner grants still need a live endpoint.
+  reduce the workload capacity calculated above.
+- ENDPOINT denial leaves the last published state intact. Event-only hosts expose
+  delivery failure and retry their pending event with bounded backoff; legacy
+  lease hosts become offline when their lease expires. Admission still needs
+  an available matching endpoint; an event publication is not a reachability proof.
 - GENERAL exhaustion denies mutations; exact bootstrap/icon GETs remain usable
   while live authority and edge limits permit them. Actor exhaustion has a distinct
   `actor_quota_exhausted` code; the Rust central response owner maps it to Korean.
@@ -705,16 +775,31 @@ steps, not part of local verification.
 
 ### Verification
 
+Current 0018 local verification: 237 Node tests and syntax checks pass. The signed
+heavy-day regression admits twelve complete ten-event groups, observing **9,960**
+units across all seven ledgers. Real local workerd/D1 checks cover additive upgrade,
+old writers, retained debt, splitter compatibility, member admission/results,
+anonymous isolation and the unchanged 10,000-unit bounded cleanup. Architecture and
+codebase-map checks pass in a scoped checkout; the active checkout's two unrelated
+untracked cleanup configs cause map drift and are excluded from generated artifacts.
+No production migration/deployment or Rust GUI test was performed.
+
 ```sh
 npm test
 npm run check
 npm run dry-run:ci
 wrangler deploy --dry-run --assets "$RUST_CHECKOUT/frontend/dist"
+node test/local_budget_rebalance.mjs "$(npm root -g)/wrangler/package.json"
 node test/local_cleanup.mjs "$(npm root -g)/wrangler/package.json"
 node test/local_abuse.mjs "$(npm root -g)/wrangler/package.json"
 node test/local_auth_capacity.mjs "$(npm root -g)/wrangler/package.json"
 node test/local_admission_isolation.mjs "$(npm root -g)/wrangler/package.json"
 ```
+
+Historical verification below is retained for the original 0010 admission/cleanup
+slice. Its test counts, 24-guest attack and five-host heartbeat capacities describe
+that revision, not 0018 or the current event-only Rust path. Current limits and
+capacity are exclusively in the 0018 section above.
 
 Migration 0010 SQL compatibility verification (Wrangler 4.98.0): the installed
 `wrangler-dist/cli.js` exports `unstable_splitSqlQuery`. The original SQL splits
@@ -747,7 +832,7 @@ it passes after the SQL change. This is a separate local check, not part of the
 77-test Node suite. The local cleanup, abuse, admission-isolation and full-day
 auth-capacity workerd/D1 regressions also pass with the changed migration.
 
-Current revision: **77/77 Node tests**, syntax check and `npm run dry-run:ci`
+Historical 0010 revision: **77/77 Node tests**, syntax check and `npm run dry-run:ci`
 pass. CI generates a temporary config beside `wrangler.toml` that omits only
 `[assets]`, preserves relative Worker/D1 paths, bundles with `--dry-run`, and then
 removes the config. This proves Worker/config validity, not the separately built
@@ -1183,8 +1268,8 @@ authentication. Body hashing covers every purpose/epoch/projection/revision.
 
 ### Budget, cleanup and staged rollout
 
-`member_sync_budget` is a separate non-borrowing **1,800-unit/day UTC** counter;
-existing CHECK constraints and the 8,000-unit pool allocation are untouched.
+`member_sync_budget` is a separate non-borrowing UTC counter. 0014 originally
+reserved 1,800 units; 0018 adds its enforced 540-unit admission ceiling above.
 New/replacement anchors cost **6**; reports cost **3 + 6 × submitted items**,
 including unknown/stale/conflicting IDs (maximum **99**). Nonce insertion, budget
 charge, projection CAS and ACK snapshot share one D1 batch. Anchor charge shares
@@ -1199,7 +1284,7 @@ is at most 100 rows. Eight queues need at most eight terminal/partial pages;
 full pages cost at least 300 units. Thus `ceil(9999 / 300) + 8 = 42` deletes fit
 inside the existing 48-delete bound, with one daily claim (at most 49 statements).
 Each delete is clipped to remaining budget divided by its weight. Admitted debt
-is **8,000 + 1,800 = 9,800 ≤ 10,000/day**. The frozen projection indexes are PK
+was **8,000 + 1,800 = 9,800 ≤ 10,000/day** under 0014; 0018 supersedes this allocation. The frozen projection indexes are PK
 (person,server,epoch), UNIQUE(projection_id), (server,epoch), (host_state,
 state_changed_at); weight 6 conservatively covers row/index rewrites. Nonce PK
 (server,nonce) and expires_at index cost 3. This is sized for the current small
@@ -1405,8 +1490,8 @@ reservation; do not reset the ledger to retry. The next UTC day resumes from
 durable rows. Ordinary grant/member expiry does not skip terminal retention or
 the dependency order. Account deletion remains a separate intentional cascade.
 
-Existing expiry admission debt remains 9,800/day (8,000 + 1,800). No pool limit is
-raised. Terminal backlog shares the same 10,000 cap; the 200-unit arithmetic
+0015 originally admitted 9,800/day; 0018 supersedes its allocation. Terminal
+backlog still shares the same 10,000 cap. The current smaller arithmetic
 headroom is not a throughput promise, and draining may take additional days.
 Each resolution additionally spends one ordinary device nonce, one guarded host
 nonce (3 expiry units each in GENERAL), at most one two-entry keeper INSERT and

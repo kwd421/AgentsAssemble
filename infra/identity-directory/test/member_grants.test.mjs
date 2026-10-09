@@ -152,22 +152,22 @@ test("member daily account cap spans sessions and servers without consuming owne
   assert.equal(r.status, 201);
   const epoch = (await r.json()).registration_epoch;
   await publishEndpoint(f.env, server, f.host, epoch);
-  // Eleven eight-unit grants require three sessions (five, five, one).
-  for (let i = 0; i < 11; i++) {
+  // Thirty eight-unit grants share three sessions (ten each).
+  for (let i = 0; i < 30; i++) {
     const id = i % 2 ? server : f.id, body = { ...f.body, registration_epoch: i % 2 ? epoch : f.epoch };
-    const issued = await f.device(sessions[Math.floor(i / 5)], `/v1/servers/${id}/member-grants`, body);
+    const issued = await f.device(sessions[Math.floor(i / 10)], `/v1/servers/${id}/member-grants`, body);
     assert.equal(issued.status, 201, await issued.clone().text());
     const token = (await issued.json()).grant_token;
     assert.equal((await signedHostRequest(f.env, id, f.host.pair, "POST", { ...body, grant_token: token },
       { pathname: `/v1/servers/${id}/member-grants/redeem` })).status, 200);
   }
   const db = f.env.DB.database;
-  assert.equal(db.prepare("SELECT general_units FROM persons WHERE person_id = ?").get(f.member.created.person.person_id).general_units, 88);
+  assert.equal(db.prepare("SELECT general_units FROM persons WHERE person_id = ?").get(f.member.created.person.person_id).general_units, 240);
   const before = db.prepare("SELECT creation_writes FROM creation_budgets WHERE purpose = 'GENERAL'").get().creation_writes;
   const rejected = await f.issue({}, sessions[2]);
   assert.equal(rejected.status, 429);
   assert.equal((await rejected.json()).error.code, "actor_quota_exhausted");
-  assert.equal(db.prepare("SELECT COUNT(*) AS n FROM server_connect_grants WHERE kind = 'member'").get().n, 11);
+  assert.equal(db.prepare("SELECT COUNT(*) AS n FROM server_connect_grants WHERE kind = 'member'").get().n, 30);
   assert.equal(db.prepare("SELECT creation_writes FROM creation_budgets WHERE purpose = 'GENERAL'").get().creation_writes, before);
   const g = await ownerGrant(f);
   assert.ok(g.grant_token);

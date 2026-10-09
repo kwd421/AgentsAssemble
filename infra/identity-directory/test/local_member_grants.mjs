@@ -119,7 +119,7 @@ try {
   assert.equal((await signed(connectPath, connectBody)).status, 409);
   assert.equal((await signed(`/v1/member-servers/${serverId}/unhide`, { registration_epoch: body.registration_epoch })).status, 200);
   // A rejected report cannot leave a nonce, counter update or projection write.
-  await db.prepare('UPDATE member_sync_budget SET creation_writes = 1800').run();
+  await db.prepare('UPDATE member_sync_budget SET creation_writes = 540').run();
   const snapshot = async () => Promise.all(['member_servers', 'member_sync_budget', 'member_sync_nonces',
     'server_connect_grants', 'host_request_nonces', 'creation_budgets'].map(async table =>
     (await db.prepare(`SELECT * FROM ${table} ORDER BY rowid`).all()).results));
@@ -133,12 +133,12 @@ try {
   const beforeAnchor = await snapshot();
   assert.equal((await signed(redeemPath, retryBody, true)).status, 429);
   assert.deepEqual(await snapshot(), beforeAnchor);
-  await db.prepare('UPDATE member_sync_budget SET creation_writes = 1794').run();
+  await db.prepare('UPDATE member_sync_budget SET creation_writes = 534').run();
   const freshResponse = await signed(redeemPath, retryBody, true);
   assert.equal(freshResponse.status, 200, await freshResponse.clone().text());
   const fresh = (await freshResponse.json()).projection_id;
   assert.notEqual(fresh, projection_id);
-  assert.equal((await db.prepare('SELECT creation_writes FROM member_sync_budget').first()).creation_writes, 1800);
+  assert.equal((await db.prepare('SELECT creation_writes FROM member_sync_budget').first()).creation_writes, 540);
   console.log(JSON.stringify({ report_items: 16, report_charge: 99, report_wall_ms: reportWallMs,
     note: 'Wall time includes client crypto and D1; not production Worker CPU evidence.' }));
   const logoutGrant = await (await signed(issuePath, body)).json();

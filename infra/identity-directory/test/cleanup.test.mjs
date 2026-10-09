@@ -77,10 +77,10 @@ test("daily creation cap rejects signed mutations and resets on a new UTC day", 
   const env = environment({ SESSION_TTL_SECONDS: "172800" }), advance = utcDayClock(t, env);
   const { key, created } = await createGuestIdentity(env);
   const db = env.DB.database;
-  // Distribute accepted debt across actors: each session may spend only 45 units.
-  for (let i = 0; i < 233; i++) {
-    const actor = `capacity-${Math.floor(i / 15)}`;
-    if (i % 15 === 0) {
+  // Distribute accepted debt across actors: each session may spend only 150 units.
+  for (let i = 0; i < 1790; i++) {
+    const actor = `capacity-${Math.floor(i / 50)}`;
+    if (i % 50 === 0) {
       db.prepare("INSERT INTO persons (person_id, identity_kind, created_at, updated_at) VALUES (?, 'guest', 0, 0)").run(actor);
       db.prepare("INSERT INTO devices (device_id, person_id, public_key_jwk, created_at, last_seen_at) VALUES (?, ?, '{}', 0, 0)").run(actor, actor);
       db.prepare("INSERT INTO sessions (session_id, person_id, device_id, token_hash, created_at, expires_at, last_seen_at) VALUES (?, ?, ?, ?, 0, 9999999999, 0)").run(actor, actor, actor, actor);
@@ -93,7 +93,7 @@ test("daily creation cap rejects signed mutations and resets on a new UTC day", 
   assert.equal(response.status, 429);
   assert.equal((await response.json()).error.code, "temporary_capacity_exhausted");
   assert.equal(db.prepare("SELECT COUNT(*) AS n FROM request_nonces").get().n, before);
-  assert.equal(db.prepare("SELECT creation_writes FROM creation_budgets WHERE purpose = 'GENERAL'").get().creation_writes, 699);
+  assert.equal(db.prepare("SELECT creation_writes FROM creation_budgets WHERE purpose = 'GENERAL'").get().creation_writes, 5370);
   assert.equal((await signedDeviceRequest(env, created.session, key.pair, "/v1/bootstrap")).status, 200);
   advance(86400);
   assert.equal((await call()).status, 200);

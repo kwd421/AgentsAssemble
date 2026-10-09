@@ -33,6 +33,8 @@ test("local D1 GENERAL counters preserve old writers and bound concurrent sessio
     const hostNonce = (serverId, nonce) => db.prepare("INSERT INTO host_request_nonces (server_id, nonce, expires_at) VALUES (?, ?, 0)").bind(serverId, nonce);
     const oldWrites = (await requestNonce(session.session_id, "before-upgrade").run()).meta.rows_written;
     for (const sql of splitSql(readFileSync(new URL("0016_general_actor_budget.sql", folder), "utf8"))) await db.prepare(sql).run();
+    // The current Worker reads the secure endpoint fields introduced by 0017.
+    for (const sql of splitSql(readFileSync(new URL("0017_secure_admission.sql", folder), "utf8"))) await db.prepare(sql).run();
     const { general_day, general_units, ...preserved } = await db.prepare("SELECT * FROM servers WHERE server_id = ?").bind(id).first();
     assert.deepEqual(preserved, original);
     assert.equal((await requestNonce(session.session_id, "after-upgrade").run()).meta.rows_written, oldWrites + 2);

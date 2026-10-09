@@ -240,8 +240,9 @@ test('retired dependencies survive 30 days then drain in ordered 100-row pages w
   db.prepare('UPDATE servers SET revoked_at = ? WHERE server_id = ?').run(now, retired);
   db.prepare('UPDATE servers SET revoked_at = ? WHERE server_id = ?').run(now + 86400, recent);
   const sessionId = db.prepare('SELECT session_id FROM sessions').get().session_id;
-  const trigger = db.prepare("SELECT sql FROM sqlite_master WHERE name = 'budget_server_connect_grants'").get().sql;
-  db.exec('DROP TRIGGER budget_server_connect_grants');
+  const triggers = db.prepare("SELECT name, sql FROM sqlite_master WHERE name IN ('budget_server_connect_grants', 'budget_member_servers')").all();
+  // Historical retirement backlog predates today's admission pools.
+  for (const { name } of triggers) db.exec(`DROP TRIGGER ${name}`);
   for (const id of [retired, recent]) {
     db.prepare("INSERT INTO server_endpoints (server_id, origin, state, generation, lease_expires_at, updated_at) VALUES (?, 'https://retired.trycloudflare.com', 'online', 1, ?, ?)").run(id, now + 600, now);
     db.prepare("INSERT INTO server_icons VALUES (?, 'retained-icon', x'01')").run(id);
@@ -258,7 +259,7 @@ test('retired dependencies survive 30 days then drain in ordered 100-row pages w
         .run(`${person}-grant`, `${person}-hash`, sessionId, f.owner.created.person.person_id, f.owner.created.session.device_id, id, now, now + 300);
     }
   }
-  db.exec(trigger);
+  for (const { sql } of triggers) db.exec(sql);
   const tables = ['server_connect_grants', 'server_endpoints', 'server_icons', 'person_servers', 'member_servers', 'servers'];
   const counts = id => tables.map(table => db.prepare(`SELECT count(*) n FROM ${table} WHERE server_id = ?`).get(id).n);
   const initial = counts(retired), recentInitial = counts(recent);

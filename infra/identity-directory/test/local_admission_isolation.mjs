@@ -123,7 +123,7 @@ try {
   const prefixDebt = await debt("ANONYMOUS") + await debt("AUTH") - beforeAnonymous;
   assert.ok(prefixDebt <= 200, `IPv6 prefix spent ${prefixDebt}`);
   const initialAuth = await debt("AUTH"), attackers = [];
-  for (let i = 0; i < 24; i++) {
+  for (let i = 0; i < 28; i++) {
     const response = await guest(`local-flood-device-${i}`, `2001:db8:${(i + 100).toString(16)}::1`);
     assert.equal(response.status, 201, await response.clone().text());
     attackers.push(await response.json());
@@ -180,7 +180,7 @@ try {
     if (response.status === 429) break;
     assert.equal(response.status, 200, await response.clone().text()); successes++;
   }
-  assert.ok(successes >= 288 && successes < 1600);
+  assert.ok(successes === 16);
   const endpointDebt = await debt("ENDPOINT");
   const alias = await register("local-attacker-alias", attacker.pair, aliasOwner);
   assert.equal((await endpoint(alias, body(1))).status, 429);

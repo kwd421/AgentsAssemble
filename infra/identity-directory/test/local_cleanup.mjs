@@ -69,7 +69,7 @@ try {
   for (const insert of inserts) {
     await assert.rejects(db.prepare("WITH n(x) AS (SELECT 2002) " + insert).run(), /temporary_capacity_exhausted/);
   }
-  assert.equal((await db.prepare("SELECT SUM(creation_writes) AS n FROM creation_budgets").first()).n, 8000);
+  assert.equal((await db.prepare("SELECT SUM(creation_writes) AS n FROM creation_budgets").first()).n, 9450);
   const tables = ["request_nonces", "host_request_nonces", "rate_limits", "google_handoffs", "server_connect_grants", "sessions", "member_sync_nonces", "member_servers"];
   const snapshot = () => Promise.all(tables.map(async table => (await db.prepare(`SELECT COUNT(*) AS n FROM ${table}`).first()).n));
   const before = await snapshot();

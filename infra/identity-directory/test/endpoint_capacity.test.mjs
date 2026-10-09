@@ -1,63 +1,27 @@
-import assert from "node:assert/strict";
-import test from "node:test";
+import assert from 'node:assert/strict';
+import test from 'node:test';
 import { createGuestIdentity, environment, hostKey, hostRegistrationProof,
-  signedDeviceRequest, signedHostRequest, utcDayClock } from "./helpers.mjs";
+  signedDeviceRequest, signedHostRequest, utcDayClock } from './helpers.mjs';
 
-// Contract: five hosts remain online all day with 100 complete owner entries.
-// Oracle: signed HTTP renewals, grants/redemptions, and visible directory leases.
-// The former 3000-unit endpoint pool fails during the 201st five-minute slot.
-test("five hosts renew all day with 150 spare endpoint calls and 100 owner entries", async t => {
-  const env = environment({ SESSION_TTL_SECONDS: "172800" });
-  const advance = utcDayClock(t, env);
-  const hosts = [];
-  for (let i = 0; i < 5; i++) {
-    const { key, created } = await createGuestIdentity(env, { deviceId: `daily-owner-${i}` });
-    const device = (path, method = "GET", body) => signedDeviceRequest(env, created.session, key.pair, path, method, body);
-    const host = await hostKey(), id = `daily-host-${i}`, origin = `https://daily-${i}.trycloudflare.com`;
-    assert.equal((await device("/v1/servers", "POST", {
-      server_id: id, host_public_key_jwk: host.publicJwk,
-      host_registration_proof: await hostRegistrationProof(host.pair, id, created.person.person_id),
-    })).status, 201);
-    hosts.push({ host, id, origin, device });
-  }
-  const endpoint = ({ host, id, origin }, renew) => {
-    const now = Math.floor(Date.now() / 1000);
-    return signedHostRequest(env, id, host.pair, renew ? "POST" : "PUT", {
-      origin, generation: 1, issued_at: now, lease_expires_at: now + 600,
-    }, { pathname: `/v1/servers/${id}/endpoint${renew ? "/renew" : ""}` });
-  };
-  let entries = 0;
-  for (let slot = 0; slot < 288; slot++) {
-    advance(slot * 300);
-    for (const host of hosts) {
-      const response = await endpoint(host, slot > 0);
-      assert.equal(response.status, 200, `slot ${slot}: ${await response.text()}`);
-    }
-    if (entries < 100) {
-      const { id, host, origin, device } = hosts[entries % 5];
-      const issued = await device(`/v1/servers/${id}/connect-grants`, "POST", {});
-      assert.equal(issued.status, 201, await issued.clone().text());
-      const grant = await issued.json();
-      const redeemed = await signedHostRequest(env, id, host.pair, "POST", {
-        grant_token: grant.grant_token, origin, generation: 1,
-      }, { pathname: `/v1/servers/${id}/connect-grants/redeem` });
-      assert.equal(redeemed.status, 200, await redeemed.clone().text());
-      assert.equal((await redeemed.json()).status, "authorized");
-      entries++;
-    }
-  }
-  for (let i = 0; i < 150; i++) assert.equal((await endpoint(hosts[i % 5], true)).status, 200);
-  const denied = await endpoint(hosts[0], true);
+// Legacy routes retain leases but no longer promise heartbeat capacity.
+// Restoring the old 320-call cap permits the seventeenth event.
+test('legacy endpoint writers retain protocol and an exact bounded daily allowance', async t => {
+  const env = environment({ SESSION_TTL_SECONDS: '172800' }), advance = utcDayClock(t, env);
+  const owner = await createGuestIdentity(env), host = await hostKey(), id = 'legacy-budget-host';
+  assert.equal((await signedDeviceRequest(env, owner.created.session, owner.key.pair, '/v1/servers', 'POST', {
+    server_id: id, host_public_key_jwk: host.publicJwk,
+    host_registration_proof: await hostRegistrationProof(host.pair, id, owner.created.person.person_id),
+  })).status, 201);
+  const publish = generation => signedHostRequest(env, id, host.pair, 'PUT', {
+    origin: 'https://legacy.trycloudflare.com', generation, issued_at: Math.floor(Date.now() / 1000),
+    lease_expires_at: Math.floor(Date.now() / 1000) + 600,
+  });
+  for (let generation = 1; generation <= 16; generation++) assert.equal((await publish(generation)).status, 200);
+  const before = env.DB.database.prepare('SELECT * FROM server_endpoints').get();
+  const denied = await publish(17);
   assert.equal(denied.status, 429);
-  assert.equal((await denied.json()).error.code, "temporary_capacity_exhausted");
-  const extra = await hosts[0].device(`/v1/servers/${hosts[0].id}/connect-grants`, "POST", {});
-  assert.equal(extra.status, 429);
-  for (const { device, id } of hosts) {
-    const bootstrap = await device("/v1/bootstrap");
-    assert.equal(bootstrap.status, 200);
-    const directory = await bootstrap.json();
-    assert.equal(directory.servers.length, 1);
-    assert.equal(directory.servers[0].server_id, id);
-    assert.equal(directory.servers[0].endpoint.status, "likely_online");
-  }
+  assert.equal((await denied.json()).error.code, 'temporary_capacity_exhausted');
+  assert.deepEqual(env.DB.database.prepare('SELECT * FROM server_endpoints').get(), before);
+  advance(86400);
+  assert.equal((await publish(17)).status, 200);
 });

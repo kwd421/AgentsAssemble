@@ -216,6 +216,7 @@ export async function signedDeviceRequest(
       "x-aa-timestamp": String(timestamp),
       "x-aa-nonce": nonce,
       "x-aa-signature": bytesToBase64Url(signature),
+      ...options.headers,
     },
   });
 }

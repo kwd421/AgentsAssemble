@@ -62,7 +62,7 @@ test("exact reads repeat at full GENERAL capacity without writes and recheck cur
   });
   assert.equal(saved.status, 200);
   const { icon } = await saved.json();
-  env.DB.database.prepare("UPDATE creation_budgets SET creation_day = ?, creation_writes = 699 WHERE purpose = 'GENERAL'").run(day());
+  env.DB.database.prepare("UPDATE creation_budgets SET creation_day = ?, creation_writes = 5369 WHERE purpose = 'GENERAL'").run(day());
   const before = snapshot(env), changes = env.DB.database.prepare("SELECT total_changes() AS n").get().n;
   for (const path of ["/v1/bootstrap", icon]) {
     const signed = await proof(owner, path);
@@ -111,7 +111,7 @@ test("member grants charge eight actor units and roll back the grant reservation
     assert.deepEqual(units(), [8, 8]);
     assert.equal(debt(env), before + 8);
     db.prepare(`UPDATE ${cap === "session" ? "sessions" : "persons"} SET general_units = ? WHERE person_id = ?`)
-      .run(cap === "session" ? 40 : 85, memberId);
+      .run(cap === "session" ? 145 : 235, memberId);
     const charged = units(), global = debt(env);
     await denied(await issue(), "actor_quota_exhausted");
     assert.deepEqual(units(), charged.map(n => n + 3)); // request proof remains committed
@@ -224,20 +224,20 @@ test("concurrent sessions and hosts share an account cap while each session and 
   const { env, owner, id, name } = await fixture();
   const second = await session(env, owner, "general-second-device"), third = await session(env, owner, "general-third-device");
   const bookmark = who => call(env, who, "/v1/bookmarks", "POST", { server_id: id, person_id: "caller-cannot-select-account" });
-  const replies = await Promise.all(Array.from({ length: 20 }, () => bookmark(owner)));
-  assert.equal(replies.filter(r => r.status === 201).length, 14); // registration spent one of fifteen
+  const replies = await Promise.all(Array.from({ length: 60 }, () => bookmark(owner)));
+  assert.equal(replies.filter(r => r.status === 201).length, 49); // registration spent one of fifty
   for (const response of replies.filter(r => r.status !== 201)) await denied(response, "actor_quota_exhausted");
-  const more = await Promise.all(Array.from({ length: 15 }, (_, i) => i % 2 ? bookmark(second) : name(1)));
+  const more = await Promise.all(Array.from({ length: 30 }, (_, i) => i % 2 ? bookmark(second) : name(1)));
   assert.ok(more.every(r => [200, 201].includes(r.status)));
   const before = snapshot(env);
   await denied(await bookmark(third), "actor_quota_exhausted");
   await denied(await name(30), "actor_quota_exhausted");
   assert.equal(snapshot(env), before);
-  assert.equal(debt(env), 90);
-  assert.equal(env.DB.database.prepare("SELECT general_units FROM persons WHERE person_id = ?").get(owner.created.person.person_id).general_units, 90);
+  assert.equal(debt(env), 240);
+  assert.equal(env.DB.database.prepare("SELECT general_units FROM persons WHERE person_id = ?").get(owner.created.person.person_id).general_units, 240);
   const fresh = await session(env, owner, "general-rotated-device");
   await denied(await bookmark(fresh), "actor_quota_exhausted");
-  assert.equal(debt(env), 90);
+  assert.equal(debt(env), 240);
   // An exhausted account cannot deny another account's normal admission path.
   const other = await createGuestIdentity(env, { deviceId: "general-independent-device" });
   const otherHost = await hostKey(), otherId = "general-other-host";
@@ -257,13 +257,13 @@ test("concurrent sessions and hosts share an account cap while each session and 
 
 test("host cap, ownership transfer and unrelated login/bootstrap/logout/connect retain isolation", async () => {
   const { env, owner, host, id, name, register } = await fixture();
-  for (let i = 1; i <= 14; i++) assert.equal((await name(i)).status, 200);
+  for (let i = 1; i <= 39; i++) assert.equal((await name(i)).status, 200);
   const other = await createGuestIdentity(env, { deviceId: "general-other-account" });
   assert.equal((await register(other, true)).status, 200);
   assert.equal(env.DB.database.prepare("SELECT general_units FROM persons WHERE person_id = ?").get(other.created.person.person_id).general_units, 6);
-  assert.equal(env.DB.database.prepare("SELECT general_units FROM persons WHERE person_id = ?").get(owner.created.person.person_id).general_units, 45);
+  assert.equal(env.DB.database.prepare("SELECT general_units FROM persons WHERE person_id = ?").get(owner.created.person.person_id).general_units, 120);
   const before = snapshot(env);
-  await denied(await name(16), "actor_quota_exhausted");
+  await denied(await name(41), "actor_quota_exhausted");
   assert.equal(snapshot(env), before);
   // Ownership transfer does not reset the server counter (claim itself needs a host nonce).
   assert.equal(env.DB.database.prepare("SELECT owner_person_id FROM servers WHERE server_id = ?").get(id).owner_person_id, other.created.person.person_id);
@@ -288,7 +288,7 @@ test("retained schema protects old default-purpose writers, rolls days and remov
   advance(0);
   // Old Worker SQL omits purpose and all added columns; it must still be bounded.
   const insert = nonce => db.prepare("INSERT INTO request_nonces (session_id, nonce, expires_at) VALUES (?, ?, 0)").run(sessionId, nonce);
-  for (let i = 0; i < 14; i++) insert(`old-${i}`);
+  for (let i = 0; i < 49; i++) insert(`old-${i}`);
   const before = snapshot(env);
   assert.throws(() => insert("old-denied"), /actor_quota_exhausted/);
   assert.throws(() => insert("old-0"), /UNIQUE/);
@@ -318,7 +318,7 @@ test("retained schema protects old default-purpose writers, rolls days and remov
 test("host quota failure rolls back ownership transfer, and host allowance rolls over in UTC", async t => {
   const { env, owner, id, name, register } = await fixture(), advance = utcDayClock(t, env);
   const other = await createGuestIdentity(env, { deviceId: "general-transfer-denied" });
-  for (let i = 1; i <= 15; i++) assert.equal((await name(i)).status, 200);
+  for (let i = 1; i <= 40; i++) assert.equal((await name(i)).status, 200);
   const used = debt(env);
   await denied(await register(other, true), "actor_quota_exhausted");
   assert.equal(env.DB.database.prepare("SELECT owner_person_id FROM servers WHERE server_id = ?").get(id).owner_person_id,
@@ -326,7 +326,7 @@ test("host quota failure rolls back ownership transfer, and host allowance rolls
   assert.equal((await call(env, owner, "/v1/bootstrap")).status, 200);
   assert.equal(debt(env), used + 3); // Device proof commits before the atomic host claim.
   advance(86400);
-  assert.equal((await name(16)).status, 200);
+  assert.equal((await name(41)).status, 200);
   assert.equal(env.DB.database.prepare("SELECT general_units FROM servers WHERE server_id = ?").get(id).general_units, 3);
   assert.equal(debt(env), 3);
 });

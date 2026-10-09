@@ -114,7 +114,7 @@ test("one host cannot exhaust ENDPOINT, including across accounts and blocked de
     if (response.status === 429) break;
     assert.equal(response.status, 200); admitted++;
   }
-  assert.ok(admitted >= 288 && admitted < 1600);
+  assert.ok(admitted === 16);
   const before = spent(env, "ENDPOINT");
   const alias = await f.register("attacker-alias", attacker.host, aliasOwner);
   assert.equal((await f.call(alias, 1)).status, 429);
@@ -181,7 +181,7 @@ test("guest Sybil recovery exhausts only untrusted capacity and preserves verifi
   const handoff = await startNativeHandoff(env, key, "verified-next-login");
   const token = await googleToken(owner.signer, env, new URL(handoff.authorization_url).searchParams.get("nonce"));
   const initial = spent(env, "AUTH"), attackers = [];
-  for (let i = 0; i < 24; i++) {
+  for (let i = 0; i < 28; i++) {
     const response = await request(env, "/v1/auth/guest", { method: "POST",
       headers: { "cf-connecting-ip": `2001:db8:${i + 100}::1` },
       body: JSON.stringify({ device_id: `sybil-device-${i}`, display_name: "Guest",

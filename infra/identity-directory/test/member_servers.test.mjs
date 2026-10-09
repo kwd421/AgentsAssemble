@@ -207,25 +207,25 @@ test('hide/unhide is device-signed, preserves host state, and invalidates only b
 // changes the full durable snapshot on a rejected signed HTTP request.
 test('anchor creation and reports share exact non-borrowing atomic debt and reject with no writes', async () => {
   const f = await memberFixture(), g = await f.grant();
-  f.db.exec("UPDATE member_sync_budget SET creation_day = CAST(strftime('%s','now') AS INTEGER)/86400, creation_writes = 1795");
+  f.db.exec("UPDATE member_sync_budget SET creation_day = CAST(strftime('%s','now') AS INTEGER)/86400, creation_writes = 535");
   const nonce = randomBase64Url(18), before = snapshot(f.db);
   const rejected = await f.redeem(g.grant_token, 'admission', {}, { nonce });
   assert.equal(rejected.status, 429);
   assert.equal((await rejected.json()).error.code, 'temporary_capacity_exhausted');
   assert.deepEqual(snapshot(f.db), before);
-  f.db.exec('UPDATE member_sync_budget SET creation_writes = 1794');
+  f.db.exec('UPDATE member_sync_budget SET creation_writes = 534');
   const response = await f.redeem(g.grant_token, 'admission', {}, { nonce });
   assert.equal(response.status, 200); const id = (await response.json()).projection_id;
-  assert.equal(syncSpent(f.db), 1800);
+  assert.equal(syncSpent(f.db), 540);
   assert.equal(await f.anchor(), id);
   const reportBefore = snapshot(f.db);
   assert.equal((await f.report([item(id)])).status, 429);
   assert.deepEqual(snapshot(f.db), reportBefore);
-  f.db.exec('UPDATE member_sync_budget SET creation_writes = 1701');
+  f.db.exec('UPDATE member_sync_budget SET creation_writes = 441');
   const unknown = Array.from({length:15}, () => item(randomBase64Url(16)));
   const general = f.db.prepare("SELECT * FROM creation_budgets WHERE purpose = 'GENERAL'").get();
   assert.equal((await f.report([item(id), ...unknown])).status, 200);
-  assert.equal(syncSpent(f.db), 1800);
+  assert.equal(syncSpent(f.db), 540);
   assert.deepEqual(f.db.prepare("SELECT * FROM creation_budgets WHERE purpose = 'GENERAL'").get(), general);
   assert.equal((await f.bootstrap()).length, 1);
 });
@@ -233,10 +233,10 @@ test('anchor creation and reports share exact non-borrowing atomic debt and reje
 test('concurrent budget contenders cannot overspend and the sync pool resets by UTC day', async t => {
   const env = environment(); utcDayClock(t, env);
   const f = await memberFixture(env), id = await f.anchor();
-  f.db.exec('UPDATE member_sync_budget SET creation_writes = 1791');
+  f.db.exec('UPDATE member_sync_budget SET creation_writes = 531');
   const responses = await Promise.all([f.report([item(id)]), f.report([item(id, 2)])]);
   assert.deepEqual(responses.map(r => r.status).sort(), [200, 429]);
-  assert.equal(syncSpent(f.db), 1800);
+  assert.equal(syncSpent(f.db), 540);
   f.db.exec('UPDATE member_sync_budget SET creation_day = creation_day - 1');
   assert.equal((await f.report([item(id, 3)])).status, 200);
   assert.equal(syncSpent(f.db), 9);

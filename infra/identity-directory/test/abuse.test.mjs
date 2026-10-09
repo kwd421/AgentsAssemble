@@ -182,7 +182,7 @@ test("non-owner creation exhaustion preserves owner issue and redemption reserve
     assert.fail("creation admission must be bounded");
   };
   // Seed shared GENERAL exhaustion; a single actor can no longer fill that pool.
-  f.env.DB.database.prepare("UPDATE creation_budgets SET creation_day = ?, creation_writes = 699 WHERE purpose = 'GENERAL'")
+  f.env.DB.database.prepare("UPDATE creation_budgets SET creation_day = ?, creation_writes = 5369 WHERE purpose = 'GENERAL'")
     .run(Math.floor(Date.now() / 86400000));
   const blocked = await f.general();
   assert.equal(blocked.status, 429);
