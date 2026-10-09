@@ -14,7 +14,7 @@ import {
   signedHostRequest,
 } from "./helpers.mjs";
 
-import { googleSigner, googleToken, startNativeHandoff } from "./google_helpers.mjs";
+import { googleSigner, googleToken, startNativeHandoff, seedGoogleIdentity } from "./google_helpers.mjs";
 
 test("native Google login rejects missing client-secret configuration before starting a handoff", async () => {
   const env = environment({ GOOGLE_DESKTOP_CLIENT_SECRET: undefined });
@@ -30,6 +30,7 @@ test("native Google login rejects missing client-secret configuration before sta
 test("guest logout then existing Google login uses a new device slot and explicit host ownership claim", async () => {
   const env = environment();
   const signer = await googleSigner(env);
+  await seedGoogleIdentity(env, "same-account-on-two-computers");
   const originalFetch = globalThis.fetch;
   async function login(device, deviceId) {
     const handoff = await startNativeHandoff(env, device, deviceId);
@@ -88,6 +89,7 @@ test("guest logout then existing Google login uses a new device slot and explici
 test("native Google handoff opens Google's account chooser and exchanges its PKCE code", async () => {
   const env = environment();
   const signer = await googleSigner(env);
+  await seedGoogleIdentity(env);
   const device = await deviceKey();
   const started = await startNativeHandoff(
     env,
@@ -205,6 +207,7 @@ test("native Google handoff rejects redirects outside the local app", async () =
 test("Google profile defaults upgrade a placeholder once and never replace saved metadata", async () => {
   const env = environment();
   const signer = await googleSigner(env);
+  await seedGoogleIdentity(env, "same-profile-subject");
   const device = await deviceKey();
   const originalFetch = globalThis.fetch;
   let personId;
@@ -235,6 +238,7 @@ test("Google profile defaults upgrade a placeholder once and never replace saved
 test("web Google login uses the existing person and rejects forged or replayed handoffs", async (t) => {
   const env = environment({ GOOGLE_CLIENT_ID: "web-client.apps.googleusercontent.com", GOOGLE_WEB_CLIENT_SECRET: "test-web-client-secret" });
   const pair = await googleSigner(env);
+  await seedGoogleIdentity(env);
   const device = await deviceKey();
   const verifier = bytesToBase64Url(crypto.getRandomValues(new Uint8Array(32)));
   const webRequest = (path, body, origin = "https://central.example") => request(env, path, {
@@ -292,6 +296,7 @@ test("web Google login uses the existing person and rejects forged or replayed h
 test("web and native Google login resolve the same canonical person", async (t) => {
   const env = environment({ GOOGLE_CLIENT_ID: "web-client.apps.googleusercontent.com", GOOGLE_WEB_CLIENT_SECRET: "test-web-client-secret" });
   const signer = await googleSigner(env);
+  await seedGoogleIdentity(env);
   const desktop = await startNativeHandoff(env, await deviceKey(), "desktop-shared-person");
   const originalFetch = globalThis.fetch;
   let native;

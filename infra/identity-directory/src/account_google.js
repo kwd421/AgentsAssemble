@@ -1,7 +1,8 @@
+import { pkceChallenge, pkceVerifier, googleAuthorizationCode } from "./google_pkce.js";
 import { constantTimeEqual, hmacBase64Url, randomBase64Url, sha256Base64Url } from "./crypto.js";
 import { HttpError, cleanIdentifier, envSecret, json, nowSeconds } from "./http.js";
 import { verifyGoogleIdToken } from "./google.js";
-import { nativeRedirectUri, pkceChallenge, pkceVerifier, googleAuthorizationCode,
+import { nativeRedirectUri,
   exchangeGoogleAuthorizationCode } from "./google_handoff.js";
 
 // This reuses OAuth transport/validation, never login/account creation/session

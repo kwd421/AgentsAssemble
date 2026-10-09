@@ -5,7 +5,7 @@ import { exchangeGoogleHandoff } from "./google_handoff.js";
 
 const TTL = 600;
 
-function requireWebOrigin(request, env) {
+export function requireWebOrigin(request, env) {
   // Room hosts, including permitted loopback/native CORS callers, cannot receive
   // credentials from this flow. Web login belongs to the fixed central origin.
   if (request.headers.get("origin") !== new URL(request.url).origin) {
@@ -14,7 +14,7 @@ function requireWebOrigin(request, env) {
   if (!env.GOOGLE_CLIENT_ID || !env.GOOGLE_WEB_CLIENT_SECRET) throw new HttpError(503, "google_web_login_unavailable");
 }
 
-export async function startWebGoogleHandoff(request, env, text, now) {
+export async function startWebGoogleHandoff(request, env, text, now, flowKind = "web") {
   requireWebOrigin(request, env);
   await consumeRateLimit(env.DB, await ipBucket(request, env, "google-web-start"), 20, 3600, now, env.authSource);
   const body = parseJson(text);
@@ -29,9 +29,9 @@ export async function startWebGoogleHandoff(request, env, text, now) {
   await authWrite(env.DB, env.authSource, env.DB.prepare(`INSERT INTO google_handoffs
     (handoff_id, device_id, device_public_key_jwk, device_label, browser_token_hash,
      poll_token_hash, google_nonce, status, created_at, expires_at, flow_kind, code_challenge, redirect_uri)
-    VALUES (?, ?, ?, ?, ?, ?, ?, 'pending', ?, ?, 'web', ?, ?)`)
+    VALUES (?, ?, ?, ?, ?, ?, ?, 'pending', ?, ?, ?, ?, ?)`)
     .bind(handoffId, deviceId, canonicalJson(publicJwk), cleanText(body.device_label, 80),
-      challenge, challenge, nonce, now, now + TTL, challenge, redirectUri), 3);
+      challenge, challenge, nonce, now, now + TTL, flowKind, challenge, redirectUri), 3);
   const authorizationUrl = new URL("https://accounts.google.com/o/oauth2/v2/auth");
   authorizationUrl.search = new URLSearchParams({
     client_id: String(env.GOOGLE_CLIENT_ID), redirect_uri: redirectUri,

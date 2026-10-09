@@ -2,7 +2,9 @@ import { resolveDuplicateServer } from "./server_ownership.js";
 import { reportMemberResults, setMemberHidden } from "./member_servers.js";
 import { cleanup } from "./cleanup.js";
 import { limitRequestIp, limitTerminationAttempt, requestPurpose } from "./abuse.js";
-import { startWebGoogleHandoff, completeWebGoogleHandoff } from "./google_web.js";
+import { startWebGoogleHandoff, completeWebGoogleHandoff, requireWebOrigin } from "./google_web.js";
+import { registerGoogleHandoff } from "./google_registration.js";
+import { exchangeGoogleHandoff } from "./google_handoff.js";
 import { serveWebEntry } from "./web_entry.js";
 import { allowedBrowserOrigin } from "./origin.js";
 import { deleteAccount, deletionProof, deletionStatus, deletionServers, logoutOtherSessions } from "./account.js";
@@ -92,6 +94,18 @@ async function route(request, env) {
   }
   if (request.method === "POST" && url.pathname === "/v1/auth/google/web/complete") {
     return completeWebGoogleHandoff(request, env, text, now);
+  }
+  const googleVerification = url.pathname.match(/^\/v1\/auth\/google\/(native|web)\/(verify-start|verify-complete|register)$/);
+  if (request.method === "POST" && googleVerification) {
+    const [, flow, operation] = googleVerification, flowKind = `${flow}_verify`;
+    if (flow === "web") requireWebOrigin(request, env);
+    const client = flow === "web" ? { id: env.GOOGLE_CLIENT_ID, secret: env.GOOGLE_WEB_CLIENT_SECRET }
+      : { id: env.GOOGLE_DESKTOP_CLIENT_ID, secret: env.GOOGLE_DESKTOP_CLIENT_SECRET };
+    if (!client.id || !client.secret) throw new HttpError(503, "google_login_unavailable");
+    if (operation === "verify-start") return flow === "web"
+      ? startWebGoogleHandoff(request, env, text, now, flowKind) : startNativeGoogleHandoff(request, env, text, now, flowKind);
+    if (operation === "register") return registerGoogleHandoff(env, text, now, flowKind);
+    return exchangeGoogleHandoff(env, text, now, flowKind, client);
   }
   const endpointRenewMatch = url.pathname.match(/^\/v1\/servers\/([^/]+)\/endpoint\/renew$/);
   if (endpointRenewMatch && request.method === "POST") {

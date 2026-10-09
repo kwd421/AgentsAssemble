@@ -1,20 +1,19 @@
+import { pkceChallenge } from "./google_pkce.js";
 import { authWrite } from "./auth_capacity.js";
 import {
   canonicalJson,
   constantTimeEqual,
-  hmacBase64Url,
   randomBase64Url,
   sha256Base64Url,
   validateDevicePublicJwk,
 } from "./crypto.js";
-import { verifyGoogleIdToken } from "./google.js";
+import { readGoogleHandoff, verifiedGoogleIdentity } from "./google_registration.js";
 import {
   HttpError,
   bindDevice,
   cleanIdentifier,
   cleanText,
   consumeRateLimit,
-  envSecret,
   ipBucket,
   issueSession,
   json,
@@ -46,27 +45,7 @@ export function nativeRedirectUri(value) {
   }
   return parsed.toString();
 }
-export function pkceChallenge(value) {
-  const clean = String(value || "").trim();
-  if (clean.length !== 43 || !/^[A-Za-z0-9_-]+$/.test(clean)) {
-    throw new HttpError(400, "invalid_code_challenge");
-  }
-  return clean;
-}
-
-export function pkceVerifier(value) {
-  const clean = String(value || "").trim();
-  if (
-    clean.length < 43 ||
-    clean.length > 128 ||
-    !/^[A-Za-z0-9._~-]+$/.test(clean)
-  ) {
-    throw new HttpError(400, "invalid_code_verifier");
-  }
-  return clean;
-}
-
-export async function startNativeGoogleHandoff(request, env, text, now) {
+export async function startNativeGoogleHandoff(request, env, text, now, flowKind = "native") {
   if (!env.GOOGLE_DESKTOP_CLIENT_ID || !env.GOOGLE_DESKTOP_CLIENT_SECRET) {
     throw new HttpError(503, "google_login_unavailable");
   }
@@ -93,7 +72,7 @@ export async function startNativeGoogleHandoff(request, env, text, now) {
         browser_token_hash, poll_token_hash, google_nonce, status, person_id,
         created_at, expires_at, consumed_at, flow_kind, code_challenge,
         redirect_uri, authorization_code_hash)
-       VALUES (?, ?, ?, ?, ?, ?, ?, 'pending', NULL, ?, ?, NULL, 'native',
+       VALUES (?, ?, ?, ?, ?, ?, ?, 'pending', NULL, ?, ?, NULL, ?,
                ?, ?, NULL)`
     )
     .bind(
@@ -106,6 +85,7 @@ export async function startNativeGoogleHandoff(request, env, text, now) {
       nonce,
       now,
       now + HANDOFF_TTL_SECONDS,
+      flowKind,
       challenge,
       redirectUri
     ), 3);
@@ -134,109 +114,33 @@ export async function startNativeGoogleHandoff(request, env, text, now) {
   );
 }
 
-async function findExternalPerson(env, issuer, subjectHmac) {
-  return env.DB
-    .prepare(
-      "SELECT person_id FROM external_identities WHERE issuer = ? AND subject_hmac = ?"
-    )
-    .bind(issuer, subjectHmac)
-    .first();
-}
-
 async function initializeGoogleProfile(env, personId, identity, now) {
-  await env.DB.prepare(
-    `UPDATE persons SET display_name = CASE WHEN display_name = 'Google user' THEN ? ELSE display_name END,
-     avatar_url = ?, updated_at = ? WHERE person_id = ? AND avatar_url IS NULL`
-  ).bind(identity.name || "Google user", identity.picture, now, personId).run();
-}
-
-async function resolveGooglePerson(env, identity, now) {
-  const issuer = "https://accounts.google.com";
-  const subjectHmac = await hmacBase64Url(
-    envSecret(env, "IDENTITY_PEPPER"),
-    `${issuer}\u0000${identity.subject}`
-  );
-  let external = await findExternalPerson(env, issuer, subjectHmac);
-  if (external?.person_id) {
-    await initializeGoogleProfile(env, external.person_id, identity, now);
-    return external.person_id;
-  }
-
-  const personId = `per_${randomBase64Url(18)}`;
-  try {
-    await env.DB.batch([
-      env.DB
-        .prepare(
-          `INSERT INTO persons
-           (person_id, identity_kind, display_name, status, created_at,
-            updated_at, avatar_url)
-           VALUES (?, 'google', ?, 'active', ?, ?, ?)`
-        )
-        .bind(personId, identity.name || "Google user", now, now, identity.picture),
-      env.DB
-        .prepare(
-          `INSERT INTO external_identities
-           (identity_id, person_id, issuer, subject_hmac, created_at)
-           VALUES (?, ?, ?, ?, ?)`
-        )
-        .bind(
-          `ext_${randomBase64Url(18)}`,
-          personId,
-          issuer,
-          subjectHmac,
-          now
-        ),
-    ]);
-    return personId;
-  } catch (error) {
-    external = await findExternalPerson(env, issuer, subjectHmac);
-    if (external?.person_id) {
-      await initializeGoogleProfile(env, external.person_id, identity, now);
-      return external.person_id;
-    }
-    throw error;
-  }
+  await requireCompatibleDevice(env.DB, identity.deviceId, personId);
+  await env.DB.prepare(`UPDATE persons SET display_name=CASE WHEN display_name='Google user' THEN ? ELSE display_name END,
+    avatar_url=?,updated_at=? WHERE person_id=? AND status='active' AND deleted_at IS NULL AND avatar_url IS NULL`)
+    .bind(identity.name || "Google user", identity.picture, now, personId).run();
 }
 
 export async function verifiedGooglePerson(env, credential, clientId, row, now) {
-  const limitCompletion = personId => consumeRateLimit(
-    env.DB,
-    `google-complete:${row.handoff_id}`,
-    8,
-    HANDOFF_TTL_SECONDS,
-    now,
-    { ...env.authSource, personId, purpose: personId ? "AUTH" : "ANONYMOUS" }
-  );
-  let identity;
-  try {
-    identity = await verifyGoogleIdToken(credential, {
-      clientId: String(clientId),
-      nonce: row.google_nonce,
-      nowSeconds: now,
-      env,
-    });
-  } catch {
-    await limitCompletion();
-    throw new HttpError(401, "invalid_google_credential");
-  }
-  const personId = await resolveGooglePerson(env, identity, now);
-  await limitCompletion(personId);
-  // A device identifier and its signing key are one central identity slot. Do
-  // not let a completed Google flow silently replace a guest or another Google
-  // identity already bound to that slot; an explicit merge flow belongs later.
-  await requireCompatibleDevice(env.DB, row.device_id, personId);
-  return personId;
+  const verified = await verifiedGoogleIdentity(env, credential, clientId, row, now);
+  if (verified.status !== "active") throw new HttpError(409, "google_registration_required", verified.status);
+  await initializeGoogleProfile(env, verified.expectedPersonId, { ...verified.identity, deviceId: row.device_id }, now);
+  return verified.expectedPersonId;
 }
 
 export async function issueHandoffSession(env, row, now) {
   env = { ...env, authSource: { ...env.authSource, purpose: "AUTH" } };
+  const active = await env.DB.prepare("SELECT person_id FROM persons WHERE person_id=? AND status='active' AND deleted_at IS NULL")
+    .bind(row.person_id).first();
+  if (!active) throw new HttpError(409, "google_registration_required", "deleted");
   await requireCompatibleDevice(env.DB, row.device_id, row.person_id);
   const claimed = await env.DB
     .prepare(
       `UPDATE google_handoffs SET status = 'consumed', consumed_at = ?
-       WHERE handoff_id = ? AND status = 'ready'`
+       WHERE handoff_id = ? AND status = 'ready' AND expires_at > ?
+         AND EXISTS (SELECT 1 FROM persons WHERE person_id=google_handoffs.person_id AND status='active' AND deleted_at IS NULL)`
     )
-    .bind(now, row.handoff_id)
+    .bind(now, row.handoff_id, now)
     .run();
   if (Number(claimed.meta?.changes || 0) !== 1) {
     throw new HttpError(409, "handoff_consumed");
@@ -276,18 +180,6 @@ export async function issueHandoffSession(env, row, now) {
     }
     throw error;
   }
-}
-
-export function googleAuthorizationCode(value) {
-  const clean = String(value || "").trim();
-  if (
-    clean.length < 16 ||
-    clean.length > 2048 ||
-    !/^[\x21-\x7e]+$/.test(clean)
-  ) {
-    throw new HttpError(400, "invalid_authorization_code");
-  }
-  return clean;
 }
 
 export async function exchangeGoogleAuthorizationCode(env, row, code, verifier, client = {
@@ -339,21 +231,11 @@ export async function exchangeGoogleHandoff(env, text, now, flowKind, client) {
   if (!client.id || !client.secret) {
     throw new HttpError(503, "google_login_unavailable");
   }
-  const body = parseJson(text);
-  const handoffId = cleanIdentifier(body.handoff_id, "handoff_id");
-  const authorizationCode = googleAuthorizationCode(body.authorization_code);
-  const verifier = pkceVerifier(body.code_verifier);
-  const row = await env.DB
-    .prepare("SELECT * FROM google_handoffs WHERE handoff_id = ?")
-    .bind(handoffId)
-    .first();
-  if (!row || row.expires_at <= now || row.flow_kind !== flowKind) {
-    throw new HttpError(401, "invalid_handoff");
-  }
-  const authorizationCodeHash = await sha256Base64Url(authorizationCode);
-  const challenge = await sha256Base64Url(verifier);
-  if (!constantTimeEqual(row.code_challenge || "", challenge)) {
-    throw new HttpError(401, "invalid_handoff");
+  const { row, code: authorizationCode, verifier, codeHash: authorizationCodeHash } =
+    await readGoogleHandoff(env, text, now, flowKind);
+  const verification = flowKind.endsWith("_verify");
+  if (verification && row.status === "ready" && ["verified_deleted", "verified_absent"].includes(row.verification_phase)) {
+    return json({ status: row.verification_phase.slice("verified_".length) });
   }
   if (row.status === "ready" && row.person_id) {
     if (!constantTimeEqual(row.authorization_code_hash || "", authorizationCodeHash)) {
@@ -371,13 +253,23 @@ export async function exchangeGoogleHandoff(env, text, now, flowKind, client) {
     verifier,
     client
   );
-  const personId = await verifiedGooglePerson(
-    env,
-    credential,
-    client.id,
-    row,
-    now
-  );
+  let personId;
+  if (verification) {
+    const verified = await verifiedGoogleIdentity(env, credential, client.id, row, now);
+    if (verified.status !== "active") {
+      const result = await env.DB.prepare(`UPDATE google_handoffs SET status='ready', authorization_code_hash=?,
+        verification_phase=?,verified_subject_hmac=?,verified_expected_person_id=?,verified_display_name=?,verified_avatar_url=?
+        WHERE handoff_id=? AND status='pending' AND flow_kind=?`)
+        .bind(authorizationCodeHash, `verified_${verified.status}`, verified.subjectHmac, verified.expectedPersonId,
+          verified.identity.name || "Google user", verified.identity.picture, row.handoff_id, flowKind).run();
+      if (Number(result.meta?.changes) !== 1) throw new HttpError(409, "handoff_consumed");
+      return json({ status: verified.status });
+    }
+    personId = verified.expectedPersonId;
+    await initializeGoogleProfile(env, personId, { ...verified.identity, deviceId: row.device_id }, now);
+  } else {
+    personId = await verifiedGooglePerson(env, credential, client.id, row, now);
+  }
   const ready = await env.DB
     .prepare(
       `UPDATE google_handoffs

@@ -13,7 +13,8 @@ export function requestPurpose(request) {
       (method === "POST" && /^\/v1\/servers\/[^/]+\/endpoint\/renew$/.test(pathname))) return "ENDPOINT";
   if (method === "POST" && ["/v1/auth/guest", "/v1/auth/recover",
     "/v1/auth/google/native/start", "/v1/auth/google/native/exchange",
-    "/v1/auth/google/web/start", "/v1/auth/google/web/complete"].includes(pathname)) return "AUTH";
+    "/v1/auth/google/web/start", "/v1/auth/google/web/complete",
+    ...["native", "web"].flatMap(flow => ["verify-start", "verify-complete", "register"].map(operation => `/v1/auth/google/${flow}/${operation}`))].includes(pathname)) return "AUTH";
   return "GENERAL";
 }
 

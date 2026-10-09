@@ -20,7 +20,7 @@ export async function heavyDay(env, prepareDay) {
     headers: { 'cf-connecting-ip': ip }, body: JSON.stringify(body) });
   const login = async (key, id, subject, ip) => {
     const verifier = randomBase64Url(32);
-    const start = await ok(await auth('/v1/auth/google/native/start', {
+    const start = await ok(await auth('/v1/auth/google/native/verify-start', {
       device_id: id, device_public_key_jwk: key.publicJwk,
       code_challenge: await sha256Base64Url(verifier), state: randomBase64Url(32),
       redirect_uri: 'http://127.0.0.1:43123/api/central-login/callback',
@@ -29,9 +29,10 @@ export async function heavyDay(env, prepareDay) {
     const original = globalThis.fetch;
     try {
       globalThis.fetch = async () => Response.json({ id_token: token });
-      return { key, created: await ok(await auth('/v1/auth/google/native/exchange', {
-        handoff_id: start.handoff_id, authorization_code: '4/local-budget-fixture', code_verifier: verifier,
-      }, ip), 200) };
+      const body = { handoff_id: start.handoff_id, authorization_code: '4/local-budget-fixture', code_verifier: verifier };
+      let created = await ok(await auth('/v1/auth/google/native/verify-complete', body, ip), 200);
+      if (created.status === 'absent') created = await ok(await auth('/v1/auth/google/native/register', body, ip), 201);
+      return { key, created };
     } finally { globalThis.fetch = original; }
   };
   for (let i = 0; i < 12; i++) {
