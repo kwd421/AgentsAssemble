@@ -20,7 +20,8 @@ async function fixture(flow = "native") {
   assert.equal(start.status, 201, await start.clone().text());
   const started = await start.json(), url = new URL(started.authorization_url);
   assert.equal(url.searchParams.get("prompt"), "select_account");
-  assert.deepEqual(JSON.parse(url.searchParams.get("claims")), { id_token: { auth_time: { essential: true } } });
+  assert.equal(url.searchParams.has("claims"), false);
+  assert.equal(url.searchParams.has("max_age"), false);
   assert.equal(url.searchParams.get("client_id"), flow === "web" ? env.GOOGLE_CLIENT_ID : env.GOOGLE_DESKTOP_CLIENT_ID);
   assert.equal(url.searchParams.get("state"), state);
   const complete = { ...fields, action: "complete", authorization_code: "4/deletion-test-code", code_verifier: verifier };
@@ -45,9 +46,9 @@ async function exchange(f, claims, subject, action) {
   } finally { globalThis.fetch = original; }
 }
 
-for (const flow of ["native", "web"]) test(`${flow} Google deletion proof checks fresh same-subject auth without creating an identity/session`, async () => {
+for (const flow of ["native", "web"]) test(`${flow} Google deletion proof checks fresh same-subject token without auth_time without creating an identity/session`, async () => {
   const f = await fixture(flow), now = Math.floor(Date.now()/1000);
-  const { result: response, calls } = await exchange(f, { auth_time: f.url.searchParams.get("max_age") === "300" ? now - 10 : now - 900 }, undefined, () => f.call(f.complete));
+  const { result: response, calls } = await exchange(f, { iat: now - 10 }, undefined, () => f.call(f.complete));
   assert.equal(response.status, 200, await response.clone().text()); assert.equal(calls, 1);
   const proof = await response.json(); assert.ok(proof.expires_at <= now + 290);
   const after = ["persons", "devices", "sessions", "google_handoffs", "external_identities", "recovery_credentials"]
@@ -59,13 +60,15 @@ for (const flow of ["native", "web"]) test(`${flow} Google deletion proof checks
   assert.equal(finish.status, 200);
 });
 
-test("Google deletion rejects missing/stale/future/fractional auth_time, stale iat, wrong account and PKCE", async t => {
-  for (const name of ["missing", "stale", "boundary", "future", "fractional", "old-issued", "wrong-account", "wrong-pkce"]) {
+test("Google deletion rejects missing/stale/future/fractional iat, invalid token, wrong account and PKCE", async t => {
+  for (const name of ["missing", "stale", "boundary", "future", "fractional", "negative", "wrong-nonce", "wrong-audience", "wrong-issuer", "wrong-account", "wrong-pkce"]) {
     await t.test(name, async () => {
       const f = await fixture(), now = Math.floor(Date.now()/1000);
-      const claims = { auth_time: name === "missing" ? null : name === "stale" ? now - 301 : name === "boundary" ? now - 300
-        : name === "future" ? now + 30 : name === "fractional" ? now - 0.5 : now,
-      ...(name === "old-issued" ? { iat: now - 301 } : {}) };
+      const claims = { iat: name === "missing" ? null : name === "stale" ? now - 301 : name === "boundary" ? now - 300
+        : name === "future" ? now + 30 : name === "fractional" ? now - 0.5 : name === "negative" ? -1 : now,
+        ...(name === "wrong-nonce" ? { nonce: "unrelated" } : {}),
+        ...(name === "wrong-audience" ? { aud: "unrelated" } : {}),
+        ...(name === "wrong-issuer" ? { iss: "https://unrelated.example" } : {}) };
       const body = name === "wrong-pkce" ? { ...f.complete, code_verifier: randomBase64Url(32) } : f.complete;
       const { result: response, calls } = await exchange(f, claims,
         name === "wrong-account" ? "another-fixture-account" : undefined, () => f.call(body));
@@ -78,7 +81,7 @@ test("Google deletion rejects missing/stale/future/fractional auth_time, stale i
 });
 
 test("Google identity never accepts recovery-code deletion and terminal/device races cannot issue a fresh proof", async () => {
-  const f = await fixture(), now = Math.floor(Date.now()/1000);
+  const f = await fixture();
   assert.equal((await f.call({ request_id: randomBase64Url(32), recovery_code: f.identity.created.recovery_code })).status, 401);
   const prepare = f.env.DB.prepare.bind(f.env.DB);
   f.env.DB.prepare = sql => {
@@ -87,13 +90,13 @@ test("Google identity never accepts recovery-code deletion and terminal/device r
     }
     return prepare(sql);
   };
-  assert.equal((await exchange(f, { auth_time: now }, undefined, () => f.call(f.complete))).result.status, 401);
+  assert.equal((await exchange(f, {}, undefined, () => f.call(f.complete))).result.status, 401);
   assert.equal(f.env.DB.database.prepare("SELECT proof_hash FROM account_deletion_proofs").get()?.proof_hash ?? null, null);
 });
 
 test("session-only Google start and a failed fresh-auth attempt cannot erase an issued proof", async () => {
   const f = await fixture(), now = Math.floor(Date.now()/1000);
-  const proof = await (await exchange(f, { auth_time: now }, undefined, () => f.call(f.complete))).result.json();
+  const proof = await (await exchange(f, {}, undefined, () => f.call(f.complete))).result.json();
   const stored = f.env.DB.database.prepare("SELECT proof_hash,request_id FROM account_deletion_proofs").get();
   const requestId = randomBase64Url(32), verifier = randomBase64Url(32);
   const started = await f.call({ ...f.fields, request_id: requestId, action: "start",
@@ -102,7 +105,7 @@ test("session-only Google start and a failed fresh-auth attempt cannot erase an 
   assert.equal(started.status, 201);
   assert.deepEqual(f.env.DB.database.prepare("SELECT proof_hash,request_id FROM account_deletion_proofs").get(), stored);
   const nonce = new URL((await started.json()).authorization_url).searchParams.get("nonce");
-  const credential = await googleToken(f.identity.signer, f.env, nonce, undefined, undefined, undefined, { auth_time: now - 301 });
+  const credential = await googleToken(f.identity.signer, f.env, nonce, undefined, undefined, undefined, { iat: now - 301 });
   const original = globalThis.fetch;
   try {
     globalThis.fetch = async () => Response.json({ id_token: credential });
@@ -116,7 +119,7 @@ test("session-only Google start and a failed fresh-auth attempt cannot erase an 
 
 for (const flow of ["native", "web"]) test(`${flow} Google token redirect cannot issue deletion authority`, async () => {
   const f = await fixture(flow), now = Math.floor(Date.now()/1000);
-  const credential = await f.token({ auth_time: now - 10 }), original = globalThis.fetch;
+  const credential = await f.token({ iat: now - 10 }), original = globalThis.fetch;
   try {
     globalThis.fetch = async (_url, options) => options.redirect === "follow"
       ? Response.json({ id_token: credential })

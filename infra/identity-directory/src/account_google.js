@@ -39,8 +39,7 @@ export async function googleDeletionProof(request, session, env, body, requestId
     const url = new URL("https://accounts.google.com/o/oauth2/v2/auth");
     url.search = new URLSearchParams({ client_id: String(client.id), redirect_uri: redirect,
       response_type: "code", scope: "openid profile", state, nonce, code_challenge: challenge,
-      code_challenge_method: "S256", prompt: "select_account", max_age: "300",
-      claims: JSON.stringify({ id_token: { auth_time: { essential: true } } }),
+      code_challenge_method: "S256", prompt: "select_account",
     }).toString();
     return json({ handoff_id: `goh_${requestId}`, request_id: requestId,
       authorization_url: url.href, state, expires_at: now + 600 }, 201);
@@ -61,11 +60,11 @@ export async function googleDeletionProof(request, session, env, body, requestId
   let identity;
   const verifiedAt = nowSeconds();
   try { identity = await verifyGoogleIdToken(credential, { clientId: String(client.id), nonce: row.google_nonce,
-    nowSeconds: verifiedAt, env, freshAuthentication: true }); }
+    nowSeconds: verifiedAt, env, freshToken: true }); }
   catch { throw new HttpError(401, "fresh_google_authentication_required",
-    "Google에서 최근 5분 안에 다시 로그인한 뒤 확인해 주세요. 최근 인증 시각을 확인할 수 없으면 탈퇴할 수 없어요."); }
+    "Google 계정을 다시 선택해 확인해요."); }
   const subject = await hmacBase64Url(envSecret(env, "IDENTITY_PEPPER"), `https://accounts.google.com\u0000${identity.subject}`);
-  const proof = randomBase64Url(32), expiresAt = Math.min(verifiedAt + 300, identity.auth_time + 300);
+  const proof = randomBase64Url(32), expiresAt = Math.min(verifiedAt + 300, identity.issued_at + 300);
   if (expiresAt <= verifiedAt) throw new HttpError(401, "fresh_google_authentication_required");
   const changed = await env.DB.prepare(`UPDATE sessions SET deletion_proof_hash = ?, deletion_google_subject_hmac = ?,
     deletion_google_nonce = NULL, deletion_code_challenge = NULL, deletion_redirect_uri = NULL,

@@ -84,8 +84,11 @@ is not claimed.
   no-store, no device credential, no polling and no auto-registration. Device-local
   host progress is separate from this central status. Lost response is unknown
   until explicit lookup; expired/missing receipt cannot prove successful deletion.
-- Google requires verified same subject with fresh integer auth_time/iat within
-  300s; absent/stale fails closed. Guest requires existing recovery code without
+- Google requires a fresh same-subject ID token obtained interactively via
+  prompt=select_account, with a new single-use request/session/device-bound nonce
+  and verified signature/issuer/audience plus integer iat within 300s. Proof expiry
+  is bounded by iat + 300s. No auth_time/max_age forcing remains (owner accepted
+  the weaker account-selection step-up, 2026-10-11). Guest requires existing recovery code without
   rotation/session-only issuance; whole device/code compromise is outside its
   narrowed threat model. Proof/final lane is non-borrowable by ordinary traffic.
 - Keep atomic guest provisioning, BEFORE DELETE guards against old cascading

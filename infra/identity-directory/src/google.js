@@ -24,7 +24,7 @@ async function googleJwks(env) {
   return payload;
 }
 
-export async function verifyGoogleIdToken(token, { clientId, nonce, nowSeconds, env, freshAuthentication = false }) {
+export async function verifyGoogleIdToken(token, { clientId, nonce, nowSeconds, env, freshToken = false }) {
   const parts = String(token || "").split(".");
   if (parts.length !== 3) throw new Error("invalid Google credential");
   const [encodedHeader, encodedClaims, encodedSignature] = parts;
@@ -65,16 +65,17 @@ export async function verifyGoogleIdToken(token, { clientId, nonce, nowSeconds, 
   if (Number.isFinite(claims.iat) && claims.iat > now + 300) throw new Error("invalid Google credential");
   if (String(claims.nonce || "") !== nonce) throw new Error("invalid Google credential");
   if (!String(claims.sub || "").trim()) throw new Error("invalid Google credential");
-  if (freshAuthentication && (!Number.isSafeInteger(claims.auth_time) || !Number.isSafeInteger(claims.iat)
-      || claims.auth_time < 0 || claims.auth_time > now || now - claims.auth_time > 300
-      || claims.iat > now || now - claims.iat > 300 || claims.auth_time > claims.iat)) {
-    throw new Error("fresh Google authentication required");
+  // Deletion accepts interactive account selection, not password reauthentication
+  // (owner decision 2026-10-11). The nonce binds this fresh token to its request.
+  if (freshToken && (!Number.isSafeInteger(claims.iat) || claims.iat < 0
+      || claims.iat > now || now - claims.iat > 300)) {
+    throw new Error("fresh Google token required");
   }
   return {
     subject: String(claims.sub),
     name: typeof claims.name === "string" ? cleanText(claims.name, 120) : "",
     picture: typeof claims.picture === "string" ? googlePicture(claims.picture) : "",
-    auth_time: Number.isSafeInteger(claims.auth_time) ? claims.auth_time : null,
+    issued_at: Number.isSafeInteger(claims.iat) ? claims.iat : null,
   };
 }
 

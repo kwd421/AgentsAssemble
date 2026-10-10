@@ -46,7 +46,7 @@ try {
   assert.equal((await DB.prepare("SELECT COUNT(*) AS n FROM persons").first()).n, 2);
   assert.equal((await DB.prepare("SELECT COUNT(*) AS n FROM sessions").first()).n, 2);
   // Provider signatures are controlled fixtures, while storage and HTTP are real
-  // local D1. This is explicitly not evidence of real Google auth_time support.
+  // local D1. This is explicitly not evidence of real Google account-selection behavior.
   const google = await verifiedRecoveryIdentity(env), verifier = randomBase64Url(32), googleRequest = randomBase64Url(32);
   const googleFields = { kind: "google", flow_kind: "native", request_id: googleRequest };
   const googleCall = body => signedDeviceRequest(env, google.created.session, google.key.pair,
@@ -58,11 +58,11 @@ try {
   const original = globalThis.fetch, now = Math.floor(Date.now()/1000);
   let googleProof;
   try {
-    const staleToken = await googleToken(google.signer, env, nonce, undefined, undefined, undefined, { auth_time: now-301 });
+    const staleToken = await googleToken(google.signer, env, nonce, undefined, undefined, undefined, { iat: now-301 });
     globalThis.fetch = async () => Response.json({ id_token: staleToken });
     const body = { ...googleFields, action: "complete", authorization_code: "4/local-proof-fixture", code_verifier: verifier };
     assert.equal((await googleCall(body)).status, 401);
-    const freshToken = await googleToken(google.signer, env, nonce, undefined, undefined, undefined, { auth_time: now });
+    const freshToken = await googleToken(google.signer, env, nonce, undefined, undefined, undefined, {});
     globalThis.fetch = async () => Response.json({ id_token: freshToken });
     const fresh = await googleCall(body); assert.equal(fresh.status, 200);
     googleProof = await fresh.json();
