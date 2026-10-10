@@ -189,7 +189,8 @@ export async function exchangeGoogleAuthorizationCode(env, row, code, verifier, 
   try {
     response = await fetch("https://oauth2.googleapis.com/token", {
       method: "POST",
-      redirect: "error",
+      // workerd supports manual/follow only; reject redirects below without forwarding credentials.
+      redirect: "manual",
       headers: {
         accept: "application/json",
         "content-type": "application/x-www-form-urlencoded",

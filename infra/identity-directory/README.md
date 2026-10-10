@@ -9,6 +9,16 @@ device credentials, known server identities, and short-lived server endpoint lea
 Room lists, messages, attachments, provider sessions, host tokens, room bearer tokens,
 and invite credentials remain on each AgentsAssemble engine.
 
+## Google token exchange runtime correction (2026-10-10)
+
+Real Firefox private member OAuth must finish at the shared Google exchange owner,
+including ordinary native/web login, explicit registration and deletion reauth.
+workerd rejects `redirect: "error"` before sending the token request. Use its
+supported manual mode and reject every non-success response; never follow a
+redirect with the Google code, PKCE verifier or client secret. No credential,
+upstream payload or exception detail may enter logs or public errors. Existing
+nonce/PKCE/subject/fresh-auth-time/state/custody checks remain mandatory.
+
 ## Account deletion — binding owner redesign (2026-10-09)
 
 Runtime contract: Rust `docs/specs/identity-accounts-friends-slice.md` → Account

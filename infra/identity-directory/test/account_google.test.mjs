@@ -35,7 +35,9 @@ async function exchange(f, claims, subject, action) {
   try {
     globalThis.fetch = async (url, options) => {
       assert.equal(String(url), "https://oauth2.googleapis.com/token");
-      assert.equal(options.redirect, "error"); calls++;
+      // Emulate the edge Request constructor, rather than Node's broader redirect enum.
+      if (!["manual", "follow"].includes(options.redirect)) throw new TypeError("unsupported edge redirect mode");
+      calls++;
       return Response.json({ id_token: credential });
     };
     const result = await action();
@@ -110,4 +112,19 @@ test("session-only Google start and a failed fresh-auth attempt cannot erase an 
   assert.deepEqual(f.env.DB.database.prepare("SELECT proof_hash,request_id FROM account_deletion_proofs").get(), stored);
   assert.equal((await f.call({ ...proof, receipt: randomBase64Url(32),
     confirmation: `delete:${f.identity.created.person.person_id}` }, "/v1/account", "DELETE")).status, 200);
+});
+
+for (const flow of ["native", "web"]) test(`${flow} Google token redirect cannot issue deletion authority`, async () => {
+  const f = await fixture(flow), now = Math.floor(Date.now()/1000);
+  const credential = await f.token({ auth_time: now - 10 }), original = globalThis.fetch;
+  try {
+    globalThis.fetch = async (_url, options) => options.redirect === "follow"
+      ? Response.json({ id_token: credential })
+      : new Response(null, { status: 302, headers: { location: "https://untrusted.example/token" } });
+    const response = await f.call(f.complete);
+    assert.equal(response.status, 401);
+    assert.equal((await response.json()).error.code, "invalid_google_authorization");
+    assert.equal(f.env.DB.database.prepare("SELECT proof_hash FROM account_deletion_proofs").get()?.proof_hash ?? null, null);
+    assert.equal(f.env.DB.database.prepare("SELECT status FROM persons").get().status, "active");
+  } finally { globalThis.fetch = original; }
 });
