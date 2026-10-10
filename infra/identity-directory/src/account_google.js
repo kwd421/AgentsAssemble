@@ -39,7 +39,7 @@ export async function googleDeletionProof(request, session, env, body, requestId
     const url = new URL("https://accounts.google.com/o/oauth2/v2/auth");
     url.search = new URLSearchParams({ client_id: String(client.id), redirect_uri: redirect,
       response_type: "code", scope: "openid profile", state, nonce, code_challenge: challenge,
-      code_challenge_method: "S256", prompt: "select_account",
+      code_challenge_method: "S256", prompt: "select_account", max_age: "300",
       claims: JSON.stringify({ id_token: { auth_time: { essential: true } } }),
     }).toString();
     return json({ handoff_id: `goh_${requestId}`, request_id: requestId,

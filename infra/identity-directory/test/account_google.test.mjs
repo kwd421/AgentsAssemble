@@ -26,7 +26,7 @@ async function fixture(flow = "native") {
   const complete = { ...fields, action: "complete", authorization_code: "4/deletion-test-code", code_verifier: verifier };
   const token = (overrides, subject) => googleToken(identity.signer, env, url.searchParams.get("nonce"), subject,
     flow === "web" ? env.GOOGLE_CLIENT_ID : env.GOOGLE_DESKTOP_CLIENT_ID, undefined, overrides);
-  return { env, identity, call, fields, complete, token, before };
+  return { env, identity, call, fields, complete, token, before, url };
 }
 
 async function exchange(f, claims, subject, action) {
@@ -47,7 +47,7 @@ async function exchange(f, claims, subject, action) {
 
 for (const flow of ["native", "web"]) test(`${flow} Google deletion proof checks fresh same-subject auth without creating an identity/session`, async () => {
   const f = await fixture(flow), now = Math.floor(Date.now()/1000);
-  const { result: response, calls } = await exchange(f, { auth_time: now - 10 }, undefined, () => f.call(f.complete));
+  const { result: response, calls } = await exchange(f, { auth_time: f.url.searchParams.get("max_age") === "300" ? now - 10 : now - 900 }, undefined, () => f.call(f.complete));
   assert.equal(response.status, 200, await response.clone().text()); assert.equal(calls, 1);
   const proof = await response.json(); assert.ok(proof.expires_at <= now + 290);
   const after = ["persons", "devices", "sessions", "google_handoffs", "external_identities", "recovery_credentials"]
