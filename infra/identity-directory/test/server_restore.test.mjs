@@ -55,6 +55,7 @@ test('restore preserves hidden membership, invalidates endpoint, fences old key 
   const endpoint = f.db.prepare('SELECT * FROM server_endpoints').get();
   assert.equal(endpoint.state, 'offline'); assert.equal(endpoint.origin, '');
   assert.ok(endpoint.generation > 1);
+  assert.equal(receipt.endpoint_generation, endpoint.generation);
   const after = rows(f);
   assert.deepEqual(await (await move(f, body)).json(), receipt);
   assert.deepEqual(rows(f), after);
@@ -79,6 +80,7 @@ test('restore preserves hidden membership, invalidates endpoint, fences old key 
     issued_at:Math.floor(Date.now()/1000),origin:'https://new.trycloudflare.com',
     lease_expires_at:Math.floor(Date.now()/1000)+300});
   assert.equal(published.status,200,await published.clone().text());
+  assert.deepEqual(await (await move(f,body)).json(), receipt);
 });
 
 test('deletion proof cannot switch server and failed authority leaves all durable effects unchanged',async()=>{

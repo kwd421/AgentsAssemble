@@ -59,7 +59,7 @@ export async function restoreStatus(session, env, serverId, operation, expectedE
   // separately could mistake our just-committed switch for somebody else's move.
   const row = await env.DB.prepare(`SELECT ? AS operation_id,
       COALESCE(r.expected_epoch,?) AS expected_epoch, r.new_key_fingerprint,
-      r.registration_epoch, CASE WHEN r.operation_id IS NULL THEN
+      r.registration_epoch, r.endpoint_generation, CASE WHEN r.operation_id IS NULL THEN
         CASE WHEN ? IS NOT NULL AND s.registration_epoch<>? THEN 'not_committed' ELSE 'unknown' END
       WHEN s.registration_epoch=r.registration_epoch AND s.host_key_fingerprint=r.new_key_fingerprint
         AND s.revoked_at IS NULL THEN 'committed' ELSE 'superseded' END AS status
@@ -112,9 +112,9 @@ export async function restoreServer(request, session, env, serverId, text, now) 
         .bind(now, session.session_id, session.person_id, session.device_id, now, id.requestId, proofHash, now),
       env.DB.prepare(`INSERT INTO server_restore_operations
         (server_id, operation_id, owner_person_id, expected_epoch, old_key_fingerprint,
-          old_public_key_jwk, new_key_fingerprint, registration_epoch, created_at)
+          old_public_key_jwk, new_key_fingerprint, registration_epoch, created_at, endpoint_generation)
         SELECT server_id, ?, owner_person_id, registration_epoch, host_key_fingerprint,
-          host_public_key_jwk, ?, ?, ? FROM live_servers WHERE changes() = 1
+          host_public_key_jwk, ?, ?, ?, COALESCE((SELECT generation+1 FROM server_endpoints WHERE server_id=live_servers.server_id),1) FROM live_servers WHERE changes() = 1
           AND server_id = ? AND registration_epoch = ? AND owner_person_id = ? AND revoked_at IS NULL
           AND NOT EXISTS (SELECT 1 FROM server_endpoints WHERE server_id = live_servers.server_id
             AND generation >= 9007199254740991)
