@@ -1,11 +1,12 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import { memberFixture } from './member_servers_helpers.mjs';
-import { hostKey, signedHostRequest } from './helpers.mjs';
+import { hostKey, signedHostRequest, deviceKey, request, seedHistorical, environment } from './helpers.mjs';
 import { proveGuestDeletion } from './deletion_helpers.mjs';
 import { bytesToBase64Url, hostRegistrationCanonical, randomBase64Url, utf8 } from '../src/crypto.js';
 import { restoreCanonical, restoreIdentity } from '../src/server_restore.js';
 
+const fixture = () => memberFixture(environment({SERVER_RESTORE_ENABLED:'true'}));
 // Contract: only fresh, exact restore authority can replace an incarnation;
 // observe HTTP and durable rows. Removing binding/CAS/fencing breaks these oracles.
 async function prepare(f, key = null, expected = f.epoch) {
@@ -35,7 +36,7 @@ async function registration(f, epoch) {
 }
 
 test('restore preserves hidden membership, invalidates endpoint, fences old key and recovers exact lost response', async () => {
-  const f = await memberFixture();
+  const f = await fixture();
   const oldProjection = await f.anchor();
   await f.visibility(true);
   const before = f.db.prepare('SELECT * FROM member_servers').get();
@@ -81,7 +82,7 @@ test('restore preserves hidden membership, invalidates endpoint, fences old key 
 });
 
 test('deletion proof cannot switch server and failed authority leaves all durable effects unchanged',async()=>{
-  const f=await memberFixture(), {body}=await prepare(f);
+  const f=await fixture(), {body}=await prepare(f);
   const deletion=await proveGuestDeletion(f.env,f.owner), before=rows(f);
   assert.equal((await move(f,{...body,proof:deletion.proof})).status,409);
   assert.deepEqual(rows(f),before);
@@ -91,7 +92,7 @@ test('deletion proof cannot switch server and failed authority leaves all durabl
 });
 
 test('two prepared operations cannot both switch an expected epoch; proof bound to exact operation and key',async()=>{
-  const f=await memberFixture(), first=await prepare(f), second=await prepare(f);
+  const f=await fixture(), first=await prepare(f), second=await prepare(f);
   const before=rows(f);
   assert.equal((await move(f,{...second.body,proof:first.body.proof})).status,409);
   assert.deepEqual(rows(f),before);
@@ -102,7 +103,7 @@ test('two prepared operations cannot both switch an expected epoch; proof bound 
 });
 
 test('membership transition budget failure rolls back consumed proof, fence and key rotation',async()=>{
-  const f=await memberFixture(); await f.anchor(); const {body}=await prepare(f);
+  const f=await fixture(); await f.anchor(); const {body}=await prepare(f);
   f.db.prepare(`UPDATE member_sync_budget SET creation_day=CAST(strftime('%s','now') AS INTEGER)/86400,
     creation_writes=daily_limit`).run();
   const before=rows(f);
@@ -113,7 +114,7 @@ test('membership transition budget failure rolls back consumed proof, fence and 
 });
 
 test('revocation immediately before the atomic switch cannot consume proof or mutate registration',async()=>{
-  const f=await memberFixture(),{body}=await prepare(f),before=rows(f);
+  const f=await fixture(),{body}=await prepare(f),before=rows(f);
   const batch=f.env.DB.batch.bind(f.env.DB);
   let armed=true;
   f.env.DB.batch=async statements=>{
@@ -132,7 +133,7 @@ test('revocation immediately before the atomic switch cannot consume proof or mu
 });
 
 test('a removed central relationship cannot be revived by restored host projection',async()=>{
-  const f=await memberFixture(),projection=await f.anchor();
+  const f=await fixture(),projection=await f.anchor();
   assert.equal((await f.report([{projection_id:projection,revision:1,state:'removed'}])).status,200);
   const {body,key}=await prepare(f),reply=await move(f,body);
   assert.equal(reply.status,200,await reply.clone().text());
@@ -144,4 +145,73 @@ test('a removed central relationship cannot be revived by restored host projecti
   assert.equal(report.status,200,await report.clone().text());
   assert.equal((await report.json()).results[0].status,'terminal');
   assert.deepEqual(f.db.prepare('SELECT * FROM member_servers').get(),member);
+});
+
+
+test('two independently stepped-up owner devices race one atomic incarnation switch', async () => {
+  const f=await fixture(), secondKey=await deviceKey();
+  const recovery=await request(f.env,'/v1/auth/recover',{method:'POST',body:JSON.stringify({
+    recovery_code:f.owner.created.recovery_code,device_id:'restore-second-owner',device_public_key_jwk:secondKey.publicJwk})});
+  assert.equal(recovery.status,200,await recovery.clone().text());
+  const created=await recovery.json();
+  f.owner.created.recovery_code=created.recovery_code;
+  const other={...f,owner:{created,key:secondKey}};
+  const first=await prepare(f),second=await prepare(other);
+  const batch=f.env.DB.batch.bind(f.env.DB);
+  let arrived=0,release;
+  const bothReady=new Promise(resolve=>{release=resolve;});
+  f.env.DB.batch=async statements=>{
+    if(statements.some(s=>s.sql.includes('INSERT INTO server_restore_operations'))) {
+      if(++arrived===2) release();
+      await bothReady;
+    }
+    return batch(statements);
+  };
+  const responses=await Promise.all([move(f,first.body),move(other,second.body)]);
+  assert.deepEqual(responses.map(r=>r.status).sort(),[200,409]);
+  const winner=await responses.find(r=>r.status===200).json();
+  assert.equal(f.db.prepare('SELECT COUNT(*) n FROM server_restore_operations').get().n,1);
+  assert.equal(f.db.prepare('SELECT registration_epoch FROM servers').get().registration_epoch,winner.registration_epoch);
+  assert.equal(f.db.prepare('SELECT COUNT(*) n FROM sessions WHERE restore_proof_used_at IS NOT NULL').get().n,1);
+});
+
+test('bounded set transition fits the existing full projection budget and preserves every member',async t=>{
+  const f=await fixture(),now=Math.floor(Date.now()/1000);
+  const budget=f.db.prepare('SELECT MIN(daily_limit,admission_limit) units FROM member_sync_budget').get().units;
+  const capacity=Math.floor(budget/6);
+  f.db=seedHistorical(f.env,db=>{
+    for(let i=0;i<capacity;i++) {
+      // These are historical rows accumulated over multiple days before current
+      // guards, then upgraded by the existing historical-fixture owner.
+      db.prepare('UPDATE member_sync_budget SET creation_day=creation_day-1').run();
+      db.prepare('UPDATE creation_budgets SET creation_day=creation_day-1').run();
+      db.prepare("INSERT INTO persons(person_id,identity_kind,created_at,updated_at) VALUES(?,'guest',?,?)")
+        .run(`restore-member-${i}`,now,now);
+      db.prepare(`INSERT INTO member_servers(person_id,server_id,registration_epoch,projection_id,host_state,user_hidden,created_at,updated_at,state_changed_at)
+        VALUES(?,?,?,?,'active',?,?,?,?)`).run(`restore-member-${i}`,f.id,f.epoch,randomBase64Url(16),i%2,now,now,now);
+    }
+    db.prepare('UPDATE member_sync_budget SET creation_day=creation_day-1').run();
+  });
+  const before=f.db.prepare('SELECT person_id,user_hidden,host_state FROM member_servers ORDER BY person_id').all();
+  const {body}=await prepare(f),started=performance.now(),response=await move(f,body);
+  const elapsed=performance.now()-started;
+  assert.equal(response.status,200,await response.clone().text());
+  const epoch=(await response.json()).registration_epoch;
+  assert.deepEqual(f.db.prepare('SELECT person_id,user_hidden,host_state FROM member_servers ORDER BY person_id').all(),before);
+  assert.equal(f.db.prepare('SELECT COUNT(*) n FROM member_servers WHERE registration_epoch=?').get(epoch).n,capacity);
+  assert.equal(f.db.prepare('SELECT creation_writes FROM member_sync_budget').get().creation_writes,capacity*6);
+  t.diagnostic(`local Node SQLite restore: members=${capacity} elapsed_ms=${elapsed.toFixed(2)}; remote D1 latency unverified`);
+});
+
+
+test('rollout capability blocks new moves while completed-operation recovery remains available',async()=>{
+  const f=await fixture(),{body}=await prepare(f),response=await move(f,body);
+  assert.equal(response.status,200,await response.clone().text());
+  const committed=await response.json();
+  f.env.SERVER_RESTORE_ENABLED='false';
+  const config=await request(f.env,'/v1/config');
+  assert.equal((await config.json()).server_restore_v1,false);
+  assert.equal((await move(f,body)).status,503);
+  const recovered=await f.device(`/v1/servers/${f.id}/restore-operations/${body.operation_id}`,undefined,f.owner,'GET');
+  assert.deepEqual(await recovered.json(),committed);
 });

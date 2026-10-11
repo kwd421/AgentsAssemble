@@ -57,6 +57,7 @@ async function route(request, env) {
       google_web_enabled: Boolean(env.GOOGLE_CLIENT_ID && env.GOOGLE_WEB_CLIENT_SECRET),
       google_native_enabled: Boolean(env.GOOGLE_DESKTOP_CLIENT_ID && env.GOOGLE_DESKTOP_CLIENT_SECRET),
       protocol_version: 3,
+      server_restore_v1: env.SERVER_RESTORE_ENABLED === "true",
     });
   }
   const termination = request.method === "DELETE" && url.pathname === "/v1/account" ||
@@ -208,6 +209,7 @@ async function route(request, env) {
   }
   const restore = url.pathname.match(/^\/v1\/servers\/([^/]+)\/(restore|restore-proof)$/);
   if (restore && request.method === "POST") {
+    if (env.SERVER_RESTORE_ENABLED !== "true") throw new HttpError(503, "server_restore_not_available");
     const serverId = cleanIdentifier(restore[1], "server_id");
     return restore[2] === "restore" ? restoreServer(request, session, env, serverId, text, now)
       : restoreProof(request, session, env, serverId, text, now);

@@ -28,9 +28,24 @@ async function requireOwner(db, session, serverId, epoch) {
   return row;
 }
 
+// Reuse the projection writer's existing budget; do not add a parallel quota or
+// scan a full backlog that cannot fit. Triggers still recheck inside the batch.
+async function requireRestoreCapacity(db, serverId, epoch) {
+  const budget = await db.prepare(`SELECT MAX(0,(MIN(daily_limit,admission_limit) -
+    CASE WHEN creation_day=CAST(strftime('%s','now') AS INTEGER)/86400
+      THEN creation_writes ELSE 0 END)/6) AS capacity FROM member_sync_budget WHERE id=1`).first();
+  if (!budget) throw new HttpError(429, 'temporary_capacity_exhausted');
+  const count = await db.prepare(`SELECT COUNT(*) AS count FROM (
+    SELECT 1 FROM member_servers m JOIN persons p ON p.person_id=m.person_id
+    WHERE m.server_id=? AND m.registration_epoch=? AND p.status='active' AND p.deleted_at IS NULL LIMIT ?)`)
+    .bind(serverId, epoch, budget.capacity + 1).first();
+  if (count.count > budget.capacity) throw new HttpError(429, 'temporary_capacity_exhausted');
+}
+
 export async function restoreProof(request, session, env, serverId, text, now) {
   const body = parseJson(text), identity = await restoreIdentity(serverId, body);
   await requireOwner(env.DB, session, serverId, identity.epoch);
+  await requireRestoreCapacity(env.DB, serverId, identity.epoch);
   if (!body.step_up || typeof body.step_up !== 'object' || Array.isArray(body.step_up))
     throw new HttpError(400, 'invalid_restore_step_up');
   // Separate columns keep issued proofs and pending nonces non-borrowable even
@@ -72,6 +87,7 @@ export async function restoreServer(request, session, env, serverId, text, now) 
     return restoreStatus(session, env, serverId, id.operation);
   }
   const current = await requireOwner(env.DB, session, serverId, id.epoch);
+  await requireRestoreCapacity(env.DB, serverId, id.epoch);
   if (current.host_key_fingerprint === id.fingerprint) throw new HttpError(409, 'server_restore_key_reused');
   if (typeof body.proof !== 'string' || !/^[A-Za-z0-9_-]{43}$/.test(body.proof))
     throw new HttpError(401, 'server_restore_reauth_required');

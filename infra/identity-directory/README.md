@@ -65,6 +65,19 @@ of scope. The design review C0/H2/M2/L1 is binding with these corrections:
   Pre-restore Worker rollback after a switch is unsafe. This task pushes both
   repositories but DOES NOT deploy; manager owns Daybreak review and deployment.
 
+Restore rollout is explicitly closed until `SERVER_RESTORE_ENABLED="true"` is set
+by the deployment owner after migration 0027 and all traffic uses restore-aware
+code. `/v1/config.server_restore_v1` advertises that state; proof/switch return
+`server_restore_not_available` while closed. Operation-status recovery remains
+available when exposure is closed. Never roll code back past the retirement fence.
+The projection transition uses the existing `member_sync_budget` and its weight-6
+replacement trigger, with a bounded preflight count; it does not raise any quota.
+At migration 0026's full remaining budget the local maximum is 208 relationships.
+The 2026-10-11 local Node SQLite HTTP invariant run preserved all 208 relationships
+in 2.58 ms (8.88 ms during the full concurrent test suite). This is not a remote D1
+latency result. D1 retains its [30-second query limit](https://developers.cloudflare.com/d1/platform/limits/);
+any budget/SQL failure rolls the entire switch and proof consumption back.
+
 Acceptance is behavioral: complete data/asset roundtrip and old-credential denial;
 malicious schema/JSON, truncation/tamper/password/KDF bounds fail without mutation;
 non-empty/racing target preserved; same-owner step-up and concurrent CAS; exact
