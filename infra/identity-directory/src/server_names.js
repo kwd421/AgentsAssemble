@@ -53,10 +53,13 @@ export async function updateDefaultServerName(request, env, serverId, text, now)
       !Number.isSafeInteger(body.name_revision) || body.name_revision < 1) {
     throw new HttpError(400, "invalid_server_name");
   }
-  const result = await env.DB.prepare(`UPDATE servers SET label = ?, name_revision = ?
+  const hostOs = body.host_os === undefined ? null : body.host_os;
+  if (body.host_os !== undefined && !["macos", "windows", "linux", "other"].includes(hostOs))
+    throw new HttpError(400, "invalid_host_os");
+  const result = await env.DB.prepare(`UPDATE servers SET label = ?, name_revision = ?, host_os = COALESCE(?, host_os)
     WHERE server_id = ? AND host_key_fingerprint = ? AND registration_epoch = ? AND revoked_at IS NULL
       AND (name_revision < ? OR (name_revision = ? AND label = ?))`)
-    .bind(name, body.name_revision, serverId, fingerprint, registrationEpoch,
+    .bind(name, body.name_revision, hostOs, serverId, fingerprint, registrationEpoch,
       body.name_revision, body.name_revision, name).run();
   if (Number(result.meta?.changes || 0) !== 1) {
     await recheckHostIncarnation(env.DB, serverId, registrationEpoch);

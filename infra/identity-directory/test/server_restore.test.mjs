@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
+import { readFileSync } from 'node:fs';
 import { memberFixture } from './member_servers_helpers.mjs';
 import { hostKey, signedHostRequest, deviceKey, request, seedHistorical, environment } from './helpers.mjs';
 import { proveGuestDeletion } from './deletion_helpers.mjs';
@@ -270,3 +271,46 @@ test('disabled switch proves this request made no mutation without consuming its
   assert.equal(retry.status, 200, await retry.clone().text());
   assert.equal((await retry.json()).status, 'committed');
 });
+
+// A snapshot may precede the last old-host profile update. Its first publication
+// must replace the old revision, but retries cannot reset later new-host writes.
+for (const [revision, existingRestore] of [[2,false],[1,false],[2,true]]) {
+  test(`restored host republishes device metadata at snapshot revision ${revision}, existing=${existingRestore}`, async () => {
+    const f = await fixture(), path = `/v1/servers/${f.id}/name`;
+    const publish = (key, epoch, name, name_revision, host_os = 'windows') =>
+      signedHostRequest(f.env, f.id, key.pair, 'PUT',
+        { registration_epoch: epoch, name, name_revision, host_os }, { pathname: path });
+    assert.equal((await publish(f.host, f.epoch, 'Owner의 MacBook Air', 2, 'macos')).status, 200);
+    const fixedAlias = revision === 1;
+    if (fixedAlias) assert.equal((await f.device(path,{registration_epoch:f.epoch,
+      name:'My alias',expected_name:'Owner의 MacBook Air',expected_name_is_default:true},f.owner)).status,200);
+    const {body,key} = await prepare(f);
+    const receipt = await (await move(f,body)).json();
+    if (existingRestore) {
+      // Reproduce pre-fix switch state without rerunning restore: production has
+      // the new key/epoch but still carries its predecessor's name revision.
+      f.db.prepare('UPDATE servers SET name_revision=2 WHERE server_id=?').run(f.id);
+      const before = f.db.prepare('SELECT label,host_os FROM servers WHERE server_id=?').get(f.id);
+      const receipts = f.db.prepare('SELECT * FROM server_restore_operations').all();
+      f.db.exec(readFileSync(new URL('../migrations/0029_restore_name_publication.sql',import.meta.url),'utf8'));
+      assert.deepEqual(f.db.prepare('SELECT label,host_os FROM servers WHERE server_id=?').get(f.id),before);
+      assert.deepEqual(f.db.prepare('SELECT * FROM server_restore_operations').all(),receipts);
+    }
+    const current = async () => (await (await f.device('/v1/bootstrap',undefined,f.owner,'GET')).json()).servers[0];
+    assert.equal((await publish(key,receipt.registration_epoch,'Owner의 Windows PC',revision)).status,200);
+    assert.equal((await current()).alias,fixedAlias?'My alias':'Owner의 Windows PC');
+    assert.equal((await current()).default_name,'Owner의 Windows PC');
+    assert.equal((await current()).host_os,'windows');
+    assert.equal((await publish(key,receipt.registration_epoch,'Owner의 Windows PC',revision)).status,200);
+    assert.equal((await f.device(path,{registration_epoch:receipt.registration_epoch,
+      name:'My alias',expected_name:fixedAlias?'My alias':'Owner의 Windows PC',expected_name_is_default:!fixedAlias},f.owner)).status,200);
+    assert.equal((await publish(key,receipt.registration_epoch,'Updated의 Windows PC',revision+1,'linux')).status,200);
+    assert.equal((await current()).alias,'My alias');
+    assert.equal((await current()).default_name,'Updated의 Windows PC');
+    assert.equal((await current()).host_os,'linux');
+    assert.equal((await publish(key,receipt.registration_epoch,'Owner의 Windows PC',revision)).status,409);
+    assert.equal((await publish(f.host,f.epoch,'Old host',100,'macos')).status,410);
+    assert.equal((await publish(key,receipt.registration_epoch,'Wrong OS',revision+2,'invalid')).status,400);
+    assert.equal((await current()).host_os,'linux');
+  });
+}

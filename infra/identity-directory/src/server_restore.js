@@ -128,7 +128,7 @@ export async function restoreServer(request, session, env, serverId, text, now) 
           id.fingerprint, session.person_id, serverId, session.person_id, serverId, id.fingerprint, serverId),
       env.DB.prepare(`INSERT INTO server_restore_assertion VALUES(1,CASE WHEN changes() = 1 THEN 1 ELSE 0 END)
         ON CONFLICT(id) DO UPDATE SET ok=excluded.ok`),
-      env.DB.prepare(`UPDATE servers SET host_public_key_jwk = ?, host_key_fingerprint = ?, registration_epoch = ?
+      env.DB.prepare(`UPDATE servers SET host_public_key_jwk = ?, host_key_fingerprint = ?, registration_epoch = ?, name_revision = 0
         WHERE server_id = ? AND registration_epoch = ? AND owner_person_id = ? AND revoked_at IS NULL`)
         .bind(canonicalJson(id.jwk), id.fingerprint, epoch, serverId, id.epoch, session.person_id),
       env.DB.prepare(`INSERT INTO server_restore_assertion VALUES(1,CASE WHEN changes() = 1 THEN 1 ELSE 0 END)
