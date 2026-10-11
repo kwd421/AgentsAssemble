@@ -215,6 +215,10 @@ async function route(request, env) {
       : restoreProof(request, session, env, serverId, text, now);
   }
   const restoreOperation = url.pathname.match(/^\/v1\/servers\/([^/]+)\/restore-operations\/([^/]+)$/);
+  if (restoreOperation && request.method === "POST")
+    return restoreStatus(session, env, cleanIdentifier(restoreOperation[1], "server_id"),
+      cleanIdentifier(restoreOperation[2], "operation_id", 32, 128),
+      cleanIdentifier(parseJson(text).expected_epoch, "expected_epoch"));
   if (restoreOperation && request.method === "GET")
     return restoreStatus(session, env, cleanIdentifier(restoreOperation[1], "server_id"),
       cleanIdentifier(restoreOperation[2], "operation_id", 32, 128));

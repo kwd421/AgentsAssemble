@@ -54,15 +54,22 @@ export async function restoreProof(request, session, env, serverId, text, now) {
     JSON.stringify({ ...body.step_up, request_id: identity.requestId }), now, 'restore');
 }
 
-export async function restoreStatus(session, env, serverId, operation) {
-  const row = await env.DB.prepare(`SELECT r.operation_id, r.expected_epoch,
-      r.new_key_fingerprint, r.registration_epoch,
-      CASE WHEN s.registration_epoch = r.registration_epoch AND s.host_key_fingerprint = r.new_key_fingerprint
+export async function restoreStatus(session, env, serverId, operation, expectedEpoch = null) {
+  // One SQLite statement observes receipt and incarnation together. Reading them
+  // separately could mistake our just-committed switch for somebody else's move.
+  const row = await env.DB.prepare(`SELECT ? AS operation_id,
+      COALESCE(r.expected_epoch,?) AS expected_epoch, r.new_key_fingerprint,
+      r.registration_epoch, CASE WHEN r.operation_id IS NULL THEN
+        CASE WHEN ? IS NOT NULL AND s.registration_epoch<>? THEN 'not_committed' ELSE 'unknown' END
+      WHEN s.registration_epoch=r.registration_epoch AND s.host_key_fingerprint=r.new_key_fingerprint
         AND s.revoked_at IS NULL THEN 'committed' ELSE 'superseded' END AS status
-    FROM server_restore_operations r JOIN live_servers s USING(server_id)
-    WHERE r.server_id = ? AND r.operation_id = ? AND r.owner_person_id = ? AND s.owner_person_id = ?`)
-    .bind(serverId, operation, session.person_id, session.person_id).first();
-  if (!row) return json({ status: 'unknown' }, 404);
+    FROM live_servers s LEFT JOIN server_restore_operations r
+      ON r.server_id=s.server_id AND r.operation_id=? AND r.owner_person_id=?
+    WHERE s.server_id=? AND s.owner_person_id=?`)
+    .bind(operation,expectedEpoch,expectedEpoch,expectedEpoch,operation,session.person_id,serverId,session.person_id).first();
+  if (!row || row.status==='unknown') return json({status:'unknown'},404);
+  if (row.status==='not_committed') return json({status:row.status,
+    operation_id:operation,expected_epoch:expectedEpoch});
   return json(row);
 }
 

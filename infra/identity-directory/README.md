@@ -1,5 +1,11 @@
 # AgentsAssemble identity directory
 
+Restore status supports a signed POST with `expected_epoch` in addition to GET.
+A single joined read returns `not_committed` only when no receipt exists and the
+current incarnation has already changed, so an old-epoch in-flight switch can no
+longer win. Native may then cancel that losing local job. `unknown` must remain
+resumable and must not be treated as cancellation; a present receipt always wins.
+
 ## Backup-based server move (2026-10-11)
 
 The owner authorizes implementation of export and restore of the same logical

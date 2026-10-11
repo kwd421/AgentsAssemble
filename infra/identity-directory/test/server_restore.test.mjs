@@ -215,3 +215,19 @@ test('rollout capability blocks new moves while completed-operation recovery rem
   const recovered=await f.device(`/v1/servers/${f.id}/restore-operations/${body.operation_id}`,undefined,f.owner,'GET');
   assert.deepEqual(await recovered.json(),committed);
 });
+
+
+test('status distinguishes a fenced loser from an unknown in-flight operation in one read',async()=>{
+  const f=await fixture(),first=await prepare(f),second=await prepare(f);
+  const status=body=>f.device(`/v1/servers/${f.id}/restore-operations/${body.operation_id}`,
+    {expected_epoch:body.expected_epoch},f.owner);
+  const before=await status(first.body);
+  assert.equal(before.status,404);assert.deepEqual(await before.json(),{status:'unknown'});
+  const moved=await move(f,second.body);assert.equal(moved.status,200);
+  const winner=await moved.json();
+  assert.deepEqual(await (await status(second.body)).json(),winner);
+  assert.deepEqual(await (await status(first.body)).json(),{status:'not_committed',
+    operation_id:first.body.operation_id,expected_epoch:first.body.expected_epoch});
+  // An arbitrarily stale expected epoch cannot relabel an existing receipt.
+  assert.deepEqual(await (await status({...second.body,expected_epoch:'another-epoch'})).json(),winner);
+});
