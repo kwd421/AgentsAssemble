@@ -1,5 +1,82 @@
 # AgentsAssemble identity directory
 
+## Backup-based server move (2026-10-11)
+
+The owner authorizes implementation of export and restore of the same logical
+server on a new computer. Central stores no backup bytes. Direct transfer,
+server cloning, ownership transfer and replacing existing installations are out
+of scope. The design review C0/H2/M2/L1 is binding with these corrections:
+
+- Shared settings exports through a local owner/native save capability; shared
+  startup/server chooser imports before runtime creation. Web explains the native
+  requirement. Members cannot export/import. Encryption is optional and default
+  on; plaintext requires explicit selection. Backup passphrases are never saved.
+- v1 contains a versioned manifest and ONE reconstructed SQLite payload, with no
+  tar or external asset machinery unless an included non-SQL durable owner is
+  demonstrated. Inventory includes messages, assets, persona cards, membership,
+  roles, valid invites, identity bindings, tombstones and retained AI configuration.
+- Treat every import as hostile: read-only SQLite, extensions disabled,
+  trusted_schema off, exact supported schema-object and column allowlist. Reject
+  unknown tables/indexes/triggers/views/columns and JSON fields. Decode fields
+  through domain owners into a fresh current-schema database; NEVER activate,
+  migrate or execute writes against the supplied database.
+- Authority sanitization: discard owner/member/operator/human/attendee/connector
+  sessions; redeemed pairing credentials; challenges, bearer fingerprints,
+  device-bound state and secure-channel bindings. Preserve memberships, roles,
+  valid invite use/expiry/revocation state and central identity bindings separately.
+  Fresh central owner/member admission is required. No old credential may work
+  against the restored host. Rotate host and session keys; omit provider secrets,
+  resume credentials, workspace paths and ingress/device credentials. Stop AI
+  execution and require explicit restart and workspace/authentication setup.
+- Native pre-runtime preparation owns the installation lock and import journal,
+  using host_device.rs's bounded no-runtime sidecar pattern. Empty means total
+  absence or an EXACT matching import-job marker. An ordinarily initialized DB
+  or key is never overwritten, including a zero-room installation.
+- Local states: Selected -> Validating -> Prepared -> SwitchUnknown/Committed ->
+  Activating -> Ready. Persist operation/new-key/expected-epoch identity before
+  sending the switch. Lost responses require status lookup with the same operation;
+  activation retries never rotate twice or restore the old incarnation. Preparation
+  must finish before central mutation. Network exposure failure remains visible.
+- Immediately before switch require fresh step-up using the account-deletion
+  machinery with a DISTINCT non-borrowable restore purpose, bound to server_id,
+  expected current epoch, new key fingerprint and operation id. Current live owner,
+  session/device and new-key possession are authoritative, never manifest identity.
+- One central transaction performs CAS, durable old-key/epoch fencing, endpoint
+  invalidation with monotonic generation, member projection transition and receipt.
+  Recheck active owner/session/device/proof at write time; zero-row authority rolls
+  back all effects. Concurrent restores have one winner. Retry is idempotent only
+  for the exact request. Keep receipt/fence recovery beyond transient cleanup.
+- All old-key requests including epochless register/claim remain fenced; valid
+  signed retired requests receive terminal server_retired. Preserve current
+  central hidden/terminal/deleted membership semantics; never revive removed users.
+  Existing members reconnect to the same local binding/roles without invite use.
+  Snapshot-missing members fail explicitly. Rebuild projection from canonical state.
+- Restore is snapshot rollback, including local bans/invite consumption after the
+  snapshot; disclose this before confirmation. Current central terminal state wins.
+  No automatic merge of later old-host writes. Old offline local sessions cannot
+  be remotely revoked until the old host reconnects and observes retirement.
+- Use maintained Argon2id + XChaCha20-Poly1305 secretstream, authenticated header,
+  bounded KDF/chunks, final tag and exact EOF; measure KDF on this Mac. Source
+  backup and existing installations remain untouched on corrupt/unsupported input,
+  wrong password, cancellation, disk failure or authority failure. Publish only
+  fully verified files atomically; unsupported atomic destinations fail explicitly.
+- Deployment order: additive D1 schema -> restore-aware Worker -> host capability.
+  No ordinary registration fallback and no capability before prerequisites pass.
+  Pre-restore Worker rollback after a switch is unsafe. This task pushes both
+  repositories but DOES NOT deploy; manager owns Daybreak review and deployment.
+
+Acceptance is behavioral: complete data/asset roundtrip and old-credential denial;
+malicious schema/JSON, truncation/tamper/password/KDF bounds fail without mutation;
+non-empty/racing target preserved; same-owner step-up and concurrent CAS; exact
+lost-response retry; retirement after cleanup/epochless traffic; member reconnect
+and hidden/removed state; stopped AI and environment reselection. Test invariants,
+not pinned constants. Mandatory architecture/structure and affected checks apply.
+No Computer Use or artifact maintenance/cleanup in this task. Packaged macOS and
+Windows acceptance remains explicitly unverified. Record evidence at the top of
+Rust docs/VERIFICATION.md. Each commit is under 1,000 changed lines with the
+requested Claude Opus 5.5 coauthor; preserve unrelated dirty work.
+
+
 Current server ownership: [one live server per account (v5.1)](#one-live-server-per-account-v51).
 Its migration/cutover and rollback rules supersede older server-deletion and
 multi-server guidance in the historical sections below.
