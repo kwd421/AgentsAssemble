@@ -1,3 +1,4 @@
+import { activeSlotClock } from "./helpers.mjs";
 import { seedHistorical } from "./helpers.mjs";
 import assert from "node:assert/strict";
 import test from "node:test";
@@ -79,11 +80,11 @@ test("scheduled cleanup bounds all tables and does not cascade live nonce/grant 
 // Contract: purpose expiry debt stays serviceable. Observe HTTP denial and durable
 // nonce state; raising the GENERAL cap to 800000 makes this regression fail.
 test("daily creation cap rejects signed mutations and resets on a new UTC day", async t => {
-  const env = environment({ SESSION_TTL_SECONDS: "172800" }), advance = utcDayClock(t, env);
+  const env = environment({ SESSION_TTL_SECONDS: "172800" }), advance = activeSlotClock(t, env);
   const { key, created } = await createGuestIdentity(env);
   const db = env.DB.database;
   // Distribute accepted debt across actors: each session may spend only 150 units.
-  for (let i = 0; i < 1790; i++) {
+  for (let i = 0; i < 3750; i++) {
     const actor = `capacity-${Math.floor(i / 50)}`;
     if (i % 50 === 0) {
       db.prepare("INSERT INTO persons (person_id, identity_kind, created_at, updated_at) VALUES (?, 'guest', 0, 0)").run(actor);
@@ -98,7 +99,7 @@ test("daily creation cap rejects signed mutations and resets on a new UTC day", 
   assert.equal(response.status, 429);
   assert.equal((await response.json()).error.code, "temporary_capacity_exhausted");
   assert.equal(db.prepare("SELECT COUNT(*) AS n FROM request_nonces").get().n, before);
-  assert.equal(db.prepare("SELECT creation_writes FROM creation_budgets WHERE purpose = 'GENERAL'").get().creation_writes, 5370);
+  assert.equal(db.prepare("SELECT creation_writes FROM creation_budgets WHERE purpose = 'GENERAL'").get().creation_writes, 11250);
   assert.equal((await signedDeviceRequest(env, created.session, key.pair, "/v1/bootstrap")).status, 200);
   advance(86400);
   assert.equal((await call()).status, 200);

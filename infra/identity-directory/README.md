@@ -382,8 +382,9 @@ the C3a runbook below supersedes that rollback target.
 The [D1 Free allowance](https://developers.cloudflare.com/d1/platform/pricing/)
 is 100,000 rows written/day across the account; index maintenance also counts.
 Before slot activation cleanup reserves at most **10,000 writes/day (10%)**;
-0025 changes this to eight 3,750-write slots (30,000/day). Admission pools stay
-at 9,990/day in stage 1. This is not a guarantee of remaining account
+0025 changes this to eight 3,750-write slots (30,000/day). 0026 raises admission
+pools to 24,000/day; the aggregate guard remains 9,990 until UTC day 20738.
+This is not a guarantee of remaining account
 quota: other databases, normal requests, cascades and migrations also consume it.
 
 Migration `0010_daily_maintenance_budget.sql` adds a cleanup singleton, six fixed creation-budget rows,
@@ -432,11 +433,11 @@ constraint), or 6 endpoint calls/minute = 8,640 host nonces/day = **25,920 clean
 writes**. Accounts, IPs and locations multiply these rates. Lowering only an
 individual account limit would not bound total generation.
 
-### Event-only budget rebalance (0018, current)
+### Event-only budget rebalance (0018 baseline; 0026 current pools below)
 
 Owner principle: central is used only for entry and explicit state changes;
-no heartbeat or polling is added. This is a local proposal, not a deployed
-migration. Worker baseline is 79e5c93b; workload paths were inspected at Rust
+no heartbeat or polling is added. This records the historical 0018 allocation,
+superseded by 0026 below. Worker baseline was 79e5c93b; paths were inspected at Rust
 d12077f2 (`central/event_publisher.rs`, `central/member_sync.rs`, persistence
 `member_projection.rs`, frontend `secureOwnerEntry.ts`/`secureMemberEntry.ts`).
 
@@ -821,31 +822,53 @@ fences, legacy workflows, preserved epochs, concurrent registration and backfill
 
 ### 배포 런북
 
-#### Cleanup slots stage 1 (review blocked; not deployed, 2026-10-11)
+#### Cleanup slots stages 1 and 2 (owner-authorized rollout, 2026-10-11)
 
-Local implementation is pending review, commit and push. Production remains
-`ef09a00b-ccd1-49d2-9af5-d60244a8520d`; remote migration check reported none
-pending through 0024 before this change. 0025 is local only; activation is unset.
-The requested Daybreak `codex exec` command was blocked before launch by the
-execution policy: `Codex exec mode is forbidden; use the canonical app-server
-Agent Session`. No reviewer verdict exists. This is not a transient API error,
-so repeated launches cannot satisfy the gate. No remote migration, deploy,
-activation, commit or push has been performed for this change. Stage 2 is held.
+Stage 1 is deployed: source `0aeac04f`, Worker
+`6cfce6bd-49c9-414b-8bdd-34be31618c11`, remote migrations through 0025.
+Remote SELECT confirmed `slots_activate_day=20738` (2026-10-12 00:00 UTC),
+`last_claimed_slot=-1`, `admission_paused=0`. The first scheduled slot is
+2026-10-12 00:17 UTC (09:17 KST), then every three hours.
 
-Worker suite: 290/290 passed. Local D1 slot, legacy cleanup, account cleanup,
+**Stage 2 owner decision:** raise pools with additive 0026 before the first real
+slot measurement because there are no real users yet. This supersedes the earlier
+pre-expansion measurement gate. Measurement remains mandatory after the first
+slots run and daily afterwards; lower pools if thresholds are exceeded.
+Real scheduled CPU/read/write/backlog evidence remains pending. No cleanup code,
+actor cap, retention, index, assets directory, spending or activation change.
+
+| Pool | Before (0018) | Current (0026) |
+| --- | ---: | ---: |
+| AUTH | 200 | 2,050 |
+| ANONYMOUS | 800 | 2,900 |
+| GENERAL | 5,370 | 11,250 |
+| ENDPOINT | 440 | 950 |
+| OWNER_GRANT | 1,920 | 4,050 |
+| OWNER_REDEEM | 720 | 1,550 |
+| member_sync admission_limit | 540 | 1,250 |
+| **Total/day** | **9,990** | **24,000** |
+
+GENERAL remains 240/account, 150/session, 120/host units/day; ENDPOINT remains
+16/server and signing key/day. AUTH/ANONYMOUS source caps (200/network,
+100/person), edge rates and active-grant caps remain unchanged. member_sync keeps
+`daily_limit=1800` and enforces `MIN(daily_limit, admission_limit)`. No borrowing
+or spending refund: 0025 caps combined debt at 9,990 before activation and 24,000
+afterwards. The target is 25 heavy groups plus 100 fresh Google registrations/day,
+not guaranteed throughput for shared actors or networks.
+
+Stage-1 local evidence: Worker suite 290/290 passed. Local D1 slot, legacy cleanup, account cleanup,
 split-migration checks and Wrangler deploy dry-run passed. Architecture check
 passed. Six controlled mutations (activation, legacy fence, monotonic claim,
 child clock, root clock, pause) each failed their durable-state regression and
 were restored. Real scheduled CPU, production slot writes/reads and target
-workload throughput remain unmeasured. Design review was REVISE C/H/M/L=0/1/1/2;
-the implementation review still has to run before rollout.
+workload throughput remain unmeasured.
 
 Required contract: additive D1 slot ledger, immutable future-UTC-day activation,
 legacy daily-claim exclusion, per-statement clock fences, bounded fair cleanup,
-and unchanged admission pools (9,990/day). Scheduled cleanup and D1 admission
+and activation-gated aggregate admission. Scheduled cleanup and D1 admission
 triggers are the affected entry points; desktop protocols and 0019–0024 account
-security/retention remain unchanged. Stage 2 (24,000/day) requires a real slot's
-CPU and D1 costs, population/storage/read headroom, and no growing backlog.
+security/retention remain unchanged. Stage 2 requires follow-up real-slot CPU and
+D1 costs, population/storage/read headroom, and backlog measurements.
 No completion ledger, catch-up, refund, client polling or dependency is added.
 
 **Algorithm and cost:** without a control SELECT, first try the monotonic slot
@@ -861,19 +884,21 @@ proposed 24,000 debt + 1,325 terminal allowance leaves 1,419 child units/day;
 the design's foreground 50,500 + cleanup 30,000 + operating margin 10,000 remains
 90,500/day. This is a workload estimate, never a hard foreground quota guarantee.
 
-**Supported horizon / pause before any raise:** at most 10,000 retained persons
+**Supported horizon / post-activation measurement duty:** at most 10,000 retained persons
 (including disabled persons), at most 25 heavy groups and 100 fresh registrations
 per day: at most 100 days from an empty person population, shorter from existing
 population or storage pressure. Accounts can persist indefinitely; this is not
 an indefinite Free-plan promise. Check account-wide D1 daily reads/writes, DB
-size, retained population, oldest eligible age, and scheduled CPU before raising
-any pool, and daily afterwards. Set `admission_paused=1` and stop expansion if
+size, retained population, oldest eligible age, and scheduled CPU after the first
+slots run on UTC day 20738, and daily afterwards. Pause admission and lower pools if
 persons reach 10,000, DB size reaches 350,000,000 bytes, cleanup reads reach
 250,000/slot, account-wide reads reach 4,000,000/day, writes reach 95,000/day,
 CPU reaches 8 ms/slot, or eligible backlog age grows on successive days.
 These are operator pause thresholds with headroom, not automatic account-wide
-quota enforcement. Missing measurements block stage 2. Resume explicitly only
-after recovery; never reset counters, activation or last_claimed_slot.
+quota enforcement. Missing measurements leave follow-up open and block further
+expansion. On a breach, set `admission_paused=1` and lower limits through an additive
+migration (pre-0026 values above are the fallback), preserving spent units.
+Resume explicitly only after recovery; never reset counters, activation or last_claimed_slot.
 
 Local D1 `EXPLAIN QUERY PLAN` for the terminal-person predicate reports `SCAN
 persons`: 10,000 active persons cost exactly 10,000 reads per evaluation.
@@ -883,7 +908,7 @@ root cleanup measured 88,717. No index is required for this bounded horizon.
 Larger retained child populations still require representative qualification;
 an index is a separate measured change with recalculated indexed costs.
 
-**Control / rollout:** apply 0025 with activation NULL and unchanged pools,
+**Stage-1 control / rollout (completed):** apply 0025 with activation NULL and unchanged pools,
 then deploy `npx wrangler deploy -c wrangler.cleanup-on.toml`. Only that local
 config's cron expression changes (`17 3 * * *` → `17 */3 * * *`); assets, bindings
 and all other settings remain untouched. The tracked base config matches it.
@@ -900,18 +925,67 @@ pause admission and roll forward a slot-capable owner, retaining schema.
 On transient API error retry once, inspecting migration/control state before
 repeating a mutation. Do not manually invoke cleanup to obtain stage-2 evidence.
 
-**Stage 2 remains gated:** at least one real scheduled slot must have measured
-CPU <8 ms, charged writes <=3,750 and reads <250,000, with account-wide headroom,
-storage/population and backlog checks above. Keep pools unchanged until this
-evidence exists; a full UTC day and representative retained populations are
-preferred before expansion. Capture scheduled `cleanup` JSON plus platform CPU
-(tail output alone may lack CPU), D1 daily metrics/size, and eligible age.
-Only then may a separately reviewed transactional update raise AUTH 2050,
-ANONYMOUS 2900, GENERAL 11250, ENDPOINT 950, OWNER_GRANT 4050, OWNER_REDEEM 1550,
-member admission_limit 1250, without changing same-day spending.
+**Stage-2 rollout:** apply 0026, then deploy with the existing assets directory:
+
+```sh
+npx wrangler d1 migrations apply agentsassemble-identity --remote -c wrangler.cleanup-on.toml
+npx wrangler deploy -c wrangler.cleanup-on.toml
+```
+
+**Post-activation commands:** run from this directory. Start tail before a real
+cron delivery (first: 00:17 UTC on October 12); stop after the desired slots.
+Do not manually invoke cleanup or reset a claim to manufacture measurements.
+
+```sh
+npx wrangler tail -c wrangler.cleanup-on.toml --format json > /tmp/identity-cleanup-slots.jsonl
+npx wrangler d1 info agentsassemble-identity --json
+npx wrangler d1 execute agentsassemble-identity --remote -c wrangler.cleanup-on.toml --command "SELECT CAST(strftime('%s','now') AS INTEGER)/86400 AS utc_day, slots_activate_day, last_claimed_slot, admission_paused FROM maintenance_budget WHERE id=1; SELECT purpose,daily_limit,creation_day,creation_writes FROM creation_budgets ORDER BY purpose; SELECT daily_limit,admission_limit,creation_day,creation_writes FROM member_sync_budget WHERE id=1; SELECT COUNT(*) AS retained_persons FROM persons"
+```
+
+For each scheduled `cleanup` JSON with `mode=slot`, record `slot`, `queries`,
+`charged_writes`, `rows_written`, `rows_read` and invocation outcome. Require
+charged and actual writes <=3,750, reads <250,000, queries <=49 and CPU <8 ms.
+In Cloudflare Workers & Pages → agentsassemble-identity → Metrics / Logs, select
+the same UTC slot window and scheduled invocation; record platform CPU, not wall
+time or SQL duration. Tail may omit CPU; missing CPU remains unverified.
+In D1 account metrics, sum all databases for the UTC day: require reads <4,000,000
+and writes <95,000. D1 info supplies the <350,000,000-byte size check. See the
+[Workers metrics](https://developers.cloudflare.com/workers/observability/metrics-and-analytics/)
+and [D1 metrics](https://developers.cloudflare.com/d1/observability/metrics-analytics/) documentation.
+
+Take the following daily retention-due backlog snapshot at the same UTC time.
+This conservatively includes dependency-blocked sessions and terminal parents;
+counts are per queue, not unique identities. Growth requires checking the owning
+child-absence predicates in `cleanup.js` / `account_cleanup.js`, never forced deletion.
+
+```sh
+npx wrangler d1 execute agentsassemble-identity --remote -c wrangler.cleanup-on.toml --command "WITH clock AS (SELECT CAST(strftime('%s','now') AS INTEGER) AS now) SELECT 'request_nonces' AS queue,COUNT(*) AS due_rows,MAX(now-(expires_at)) AS oldest_due_seconds FROM request_nonces,clock WHERE (expires_at)<now;
+WITH clock AS (SELECT CAST(strftime('%s','now') AS INTEGER) AS now) SELECT 'host_request_nonces' AS queue,COUNT(*) AS due_rows,MAX(now-(expires_at)) AS oldest_due_seconds FROM host_request_nonces,clock WHERE (expires_at)<now;
+WITH clock AS (SELECT CAST(strftime('%s','now') AS INTEGER) AS now) SELECT 'member_sync_nonces' AS queue,COUNT(*) AS due_rows,MAX(now-(expires_at)) AS oldest_due_seconds FROM member_sync_nonces,clock WHERE (expires_at)<now;
+WITH clock AS (SELECT CAST(strftime('%s','now') AS INTEGER) AS now) SELECT 'rate_limits' AS queue,COUNT(*) AS due_rows,MAX(now-(window_start+86400)) AS oldest_due_seconds FROM rate_limits,clock WHERE (window_start+86400)<now;
+WITH clock AS (SELECT CAST(strftime('%s','now') AS INTEGER) AS now) SELECT 'google_handoffs' AS queue,COUNT(*) AS due_rows,MAX(now-(expires_at)) AS oldest_due_seconds FROM google_handoffs,clock WHERE (expires_at)<now;
+WITH clock AS (SELECT CAST(strftime('%s','now') AS INTEGER) AS now) SELECT 'server_connect_grants' AS queue,COUNT(*) AS due_rows,MAX(now-(expires_at)) AS oldest_due_seconds FROM server_connect_grants,clock WHERE (expires_at)<now;
+WITH clock AS (SELECT CAST(strftime('%s','now') AS INTEGER) AS now) SELECT 'sessions' AS queue,COUNT(*) AS due_rows,MAX(now-(MIN(expires_at,COALESCE(revoked_at+86400,expires_at)))) AS oldest_due_seconds FROM sessions,clock WHERE (MIN(expires_at,COALESCE(revoked_at+86400,expires_at)))<now;
+WITH clock AS (SELECT CAST(strftime('%s','now') AS INTEGER) AS now) SELECT 'member_servers' AS queue,COUNT(*) AS due_rows,MAX(now-(state_changed_at+2592000)) AS oldest_due_seconds FROM member_servers,clock WHERE host_state IN ('pending','removed') AND (state_changed_at+2592000)<now;
+WITH clock AS (SELECT CAST(strftime('%s','now') AS INTEGER) AS now) SELECT 'server_authorities' AS queue,COUNT(*) AS due_rows,MAX(now-(COALESCE(revoked_at,owner_deleted_at)+2592000)) AS oldest_due_seconds FROM server_authorities,clock WHERE (COALESCE(revoked_at,owner_deleted_at)+2592000)<now;
+WITH clock AS (SELECT CAST(strftime('%s','now') AS INTEGER) AS now) SELECT 'persons' AS queue,COUNT(*) AS due_rows,MAX(now-(deleted_at+2592000)) AS oldest_due_seconds FROM persons,clock WHERE status='disabled' AND (deleted_at+2592000)<now"
+```
+
+Compare all eight expected cron deliveries/day with slot progression; a claim is
+not a completion receipt. Missing/error results and increasing eligible age need
+investigation and pause when backlog cannot absorb lost capacity. Lower pools
+when thresholds are exceeded; never increase cleanup allowance or reset controls.
+Capture the first slots and a complete UTC day as follow-up evidence; this rollout
+does not wait for activation or claim production measurements have passed.
 
 **Local verification:** `npm test`; `node test/local_cleanup_slots.mjs <wrangler/package.json>`;
 existing `local_cleanup.mjs`, `local_account_cleanup.mjs`, and split migrations.
+Stage-2 verification: 290/290 Worker tests passed with active-slot capacity
+fixtures; local D1 confirmed preserved spending, higher admission, preactivation
+aggregate rejection and paused admission. Slot tests and the backlog SELECTs
+passed on Wrangler 4.98.0. Relaxing GENERAL/member limits caused three expected
+HTTP/durable-state failures; after restoration all 34 affected tests passed.
+Architecture, regenerated codebase-map check and deploy dry-run passed.
 The slot tests observe durable rows after old/new claims, duplicate/stale/future
 events, 24 rotated slots, response loss, clock crossover and paused admission.
 Local D1 uses a controlled SQLite clock, not a real production scheduled run;

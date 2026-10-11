@@ -1,3 +1,4 @@
+import { activeSlotClock } from "./helpers.mjs";
 import assert from "node:assert/strict";
 import test from "node:test";
 import { createGuestIdentity, environment, signedDeviceRequest, request, payload,
@@ -107,8 +108,9 @@ test("proof is request/session/device bound; expiry and write-time revocation ro
   assert.equal(env.DB.database.prepare("SELECT COUNT(*) AS n FROM account_deletions").get().n, 0);
 });
 
-test("ordinary quota saturation cannot spend a proof or its final disable reservation", async () => {
+test("ordinary quota saturation cannot spend a proof or its final disable reservation", async t => {
   const env = environment(), owner = await createGuestIdentity(env);
+  activeSlotClock(t, env);
   const proof = await proveGuestDeletion(env, owner);
   env.DB.database.exec(`UPDATE persons SET general_day=CAST(strftime('%s','now') AS INTEGER)/86400,general_units=240;
     UPDATE sessions SET general_day=CAST(strftime('%s','now') AS INTEGER)/86400,general_units=150;

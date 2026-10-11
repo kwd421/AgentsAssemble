@@ -56,7 +56,7 @@ for (const attack of ["guest", "google/native/start", "google/web/start"]) {
     const owner = await verifiedRecoveryIdentity(env);
     const key = await deviceKey(), initial = spent(env, "AUTH");
     let successes = 0, denied = false;
-    for (let i = 0; i < 300; i++) {
+    for (let i = 0; i < 1000; i++) {
       const response = await request(env, `/v1/auth/${attack}`, { method: "POST",
         headers: { "cf-connecting-ip": `2001:db8:${i.toString(16)}::1`, origin: "https://central.example" },
         body: JSON.stringify({ device_id: `attack-device-${i}`, display_name: "Guest",
@@ -181,7 +181,7 @@ test("guest Sybil recovery exhausts only untrusted capacity and preserves verifi
   const handoff = await startNativeHandoff(env, key, "verified-next-login");
   const token = await googleToken(owner.signer, env, new URL(handoff.authorization_url).searchParams.get("nonce"));
   const initial = spent(env, "AUTH"), attackers = [];
-  for (let i = 0; i < 28; i++) {
+  for (let i = 0; i < 100; i++) {
     const response = await request(env, "/v1/auth/guest", { method: "POST",
       headers: { "cf-connecting-ip": `2001:db8:${i + 100}::1` },
       body: JSON.stringify({ device_id: `sybil-device-${i}`, display_name: "Guest",

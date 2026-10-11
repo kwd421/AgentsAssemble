@@ -1,3 +1,4 @@
+import { activeSlotClock } from "./helpers.mjs";
 import assert from "node:assert/strict";
 import test from "node:test";
 import { sha256Base64Url } from "../src/crypto.js";
@@ -173,8 +174,9 @@ test("member daily account cap spans sessions and servers without consuming owne
   assert.ok(g.grant_token);
 });
 
-test("member requests use GENERAL limiters and creation pool, preserving owner reserves", async () => {
+test("member requests use GENERAL limiters and creation pool, preserving owner reserves", async t => {
   const f = await fixture(), db = f.env.DB.database;
+  activeSlotClock(t, f.env);
   const budget = purpose => db.prepare("SELECT creation_writes FROM creation_budgets WHERE purpose = ?").get(purpose).creation_writes;
   const ownerBefore = budget("OWNER_GRANT"), generalBefore = budget("GENERAL");
   const g = await f.grant();

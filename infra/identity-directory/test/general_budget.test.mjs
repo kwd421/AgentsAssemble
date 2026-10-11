@@ -1,3 +1,4 @@
+import { activeSlotClock } from "./helpers.mjs";
 import { seedHistorical } from "./helpers.mjs";
 import assert from "node:assert/strict";
 import test from "node:test";
@@ -54,8 +55,9 @@ async function proof(who, path, method = "GET", body = "", timestamp = Math.floo
 // Contracts and sensitivity: restore read nonce insertion to deny reads at full
 // global capacity; remove either actor trigger to admit >90/45 units. Oracles
 // are signed HTTP results, current data, persisted nonces and durable counters.
-test("exact reads repeat at full GENERAL capacity without writes and recheck current icon authority", async () => {
+test("exact reads repeat at full GENERAL capacity without writes and recheck current icon authority", async t => {
   const { env, owner, id } = await fixture();
+  activeSlotClock(t, env);
   const stranger = await createGuestIdentity(env, { deviceId: "general-stranger" });
   const bytes = encode({ width: 512, height: 512, channels: 4, data: new Uint8Array(512 * 512 * 4).fill(90) });
   const saved = await call(env, owner, `/v1/servers/${id}/icon`, "POST", {
@@ -63,7 +65,7 @@ test("exact reads repeat at full GENERAL capacity without writes and recheck cur
   });
   assert.equal(saved.status, 200);
   const { icon } = await saved.json();
-  env.DB.database.prepare("UPDATE creation_budgets SET creation_day = ?, creation_writes = 5369 WHERE purpose = 'GENERAL'").run(day());
+  env.DB.database.prepare("UPDATE creation_budgets SET creation_day = ?, creation_writes = daily_limit - 1 WHERE purpose = 'GENERAL'").run(day());
   const before = snapshot(env), changes = env.DB.database.prepare("SELECT total_changes() AS n").get().n;
   for (const path of ["/v1/bootstrap", icon]) {
     const signed = await proof(owner, path);

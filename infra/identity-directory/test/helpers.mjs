@@ -125,6 +125,17 @@ export function utcDayClock(t, env) {
   return seconds => { now = start + seconds * 1000; t.mock.timers.setTime(now); };
 }
 
+// Arm on the previous controlled day so capacity tests exercise active slots
+// without bypassing the production write-once future-day activation guard.
+export function activeSlotClock(t, env) {
+  const advance = utcDayClock(t, env);
+  const day = Math.floor(Date.now() / 86400000);
+  advance(-86400);
+  env.DB.database.prepare('UPDATE maintenance_budget SET slots_activate_day = ? WHERE id = 1').run(day);
+  advance(0);
+  return advance;
+}
+
 export async function deviceKey() {
   const pair = await crypto.subtle.generateKey(
     { name: "ECDSA", namedCurve: "P-256" },

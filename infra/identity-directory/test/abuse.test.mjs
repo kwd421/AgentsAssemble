@@ -1,3 +1,4 @@
+import { activeSlotClock } from "./helpers.mjs";
 import assert from "node:assert/strict";
 import test from "node:test";
 import { createGuestIdentity, environment, hostKey, hostRegistrationProof,
@@ -168,8 +169,9 @@ test("grant issuance leaves unrelated expired grants for scheduled cleanup", asy
 // Contract: unrelated expiry debt cannot consume owner admission reserves.
 // Regression oracle: signed HTTP issue + redemption after every non-owner pool
 // denies admission. The original shared 8000 ledger fails the issue assertion.
-test("non-owner creation exhaustion preserves owner issue and redemption reserves", async () => {
+test("non-owner creation exhaustion preserves owner issue and redemption reserves", async t => {
   const f = await fixture();
+  activeSlotClock(t, f.env);
   const exhaust = async (call, success) => {
     for (let i = 0; i < 3000; i++) {
       const response = await call();
@@ -182,7 +184,7 @@ test("non-owner creation exhaustion preserves owner issue and redemption reserve
     assert.fail("creation admission must be bounded");
   };
   // Seed shared GENERAL exhaustion; a single actor can no longer fill that pool.
-  f.env.DB.database.prepare("UPDATE creation_budgets SET creation_day = ?, creation_writes = 5369 WHERE purpose = 'GENERAL'")
+  f.env.DB.database.prepare("UPDATE creation_budgets SET creation_day = ?, creation_writes = daily_limit - 1 WHERE purpose = 'GENERAL'")
     .run(Math.floor(Date.now() / 86400000));
   const blocked = await f.general();
   assert.equal(blocked.status, 429);
