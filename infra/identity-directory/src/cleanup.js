@@ -3,6 +3,7 @@ import { RETIRED_RETENTION_SECONDS } from "./server_ownership.js";
 import { MEMBER_RETENTION_SECONDS } from "./member_servers.js";
 import { nowSeconds } from "./http.js";
 
+const ACCOUNT_RETENTION_SECONDS = 7 * 86400;
 const DAILY_WRITES = 10_000;
 const CHUNK_ROWS = 100;
 // Table row + all indexes (including PK/UNIQUE and the partial revoked index).
@@ -40,7 +41,7 @@ for (let i = 0; i < retiredTables.length; i++) {
     WHERE COALESCE(retired.revoked_at,retired.owner_deleted_at) <= ? ${absent.map(clause => `AND ${clause}`).join(' ')})`, cost, true]);
 }
 
-QUEUES.push(...ACCOUNT_QUEUES);
+QUEUES.push(...ACCOUNT_QUEUES.map(queue => [...queue, ACCOUNT_RETENTION_SECONDS]));
 
 function written(result) {
   const value = result.meta?.rows_written;
@@ -81,10 +82,10 @@ export async function cleanup(env, scheduledTime = Date.now()) {
   // At most 49 active / 50 pre-activation statements, including root closure.
   for (let query = 0; query < 45 && queues.length; query++) {
     const queue = queues.shift();
-    const [table, condition, cost, retired] = queue;
+    const [table, condition, cost, retired, retention = RETIRED_RETENTION_SECONDS] = queue;
     const count = Math.min(CHUNK_ROWS, Math.floor((childLimit - spent) / cost));
     if (!count) break;
-    const cutoff = retired ? now - RETIRED_RETENTION_SECONDS : table === "member_servers" ? now - MEMBER_RETENTION_SECONDS
+    const cutoff = retired ? now - retention : table === "member_servers" ? now - MEMBER_RETENTION_SECONDS
       : table === "rate_limits" ? now - 86400 : now;
     const values = table === "sessions" && !retired ? [now, now - 86400] : [cutoff];
     const result = await env.DB.prepare(`DELETE FROM ${table} WHERE rowid IN (
@@ -102,7 +103,7 @@ export async function cleanup(env, scheduledTime = Date.now()) {
       else queues.push(queue);
     }
   }
-  const roots = await purgeAccountRoots(env,day,now-RETIRED_RETENTION_SECONDS,limit-spent,fence);
+  const roots = await purgeAccountRoots(env,day,now-ACCOUNT_RETENTION_SECONDS,limit-spent,fence);
   console.log(JSON.stringify({event: "cleanup", mode: active ? "slot" : "daily", slot: active ? slot : null,
     queries: queries + roots.queries, charged_writes: spent + roots.spent,
     rows_written: rowsWritten + (roots.rowsWritten ?? 0), rows_read: rowsRead + (roots.rowsRead ?? 0)}));

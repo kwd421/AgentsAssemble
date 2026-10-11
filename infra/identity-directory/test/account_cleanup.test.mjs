@@ -25,6 +25,18 @@ test('day-reserved cleanup purges disabled account and owned registration depend
   await cleanup(env);assert.equal(f.db.prepare('SELECT total_changes() AS n').get().n,before);
 });
 
+test('deleted accounts and their children are retained before seven days and purged at seven days',async t=>{
+  const env=environment(),advance=utcDayClock(t,env),who=await createGuestIdentity(env);
+  assert.equal((await finish(env,who)).status,200);
+  const db=env.DB.database,id=who.created.person.person_id;
+  advance(7*86400-1);await cleanup(env);
+  assert.equal(db.prepare('SELECT COUNT(*) AS n FROM persons WHERE person_id=?').get(id).n,1);
+  assert.equal(db.prepare('SELECT COUNT(*) AS n FROM devices WHERE person_id=?').get(id).n,1);
+  advance(7*86400);await cleanup(env);
+  for(const table of ['persons','devices','recovery_credentials','account_deletions'])
+    assert.equal(db.prepare(`SELECT COUNT(*) AS n FROM ${table} WHERE person_id=?`).get(id).n,0,table);
+});
+
 test('unknown future FK child fails root closure atomically and preserves ledger, proof of deletion and purge flag',async t=>{
   const env=environment(),advance=utcDayClock(t,env),who=await createGuestIdentity(env);
   assert.equal((await finish(env,who)).status,200);

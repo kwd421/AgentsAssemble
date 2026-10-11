@@ -115,8 +115,15 @@ is not claimed.
   precedes UI exposure,
   never a host ACK wait after disable.
   Keep unrelated users/server AIs/providers and optional-wipe authority local.
+- Deleted accounts and account-child queues have a separate 7-day retention.
+  The deleted-account notice and explicit re-registration apply while the Google
+  identity is retained in that window; after cleanup removes it, Google login is
+  treated as new. Bounded cleanup may lag the cutoff. Retired-server retention
+  stays 30 days and member-relation retention is unchanged.
 - Central bounded cleanup removes terminal children in dependency order after
-  retention, then cleanup-only purge_ready/ledger/parent atomically. Host responses
+  their retention, then cleanup-only purge_ready/ledger/parent atomically.
+  Account roots are eligible after 7 days, but still wait for all children,
+  including owned server registrations on their unchanged 30-day schedule. Host responses
   never gate this cleanup. Preserve the phase limits (pre-activation: 10,000 indexed
   writes/day, <=50 statements; after slot activation: 3,750/slot, 30,000/day, <=49
   statements), <=100 rows/page and the day/slot crash reservation. No gate increases.
