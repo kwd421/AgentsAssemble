@@ -72,10 +72,17 @@ of scope. The design review C0/H2/M2/L1 is binding with these corrections:
   repositories but DOES NOT deploy; manager owns Daybreak review and deployment.
 
 Restore rollout is explicitly closed until `SERVER_RESTORE_ENABLED="true"` is set
-by the deployment owner after migration 0027 and all traffic uses restore-aware
+by the deployment owner after migrations 0027–0028 and all traffic uses restore-aware
 code. `/v1/config.server_restore_v1` advertises that state; proof/switch return
 `server_restore_not_available` while closed. Operation-status recovery remains
 available when exposure is closed. Never roll code back past the retirement fence.
+Migration 0028 stores the switch-time endpoint generation in the immutable receipt;
+a restored writer must publish a strictly newer generation. Existing pre-release
+receipts without that floor are not assigned an invented historical value.
+Logical-server invitation links may resolve their old epoch only through a recorded
+restore lineage and the same current live owner. Ordinary member entry remains
+strictly incarnation-bound; legacy origin-only links require a fresh host link.
+
 The projection transition uses the existing `member_sync_budget` and its weight-6
 replacement trigger, with a bounded preflight count; it does not raise any quota.
 At migration 0026's full remaining budget the local maximum is 208 relationships.

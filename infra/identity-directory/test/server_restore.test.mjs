@@ -242,3 +242,15 @@ test('status distinguishes a fenced loser from an unknown in-flight operation in
   // An arbitrarily stale expected epoch cannot relabel an existing receipt.
   assert.deepEqual(await (await status({...second.body,expected_epoch:'another-epoch'})).json(),winner);
 });
+
+test('another live account cannot request restore authority or borrow the owner proof', async () => {
+  const f = await fixture(), {body} = await prepare(f), before = rows(f);
+  const proof = await f.device(`/v1/servers/${f.id}/restore-proof`, {
+    expected_epoch:f.epoch, operation_id:randomBase64Url(32), new_public_key_jwk:(await hostKey()).publicJwk,
+    step_up:{recovery_code:f.member.created.recovery_code},
+  });
+  assert.equal(proof.status,409);
+  assert.equal((await f.device(`/v1/servers/${f.id}/restore`,body)).status,401);
+  assert.deepEqual(rows(f),before);
+  assert.equal((await move(f,body)).status,200);
+});
