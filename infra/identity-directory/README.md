@@ -2004,3 +2004,7 @@ local administrator stop; clients cannot select an owner, and no deletion proof,
 receipt, host cleanup inventory or acknowledgment is stored here. Authenticated
 `account_deleted` terminal host responses carry the same owner person so Rust can
 fence that actual person's roots independently of the shared local operator.
+
+Restore-aware invite preview (`resolve_invite: true`, secure protocol only) follows
+immutable same-owner restore lineage, then pins the current key/epoch for consent
+and fresh admission. Ordinary member preview retains exact-epoch semantics.

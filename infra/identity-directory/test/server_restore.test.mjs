@@ -77,10 +77,19 @@ test('restore preserves hidden membership, invalidates endpoint, fences old key 
   // New key can publish only a newer generation with the committed epoch.
   const published = await signedHostRequest(f.env,f.id,key.pair,'PUT',{
     registration_epoch:receipt.registration_epoch,generation:endpoint.generation+1,
-    issued_at:Math.floor(Date.now()/1000),origin:'https://new.trycloudflare.com',
-    lease_expires_at:Math.floor(Date.now()/1000)+300});
+    protocol:'secure_admission_v1',mode:'event_secure_v1',
+    issued_at:Math.floor(Date.now()/1000),origin:'https://new.trycloudflare.com'});
   assert.equal(published.status,200,await published.clone().text());
   assert.deepEqual(await (await move(f,body)).json(), receipt);
+  const preview = epoch => f.device(`/v1/servers/${f.id}/member-preview`,{
+    protocol:'secure_admission_v1',registration_epoch:epoch,resolve_invite:true});
+  const movedInvite = await preview(f.epoch);
+  assert.equal(movedInvite.status,200,await movedInvite.clone().text());
+  assert.equal((await movedInvite.json()).registration_epoch,receipt.registration_epoch);
+  assert.equal((await preview('unrelated-epoch')).status,409);
+  assert.equal((await f.device(`/v1/servers/${f.id}/member-preview`,{
+    protocol:'secure_admission_v1',registration_epoch:f.epoch})).status,409);
+
 });
 
 test('deletion proof cannot switch server and failed authority leaves all durable effects unchanged',async()=>{

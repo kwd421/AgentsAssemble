@@ -190,15 +190,34 @@ async function memberEndpoint(env, serverId, epoch, now, secure = false) {
   return endpoint;
 }
 
+// Invite consent follows only a centrally recorded restore of the same owner.
+// Grants and channels always pin the resolved incarnation; no old authority moves.
+async function restoredInviteEndpoint(env,serverId,sourceEpoch,now) {
+  const endpoint = await serverEndpoint(env,serverId);
+  if (!endpoint || endpoint.revoked_at) throw new HttpError(409,"incarnation_conflict");
+  if (endpoint.registration_epoch !== sourceEpoch) {
+    const lineage = await env.DB.prepare(`SELECT 1 FROM server_restore_operations r
+      JOIN live_servers s ON s.server_id=r.server_id AND s.owner_person_id=r.owner_person_id
+      WHERE r.server_id=? AND r.expected_epoch=? AND s.registration_epoch=? AND s.revoked_at IS NULL`)
+      .bind(serverId,sourceEpoch,endpoint.registration_epoch).first();
+    if (!lineage) throw new HttpError(409,"incarnation_conflict");
+  }
+  requireEndpoint(endpoint,now,true);
+  return endpoint;
+}
+
 export async function previewMemberServer(env, serverId, text, now) {
   const body = parseJson(text);
   const epoch = cleanIdentifier(body.registration_epoch, "registration_epoch");
   const secure = body.protocol === SECURE_PROTOCOL;
-  if ((body.protocol !== undefined && !secure) || Object.keys(body).some(key => !["registration_epoch", "protocol"].includes(key))) throw new HttpError(400, "invalid_member_preview_request");
-  const endpoint = await memberEndpoint(env, serverId, epoch, now, secure);
+  if ((body.protocol !== undefined && !secure) || Object.keys(body).some(key => !["registration_epoch", "protocol", "resolve_invite"].includes(key))) throw new HttpError(400, "invalid_member_preview_request");
+  if (body.resolve_invite !== undefined && (body.resolve_invite !== true || !secure))
+    throw new HttpError(400, "invalid_member_preview_request");
+  const endpoint = body.resolve_invite ? await restoredInviteEndpoint(env,serverId,epoch,now)
+    : await memberEndpoint(env, serverId, epoch, now, secure);
   return json({ server_id: serverId, label: endpoint.label,
     endpoint_origin: endpoint.origin, endpoint_generation: Number(endpoint.generation),
-    ...(secure ? { protocol: SECURE_PROTOCOL, mode: EVENT_MODE, registration_epoch: epoch,
+    ...(secure ? { protocol: SECURE_PROTOCOL, mode: EVENT_MODE, registration_epoch: endpoint.registration_epoch,
       host_key_fingerprint: endpoint.host_key_fingerprint, host_public_key_jwk: JSON.parse(endpoint.host_public_key_jwk) } : {}) });
 }
 
