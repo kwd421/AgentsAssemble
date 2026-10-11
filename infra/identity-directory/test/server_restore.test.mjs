@@ -254,3 +254,19 @@ test('another live account cannot request restore authority or borrow the owner 
   assert.deepEqual(rows(f),before);
   assert.equal((await move(f,body)).status,200);
 });
+
+
+test('disabled switch proves this request made no mutation without consuming its proof', async () => {
+  const f = await fixture(), {body} = await prepare(f), before = rows(f);
+  f.env.SERVER_RESTORE_ENABLED = 'false';
+  const response = await move(f, body);
+  assert.equal(response.status, 503);
+  const result = await response.json();
+  assert.equal(result.error.code, 'server_restore_not_available');
+  assert.equal(result.error.request_not_committed, true);
+  assert.deepEqual(rows(f), before);
+  f.env.SERVER_RESTORE_ENABLED = 'true';
+  const retry = await move(f, body);
+  assert.equal(retry.status, 200, await retry.clone().text());
+  assert.equal((await retry.json()).status, 'committed');
+});

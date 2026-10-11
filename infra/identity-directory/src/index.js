@@ -209,7 +209,7 @@ async function route(request, env) {
   }
   const restore = url.pathname.match(/^\/v1\/servers\/([^/]+)\/(restore|restore-proof)$/);
   if (restore && request.method === "POST") {
-    if (env.SERVER_RESTORE_ENABLED !== "true") throw new HttpError(503, "server_restore_not_available");
+    if (env.SERVER_RESTORE_ENABLED !== "true") throw new HttpError(503, "server_restore_not_available", "server_restore_not_available", { request_not_committed: true });
     const serverId = cleanIdentifier(restore[1], "server_id");
     return restore[2] === "restore" ? restoreServer(request, session, env, serverId, text, now)
       : restoreProof(request, session, env, serverId, text, now);
