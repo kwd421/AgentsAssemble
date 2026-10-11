@@ -48,37 +48,62 @@ function written(result) {
   return value;
 }
 
-export async function cleanup(env) {
-  const now = nowSeconds(), day = Math.floor(now / 86400);
+export async function cleanup(env, scheduledTime = Date.now()) {
+  const slot = Math.floor(scheduledTime / 10_800_000);
+  // No pre-read: try the slot, then the fenced legacy claim. A failed claim
+  // cannot mint allowance; a crash burns a successfully claimed slot forever.
+  const slotClaim = await env.DB.prepare(`UPDATE maintenance_budget SET last_claimed_slot = ?
+    WHERE id = 1 AND slots_activate_day IS NOT NULL
+      AND CAST(strftime('%s', 'now') AS INTEGER) / 86400 >= slots_activate_day
+      AND CAST(strftime('%s', 'now') AS INTEGER) / 10800 = ? AND last_claimed_slot < ?
+    RETURNING CAST(strftime('%s', 'now') AS INTEGER) AS now`)
+    .bind(slot, slot, slot).run();
+  const active = slotClaim.meta.changes === 1;
+  const now = active ? slotClaim.results[0].now : nowSeconds(), day = Math.floor(now / 86400);
   // Reserve the entire day atomically. A crash burns the unused allowance;
   // retries, concurrent invocations and Worker restarts cannot spend it twice.
-  const claim = await env.DB.prepare(`UPDATE maintenance_budget SET cleanup_day = ?
+  const claim = active ? slotClaim : await env.DB.prepare(`UPDATE maintenance_budget SET cleanup_day = ?
     WHERE id = 1 AND cleanup_day < ? AND CAST(strftime('%s', 'now') AS INTEGER) / 86400 = ?`)
     .bind(day, day, day).run();
   if (claim.meta.changes === 0) return;
   let spent = Math.max(1, written(claim));
-  const queues = [...QUEUES];
-  // Reserve three of the existing 49 statements for atomic ledger/parent closure.
+  // Unknown read metadata serializes as null, never as a measured zero.
+  let rowsRead = Number(slotClaim.meta.rows_read) + (active ? 0 : Number(claim.meta.rows_read));
+  let rowsWritten = written(claim), queries = active ? 1 : 2;
+  const limit = active ? 3750 : DAILY_WRITES;
+  const childLimit = active ? limit - 400 : limit;
+  const fence = active
+    ? {sql: `CAST(strftime('%s', 'now') AS INTEGER) / 10800 = ?
+        AND EXISTS (SELECT 1 FROM maintenance_budget WHERE id = 1 AND last_claimed_slot = ?)`, values: [slot, slot]}
+    : {sql: "CAST(strftime('%s', 'now') AS INTEGER) / 86400 = ?", values: [day]};
+  const start = active ? slot % QUEUES.length : 0;
+  const queues = [...QUEUES.slice(start), ...QUEUES.slice(0, start)];
+  // At most 49 active / 50 pre-activation statements, including root closure.
   for (let query = 0; query < 45 && queues.length; query++) {
     const queue = queues.shift();
     const [table, condition, cost, retired] = queue;
-    const count = Math.min(CHUNK_ROWS, Math.floor((DAILY_WRITES - spent) / cost));
+    const count = Math.min(CHUNK_ROWS, Math.floor((childLimit - spent) / cost));
     if (!count) break;
     const cutoff = retired ? now - RETIRED_RETENTION_SECONDS : table === "member_servers" ? now - MEMBER_RETENTION_SECONDS
       : table === "rate_limits" ? now - 86400 : now;
     const values = table === "sessions" && !retired ? [now, now - 86400] : [cutoff];
     const result = await env.DB.prepare(`DELETE FROM ${table} WHERE rowid IN (
       SELECT rowid FROM ${table} WHERE (${condition})
-      AND CAST(strftime('%s', 'now') AS INTEGER) / 86400 = ? ORDER BY rowid LIMIT ?
-    )`).bind(...values, day, count).run();
+      AND ${fence.sql} ORDER BY rowid LIMIT ?
+    )`).bind(...values, ...fence.values, count).run();
     // Local workerd may underreport index writes. Never spend less than the
     // schema-derived cost; production metadata remains authoritative if higher.
     spent += Math.max(written(result), result.meta.changes * cost);
-    if (spent > DAILY_WRITES) throw new Error("cleanup write cost exceeded schema bound");
+    rowsRead += Number(result.meta.rows_read);
+    rowsWritten += written(result); queries++;
+    if (spent > childLimit) throw new Error("cleanup write cost exceeded schema bound");
     if (result.meta.changes === count) {
-      if (retired) queues.unshift(queue);
+      if (retired && !active) queues.unshift(queue);
       else queues.push(queue);
     }
   }
-  await purgeAccountRoots(env,day,now-RETIRED_RETENTION_SECONDS,DAILY_WRITES-spent);
+  const roots = await purgeAccountRoots(env,day,now-RETIRED_RETENTION_SECONDS,limit-spent,fence);
+  console.log(JSON.stringify({event: "cleanup", mode: active ? "slot" : "daily", slot: active ? slot : null,
+    queries: queries + roots.queries, charged_writes: spent + roots.spent,
+    rows_written: rowsWritten + (roots.rowsWritten ?? 0), rows_read: rowsRead + (roots.rowsRead ?? 0)}));
 }

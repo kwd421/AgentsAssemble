@@ -117,8 +117,9 @@ is not claimed.
   Keep unrelated users/server AIs/providers and optional-wipe authority local.
 - Central bounded cleanup removes terminal children in dependency order after
   retention, then cleanup-only purge_ready/ledger/parent atomically. Host responses
-  never gate this cleanup. Preserve 10,000 indexed writes/day, <=100 rows/page,
-  <=49 statements/invocation and existing day/crash reservation. No gate increases.
+  never gate this cleanup. Preserve the phase limits (pre-activation: 10,000 indexed
+  writes/day, <=50 statements; after slot activation: 3,750/slot, 30,000/day, <=49
+  statements), <=100 rows/page and the day/slot crash reservation. No gate increases.
 - 0019–0021 retain applicable terminal/proof/Google safeguards. Remote migration
   inspection found 0019 onward unapplied. Remove unshipped custody-only 0022/0023
   and source with an explicit honest history; deployed schema is expand-only.
@@ -380,18 +381,20 @@ the C3a runbook below supersedes that rollback target.
 
 The [D1 Free allowance](https://developers.cloudflare.com/d1/platform/pricing/)
 is 100,000 rows written/day across the account; index maintenance also counts.
-Cleanup reserves at most **10,000 writes/day (10%)**, leaving at least 90,000
-of that allowance for other work. This is not a guarantee of remaining account
+Before slot activation cleanup reserves at most **10,000 writes/day (10%)**;
+0025 changes this to eight 3,750-write slots (30,000/day). Admission pools stay
+at 9,990/day in stage 1. This is not a guarantee of remaining account
 quota: other databases, normal requests, cascades and migrations also consume it.
 
 Migration `0010_daily_maintenance_budget.sql` adds a cleanup singleton, six fixed creation-budget rows,
 nonce/session-purpose columns and atomic admission triggers. This migration is
-still pending production application; do not overwrite an already-applied 0010. Cleanup claims the UTC day with one
+historical; do not overwrite an already-applied 0010. Before activation cleanup claims the UTC day with one
 conditional UPDATE. Concurrent calls, repeated cron delivery, isolate restarts
 and retries cannot reserve it twice. Failure burns the unused daily allowance;
 there is no same-day retry/reclaim. Missing `meta.rows_written` stops the run.
 The SQL day guard prevents a delayed invocation from starting deletes on a later
-UTC day. Keep the single `17 3 * * *` cron; do not increase its frequency.
+UTC day. The current single `17 */3 * * *` cron uses the D1 slot/daily fence;
+see the stage-1 deployment entry for the write-once cutover.
 
 Each chunk selects at most 100 rows. All queues share the same remaining budget,
 charged at `max(meta.rows_written, deleted rows × schema write cost)`. The schema
@@ -399,8 +402,9 @@ floor is necessary because local workerd reports logical deletes without index
 maintenance. Before each DELETE its LIMIT is reduced to fit the remaining
 worst-case cost, so the final chunk cannot overshoot. Session deletion excludes
 all nonce/grant parents before LIMIT; foreign-key cascades cannot bypass this
-bound. Ordinary nonempty queues rotate; terminal dependency queues drain in
-order. Empty queues stop consuming query slots.
+bound. Before activation terminal queues drain in order. Active slots rotate
+the starting queue and requeue every full page at the tail. Empty queues stop
+consuming query slots.
 
 | Queue | Table + maximum index writes per deleted row |
 | --- | ---: |
@@ -411,11 +415,13 @@ order. Empty queues stop consuming query slots.
 | Connect grants | 5 |
 | Sessions (including revoked partial index) | 7 |
 
-There are at most 49 D1 statements (one claim + 48 chunks), within the
+There are 24 queue entries, at most 45 child DELETEs and three root statements.
+An active slot uses at most 49 statements; pre-activation uses at most 50
+(failed slot claim + daily claim + 45 child DELETEs + three root statements), within the
 [50-query Free invocation limit](https://developers.cloudflare.com/d1/platform/limits/).
 The original six-queue schema could use at least 9,993 deletion writes with
 eligible backlog. Migration 0015 adds cheaper two-write terminal queues;
-the 48-delete cap can now end an invocation before the write budget is exhausted.
+the statement cap can end an invocation before the write budget is exhausted.
 SQL/time/quota failures can also reduce throughput.
 Changing indexes, triggers or cascades requires rechecking these costs and the
 all-queue regression. Do not refund the ledger or manually invoke old cleanup.
@@ -524,13 +530,12 @@ The signed HTTP regression seeds a valid old 9,800-unit day, admits another 189,
 then observes rejection and an unchanged durable snapshot; removing the aggregate
 guards instead admits that rejected host rename. The member writer is also checked.
 
-Cleanup stays **10,000/day**, one `17 3 * * *` cron, 100 rows/page, at most 48
-DELETEs plus one daily claim. 9,990 admitted units plus the claim fit the ceiling;
-the remaining nine units are only arithmetic headroom. The 14-queue statement
+0018 retained **10,000/day**; 0025 supersedes its schedule with future-day slots
+while preserving all seven pool limits. Pages remain at most 100 rows. The 24-queue statement
 cap, terminal backlog, long-lived rows and failed/burned cleanup runs mean this
 is **admission capacity, not guaranteed sustained cleanup throughput**. Account
 wide D1 write/read/CPU quotas can also bind; indexed foreground mutations and
-retirement are separate costs. No cleanup frequency or per-run bound is changed.
+retirement are separate costs. See the stage-1 runbook for current cleanup bounds.
 
 Rollout (not performed): record the current Worker version and remote migration
 state; apply additive 0018 before the matching release. Retain schema on code
@@ -815,6 +820,105 @@ The regression oracles cover delayed DELETE, exact endpoint replay, all mutation
 fences, legacy workflows, preserved epochs, concurrent registration and backfill.
 
 ### 배포 런북
+
+#### Cleanup slots stage 1 (review blocked; not deployed, 2026-10-11)
+
+Local implementation is pending review, commit and push. Production remains
+`ef09a00b-ccd1-49d2-9af5-d60244a8520d`; remote migration check reported none
+pending through 0024 before this change. 0025 is local only; activation is unset.
+The requested Daybreak `codex exec` command was blocked before launch by the
+execution policy: `Codex exec mode is forbidden; use the canonical app-server
+Agent Session`. No reviewer verdict exists. This is not a transient API error,
+so repeated launches cannot satisfy the gate. No remote migration, deploy,
+activation, commit or push has been performed for this change. Stage 2 is held.
+
+Worker suite: 290/290 passed. Local D1 slot, legacy cleanup, account cleanup,
+split-migration checks and Wrangler deploy dry-run passed. Architecture check
+passed. Six controlled mutations (activation, legacy fence, monotonic claim,
+child clock, root clock, pause) each failed their durable-state regression and
+were restored. Real scheduled CPU, production slot writes/reads and target
+workload throughput remain unmeasured. Design review was REVISE C/H/M/L=0/1/1/2;
+the implementation review still has to run before rollout.
+
+Required contract: additive D1 slot ledger, immutable future-UTC-day activation,
+legacy daily-claim exclusion, per-statement clock fences, bounded fair cleanup,
+and unchanged admission pools (9,990/day). Scheduled cleanup and D1 admission
+triggers are the affected entry points; desktop protocols and 0019–0024 account
+security/retention remain unchanged. Stage 2 (24,000/day) requires a real slot's
+CPU and D1 costs, population/storage/read headroom, and no growing backlog.
+No completion ledger, catch-up, refund, client polling or dependency is added.
+
+**Algorithm and cost:** without a control SELECT, first try the monotonic slot
+`UPDATE ... RETURNING` using the scheduled timestamp and D1 clock equality.
+On zero changes try the legacy daily UPDATE, which 0025 ignores after activation
+or any slot claim. Every child/root candidate is fenced to the claimed D1 slot.
+Claim costs at least 1; children receive 3,349; roots reserve 400 (100 persons at
+4 each). No completion UPDATE. At most 45 child statements gives 49 total when
+active and 50 during mixed rollout. The minimum conditional child service is
+3,343/slot after at most six units of quantization, or 26,744/day. Roots have
+3,200/day reserved. Unused allowance is burned. No index was added, so the
+proposed 24,000 debt + 1,325 terminal allowance leaves 1,419 child units/day;
+the design's foreground 50,500 + cleanup 30,000 + operating margin 10,000 remains
+90,500/day. This is a workload estimate, never a hard foreground quota guarantee.
+
+**Supported horizon / pause before any raise:** at most 10,000 retained persons
+(including disabled persons), at most 25 heavy groups and 100 fresh registrations
+per day: at most 100 days from an empty person population, shorter from existing
+population or storage pressure. Accounts can persist indefinitely; this is not
+an indefinite Free-plan promise. Check account-wide D1 daily reads/writes, DB
+size, retained population, oldest eligible age, and scheduled CPU before raising
+any pool, and daily afterwards. Set `admission_paused=1` and stop expansion if
+persons reach 10,000, DB size reaches 350,000,000 bytes, cleanup reads reach
+250,000/slot, account-wide reads reach 4,000,000/day, writes reach 95,000/day,
+CPU reaches 8 ms/slot, or eligible backlog age grows on successive days.
+These are operator pause thresholds with headroom, not automatic account-wide
+quota enforcement. Missing measurements block stage 2. Resume explicitly only
+after recovery; never reset counters, activation or last_claimed_slot.
+
+Local D1 `EXPLAIN QUERY PLAN` for the terminal-person predicate reports `SCAN
+persons`: 10,000 active persons cost exactly 10,000 reads per evaluation.
+A full cleanup fixture at that population with 40,000 expired rate rows measured
+114,571 reads including a duplicate invocation, below the 250,000-slot gate;
+root cleanup measured 88,717. No index is required for this bounded horizon.
+Larger retained child populations still require representative qualification;
+an index is a separate measured change with recalculated indexed costs.
+
+**Control / rollout:** apply 0025 with activation NULL and unchanged pools,
+then deploy `npx wrangler deploy -c wrangler.cleanup-on.toml`. Only that local
+config's cron expression changes (`17 3 * * *` → `17 */3 * * *`); assets, bindings
+and all other settings remain untouched. The tracked base config matches it.
+After smoke, arm exactly the next D1 UTC midnight with:
+
+```sh
+npx wrangler d1 execute agentsassemble-identity --remote -c wrangler.cleanup-on.toml --command "UPDATE maintenance_budget SET slots_activate_day=CAST(strftime('%s','now') AS INTEGER)/86400+1 WHERE id=1 AND slots_activate_day IS NULL"
+```
+
+Read back the ledger and UTC date. D1 rejects clearing, moving forward/backward,
+and any subsequent assignment, including to the same day. Do not restore/reset
+the control row. After activation an old-only code rollback cannot clean up:
+pause admission and roll forward a slot-capable owner, retaining schema.
+On transient API error retry once, inspecting migration/control state before
+repeating a mutation. Do not manually invoke cleanup to obtain stage-2 evidence.
+
+**Stage 2 remains gated:** at least one real scheduled slot must have measured
+CPU <8 ms, charged writes <=3,750 and reads <250,000, with account-wide headroom,
+storage/population and backlog checks above. Keep pools unchanged until this
+evidence exists; a full UTC day and representative retained populations are
+preferred before expansion. Capture scheduled `cleanup` JSON plus platform CPU
+(tail output alone may lack CPU), D1 daily metrics/size, and eligible age.
+Only then may a separately reviewed transactional update raise AUTH 2050,
+ANONYMOUS 2900, GENERAL 11250, ENDPOINT 950, OWNER_GRANT 4050, OWNER_REDEEM 1550,
+member admission_limit 1250, without changing same-day spending.
+
+**Local verification:** `npm test`; `node test/local_cleanup_slots.mjs <wrangler/package.json>`;
+existing `local_cleanup.mjs`, `local_account_cleanup.mjs`, and split migrations.
+The slot tests observe durable rows after old/new claims, duplicate/stale/future
+events, 24 rotated slots, response loss, clock crossover and paused admission.
+Local D1 uses a controlled SQLite clock, not a real production scheduled run;
+its logical rows_written underreports indexed deletion costs, so schema floors
+remain mandatory. Local runtime does not establish Free cron CPU.
+
+
 
 - **C3c-1a: migration 0011 first, then this Worker code.** The new code directly
   selects/writes the new column and is not safe on a pre-0011 database. The schema
@@ -1446,11 +1550,11 @@ the grant/nonce/anchor batch. Over budget returns 429
 00:00 UTC. Admission issue/device nonce costs remain in GENERAL, as before.
 Existing-anchor redemption needs no member-sync debt, even when that pool is full.
 
-Two queues are added to the existing daily cleanup: `member_sync_nonces` at
+0014 added two queues to cleanup: `member_sync_nonces` at
 weight 3, `member_servers` at weight 6. No server FK cascade is added. Each page
-is at most 100 rows. Eight queues need at most eight terminal/partial pages;
+is at most 100 rows. Historically eight queues needed at most eight terminal/partial pages;
 full pages cost at least 300 units. Thus `ceil(9999 / 300) + 8 = 42` deletes fit
-inside the existing 48-delete bound, with one daily claim (at most 49 statements).
+inside the then-current 48-delete bound. Current 0025 bounds are above.
 Each delete is clipped to remaining budget divided by its weight. Admitted debt
 was **8,000 + 1,800 = 9,800 ≤ 10,000/day** under 0014; 0018 supersedes this allocation. The frozen projection indexes are PK
 (person,server,epoch), UNIQUE(projection_id), (server,epoch), (host_state,
@@ -1652,16 +1756,17 @@ Retired registrations and their retained dependents become eligible at
 
 Host nonces drain through their existing expiry queue (3). Parent removal also
 requires no host nonce or keeper record, so it cannot cascade a retained child.
-Future RESTRICT references still fail closed. All 14 queues share one durable
-10,000-write/day reservation, at most 48 deletes plus one claim, with each page
-shrunk to the remaining budget. A failed invocation burns its remaining daily
-reservation; do not reset the ledger to retry. The next UTC day resumes from
+Future RESTRICT references still fail closed. The original 14 queues now have
+ten account queues alongside them. All share the 0025 slot/daily reservation,
+at most 45 child deletes plus three root statements, with each page shrunk to
+the remaining budget. A failed invocation burns its remaining reservation;
+do not reset the ledger to retry. The next eligible slot/day resumes from
 durable rows. Ordinary grant/member expiry does not skip terminal retention or
 the dependency order. Account deletion uses its effective-owner terminal state
 and bounded dependency cleanup; it never uses a parent cascade.
 
 0015 originally admitted 9,800/day; 0018 supersedes its allocation. Terminal
-backlog still shares the same 10,000 cap. The current smaller arithmetic
+backlog shares the current slot/daily cap. The current smaller admission
 headroom is not a throughput promise, and draining may take additional days.
 Each resolution additionally spends one ordinary device nonce, one guarded host
 nonce (3 expiry units each in GENERAL), at most one two-entry keeper INSERT and

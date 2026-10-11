@@ -22,19 +22,19 @@ export const ACCOUNT_QUEUES = [
   ['server_owner_resolutions',`owner_person_id IN (${TERMINAL})`,2,true],
 ];
 
-export async function purgeAccountRoots(env,day,cutoff,allowance) {
+export async function purgeAccountRoots(env,day,cutoff,allowance,fence = {sql: "CAST(strftime('%s','now') AS INTEGER)/86400=?", values: [day]}) {
   // One unique person costs update1 + receipt-clear1 + delete(row/PK)2. No cascade.
   const count=Math.min(100,Math.floor(allowance/4));
   if(count<1)return {spent:0,queries:0};
   const absent=ACCOUNT_CHILDREN.map(([table,column])=>
     `NOT EXISTS (SELECT 1 FROM ${table} WHERE ${column}=persons.person_id)`).join(' AND ');
   const candidate=`SELECT person_id FROM persons WHERE status='disabled' AND deleted_at<=?
-    AND ${absent} AND CAST(strftime('%s','now') AS INTEGER)/86400=? ORDER BY rowid LIMIT ?`;
+    AND ${absent} AND ${fence.sql} ORDER BY rowid LIMIT ?`;
   const ready=`SELECT person_id FROM persons WHERE purge_ready=1 AND person_id IN (${candidate})`;
   const results=await env.DB.batch([
-    env.DB.prepare(`UPDATE persons SET purge_ready=1 WHERE person_id IN (${candidate})`).bind(cutoff,day,count),
-    env.DB.prepare(`DELETE FROM account_deletions WHERE person_id IN (${ready})`).bind(cutoff,day,count),
-    env.DB.prepare(`DELETE FROM persons WHERE person_id IN (${ready})`).bind(cutoff,day,count),
+    env.DB.prepare(`UPDATE persons SET purge_ready=1 WHERE person_id IN (${candidate})`).bind(cutoff,...fence.values,count),
+    env.DB.prepare(`DELETE FROM account_deletions WHERE person_id IN (${ready})`).bind(cutoff,...fence.values,count),
+    env.DB.prepare(`DELETE FROM persons WHERE person_id IN (${ready})`).bind(cutoff,...fence.values,count),
   ]);
   let spent=0;
   for(let i=0;i<results.length;i++) {
@@ -43,5 +43,6 @@ export async function purgeAccountRoots(env,day,cutoff,allowance) {
     spent+=Math.max(measured,results[0].meta.changes*(i===2?2:1));
   }
   if(spent>allowance)throw new Error('account cleanup exceeded reserved write bound');
-  return {spent,queries:3};
+  return {spent,queries:3, rowsWritten:results.reduce((n,r)=>n+r.meta.rows_written,0),
+    rowsRead:results.reduce((n,r)=>n+Number(r.meta.rows_read),0)};
 }

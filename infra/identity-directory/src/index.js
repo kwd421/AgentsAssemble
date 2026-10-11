@@ -343,7 +343,7 @@ export async function handleRequest(request, env) {
 
 export default {
   fetch: handleRequest,
-  scheduled(_controller, env, ctx) {
-    ctx.waitUntil(cleanup(env));
+  scheduled(controller, env, ctx) {
+    ctx.waitUntil(cleanup(env, controller.scheduledTime));
   },
 };

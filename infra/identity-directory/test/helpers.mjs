@@ -36,8 +36,10 @@ class D1Prepared {
     return { results: this.database.prepare(this.sql).all(...this.values) };
   }
   async run() {
-    const info = this.database.prepare(this.sql).run(...this.values);
+    const results = this.database.prepare(this.sql).all(...this.values);
+    const info = this.database.prepare("SELECT changes() AS changes, last_insert_rowid() AS lastInsertRowid").get();
     return {
+      results,
       meta: {
         changes: Number(info.changes || 0),
         rows_written: Number(info.changes || 0),

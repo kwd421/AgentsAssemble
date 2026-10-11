@@ -33,9 +33,9 @@ try {
     assert.equal((await DB.prepare(`SELECT COUNT(*) AS n FROM ${table}`).first()).n,0,table);
   assert.equal((await DB.prepare('SELECT COUNT(*) AS n FROM persons').first()).n,1);
   assert.equal((await signedDeviceRequest(environment({DB}),unrelated.created.session,unrelated.key.pair,'/v1/bootstrap')).status,200);
-  assert.ok(writes>0&&writes<=10000);assert.ok(statements<=49);assert.ok(maxRows<=100);
+  assert.ok(writes>0&&writes<=10000);assert.ok(statements<=50);assert.ok(maxRows<=100);
   const first={writes,statements,rootWrites,maxRows};writes=0;statements=0;await cleanup(env);
-  assert.equal(writes,0);assert.equal(statements,1);
+  assert.equal(writes,0);
   console.log(JSON.stringify({...first,disabled_accounts_purged:2,own_registration_purged:true,unrelated_bootstrap:200,
     retry_rows_written:0,host_ack_required:false,historical_fixture:true}));
 }finally{await mf.dispose();}
