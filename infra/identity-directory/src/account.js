@@ -19,24 +19,25 @@ export async function logoutOtherSessions(session, env, now) {
   });
 }
 
-export async function deletionProof(request, session, env, text, now) {
+export async function deletionProof(request, session, env, text, now, purpose = "deletion") {
+  const prefix = purpose === "restore" ? "restore" : "deletion";
   await limitTerminationAttempt(request, env, session);
   const body = parseJson(text);
   const requestId = cleanIdentifier(body.request_id, "request_id", 32, 128);
-  if (body.kind === "google") return googleDeletionProof(request, session, env, body, requestId, now);
+  if (body.kind === "google") return googleDeletionProof(request, session, env, body, requestId, now, purpose);
   if (body.kind !== undefined && body.kind !== "guest") throw new HttpError(400, "invalid_deletion_proof_kind");
   const verifier = await hmacBase64Url(envSecret(env, "RECOVERY_PEPPER"), normalizeRecoveryCode(body.recovery_code));
   const proof = randomBase64Url(32);
-  const inserted = await env.DB.prepare(`UPDATE sessions SET deletion_request_id = ?, deletion_proof_hash = ?,
-    deletion_recovery_verifier = ?, deletion_google_subject_hmac = NULL,
-    deletion_proof_expires_at = ?, deletion_proof_used_at = NULL
+  const inserted = await env.DB.prepare(`UPDATE sessions SET ${prefix}_request_id = ?, ${prefix}_proof_hash = ?,
+    ${prefix}_recovery_verifier = ?, ${prefix}_google_subject_hmac = NULL,
+    ${prefix}_proof_expires_at = ?, ${prefix}_proof_used_at = NULL
     WHERE session_id = ? AND person_id = ? AND device_id = ? AND revoked_at IS NULL AND expires_at > ?
       AND EXISTS (SELECT 1 FROM persons JOIN devices USING(person_id)
         JOIN recovery_credentials USING(person_id) WHERE persons.person_id = sessions.person_id
         AND devices.device_id = sessions.device_id AND devices.revoked_at IS NULL
         AND persons.status = 'active' AND persons.deleted_at IS NULL AND persons.identity_kind = 'guest'
         AND recovery_credentials.verifier = ? AND recovery_credentials.revoked_at IS NULL)
-    RETURNING deletion_request_id AS request_id`)
+    RETURNING ${prefix}_request_id AS request_id`)
     .bind(requestId, await sha256Base64Url(proof), verifier, now + 300,
       session.session_id, session.person_id, session.device_id, now, verifier).first();
   if (!inserted) throw new HttpError(401, "account_deletion_reauth_required", "현재 계정의 복구 코드를 다시 확인해 주세요.");

@@ -1,4 +1,4 @@
-import { randomBase64Url } from './crypto.js';
+import { randomBase64Url, verifyHostSignature } from './crypto.js';
 import { HttpError, cleanIdentifier, json, parseJson, serverDisplayName } from './http.js';
 
 // Both registration and claim use this predicate inside their authority write.
@@ -95,4 +95,21 @@ export async function resolveDuplicateServer(session, env, text, now) {
   }
   const resolution = await env.DB.prepare('SELECT keeper_server_id, keeper_epoch AS keeper_registration_epoch, revision FROM server_owner_resolutions WHERE owner_person_id = ?').bind(personId).first();
   return json({ status: 'server_retired', server_id: targetId, registration_epoch: targetEpoch, resolution });
+}
+
+export async function rejectRetiredKey(db, serverId, fingerprint) {
+  const retired = await db.prepare(`SELECT expected_epoch FROM server_restore_operations
+    WHERE server_id=? AND old_key_fingerprint=?`).bind(serverId, fingerprint).first();
+  if (retired) throw new HttpError(410, 'server_retired', 'This registration has been retired.',
+    { server_id: serverId, registration_epoch: retired.expected_epoch });
+}
+
+export async function rejectRetiredSignature(db, serverId, epoch, signature, canonical) {
+  const {results} = await db.prepare(`SELECT old_public_key_jwk, expected_epoch FROM server_restore_operations
+    WHERE server_id=? AND (? IS NULL OR expected_epoch=?) LIMIT 64`).bind(serverId, epoch, epoch).all();
+  for (const row of results) {
+    if (await verifyHostSignature(JSON.parse(row.old_public_key_jwk), signature, canonical))
+      throw new HttpError(410, 'server_retired', 'This registration has been retired.',
+        { server_id: serverId, registration_epoch: row.expected_epoch });
+  }
 }

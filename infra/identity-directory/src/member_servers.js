@@ -46,7 +46,7 @@ export async function reportMemberResults(request, env, serverId, text, now) {
   for (const item of body.results) {
     statements.push(env.DB.prepare(`UPDATE member_servers SET host_state = ?, host_revision = ?,
         updated_at = ?, state_changed_at = CASE WHEN host_state != ? THEN ? ELSE state_changed_at END
-      WHERE projection_id = ? AND server_id = ? AND registration_epoch = ? AND host_revision < ?
+      WHERE projection_id = ? AND server_id = ? AND registration_epoch = ? AND host_revision < ? AND restore_terminal = 0
         AND EXISTS (SELECT 1 FROM persons WHERE persons.person_id = member_servers.person_id
           AND persons.status = 'active' AND persons.deleted_at IS NULL)
         AND (host_state = 'active' OR state_changed_at > ?)
@@ -55,7 +55,7 @@ export async function reportMemberResults(request, env, serverId, text, now) {
       .bind(item.state, item.revision, now, item.state, now, item.projection_id, serverId, epoch,
         item.revision, now - MEMBER_RETENTION_SECONDS, serverId, epoch, fingerprint));
     statements.push(env.DB.prepare(`SELECT CASE
-        WHEN EXISTS (SELECT 1 FROM persons WHERE persons.person_id = member_servers.person_id
+        WHEN restore_terminal = 1 OR EXISTS (SELECT 1 FROM persons WHERE persons.person_id = member_servers.person_id
           AND persons.deleted_at IS NOT NULL) THEN 'terminal'
         WHEN host_revision = ? AND host_state = ? THEN 'applied'
         WHEN host_revision = ? THEN 'conflict' ELSE 'stale' END AS status

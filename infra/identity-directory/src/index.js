@@ -1,3 +1,4 @@
+import { restoreProof, restoreServer, restoreStatus } from './server_restore.js';
 import { resolveDuplicateServer } from "./server_ownership.js";
 import { reportMemberResults, setMemberHidden } from "./member_servers.js";
 import { cleanup } from "./cleanup.js";
@@ -205,6 +206,16 @@ async function route(request, env) {
   if (request.method === "POST" && url.pathname === "/v1/servers/resolve-duplicates") {
     return resolveDuplicateServer(session, env, text, now);
   }
+  const restore = url.pathname.match(/^\/v1\/servers\/([^/]+)\/(restore|restore-proof)$/);
+  if (restore && request.method === "POST") {
+    const serverId = cleanIdentifier(restore[1], "server_id");
+    return restore[2] === "restore" ? restoreServer(request, session, env, serverId, text, now)
+      : restoreProof(request, session, env, serverId, text, now);
+  }
+  const restoreOperation = url.pathname.match(/^\/v1\/servers\/([^/]+)\/restore-operations\/([^/]+)$/);
+  if (restoreOperation && request.method === "GET")
+    return restoreStatus(session, env, cleanIdentifier(restoreOperation[1], "server_id"),
+      cleanIdentifier(restoreOperation[2], "operation_id", 32, 128));
   const visibility = url.pathname.match(/^\/v1\/member-servers\/([^/]+)\/(hide|unhide)$/);
   if (visibility && request.method === "POST") {
     return setMemberHidden(session, env, cleanIdentifier(visibility[1], "server_id"), text, now, visibility[2] === "hide");

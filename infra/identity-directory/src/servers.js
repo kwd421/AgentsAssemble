@@ -18,7 +18,7 @@ import {
   parseJson,
 } from "./http.js";
 import { normalizeServerOrigin } from "./origin.js";
-import { NO_OTHER_LIVE_OWNER, requireHostIncarnation, recheckHostIncarnation, serverExistsError } from "./server_ownership.js";
+import { rejectRetiredKey, rejectRetiredSignature, NO_OTHER_LIVE_OWNER, requireHostIncarnation, recheckHostIncarnation, serverExistsError } from "./server_ownership.js";
 import { claimServerOwnership } from "./server_owner_claim.js";
 
 const CLOCK_SKEW_SECONDS = 300;
@@ -63,6 +63,7 @@ export async function registerServer(session, env, text, now) {
     throw new HttpError(401, "invalid_host_registration_proof");
   }
   const fingerprint = await sha256Base64Url(canonicalJson(hostJwk));
+  await rejectRetiredKey(env.DB, serverId, fingerprint);
   let existing = await env.DB
     .prepare(
       "SELECT owner_person_id, host_key_fingerprint, registration_epoch, revoked_at, owner_deleted_at, owner_status FROM server_authorities WHERE server_id = ?"
@@ -198,7 +199,6 @@ export async function verifyHostRequest(request, env, serverId, body, now) {
   ) {
     throw new HttpError(401, "invalid_host_signature");
   }
-  if (!server) requireHostIncarnation(server, serverId, registrationEpoch);
   const canonical = await hostRequestCanonical({
     method: request.method,
     pathname: new URL(request.url).pathname,
@@ -206,12 +206,16 @@ export async function verifyHostRequest(request, env, serverId, body, now) {
     nonce,
     bodyText: body,
   });
-  const valid = await verifyHostSignature(
+  const valid = server && await verifyHostSignature(
     JSON.parse(server.host_public_key_jwk),
     signature,
     canonical
   );
-  if (!valid) throw new HttpError(401, "invalid_host_signature");
+  if (!valid) {
+    await rejectRetiredSignature(env.DB, serverId, registrationEpoch, signature, canonical);
+    if (!server) requireHostIncarnation(server, serverId, registrationEpoch);
+    throw new HttpError(401, "invalid_host_signature");
+  }
   requireHostIncarnation(server, serverId, registrationEpoch);
   await limitHost(request, env, serverId, server.host_key_fingerprint);
   return { nonce, fingerprint: server.host_key_fingerprint, registrationEpoch, body: payload };

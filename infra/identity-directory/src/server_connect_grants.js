@@ -337,7 +337,7 @@ export async function redeemMemberGrant(request, env, serverId, text, now, purpo
         SELECT person_id, server_id, registration_epoch, ?, ?, ?, ? FROM server_connect_grants AS source
         WHERE secret_hash = ? AND changes() = 1
         ON CONFLICT(person_id, server_id, registration_epoch) DO UPDATE SET
-          projection_id = excluded.projection_id, host_state = 'pending', host_revision = 0,
+          projection_id = excluded.projection_id, host_state = 'pending', host_revision = 0, restore_terminal = 0,
           created_at = excluded.created_at, updated_at = excluded.updated_at,
           state_changed_at = excluded.state_changed_at
         WHERE member_servers.host_state IN ('pending', 'removed') AND member_servers.state_changed_at <= ?`)
