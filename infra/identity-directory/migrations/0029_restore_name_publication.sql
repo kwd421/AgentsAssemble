@@ -3,7 +3,11 @@
 -- snapshot's revision. Preserve labels/aliases until that publication succeeds.
 -- Future restores reset the revision inside the existing atomic switch.
 UPDATE servers SET name_revision = 0
-WHERE revoked_at IS NULL AND EXISTS (
+WHERE revoked_at IS NULL
+  -- Deleted owners' retained servers are terminal; updating them would abort the migration.
+  AND EXISTS (SELECT 1 FROM persons p WHERE p.person_id = servers.owner_person_id
+    AND p.status = 'active' AND p.deleted_at IS NULL)
+  AND EXISTS (
   SELECT 1 FROM server_restore_operations r
   WHERE r.server_id = servers.server_id
     AND r.registration_epoch = servers.registration_epoch
